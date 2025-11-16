@@ -6,14 +6,23 @@ import { useProfile } from '@/hooks/useProfile'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 type DocType = {
-  id: string; code: string; label: string;
-  category: string | null; scope: 'property'|'building'|null;
-  description: string | null; is_default: boolean | null;
+  id: string
+  code: string
+  label: string
+  category: string | null
+  scope: 'property'|'building'|null
+  description: string | null
+  is_default: boolean | null
 }
+
 type CompType = {
-  id: string; code: string; name: string;
-  category: string | null; default_lifecycle_years: number | null;
-  notes: string | null;
+  id: string
+  code: string | null
+  name: string
+  category: string | null
+  technical_lifespan_years: number | null
+  maintenance_interval_years: number | null
+  notes: string | null
 }
 
 export default function AdminPage() {
@@ -51,16 +60,17 @@ export default function AdminPage() {
   const loadDocs = async () => {
     const { data, error } = await supabase
       .from('document_types')
-      .select('*')
+      .select('id, code, label, category, scope, description, is_default')
       .order('category', { ascending: true })
       .order('label', { ascending: true })
     if (error) { console.error(error.message); return }
     setDocs((data ?? []) as DocType[])
   }
+
   const loadComps = async () => {
     const { data, error } = await supabase
       .from('component_types')
-      .select('*')
+      .select('id, code, name, category, technical_lifespan_years, maintenance_interval_years, notes')
       .order('category', { ascending: true })
       .order('name', { ascending: true })
     if (error) { console.error(error.message); return }
@@ -97,7 +107,7 @@ export default function AdminPage() {
     const code = `DOC_${Math.random().toString(36).slice(2,7).toUpperCase()}`
     const { data, error } = await supabase.from('document_types')
       .insert({ code, label: 'Nytt dokument', scope: 'building', is_default: true })
-      .select('*').single()
+      .select('id, code, label, category, scope, description, is_default').single()
     if (error) return alert(error.message)
     setDocs(prev => [data as DocType, ...prev])
   }
@@ -117,7 +127,7 @@ export default function AdminPage() {
     const code = `CMP_${Math.random().toString(36).slice(2,7).toUpperCase()}`
     const { data, error } = await supabase.from('component_types')
       .insert({ code, name: 'Ny komponent' })
-      .select('*').single()
+      .select('id, code, name, category, technical_lifespan_years, maintenance_interval_years, notes').single()
     if (error) return alert(error.message)
     setComps(prev => [data as CompType, ...prev])
   }
@@ -232,7 +242,8 @@ export default function AdminPage() {
                     <th className="py-2 pr-3">Code</th>
                     <th className="py-2 pr-3">Namn</th>
                     <th className="py-2 pr-3">Kategori</th>
-                    <th className="py-2 pr-3">Livslängd (år)</th>
+                    <th className="py-2 pr-3">Teknisk livslängd (år)</th>
+                    <th className="py-2 pr-3">Underhållsintervall (år)</th>
                     <th className="py-2 pr-3">Anteckning</th>
                     <th />
                   </tr>
@@ -240,7 +251,7 @@ export default function AdminPage() {
                 <tbody className="divide-y">
                   {filteredComps.map(c => (
                     <tr key={c.id}>
-                      <td className="py-2 pr-3">{c.code}</td>
+                      <td className="py-2 pr-3">{c.code ?? ''}</td>
                       <td className="py-2 pr-3">
                         <input className="border rounded px-2 py-1 w-56"
                           value={c.name} onChange={e=>saveComp(c.id,{name:e.target.value})}/>
@@ -250,8 +261,24 @@ export default function AdminPage() {
                           value={c.category ?? ''} onChange={e=>saveComp(c.id,{category:e.target.value||null})}/>
                       </td>
                       <td className="py-2 pr-3">
-                        <input type="number" className="border rounded px-2 py-1 w-28"
-                          value={c.default_lifecycle_years ?? ''} onChange={e=>saveComp(c.id,{default_lifecycle_years: e.target.value===''? null : Number(e.target.value)})}/>
+                        <input
+                          type="number"
+                          className="border rounded px-2 py-1 w-32"
+                          value={c.technical_lifespan_years ?? ''}
+                          onChange={e=>saveComp(c.id,{
+                            technical_lifespan_years: e.target.value==='' ? null : Number(e.target.value)
+                          })}
+                        />
+                      </td>
+                      <td className="py-2 pr-3">
+                        <input
+                          type="number"
+                          className="border rounded px-2 py-1 w-32"
+                          value={c.maintenance_interval_years ?? ''}
+                          onChange={e=>saveComp(c.id,{
+                            maintenance_interval_years: e.target.value==='' ? null : Number(e.target.value)
+                          })}
+                        />
                       </td>
                       <td className="py-2 pr-3">
                         <input className="border rounded px-2 py-1 w-72"
@@ -263,7 +290,7 @@ export default function AdminPage() {
                     </tr>
                   ))}
                   {filteredComps.length===0 && (
-                    <tr><td className="py-4 text-gray-500" colSpan={6}>Inga rader.</td></tr>
+                    <tr><td className="py-4 text-gray-500" colSpan={7}>Inga rader.</td></tr>
                   )}
                 </tbody>
               </table>

@@ -1,8 +1,12 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+
+// Route: /properties/[id]/buildings
+
+import { useEffect, useState } from 'react'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
+import Protected from '@/components/Protected'
 
 type Building = {
   id: string
@@ -24,7 +28,6 @@ type Media = {
 
 export default function BuildingsPage() {
   const { id: propertyId } = useParams() as { id: string }
-  const router = useRouter()
 
   const [buildings, setBuildings] = useState<Building[]>([])
   const [loading, setLoading] = useState(true)
@@ -42,9 +45,12 @@ export default function BuildingsPage() {
   // Cache för signerade URL:er så vi inte hämtar om och om igen
   const [signedUrlCache, setSignedUrlCache] = useState<Record<string, string>>({})
 
+  // Vilken byggnad som tas bort just nu
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
   useEffect(() => {
     loadBuildings()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propertyId])
 
   const loadBuildings = async () => {
@@ -79,6 +85,27 @@ export default function BuildingsPage() {
     setBName('')
     setOpenNew(false)
     await loadBuildings()
+  }
+
+  // Ta bort byggnad
+  const deleteBuilding = async (b: Building) => {
+    const ok = confirm(
+      `Är du säker på att du vill ta bort byggnaden "${b.name}"? Detta går inte att ångra.`
+    )
+    if (!ok) return
+
+    try {
+      setDeletingId(b.id)
+      const { error } = await supabase.from('buildings').delete().eq('id', b.id)
+      if (error) {
+        alert('Kunde inte ta bort byggnaden: ' + error.message)
+        console.error(error)
+        return
+      }
+      await loadBuildings()
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   // Ladda upp / byt omslagsbild
@@ -178,7 +205,7 @@ export default function BuildingsPage() {
         if (mounted) setUrl(u)
       })()
       return () => { mounted = false }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [path])
     return url
   }
@@ -186,6 +213,7 @@ export default function BuildingsPage() {
   // Liten rad-komponent inline (för enkelhet)
   const BuildingRow: React.FC<{ b: Building }> = ({ b }) => {
     const coverUrl = useSigned(b.cover_path)
+    const isDeleting = deletingId === b.id
 
     return (
       <div className="p-4 flex items-center justify-between gap-4">
@@ -195,7 +223,9 @@ export default function BuildingsPage() {
               // Använder <img> för att slippa konfigurera next/image-domänen nu
               <img src={coverUrl} alt="Omslag" className="h-full w-full object-cover" />
             ) : (
-              <div className="h-full w-full flex items-center justify-center text-[11px] text-gray-400">Ingen bild</div>
+              <div className="h-full w-full flex items-center justify-center text-[11px] text-gray-400">
+                Ingen bild
+              </div>
             )}
           </div>
           <div className="min-w-0">
@@ -230,124 +260,171 @@ export default function BuildingsPage() {
             Galleri
           </button>
 
-          {/* Öppna byggnad (detalj – för kommande “underkategorier”) */}
+          {/* Öppna byggnad (detalj) */}
           <Link
             href={`/properties/${propertyId}/buildings/${b.id}`}
             className="text-sm px-3 py-2 rounded border hover:bg-gray-50"
           >
             Öppna
           </Link>
+
+          {/* Ta bort byggnad */}
+          <button
+            onClick={() => deleteBuilding(b)}
+            disabled={isDeleting}
+            className="text-sm px-3 py-2 rounded border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50"
+          >
+            {isDeleting ? 'Tar bort…' : 'Ta bort'}
+          </button>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl md:text-2xl font-semibold">Byggnader</h1>
-          <p className="text-sm text-gray-600">Fastighet: {propertyId}</p>
+    <Protected>
+      <div className="space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl md:text-2xl font-semibold">Byggnader</h1>
+            <p className="text-sm text-gray-600">Fastighet: {propertyId}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href={`/properties/${propertyId}`} className="text-sm underline">
+              ← Tillbaka
+            </Link>
+            <button
+              onClick={() => setOpenNew(true)}
+              className="bg-emerald-600 text-white text-sm px-3 py-2 rounded-lg"
+            >
+              + Lägg till byggnad
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href={`/properties/${propertyId}`} className="text-sm underline">
-            ← Tillbaka
-          </Link>
-          <button onClick={() => setOpenNew(true)} className="bg-emerald-600 text-white text-sm px-3 py-2 rounded-lg">
-            + Lägg till byggnad
-          </button>
-        </div>
+
+        {/* Lista */}
+        {loading ? (
+          <div className="bg-white rounded-xl shadow p-6 text-gray-500">Laddar…</div>
+        ) : buildings.length === 0 ? (
+          <div className="bg-white rounded-xl shadow p-8 text-center text-gray-600">
+            Inga byggnader ännu.<br />
+            <button
+              onClick={() => setOpenNew(true)}
+              className="mt-3 bg-emerald-600 text-white text-sm px-4 py-2 rounded-lg"
+            >
+              Skapa din första byggnad
+            </button>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl shadow divide-y">
+            {buildings.map(b => <BuildingRow key={b.id} b={b} />)}
+          </div>
+        )}
+
+        {/* Modal: Ny byggnad */}
+        {openNew && (
+          <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl shadow w-full max-w-md p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-semibold">Ny byggnad</h2>
+                <button onClick={() => setOpenNew(false)} className="text-sm text-gray-500">
+                  Stäng
+                </button>
+              </div>
+              <form onSubmit={addBuilding} className="space-y-3">
+                <div>
+                  <label className="block text-sm mb-1">Namn *</label>
+                  <input
+                    className="border rounded w-full p-2"
+                    value={bName}
+                    onChange={e=>setBName(e.target.value)}
+                    placeholder="t.ex. Huvudbyggnad"
+                    required
+                  />
+                </div>
+                <div className="pt-2 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOpenNew(false)}
+                    className="px-3 py-2 text-sm rounded border"
+                  >
+                    Avbryt
+                  </button>
+                  <button className="px-3 py-2 text-sm rounded bg-emerald-600 text-white">
+                    Spara
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Galleri */}
+        {openGallery && activeBuilding && (
+          <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl shadow w-full max-w-3xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-semibold">Galleri – {activeBuilding.name}</h2>
+                <button
+                  onClick={() => { setOpenGallery(false); setActiveBuilding(null) }}
+                  className="text-sm text-gray-500"
+                >
+                  Stäng
+                </button>
+              </div>
+
+              <div className="mb-3">
+                <label className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded border hover:bg-gray-50 cursor-pointer">
+                  + Lägg till bilder
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = e.target.files
+                      onUploadGallery(files)
+                      e.currentTarget.value = ''
+                    }}
+                  />
+                </label>
+              </div>
+
+              {galleryLoading ? (
+                <div className="text-gray-500">Laddar…</div>
+              ) : gallery.length === 0 ? (
+                <div className="text-gray-600">Inga bilder ännu.</div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {gallery.map((m) => (
+                    <GalleryThumb
+                      key={m.id}
+                      media={m}
+                      getUrl={getSignedUrl}
+                      onDelete={() => deleteGalleryItem(m)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
-
-      {/* Lista */}
-      {loading ? (
-        <div className="bg-white rounded-xl shadow p-6 text-gray-500">Laddar…</div>
-      ) : buildings.length === 0 ? (
-        <div className="bg-white rounded-xl shadow p-8 text-center text-gray-600">
-          Inga byggnader ännu.<br />
-          <button onClick={() => setOpenNew(true)} className="mt-3 bg-emerald-600 text-white text-sm px-4 py-2 rounded-lg">
-            Skapa din första byggnad
-          </button>
-        </div>
-      ) : (
-        <div className="bg-white rounded-xl shadow divide-y">
-          {buildings.map(b => <BuildingRow key={b.id} b={b} />)}
-        </div>
-      )}
-
-      {/* Modal: Ny byggnad */}
-      {openNew && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow w-full max-w-md p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold">Ny byggnad</h2>
-              <button onClick={() => setOpenNew(false)} className="text-sm text-gray-500">Stäng</button>
-            </div>
-            <form onSubmit={addBuilding} className="space-y-3">
-              <div>
-                <label className="block text-sm mb-1">Namn *</label>
-                <input className="border rounded w-full p-2" value={bName} onChange={e=>setBName(e.target.value)} placeholder="t.ex. Huvudbyggnad" required />
-              </div>
-              <div className="pt-2 flex items-center justify-end gap-2">
-                <button type="button" onClick={() => setOpenNew(false)} className="px-3 py-2 text-sm rounded border">
-                  Avbryt
-                </button>
-                <button className="px-3 py-2 text-sm rounded bg-emerald-600 text-white">
-                  Spara
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Galleri */}
-      {openGallery && activeBuilding && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow w-full max-w-3xl p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold">Galleri – {activeBuilding.name}</h2>
-              <button onClick={() => { setOpenGallery(false); setActiveBuilding(null) }} className="text-sm text-gray-500">Stäng</button>
-            </div>
-
-            <div className="mb-3">
-              <label className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded border hover:bg-gray-50 cursor-pointer">
-                + Lägg till bilder
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    const files = e.target.files
-                    onUploadGallery(files)
-                    e.currentTarget.value = ''
-                  }}
-                />
-              </label>
-            </div>
-
-            {galleryLoading ? (
-              <div className="text-gray-500">Laddar…</div>
-            ) : gallery.length === 0 ? (
-              <div className="text-gray-600">Inga bilder ännu.</div>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {gallery.map((m) => (
-                  <GalleryThumb key={m.id} media={m} getUrl={getSignedUrl} onDelete={() => deleteGalleryItem(m)} />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
+    </Protected>
   )
 }
 
 // Liten thumb-komponent (separat för läsbarhet)
-function GalleryThumb({ media, getUrl, onDelete }: { media: Media; getUrl: (p: string) => Promise<string | null>; onDelete: () => void }) {
+function GalleryThumb({
+  media,
+  getUrl,
+  onDelete,
+}: {
+  media: Media
+  getUrl: (p: string) => Promise<string | null>
+  onDelete: () => void
+}) {
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
     let mounted = true
@@ -365,7 +442,9 @@ function GalleryThumb({ media, getUrl, onDelete }: { media: Media; getUrl: (p: s
       </div>
       <div className="p-2 flex items-center justify-between">
         <div className="text-xs text-gray-600 truncate">{media.caption ?? '—'}</div>
-        <button onClick={onDelete} className="text-xs text-rose-600 hover:underline">Ta bort</button>
+        <button onClick={onDelete} className="text-xs text-rose-600 hover:underline">
+          Ta bort
+        </button>
       </div>
     </div>
   )
