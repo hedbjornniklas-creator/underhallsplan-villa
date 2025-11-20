@@ -80,10 +80,49 @@ export default function PropertyInspectionsPage() {
 
   const hasInspections = useMemo(() => inspections.length > 0, [inspections])
 
-  const handleCreateNew = () => {
-    // Här kommer vi senare skapa en ny rad i `inspections`
-    // och sedan styra vidare till formuläret.
-    router.push(`/properties/${propertyId}/ob/new`)
+  const handleCreateNew = async () => {
+    if (!propertyId) return
+
+    // Skapa en ny besiktning i databasen
+    const { data, error } = await supabase
+      .from('inspections')
+      .insert({
+        property_id: propertyId,
+        type: 'OB',
+        status: 'draft',
+      })
+      .select('id')
+      .single()
+
+    if (error || !data) {
+      console.error('Kunde inte skapa besiktning:', error?.message)
+      alert('Kunde inte skapa en ny överlåtelsebesiktning.')
+      return
+    }
+
+    const newId = data.id as string
+
+    // Gå direkt till detaljsidan för besiktningen
+    router.push(`/properties/${propertyId}/ob/${newId}`)
+  }
+
+  const handleDelete = async (inspectionId: string) => {
+    const ok = confirm('Vill du verkligen radera denna besiktning?')
+    if (!ok) return
+
+    const { error } = await supabase
+      .from('inspections')
+      .delete()
+      .eq('id', inspectionId)
+
+    if (error) {
+      console.error('Kunde inte radera besiktning:', error)
+      alert('Kunde inte radera besiktningen.')
+      return
+    }
+
+    // Ta bort den lokalt ur listan
+    setInspections(prev => prev.filter(i => i.id !== inspectionId))
   }
 
   const formatDate = (value: string | null) => {
@@ -117,7 +156,9 @@ export default function PropertyInspectionsPage() {
     return (
       <Protected>
         <main className="p-6">
-          <p className="text-sm text-gray-500">Laddar fastighet och besiktningar…</p>
+          <p className="text-sm text-gray-500">
+            Laddar fastighet och besiktningar…
+          </p>
         </main>
       </Protected>
     )
@@ -222,7 +263,7 @@ export default function PropertyInspectionsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {inspections.map((inspection) => (
+                    {inspections.map(inspection => (
                       <tr
                         key={inspection.id}
                         className="border-b last:border-b-0 hover:bg-gray-50"
@@ -239,13 +280,21 @@ export default function PropertyInspectionsPage() {
                         <td className="px-3 py-2 align-middle">
                           {inspection.inspector_name || '–'}
                         </td>
-                        <td className="px-3 py-2 align-middle text-right">
-                          <Link
-                            href={`/properties/${property.id}/ob/${inspection.id}`}
-                            className="text-sm text-blue-600 hover:underline"
-                          >
-                            Öppna
-                          </Link>
+                        <td className="px-3 py-2 align-middle">
+                          <div className="flex justify-end gap-3">
+                            <Link
+                              href={`/properties/${property.id}/ob/${inspection.id}`}
+                              className="text-sm text-blue-600 hover:underline"
+                            >
+                              Öppna
+                            </Link>
+                            <button
+                              onClick={() => void handleDelete(inspection.id)}
+                              className="text-sm text-red-600 hover:underline"
+                            >
+                              Radera
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
