@@ -1,6 +1,15 @@
 'use client'
 
+import { useEffect } from 'react'
 import ObStepGrunddata from './ObStepGrunddata'
+import ObStepHandlingar from './ObStepHandlingar'
+import ObStepForutsattningar from './ObStepForutsattningar'
+import ObStepUtsida from './ObStepUtsida'
+import ObStepInsida from './ObStepInsida'
+
+export type TenureType = 'freehold' | 'bostadsratt' | null
+export type DwellingType = 'house' | 'apartment' | null
+export type InspectionSide = 'buyer' | 'seller' | null
 
 type Property = {
   id: string
@@ -11,6 +20,9 @@ type Property = {
   municipality: string | null
   cadastral_id: string | null
   owner_name: string | null
+
+  tenure_type: TenureType
+  dwelling_type: DwellingType
 }
 
 type Inspection = {
@@ -27,19 +39,19 @@ type Inspection = {
   scope: string | null
   inspection_time: string | null
   attendees: string | null
+  attendees_other?: string | null
+  inspection_side: InspectionSide
 }
 
 export type ObSectionKey =
   | 'overview'
   | 'grunddata'
   | 'handlingar'
+  | 'forutsattningar'
   | 'utsida'
   | 'insida'
-  | 'vindsutrymme'
-  | 'vatrum'
   | 'risk'
   | 'ftu'
-  | 'summary'
 
 interface ObWizardProps {
   property: Property
@@ -56,29 +68,95 @@ export default function ObWizard({
   onPropertyUpdated,
   onInspectionUpdated,
 }: ObWizardProps) {
-  // 🔹 Här styr vi vilken "sida" som syns
+  useEffect(() => {
+    console.log('ObWizard activeSection =', activeSection)
+  }, [activeSection])
 
-  if (activeSection === 'grunddata') {
-    return (
-      <ObStepGrunddata
-        property={property}
-        inspection={inspection}
-        onPropertyUpdated={onPropertyUpdated}
-        onInspectionUpdated={onInspectionUpdated}
-      />
-    )
+  switch (activeSection) {
+    case 'overview':
+      return (
+        <div className="rounded-xl border bg-white p-4 text-sm text-gray-700 space-y-2">
+          <h2 className="text-base font-semibold text-gray-900">
+            Översikt över besiktningen
+          </h2>
+          <p>
+            Här kommer vi senare samla en översikt med status för samtliga steg:
+            grunddata, handlingar, förutsättningar, utsida/insida, riskanalys och FTU.
+          </p>
+          <div className="text-xs text-gray-500 space-y-1">
+            <p>
+              Fastighet:{' '}
+              <span className="font-medium">
+                {property.name}
+                {property.address ? ` – ${property.address}` : ''}
+              </span>
+            </p>
+            <p>
+              Besiktning:{' '}
+              <span className="font-medium">
+                {inspection.assignment_number || inspection.id}
+              </span>{' '}
+              {inspection.date && <>· {inspection.date}</>}
+            </p>
+          </div>
+        </div>
+      )
+
+    case 'grunddata':
+      return (
+        <ObStepGrunddata
+          property={property}
+          inspection={inspection}
+          onPropertyUpdated={onPropertyUpdated}
+          onInspectionUpdated={onInspectionUpdated}
+        />
+      )
+
+    case 'handlingar':
+      return <ObStepHandlingar property={property} inspection={inspection} />
+
+    case 'forutsattningar':
+      return <ObStepForutsattningar property={property} inspection={inspection} />
+
+    case 'utsida':
+      return <ObStepUtsida inspection={inspection} />
+
+    case 'insida':
+      return <ObStepInsida inspection={inspection} />
+
+    case 'risk':
+      return (
+        <div className="rounded-xl border bg-white p-4 text-sm text-gray-700 space-y-1">
+          <h2 className="text-base font-semibold text-gray-900">Riskanalys</h2>
+          <p>
+            Riskanalys-steget kommer att kopplas till risk-/FTU-databasen.
+          </p>
+        </div>
+      )
+
+    case 'ftu':
+      return (
+        <div className="rounded-xl border bg-white p-4 text-sm text-gray-700 space-y-1">
+          <h2 className="text-base font-semibold text-gray-900">
+            Fortsatt teknisk utredning (FTU)
+          </h2>
+          <p>
+            Här kommer systemet sammanställa FTU-punkter utifrån risker.
+          </p>
+        </div>
+      )
+
+    default:
+      return (
+        <div className="rounded-xl border bg-white p-4 text-sm text-gray-600">
+          <p>
+            Steget{' '}
+            <span className="font-mono">
+              {activeSection ?? '(okänt värde)'}
+            </span>{' '}
+            är ännu inte byggt.
+          </p>
+        </div>
+      )
   }
-
-  // 🔹 Övriga steg är placeholders tills vi bygger dem
-  return (
-    <div className="rounded-xl border bg-white p-4 text-sm text-gray-600">
-      <p>
-        Steget <span className="font-mono">{activeSection}</span> är ännu inte byggt.
-      </p>
-      <p className="mt-1 text-xs text-gray-500">
-        Här kommer vi senare lägga moduler för Handlingar, utsida, insida, våtrum, riskanalys,
-        FTU och sammanfattning.
-      </p>
-    </div>
-  )
 }

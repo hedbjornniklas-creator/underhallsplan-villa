@@ -1,0 +1,1279 @@
+'use client'
+
+import { useEffect, useState, ChangeEvent, useRef } from 'react'
+import { supabase } from '@/lib/supabaseClient'
+
+type Inspection = {
+  id: string
+  property_id: string
+  date: string | null
+  assignment_number: string | null
+}
+
+type SettingsExteriorItem = {
+  id: string
+  key: string
+  label: string
+  sort_order: number
+  is_active: boolean
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+type SettingsExteriorGroup = {
+  id: string
+  item_id: string
+  key: string
+  label: string
+  sort_order: number
+  is_active: boolean
+  field_type?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+type SettingsExteriorOption = {
+  id: string
+  group_id: string
+  value: string
+  label: string
+  sort_order: number
+  is_active: boolean
+  trigger_tags?: any | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+type InspectionExteriorObservation = {
+  id?: string
+  inspection_id: string
+  exterior_item_id: string
+  part_label: string | null
+  values: Record<string, any>
+  note: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+type ItemBundle = SettingsExteriorItem & {
+  groups: (SettingsExteriorGroup & { options: SettingsExteriorOption[] })[]
+}
+
+// Kontrollpunkter (samma tabell som insida, men här via exterior_observation_id)
+type InspectionControlItem = {
+  id?: string
+  inspection_id: string
+  exterior_observation_id: string
+  control_point_id: string
+  title: string
+  status: string | null
+  note: string | null
+  sort_order: number
+}
+
+// Lätta kontrollpunkter från settings_control_points (scope='exterior')
+type ControlPointLite = {
+  id: string
+  key: string
+  title: string
+  label: string | null
+  description: string | null
+  tags: any | null
+  exterior_item_key?: string | null
+}
+
+// Bilder kopplade till kontrollpunkter (inspection_images.control_item_id)
+type InspectionImage = {
+  id: string
+  inspection_id: string
+  exterior_observation_id: string | null
+  interior_room_id: string | null
+  control_item_id: string | null
+  file_path: string
+  label: string | null
+  sort_order: number
+  created_at?: string | null
+}
+
+// Fasta status-värden (kodade) för kontrollpunkter
+const CONTROL_STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: 'ok',             label: 'OK' },
+  { value: 'remark',         label: 'Anmärkning' },
+  { value: 'not_inspected',  label: 'Ej besiktigad' },
+  { value: 'not_accessible', label: 'Ej åtkomlig' },
+]
+
+// Storage-bucket för bilder
+const IMAGE_BUCKET = 'inspection-images' as const
+
+const getImagePublicUrl = (filePath: string) => {
+  const { data } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(filePath)
+  return data.publicUrl
+}
+
+export default function ObStepUtsida({ inspection }: { inspection: Inspection }) {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const [items, setItems] = useState<ItemBundle[]>([])
+  const [observations, setObservations] = useState<
+    Record<string, InspectionExteriorObservation[]>
+  >({})
+  const [controlItems, setControlItems] = useState<InspectionControlItem[]>([])
+
+  // Bilder per kontrollpunkt (inspection_control_items)
+  const [imagesByControlItemId, setImagesByControlItemId] = useState<
+    Record<string, InspectionImage[]>
+  >({})
+
+  // -----------------------------
+  // LOAD SETTINGS + OBSERVATIONER + KONTROLLPUNKTER + BILDER
+  // -----------------------------
+  useEffect(() => {
+    if (!inspection?.id) return
+
+    const loadAll = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        // 1) Items (Mark, Grundmur/sockel, Fasad, Dörrar/fönster, Yttertak, Övrigt)
+        const { data: itemsData, error: itemsErr } = await supabase
+          .from('settings_exterior_items')
+          .select('*')
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true })
+
+        if (itemsErr) {
+          console.error('settings_exterior_items error:', itemsErr)
+          throw new Error(itemsErr.message)
+        }
+
+        const itemsArr = (itemsData ?? []) as SettingsExteriorItem[]
+        const itemIds = itemsArr.map(i => i.id)
+
+        if (itemIds.length === 0) {
+          setItems([])
+          setObservations({})
+          setControlItems([])
+          setImagesByControlItemId({})
+          return
+        }
+
+        // 2) Groups
+        const { data: groupsData, error: groupsErr } = await supabase
+          .from('settings_exterior_groups')
+          .select('*')
+          .in('item_id', itemIds)
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true })
+
+        if (groupsErr) {
+          console.error('settings_exterior_groups error:', groupsErr)
+          throw new Error(groupsErr.message)
+        }
+
+        const groupsArr = (groupsData ?? []) as SettingsExteriorGroup[]
+        const groupIds = groupsArr.map(g => g.id)
+
+        // 3) Options per group
+        const { data: optionsData, error: optErr } = await supabase
+          .from('settings_exterior_options')
+          .select('*')
+          .in('group_id', groupIds)
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true })
+
+        if (optErr) {
+          console.error('settings_exterior_options error:', optErr)
+          throw new Error(optErr.message)
+        }
+
+        const optionsArr = (optionsData ?? []) as SettingsExteriorOption[]
+
+        // 4) Befintliga observationer för denna besiktning
+        const { data: obsData, error: obsErr } = await supabase
+          .from('inspection_exterior_observations')
+          .select('*')
+          .eq('inspection_id', inspection.id)
+          .order('created_at', { ascending: true })
+
+        if (obsErr) {
+          console.error('inspection_exterior_observations error:', obsErr)
+          throw new Error(obsErr.message)
+        }
+
+        let allObs: InspectionExteriorObservation[] = (obsData ?? []).map(o => ({
+          ...o,
+          values: (o.values as any) || {},
+        }))
+
+        // 4b) Säkerställ att varje komponent har minst EN "main"-observation (utan _free_note)
+        for (const it of itemsArr) {
+          const hasMain = allObs.some(
+            o => o.exterior_item_id === it.id && !o.values?._free_note
+          )
+
+          if (!hasMain) {
+            const { data: newObsData, error: newObsErr } = await supabase
+              .from('inspection_exterior_observations')
+              .insert({
+                inspection_id: inspection.id,
+                exterior_item_id: it.id,
+                part_label: null,
+                values: {},
+                note: null,
+              })
+              .select('*')
+              .single()
+
+            if (newObsErr) {
+              console.error('create default exterior observation failed:', newObsErr)
+              continue
+            }
+
+            const newObs: InspectionExteriorObservation = {
+              ...(newObsData as any),
+              values: ((newObsData as any).values as any) || {},
+            }
+
+            allObs.push(newObs)
+
+            // Skapa standardkontrollpunkter för denna komponent
+            const { data: cpsData, error: cpsErr } = await supabase
+              .from('settings_control_points')
+              .select('id, key, title, label, tags, exterior_item_key')
+              .eq('scope', 'exterior')
+              .eq('is_active', true)
+              .eq('exterior_item_key', it.key)
+
+            if (cpsErr) {
+              console.error('fetch exterior control points (init) failed:', cpsErr)
+            } else {
+              const cps = (cpsData ?? []) as ControlPointLite[]
+              if (cps.length > 0) {
+                let sortBase = 0
+                const payload = cps.map(cp => {
+                  sortBase += 10
+                  return {
+                    inspection_id: inspection.id,
+                    exterior_observation_id: newObs.id!,
+                    control_point_id: cp.id,
+                    title: cp.title || cp.label || cp.key,
+                    status: 'not_inspected',
+                    note: null,
+                    sort_order: sortBase,
+                  }
+                })
+
+                const { error: insErr } = await supabase
+                  .from('inspection_control_items')
+                  .insert(payload)
+
+                if (insErr) {
+                  console.error(
+                    'insert default exterior control items (init) failed:',
+                    insErr
+                  )
+                }
+              }
+            }
+          }
+        }
+
+        // Bygg bundles
+        const optionsByGroup: Record<string, SettingsExteriorOption[]> = {}
+        for (const o of optionsArr) {
+          optionsByGroup[o.group_id] = optionsByGroup[o.group_id] || []
+          optionsByGroup[o.group_id].push(o)
+        }
+
+        const groupsByItem: Record<
+          string,
+          (SettingsExteriorGroup & { options: SettingsExteriorOption[] })[]
+        > = {}
+        for (const g of groupsArr) {
+          groupsByItem[g.item_id] = groupsByItem[g.item_id] || []
+          groupsByItem[g.item_id].push({
+            ...g,
+            options: optionsByGroup[g.id] || [],
+          })
+        }
+
+        const bundles: ItemBundle[] = itemsArr.map(it => ({
+          ...it,
+          groups: groupsByItem[it.id] || [],
+        }))
+        setItems(bundles)
+
+        // Observationer map (per komponent)
+        const obsMap: Record<string, InspectionExteriorObservation[]> = {}
+        for (const o of allObs) {
+          const key = o.exterior_item_id
+          obsMap[key] = obsMap[key] || []
+          obsMap[key].push(o)
+        }
+        setObservations(obsMap)
+
+        // 5) Hämta kontrollpunkter per observation
+        const obsIds = allObs
+          .map(o => o.id)
+          .filter((id): id is string => !!id)
+
+        if (obsIds.length > 0) {
+          const { data: ciData, error: ciErr } = await supabase
+            .from('inspection_control_items')
+            .select('*')
+            .in('exterior_observation_id', obsIds)
+            .order('sort_order', { ascending: true })
+
+          if (ciErr) {
+            console.error('inspection_control_items (utsida) error:', ciErr)
+            throw new Error(ciErr.message)
+          }
+
+          setControlItems((ciData ?? []) as InspectionControlItem[])
+        } else {
+          setControlItems([])
+        }
+
+        // 6) Bilder kopplade till kontrollpunkter (control_item_id)
+        const { data: imgCtrlData, error: imgCtrlErr } = await supabase
+          .from('inspection_images')
+          .select('*')
+          .eq('inspection_id', inspection.id)
+          .not('control_item_id', 'is', null)
+          .order('sort_order', { ascending: true })
+          .order('created_at', { ascending: true })
+
+        if (imgCtrlErr) {
+          console.error('inspection_images (kontrollpunkter) error:', imgCtrlErr)
+          throw new Error(imgCtrlErr.message)
+        }
+
+        const imgsCtrlArr = (imgCtrlData ?? []) as InspectionImage[]
+        const imgCtrlMap: Record<string, InspectionImage[]> = {}
+        for (const img of imgsCtrlArr) {
+          if (!img.control_item_id) continue
+          const key = img.control_item_id
+          imgCtrlMap[key] = imgCtrlMap[key] || []
+          imgCtrlMap[key].push(img)
+        }
+        setImagesByControlItemId(imgCtrlMap)
+      } catch (e: any) {
+        console.error('loadAll utsida failed:', e)
+        setError(e?.message ?? 'Kunde inte ladda Utsida-data.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadAll()
+  }, [inspection?.id])
+
+  // -----------------------------
+  // OBSERVATIONER – helpers (fri notering)
+  // -----------------------------
+  const getItemRows = (itemId: string) => observations[itemId] || []
+
+  const setItemRows = (itemId: string, rows: InspectionExteriorObservation[]) => {
+    setObservations(prev => ({ ...prev, [itemId]: rows }))
+  }
+
+  const upsertObservationRow = async (
+    row: InspectionExteriorObservation
+  ): Promise<InspectionExteriorObservation> => {
+    setSaving(true)
+    setError(null)
+    try {
+      if (row.id) {
+        const { data, error } = await supabase
+          .from('inspection_exterior_observations')
+          .update({
+            part_label: row.part_label,
+            values: row.values,
+            note: row.note,
+          })
+          .eq('id', row.id)
+          .select('*')
+          .single()
+
+        if (error) throw error
+        const r = data as any
+        return { ...r, values: (r.values as any) || {} }
+      } else {
+        const { data, error } = await supabase
+          .from('inspection_exterior_observations')
+          .insert({
+            inspection_id: row.inspection_id,
+            exterior_item_id: row.exterior_item_id,
+            part_label: row.part_label,
+            values: row.values,
+            note: row.note,
+          })
+          .select('*')
+          .single()
+
+        if (error) throw error
+        const r = data as any
+        return { ...r, values: (r.values as any) || {} }
+      }
+    } catch (e: any) {
+      console.error('upsertObservationRow utsida failed:', e)
+      setError(e?.message ?? 'Kunde inte spara notering.')
+      return row
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const addFreeNoteRow = async (item: ItemBundle) => {
+    const rows = getItemRows(item.id)
+    const newRow: InspectionExteriorObservation = {
+      inspection_id: inspection.id,
+      exterior_item_id: item.id,
+      part_label: '',
+      values: { _free_note: true },
+      note: '',
+    }
+
+    const saved = await upsertObservationRow(newRow)
+    setItemRows(item.id, [...rows, saved])
+  }
+
+  const updateFreeNoteRow = async (
+    itemId: string,
+    rowId: string,
+    patch: Partial<InspectionExteriorObservation>
+  ) => {
+    const rows = getItemRows(itemId)
+    const index = rows.findIndex(r => r.id === rowId)
+    if (index === -1) return
+
+    const current = rows[index]
+    const updated: InspectionExteriorObservation = {
+      ...current,
+      ...patch,
+      values: {
+        ...(current.values || {}),
+        ...(patch.values || {}),
+        _free_note: true,
+      },
+    }
+
+    const optimistic = [...rows]
+    optimistic[index] = updated
+    setItemRows(itemId, optimistic)
+
+    const saved = await upsertObservationRow(updated)
+    const finalRows = [...getItemRows(itemId)]
+    const finalIndex = finalRows.findIndex(r => r.id === rowId)
+    if (finalIndex !== -1) {
+      finalRows[finalIndex] = saved
+      setItemRows(itemId, finalRows)
+    }
+  }
+
+  const deleteFreeNoteRow = async (itemId: string, rowId: string) => {
+    try {
+      setSaving(true)
+      setError(null)
+
+      await supabase
+        .from('inspection_exterior_observations')
+        .delete()
+        .eq('id', rowId)
+
+      const rows = getItemRows(itemId)
+      const filtered = rows.filter(r => r.id !== rowId)
+      setItemRows(itemId, filtered)
+    } catch (e: any) {
+      console.error('deleteFreeNoteRow utsida failed:', e)
+      setError(e?.message ?? 'Kunde inte ta bort fri notering.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // -----------------------------
+  // KONTROLLPUNKTER – helpers
+  // -----------------------------
+  const upsertControlItem = async (
+    item: InspectionControlItem
+  ): Promise<InspectionControlItem> => {
+    setSaving(true)
+    setError(null)
+    try {
+      if (item.id) {
+        const { data, error } = await supabase
+          .from('inspection_control_items')
+          .update({
+            title: item.title,
+            status: item.status,
+            note: item.note,
+            sort_order: item.sort_order,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', item.id)
+          .select('*')
+          .single()
+
+        if (error) throw error
+        return data as InspectionControlItem
+      } else {
+        const { data, error } = await supabase
+          .from('inspection_control_items')
+          .insert({
+            inspection_id: item.inspection_id,
+            exterior_observation_id: item.exterior_observation_id,
+            control_point_id: item.control_point_id,
+            title: item.title,
+            status: item.status,
+            note: item.note,
+            sort_order: item.sort_order,
+          })
+          .select('*')
+          .single()
+
+        if (error) throw error
+        return data as InspectionControlItem
+      }
+    } catch (e: any) {
+      console.error('upsertControlItem (utsida) failed:', e)
+      setError(e?.message ?? 'Kunde inte spara kontrollpunkt.')
+      return item
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const updateControlItem = async (
+    itemId: string,
+    patch: Partial<InspectionControlItem>
+  ) => {
+    const current = controlItems.find(ci => ci.id === itemId)
+    if (!current) return
+
+    const optimistic: InspectionControlItem = { ...current, ...patch }
+    setControlItems(prev => prev.map(ci => (ci.id === itemId ? optimistic : ci)))
+
+    const saved = await upsertControlItem(optimistic)
+    setControlItems(prev => prev.map(ci => (ci.id === itemId ? saved : ci)))
+  }
+
+  const addControlItemFromCatalog = async (
+    item: ItemBundle,
+    row: InspectionExteriorObservation,
+    cp: ControlPointLite
+  ) => {
+    if (!row.id) return
+
+    const existingForRow = controlItems.filter(
+      ci => ci.exterior_observation_id === row.id
+    )
+    const sortOrder =
+      existingForRow.length > 0
+        ? Math.max(...existingForRow.map(ci => ci.sort_order || 0)) + 10
+        : 10
+
+    const newItem: InspectionControlItem = {
+      inspection_id: inspection.id,
+      exterior_observation_id: row.id,
+      control_point_id: cp.id,
+      title: cp.title || cp.label || cp.key,
+      status: 'not_inspected',
+      note: null,
+      sort_order: sortOrder,
+    }
+
+    const saved = await upsertControlItem(newItem)
+    setControlItems(prev => [...prev, saved])
+  }
+
+  // -----------------------------
+  // BILDER – helpers (per kontrollpunkt)
+  // -----------------------------
+  const handleUploadImageForControlItem = async (
+    controlItem: InspectionControlItem,
+    file: File
+  ) => {
+    if (!controlItem.id) return
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const ciId = controlItem.id
+      const currentImages = imagesByControlItemId[ciId] || []
+      const maxSort =
+        currentImages.length > 0
+          ? Math.max(...currentImages.map(img => img.sort_order || 0))
+          : 0
+
+      const ext = file.name.split('.').pop() || 'jpg'
+      const safeExt = ext.toLowerCase()
+      const fileName = `${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}.${safeExt}`
+
+      const path = `${inspection.id}/exterior/control/${ciId}/${fileName}`
+
+      const { error: uploadErr } = await supabase.storage
+        .from(IMAGE_BUCKET)
+        .upload(path, file, {
+          cacheControl: '3600',
+          upsert: false,
+        })
+
+      if (uploadErr) {
+        console.error('upload control-item image failed', uploadErr)
+        throw new Error(uploadErr.message)
+      }
+
+      const { data, error: insErr } = await supabase
+        .from('inspection_images')
+        .insert({
+          inspection_id: inspection.id,
+          exterior_observation_id: null,
+          interior_room_id: null,
+          control_item_id: ciId,
+          file_path: path,
+          label: null,
+          sort_order: maxSort + 10,
+        })
+        .select('*')
+        .single()
+
+      if (insErr) {
+        console.error('insert inspection_image (control item) failed', insErr)
+        throw new Error(insErr.message)
+      }
+
+      const img = data as InspectionImage
+
+      setImagesByControlItemId(prev => {
+        const prevArr = prev[ciId] || []
+        return {
+          ...prev,
+          [ciId]: [...prevArr, img].sort(
+            (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+          ),
+        }
+      })
+    } catch (e: any) {
+      console.error('handleUploadImageForControlItem failed', e)
+      setError(e?.message ?? 'Kunde inte ladda upp bild för kontrollpunkt.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeleteControlItemImage = async (imageId: string) => {
+    try {
+      setSaving(true)
+      setError(null)
+
+      let targetControlId: string | null = null
+
+      for (const [ciId, arr] of Object.entries(imagesByControlItemId)) {
+        const found = arr.find(img => img.id === imageId)
+        if (found) {
+          targetControlId = ciId
+          break
+        }
+      }
+
+      if (!targetControlId) return
+
+      const { error: delErr } = await supabase
+        .from('inspection_images')
+        .delete()
+        .eq('id', imageId)
+
+      if (delErr) {
+        console.error('delete inspection_image (control item) failed', delErr)
+        throw new Error(delErr.message)
+      }
+
+      setImagesByControlItemId(prev => {
+        const prevArr = prev[targetControlId!] || []
+        return {
+          ...prev,
+          [targetControlId!]: prevArr.filter(img => img.id !== imageId),
+        }
+      })
+    } catch (e: any) {
+      console.error('handleDeleteControlItemImage failed', e)
+      setError(e?.message ?? 'Kunde inte ta bort bild för kontrollpunkt.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // -----------------------------
+  // UI HELPERS
+  // -----------------------------
+  const itemEmoji: Record<string, string> = {
+    mark: '🌱',
+    grundmur_sockel: '🧱',
+    fasad: '🏠',
+    dorrar_fonster: '🚪',
+    yttertak: '🏡',
+    ovrigt: '➕',
+  }
+
+  const controlItemsByObservationId: Record<string, InspectionControlItem[]> =
+    controlItems.reduce((map, ci) => {
+      const key = ci.exterior_observation_id
+      if (!key) return map
+      if (!map[key]) map[key] = []
+      map[key].push(ci)
+      return map
+    }, {} as Record<string, InspectionControlItem[]>)
+
+  const renderItemCard = (item: ItemBundle) => {
+    const rows = getItemRows(item.id)
+
+    if (!rows || rows.length === 0) {
+      return (
+        <section
+          key={item.id}
+          className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3"
+        >
+          <header className="flex items-center justify-between">
+            <h3 className="text-base font-semibold text-gray-900">
+              <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
+              {item.label}
+            </h3>
+          </header>
+          <p className="text-xs text-gray-500">Initierar komponentdata…</p>
+        </section>
+      )
+    }
+
+    // Huvud-observation (utan _free_note)
+    const mainRow =
+      rows.find(r => !r.values?._free_note) ?? rows[0]
+
+    // Fria noteringar (med _free_note)
+    const freeNoteRows = rows.filter(
+      r => r.id !== mainRow.id && r.values?._free_note
+    )
+
+    const rowControlItems = mainRow.id
+      ? controlItemsByObservationId[mainRow.id] || []
+      : []
+
+    return (
+      <section
+        key={item.id}
+        className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-4"
+      >
+        <header className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-gray-900">
+            <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
+            {item.label}
+          </h3>
+        </header>
+
+        {/* Kontrollpunkter för komponenten */}
+        <div className="rounded-xl bg-gray-50 ring-1 ring-gray-200 p-3 md:p-4">
+          <ExteriorControlPointsSection
+            item={item}
+            row={mainRow}
+            items={rowControlItems}
+            onUpdateItem={updateControlItem}
+            imagesByControlItemId={imagesByControlItemId}
+            onUploadImageForControlItem={handleUploadImageForControlItem}
+            onDeleteControlItemImage={handleDeleteControlItemImage}
+          />
+        </div>
+
+        {/* Fria noteringar + knapp för ytterligare kontrollpunkt */}
+        <FreeNotesSection
+          item={item}
+          rows={freeNoteRows}
+          onAddFreeNote={() => addFreeNoteRow(item)}
+          onUpdateFreeNote={(rowId, patch) =>
+            updateFreeNoteRow(item.id, rowId, patch)
+          }
+          onDeleteFreeNote={(rowId) => deleteFreeNoteRow(item.id, rowId)}
+          onAddControlFromCatalog={cp =>
+            addControlItemFromCatalog(item, mainRow, cp)
+          }
+        />
+      </section>
+    )
+  }
+
+  // -----------------------------
+  // RENDER
+  // -----------------------------
+  if (loading) {
+    return <div className="p-4 text-sm text-gray-600">Laddar utsida…</div>
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 text-sm text-red-600">
+        {error}
+        <div className="mt-1 text-xs text-gray-500">
+          Kontrollera att tabellerna settings_exterior_*,
+          inspection_exterior_observations, inspection_control_items och inspection_images finns
+          och att RLS/policies släpper igenom.
+        </div>
+      </div>
+    )
+  }
+
+  if (!items.length) {
+    return (
+      <div className="p-4 text-sm text-gray-600">
+        Inga rubriker för utsida är definierade. Lägg upp dem under Settings → Utsida.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+      <header className="space-y-1">
+        <h2 className="text-xl font-semibold text-gray-900">Byggnad – utsida</h2>
+        <p className="text-sm text-gray-700">
+          Här dokumenterar du utsidans komponenter per rubrik (Mark, Grundmur/sockel,
+          Fasad, Dörrar/fönster, Yttertak, Övrigt). Under varje komponent visas
+          kontrollpunkter med status, noteringar och bilder samt fria noteringar som
+          kan användas för kompletterande information.
+        </p>
+      </header>
+
+      <section className="space-y-4">
+        {items.map(item => renderItemCard(item))}
+      </section>
+
+      {saving && (
+        <div className="text-xs text-gray-500">
+          Sparar…
+        </div>
+      )}
+    </div>
+  )
+}
+
+// =============================
+// UND-KOMPONENT: Bilder per kontrollpunkt
+// =============================
+type ControlPointImagesSectionProps = {
+  images: InspectionImage[]
+  onUpload: (file: File) => void
+  onDelete: (imageId: string) => void
+}
+
+function ControlPointImagesSection({
+  images,
+  onUpload,
+  onDelete,
+}: ControlPointImagesSectionProps) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    onUpload(file)
+    e.target.value = ''
+  }
+
+  return (
+    <section className="space-y-2 border-t pt-2">
+      <header className="flex items-center justify-between">
+        <h5 className="text-[11px] font-semibold text-gray-900">
+          Bilder (denna kontrollpunkt)
+        </h5>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-800 hover:bg-gray-50"
+        >
+          + Lägg till bild
+        </button>
+      </header>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
+      {images.length === 0 && (
+        <p className="text-[10px] text-gray-500">
+          Inga bilder ännu för denna kontrollpunkt.
+        </p>
+      )}
+
+      {images.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {images.map(img => {
+            const url = getImagePublicUrl(img.file_path)
+            return (
+              <div
+                key={img.id}
+                className="relative h-16 w-16 overflow-hidden rounded-lg border bg-gray-100"
+              >
+                <img
+                  src={url}
+                  alt={img.label || 'Bild'}
+                  className="h-full w-full object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => onDelete(img.id)}
+                  className="absolute right-0.5 top-0.5 rounded-full bg-black/70 px-1 text-[8px] font-medium text-white"
+                >
+                  ×
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
+}
+
+// =============================
+// UND-KOMPONENT: Kontrollpunkter per komponent
+// =============================
+type ExteriorControlPointsSectionProps = {
+  item: ItemBundle
+  row: InspectionExteriorObservation
+  items: InspectionControlItem[]
+  onUpdateItem: (itemId: string, patch: Partial<InspectionControlItem>) => void
+  imagesByControlItemId: Record<string, InspectionImage[]>
+  onUploadImageForControlItem: (
+    controlItem: InspectionControlItem,
+    file: File
+  ) => void
+  onDeleteControlItemImage: (imageId: string) => void
+}
+
+function ExteriorControlPointsSection({
+  item,
+  row,
+  items,
+  onUpdateItem,
+  imagesByControlItemId,
+  onUploadImageForControlItem,
+  onDeleteControlItemImage,
+}: ExteriorControlPointsSectionProps) {
+  return (
+    <section className="space-y-3">
+      <header className="flex items-center justify-between">
+        <h4 className="text-sm font-semibold text-gray-900">
+          Kontrollpunkter – {item.label}
+        </h4>
+        <span className="text-[11px] text-gray-500">
+          Varje rad nedan är en kontrollpunkt med egen status, notering och bilder.
+        </span>
+      </header>
+
+      <div className="space-y-2">
+        {items.length === 0 && (
+          <div className="text-xs text-gray-500">
+            Inga kontrollpunkter ännu. Lägg till via knappen “Lägg till ytterligare kontrollpunkt”.
+          </div>
+        )}
+
+        {items.map(ci => {
+          const effectiveStatus = ci.status ?? 'not_inspected'
+          const ciId = ci.id ?? ''
+          const ciImages = ciId ? imagesByControlItemId[ciId] || [] : []
+
+          return (
+            <div
+              key={ci.id}
+              className="rounded-lg border bg-gray-50 px-3 py-2 space-y-2"
+            >
+              <div className="flex items-center justify_between gap-2">
+                <div className="text-xs font-semibold text-gray-900">
+                  {ci.title}
+                </div>
+              </div>
+
+              <div className="grid gap-2 md:grid-cols-[220px_minmax(0,1fr)] items-start">
+                {/* Status-knappar */}
+                <div className="space-y-1">
+                  <label className="text-[11px] text-gray-600">
+                    Status
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {CONTROL_STATUS_OPTIONS.map(opt => {
+                      const isActive = effectiveStatus === opt.value
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          className={
+                            'rounded-full border px-2.5 py-1 text-[11px] ' +
+                            (isActive
+                              ? 'border-gray-900 bg-gray-900 text-white'
+                              : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100')
+                          }
+                          onClick={() =>
+                            ci.id &&
+                            onUpdateItem(ci.id, { status: opt.value })
+                          }
+                        >
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Notering fritext */}
+                <div className="space-y-1">
+                  <label className="text-[11px] text-gray-600">
+                    Notering (denna kontrollpunkt)
+                  </label>
+                  <textarea
+                    rows={2}
+                    className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                    placeholder="Specifik notering för just denna kontrollpunkt…"
+                    value={ci.note ?? ''}
+                    onChange={e =>
+                      ci.id &&
+                      onUpdateItem(ci.id, { note: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+
+              {/* Bilder per kontrollpunkt */}
+              {ci.id && (
+                <ControlPointImagesSection
+                  images={ciImages}
+                  onUpload={file => onUploadImageForControlItem(ci, file)}
+                  onDelete={onDeleteControlItemImage}
+                />
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+// =============================
+// UND-KOMPONENT: Fria noteringar + knapp för kontrollpunkt
+// =============================
+type FreeNotesSectionProps = {
+  item: ItemBundle
+  rows: InspectionExteriorObservation[]
+  onAddFreeNote: () => void
+  onUpdateFreeNote: (
+    rowId: string,
+    patch: Partial<InspectionExteriorObservation>
+  ) => void
+  onDeleteFreeNote: (rowId: string) => void
+  onAddControlFromCatalog: (cp: ControlPointLite) => void
+}
+
+function FreeNotesSection({
+  item,
+  rows,
+  onAddFreeNote,
+  onUpdateFreeNote,
+  onDeleteFreeNote,
+  onAddControlFromCatalog,
+}: FreeNotesSectionProps) {
+  const [showSearch, setShowSearch] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [searchResults, setSearchResults] = useState<ControlPointLite[]>([])
+  const [searching, setSearching] = useState(false)
+
+  const handleToggleSearch = () => {
+    const next = !showSearch
+    setShowSearch(next)
+    if (!next) {
+      setSearchTerm('')
+      setSearchResults([])
+    }
+  }
+
+  const handleSearchChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const term = e.target.value
+    setSearchTerm(term)
+
+    const trimmed = term.trim()
+    if (trimmed.length < 2) {
+      setSearchResults([])
+      return
+    }
+
+    setSearching(true)
+    try {
+      const like = `%${trimmed}%`
+
+      const { data, error } = await supabase
+        .from('settings_control_points')
+        .select('id, key, title, label, description, tags, exterior_item_key')
+        .eq('scope', 'exterior')
+        .eq('is_active', true)
+        .or(
+          `title.ilike.${like},label.ilike.${like},key.ilike.${like},description.ilike.${like}`
+        )
+
+      if (error) {
+        console.error(
+          'search exterior control points (FreeNotesSection) failed:',
+          error
+        )
+        return
+      }
+
+      setSearchResults((data ?? []) as ControlPointLite[])
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  return (
+    <section className="space-y-3">
+      <header className="flex flex_wrap items-center justify_between gap-2">
+        <h4 className="text-sm font-semibold text-gray-900">
+          Fria noteringar – {item.label}
+        </h4>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onAddFreeNote}
+            className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
+          >
+            + Lägg till fri notering
+          </button>
+          <button
+            type="button"
+            onClick={handleToggleSearch}
+            className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
+          >
+            + Lägg till ytterligare kontrollpunkt
+          </button>
+        </div>
+      </header>
+
+      {/* Sök-ruta för att lägga till kontrollpunkt – visas först när man klickar på knappen */}
+      {showSearch && (
+        <div className="space-y-2 rounded-lg border bg-gray-50 px-3 py-2">
+          <label className="text-xs font-medium text-gray-700">
+            Sök kontrollpunkt (alla utsides-kontrollpunkter)
+          </label>
+          <input
+            className="w-full rounded-md border px-2 py-1.5 text-sm bg-white"
+            placeholder="Sök t.ex. sprickor, rost, avrinning…"
+            value={searchTerm}
+            onChange={handleSearchChange}
+          />
+
+          {searching && (
+            <div className="text-[11px] text-gray-500">Söker…</div>
+          )}
+
+          {!searching && searchTerm.trim().length >= 2 && (
+            <div className="max-h-40 overflow-auto rounded-md border bg-white">
+              {searchResults.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-gray-500">
+                  Inga kontrollpunkter hittades för “{searchTerm.trim()}”.
+                </div>
+              ) : (
+                searchResults.map(cp => (
+                  <button
+                    key={cp.id}
+                    type="button"
+                    onClick={() => {
+                      onAddControlFromCatalog(cp)
+                      setShowSearch(false)
+                      setSearchTerm('')
+                      setSearchResults([])
+                    }}
+                    className="flex w-full flex-col items-start px-3 py-2 text-left text-xs hover:bg-gray-50"
+                  >
+                    <span className="font-medium text-gray-900">
+                      {cp.title || cp.label || cp.key}
+                    </span>
+                    {cp.description && (
+                      <span className="text-[11px] text-gray-500 line-clamp-2">
+                        {cp.description}
+                      </span>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Lista fria noteringar */}
+      {rows.length === 0 && (
+        <p className="text-xs text-gray-500">
+          Inga fria noteringar ännu. Använd knappen ovan om du vill lägga till en separat rad med
+          rubrik/del och notering för denna komponent.
+        </p>
+      )}
+
+      {rows.length > 0 && (
+        <div className="space-y-2">
+          {rows.map(row => (
+            <div
+              key={row.id}
+              className="rounded-lg border bg-gray-50 px-3 py-2 space-y-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex-1 space-y-1">
+                  <label className="text-[11px] text-gray-600">
+                    Del / rubrik (fri)
+                  </label>
+                  <input
+                    className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                    placeholder="t.ex. Uterum, altanräcke, stödmur…"
+                    value={row.part_label ?? ''}
+                    onChange={e =>
+                      row.id &&
+                      onUpdateFreeNote(row.id, { part_label: e.target.value })
+                    }
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => row.id && onDeleteFreeNote(row.id)}
+                  className="text-[11px] text-red-600 hover:underline"
+                >
+                  Ta bort
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-600">
+                  Notering (fri text)
+                </label>
+                <textarea
+                  rows={2}
+                  className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                  placeholder="Beskrivning av observationen eller kompletterande upplysning…"
+                  value={row.note ?? ''}
+                  onChange={e =>
+                    row.id &&
+                    onUpdateFreeNote(row.id, { note: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}

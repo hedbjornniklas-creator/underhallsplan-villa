@@ -4,7 +4,12 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
-import ObWizard from '@/components/ob/ObWizard'
+import ObWizard, {
+  ObSectionKey,
+  TenureType,
+  DwellingType,
+  InspectionSide,
+} from '@/components/ob/ObWizard'
 
 type Property = {
   id: string
@@ -15,8 +20,8 @@ type Property = {
   municipality: string | null
   cadastral_id: string | null
   owner_name: string | null
-  tenure_type: 'freehold' | 'bostadsratt' | null       // NYTT
-  dwelling_type: 'house' | 'apartment' | null          // NYTT
+  tenure_type: TenureType
+  dwelling_type: DwellingType
 }
 
 type Inspection = {
@@ -34,32 +39,21 @@ type Inspection = {
   inspection_time: string | null
   attendees: string | null
   attendees_other: string | null
-  inspection_side: string | null
-}
+  inspection_side: InspectionSide
 
-type ObSectionKey =
-  | 'overview'
-  | 'grunddata'
-  | 'handlingar'
-  | 'utsida'
-  | 'insida'
-  | 'vindsutrymme'
-  | 'vatrum'
-  | 'risk'
-  | 'ftu'
-  | 'summary'
+  // ev fritext om fel i fastigheten (om du använder den i handlingar-steget)
+  defect_disclosures?: string | null
+}
 
 const SECTIONS: { key: ObSectionKey; label: string }[] = [
   { key: 'overview', label: 'Översikt' },
   { key: 'grunddata', label: 'Grunddata' },
   { key: 'handlingar', label: 'Handlingar & upplysningar' },
+  { key: 'forutsattningar', label: 'Förutsättningar' },
   { key: 'utsida', label: 'Byggnad – utsida' },
   { key: 'insida', label: 'Byggnad – insida' },
-  { key: 'vindsutrymme', label: 'Vindsutrymme' },
-  { key: 'vatrum', label: 'Våtrum' },
   { key: 'risk', label: 'Riskanalys' },
   { key: 'ftu', label: 'FTU' },
-  { key: 'summary', label: 'Sammanfattning' },
 ]
 
 export default function InspectionDetailPage() {
@@ -73,7 +67,10 @@ export default function InspectionDetailPage() {
   const [inspection, setInspection] = useState<Inspection | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeSection, setActiveSection] = useState<ObSectionKey>('grunddata')
+
+  // Starta på Grunddata (som ni gjort hittills)
+  const [activeSection, setActiveSection] =
+    useState<ObSectionKey>('grunddata')
 
   useEffect(() => {
     if (!propertyId || !inspectionId) return
@@ -88,7 +85,8 @@ export default function InspectionDetailPage() {
       ] = await Promise.all([
         supabase
           .from('inspections')
-          .select(`
+          .select(
+            `
             id,
             property_id,
             date,
@@ -103,13 +101,16 @@ export default function InspectionDetailPage() {
             inspection_time,
             attendees,
             attendees_other,
-            inspection_side
-          `)
+            inspection_side,
+            defect_disclosures
+          `
+          )
           .eq('id', inspectionId)
           .single(),
         supabase
           .from('properties')
-          .select(`
+          .select(
+            `
             id,
             name,
             address,
@@ -120,7 +121,8 @@ export default function InspectionDetailPage() {
             owner_name,
             tenure_type,
             dwelling_type
-          `)
+          `
+          )
           .eq('id', propertyId)
           .single(),
       ])
@@ -193,6 +195,7 @@ export default function InspectionDetailPage() {
             <div className="mb-2 text-xs font-semibold uppercase text-gray-500">
               ÖB-moduler
             </div>
+
             {SECTIONS.map(section => (
               <button
                 key={section.key}
@@ -223,8 +226,12 @@ export default function InspectionDetailPage() {
               property={property}
               inspection={inspection}
               activeSection={activeSection}
-              onPropertyUpdated={updated => setProperty(updated as Property)}
-              onInspectionUpdated={updated => setInspection(updated as Inspection)}
+              onPropertyUpdated={updated =>
+                setProperty(updated as Property)
+              }
+              onInspectionUpdated={updated =>
+                setInspection(updated as Inspection)
+              }
             />
           </div>
         </div>

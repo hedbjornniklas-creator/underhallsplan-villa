@@ -24,6 +24,23 @@ type Profile = {
   logo_path: string | null
 }
 
+// Separat form-typ så alla textfält är rena string
+type ProfileForm = {
+  full_name: string
+  sbr_group: string
+  sbr_status: string
+  membership_number: string
+  phone: string
+  email: string
+  company_name: string
+  company_orgno: string
+  company_address: string
+  company_postal_code: string
+  company_city: string
+  avatar_path: string | null
+  logo_path: string | null
+}
+
 export default function SettingsOverview() {
   const { isAdmin, loading: profileLoading } = useProfile()
 
@@ -32,7 +49,7 @@ export default function SettingsOverview() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const [form, setForm] = useState<Omit<Profile, 'id'>>({
+  const [form, setForm] = useState<ProfileForm>({
     full_name: '',
     sbr_group: '',
     sbr_status: '',
@@ -72,8 +89,8 @@ export default function SettingsOverview() {
         .eq('id', user.id)
         .single()
 
+      // Om ingen profil finns ännu – skapa tom form med email ifylld
       if (error || !data) {
-        console.warn('Ingen profil hittades, använder tomma fält.', error?.message)
         const p: Profile = {
           id: user.id,
           full_name: null,
@@ -122,7 +139,7 @@ export default function SettingsOverview() {
     loadProfile()
   }, [])
 
-  const handleChange = (key: keyof typeof form, value: string) => {
+  const handleChange = (key: keyof ProfileForm, value: string) => {
     setForm(prev => ({ ...prev, [key]: value }))
   }
 
@@ -153,7 +170,6 @@ export default function SettingsOverview() {
       .eq('id', profile.id)
 
     if (error) {
-      console.error(error)
       setError('Kunde inte spara din profil.')
       setSaving(false)
       return
@@ -175,8 +191,7 @@ export default function SettingsOverview() {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
       const filePath = `profiles/${profile.id}/${field}.${ext}`
 
-      const { error: uploadErr } = await supabase
-        .storage
+      const { error: uploadErr } = await supabase.storage
         .from('property-media')
         .upload(filePath, file, { upsert: true })
 
@@ -192,8 +207,7 @@ export default function SettingsOverview() {
         ...prev,
         [field]: publicURL,
       }))
-    } catch (err) {
-      console.error(err)
+    } catch {
       alert('Kunde inte ladda upp bilden.')
     } finally {
       e.target.value = ''
@@ -216,6 +230,7 @@ export default function SettingsOverview() {
     )
   }
 
+  // Cards för inställningssidor – inkl. nya Kontrollpunkter
   const cards = [
     {
       title: 'Handlingar & upplysningar',
@@ -223,19 +238,29 @@ export default function SettingsOverview() {
       href: '/settings/handlingar-upplysningar',
     },
     {
-      title: 'Basinformation',
-      desc: 'Fält & val för teknisk basinfo.',
-      href: '/settings/basinformation',
+      title: 'Förutsättningar',
+      desc: 'Rubriker, dropdowns och värden för Punkt 2 (Förutsättningar).',
+      href: '/settings/forutsattningar',
     },
     {
-      title: 'Utsida',
-      desc: 'Katalog för utvändiga punkter.',
+      title: 'ÖB – utsida',
+      desc: 'Katalog för utvändiga punkter i ÖB.',
       href: '/settings/utsida',
     },
     {
       title: 'Insida',
-      desc: 'Katalog för invändiga punkter.',
+      desc: 'Katalog för invändiga punkter (UHP).',
       href: '/settings/insida',
+    },
+    {
+      title: 'ÖB – insida',
+      desc: 'Rumstyper och fält för invändig överlåtelsebesiktning.',
+      href: '/settings/ob-insida',
+    },
+    {
+      title: 'Kontrollpunkter',
+      desc: 'Standardiserade kontrollfrågor kopplade till utsida/insida.',
+      href: '/settings/ob-control-points',
     },
   ]
 
@@ -244,14 +269,14 @@ export default function SettingsOverview() {
       <div className="p-4 md:p-6 space-y-6">
         <h1 className="text-xl md:text-2xl font-semibold">Settings</h1>
 
-        {/* Visitkort högst upp */}
+        {/* Visitkort / profil */}
         <section className="rounded-2xl border bg-white p-5 md:p-6 shadow-sm space-y-5">
           <h2 className="text-lg font-semibold">Besiktningsman – profil</h2>
 
           <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
-            {/* Vänster kolumn: bilder */}
+            {/* Bilder */}
             <div className="space-y-6">
-              {/* Besiktningsman-bild */}
+              {/* Avatar */}
               <div className="space-y-2">
                 <div className="text-xs font-medium text-gray-600">
                   Bild på besiktningsman
@@ -314,7 +339,7 @@ export default function SettingsOverview() {
               </div>
             </div>
 
-            {/* Höger kolumn: visitkort + formulär */}
+            {/* Formulär */}
             <div className="space-y-4">
               {/* Visitkorts-preview */}
               <div className="rounded-lg border bg-gray-50 p-4">
@@ -361,22 +386,23 @@ export default function SettingsOverview() {
                         {form.company_address}
                         {form.company_postal_code &&
                           `, ${form.company_postal_code}`}{' '}
-                        {form.company_city && form.company_city}
+                        {form.company_city}
                       </div>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Formulärfält */}
+              {/* Fält */}
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs text-gray-600">Namn</label>
+                  <label className="mb-1 block text-xs text-gray-600">
+                    Namn
+                  </label>
                   <input
                     className="w-full rounded-md border px-3 py-2 text-sm"
-                    value={form.full_name ?? ''}
+                    value={form.full_name}
                     onChange={e => handleChange('full_name', e.target.value)}
-                    placeholder="Niklas Hedbjörn"
                   />
                 </div>
 
@@ -386,9 +412,8 @@ export default function SettingsOverview() {
                   </label>
                   <input
                     className="w-full rounded-md border px-3 py-2 text-sm"
-                    value={form.sbr_group ?? ''}
+                    value={form.sbr_group}
                     onChange={e => handleChange('sbr_group', e.target.value)}
-                    placeholder="Medlem i SBRs överlåtelsebesiktningsgrupp"
                   />
                 </div>
 
@@ -398,9 +423,8 @@ export default function SettingsOverview() {
                   </label>
                   <input
                     className="w-full rounded-md border px-3 py-2 text-sm"
-                    value={form.sbr_status ?? ''}
+                    value={form.sbr_status}
                     onChange={e => handleChange('sbr_status', e.target.value)}
-                    placeholder="Av SBR Godkänd besiktningsman"
                   />
                 </div>
 
@@ -410,11 +434,10 @@ export default function SettingsOverview() {
                   </label>
                   <input
                     className="w-full rounded-md border px-3 py-2 text-sm"
-                    value={form.membership_number ?? ''}
+                    value={form.membership_number}
                     onChange={e =>
                       handleChange('membership_number', e.target.value)
                     }
-                    placeholder="22015326"
                   />
                 </div>
 
@@ -424,9 +447,8 @@ export default function SettingsOverview() {
                   </label>
                   <input
                     className="w-full rounded-md border px-3 py-2 text-sm"
-                    value={form.phone ?? ''}
+                    value={form.phone}
                     onChange={e => handleChange('phone', e.target.value)}
-                    placeholder="073 5678 716"
                   />
                 </div>
 
@@ -436,9 +458,8 @@ export default function SettingsOverview() {
                   </label>
                   <input
                     className="w-full rounded-md border px-3 py-2 text-sm"
-                    value={form.email ?? ''}
+                    value={form.email}
                     onChange={e => handleChange('email', e.target.value)}
-                    placeholder="Niklas.h@bbsab.nu"
                   />
                 </div>
 
@@ -448,9 +469,10 @@ export default function SettingsOverview() {
                   </label>
                   <input
                     className="w-full rounded-md border px-3 py-2 text-sm"
-                    value={form.company_name ?? ''}
-                    onChange={e => handleChange('company_name', e.target.value)}
-                    placeholder="STYR Projekt Stockholm AB"
+                    value={form.company_name}
+                    onChange={e =>
+                      handleChange('company_name', e.target.value)
+                    }
                   />
                 </div>
 
@@ -460,9 +482,10 @@ export default function SettingsOverview() {
                   </label>
                   <input
                     className="w-full rounded-md border px-3 py-2 text-sm"
-                    value={form.company_orgno ?? ''}
-                    onChange={e => handleChange('company_orgno', e.target.value)}
-                    placeholder="559281-0823"
+                    value={form.company_orgno}
+                    onChange={e =>
+                      handleChange('company_orgno', e.target.value)
+                    }
                   />
                 </div>
 
@@ -472,11 +495,10 @@ export default function SettingsOverview() {
                   </label>
                   <input
                     className="w-full rounded-md border px-3 py-2 text-sm"
-                    value={form.company_address ?? ''}
+                    value={form.company_address}
                     onChange={e =>
                       handleChange('company_address', e.target.value)
                     }
-                    placeholder="Bryggvägen 7"
                   />
                 </div>
 
@@ -486,11 +508,10 @@ export default function SettingsOverview() {
                   </label>
                   <input
                     className="w-full rounded-md border px-3 py-2 text-sm"
-                    value={form.company_postal_code ?? ''}
+                    value={form.company_postal_code}
                     onChange={e =>
                       handleChange('company_postal_code', e.target.value)
                     }
-                    placeholder="117 71"
                   />
                 </div>
 
@@ -500,18 +521,15 @@ export default function SettingsOverview() {
                   </label>
                   <input
                     className="w-full rounded-md border px-3 py-2 text-sm"
-                    value={form.company_city ?? ''}
+                    value={form.company_city}
                     onChange={e =>
                       handleChange('company_city', e.target.value)
                     }
-                    placeholder="Stockholm"
                   />
                 </div>
               </div>
 
-              {error && (
-                <p className="text-sm text-red-600">{error}</p>
-              )}
+              {error && <p className="text-sm text-red-600">{error}</p>}
 
               <div className="flex justify-end">
                 <button
@@ -526,7 +544,7 @@ export default function SettingsOverview() {
           </div>
         </section>
 
-        {/* Befintliga settings-kort under visitkortet */}
+        {/* Settings-kort */}
         <div className="grid gap-4 md:grid-cols-2">
           {cards.map(c => (
             <Link
