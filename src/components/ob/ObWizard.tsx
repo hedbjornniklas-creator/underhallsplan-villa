@@ -7,13 +7,14 @@ import ObStepForutsattningar from './ObStepForutsattningar'
 import ObStepUtsida from './ObStepUtsida'
 import ObStepInsida from './ObStepInsida'
 import type { Tables } from '@/types/supabase'
+import type { ObInspection } from './ObStepGrunddata'
 
 export type TenureType = Tables<'properties'>['tenure_type']
 export type DwellingType = Tables<'properties'>['dwelling_type']
 export type InspectionSide = Tables<'inspections'>['inspection_side']
 
 type Property = Tables<'properties'>
-type Inspection = Tables<'inspections'>
+type Inspection = ObInspection
 
 export type ObSectionKey =
   | 'overview'
@@ -41,7 +42,7 @@ export default function ObWizard({
   onInspectionUpdated,
 }: ObWizardProps) {
   // Säkerställ att attendees_other aldrig är undefined
-  const normalizedInspection = useMemo<Inspection>(
+  const normalizedInspection: Inspection = useMemo(
     () => ({
       ...inspection,
       attendees_other: inspection.attendees_other ?? null,

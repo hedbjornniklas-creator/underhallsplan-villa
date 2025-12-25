@@ -4,15 +4,17 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
 
+export type ObInspection = Tables<'inspections'>
+
 type Property = Tables<'properties'>
-type Inspection = Tables<'inspections'>
+type Inspection = ObInspection
 type InspectionSide = Inspection['inspection_side'] // typiskt: 'buyer' | 'seller' | null
 
 interface ObStepGrunddataProps {
   property: Property
-  inspection: Inspection
+  inspection: ObInspection
   onPropertyUpdated?: (p: Property) => void
-  onInspectionUpdated?: (i: Inspection) => void
+  onInspectionUpdated?: (i: ObInspection) => void
 }
 
 // 🔹 Standardval för Omfattning – går lätt att ändra senare
