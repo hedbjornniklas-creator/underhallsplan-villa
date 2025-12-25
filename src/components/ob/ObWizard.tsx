@@ -7,14 +7,26 @@ import ObStepForutsattningar from './ObStepForutsattningar'
 import ObStepUtsida from './ObStepUtsida'
 import ObStepInsida from './ObStepInsida'
 import type { Tables } from '@/types/supabase'
-import type { ObInspection } from './ObStepGrunddata'
+
+type DbInspection = Tables<'inspections'>
+type DbProperty = Tables<'properties'>
+
+export type ObWizardInspectionInput = DbInspection & {
+  defect_disclosures?: string | null
+  attendees_other?: string | null
+}
+
+export type ObWizardInspection = DbInspection & {
+  defect_disclosures: string | null
+  attendees_other: string | null
+}
+
+export type ObWizardPropertyInput = Partial<DbProperty> & Pick<DbProperty, 'id' | 'name'>
+export type ObWizardProperty = DbProperty
 
 export type TenureType = Tables<'properties'>['tenure_type']
 export type DwellingType = Tables<'properties'>['dwelling_type']
 export type InspectionSide = Tables<'inspections'>['inspection_side']
-
-type Property = Tables<'properties'>
-type Inspection = ObInspection
 
 export type ObSectionKey =
   | 'overview'
@@ -27,11 +39,11 @@ export type ObSectionKey =
   | 'ftu'
 
 interface ObWizardProps {
-  property: Property
-  inspection: Inspection
+  property: ObWizardPropertyInput
+  inspection: ObWizardInspectionInput
   activeSection: ObSectionKey
-  onPropertyUpdated?: (p: Property) => void
-  onInspectionUpdated?: (i: Inspection) => void
+  onPropertyUpdated?: (p: ObWizardProperty) => void
+  onInspectionUpdated?: (i: ObWizardInspection) => void
 }
 
 export default function ObWizard({
@@ -41,11 +53,47 @@ export default function ObWizard({
   onPropertyUpdated,
   onInspectionUpdated,
 }: ObWizardProps) {
+  const normalizedProperty = useMemo<ObWizardProperty>(
+    () => ({
+      id: property.id,
+      name: property.name ?? '',
+      address: property.address ?? null,
+      area_m2: property.area_m2 ?? null,
+      area_sqm: property.area_sqm ?? null,
+      cadastral_id: property.cadastral_id ?? null,
+      city: property.city ?? null,
+      client_name: property.client_name ?? null,
+      contact_person: property.contact_person ?? null,
+      cover_path: property.cover_path ?? null,
+      created_at: property.created_at ?? null,
+      dwelling_type: property.dwelling_type ?? null,
+      heating: property.heating ?? null,
+      last_inspected: property.last_inspected ?? null,
+      last_inspection_at: property.last_inspection_at ?? null,
+      municipality: property.municipality ?? null,
+      owner: property.owner ?? '',
+      owner_name: property.owner_name ?? null,
+      planning_status: property.planning_status ?? null,
+      plot_area_m2: property.plot_area_m2 ?? null,
+      postal_code: property.postal_code ?? null,
+      property_type: property.property_type ?? null,
+      roof_type: property.roof_type ?? null,
+      status: property.status ?? null,
+      tax_value: property.tax_value ?? null,
+      tenure_type: property.tenure_type ?? null,
+      type_code: property.type_code ?? null,
+      ventilation: property.ventilation ?? null,
+      year_built: property.year_built ?? null,
+    }),
+    [property]
+  )
+
   // Säkerställ att attendees_other aldrig är undefined
-  const normalizedInspection: Inspection = useMemo(
+  const normalizedInspection = useMemo<ObWizardInspection>(
     () => ({
       ...inspection,
       attendees_other: inspection.attendees_other ?? null,
+      defect_disclosures: inspection.defect_disclosures ?? null,
     }),
     [inspection]
   )
@@ -69,8 +117,8 @@ export default function ObWizard({
             <p>
               Fastighet:{' '}
               <span className="font-medium">
-                {property.name}
-                {property.address ? ` – ${property.address}` : ''}
+                {normalizedProperty.name}
+                {normalizedProperty.address ? ` – ${normalizedProperty.address}` : ''}
               </span>
             </p>
             <p>
@@ -87,7 +135,7 @@ export default function ObWizard({
     case 'grunddata':
       return (
         <ObStepGrunddata
-          property={property}
+          property={normalizedProperty}
           inspection={normalizedInspection}
           onPropertyUpdated={onPropertyUpdated}
           onInspectionUpdated={onInspectionUpdated}
@@ -97,7 +145,7 @@ export default function ObWizard({
     case 'handlingar':
       return (
         <ObStepHandlingar
-          property={property}
+          property={normalizedProperty}
           inspection={normalizedInspection}
         />
       )
@@ -105,7 +153,7 @@ export default function ObWizard({
     case 'forutsattningar':
       return (
         <ObStepForutsattningar
-          property={property}
+          property={normalizedProperty}
           inspection={normalizedInspection}
         />
       )
