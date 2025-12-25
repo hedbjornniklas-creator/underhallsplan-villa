@@ -2,37 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import type { Tables } from '@/types/supabase'
 
-type Property = {
-  id: string
-  name: string
-  address: string | null
-  postal_code: string | null
-  city: string | null
-  municipality: string | null
-  cadastral_id: string | null
-  owner_name: string | null
-  tenure_type: 'freehold' | 'bostadsratt' | null
-  dwelling_type: 'house' | 'apartment' | null
-}
-
-type Inspection = {
-  id: string
-  property_id: string
-  date: string | null
-  type: string | null
-  status: string | null
-  inspector_name: string | null
-  created_at: string
-  client_name: string | null
-  client_contact: string | null
-  assignment_number: string | null
-  scope: string | null
-  inspection_time: string | null
-  attendees: string | null
-  attendees_other: string | null
-  inspection_side: string | null // 'buyer' | 'seller'
-}
+type Property = Tables<'properties'>
+type Inspection = Tables<'inspections'>
+type InspectionSide = Inspection['inspection_side'] // typiskt: 'buyer' | 'seller' | null
 
 interface ObStepGrunddataProps {
   property: Property
@@ -61,13 +35,17 @@ const ATTENDEE_OPTIONS: { key: 'owner' | 'buyer'; label: string }[] = [
 ]
 
 // 🔹 Ägandeform-alternativ
-const TENURE_OPTIONS: { value: 'freehold' | 'bostadsratt'; label: string }[] = [
-  { value: 'freehold', label: 'Äganderätt' },
-  { value: 'bostadsratt', label: 'Bostadsrätt' },
-]
+const TENURE_OPTIONS: { value: NonNullable<Property['tenure_type']>; label: string }[] =
+  [
+    { value: 'freehold', label: 'Äganderätt' },
+    { value: 'bostadsratt', label: 'Bostadsrätt' },
+  ]
 
 // 🔹 Typ av objekt
-const DWELLING_OPTIONS: { value: 'house' | 'apartment'; label: string }[] = [
+const DWELLING_OPTIONS: {
+  value: NonNullable<Property['dwelling_type']>
+  label: string
+}[] = [
   { value: 'house', label: 'Hus (villa/radhus/parhus)' },
   { value: 'apartment', label: 'Lägenhet' },
 ]
@@ -98,7 +76,6 @@ function formatList(labels: string[]): string {
   return labels.join('; ')
 }
 
-// Specifika wrappers om vi vill särskilja i framtiden
 function parseScopeLabels(raw: string | null): string[] {
   return parseList(raw)
 }
@@ -117,7 +94,6 @@ function formatAttendeeLabels(labels: string[]): string {
 
 // 🔹 Här bestämmer vi om kombinationen ska behandlas som villa-mall eller lägenhets-mall
 function deriveFormKind(
-  tenure: Property['tenure_type'],
   dwelling: Property['dwelling_type']
 ): 'villa' | 'lägenhet' | null {
   if (!dwelling) return null
@@ -152,7 +128,7 @@ export default function ObStepGrunddata({
     inspection_time: inspection.inspection_time ?? '',
     attendees: inspection.attendees ?? '',
     attendees_other: inspection.attendees_other ?? '',
-    inspection_side: inspection.inspection_side ?? 'buyer', // default: köparbesiktning
+    inspection_side: (inspection.inspection_side ?? 'buyer') as NonNullable<InspectionSide>,
   })
 
   const [savingProp, setSavingProp] = useState(false)
@@ -182,7 +158,7 @@ export default function ObStepGrunddata({
       inspection_time: inspection.inspection_time ?? '',
       attendees: inspection.attendees ?? '',
       attendees_other: inspection.attendees_other ?? '',
-      inspection_side: inspection.inspection_side ?? 'buyer',
+      inspection_side: (inspection.inspection_side ?? 'buyer') as NonNullable<InspectionSide>,
     })
   }, [inspection])
 
@@ -190,6 +166,7 @@ export default function ObStepGrunddata({
   const saveProperty = async (patch: Partial<Property>) => {
     setError(null)
     setSavingProp(true)
+
     const { error: updErr, data } = await supabase
       .from('properties')
       .update(patch)
@@ -214,6 +191,7 @@ export default function ObStepGrunddata({
   const saveInspection = async (patch: Partial<Inspection>) => {
     setError(null)
     setSavingInsp(true)
+
     const { error: updErr, data } = await supabase
       .from('inspections')
       .update(patch)
@@ -237,20 +215,16 @@ export default function ObStepGrunddata({
   // 🔹 Autogenerera uppdragsnummer baserat på datum + löpnummer
   useEffect(() => {
     const maybeGenerateAssignmentNumber = async () => {
-      // Om det redan finns ett nummer – rör det inte
       if (inspection.assignment_number && inspection.assignment_number !== '') return
-
-      // Vi genererar bara om ett datum är satt
       if (!inspection.date) return
 
-      const baseDate = inspection.date // format: YYYY-MM-DD
+      const baseDate = inspection.date // YYYY-MM-DD
       const parts = baseDate.split('-')
       if (parts.length !== 3) return
 
       const [year, month, day] = parts
       if (!year || !month || !day) return
 
-      // Nyckel enligt din modell: 2025-1119-01 (YYYY-MMDD-XX)
       const dateKey = `${year}-${month}${day}`
 
       try {
@@ -265,7 +239,6 @@ export default function ObStepGrunddata({
         }
 
         let maxSeq = 0
-
         ;(data || []).forEach((row: any) => {
           const num = row.assignment_number as string | null
           if (!num) return
@@ -273,16 +246,14 @@ export default function ObStepGrunddata({
           if (!num.startsWith(prefix)) return
           const suffix = num.slice(prefix.length)
           const parsed = parseInt(suffix, 10)
-          if (!isNaN(parsed) && parsed > maxSeq) {
-            maxSeq = parsed
-          }
+          if (!isNaN(parsed) && parsed > maxSeq) maxSeq = parsed
         })
 
         const next = maxSeq + 1
         const seqStr = next.toString().padStart(2, '0')
         const newNumber = `${dateKey}-${seqStr}`
 
-        await saveInspection({ assignment_number: newNumber })
+        await saveInspection({ assignment_number: newNumber } as Partial<Inspection>)
         setInspForm(prev => ({ ...prev, assignment_number: newNumber }))
       } catch (err) {
         console.error('Fel vid generering av uppdragsnummer:', err)
@@ -314,9 +285,7 @@ export default function ObStepGrunddata({
     if (field === 'tenure_type') patch.tenure_type = val
     if (field === 'dwelling_type') patch.dwelling_type = val
 
-    if (Object.keys(patch).length > 0) {
-      void saveProperty(patch)
-    }
+    if (Object.keys(patch).length > 0) void saveProperty(patch)
   }
 
   const handleInspChange = (field: keyof typeof inspForm, value: string) => {
@@ -326,18 +295,20 @@ export default function ObStepGrunddata({
   const handleInspBlur = (field: keyof typeof inspForm) => {
     const val = inspForm[field] || null
     const patch: Partial<Inspection> = {}
-    if (field === 'client_name') patch.client_name = val
-    if (field === 'assignment_number') patch.assignment_number = val
-    if (field === 'scope') patch.scope = val
-    if (field === 'date') patch.date = val
-    if (field === 'inspection_time') patch.inspection_time = val
-    if (field === 'attendees') patch.attendees = val
-    if (field === 'attendees_other') patch.attendees_other = val
-    if (field === 'inspection_side') patch.inspection_side = val
 
-    if (Object.keys(patch).length > 0) {
-      void saveInspection(patch)
+    if (field === 'client_name') patch.client_name = val as any
+    if (field === 'assignment_number') patch.assignment_number = val as any
+    if (field === 'scope') patch.scope = val as any
+    if (field === 'date') patch.date = val as any
+    if (field === 'inspection_time') patch.inspection_time = val as any
+    if (field === 'attendees') patch.attendees = val as any
+    if (field === 'attendees_other') patch.attendees_other = val as any
+
+    if (field === 'inspection_side') {
+      patch.inspection_side = (val as any) as InspectionSide
     }
+
+    if (Object.keys(patch).length > 0) void saveInspection(patch)
   }
 
   // 🔹 Checkboxar för omfattning
@@ -345,15 +316,10 @@ export default function ObStepGrunddata({
 
   const handleScopeToggle = async (label: string) => {
     const current = parseScopeLabels(inspForm.scope)
-    let next: string[]
-    if (current.includes(label)) {
-      next = current.filter(l => l !== label)
-    } else {
-      next = [...current, label]
-    }
+    const next = current.includes(label) ? current.filter(l => l !== label) : [...current, label]
     const newScope = formatScopeLabels(next)
     setInspForm(prev => ({ ...prev, scope: newScope }))
-    await saveInspection({ scope: newScope })
+    await saveInspection({ scope: newScope } as Partial<Inspection>)
   }
 
   // 🔹 Checkboxar för närvarande
@@ -361,19 +327,14 @@ export default function ObStepGrunddata({
 
   const handleAttendeeToggle = async (label: string) => {
     const current = parseAttendeeLabels(inspForm.attendees)
-    let next: string[]
-    if (current.includes(label)) {
-      next = current.filter(l => l !== label)
-    } else {
-      next = [...current, label]
-    }
+    const next = current.includes(label) ? current.filter(l => l !== label) : [...current, label]
     const newAttendees = formatAttendeeLabels(next)
     setInspForm(prev => ({ ...prev, attendees: newAttendees }))
-    await saveInspection({ attendees: newAttendees })
+    await saveInspection({ attendees: newAttendees } as Partial<Inspection>)
   }
 
   // 🔹 Köpar-/säljarbesiktning – radioknappar
-  const handleInspectionSideChange = async (side: 'buyer' | 'seller') => {
+  const handleInspectionSideChange = async (side: NonNullable<InspectionSide>) => {
     const patch: Partial<Inspection> = { inspection_side: side }
 
     // Om vi växlar till säljarbesiktning ska "Köpare" inte vara markerad
@@ -382,7 +343,7 @@ export default function ObStepGrunddata({
       if (current.includes('Köpare')) {
         const next = current.filter(l => l !== 'Köpare')
         const newAttendees = formatAttendeeLabels(next)
-        patch.attendees = newAttendees
+        patch.attendees = newAttendees as any
         setInspForm(prev => ({
           ...prev,
           inspection_side: side,
@@ -404,25 +365,17 @@ export default function ObStepGrunddata({
       : ATTENDEE_OPTIONS
 
   // 🔹 Här räknar vi fram vilken mall som gäller (villa/lägenhet)
-  const formKind = deriveFormKind(
-    propForm.tenure_type as Property['tenure_type'],
-    propForm.dwelling_type as Property['dwelling_type']
-  )
+  const formKind = deriveFormKind(propForm.dwelling_type)
 
   return (
     <div className="space-y-4">
-      {/* Info-rad */}
       <div className="rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-900">
         Grunduppgifter för objekt, uppdragsgivare och besiktningsman. Ändringar sparas
         automatiskt när du lämnar ett fält. Uppdragsnummer skapas automatiskt när
         besiktningsdatum är satt.
       </div>
 
-      {error && (
-        <p className="text-xs text-red-600">
-          {error}
-        </p>
-      )}
+      {error && <p className="text-xs text-red-600">{error}</p>}
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* --- Kolumn 1: Objekt --- */}
@@ -472,7 +425,6 @@ export default function ObStepGrunddata({
             onBlur={() => handlePropBlur('owner_name')}
           />
 
-          {/* Ägandeform */}
           <div className="space-y-1">
             <div className="text-xs font-medium text-gray-600">Ägandeform</div>
             <select
@@ -495,7 +447,6 @@ export default function ObStepGrunddata({
             </select>
           </div>
 
-          {/* Typ av objekt */}
           <div className="space-y-1">
             <div className="text-xs font-medium text-gray-600">Typ av objekt</div>
             <select
@@ -518,7 +469,6 @@ export default function ObStepGrunddata({
             </select>
           </div>
 
-          {/* Info om vilken mall som används */}
           <p className="mt-1 text-[11px] text-gray-500">
             {propForm.tenure_type && propForm.dwelling_type && formKind ? (
               <>
@@ -533,9 +483,7 @@ export default function ObStepGrunddata({
             )}
           </p>
 
-          {savingProp && (
-            <p className="mt-1 text-[11px] text-gray-400">Sparar objekt…</p>
-          )}
+          {savingProp && <p className="mt-1 text-[11px] text-gray-400">Sparar objekt…</p>}
         </section>
 
         {/* --- Kolumn 2: Uppdragsgivare & besiktningsuppdrag --- */}
@@ -544,7 +492,6 @@ export default function ObStepGrunddata({
             Uppdragsgivare & besiktningsuppdrag
           </h2>
 
-          {/* Typ av uppdrag: köpare / säljare */}
           <div className="space-y-1">
             <div className="text-xs font-medium text-gray-600">Typ av uppdrag</div>
             <div className="flex flex-wrap gap-4 text-xs text-gray-700">
@@ -553,9 +500,7 @@ export default function ObStepGrunddata({
                   type="radio"
                   className="h-3 w-3"
                   checked={inspForm.inspection_side === 'buyer'}
-                  onChange={() => {
-                    void handleInspectionSideChange('buyer')
-                  }}
+                  onChange={() => void handleInspectionSideChange('buyer')}
                 />
                 <span>Köparbesiktning</span>
               </label>
@@ -564,9 +509,7 @@ export default function ObStepGrunddata({
                   type="radio"
                   className="h-3 w-3"
                   checked={inspForm.inspection_side === 'seller'}
-                  onChange={() => {
-                    void handleInspectionSideChange('seller')
-                  }}
+                  onChange={() => void handleInspectionSideChange('seller')}
                 />
                 <span>Säljarbesiktning</span>
               </label>
@@ -589,22 +532,16 @@ export default function ObStepGrunddata({
             placeholder="Skapas automatiskt när datum är satt (kan justeras)"
           />
 
-          {/* Omfattning med checkboxar */}
           <div className="space-y-2">
             <div className="text-xs font-medium text-gray-600">Omfattning</div>
             <div className="space-y-1">
               {SCOPE_OPTIONS.map(opt => (
-                <label
-                  key={opt.key}
-                  className="flex items-start gap-2 text-xs text-gray-700"
-                >
+                <label key={opt.key} className="flex items-start gap-2 text-xs text-gray-700">
                   <input
                     type="checkbox"
                     className="mt-0.5 h-3 w-3"
                     checked={selectedScopeLabels.includes(opt.label)}
-                    onChange={() => {
-                      void handleScopeToggle(opt.label)
-                    }}
+                    onChange={() => void handleScopeToggle(opt.label)}
                   />
                   <span>{opt.label}</span>
                 </label>
@@ -635,31 +572,23 @@ export default function ObStepGrunddata({
             />
           </div>
 
-          {/* 🔹 Närvarande */}
           <div className="mt-3 space-y-3">
             <div className="text-xs font-medium text-gray-600">Närvarande</div>
 
-            {/* Checkboxar för huvudroller */}
             <div className="space-y-1">
               {attendeeOptionsToShow.map(opt => (
-                <label
-                  key={opt.key}
-                  className="flex items-start gap-2 text-xs text-gray-700"
-                >
+                <label key={opt.key} className="flex items-start gap-2 text-xs text-gray-700">
                   <input
                     type="checkbox"
                     className="mt-0.5 h-3 w-3"
                     checked={selectedAttendees.includes(opt.label)}
-                    onChange={() => {
-                      void handleAttendeeToggle(opt.label)
-                    }}
+                    onChange={() => void handleAttendeeToggle(opt.label)}
                   />
                   <span>{opt.label}</span>
                 </label>
               ))}
             </div>
 
-            {/* Övriga närvarande, fritt textfält */}
             <div className="space-y-1">
               <div className="text-xs font-medium text-gray-600">
                 Övriga närvarande (namn och roll)
@@ -683,9 +612,7 @@ export default function ObStepGrunddata({
             </div>
           </div>
 
-          {savingInsp && (
-            <p className="mt-1 text-[11px] text-gray-400">Sparar uppdrag…</p>
-          )}
+          {savingInsp && <p className="mt-1 text-[11px] text-gray-400">Sparar uppdrag…</p>}
         </section>
 
         {/* --- Kolumn 3: Besiktningsman (read-only) --- */}
@@ -693,36 +620,22 @@ export default function ObStepGrunddata({
           <h2 className="text-sm font-semibold text-gray-900">Besiktningsman</h2>
 
           <div className="space-y-1 text-sm text-gray-800">
-            <div className="font-semibold">
-              {inspection.inspector_name || INSPECTOR_CARD.name}
-            </div>
+            <div className="font-semibold">{inspection.inspector_name || INSPECTOR_CARD.name}</div>
             <div className="text-xs text-gray-600">{INSPECTOR_CARD.sbrLine1}</div>
             <div className="text-xs text-gray-600">{INSPECTOR_CARD.sbrLine2}</div>
 
-            <div className="mt-2 text-xs text-gray-600">
-              Medlemsnummer: {INSPECTOR_CARD.memberNumber}
-            </div>
-            <div className="text-xs text-gray-600">
-              Telefon: {INSPECTOR_CARD.phone}
-            </div>
-            <div className="text-xs text-gray-600">
-              E-post: {INSPECTOR_CARD.email}
-            </div>
+            <div className="mt-2 text-xs text-gray-600">Medlemsnummer: {INSPECTOR_CARD.memberNumber}</div>
+            <div className="text-xs text-gray-600">Telefon: {INSPECTOR_CARD.phone}</div>
+            <div className="text-xs text-gray-600">E-post: {INSPECTOR_CARD.email}</div>
 
-            <div className="mt-2 text-xs text-gray-600">
-              {INSPECTOR_CARD.company}
-            </div>
-            <div className="text-xs text-gray-600">
-              Org.nr: {INSPECTOR_CARD.orgNumber}
-            </div>
-            <div className="text-xs text-gray-600">
-              {INSPECTOR_CARD.addressLine}
-            </div>
+            <div className="mt-2 text-xs text-gray-600">{INSPECTOR_CARD.company}</div>
+            <div className="text-xs text-gray-600">Org.nr: {INSPECTOR_CARD.orgNumber}</div>
+            <div className="text-xs text-gray-600">{INSPECTOR_CARD.addressLine}</div>
           </div>
 
           <p className="mt-2 text-xs text-gray-600">
-            Uppgifterna om besiktningsmannen hämtas tills vidare från en statisk
-            profil. Senare kan detta kopplas till dina inställningar under Settings.
+            Uppgifterna om besiktningsmannen hämtas tills vidare från en statisk profil. Senare kan
+            detta kopplas till dina inställningar under Settings.
           </p>
         </section>
       </div>

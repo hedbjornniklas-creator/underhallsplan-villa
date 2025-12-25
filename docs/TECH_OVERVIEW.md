@@ -1,273 +1,72 @@
-# UnderhÃ¥llsplan Villa â€“ Tech Overview
-
-En Next.js + Supabase-app fÃ¶r att skapa och hantera underhÃ¥llsplaner fÃ¶r villor.  
-MÃ¥let: kombinera Ã¶versikt frÃ¥n underhÃ¥llsplaner med arbetssÃ¤tt frÃ¥n Ã¶verlÃ¥telsebesiktning (SBR-tÃ¤nk) i ett modernt, enkelt verktyg.
-
----
-
-## 1) Stack & verktyg
-
-- **Frontend**: Next.js 16 (App Router), React, TypeScript, Tailwind CSS
-- **Auth & DB**: Supabase (Postgres + RLS), Supabase Auth (Email/Password)
-- **Fil-lagring**: Supabase Storage (bucket `property-media`)
-- **UI-ikoner**: `lucide-react`
-- **Kodkvalitet**: ESLint (standard), Prettier (implicit via VS Code-formattering)
-- **Paket-hanterare**: npm
-
-KÃ¶r lokalt:
-```bash
-npm install
-npm run dev
-# http://localhost:3000
-MiljÃ¶variabler i .env.local:
-
-ini
-Kopiera kod
-NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-2) Katalogstruktur (viktiga filer)
-bash
-Kopiera kod
-src/
-  app/
-    (auth)/
-      layout.tsx                # Layout fÃ¶r auth-flÃ¶de (utan sidebar)
-      login/page.tsx            # Supabase Auth UI (inloggning)
-    (app)/
-      layout.tsx                # Huvudlayout (Shell + Topbar + Sidebar)
-      page.tsx                  # Ã–versiktssida efter login
-      properties/page.tsx       # Lista + skapa fastighet
-      properties/[id]/page.tsx  # Fastighetssida (visa/redigera + omslagsbild + "lÃ¤gg till byggnad")
-      properties/[id]/buildings/page.tsx            # Byggnader-lista
-      properties/[id]/buildings/[buildingId]/page.tsx # Byggnadsvy: utrymmen + komponenter
-      admin/page.tsx            # Admin: dokumenttyper + komponentkatalog
-    favicon.ico
-    globals.css
-    layout.tsx                  # Rotlayout (App Router)
-  components/
-    Protected.tsx               # Inloggningsskydd (redirect till /login)
-    Shell.tsx                   # App-ram (topbar + sidebar + innehÃ¥ll)
-    Topbar.tsx                  # Ã–vre rad (logo, profil, logout-knapp)
-    Sidebar.tsx                 # Sidonavigation
-  hooks/
-    useProfile.ts               # LÃ¤ser profil + adminflagga
-  lib/
-    supabaseClient.ts           # Supabase-klient (browser)
-public/
-  *.svg
-3) Navigering & sidor
-/login â€“ Inloggning via Supabase Auth UI.
-
-/ â€“ Ã–versikt (visar bl.a. â€œRÃ¶da fÃ¶rstâ€, placeholder fÃ¶r statistik).
-
-/properties â€“ Fastighetslista:
-
-SÃ¶k/filtret (Aktiv/Arkiverad/Utkast/Alla)
-
-+ Ny fastighet â†’ skapar utkast & skickar direkt till detaljsidan
-
-/properties/[id] â€“ Fastighetssida:
-
-Visa/Redigera grunddata inline (namn, adress, Ã¤gare, byggÃ¥r, area, uppvÃ¤rmning, ventilation, senaste besiktning)
-
-Omslagsbild: uppladdning till Supabase Storage (property-media/{propertyId}/cover.ext)
-
-+ LÃ¤gg till byggnad â†’ skapar byggnad och leder till byggnadslistan (just nu): /properties/[id]/buildings
-
-/properties/[id]/buildings â€“ (enkel lista) byggnader fÃ¶r fastigheten
-
-/properties/[id]/buildings/[buildingId] â€“ Byggnadssida:
-
-Utrymmen (Spaces): vÃ¤nsterlista, lÃ¤gg till utrymme (namn + kategori)
-
-Komponenter (Components): under utrymmen, lÃ¤gg till komponent (namn, status, install. Ã¥r, livslÃ¤ngd)
-
-Denna sida Ã¤r tÃ¤nkt att bÃ¤ra Handingar & upplysningar och Basinformation-rutor lÃ¤ngre fram
-
-/admin â€“ Adminpanel:
-
-Dokumenttyper (document_types): kod, label, kategori, scope (property/building), default, beskrivning
-
-Komponentkatalog (component_types): kod, namn, kategori, standard-livslÃ¤ngd, anteckning
-
-Protected.tsx skyddar alla (app)-sidor (krÃ¤ver inloggning). (auth)-sidor visas utan sidomeny.
-
-4) Datamodell (Postgres/Supabase)
-KÃ¤rntabeller
-properties
-
-id (uuid PK), owner (uuid), name, address, client_name,
-year_built (int), area_m2 (int), heating, ventilation,
-last_inspection_at (date), cover_path (text), status ('Utkast'|'Aktiv'|'Arkiverad')
-
-buildings
-
-id (uuid PK), property_id (uuid FK -> properties.id), name, cover_path (text), created_at
-
-spaces
-
-id (uuid PK), building_id (uuid FK -> buildings.id), name, category, created_at
-
-components
-
-Minimal variant anvÃ¤nds nu (enligt befintlig tabell i databasen):
-
-id (uuid PK), property_id (uuid), component_type_id (uuid),
-install_year (int), condition (text), last_inspected (date), comment (text), created_at
-
-(Frontend-formulÃ¤ret anvÃ¤nder nyare fÃ¤ltnamn â€“ dessa mappas senare eller sÃ¥ uppdateras tabellen.)
-
-Admin-tabeller
-document_types
-
-id (uuid PK), code, label, category, scope ('property'|'building'), is_default (bool), description
-
-component_types
-
-id (uuid PK), code, name, category, default_lifecycle_years (int), notes
-
-OBS: Vissa tabeller/fÃ¤lt kan saknas i din DB just nu. LÃ¤gg till dem via Supabase SQL Editor nÃ¤r du aktiverar respektive funktion.
-
-5) RLS (Row Level Security) â€“ principer
-properties: Ã¤garen (eller teamet) fÃ¥r lÃ¤sa/skriva. Nuvarande prototyp anvÃ¤nder enkel Ã¤garkoppling (owner = auth.uid()).
-
-buildings / spaces / components: Ã¥tkomst via koppling till properties.owner.
-
-storage (property-media):
-
-Inloggade fÃ¥r ladda upp/uppdatera filer under {propertyId}/... om de Ã¤ger fastigheten
-
-LÃ¤sning: public bucket under prototypen (enkelt) â€“ kan bytas till signerade URLs senare
-
-profiles: is_admin flagga styr Ã¥tkomst till /admin
-
-Du har redan lagt RLS-policys bitvis; om fel â€œRLS violationâ€ dyker upp, kolla att policyn finns fÃ¶r rÃ¤tt tabell/operation.
-
-6) Viktiga UI-flÃ¶den
-Skapa fastighet (frÃ¥n /properties)
-Klick + Ny fastighet
-
-Appen skapar rad i properties med temporÃ¤rt namn (status: Utkast)
-
-Redirect â†’ /properties/{id}
-
-Fastighetssidan
-Inline-edit (Visa/Redigera) fÃ¶r grunddata
-
-Omslagsbild: laddas upp till property-media/{propertyId}/cover.ext, URL sparas i properties.cover_path
-
-+ LÃ¤gg till byggnad: skapar byggnad, valfritt seedar standard-utrymmen, redirect till byggnader
-
-Byggnadssidan
-VÃ¤lj/lÃ¤gg till Utrymmen (ex. â€œBadrumâ€, â€œKÃ¶kâ€, â€œTakâ€, â€œFasadâ€ â€¦)
-
-Per utrymme: lÃ¤gg till Komponenter (status, Ã¥r, livslÃ¤ngd â€“ anvÃ¤nds senare fÃ¶r plan/graf)
-
-Kommer att fÃ¥ rutor fÃ¶r Handlingar & upplysningar och Basinformation (byggnadstyp, stomme, tak m.m.)
-
-Admin
-Redigera Dokumenttyper (fÃ¶r den guidade listan i â€œHandlingar & upplysningarâ€)
-
-Redigera Komponentkatalog (centrala namn & standard-livslÃ¤ngder)
-
-7) Bildhantering (Supabase Storage)
-Bucket: property-media (public under prototyp)
-
-Uppladdning: propertyId/cover.jpg (upsert)
-
-Frontend sparar cover_path i properties
-
-Cache-busting i UI: ?v=timestamp fÃ¶r att tvinga ny bild att laddas
-
-Produktion: byt till privat bucket + signerade URL:er, och lÃ¤gg caching-regler i Next.js.
-
-8) Kodkonventioner
-TypeScript i App Router (server/client-komponenter).
-
-â€œSkyddaâ€ sidor med <Protected> som kollar supabase.auth.getUser().
-
-Enkla, funktionella komponenter.
-
-Tailwind fÃ¶r layout/spacing/typografi.
-
-useProfile() fÃ¶r att hÃ¤mta profil + admin.
-
-9) Bygga vidare â€“ plan
-Handlingar & upplysningar:
-
-Visa en checklista (frÃ¥n document_types dÃ¤r scope='building')
-
-FÃ¶r varje rad: checkbox + datum + lÃ¤nk till uppladdat dokument
-
-DB-tabell: t.ex. building_documents (id, building_id, document_type_id, present (bool), date, file_url)
-
-Basinformation (byggnad):
-
-Tabell building_facts (id, building_id, key, value) eller kolumner direkt pÃ¥ buildings
-
-Komponenter:
-
-Knyt till component_types + statusfÃ¤rger (GrÃ¶n/Gul/RÃ¶d) och rÃ¤kna plan/budget framÃ¥t
-
-Plan & Budget:
-
-Generera 10-Ã¥rs vy med kostnader per Ã¥r, exportera till PDF
-
-BehÃ¶righet:
-
-â€œInspektÃ¶r ser alltâ€ vs â€œKund ser sin fastighetâ€ â†’ nya policys och rollhantering
-
-Deployment:
-
-Vercel (Next.js) + Supabase (prod-projekt).
-
-Signerade filer (produktion): byt Storage-lÃ¤get.
-
-10) Git & repo
-Repo: underhallsplan-villa
-
-Vanligt flÃ¶de:
-
-bash
-Kopiera kod
-git pull
-git checkout -b feature/xyz
-# jobba, committa
-git push -u origin feature/xyz
-# Ã¶ppna Pull Request pÃ¥ GitHub
-Dokumentation i docs/:
-
-TECH_OVERVIEW.md (detta dokument)
-
-DB_NOTES.md (DDL, policies, seed)
-
-ROUTES.md (sidor och URL-struktur)
-
-TODO.md (nÃ¤sta steg / backlog)
-
-11) Vanliga fel & lÃ¶sningar
-RLS violation (insert/update)
-â†’ Saknas policy fÃ¶r tabell/operation eller fel owner. Verifiera auth.uid() i policyn.
-
-next/image â€œunconfigured hostâ€
-â†’ LÃ¤gg till Supabase-domÃ¤nen i next.config.ts under images.remotePatterns.
-
-Bild byts inte i UI efter uppladdning
-â†’ AnvÃ¤nd cache-buster (?v=Date.now()) och/eller key={src} pÃ¥ <Image>.
-
-404 pÃ¥ nya sidor
-â†’ Kontrollera mappstruktur under src/app/... och att filen heter page.tsx.
-
-12) Juridik (Ã¶versikt, ej rÃ¥dgivning)
-Detta Ã¤r inte en traditionell Ã¶verlÃ¥telsebesiktning (Ã–B).
-
-TjÃ¤nsten bÃ¶r beskrivas tydligt i villkor/avtal: omfattning, metod, ansvarsbegrÃ¤nsningar, fÃ¶rsÃ¤kring, standardtexter.
-
-NÃ¤r export (PDF) kommer â€“ inkludera ansvarsbegrÃ¤nsning, upplysningskÃ¤llor, datum och signatur.
-
-Kontakt/Ã¤garskap
-Ã„gande: STYR Projekt Stockholm AB
-
-Repo: (GitHub) underhallsplan-villa
-
-Huvudansvar: Niklas (produkt), ev. utvecklare/partners lÃ¤ggs till efter behov.
+Underhållsplan Villa – Tech Overview (v2.2)
+
+Databassanning
+- Faktiskt schema och typer genereras i src/types/supabase.ts. Detta dokument beskriver avsedda flöden; vid konflikt gäller typerna i filen.
+
+Stack & verktyg
+- Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS
+- Supabase: Postgres + RLS, Supabase Auth, Storage bucket property-media
+- ESLint + Prettier, npm
+- Kör lokalt: npm install && npm run dev (http://localhost:3000)
+
+Systemidé
+- En central hub för överlåtelsebesiktning, statusbesiktning och underhållsplanering.
+- Samla fastighetsdata en gång, återanvänd i besiktning, risk/FTU och underhållsplan.
+- Undvika dubbelregistrering och parallella system.
+
+Navigering & sidor
+- /login: Supabase Auth.
+- /: Redirect till /properties.
+- /properties: Lista fastigheter (filter Utkast/Aktiv/Arkiverad/Alla). “Ny fastighet” skapar rad med status "Utkast" och owner = inloggad användare.
+- /properties/[id]: Fastighetssida med basdata (adress, kommun, taxeringsinfo m.m.), omslagsbild (publik URL), byggnader samt länk till överlåtelsebesiktning. Basdata sparas direkt till properties.
+- /properties/[id]/buildings: Lista byggnader för fastigheten, byt omslagsbild (signed URL), hantera galleri.
+- /properties/[id]/buildings/[buildingId]: Byggnadsdetalj. Basinfo via basic_fields/building_basic_values (kritiska fält markeras), upplysningar via building_disclosures.
+- /properties/[id]/ob: Lista överlåtelsebesiktningar för fastigheten.
+- /properties/[id]/ob/[inspectionId]: ÖB-wizard med sektioner: overview, grunddata, handlingar (inkl. upplysningar och fel), förutsättningar, utsida, insida, risk, ftu.
+- /inspections: Global lista över besiktningar (alla properties, ingen ägarfiltrering i UI).
+- /settings/*: Admin för handlingstyper, förutsättningar, utsida/insida/control-points m.m. (gated på profiles.is_admin i client).
+
+Datamodell (Postgres/Supabase)
+- properties: id (uuid, PK), owner (profiles.id), name (required), address/postal_code/city/municipality, cadastral_id, plot_area_m2, owner_name, contact_person, property_type, tenure_type (fri sträng), dwelling_type (fri sträng), status (fri sträng), tax_value, planning_status, type_code, cover_path, created_at/last_inspected/last_inspection_at, area_m2/area_sqm, heating/ventilation/roof_type/type_code/property_type. Det finns inget metadata-fält.
+- buildings: id, property_id -> properties, name, built_year, notes, cover_path, created_at/updated_at.
+- spaces: building_id -> buildings, name, category, floor, cover_path, notes (seedas när byggnad skapas).
+- basic_fields: global mall för byggnadsbasinfo (key, label, field_type, options, field_group Bas/Utsida/Insida, is_critical, order_index, is_active). building_basic_values binder building_id + field_id + value_text. Byggnads-sammanfattning läser nycklarna year_built, building_type, floors, area_m2, heating, ventilation.
+- building_disclosures: byggnadsvisa upplysningar (title, content, link_url).
+- building_media: building_id, path (lagras i bucket), caption, sort_order.
+- inspections: property_id -> properties, date, type (str, t.ex. OB), status (str), inspector_name, assignment_number, inspection_side (buyer/seller), scope (semikolon-lista), attendees, attendees_other, inspection_time, client_name, client_contact, defect_disclosures (fri text), created_at.
+- inspection_documents: inspection_id -> inspections, document_type_id nullable -> document_types, title, status (present/missing/na), document_date, document_value, note, file_url, created_at/updated_at.
+- document_types: code, label, category, scope (building/property), description, is_active, is_default, result_label, result_unit, validity_years, recommended_interval_years, interval_note.
+- inspection_disclosures: inspection_id -> inspections, title, note, source_image_url, answer (str), disclosure_item_id nullable -> settings_disclosure_items. I nuvarande UI används en enda rad som fri text; mallfrågor (settings_disclosure_items) används inte ännu.
+- inspection_conditions: inspection_id (1:1), furnishing_level m.m. (Används i Förutsättningar-steget).
+- settings_overview_items/groups/options och inspection_overview_selections: styr Förutsättningar (selection_mode single/multi_set/per_floor, conditional_on_values, note_enabled).
+- settings_exterior_*, settings_interior_*, settings_control_points: styr utsida/insida/kontrollpunkter i ÖB-steget.
+- components, component_types, actions, maintenance_templates: grund för underhållsplan/åtgärder kopplade till property (ej färdig UI).
+
+Adminpanel
+- /settings/handlingar-upplysningar: CRUD för document_types (alla fält inkl. result_label/unit, intervall, giltighet, scope, is_active/default).
+- /settings/forutsattningar: CRUD för overview-items/groups/options som driver inspection_overview_selections.
+- /settings/ob-utsida, /settings/ob-insida, /settings/ob-control-points m.fl.: mallar för kontrollpunkter och val i utsida/insida.
+- basic_fields hanteras i utsida/insida-settings (används av byggnadssidorna för basinfon).
+
+Åtkomstmodell (RLS)
+- Ägarskap kedjas via profiles.id -> properties.owner -> inspections.property_id (+ child-tabeller). inspections har ingen egen owner.
+- Klient: fastighetslistan filtrerar på inloggad användare; övriga vyer litar på RLS. is_admin används bara för att visa settings-sidor; det finns ingen klientlogik som visar “alla fastigheter” utan RLS-policies.
+
+Fil- och bildhantering (bucket property-media)
+- Fastighetens omslag: upload till {propertyId}/cover.ext med upsert; public URL sparas i properties.cover_path via getPublicUrl (kräver att bucket/tillägg medger publik läsning eller tokens i URL:n).
+- Byggnadsomslag: upload {propertyId}/{buildingId}/cover.ext; path sparas i buildings.cover_path; klienten hämtar signerad URL vid render.
+- Byggnadsgalleri: upload {propertyId}/{buildingId}/gallery/{uuid.ext}; signerad URL används vid visning och filen tas bort på delete.
+- Det finns i nuläget ingen inspelningsmapp per inspectionId.
+
+Kodprinciper
+- App Router med server + client components, TypeScript överallt, Tailwind för UI, Protected runt app-sidor.
+- Enkel, läsbar kod framför tidig abstraktion. Uppdatera TECH_OVERVIEW innan nya funktioner som påverkar datamodell, flöden eller juridik.
+
+Juridisk ram (översikt)
+- Systemet dokumenterar, inte automatiserar juridisk överlåtelsebesiktning.
+- Risk- och FTU-texter ska hämtas ur databasen; PDF-export ska bära ansvarstext, upplysningskälla, datum och besiktningsman.
+
+Fortsatt utveckling (kort)
+- Koppla risk/FTU-texter från Excel/DB, PDF-export.
+- Underhållsplan (10–30 år) och kostnadsprognoser.
+- AI-stöd för upplysningar via foto (tillval).

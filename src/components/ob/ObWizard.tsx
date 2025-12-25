@@ -1,47 +1,19 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import ObStepGrunddata from './ObStepGrunddata'
 import ObStepHandlingar from './ObStepHandlingar'
 import ObStepForutsattningar from './ObStepForutsattningar'
 import ObStepUtsida from './ObStepUtsida'
 import ObStepInsida from './ObStepInsida'
+import type { Tables } from '@/types/supabase'
 
-export type TenureType = 'freehold' | 'bostadsratt' | null
-export type DwellingType = 'house' | 'apartment' | null
-export type InspectionSide = 'buyer' | 'seller' | null
+export type TenureType = Tables<'properties'>['tenure_type']
+export type DwellingType = Tables<'properties'>['dwelling_type']
+export type InspectionSide = Tables<'inspections'>['inspection_side']
 
-type Property = {
-  id: string
-  name: string
-  address: string | null
-  postal_code: string | null
-  city: string | null
-  municipality: string | null
-  cadastral_id: string | null
-  owner_name: string | null
-
-  tenure_type: TenureType
-  dwelling_type: DwellingType
-}
-
-type Inspection = {
-  id: string
-  property_id: string
-  date: string | null
-  type: string | null
-  status: string | null
-  inspector_name: string | null
-  created_at: string
-  client_name: string | null
-  client_contact: string | null
-  assignment_number: string | null
-  scope: string | null
-  inspection_time: string | null
-  attendees: string | null
-  attendees_other?: string | null
-  inspection_side: InspectionSide
-}
+type Property = Tables<'properties'>
+type Inspection = Tables<'inspections'>
 
 export type ObSectionKey =
   | 'overview'
@@ -68,6 +40,15 @@ export default function ObWizard({
   onPropertyUpdated,
   onInspectionUpdated,
 }: ObWizardProps) {
+  // Säkerställ att attendees_other aldrig är undefined
+  const normalizedInspection = useMemo<Inspection>(
+    () => ({
+      ...inspection,
+      attendees_other: inspection.attendees_other ?? null,
+    }),
+    [inspection]
+  )
+
   useEffect(() => {
     console.log('ObWizard activeSection =', activeSection)
   }, [activeSection])
@@ -94,9 +75,9 @@ export default function ObWizard({
             <p>
               Besiktning:{' '}
               <span className="font-medium">
-                {inspection.assignment_number || inspection.id}
+                {normalizedInspection.assignment_number || normalizedInspection.id}
               </span>{' '}
-              {inspection.date && <>· {inspection.date}</>}
+              {normalizedInspection.date && <>· {normalizedInspection.date}</>}
             </p>
           </div>
         </div>
@@ -106,23 +87,33 @@ export default function ObWizard({
       return (
         <ObStepGrunddata
           property={property}
-          inspection={inspection}
+          inspection={normalizedInspection}
           onPropertyUpdated={onPropertyUpdated}
           onInspectionUpdated={onInspectionUpdated}
         />
       )
 
     case 'handlingar':
-      return <ObStepHandlingar property={property} inspection={inspection} />
+      return (
+        <ObStepHandlingar
+          property={property}
+          inspection={normalizedInspection}
+        />
+      )
 
     case 'forutsattningar':
-      return <ObStepForutsattningar property={property} inspection={inspection} />
+      return (
+        <ObStepForutsattningar
+          property={property}
+          inspection={normalizedInspection}
+        />
+      )
 
     case 'utsida':
-      return <ObStepUtsida inspection={inspection} />
+      return <ObStepUtsida inspection={normalizedInspection} />
 
     case 'insida':
-      return <ObStepInsida inspection={inspection} />
+      return <ObStepInsida inspection={normalizedInspection} />
 
     case 'risk':
       return (

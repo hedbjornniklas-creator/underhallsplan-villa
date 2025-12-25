@@ -2,22 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import type { Tables } from '@/types/supabase'
 
 type FurnishingLevel = 'fullt_moblerad' | 'delvis_moblerad' | 'omoblerad'
 type SelectionMode = 'single' | 'multi_set' | 'per_floor'
 
-interface Property {
-  id: string
-  name: string | null
-  address: string | null
-}
-
-interface Inspection {
-  id: string
-  property_id: string
-  date: string | null
-  assignment_number: string | null
-}
+// Hämta direkt från Supabase-typerna
+type Property = Tables<'properties'>
+type Inspection = Tables<'inspections'>
 
 interface InspectionConditionsRow {
   id: string
@@ -454,7 +446,6 @@ export default function ObStepForutsattningar({
     sewage: '🕳️',
   }
 
-  // ✅ NY: label till vänster, tightare avstånd
   const SelectField = ({
     label,
     value,
@@ -475,7 +466,7 @@ export default function ObStepForutsattningar({
 
       <select
         value={value ?? ''}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={e => onChange(e.target.value)}
         className="h-10 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 text-sm text-gray-900
                    focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
       >
@@ -485,7 +476,7 @@ export default function ObStepForutsattningar({
             {disabledEmpty ? 'Inga val i settings' : '—'}
           </option>
         )}
-        {options.map((o) => (
+        {options.map(o => (
           <option key={o.id} value={o.value}>
             {o.label}
           </option>
@@ -496,7 +487,6 @@ export default function ObStepForutsattningar({
 
   // -----------------------------
   // Layout-regel: högerkolumn = ålder/underhåll
-  // (styrt av group.key, inga options hårdkodas)
   // -----------------------------
   const isRightGroupKey = (key: string) => {
     if (!key) return false
@@ -509,9 +499,6 @@ export default function ObStepForutsattningar({
     )
   }
 
-  // -----------------------------
-  // Render helpers
-  // -----------------------------
   const renderSelectionSet = (item: ItemBundle, sel: InspectionOverviewSelection, selIndex: number) => {
     const values = sel.values || {}
 
@@ -521,26 +508,25 @@ export default function ObStepForutsattningar({
 
     return (
       <div className="space-y-3">
-        {/* 1 kolumn i mobil, 2 kolumner på md+ */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* VÄNSTER: Vad är det? */}
+          {/* Vänster: vad är det? */}
           <div className="space-y-3">
             <div className="text-[11px] font-semibold tracking-wide text-gray-500 uppercase md:hidden">
               Vad är det?
             </div>
-            {leftGroups.map((g) => (
+            {leftGroups.map(g => (
               <SelectField
                 key={g.id}
                 label={g.label}
                 value={values[g.key] ?? ''}
                 options={g.options}
                 disabledEmpty
-                onChange={(v) => updateGroupValue(item.id, selIndex, g.key, v)}
+                onChange={v => updateGroupValue(item.id, selIndex, g.key, v)}
               />
             ))}
           </div>
 
-          {/* HÖGER: Ålder & underhåll */}
+          {/* Höger: ålder/underhåll */}
           <div className="space-y-3">
             <div className="text-[11px] font-semibold tracking-wide text-gray-500 uppercase md:hidden">
               Ålder & underhåll
@@ -551,14 +537,14 @@ export default function ObStepForutsattningar({
                 Inga ålder-/underhållsfält för denna del.
               </div>
             ) : (
-              rightGroups.map((g) => (
+              rightGroups.map(g => (
                 <SelectField
                   key={g.id}
                   label={g.label}
                   value={values[g.key] ?? ''}
                   options={g.options}
                   disabledEmpty
-                  onChange={(v) => updateGroupValue(item.id, selIndex, g.key, v)}
+                  onChange={v => updateGroupValue(item.id, selIndex, g.key, v)}
                 />
               ))
             )}
@@ -571,7 +557,7 @@ export default function ObStepForutsattningar({
             <label className="text-xs font-medium text-gray-700">Notering (valfritt)</label>
             <textarea
               value={sel.note ?? ''}
-              onChange={(e) => updateSelectionNote(item.id, selIndex, e.target.value)}
+              onChange={e => updateSelectionNote(item.id, selIndex, e.target.value)}
               placeholder="Kort notering…"
               rows={2}
               className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm
@@ -590,7 +576,6 @@ export default function ObStepForutsattningar({
     if (partVal === 'huvudbyggnad') return 'Huvudbyggnad'
     if (partVal === 'tillbyggnad') return idx === 0 ? 'Tillbyggnad' : `Tillbyggnad ${idx}`
 
-    // fallback utan part: första set = huvud, övriga = tillbyggnad n
     return idx === 0 ? 'Huvudbyggnad' : `Tillbyggnad ${idx}`
   }
 
@@ -648,7 +633,7 @@ export default function ObStepForutsattningar({
       return (
         <div className="space-y-2">
           <p className="text-xs text-gray-500">
-            Fyll i "Byggnadstyp" (våningar/källare) så skapas val per våning.
+            Fyll i &quot;Byggnadstyp&quot; (våningar/källare) så skapas val per våning.
           </p>
           {renderSelectionSet(item, arr[0], 0)}
         </div>
@@ -659,7 +644,7 @@ export default function ObStepForutsattningar({
     const existing = getItemSelections(item.id)
     const next: InspectionOverviewSelection[] = []
 
-    floors.forEach((fk) => {
+    floors.forEach(fk => {
       const found = existing.find(s => s.floor_key === fk && s.set_index === 0)
       next.push(
         found || {
@@ -689,7 +674,10 @@ export default function ObStepForutsattningar({
     return (
       <div className="space-y-3">
         {next.map((sel, idx) => (
-          <div key={sel.floor_key ?? idx} className="rounded-xl bg-gray-50 ring-1 ring-gray-200 p-3 md:p-4 space-y-3">
+          <div
+            key={sel.floor_key ?? idx}
+            className="rounded-xl bg-gray-50 ring-1 ring-gray-200 p-3 md:p-4 space-y-3"
+          >
             <div className="text-xs font-semibold text-gray-900">
               {floorLabel(sel.floor_key)}
             </div>
@@ -718,9 +706,7 @@ export default function ObStepForutsattningar({
 
   return (
     <div className="space-y-6">
-      {/* =========================
-          HEADER
-      ========================== */}
+      {/* HEADER */}
       <header className="space-y-1">
         <h2 className="text-xl font-semibold text-gray-900">Förutsättningar</h2>
 
@@ -739,15 +725,13 @@ export default function ObStepForutsattningar({
         )}
       </header>
 
-      {/* =========================
-          SÄRSKILDA FÖRUTSÄTTNINGAR
-      ========================== */}
+      {/* SÄRSKILDA FÖRUTSÄTTNINGAR */}
       <section className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3">
         <div className="text-sm text-gray-900">
           Byggnaden var{' '}
           <select
             value={furnishing}
-            onChange={(e) => {
+            onChange={e => {
               const lvl = e.target.value as FurnishingLevel
               setFurnishing(lvl)
               saveFurnishing(lvl)
@@ -763,25 +747,24 @@ export default function ObStepForutsattningar({
         </div>
 
         <p className="text-sm text-gray-700">
-          Besiktning har skett av de delar som varit normalt åtkomliga utan omflyttning av möbler och belamrade ytor.
-          Bakomliggande ytor ingår i köparens undersökningsplikt.
+          Besiktning har skett av de delar som varit normalt åtkomliga utan omflyttning av
+          möbler och belamrade ytor. Bakomliggande ytor ingår i köparens undersökningsplikt.
         </p>
 
         <p className="text-sm text-gray-700">
-          För ytor, utrymmen och byggnadsdelar som noterats helt eller delvis ej besiktningsbara eller belamrade
-          har besiktningsmannen inget ansvar.
+          För ytor, utrymmen och byggnadsdelar som noterats helt eller delvis ej
+          besiktningsbara eller belamrade har besiktningsmannen inget ansvar.
         </p>
 
         <p className="text-sm text-gray-700">
-          Notering ”-----” innebär att utrymmet/ytan bedöms vara i normalt skick med hänsyn taget till byggnadens ålder och byggnadssätt.
+          Notering ”-----” innebär att utrymmet/ytan bedöms vara i normalt skick med hänsyn
+          taget till byggnadens ålder och byggnadssätt.
         </p>
       </section>
 
-      {/* =========================
-          PUNKT 2: DYNAMISKT FRÅN SETTINGS
-      ========================== */}
+      {/* PUNKT 2 – dynamiskt från settings */}
       <section className="space-y-4">
-        {items.map((item) => (
+        {items.map(item => (
           <section
             key={item.id}
             className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3"
