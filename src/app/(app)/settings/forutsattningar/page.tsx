@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 
+export const dynamic = 'force-dynamic'
+
 type SelectionMode = 'single' | 'multi_set' | 'per_floor'
 
 type SettingsOverviewItem = {
