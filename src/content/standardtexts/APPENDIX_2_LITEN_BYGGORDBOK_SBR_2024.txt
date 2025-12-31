@@ -1,0 +1,134 @@
+Asfaboard  
+Porös, asfaltimpregnerad skiva.
+
+Alkydoljefärg  
+En ”modernare” variant av oljefärg som består av linoljefärg och alkydhartser. Torkar snabbare än oljefärg men tränger inte lika djupt in i virket.
+
+Avloppsluftare  
+Rör som går upp genom yttertaket och som har till uppgift att ta in luft vid spolning i avlopp, så att vakuum inte uppstår i systemet.
+
+Betong  
+Blandning av cement (bindmedel) och grus, sten (ballast).
+
+Blåbetong  
+Lättbetongblock tillverkade av alunskiffer. Radonhaltigt.
+
+Brunröta  
+Angrepp av brunröta innebär att virkets hållfasthet nedsätts och att fibrerna spricker tvärs längdriktningen. Orsakas av svampangrepp.
+
+Byggfukt  
+Fukt som tillförs byggnadsmaterial under byggtiden.
+
+Bärläkt  
+Virke som bär upp takpannor.
+
+Båge  
+Den del av ett fönster som är öppningsbar.
+
+Cement  
+Bindmedel i betong och putsbruk.
+
+Cylinder  
+Lås.
+
+Dagvattenledning  
+Ledning i mark för att avleda vatten från stuprör och regnvattenbrunnar.
+
+Dränering  
+System av dränerande (vattenavledande) massor och ledningar.
+
+Dörrblad  
+Den öppningsbara delen av en dörr.
+
+Falsad plåt  
+Slätplåt som skarvas ihop med övervikta ståndskarvar.
+
+Fotplåt  
+Dropplåt placerad vid takfot och som leder vatten ner i hängrännan.
+
+Fuktskydd  
+Skikt av vattentät massa, luftspaltbildande matta av HD-polyeten eller bitumenduk etc., som har till uppgift att förhindra fuktinträngning i konstruktion eller hindra avdunstning från mark i s.k. uteluftsventilerad krypgrund.
+
+Fuktkvot  
+Förhållandet mellan vikten på fuktigt material och materialets torrvikt. Anges i % eller kg/kg.
+
+Foder  
+Täckande listverk runt fönster eller dörr.
+
+Grundmur  
+Murverk runt uteluftsventilerad krypgrund eller s.k. torpargrund varpå byggnaden vilar.
+
+Hammarband  
+Träregel längst upp på en regelvägg varpå takstolen vilar.
+
+Hanbjälke  
+Tvärgående bjälke i takstol (mot s.k. ”kattvind”).
+
+Imma  
+Se mättnadsånghalt.
+
+Karm  
+Den del av en dörr eller ett fönster som sitter fast i väggen.
+
+Klinker  
+Plattor av keramiskt material.
+
+Klämring  
+Ring med uppgift att hålla fast en plastmatta mot en golvbrunn, så att inget vatten kan tränga in mellan golvbrunnen och mattan.
+
+Limträ  
+Till exempel balkar sammanlimmade av flera trästavar. Är starkare än motsvarande dimension av ”vanligt” virke.
+
+Mekanisk ventilation  
+Ventilation som styrs av fläktar. Kan vara endast frånluft eller både frånluft och tilluft. Ibland förekommer även energiåtervinning ur frånluften.
+
+Mättnadsånghalt  
+Den ånghalt som luft vid en viss temperatur maximalt kan innehålla. Kan även benämnas daggpunkt. Vattenångan övergår då till vatten (kondenserar).
+
+Okulär  
+Vad man kan se med ögat.
+
+Plansteg  
+De horisontella stegen i en trappa.
+
+Relativ fuktighet  
+Ånghalten i luft i % av mättnadsånghalten.
+
+Radon  
+Radongas avgår vid radioaktivt sönderfall av radium i mineralkornen i jorden eller berggrunden.
+
+Revetering  
+Puts på rörvassmatta, som beklädnad på hus med trästomme.
+
+Självdragsventilation  
+Fungerar genom att varm luft, som är lättare än kall, stiger uppåt i rummet och ut genom frånluftskanaler.
+
+Sättsteg  
+Den vertikala ytan mellan planstegen i en trappa.
+
+Stödben  
+Den del av en takstol som utgör del av vägg längs takfot.
+
+Svall  
+Underlagstak av spontade bräder.
+
+Trycke  
+Dörr- eller fönsterhandtag.
+
+Takfot  
+Där taket möter ytterväggen.
+
+Taknock  
+Översta delen av ett yttertak.
+
+Underlagstak  
+Tak som ligger under beläggning av till exempel tegelpannor, plåt eller överläggsplattor. Utgörs ibland av papp på träsvall, av masonit eller av armerad plastfolie.
+
+Underram  
+Nedersta bjälken i en takstol. Utgör även del av bjälklag.
+
+Överluft  
+Ventilation mellan två utrymmen via ventil i vägg eller springa mellan dörrkarm och dörrblad.
+
+Överram  
+Den del av en takstol som underlagstaket vilar på.

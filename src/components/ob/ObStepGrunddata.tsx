@@ -125,6 +125,8 @@ export default function ObStepGrunddata({
   const [inspForm, setInspForm] = useState({
     client_name: inspection.client_name ?? '',
     assignment_number: inspection.assignment_number ?? '',
+    assignment_confirmation_delivered_date:
+      inspection.assignment_confirmation_delivered_date ?? '',
     scope: inspection.scope ?? '',
     date: inspection.date ?? '',
     inspection_time: inspection.inspection_time ?? '',
@@ -155,6 +157,8 @@ export default function ObStepGrunddata({
     setInspForm({
       client_name: inspection.client_name ?? '',
       assignment_number: inspection.assignment_number ?? '',
+      assignment_confirmation_delivered_date:
+        inspection.assignment_confirmation_delivered_date ?? '',
       scope: inspection.scope ?? '',
       date: inspection.date ?? '',
       inspection_time: inspection.inspection_time ?? '',
@@ -300,6 +304,9 @@ export default function ObStepGrunddata({
 
     if (field === 'client_name') patch.client_name = val as any
     if (field === 'assignment_number') patch.assignment_number = val as any
+    if (field === 'assignment_confirmation_delivered_date') {
+      patch.assignment_confirmation_delivered_date = val as any
+    }
     if (field === 'scope') patch.scope = val as any
     if (field === 'date') patch.date = val as any
     if (field === 'inspection_time') patch.inspection_time = val as any
@@ -591,24 +598,36 @@ export default function ObStepGrunddata({
               ))}
             </div>
 
-            <div className="space-y-1">
-              <div className="text-xs font-medium text-gray-600">
-                Övriga närvarande (namn och roll)
+              <div className="space-y-1">
+                <div className="text-xs font-medium text-gray-600">
+                  Övriga närvarande (namn och roll)
+                </div>
+                <textarea
+                  className="w-full rounded-md border px-3 py-2 text-xs"
+                  rows={2}
+                  placeholder="T.ex. Anna Andersson (mäklare), Kalle Karlsson (besiktningsman säljare)"
+                  value={inspForm.attendees_other}
+                  onChange={e => handleInspChange('attendees_other', e.target.value)}
+                  onBlur={() => handleInspBlur('attendees_other')}
+                />
               </div>
-              <textarea
-                className="w-full rounded-md border px-3 py-2 text-xs"
-                rows={2}
-                placeholder="T.ex. Anna Andersson (mäklare), Kalle Karlsson (besiktningsman säljare)"
-                value={inspForm.attendees_other}
-                onChange={e => handleInspChange('attendees_other', e.target.value)}
-                onBlur={() => handleInspBlur('attendees_other')}
-              />
-            </div>
 
-            <div className="mt-1 text-[11px] text-gray-500">
-              {inspForm.attendees && inspForm.attendees.trim() !== '' ? (
-                <>Registrerade närvarande (huvudroller): {inspForm.attendees}</>
-              ) : (
+              <Field
+                label="Uppdragsbekräftelse överlämnad"
+                type="date"
+                value={inspForm.assignment_confirmation_delivered_date}
+                onChange={v =>
+                  handleInspChange('assignment_confirmation_delivered_date', v)
+                }
+                onBlur={() =>
+                  handleInspBlur('assignment_confirmation_delivered_date')
+                }
+              />
+
+              <div className="mt-1 text-[11px] text-gray-500">
+                {inspForm.attendees && inspForm.attendees.trim() !== '' ? (
+                  <>Registrerade närvarande (huvudroller): {inspForm.attendees}</>
+                ) : (
                 'Inga huvudroller markerade ännu.'
               )}
             </div>

@@ -1,0 +1,4 @@
+{{place}}, {{date}}
+{{company_name}}
+
+{{inspector_name}}

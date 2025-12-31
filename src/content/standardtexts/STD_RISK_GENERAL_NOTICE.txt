@@ -1,0 +1,3 @@
+I riskanalysen redovisas risker för väsentliga fel i byggnaden som kan föreligga med hänsyn till byggnadens ålder, konstruktion, utförande, användning och synliga tecken på skador.
+
+En risk innebär att det finns en förhöjd sannolikhet för att ett fel eller en skada föreligger, även om detta inte kunnat konstateras vid den okulära besiktningen.

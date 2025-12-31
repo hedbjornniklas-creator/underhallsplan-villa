@@ -739,9 +739,9 @@ export default function ObStepForutsattningar({
             className="mx-1 h-9 rounded-lg border border-gray-300 bg-gray-50 px-2 text-sm
                        focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
           >
-            <option value="fullt_moblerad">fullt möblerad</option>
-            <option value="delvis_moblerad">delvis möblerad</option>
-            <option value="omoblerad">omöblerad</option>
+            <option value="fullt möblerad">fullt möblerad</option>
+            <option value="delvis möblerad">delvis möblerad</option>
+            <option value="omöblerad">omöblerad</option>
           </select>{' '}
           vid besiktningstillfället.
         </div>

@@ -1,0 +1,13 @@
+Väderlek:
+Byggnadstyp: Byggnaden är uppförd som {TYPE} med {FLOORS_TEXT}{ATTIC_TEXT}{BASEMENT_TEXT}.
+Byggnadsår:
+Grundläggning:
+Stomme:
+Bjälklag:
+Fasad:
+Fönster:
+Yttertak:
+Uppvärmning:
+Ventilation:
+Vatten:
+Avlopp:

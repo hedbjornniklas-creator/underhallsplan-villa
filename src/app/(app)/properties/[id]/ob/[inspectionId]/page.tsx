@@ -6,25 +6,20 @@ import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 import ObWizard, {
   ObSectionKey,
-  TenureType,
-  DwellingType,
-  InspectionSide,
-  ObWizardProperty,
   ObWizardInspectionInput,
   ObWizardPropertyInput,
 } from '@/components/ob/ObWizard'
 
 type Property = ObWizardPropertyInput
-
 type Inspection = ObWizardInspectionInput
 
 const SECTIONS: { key: ObSectionKey; label: string }[] = [
-  { key: 'overview', label: 'Ç-versikt' },
+  { key: 'overview', label: 'Översikt' },
   { key: 'grunddata', label: 'Grunddata' },
   { key: 'handlingar', label: 'Handlingar & upplysningar' },
-  { key: 'forutsattningar', label: 'FÇôrutsÇÏttningar' },
-  { key: 'utsida', label: 'Byggnad ƒ?" utsida' },
-  { key: 'insida', label: 'Byggnad ƒ?" insida' },
+  { key: 'forutsattningar', label: 'Förutsättningar' },
+  { key: 'utsida', label: 'Byggnad – utsida' },
+  { key: 'insida', label: 'Byggnad – insida' },
   { key: 'risk', label: 'Riskanalys' },
   { key: 'ftu', label: 'FTU' },
 ]
@@ -41,9 +36,8 @@ export default function InspectionDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Starta pÇ¾ Grunddata (som ni gjort hittills)
-  const [activeSection, setActiveSection] =
-    useState<ObSectionKey>('grunddata')
+  // Starta på Grunddata (som ni gjort hittills)
+  const [activeSection, setActiveSection] = useState<ObSectionKey>('grunddata')
 
   useEffect(() => {
     if (!propertyId || !inspectionId) return
@@ -70,6 +64,7 @@ export default function InspectionDetailPage() {
             client_name,
             client_contact,
             assignment_number,
+            assignment_confirmation_delivered_date,
             scope,
             inspection_time,
             attendees,
@@ -101,15 +96,15 @@ export default function InspectionDetailPage() {
       ])
 
       if (inspErr || !inspData) {
-        console.error('Kunde inte hÇÏmta besiktning:', inspErr?.message)
-        setError('Kunde inte hÇÏmta besiktningen.')
+        console.error('Kunde inte hämta besiktning:', inspErr?.message)
+        setError('Kunde inte hämta besiktningen.')
         setLoading(false)
         return
       }
 
       if (propErr || !propData) {
-        console.error('Kunde inte hÇÏmta fastighet:', propErr?.message)
-        setError('Kunde inte hÇÏmta fastigheten.')
+        console.error('Kunde inte hämta fastighet:', propErr?.message)
+        setError('Kunde inte hämta fastigheten.')
         setLoading(false)
         return
       }
@@ -126,7 +121,7 @@ export default function InspectionDetailPage() {
     return (
       <Protected hideSidebar>
         <main className="p-6">
-          <p className="text-sm text-gray-500">Laddar besiktningƒ?Ý</p>
+          <p className="text-sm text-gray-500">Laddar besiktning…</p>
         </main>
       </Protected>
     )
@@ -153,23 +148,23 @@ export default function InspectionDetailPage() {
   return (
     <Protected hideSidebar>
       <main className="p-6 space-y-4">
-        {/* Tillbaka-knapp hÇôgst upp */}
+        {/* Tillbaka-knapp högst upp */}
         <button
           onClick={() => router.push(`/properties/${propertyId}/ob`)}
           className="text-sm text-blue-600 hover:underline"
         >
-          ƒÅ? Tillbaka till besiktningar
+          ← Tillbaka till besiktningar
         </button>
 
-        {/* Layout: lokal Ç-B-sidebar + wizard */}
+        {/* Layout: lokal OB-sidebar + wizard */}
         <div className="mt-2 grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
-          {/* Lokal Ç-B-sidebar */}
+          {/* Lokal OB-sidebar */}
           <nav className="rounded-lg border bg-white p-3 space-y-2">
             <div className="mb-2 text-xs font-semibold uppercase text-gray-500">
-              Ç-B-moduler
+              OB-moduler
             </div>
 
-            {SECTIONS.map(section => (
+            {SECTIONS.map((section) => (
               <button
                 key={section.key}
                 onClick={() => setActiveSection(section.key)}
@@ -188,23 +183,19 @@ export default function InspectionDetailPage() {
                 onClick={() => router.push(`/properties/${propertyId}`)}
                 className="w-full rounded-md border px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
               >
-                ƒÅ? Till fastighetssidan
+                ← Till fastighetssidan
               </button>
             </div>
           </nav>
 
-          {/* SjÇÏlva Ç-B-wizarden */}
+          {/* Själva OB-wizarden */}
           <div>
             <ObWizard
               property={property}
               inspection={inspection}
               activeSection={activeSection}
-              onPropertyUpdated={updated =>
-                setProperty(updated as Property)
-              }
-              onInspectionUpdated={updated =>
-                setInspection(updated as Inspection)
-              }
+              onPropertyUpdated={(updated) => setProperty(updated as Property)}
+              onInspectionUpdated={(updated) => setInspection(updated as Inspection)}
             />
           </div>
         </div>

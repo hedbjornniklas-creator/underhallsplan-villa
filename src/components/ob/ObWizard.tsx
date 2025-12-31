@@ -1,5 +1,6 @@
-'use client'
+﻿'use client'
 
+import Link from 'next/link'
 import { useEffect, useMemo } from 'react'
 import ObStepGrunddata from './ObStepGrunddata'
 import ObStepHandlingar from './ObStepHandlingar'
@@ -46,6 +47,9 @@ interface ObWizardProps {
   onInspectionUpdated?: (i: ObWizardInspection) => void
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const isValidUuid = (value?: string | null) => !!value && UUID_RE.test(value)
+
 export default function ObWizard({
   property,
   inspection,
@@ -88,7 +92,7 @@ export default function ObWizard({
     [property]
   )
 
-  // Säkerställ att attendees_other aldrig är undefined
+  // SÃ¤kerstÃ¤ll att attendees_other aldrig Ã¤r undefined
   const normalizedInspection = useMemo<ObWizardInspection>(
     () => ({
       ...inspection,
@@ -104,33 +108,77 @@ export default function ObWizard({
 
   switch (activeSection) {
     case 'overview':
-      return (
-        <div className="rounded-xl border bg-white p-4 text-sm text-gray-700 space-y-2">
-          <h2 className="text-base font-semibold text-gray-900">
-            Översikt över besiktningen
-          </h2>
-          <p>
-            Här kommer vi senare samla en översikt med status för samtliga steg:
-            grunddata, handlingar, förutsättningar, utsida/insida, riskanalys och FTU.
-          </p>
-          <div className="text-xs text-gray-500 space-y-1">
+      {
+        const propertyId = normalizedProperty.id ?? null
+        const inspectionId = normalizedInspection.id ?? null
+        const hasValidIds = isValidUuid(propertyId) && isValidUuid(inspectionId)
+        const reportHref = hasValidIds
+          ? `/utlatande/${propertyId}/${inspectionId}`
+          : ''
+        const newTabHref = reportHref
+        const autoPrintHref = hasValidIds ? `${reportHref}?autoprint=1` : ''
+        const iframeSrc = hasValidIds ? `${reportHref}?embed=1` : ''
+        return (
+          <div className="rounded-xl border bg-white p-4 text-sm text-gray-700 space-y-3">
+            <h2 className="text-base font-semibold text-gray-900">Översikt och förhandsgranskning</h2>
             <p>
-              Fastighet:{' '}
-              <span className="font-medium">
-                {normalizedProperty.name}
-                {normalizedProperty.address ? ` – ${normalizedProperty.address}` : ''}
-              </span>
+              Här visas utlåtandet i förhandsgranskning. Använd knapparna för att öppna i ny flik eller skriva ut.
             </p>
-            <p>
-              Besiktning:{' '}
-              <span className="font-medium">
-                {normalizedInspection.assignment_number || normalizedInspection.id}
-              </span>{' '}
-              {normalizedInspection.date && <>· {normalizedInspection.date}</>}
-            </p>
+            
+            {hasValidIds ? (
+              <>
+                <div className="flex flex-wrap items-center gap-2 print:hidden">
+                  <Link
+                    href={newTabHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
+                  >
+                    Öppna i ny flik
+                  </Link>
+                  <Link
+                    href={autoPrintHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-black"
+                  >
+                    Skriv ut
+                  </Link>
+                </div>
+
+                <div className="rounded-xl border bg-gray-100 p-3">
+                  <div className="flex justify-center">
+                    <div className="overflow-auto rounded-lg border border-gray-300 bg-white shadow">
+                      <iframe
+                        title="Utlåtande"
+                        src={iframeSrc}
+                        className="w-full"
+                        style={{
+                          width: '210mm',
+                          maxWidth: '100%',
+                          minHeight: '320mm',
+                          border: '0',
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-gray-600">
+                    Om förhandsgranskningen inte visas kan du{' '}
+                    <Link href={reportHref} target="_blank" rel="noreferrer" className="underline">
+                      öppna utlåtandet här
+                    </Link>
+                    .
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                Utlåtande kan inte öppnas innan fastighet och besiktning är valda.
+              </div>
+            )}
           </div>
-        </div>
-      )
+        )
+      }
 
     case 'grunddata':
       return (
@@ -181,7 +229,7 @@ export default function ObWizard({
             Fortsatt teknisk utredning (FTU)
           </h2>
           <p>
-            Här kommer systemet sammanställa FTU-punkter utifrån risker.
+            HÃ¤r kommer systemet sammanstÃ¤lla FTU-punkter utifrÃ¥n risker.
           </p>
         </div>
       )
@@ -192,11 +240,14 @@ export default function ObWizard({
           <p>
             Steget{' '}
             <span className="font-mono">
-              {activeSection ?? '(okänt värde)'}
+              {activeSection ?? '(okÃ¤nt vÃ¤rde)'}
             </span>{' '}
-            är ännu inte byggt.
+            Ã¤r Ã¤nnu inte byggt.
           </p>
         </div>
       )
   }
 }
+
+
+
