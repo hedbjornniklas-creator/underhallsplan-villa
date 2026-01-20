@@ -69,6 +69,7 @@ type InspectionControlItem = {
   status: string | null
   note: string | null
   sort_order: number
+  selected_outcome_id: string | null
 }
 
 // Lätta kontrollpunkter från settings_control_points (scope='exterior')
@@ -80,6 +81,27 @@ type ControlPointLite = {
   description: string | null
   tags: any | null
   exterior_item_key?: string | null
+}
+
+type ControlPointOutcome = {
+  id: string
+  control_point_id: string
+  outcome_key: string
+  label: string
+  severity: number
+  note_template: string | null
+  risk_template: string | null
+  ftu_template: string | null
+  tags: any | null
+  sort_order: number
+  is_active: boolean
+}
+
+type ControlPointMeta = {
+  id: string
+  title: string
+  label: string | null
+  description: string | null
 }
 
 // Bilder kopplade till kontrollpunkter (inspection_images.control_item_id)
@@ -95,16 +117,9 @@ type InspectionImage = {
   created_at?: string | null
 }
 
-// Fasta status-värden (kodade) för kontrollpunkter
-const CONTROL_STATUS_OPTIONS: { value: string; label: string }[] = [
-  { value: 'ok',             label: 'OK' },
-  { value: 'remark',         label: 'Anmärkning' },
-  { value: 'not_inspected',  label: 'Ej besiktigad' },
-  { value: 'not_accessible', label: 'Ej åtkomlig' },
-]
-
 // Storage-bucket för bilder
 const IMAGE_BUCKET = 'inspection-images' as const
+const RED_STATUS: InspectionControlItem['status'] = null
 
 const getImagePublicUrl = (filePath: string) => {
   const { data } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(filePath)
@@ -121,6 +136,12 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     Record<string, InspectionExteriorObservation[]>
   >({})
   const [controlItems, setControlItems] = useState<InspectionControlItem[]>([])
+  const [controlPointMetaById, setControlPointMetaById] = useState<
+    Record<string, ControlPointMeta>
+  >({})
+  const [outcomesByControlPointId, setOutcomesByControlPointId] = useState<
+    Record<string, ControlPointOutcome[]>
+  >({})
 
   // Bilder per kontrollpunkt (inspection_control_items)
   const [imagesByControlItemId, setImagesByControlItemId] = useState<
@@ -157,6 +178,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           setItems([])
           setObservations({})
           setControlItems([])
+          setControlPointMetaById({})
+          setOutcomesByControlPointId({})
           setImagesByControlItemId({})
           return
         }
@@ -254,18 +277,18 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               const cps = (cpsData ?? []) as ControlPointLite[]
               if (cps.length > 0) {
                 let sortBase = 0
-                const payload = cps.map(cp => {
-                  sortBase += 10
-                  return {
-                    inspection_id: inspection.id,
-                    exterior_observation_id: newObs.id!,
-                    control_point_id: cp.id,
-                    title: cp.title || cp.label || cp.key,
-                    status: 'not_inspected',
-                    note: null,
-                    sort_order: sortBase,
-                  }
-                })
+              const payload = cps.map(cp => {
+                sortBase += 10
+                return {
+                  inspection_id: inspection.id,
+                  exterior_observation_id: newObs.id!,
+                  control_point_id: cp.id,
+                  title: cp.title || cp.label || cp.key,
+                  status: RED_STATUS,
+                  note: null,
+                  sort_order: sortBase,
+                }
+              })
 
                 const { error: insErr } = await supabase
                   .from('inspection_control_items')
@@ -333,9 +356,81 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             throw new Error(ciErr.message)
           }
 
-          setControlItems((ciData ?? []) as InspectionControlItem[])
+          const ciArr = (ciData ?? []).map(ci => ({
+            ...(ci as InspectionControlItem),
+            selected_outcome_id:
+              (ci as InspectionControlItem).selected_outcome_id ?? null,
+          })) as InspectionControlItem[]
+          setControlItems(ciArr)
+
+          const cpIds = Array.from(
+            new Set(
+              ciArr
+                .map(ci => ci.control_point_id)
+                .filter((id): id is string => !!id)
+            )
+          )
+
+          if (cpIds.length === 0) {
+            setControlPointMetaById({})
+            setOutcomesByControlPointId({})
+          } else {
+            try {
+              const { data: outcomesData, error: outcomesErr } = await supabase
+                .from('settings_control_point_outcomes')
+                .select(
+                  'id, control_point_id, label, severity, risk_template, ftu_template, sort_order, is_active'
+                )
+                .in('control_point_id', cpIds)
+                .eq('is_active', true)
+                .order('sort_order', { ascending: true })
+
+              if (outcomesErr) {
+                throw outcomesErr
+              }
+
+              const outcomesArr = (outcomesData ?? []) as ControlPointOutcome[]
+              const outcomesMap: Record<string, ControlPointOutcome[]> = {}
+              for (const outcome of outcomesArr) {
+                const key = outcome.control_point_id
+                outcomesMap[key] = outcomesMap[key] || []
+                outcomesMap[key].push(outcome)
+              }
+              setOutcomesByControlPointId(outcomesMap)
+            } catch (outcomesErr) {
+              console.error(
+                'settings_control_point_outcomes (utsida) error:',
+                outcomesErr
+              )
+              setOutcomesByControlPointId({})
+            }
+
+            try {
+              const { data: metaData, error: metaErr } = await supabase
+                .from('settings_control_points')
+                .select('id, title, label, description')
+                .in('id', cpIds)
+                .eq('is_active', true)
+
+              if (metaErr) {
+                throw metaErr
+              }
+
+              const metaArr = (metaData ?? []) as ControlPointMeta[]
+              const metaMap: Record<string, ControlPointMeta> = {}
+              for (const meta of metaArr) {
+                metaMap[meta.id] = meta
+              }
+              setControlPointMetaById(metaMap)
+            } catch (metaErr) {
+              console.error('settings_control_points (utsida) error:', metaErr)
+              setControlPointMetaById({})
+            }
+          }
         } else {
           setControlItems([])
+          setControlPointMetaById({})
+          setOutcomesByControlPointId({})
         }
 
         // 6) Bilder kopplade till kontrollpunkter (control_item_id)
@@ -513,6 +608,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             status: item.status,
             note: item.note,
             sort_order: item.sort_order,
+            selected_outcome_id: item.selected_outcome_id ?? null,
             updated_at: new Date().toISOString(),
           })
           .eq('id', item.id)
@@ -532,6 +628,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             status: item.status,
             note: item.note,
             sort_order: item.sort_order,
+            selected_outcome_id: item.selected_outcome_id ?? null,
           })
           .select('*')
           .single()
@@ -582,9 +679,10 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       exterior_observation_id: row.id,
       control_point_id: cp.id,
       title: cp.title || cp.label || cp.key,
-      status: 'not_inspected',
+      status: RED_STATUS,
       note: null,
       sort_order: sortOrder,
+      selected_outcome_id: null,
     }
 
     const saved = await upsertControlItem(newItem)
@@ -784,6 +882,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             row={mainRow}
             items={rowControlItems}
             onUpdateItem={updateControlItem}
+            outcomesByControlPointId={outcomesByControlPointId}
+            controlPointMetaById={controlPointMetaById}
             imagesByControlItemId={imagesByControlItemId}
             onUploadImageForControlItem={handleUploadImageForControlItem}
             onDeleteControlItemImage={handleDeleteControlItemImage}
@@ -950,6 +1050,8 @@ type ExteriorControlPointsSectionProps = {
   row: InspectionExteriorObservation
   items: InspectionControlItem[]
   onUpdateItem: (itemId: string, patch: Partial<InspectionControlItem>) => void
+  outcomesByControlPointId: Record<string, ControlPointOutcome[]>
+  controlPointMetaById: Record<string, ControlPointMeta>
   imagesByControlItemId: Record<string, InspectionImage[]>
   onUploadImageForControlItem: (
     controlItem: InspectionControlItem,
@@ -963,6 +1065,8 @@ function ExteriorControlPointsSection({
   row,
   items,
   onUpdateItem,
+  outcomesByControlPointId,
+  controlPointMetaById,
   imagesByControlItemId,
   onUploadImageForControlItem,
   onDeleteControlItemImage,
@@ -986,68 +1090,133 @@ function ExteriorControlPointsSection({
         )}
 
         {items.map(ci => {
-          const effectiveStatus = ci.status ?? 'not_inspected'
+          const effectiveStatus = ci.status
           const ciId = ci.id ?? ''
           const ciImages = ciId ? imagesByControlItemId[ciId] || [] : []
+          const outcomes = outcomesByControlPointId[ci.control_point_id] || []
+          const meta = controlPointMetaById[ci.control_point_id]
+          const description = (meta?.description ?? '').trim()
+          const selectedOutcome = ci.selected_outcome_id
+            ? outcomes.find(outcome => outcome.id === ci.selected_outcome_id) || null
+            : null
+          const riskTemplate = (selectedOutcome?.risk_template ?? '').trim()
+          const ftuTemplate = (selectedOutcome?.ftu_template ?? '').trim()
+          const hasRiskTemplate = riskTemplate.length > 0
+          const hasFtuTemplate = ftuTemplate.length > 0
+          const isGreen = !ci.selected_outcome_id && effectiveStatus === 'ok'
+          const isYellow = !!ci.selected_outcome_id
+          const isRed = !isGreen && !isYellow
+          const rowToneClass = isRed
+            ? 'bg-red-50 border-red-200'
+            : isGreen
+            ? 'bg-emerald-50 border-emerald-200'
+            : 'bg-amber-50 border-amber-200'
 
           return (
             <div
               key={ci.id}
-              className="rounded-lg border bg-gray-50 px-3 py-2 space-y-2"
+              className={`rounded-lg border px-3 py-2 space-y-2 ${rowToneClass}`}
             >
               <div className="flex items-center justify_between gap-2">
                 <div className="text-xs font-semibold text-gray-900">
                   {ci.title}
                 </div>
               </div>
-
-              <div className="grid gap-2 md:grid-cols-[220px_minmax(0,1fr)] items-start">
-                {/* Status-knappar */}
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-600">
-                    Status
-                  </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {CONTROL_STATUS_OPTIONS.map(opt => {
-                      const isActive = effectiveStatus === opt.value
-                      return (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          className={
-                            'rounded-full border px-2.5 py-1 text-[11px] ' +
-                            (isActive
-                              ? 'border-gray-900 bg-gray-900 text-white'
-                              : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100')
-                          }
-                          onClick={() =>
-                            ci.id &&
-                            onUpdateItem(ci.id, { status: opt.value })
-                          }
-                        >
-                          {opt.label}
-                        </button>
-                      )
-                    })}
-                  </div>
+              {description.length > 0 && (
+                <div className="text-[11px] text-gray-600">
+                  {description}
                 </div>
+              )}
 
-                {/* Notering fritext */}
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-600">
-                    Notering (denna kontrollpunkt)
-                  </label>
-                  <textarea
-                    rows={2}
-                    className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
-                    placeholder="Specifik notering för just denna kontrollpunkt…"
-                    value={ci.note ?? ''}
-                    onChange={e =>
-                      ci.id &&
-                      onUpdateItem(ci.id, { note: e.target.value })
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-600">
+                  Bedömning
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    className={
+                      'rounded-full border px-2.5 py-1 text-[11px] ' +
+                      (isGreen
+                        ? 'border-gray-900 bg-gray-900 text-white'
+                        : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
                     }
-                  />
+                    onClick={() => {
+                      if (!ci.id) return
+                      onUpdateItem(ci.id, {
+                        status: isGreen ? RED_STATUS : 'ok',
+                        selected_outcome_id: null,
+                      })
+                    }}
+                  >
+                    Inget att notera
+                  </button>
+                  {outcomes.map(outcome => {
+                    const isActive = ci.selected_outcome_id === outcome.id
+                    const chipClass =
+                      'rounded-full border px-2.5 py-1 text-[11px] ' +
+                      (isActive
+                        ? 'border-gray-900 bg-gray-900 text-white'
+                        : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
+                    return (
+                      <button
+                        key={outcome.id}
+                        type="button"
+                        className={chipClass}
+                        onClick={() => {
+                          if (!ci.id) return
+                          onUpdateItem(ci.id, {
+                            status: isActive ? RED_STATUS : 'remark',
+                            selected_outcome_id: isActive ? null : outcome.id,
+                          })
+                        }}
+                      >
+                        {outcome.label}
+                      </button>
+                    )
+                  })}
                 </div>
+              </div>
+
+              {selectedOutcome && (hasRiskTemplate || hasFtuTemplate) && (
+                <div className="space-y-2">
+                  {hasRiskTemplate && (
+                    <div className="rounded-lg border border-gray-200 bg-white p-3">
+                      <div className="text-xs font-semibold text-gray-700">
+                        Risk (från databas)
+                      </div>
+                      <div className="text-sm text-gray-800 whitespace-pre-line">
+                        {riskTemplate}
+                      </div>
+                    </div>
+                  )}
+                  {hasFtuTemplate && (
+                    <div className="rounded-lg border border-gray-200 bg-white p-3">
+                      <div className="text-xs font-semibold text-gray-700">
+                        Fortsatt teknisk utredning (från databas)
+                      </div>
+                      <div className="text-sm text-gray-800 whitespace-pre-line">
+                        {ftuTemplate}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-600">
+                  Förtydligande
+                </label>
+                <textarea
+                  rows={2}
+                  className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                  placeholder="Specifik notering för just denna kontrollpunkt…"
+                  value={ci.note ?? ''}
+                  onChange={e =>
+                    ci.id &&
+                    onUpdateItem(ci.id, { note: e.target.value })
+                  }
+                />
               </div>
 
               {/* Bilder per kontrollpunkt */}
