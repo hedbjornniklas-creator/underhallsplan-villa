@@ -1,5 +1,4 @@
 import { defaultCoverIllustrationSrc, sbrLogoSrc } from '@/lib/report/reportAssets'
-import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import {
   ACCENT_COLOR,
   REPORT_STYLES,
@@ -15,6 +14,7 @@ type ReportCoverPageProps = {
   inspectionDate?: string
   assignmentNumber?: string
   coverIllustrationUrl?: string | null
+  coverNotice?: string
 }
 
 export default function ReportCoverPage({
@@ -24,8 +24,8 @@ export default function ReportCoverPage({
   inspectionDate,
   assignmentNumber,
   coverIllustrationUrl,
+  coverNotice = '',
 }: ReportCoverPageProps) {
-  const coverNotice = loadStandardText('STD_COVER_BUYER_DUTY_NOTICE')
   const coverSrc = coverIllustrationUrl || defaultCoverIllustrationSrc
 
   return (

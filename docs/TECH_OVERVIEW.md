@@ -1,72 +1,96 @@
-UnderhÂllsplan Villa ñ Tech Overview (v2.2)
+Underh√•llsplan Villa ‚Äì Tech Overview (v2.2)
 
 Databassanning
-- Faktiskt schema och typer genereras i src/types/supabase.ts. Detta dokument beskriver avsedda flˆden; vid konflikt g‰ller typerna i filen.
+- Faktiskt schema och typer genereras i src/types/supabase.ts. Detta dokument beskriver avsedda fl√∂den; vid konflikt g√§ller typerna i filen.
 
 Stack & verktyg
 - Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS
 - Supabase: Postgres + RLS, Supabase Auth, Storage bucket property-media
 - ESLint + Prettier, npm
-- Kˆr lokalt: npm install && npm run dev (http://localhost:3000)
+- K√∂r lokalt: npm install && npm run dev (http://localhost:3000)
 
-SystemidÈ
-- En central hub fˆr ˆverlÂtelsebesiktning, statusbesiktning och underhÂllsplanering.
-- Samla fastighetsdata en gÂng, Âteranv‰nd i besiktning, risk/FTU och underhÂllsplan.
+Systemid√©
+- En central hub f√∂r √∂verl√•telsebesiktning, statusbesiktning och underh√•llsplanering.
+- Samla fastighetsdata en g√•ng, √•teranv√§nd i besiktning, risk/FTU och underh√•llsplan.
 - Undvika dubbelregistrering och parallella system.
 
 Navigering & sidor
 - /login: Supabase Auth.
 - /: Redirect till /properties.
-- /properties: Lista fastigheter (filter Utkast/Aktiv/Arkiverad/Alla). ìNy fastighetî skapar rad med status "Utkast" och owner = inloggad anv‰ndare.
-- /properties/[id]: Fastighetssida med basdata (adress, kommun, taxeringsinfo m.m.), omslagsbild (publik URL), byggnader samt l‰nk till ˆverlÂtelsebesiktning. Basdata sparas direkt till properties.
-- /properties/[id]/buildings: Lista byggnader fˆr fastigheten, byt omslagsbild (signed URL), hantera galleri.
-- /properties/[id]/buildings/[buildingId]: Byggnadsdetalj. Basinfo via basic_fields/building_basic_values (kritiska f‰lt markeras), upplysningar via building_disclosures.
-- /properties/[id]/ob: Lista ˆverlÂtelsebesiktningar fˆr fastigheten.
-- /properties/[id]/ob/[inspectionId]: ÷B-wizard med sektioner: overview, grunddata, handlingar (inkl. upplysningar och fel), fˆruts‰ttningar, utsida, insida, risk, ftu.
-- /inspections: Global lista ˆver besiktningar (alla properties, ingen ‰garfiltrering i UI).
-- /settings/*: Admin fˆr handlingstyper, fˆruts‰ttningar, utsida/insida/control-points m.m. (gated pÂ profiles.is_admin i client).
+- /properties: Lista fastigheter (filter Utkast/Aktiv/Arkiverad/Alla). ‚ÄúNy fastighet‚Äù skapar rad med status "Utkast" och owner = inloggad anv√§ndare.
+- /properties/[id]: Fastighetssida med basdata (adress, kommun, taxeringsinfo m.m.), omslagsbild (publik URL), byggnader samt l√§nk till √∂verl√•telsebesiktning. Basdata sparas direkt till properties.
+- /properties/[id]/buildings: Lista byggnader f√∂r fastigheten, byt omslagsbild (signed URL), hantera galleri.
+- /properties/[id]/buildings/[buildingId]: Byggnadsdetalj. Basinfo via basic_fields/building_basic_values (kritiska f√§lt markeras), upplysningar via building_disclosures.
+- /properties/[id]/ob: Lista √∂verl√•telsebesiktningar f√∂r fastigheten.
+- /properties/[id]/ob/[inspectionId]: √ñB-wizard med sektioner: overview, grunddata, handlingar (inkl. upplysningar och fel), f√∂ruts√§ttningar, utsida, insida, risk, ftu.
+- /inspections: Global lista √∂ver besiktningar (alla properties, ingen √§garfiltrering i UI).
+- /settings/*: Admin f√∂r handlingstyper, f√∂ruts√§ttningar, utsida/insida/control-points m.m. (gated p√• profiles.is_admin i client).
 
 Datamodell (Postgres/Supabase)
-- properties: id (uuid, PK), owner (profiles.id), name (required), address/postal_code/city/municipality, cadastral_id, plot_area_m2, owner_name, contact_person, property_type, tenure_type (fri str‰ng), dwelling_type (fri str‰ng), status (fri str‰ng), tax_value, planning_status, type_code, cover_path, created_at/last_inspected/last_inspection_at, area_m2/area_sqm, heating/ventilation/roof_type/type_code/property_type. Det finns inget metadata-f‰lt.
+- properties: id (uuid, PK), owner (profiles.id), name (required), address/postal_code/city/municipality, cadastral_id, plot_area_m2, owner_name, contact_person, property_type, tenure_type (fri str√§ng), dwelling_type (fri str√§ng), status (fri str√§ng), tax_value, planning_status, type_code, cover_path, created_at/last_inspected/last_inspection_at, area_m2/area_sqm, heating/ventilation/roof_type/type_code/property_type. Det finns inget metadata-f√§lt.
 - buildings: id, property_id -> properties, name, built_year, notes, cover_path, created_at/updated_at.
-- spaces: building_id -> buildings, name, category, floor, cover_path, notes (seedas n‰r byggnad skapas).
-- basic_fields: global mall fˆr byggnadsbasinfo (key, label, field_type, options, field_group Bas/Utsida/Insida, is_critical, order_index, is_active). building_basic_values binder building_id + field_id + value_text. Byggnads-sammanfattning l‰ser nycklarna year_built, building_type, floors, area_m2, heating, ventilation.
+- spaces: building_id -> buildings, name, category, floor, cover_path, notes (seedas n√§r byggnad skapas).
+- basic_fields: global mall f√∂r byggnadsbasinfo (key, label, field_type, options, field_group Bas/Utsida/Insida, is_critical, order_index, is_active). building_basic_values binder building_id + field_id + value_text. Byggnads-sammanfattning l√§ser nycklarna year_built, building_type, floors, area_m2, heating, ventilation.
 - building_disclosures: byggnadsvisa upplysningar (title, content, link_url).
 - building_media: building_id, path (lagras i bucket), caption, sort_order.
 - inspections: property_id -> properties, date, type (str, t.ex. OB), status (str), inspector_name, assignment_number, inspection_side (buyer/seller), scope (semikolon-lista), attendees, attendees_other, inspection_time, client_name, client_contact, defect_disclosures (fri text), created_at.
 - inspection_documents: inspection_id -> inspections, document_type_id nullable -> document_types, title, status (present/missing/na), document_date, document_value, note, file_url, created_at/updated_at.
 - document_types: code, label, category, scope (building/property), description, is_active, is_default, result_label, result_unit, validity_years, recommended_interval_years, interval_note.
-- inspection_disclosures: inspection_id -> inspections, title, note, source_image_url, answer (str), disclosure_item_id nullable -> settings_disclosure_items. I nuvarande UI anv‰nds en enda rad som fri text; mallfrÂgor (settings_disclosure_items) anv‰nds inte ‰nnu.
-- inspection_conditions: inspection_id (1:1), furnishing_level m.m. (Anv‰nds i Fˆruts‰ttningar-steget).
-- settings_overview_items/groups/options och inspection_overview_selections: styr Fˆruts‰ttningar (selection_mode single/multi_set/per_floor, conditional_on_values, note_enabled).
-- settings_exterior_*, settings_interior_*, settings_control_points: styr utsida/insida/kontrollpunkter i ÷B-steget.
-- components, component_types, actions, maintenance_templates: grund fˆr underhÂllsplan/Âtg‰rder kopplade till property (ej f‰rdig UI).
+- inspection_disclosures: inspection_id -> inspections, title, note, source_image_url, answer (str), disclosure_item_id nullable -> settings_disclosure_items. I nuvarande UI anv√§nds en enda rad som fri text; mallfr√•gor (settings_disclosure_items) anv√§nds inte √§nnu.
+- inspection_conditions: inspection_id (1:1), furnishing_level m.m. (Anv√§nds i F√∂ruts√§ttningar-steget).
+- settings_overview_items/groups/options och inspection_overview_selections: styr F√∂ruts√§ttningar (selection_mode single/multi_set/per_floor, conditional_on_values, note_enabled).
+- Insida-v√•ningar byggs fr√•n inspection_overview_selections.values f√∂r overview_item key "building_type": floors/basement/attic. basement yes/ja/true => k√§llare, basement partial/delvis => k√§llare_delvis; floors 1/2/3/1_5 => entr√©plan/plan2/plan3; om attic har v√§rde l√§ggs vind till (label fr√•n settings_overview_groups key attic + settings_overview_options.value, annars r√•tt v√§rde).
+- settings_exterior_*, settings_interior_*, settings_control_points: styr utsida/insida/kontrollpunkter i √ñB-steget.
+- components, component_types, actions, maintenance_templates: grund f√∂r underh√•llsplan/√•tg√§rder kopplade till property (ej f√§rdig UI).
 
 Adminpanel
-- /settings/handlingar-upplysningar: CRUD fˆr document_types (alla f‰lt inkl. result_label/unit, intervall, giltighet, scope, is_active/default).
-- /settings/forutsattningar: CRUD fˆr overview-items/groups/options som driver inspection_overview_selections.
-- /settings/ob-utsida, /settings/ob-insida, /settings/ob-control-points m.fl.: mallar fˆr kontrollpunkter och val i utsida/insida.
-- basic_fields hanteras i utsida/insida-settings (anv‰nds av byggnadssidorna fˆr basinfon).
+- /settings/handlingar-upplysningar: CRUD f√∂r document_types (alla f√§lt inkl. result_label/unit, intervall, giltighet, scope, is_active/default).
+- /settings/forutsattningar: CRUD f√∂r overview-items/groups/options som driver inspection_overview_selections.
+- /settings/ob-utsida, /settings/ob-insida, /settings/ob-control-points m.fl.: mallar f√∂r kontrollpunkter och val i utsida/insida.
+- basic_fields hanteras i utsida/insida-settings (anv√§nds av byggnadssidorna f√∂r basinfon).
 
-≈tkomstmodell (RLS)
-- ƒgarskap kedjas via profiles.id -> properties.owner -> inspections.property_id (+ child-tabeller). inspections har ingen egen owner.
-- Klient: fastighetslistan filtrerar pÂ inloggad anv‰ndare; ˆvriga vyer litar pÂ RLS. is_admin anv‰nds bara fˆr att visa settings-sidor; det finns ingen klientlogik som visar ìalla fastigheterî utan RLS-policies.
+√Ötkomstmodell (RLS)
+- √Ñgarskap kedjas via profiles.id -> properties.owner -> inspections.property_id (+ child-tabeller). inspections har ingen egen owner.
+- Klient: fastighetslistan filtrerar p√• inloggad anv√§ndare; √∂vriga vyer litar p√• RLS. is_admin anv√§nds bara f√∂r att visa settings-sidor; det finns ingen klientlogik som visar ‚Äúalla fastigheter‚Äù utan RLS-policies.
 
 Fil- och bildhantering (bucket property-media)
-- Fastighetens omslag: upload till {propertyId}/cover.ext med upsert; public URL sparas i properties.cover_path via getPublicUrl (kr‰ver att bucket/till‰gg medger publik l‰sning eller tokens i URL:n).
-- Byggnadsomslag: upload {propertyId}/{buildingId}/cover.ext; path sparas i buildings.cover_path; klienten h‰mtar signerad URL vid render.
-- Byggnadsgalleri: upload {propertyId}/{buildingId}/gallery/{uuid.ext}; signerad URL anv‰nds vid visning och filen tas bort pÂ delete.
-- Det finns i nul‰get ingen inspelningsmapp per inspectionId.
+- Fastighetens omslag: upload till {propertyId}/cover.ext med upsert; public URL sparas i properties.cover_path via getPublicUrl (kr√§ver att bucket/till√§gg medger publik l√§sning eller tokens i URL:n).
+- Byggnadsomslag: upload {propertyId}/{buildingId}/cover.ext; path sparas i buildings.cover_path; klienten h√§mtar signerad URL vid render.
+- Byggnadsgalleri: upload {propertyId}/{buildingId}/gallery/{uuid.ext}; signerad URL anv√§nds vid visning och filen tas bort p√• delete.
+- Det finns i nul√§get ingen inspelningsmapp per inspectionId.
 
 Kodprinciper
-- App Router med server + client components, TypeScript ˆverallt, Tailwind fˆr UI, Protected runt app-sidor.
-- Enkel, l‰sbar kod framfˆr tidig abstraktion. Uppdatera TECH_OVERVIEW innan nya funktioner som pÂverkar datamodell, flˆden eller juridik.
+- App Router med server + client components, TypeScript √∂verallt, Tailwind f√∂r UI, Protected runt app-sidor.
+- Enkel, l√§sbar kod framf√∂r tidig abstraktion. Uppdatera TECH_OVERVIEW innan nya funktioner som p√•verkar datamodell, fl√∂den eller juridik.
 
-Juridisk ram (ˆversikt)
-- Systemet dokumenterar, inte automatiserar juridisk ˆverlÂtelsebesiktning.
-- Risk- och FTU-texter ska h‰mtas ur databasen; PDF-export ska b‰ra ansvarstext, upplysningsk‰lla, datum och besiktningsman.
+Juridisk ram (√∂versikt)
+- Systemet dokumenterar, inte automatiserar juridisk √∂verl√•telsebesiktning.
+- Risk- och FTU-texter ska h√§mtas ur databasen; PDF-export ska b√§ra ansvarstext, upplysningsk√§lla, datum och besiktningsman.
 
 Fortsatt utveckling (kort)
-- Koppla risk/FTU-texter frÂn Excel/DB, PDF-export.
-- UnderhÂllsplan (10ñ30 Âr) och kostnadsprognoser.
-- AI-stˆd fˆr upplysningar via foto (tillval).
+- Koppla risk/FTU-texter fr√•n Excel/DB, PDF-export.
+- Underh√•llsplan (10‚Äì30 √•r) och kostnadsprognoser.
+- AI-st√∂d f√∂r upplysningar via foto (tillval).
+
+UtlAtande (report/print) - aktuell funktionalitet
+- Route: /utlatande/[propertyId]/[inspectionId] (server-rendered). OB-wizard preview uses ?embed=1 and ?autoprint=1.
+- Render pipeline: src/app/utlatande/[propertyId]/[inspectionId]/page.tsx builds mockData; src/components/report/ReportRenderer.tsx resolves standard/appendix texts and passes to src/components/report/ReportRendererClient.tsx, which paginates client-side (measured block heights) and renders ReportPage/ReportCoverPage/AppendixPage using layout from src/lib/report/reportSpec.ts.
+- Data sources in report mapping:
+  - properties, inspections, profiles (cover image, client/inspector data)
+  - inspection_documents + inspection_disclosures
+  - inspection_conditions + settings_overview_* + inspection_overview_selections (building data)
+  - settings_exterior_items + inspection_exterior_observations
+  - inspection_interior_rooms
+  - inspection_control_items (exterior via exterior_observation_id, interior via interior_room_id) including selected_outcome_id
+  - settings_control_point_outcomes (risk_template, ftu_template)
+  - inspection_images (mapped by control_item_id)
+- TOC/sidnummer kommer fr√•n sectionPageMap i ReportRendererClient, byggt vid paginering (layoutm√§tning).
+- Inspection blocks (Notering/Risk/FTU):
+  - One or more blocks per exterior component and per interior room.
+  - If nothing to note, a block with noteText "--" and hasDeviations=false is still produced.
+  - Risk/FTU sections render only when templates exist.
+  - Photos are pulled from inspection-images bucket and rendered under Notering.
+- Print CSS lives in src/app/globals.css:
+  - @media print with A4 sizing; .report-page width 210mm, min-height 297mm, padding-top 10mm.
+  - .report-root uses no padding in print; report headings avoid page breaks; .ob-block avoids break-inside.
+  - Browser headers/footers are controlled in the print dialog (cannot be disabled via CSS).

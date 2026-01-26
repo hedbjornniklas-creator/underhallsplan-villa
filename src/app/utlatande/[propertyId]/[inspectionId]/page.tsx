@@ -15,6 +15,77 @@ import { parseScopeCodes, renderScopeText } from '@/lib/report/scopeText'
 
 export const dynamic = 'force-dynamic'
 
+type ExteriorItemRow = {
+  id: string
+  label: string
+  sort_order: number | null
+}
+
+type ExteriorObservationRow = {
+  id: string
+  exterior_item_id: string
+  part_label: string | null
+  note: string | null
+  values: Record<string, any> | null
+  created_at?: string | null
+}
+
+type ExteriorControlItemRow = {
+  id: string
+  exterior_observation_id: string | null
+  control_point_id: string | null
+  title: string
+  note: string | null
+  sort_order: number | null
+  selected_outcome_id: string | null
+}
+
+type ControlPointOutcomeRow = {
+  id: string
+  control_point_id: string
+  label: string | null
+  risk_template: string | null
+  ftu_template: string | null
+  sort_order: number | null
+  is_active: boolean | null
+}
+
+type InteriorRoomRow = {
+  id: string
+  floor_label: string
+  room_label: string
+  room_type_key: string
+  note: string | null
+  order_index: number | null
+}
+
+type InteriorControlItemRow = {
+  id: string
+  interior_room_id: string | null
+  control_point_id: string | null
+  title: string
+  note: string | null
+  sort_order: number | null
+  selected_outcome_id: string | null
+}
+
+type InspectionImageRow = {
+  id: string
+  control_item_id: string | null
+  file_path: string | null
+  sort_order: number | null
+  created_at?: string | null
+}
+
+type InspectionBlock = {
+  title: string
+  noteText: string
+  riskText: string
+  ftuText: string
+  photoUrls: string[]
+  hasDeviations: boolean
+}
+
 export default async function Page({
   params,
   searchParams,
@@ -37,6 +108,16 @@ export default async function Page({
     if (value === null || value === undefined) return alt
     const trimmed = String(value).trim()
     return trimmed.length > 0 ? trimmed : alt
+  }
+  const trimText = (value: string | null | undefined) => (value ?? '').trim()
+  const buildInspectionImageUrl = (path: string | null | undefined) => {
+    if (!path) return null
+    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('/')) {
+      return path
+    }
+    const base = process.env.NEXT_PUBLIC_SUPABASE_URL
+    if (!base) return null
+    return `${base}/storage/v1/object/public/inspection-images/${path}`
   }
 
   const { data: property, error: propertyError } = await supabase
@@ -274,6 +355,394 @@ export default async function Page({
     buildingTypeParts
   )
 
+  const { data: exteriorItems, error: exteriorItemsError } = await supabase
+    .from('settings_exterior_items')
+    .select('id, label, sort_order')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+
+  if (exteriorItemsError) {
+    console.error('Kunde inte hamta utsida-komponenter', exteriorItemsError)
+  }
+
+  const { data: exteriorObservations, error: exteriorObservationsError } = await supabase
+    .from('inspection_exterior_observations')
+    .select('id, exterior_item_id, part_label, note, values, created_at')
+    .eq('inspection_id', resolvedParams.inspectionId)
+    .order('created_at', { ascending: true })
+
+  if (exteriorObservationsError) {
+    console.error('Kunde inte hamta utsida-observationer', exteriorObservationsError)
+  }
+
+  const { data: exteriorControlItems, error: exteriorControlItemsError } = await supabase
+    .from('inspection_control_items')
+    .select(
+      'id, exterior_observation_id, control_point_id, title, note, sort_order, selected_outcome_id'
+    )
+    .eq('inspection_id', resolvedParams.inspectionId)
+    .not('exterior_observation_id', 'is', null)
+    .order('sort_order', { ascending: true })
+
+  if (exteriorControlItemsError) {
+    console.error('Kunde inte hamta utsida-kontrollpunkter', exteriorControlItemsError)
+  }
+
+  const controlPointIds = Array.from(
+    new Set(
+      (exteriorControlItems ?? [])
+        .map((item) => item.control_point_id)
+        .filter((id): id is string => Boolean(id))
+    )
+  )
+
+  const { data: outcomeRows, error: outcomesError } = controlPointIds.length
+    ? await supabase
+        .from('settings_control_point_outcomes')
+        .select(
+          'id, control_point_id, label, risk_template, ftu_template, sort_order, is_active'
+        )
+        .in('control_point_id', controlPointIds)
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+    : { data: [], error: null }
+
+  if (outcomesError) {
+    console.error('Kunde inte hamta utfall (utsida)', outcomesError)
+  }
+
+  const { data: interiorRooms, error: interiorRoomsError } = await supabase
+    .from('inspection_interior_rooms')
+    .select('id, floor_label, room_label, room_type_key, note, order_index')
+    .eq('inspection_id', resolvedParams.inspectionId)
+    .order('floor_label', { ascending: true })
+    .order('order_index', { ascending: true })
+
+  if (interiorRoomsError) {
+    console.error('Kunde inte hamta insida-rum', interiorRoomsError)
+  }
+
+  const interiorRoomRows = (interiorRooms ?? []) as InteriorRoomRow[]
+  const interiorRoomIds = interiorRoomRows.map((room) => room.id)
+
+  const { data: interiorControlItems, error: interiorControlItemsError } =
+    interiorRoomIds.length > 0
+      ? await supabase
+          .from('inspection_control_items')
+          .select(
+            'id, interior_room_id, control_point_id, title, note, sort_order, selected_outcome_id'
+          )
+          .eq('inspection_id', resolvedParams.inspectionId)
+          .in('interior_room_id', interiorRoomIds)
+          .order('sort_order', { ascending: true })
+      : { data: [], error: null }
+
+  if (interiorControlItemsError) {
+    console.error('Kunde inte hamta insida-kontrollpunkter', interiorControlItemsError)
+  }
+
+  const interiorControlItemsRows =
+    (interiorControlItems ?? []) as InteriorControlItemRow[]
+  const interiorControlPointIds = Array.from(
+    new Set(
+      interiorControlItemsRows
+        .map((item) => item.control_point_id)
+        .filter((id): id is string => Boolean(id))
+    )
+  )
+
+  const { data: interiorOutcomeRows, error: interiorOutcomesError } =
+    interiorControlPointIds.length > 0
+      ? await supabase
+          .from('settings_control_point_outcomes')
+          .select(
+            'id, control_point_id, label, risk_template, ftu_template, sort_order, is_active'
+          )
+          .in('control_point_id', interiorControlPointIds)
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true })
+      : { data: [], error: null }
+
+  if (interiorOutcomesError) {
+    console.error('Kunde inte hamta utfall (insida)', interiorOutcomesError)
+  }
+
+  const { data: exteriorImages, error: exteriorImagesError } = await supabase
+    .from('inspection_images')
+    .select('id, control_item_id, file_path, sort_order, created_at')
+    .eq('inspection_id', resolvedParams.inspectionId)
+    .not('control_item_id', 'is', null)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (exteriorImagesError) {
+    console.error('Kunde inte hamta utsida-bilder', exteriorImagesError)
+  }
+
+  const outcomeById = new Map<string, ControlPointOutcomeRow>(
+    (outcomeRows ?? []).map((row) => [row.id, row as ControlPointOutcomeRow])
+  )
+  for (const row of interiorOutcomeRows ?? []) {
+    outcomeById.set(row.id, row as ControlPointOutcomeRow)
+  }
+
+  const exteriorItemsSorted = (exteriorItems ?? []) as ExteriorItemRow[]
+  const exteriorObservationsRows = (exteriorObservations ?? []) as ExteriorObservationRow[]
+  const exteriorControlItemsRows =
+    (exteriorControlItems ?? []) as ExteriorControlItemRow[]
+  const exteriorImageRows = (exteriorImages ?? []) as InspectionImageRow[]
+
+  const controlItemsByObservationId = new Map<string, ExteriorControlItemRow[]>()
+  for (const controlItem of exteriorControlItemsRows) {
+    const key = controlItem.exterior_observation_id
+    if (!key) continue
+    const bucket = controlItemsByObservationId.get(key) ?? []
+    bucket.push(controlItem)
+    controlItemsByObservationId.set(key, bucket)
+  }
+
+  const observationsByItemId = new Map<string, ExteriorObservationRow[]>()
+  for (const row of exteriorObservationsRows) {
+    const bucket = observationsByItemId.get(row.exterior_item_id) ?? []
+    bucket.push({
+      ...row,
+      values: (row.values as Record<string, any>) || {},
+    })
+    observationsByItemId.set(row.exterior_item_id, bucket)
+  }
+
+  const imagesByControlItemId = new Map<string, InspectionImageRow[]>()
+  for (const image of exteriorImageRows) {
+    if (!image.control_item_id) continue
+    const bucket = imagesByControlItemId.get(image.control_item_id) ?? []
+    bucket.push(image)
+    imagesByControlItemId.set(image.control_item_id, bucket)
+  }
+
+  const exteriorLines: string[] = []
+  const riskLines: string[] = []
+  const ftuLines: string[] = []
+  const exteriorBlocks: InspectionBlock[] = []
+
+  for (const item of exteriorItemsSorted) {
+    const rows = observationsByItemId.get(item.id) ?? []
+    const mainRows = rows.filter((row) => !row.values?._free_note)
+    const freeNoteRows = rows.filter((row) => row.values?._free_note)
+
+    const controlItemsForItem: ExteriorControlItemRow[] = []
+    for (const row of mainRows) {
+      const rowItems = controlItemsByObservationId.get(row.id) ?? []
+      controlItemsForItem.push(...rowItems)
+    }
+
+    controlItemsForItem.sort(
+      (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+    )
+
+    const itemLines: string[] = []
+    const blocksForItem: InspectionBlock[] = []
+
+    controlItemsForItem.forEach((controlItem) => {
+      const note = trimText(controlItem.note)
+      const outcome = controlItem.selected_outcome_id
+        ? outcomeById.get(controlItem.selected_outcome_id) ?? null
+        : null
+      const outcomeLabel = trimText(outcome?.label ?? '')
+      const hasOutcome = Boolean(controlItem.selected_outcome_id)
+
+      if (!hasOutcome && note.length === 0) return
+
+      let line = controlItem.title
+      if (hasOutcome && outcomeLabel.length > 0) {
+        line += ` - ${outcomeLabel}`
+      }
+      if (note.length > 0) {
+        line += `: ${note}`
+      }
+      itemLines.push(line)
+
+      const controlItemImages =
+        controlItem.id ? imagesByControlItemId.get(controlItem.id) ?? [] : []
+      const photoUrls = controlItemImages
+        .map((image) => buildInspectionImageUrl(image.file_path))
+        .filter((url): url is string => Boolean(url))
+
+      const riskText = trimText(outcome?.risk_template ?? '')
+      if (riskText.length > 0) {
+        riskLines.push(`${item.label} - ${controlItem.title}`)
+        riskLines.push(riskText)
+        riskLines.push('')
+      }
+
+      const ftuText = trimText(outcome?.ftu_template ?? '')
+      if (ftuText.length > 0) {
+        ftuLines.push(`${item.label} - ${controlItem.title}`)
+        ftuLines.push(ftuText)
+        ftuLines.push('')
+      }
+
+      blocksForItem.push({
+        title: item.label,
+        noteText: line,
+        riskText,
+        ftuText,
+        photoUrls,
+        hasDeviations: true,
+      })
+    })
+
+    freeNoteRows.forEach((row) => {
+      const note = trimText(row.note)
+      if (!note) return
+      const label = trimText(row.part_label) || 'Fri notering'
+      const line = `${label}: ${note}`
+      itemLines.push(line)
+      blocksForItem.push({
+        title: item.label,
+        noteText: line,
+        riskText: '',
+        ftuText: '',
+        photoUrls: [],
+        hasDeviations: true,
+      })
+    })
+
+    if (blocksForItem.length === 0) {
+      blocksForItem.push({
+        title: item.label,
+        noteText: '--',
+        riskText: '',
+        ftuText: '',
+        photoUrls: [],
+        hasDeviations: false,
+      })
+    }
+
+    exteriorBlocks.push(...blocksForItem)
+
+    exteriorLines.push(item.label)
+    if (itemLines.length > 0) {
+      itemLines.forEach((line) => exteriorLines.push(`- ${line}`))
+    } else {
+      exteriorLines.push('--')
+    }
+    exteriorLines.push('')
+  }
+
+  const interiorBlocks: InspectionBlock[] = []
+  const interiorLines: string[] = []
+
+  const interiorControlItemsByRoomId = new Map<string, InteriorControlItemRow[]>()
+  for (const controlItem of interiorControlItemsRows) {
+    const key = controlItem.interior_room_id
+    if (!key) continue
+    const bucket = interiorControlItemsByRoomId.get(key) ?? []
+    bucket.push(controlItem)
+    interiorControlItemsByRoomId.set(key, bucket)
+  }
+
+  for (const room of interiorRoomRows) {
+    const roomTitle = [room.floor_label, room.room_label]
+      .map((part) => String(part ?? '').trim())
+      .filter(Boolean)
+      .join(' - ')
+    const roomBlocks: InspectionBlock[] = []
+    const roomLines: string[] = []
+
+    const roomNote = trimText(room.note ?? '')
+    if (roomNote.length > 0) {
+      roomLines.push(roomNote)
+      roomBlocks.push({
+        title: roomTitle,
+        noteText: roomNote,
+        riskText: '',
+        ftuText: '',
+        photoUrls: [],
+        hasDeviations: true,
+      })
+    }
+
+    const roomControlItems = interiorControlItemsByRoomId.get(room.id) ?? []
+    roomControlItems.sort(
+      (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+    )
+
+    roomControlItems.forEach((controlItem) => {
+      const note = trimText(controlItem.note)
+      const outcome = controlItem.selected_outcome_id
+        ? outcomeById.get(controlItem.selected_outcome_id) ?? null
+        : null
+      const outcomeLabel = trimText(outcome?.label ?? '')
+      const hasOutcome = Boolean(controlItem.selected_outcome_id)
+
+      if (!hasOutcome && note.length === 0) return
+
+      let line = controlItem.title
+      if (hasOutcome && outcomeLabel.length > 0) {
+        line += ` - ${outcomeLabel}`
+      }
+      if (note.length > 0) {
+        line += `: ${note}`
+      }
+      roomLines.push(line)
+
+      const controlItemImages =
+        controlItem.id ? imagesByControlItemId.get(controlItem.id) ?? [] : []
+      const photoUrls = controlItemImages
+        .map((image) => buildInspectionImageUrl(image.file_path))
+        .filter((url): url is string => Boolean(url))
+
+      const riskText = trimText(outcome?.risk_template ?? '')
+      if (riskText.length > 0) {
+        riskLines.push(`${roomTitle} - ${controlItem.title}`)
+        riskLines.push(riskText)
+        riskLines.push('')
+      }
+
+      const ftuText = trimText(outcome?.ftu_template ?? '')
+      if (ftuText.length > 0) {
+        ftuLines.push(`${roomTitle} - ${controlItem.title}`)
+        ftuLines.push(ftuText)
+        ftuLines.push('')
+      }
+
+      roomBlocks.push({
+        title: roomTitle,
+        noteText: line,
+        riskText,
+        ftuText,
+        photoUrls,
+        hasDeviations: true,
+      })
+    })
+
+    if (roomBlocks.length === 0) {
+      roomBlocks.push({
+        title: roomTitle,
+        noteText: '--',
+        riskText: '',
+        ftuText: '',
+        photoUrls: [],
+        hasDeviations: false,
+      })
+    }
+
+    interiorBlocks.push(...roomBlocks)
+
+    interiorLines.push(roomTitle)
+    if (roomLines.length > 0) {
+      roomLines.forEach((line) => interiorLines.push(`- ${line}`))
+    } else {
+      interiorLines.push('--')
+    }
+    interiorLines.push('')
+  }
+
+  const exteriorText = trimText(exteriorLines.join('\n'))
+  const interiorText = trimText(interiorLines.join('\n'))
+  const riskText = trimText(riskLines.join('\n'))
+  const ftuText = trimText(ftuLines.join('\n'))
+
   const mockData = {
     mock: {
       company: {
@@ -329,6 +798,20 @@ export default async function Page({
       },
       buildingData: {
         text: buildingDataText,
+      },
+      exterior: {
+        text: exteriorText || fallback,
+        blocks: exteriorBlocks,
+      },
+      interior: {
+        text: interiorText || fallback,
+        blocks: interiorBlocks,
+      },
+      risk: {
+        text: riskText || fallback,
+      },
+      ftu: {
+        text: ftuText || fallback,
       },
     },
   }

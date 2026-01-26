@@ -73,6 +73,12 @@ export type ReportBlock =
       marginBottomMm: number
     }
   | {
+      type: 'inspectionBlocks'
+      itemsPath: string
+      marginTopMm: number
+      marginBottomMm: number
+    }
+  | {
       type: 'twoColumn'
       rows: TwoColumnRow[]
       labelWidthMm?: number
@@ -515,8 +521,45 @@ export const REPORT_SPEC: ReportSection[] = [
         accent: true,
       },
       {
-        type: 'text',
-        source: { kind: 'standardText', id: 'STD_NOTES_SECTION_SKELETON' },
+        type: 'heading',
+        level: 3,
+        text: 'Byggnad - utsida',
+        marginTopMm: 0,
+        marginBottomMm: 2,
+        fontSizePt: 11,
+      },
+      {
+        type: 'inspectionBlocks',
+        itemsPath: 'mock.exterior.blocks',
+        marginTopMm: 0,
+        marginBottomMm: 4,
+      },
+    ],
+  },
+  {
+    id: 'notes-interior',
+    title: 'Noteringar',
+    startOnNewPage: true,
+    blocks: [
+      {
+        type: 'heading',
+        level: 2,
+        text: 'Noteringar',
+        marginTopMm: 0,
+        marginBottomMm: 3,
+        accent: true,
+      },
+      {
+        type: 'heading',
+        level: 3,
+        text: 'Byggnad - insida',
+        marginTopMm: 0,
+        marginBottomMm: 2,
+        fontSizePt: 11,
+      },
+      {
+        type: 'inspectionBlocks',
+        itemsPath: 'mock.interior.blocks',
         marginTopMm: 0,
         marginBottomMm: 4,
       },
@@ -543,7 +586,7 @@ export const REPORT_SPEC: ReportSection[] = [
       },
       {
         type: 'text',
-        source: { kind: 'static', text: 'Riskpunkter kommer att listas här.' },
+        source: { kind: 'mock', path: 'mock.risk.text' },
         marginTopMm: 0,
         marginBottomMm: 4,
       },
@@ -570,7 +613,7 @@ export const REPORT_SPEC: ReportSection[] = [
       },
       {
         type: 'text',
-        source: { kind: 'static', text: 'FTU-punkter kommer att listas här.' },
+        source: { kind: 'mock', path: 'mock.ftu.text' },
         marginTopMm: 0,
         marginBottomMm: 4,
       },
@@ -601,5 +644,6 @@ export const REPORT_SPEC: ReportSection[] = [
     blocks: [],
   },
 ]
+
 
 

@@ -57,6 +57,7 @@ type InspectionControlItem = {
   status: string | null
   note: string | null
   sort_order: number
+  selected_outcome_id: string | null
 }
 
 type ControlPointLite = {
@@ -67,6 +68,24 @@ type ControlPointLite = {
   description: string | null
   tags: any | null
   trigger_room_types?: any | null
+}
+
+type ControlPointOutcome = {
+  id: string
+  control_point_id: string
+  label: string
+  severity: number
+  risk_template: string | null
+  ftu_template: string | null
+  sort_order: number
+  is_active: boolean
+}
+
+type ControlPointMeta = {
+  id: string
+  title: string
+  label: string | null
+  description: string | null
 }
 
 type InspectionImage = {
@@ -85,13 +104,7 @@ type ObStepInsidaProps = {
   inspection: Inspection
 }
 
-// Fasta status-värden (kodade) för kontrollpunkter
-const CONTROL_STATUS_OPTIONS: { value: string; label: string }[] = [
-  { value: 'ok',             label: 'OK' },
-  { value: 'remark',         label: 'Anmärkning' },
-  { value: 'not_inspected',  label: 'Ej besiktigad' },
-  { value: 'not_accessible', label: 'Ej åtkomlig' },
-]
+const RED_STATUS: InspectionControlItem['status'] = null
 
 // Storage-bucket för bilder
 const IMAGE_BUCKET = 'inspection-images' as const
@@ -116,6 +129,8 @@ const buildFloorsFromAnswers = (answers: Record<string, any>): string[] => {
     answers['källare'] ??
     null
 
+  const atticVal = answers['attic'] ?? null
+
   const count =
     floorsVal === '1_5' ? 2 :
     floorsVal === '2'   ? 2 :
@@ -135,6 +150,9 @@ const buildFloorsFromAnswers = (answers: Record<string, any>): string[] => {
   if (count >= 1) keys.push('entréplan')
   if (count >= 2) keys.push('plan2')
   if (count >= 3) keys.push('plan3')
+  if (atticVal !== null && atticVal !== undefined && String(atticVal).trim() !== '') {
+    keys.push('vind')
+  }
 
   return keys
 }
@@ -164,6 +182,14 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
   // Kontrollpunkter per rum
   const [controlItems, setControlItems] = useState<InspectionControlItem[]>([])
+  const [outcomesByControlPointId, setOutcomesByControlPointId] = useState<
+    Record<string, ControlPointOutcome[]>
+  >({})
+  const [controlPointMetaById, setControlPointMetaById] = useState<
+    Record<string, ControlPointMeta>
+  >({})
+
+  const [atticLabel, setAtticLabel] = useState<string | null>(null)
 
   // Bilder per kontrollpunkt
   const [imagesByControlItemId, setImagesByControlItemId] = useState<
@@ -258,6 +284,48 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
             const answers = (btSelData?.[0]?.values as any) || {}
             floorsFromConditions = buildFloorsFromAnswers(answers)
+
+            const rawAttic = answers['attic'] ?? null
+            if (
+              rawAttic !== null &&
+              rawAttic !== undefined &&
+              String(rawAttic).trim() !== ''
+            ) {
+              try {
+                const { data: atticGroup, error: atticGroupErr } = await supabase
+                  .from('settings_overview_groups')
+                  .select('id, key')
+                  .eq('overview_item_id', buildingItem.id)
+                  .eq('key', 'attic')
+                  .eq('is_active', true)
+                  .maybeSingle()
+
+                if (atticGroupErr) throw atticGroupErr
+
+                if (atticGroup) {
+                  const { data: atticOptions, error: atticOptErr } =
+                    await supabase
+                      .from('settings_overview_options')
+                      .select('value, label')
+                      .eq('group_id', atticGroup.id)
+                      .eq('is_active', true)
+
+                  if (atticOptErr) throw atticOptErr
+
+                  const match = (atticOptions ?? []).find(
+                    o => o.value === rawAttic
+                  )
+                  setAtticLabel(match?.label ?? String(rawAttic))
+                } else {
+                  setAtticLabel(String(rawAttic))
+                }
+              } catch (atticErr) {
+                console.warn('Kunde inte läsa vind-etikett:', atticErr)
+                setAtticLabel(String(rawAttic))
+              }
+            } else {
+              setAtticLabel(null)
+            }
           }
         } catch (e) {
           console.warn('Kunde inte läsa våningsinfo från Förutsättningar:', e)
@@ -278,9 +346,77 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             .order('sort_order', { ascending: true })
 
           if (ciErr) throw ciErr
-          setControlItems((ciData ?? []) as InspectionControlItem[])
+          const ciArr = (ciData ?? []).map(ci => ({
+            ...(ci as InspectionControlItem),
+            selected_outcome_id:
+              (ci as InspectionControlItem).selected_outcome_id ?? null,
+          })) as InspectionControlItem[]
+          setControlItems(ciArr)
+
+          const cpIds = Array.from(
+            new Set(
+              ciArr
+                .map(ci => ci.control_point_id)
+                .filter((id): id is string => !!id)
+            )
+          )
+
+          if (cpIds.length === 0) {
+            setOutcomesByControlPointId({})
+            setControlPointMetaById({})
+          } else {
+            try {
+              const { data: outcomesData, error: outcomesErr } = await supabase
+                .from('settings_control_point_outcomes')
+                .select(
+                  'id, control_point_id, label, severity, risk_template, ftu_template, sort_order, is_active'
+                )
+                .in('control_point_id', cpIds)
+                .eq('is_active', true)
+                .order('sort_order', { ascending: true })
+
+              if (outcomesErr) throw outcomesErr
+
+              const outcomesArr = (outcomesData ?? []) as ControlPointOutcome[]
+              const outcomesMap: Record<string, ControlPointOutcome[]> = {}
+              for (const outcome of outcomesArr) {
+                const key = outcome.control_point_id
+                outcomesMap[key] = outcomesMap[key] || []
+                outcomesMap[key].push(outcome)
+              }
+              setOutcomesByControlPointId(outcomesMap)
+            } catch (outcomesErr) {
+              console.error(
+                'settings_control_point_outcomes (insida) error:',
+                outcomesErr
+              )
+              setOutcomesByControlPointId({})
+            }
+
+            try {
+              const { data: metaData, error: metaErr } = await supabase
+                .from('settings_control_points')
+                .select('id, title, label, description')
+                .in('id', cpIds)
+                .eq('is_active', true)
+
+              if (metaErr) throw metaErr
+
+              const metaArr = (metaData ?? []) as ControlPointMeta[]
+              const metaMap: Record<string, ControlPointMeta> = {}
+              for (const meta of metaArr) {
+                metaMap[meta.id] = meta
+              }
+              setControlPointMetaById(metaMap)
+            } catch (metaErr) {
+              console.error('settings_control_points (insida) error:', metaErr)
+              setControlPointMetaById({})
+            }
+          }
         } else {
           setControlItems([])
+          setOutcomesByControlPointId({})
+          setControlPointMetaById({})
         }
 
         // 4) Läs bilder kopplade till kontrollpunkter (insida)
@@ -345,6 +481,72 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     return map
   }, [options])
 
+  const filteredGroups = useMemo(() => {
+    const blockedTokens = ['vägg', 'tak', 'golv', 'ventilation', 'fukt']
+    return groups.filter(g => {
+      const label = (g.label || '').toLowerCase()
+      const key = (g.key || '').toLowerCase()
+      return !blockedTokens.some(token => label.includes(token) || key.includes(token))
+    })
+  }, [groups])
+
+  const ensureControlPointData = async (cpIds: string[]) => {
+    const uniqueIds = Array.from(new Set(cpIds)).filter(
+      (id): id is string => !!id
+    )
+    if (uniqueIds.length === 0) return
+
+    const missingOutcomes = uniqueIds.filter(
+      id => !outcomesByControlPointId[id]
+    )
+    if (missingOutcomes.length > 0) {
+      const { data: outcomesData, error: outcomesErr } = await supabase
+        .from('settings_control_point_outcomes')
+        .select(
+          'id, control_point_id, label, severity, risk_template, ftu_template, sort_order, is_active'
+        )
+        .in('control_point_id', missingOutcomes)
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+
+      if (outcomesErr) {
+        console.error(
+          'settings_control_point_outcomes (insida) error:',
+          outcomesErr
+        )
+      } else {
+        const outcomesArr = (outcomesData ?? []) as ControlPointOutcome[]
+        const outcomesMap: Record<string, ControlPointOutcome[]> = {}
+        for (const outcome of outcomesArr) {
+          const key = outcome.control_point_id
+          outcomesMap[key] = outcomesMap[key] || []
+          outcomesMap[key].push(outcome)
+        }
+        setOutcomesByControlPointId(prev => ({ ...prev, ...outcomesMap }))
+      }
+    }
+
+    const missingMeta = uniqueIds.filter(id => !controlPointMetaById[id])
+    if (missingMeta.length > 0) {
+      const { data: metaData, error: metaErr } = await supabase
+        .from('settings_control_points')
+        .select('id, title, label, description')
+        .in('id', missingMeta)
+        .eq('is_active', true)
+
+      if (metaErr) {
+        console.error('settings_control_points (insida) error:', metaErr)
+      } else {
+        const metaArr = (metaData ?? []) as ControlPointMeta[]
+        const metaMap: Record<string, ControlPointMeta> = {}
+        for (const meta of metaArr) {
+          metaMap[meta.id] = meta
+        }
+        setControlPointMetaById(prev => ({ ...prev, ...metaMap }))
+      }
+    }
+  }
+
   // Våningar för flikar
   const floorLabels = useMemo(() => {
     if (derivedFloors.length) return derivedFloors
@@ -352,6 +554,11 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     for (const r of rooms) s.add(r.floor_label)
     return Array.from(s).sort()
   }, [derivedFloors, rooms])
+
+  const getFloorLabel = (k: string) => {
+    if (k === 'vind') return atticLabel || 'Vind'
+    return floorLabelFromKey(k)
+  }
 
   const filteredRooms = useMemo(() => {
     if (!activeFloor) return rooms
@@ -397,6 +604,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             status: item.status,
             note: item.note,
             sort_order: item.sort_order,
+            selected_outcome_id: item.selected_outcome_id ?? null,
           })
           .eq('id', item.id)
           .select('*')
@@ -415,6 +623,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             status: item.status,
             note: item.note,
             sort_order: item.sort_order,
+            selected_outcome_id: item.selected_outcome_id ?? null,
           })
           .select('*')
           .single()
@@ -452,23 +661,61 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     // Framför allt avsett för fria noteringar, men fungerar för alla
     if (!confirm('Ta bort denna notering/kontrollpunkt?')) return
 
-    const { error } = await supabase
-      .from('inspection_control_items')
-      .delete()
-      .eq('id', itemId)
+    try {
+      const { data: imgRows, error: imgFetchErr } = await supabase
+        .from('inspection_images')
+        .select('id, file_path')
+        .eq('control_item_id', itemId)
 
-    if (error) {
-      console.error('deleteControlItem failed:', error)
-      alert(error.message)
-      return
+      if (imgFetchErr) {
+        console.error('fetch inspection_images (insida) failed:', imgFetchErr)
+      }
+
+      const imageRows = (imgRows ?? []) as Pick<InspectionImage, 'id' | 'file_path'>[]
+      if (imageRows.length > 0) {
+        const paths = imageRows.map(img => img.file_path).filter(Boolean)
+        if (paths.length > 0) {
+          const { error: storageErr } = await supabase.storage
+            .from(IMAGE_BUCKET)
+            .remove(paths)
+
+          if (storageErr) {
+            console.error('remove storage files (insida) failed:', storageErr)
+          }
+        }
+
+        const imageIds = imageRows.map(img => img.id)
+        const { error: imgDeleteErr } = await supabase
+          .from('inspection_images')
+          .delete()
+          .in('id', imageIds)
+
+        if (imgDeleteErr) {
+          console.error('delete inspection_images (insida) failed:', imgDeleteErr)
+        }
+      }
+
+      const { error } = await supabase
+        .from('inspection_control_items')
+        .delete()
+        .eq('id', itemId)
+
+      if (error) {
+        console.error('deleteControlItem failed:', error)
+        alert(error.message)
+        return
+      }
+
+      setControlItems(prev => prev.filter(ci => ci.id !== itemId))
+      setImagesByControlItemId(prev => {
+        const clone = { ...prev }
+        delete clone[itemId]
+        return clone
+      })
+    } catch (e) {
+      console.error('deleteControlItem (insida) failed:', e)
+      alert('Kunde inte ta bort kontrollpunkt.')
     }
-
-    setControlItems(prev => prev.filter(ci => ci.id !== itemId))
-    setImagesByControlItemId(prev => {
-      const clone = { ...prev }
-      delete clone[itemId]
-      return clone
-    })
   }
 
   // -----------------------------
@@ -525,9 +772,10 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           interior_room_id: room.id!,
           control_point_id: cp.id,
           title: cp.title || cp.label || cp.key,
-          status: 'not_inspected', // förvalt
+          status: RED_STATUS,
           note: null,
           sort_order: sortBase,
+          selected_outcome_id: null,
         }
       })
 
@@ -545,6 +793,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
         ...prev,
         ...((insData ?? []) as InspectionControlItem[]),
       ])
+      await ensureControlPointData(cps.map(cp => cp.id))
     } catch (e) {
       console.error('createDefaultControlItemsForRoom error:', e)
     }
@@ -572,13 +821,15 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       interior_room_id: room.id,
       control_point_id: cp.id,
       title: cp.title || cp.label || cp.key,
-      status: 'not_inspected', // förvalt även vid manuell tillägg
+      status: RED_STATUS,
       note: null,
       sort_order: sortOrder,
+      selected_outcome_id: null,
     }
 
     const saved = await upsertControlItem(newItem)
     setControlItems(prev => [...prev, saved])
+    await ensureControlPointData([cp.id])
   }
 
   // -----------------------------
@@ -600,9 +851,10 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       interior_room_id: room.id,
       control_point_id: null, // viktigt: null, inte "free_note"
       title: 'Fri notering',
-      status: null,
+      status: RED_STATUS,
       note: '',
       sort_order: sortOrder,
+      selected_outcome_id: null,
     }
 
     const saved = await upsertControlItem(newItem)
@@ -951,7 +1203,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                 : 'bg-white text-gray-800 border-gray-300 hover:bg-gray-50'
             }`}
           >
-            {floorLabelFromKey(fl)}
+            {getFloorLabel(fl)}
           </button>
         ))}
 
@@ -996,7 +1248,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                 >
                   {derivedFloors.map(fk => (
                     <option key={fk} value={fk}>
-                      {floorLabelFromKey(fk)}
+                      {getFloorLabel(fk)}
                     </option>
                   ))}
                 </select>
@@ -1076,7 +1328,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
               <header className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="text-xs uppercase text-gray-500">
-                    {floorLabelFromKey(room.floor_label)}
+                    {getFloorLabel(room.floor_label)}
                   </div>
                   <h3 className="text-base font-semibold text-gray-900">
                     {room.room_label}{' '}
@@ -1122,7 +1374,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                   />
                 </div>
 
-                {groups.map(g => (
+                {filteredGroups.map(g => (
                   <SelectField
                     key={g.id}
                     label={g.label}
@@ -1161,6 +1413,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                   onDeleteItem={deleteControlItem}
                   onAddFromCatalog={addControlItemFromCatalog}
                   onAddFreeNote={addFreeNoteControlItem}
+                  outcomesByControlPointId={outcomesByControlPointId}
+                  controlPointMetaById={controlPointMetaById}
                   imagesByControlItemId={imagesByControlItemId}
                   onUploadImage={handleUploadImageForControlItem}
                   onDeleteImage={handleDeleteImage}
@@ -1216,8 +1470,9 @@ function ControlItemImagesSection({
   return (
     <section className="space-y-2 border-t pt-2 mt-2">
       <div className="flex items-center justify-between">
-        <h5 className="text-[11px] font-semibold text-gray-900">
-          Bilder (denna kontrollpunkt)
+        <h5 className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-900">
+          <span aria-hidden="true">📷</span>
+          <span>Bilder (denna kontrollpunkt)</span>
         </h5>
         <button
           type="button"
@@ -1282,6 +1537,8 @@ type RoomControlPointsSectionProps = {
   onDeleteItem: (itemId: string) => void
   onAddFromCatalog: (room: InteriorRoom, cp: ControlPointLite) => void
   onAddFreeNote: (room: InteriorRoom) => void
+  outcomesByControlPointId: Record<string, ControlPointOutcome[]>
+  controlPointMetaById: Record<string, ControlPointMeta>
   imagesByControlItemId: Record<string, InspectionImage[]>
   onUploadImage: (ci: InspectionControlItem, file: File) => void
   onDeleteImage: (imageId: string) => void
@@ -1294,6 +1551,8 @@ function RoomControlPointsSection({
   onDeleteItem,
   onAddFromCatalog,
   onAddFreeNote,
+  outcomesByControlPointId,
+  controlPointMetaById,
   imagesByControlItemId,
   onUploadImage,
   onDeleteImage,
@@ -1320,6 +1579,7 @@ function RoomControlPointsSection({
       const { data, error } = await supabase
         .from('settings_control_points')
         .select('id, key, title, label, description, tags')
+        .eq('scope', 'interior')
         .eq('is_active', true)
         .or(
           `title.ilike.${like},label.ilike.${like},key.ilike.${like},description.ilike.${like}`
@@ -1376,79 +1636,157 @@ function RoomControlPointsSection({
         )}
 
         {items.map(ci => {
-          const effectiveStatus = ci.status ?? 'not_inspected'
           const ciId = ci.id ?? ''
           const ciImages = imagesByControlItemId[ciId] || []
           const isFreeNote = ci.control_point_id === null
+          const outcomes = ci.control_point_id
+            ? outcomesByControlPointId[ci.control_point_id] || []
+            : []
+          const meta = ci.control_point_id
+            ? controlPointMetaById[ci.control_point_id]
+            : undefined
+          const description = (meta?.description ?? '').trim()
+          const selectedOutcome = ci.selected_outcome_id
+            ? outcomes.find(outcome => outcome.id === ci.selected_outcome_id) || null
+            : null
+          const riskTemplate = (selectedOutcome?.risk_template ?? '').trim()
+          const ftuTemplate = (selectedOutcome?.ftu_template ?? '').trim()
+          const hasRiskTemplate = riskTemplate.length > 0
+          const hasFtuTemplate = ftuTemplate.length > 0
+          const effectiveStatus = ci.status
+          const isGreen = !ci.selected_outcome_id && effectiveStatus === 'ok'
+          const isYellow = !!ci.selected_outcome_id
+          const isRed = !isGreen && !isYellow
+          const rowToneClass = isFreeNote
+            ? 'bg-gray-50 border-gray-200'
+            : isRed
+            ? 'bg-red-50 border-red-200'
+            : isGreen
+            ? 'bg-emerald-50 border-emerald-200'
+            : 'bg-amber-50 border-amber-200'
 
           return (
             <div
               key={ci.id}
-              className="rounded-lg border bg-gray-50 px-3 py-2 space-y-1"
+              className={`rounded-lg border px-3 py-2 space-y-2 ${rowToneClass}`}
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-semibold text-gray-900">
                   {ci.title}
                 </div>
 
-                {isFreeNote && ci.id && (
+                {ci.id && (
                   <button
                     type="button"
                     onClick={() => onDeleteItem(ci.id!)}
                     className="text-[11px] text-rose-600 hover:underline"
                   >
-                    Ta bort notering
+                    {isFreeNote ? 'Ta bort notering' : 'Ta bort kontrollpunkt'}
                   </button>
                 )}
               </div>
 
-              <div className="grid gap-2 md:grid-cols-[220px_minmax(0,1fr)] items-start">
-                {/* Status som fyra boxar */}
+              {description.length > 0 && (
+                <div className="text-[11px] text-gray-600">
+                  {description}
+                </div>
+              )}
+
+              {!isFreeNote && (
                 <div className="space-y-1">
                   <label className="text-[11px] text-gray-600">
-                    Status
+                    Bedömning
                   </label>
                   <div className="flex flex-wrap gap-1.5">
-                    {CONTROL_STATUS_OPTIONS.map(opt => {
-                      const isActive = effectiveStatus === opt.value
+                    <button
+                      type="button"
+                      className={
+                        'rounded-full border px-2.5 py-1 text-[11px] ' +
+                        (isGreen
+                          ? 'border-gray-900 bg-gray-900 text-white'
+                          : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
+                      }
+                      onClick={() => {
+                        if (!ci.id) return
+                        onUpdateItem(ci.id, {
+                          status: isGreen ? RED_STATUS : 'ok',
+                          selected_outcome_id: null,
+                        })
+                      }}
+                    >
+                      Inget att notera
+                    </button>
+                    {outcomes.map(outcome => {
+                      const isActive = ci.selected_outcome_id === outcome.id
+                      const chipClass =
+                        'rounded-full border px-2.5 py-1 text-[11px] ' +
+                        (isActive
+                          ? 'border-gray-900 bg-gray-900 text-white'
+                          : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
                       return (
                         <button
-                          key={opt.value}
+                          key={outcome.id}
                           type="button"
-                          className={
-                            'rounded-full border px-2.5 py-1 text-[11px] ' +
-                            (isActive
-                              ? 'border-gray-900 bg-gray-900 text-white'
-                              : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100')
-                          }
-                          onClick={() =>
-                            ci.id &&
-                            onUpdateItem(ci.id, { status: opt.value })
-                          }
+                          className={chipClass}
+                          onClick={() => {
+                            if (!ci.id) return
+                            onUpdateItem(ci.id, {
+                              status: isActive ? RED_STATUS : 'remark',
+                              selected_outcome_id: isActive ? null : outcome.id,
+                            })
+                          }}
                         >
-                          {opt.label}
+                          {outcome.label}
                         </button>
                       )
                     })}
                   </div>
                 </div>
+              )}
 
-                {/* Notering fritext */}
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-600">
-                    Notering (denna kontrollpunkt)
-                  </label>
-                  <textarea
-                    rows={2}
-                    className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
-                    placeholder="Specifik notering för just denna kontrollpunkt…"
-                    value={ci.note ?? ''}
-                    onChange={e =>
-                      ci.id &&
-                      onUpdateItem(ci.id, { note: e.target.value })
-                    }
-                  />
+              {!isFreeNote && selectedOutcome && (hasRiskTemplate || hasFtuTemplate) && (
+                <div className="space-y-2">
+                  {hasRiskTemplate && (
+                    <div className="rounded-lg border border-gray-200 bg-white p-3">
+                      <div className="text-xs font-semibold text-gray-700">
+                        Risk (från databas)
+                      </div>
+                      <div className="text-sm text-gray-800 whitespace-pre-line">
+                        {riskTemplate}
+                      </div>
+                    </div>
+                  )}
+                  {hasFtuTemplate && (
+                    <div className="rounded-lg border border-gray-200 bg-white p-3">
+                      <div className="text-xs font-semibold text-gray-700">
+                        Fortsatt teknisk utredning (från databas)
+                      </div>
+                      <div className="text-sm text-gray-800 whitespace-pre-line">
+                        {ftuTemplate}
+                      </div>
+                    </div>
+                  )}
                 </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-600">
+                  {isFreeNote ? 'Notering' : 'Förtydligande'}
+                </label>
+                <textarea
+                  rows={2}
+                  className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                  placeholder={
+                    isFreeNote
+                      ? 'Fri notering för rummet…'
+                      : 'Specifik notering för just denna kontrollpunkt…'
+                  }
+                  value={ci.note ?? ''}
+                  onChange={e =>
+                    ci.id &&
+                    onUpdateItem(ci.id, { note: e.target.value })
+                  }
+                />
               </div>
 
               {/* Bilder för denna kontrollpunkt */}

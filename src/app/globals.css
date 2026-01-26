@@ -24,3 +24,69 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Print note: browser headers/footers (date/url/page number) are controlled in the print dialog. */
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .min-h-screen,
+  .min-h-dvh {
+    min-height: auto !important;
+  }
+
+  .report-root {
+    background: transparent !important;
+    padding: 0 !important;
+  }
+
+  .report-page {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 auto !important;
+    width: 210mm !important;
+    min-height: 297mm !important;
+    padding-top: 10mm !important;
+    page-break-after: always;
+  }
+
+  .report-page,
+  .report-page * {
+    box-sizing: border-box;
+  }
+
+  .report-heading {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .ob-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+    max-height: 160mm;
+    object-fit: contain;
+  }
+
+  .report-page img[alt="Sidfot"] {
+    width: 210mm !important;
+  }
+}

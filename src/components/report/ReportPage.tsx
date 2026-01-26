@@ -39,6 +39,7 @@ export default function ReportPage({
     : 0
   return (
     <div
+      className="report-page"
       style={{
         width: mmToPx(PAGE_WIDTH_MM),
         minHeight: mmToPx(PAGE_HEIGHT_MM),
@@ -153,7 +154,7 @@ export default function ReportPage({
               right: mmToPx(PAGE_PADDING_MM.right),
               bottom: mmToPx(2),
               fontSize: '9pt',
-              color: '#64748b',
+              color: '#ffffff',
             }}
           >
             {footerNote}

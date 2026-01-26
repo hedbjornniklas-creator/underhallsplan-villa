@@ -32,9 +32,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Global sidebar visas på alla sidor UTOM detaljsidan för ÖB */}
       {!hideSidebarForObDetail && <Sidebar />}
 
-      <div className="flex flex-1 flex-col">
+      <div className="flex flex-1 min-h-0 flex-col">
         <Topbar />
-        <main className="flex-1 overflow-auto">{children}</main>
+        <main className="flex-1 min-h-0 overflow-auto">{children}</main>
       </div>
     </div>
   )

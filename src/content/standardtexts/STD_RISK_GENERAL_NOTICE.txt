@@ -1,3 +1,5 @@
-I riskanalysen redovisas risker för väsentliga fel i byggnaden som kan föreligga med hänsyn till byggnadens ålder, konstruktion, utförande, användning och synliga tecken på skador.
+En riskanalys innebär att besiktningsmannen, utifrån byggnadens konstruktion, ålder, materialval och utförande, bedömer om det finns en förhöjd risk för att skada eller brist kan förekomma, även om sådan skada inte kunnat konstateras vid den okulära besiktningen.
 
-En risk innebär att det finns en förhöjd sannolikhet för att ett fel eller en skada föreligger, även om detta inte kunnat konstateras vid den okulära besiktningen.
+Riskanalysen grundar sig på kända skadebilder och beprövad byggnadsteknisk erfarenhet. Den innebär inte att fel eller skada har konstaterats, men anger områden där osäkerhet föreligger och där ytterligare kontroll kan vara motiverad.
+
+För köpare innebär en redovisad riskanalys att särskild uppmärksamhet bör ägnas åt de berörda byggnadsdelarna i samband med beslut om köp. Närmare definition av riskanalys samt ansvar och begränsningar framgår av villkoren i bilaga 1.

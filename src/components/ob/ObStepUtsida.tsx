@@ -659,6 +659,72 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     setControlItems(prev => prev.map(ci => (ci.id === itemId ? saved : ci)))
   }
 
+  const deleteControlItem = async (itemId: string) => {
+    const item = controlItems.find(ci => ci.id === itemId)
+    if (!item) return
+    if (!confirm('Ta bort denna kontrollpunkt?')) return
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const { data: imgRows, error: imgFetchErr } = await supabase
+        .from('inspection_images')
+        .select('id, file_path')
+        .eq('control_item_id', itemId)
+
+      if (imgFetchErr) {
+        console.error('fetch inspection_images (utsida) failed:', imgFetchErr)
+      }
+
+      const imageRows = (imgRows ?? []) as Pick<InspectionImage, 'id' | 'file_path'>[]
+      if (imageRows.length > 0) {
+        const paths = imageRows.map(img => img.file_path).filter(Boolean)
+        if (paths.length > 0) {
+          const { error: storageErr } = await supabase.storage
+            .from(IMAGE_BUCKET)
+            .remove(paths)
+
+          if (storageErr) {
+            console.error('remove storage files (utsida) failed:', storageErr)
+          }
+        }
+
+        const imageIds = imageRows.map(img => img.id)
+        const { error: imgDeleteErr } = await supabase
+          .from('inspection_images')
+          .delete()
+          .in('id', imageIds)
+
+        if (imgDeleteErr) {
+          console.error('delete inspection_images (utsida) failed:', imgDeleteErr)
+        }
+      }
+
+      const { error: delErr } = await supabase
+        .from('inspection_control_items')
+        .delete()
+        .eq('id', itemId)
+
+      if (delErr) {
+        console.error('delete inspection_control_item (utsida) failed:', delErr)
+        throw new Error(delErr.message)
+      }
+
+      setControlItems(prev => prev.filter(ci => ci.id !== itemId))
+      setImagesByControlItemId(prev => {
+        const clone = { ...prev }
+        delete clone[itemId]
+        return clone
+      })
+    } catch (e: any) {
+      console.error('deleteControlItem (utsida) failed:', e)
+      setError(e?.message ?? 'Kunde inte ta bort kontrollpunkt.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const addControlItemFromCatalog = async (
     item: ItemBundle,
     row: InspectionExteriorObservation,
@@ -832,12 +898,14 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
 
   const renderItemCard = (item: ItemBundle) => {
     const rows = getItemRows(item.id)
+    const itemAnchorId = `utsida-${item.key}`
 
     if (!rows || rows.length === 0) {
       return (
         <section
           key={item.id}
-          className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3"
+          id={itemAnchorId}
+          className="scroll-mt-28 rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3"
         >
           <header className="flex items-center justify-between">
             <h3 className="text-base font-semibold text-gray-900">
@@ -866,7 +934,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     return (
       <section
         key={item.id}
-        className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-4"
+        id={itemAnchorId}
+        className="scroll-mt-28 rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-4"
       >
         <header className="flex items-center justify-between">
           <h3 className="text-base font-semibold text-gray-900">
@@ -882,6 +951,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             row={mainRow}
             items={rowControlItems}
             onUpdateItem={updateControlItem}
+            onDeleteItem={deleteControlItem}
             outcomesByControlPointId={outcomesByControlPointId}
             controlPointMetaById={controlPointMetaById}
             imagesByControlItemId={imagesByControlItemId}
@@ -986,8 +1056,9 @@ function ControlPointImagesSection({
   return (
     <section className="space-y-2 border-t pt-2">
       <header className="flex items-center justify-between">
-        <h5 className="text-[11px] font-semibold text-gray-900">
-          Bilder (denna kontrollpunkt)
+        <h5 className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-900">
+          <span aria-hidden="true">📷</span>
+          <span>Bilder (denna kontrollpunkt)</span>
         </h5>
         <button
           type="button"
@@ -1050,6 +1121,7 @@ type ExteriorControlPointsSectionProps = {
   row: InspectionExteriorObservation
   items: InspectionControlItem[]
   onUpdateItem: (itemId: string, patch: Partial<InspectionControlItem>) => void
+  onDeleteItem: (itemId: string) => void
   outcomesByControlPointId: Record<string, ControlPointOutcome[]>
   controlPointMetaById: Record<string, ControlPointMeta>
   imagesByControlItemId: Record<string, InspectionImage[]>
@@ -1065,6 +1137,7 @@ function ExteriorControlPointsSection({
   row,
   items,
   onUpdateItem,
+  onDeleteItem,
   outcomesByControlPointId,
   controlPointMetaById,
   imagesByControlItemId,
@@ -1121,6 +1194,15 @@ function ExteriorControlPointsSection({
                 <div className="text-xs font-semibold text-gray-900">
                   {ci.title}
                 </div>
+                {ci.id && (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteItem(ci.id!)}
+                    className="ml-auto text-[11px] text-rose-600 hover:underline"
+                  >
+                    Ta bort
+                  </button>
+                )}
               </div>
               {description.length > 0 && (
                 <div className="text-[11px] text-gray-600">
