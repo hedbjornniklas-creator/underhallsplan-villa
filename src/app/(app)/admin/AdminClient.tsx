@@ -121,7 +121,7 @@ export default function AdminClient() {
   }
   const addDoc = async () => {
     const code = `DOC_${Math.random().toString(36).slice(2, 7).toUpperCase()}`
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('document_types')
       .insert({ code, label: 'Nytt dokument', scope: 'building', is_default: true })
       .select('id, code, label, category, scope, description, is_default')
