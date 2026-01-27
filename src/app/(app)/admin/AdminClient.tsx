@@ -137,7 +137,10 @@ export default function AdminClient() {
   }
 
   const saveComp = async (id: string, patch: Partial<CompType>) => {
-    const { error } = await supabase.from('component_types').update(patch).eq('id', id)
+    const { error } = await (supabase as any)
+      .from('component_types')
+      .update(patch)
+      .eq('id', id)
     if (error) return alert(error.message)
     setComps(prev => prev.map(x => (x.id === id ? { ...x, ...patch } as CompType : x)))
   }
