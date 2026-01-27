@@ -2,6 +2,7 @@
 
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
+import type { Database } from '@/types/supabase'
 import { useEffect, useMemo, useState } from 'react'
 import { useProfile } from '@/hooks/useProfile'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -107,7 +108,10 @@ export default function AdminClient() {
   }, [comps, qComps])
 
   // --- INLINE SAVE HELPERS ---
-  const saveDoc = async (id: string, patch: Partial<DocType>) => {
+  const saveDoc = async (
+    id: string,
+    patch: Database['public']['Tables']['document_types']['Update']
+  ) => {
     const { error } = await supabase.from('document_types').update(patch).eq('id', id)
     if (error) return alert(error.message)
     setDocs(prev => prev.map(x => (x.id === id ? { ...x, ...patch } as DocType : x)))
