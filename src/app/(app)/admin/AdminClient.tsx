@@ -112,9 +112,9 @@ export default function AdminClient() {
     id: string,
     patch: Database['public']['Tables']['document_types']['Update']
   ) => {
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('document_types')
-      .update(patch as any)
+      .update(patch)
       .eq('id', id)
     if (error) return alert(error.message)
     setDocs(prev => prev.map(x => (x.id === id ? { ...x, ...patch } as DocType : x)))
