@@ -24,6 +24,7 @@ Navigering & sidor
 - /properties/[id]/ob: Lista överlåtelsebesiktningar för fastigheten.
 - /properties/[id]/ob/[inspectionId]: ÖB-wizard med sektioner: overview, grunddata, handlingar (inkl. upplysningar och fel), förutsättningar, utsida, insida, risk, ftu.
 - /inspections: Global lista över besiktningar (alla properties, ingen ägarfiltrering i UI).
+- /admin: Adminpanel (dokumenttyper, komponentkatalog, kontrollpunkter).
 - /settings/*: Admin för handlingstyper, förutsättningar, utsida/insida/control-points m.m. (gated på profiles.is_admin i client).
 
 Datamodell (Postgres/Supabase)
@@ -44,6 +45,7 @@ Datamodell (Postgres/Supabase)
 - components, component_types, actions, maintenance_templates: grund för underhållsplan/åtgärder kopplade till property (ej färdig UI).
 
 Adminpanel
+- /admin: Flikar för document_types, component_types och settings_control_points. Kontrollpunkter redigeras i modal (duplicera finns). Key autogenereras vid spara om tom; question används inte i UI.
 - /settings/handlingar-upplysningar: CRUD för document_types (alla fält inkl. result_label/unit, intervall, giltighet, scope, is_active/default).
 - /settings/forutsattningar: CRUD för overview-items/groups/options som driver inspection_overview_selections.
 - /settings/ob-utsida, /settings/ob-insida, /settings/ob-control-points m.fl.: mallar för kontrollpunkter och val i utsida/insida.
@@ -94,3 +96,4 @@ UtlAtande (report/print) - aktuell funktionalitet
   - @media print with A4 sizing; .report-page width 210mm, min-height 297mm, padding-top 10mm.
   - .report-root uses no padding in print; report headings avoid page breaks; .ob-block avoids break-inside.
   - Browser headers/footers are controlled in the print dialog (cannot be disabled via CSS).
+

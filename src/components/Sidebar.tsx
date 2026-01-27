@@ -6,6 +6,7 @@ import {
   Building2,
   Settings as SettingsIcon,
   ClipboardList,     // 👈 ny ikon för besiktningar
+  Shield,
 } from 'lucide-react'
 import { useProfile } from '@/hooks/useProfile'
 
@@ -20,7 +21,10 @@ export default function Sidebar() {
     { href: '/inspections', label: 'Besiktningar', icon: ClipboardList }, // 👈 NY LÄNK
     // Settings visas bara för admin
     ...(isAdmin
-      ? [{ href: '/settings', label: 'Settings', icon: SettingsIcon }]
+      ? [
+          { href: '/admin', label: 'Admin', icon: Shield },
+          { href: '/settings', label: 'Settings', icon: SettingsIcon },
+        ]
       : []
     ),
   ]
@@ -54,3 +58,5 @@ export default function Sidebar() {
     </aside>
   )
 }
+
+

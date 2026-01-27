@@ -10,7 +10,6 @@ type ControlPoint = {
   scope: Scope
   key: string
   title: string
-  question: string
   label: string | null
   description: string | null
   sort_order: number
@@ -119,7 +118,6 @@ export default function SettingsControlPointsPage() {
           scope: row.scope as Scope,
           key: row.key,
           title: row.title,
-          question: row.question,
           label: row.label,
           description: row.description,
           sort_order: row.sort_order,
@@ -174,7 +172,6 @@ export default function SettingsControlPointsPage() {
         scope: 'interior',
         key: '',
         title: '',
-        question: '',
         label: '',
         description: '',
         sort_order: 100,
@@ -193,8 +190,8 @@ export default function SettingsControlPointsPage() {
   const savePoint = async (p: ControlPoint) => {
     const isNew = !p.id
 
-    if (!p.key.trim() || !p.title.trim() || !p.question.trim()) {
-      alert('Key, titel och fråga måste fyllas i.')
+    if (!p.key.trim() || !p.title.trim()) {
+      alert('Key och titel måste fyllas i.')
       return
     }
 
@@ -209,7 +206,6 @@ export default function SettingsControlPointsPage() {
             scope: p.scope,
             key: p.key.trim(),
             title: p.title.trim(),
-            question: p.question.trim(),
             label: p.label?.trim() || null,
             description: p.description?.trim() || null,
             sort_order: p.sort_order ?? 100,
@@ -231,7 +227,6 @@ export default function SettingsControlPointsPage() {
           scope: row.scope,
           key: row.key,
           title: row.title,
-          question: row.question,
           label: row.label,
           description: row.description,
           sort_order: row.sort_order,
@@ -258,7 +253,6 @@ export default function SettingsControlPointsPage() {
           .update({
             scope: p.scope,
             title: p.title.trim(),
-            question: p.question.trim(),
             label: p.label?.trim() || null,
             description: p.description?.trim() || null,
             sort_order: p.sort_order ?? 100,
@@ -281,7 +275,6 @@ export default function SettingsControlPointsPage() {
           scope: row.scope,
           key: row.key,
           title: row.title,
-          question: row.question,
           label: row.label,
           description: row.description,
           sort_order: row.sort_order,
@@ -342,7 +335,6 @@ export default function SettingsControlPointsPage() {
       list = list.filter(p =>
         (p.key && p.key.toLowerCase().includes(s)) ||
         (p.title && p.title.toLowerCase().includes(s)) ||
-        (p.question && p.question.toLowerCase().includes(s)) ||
         (p.label && p.label.toLowerCase().includes(s))
       )
     }
@@ -598,7 +590,7 @@ export default function SettingsControlPointsPage() {
                 )}
               </div>
 
-              {/* Titel + fråga */}
+              {/* Titel + label */}
               <div className="grid gap-3 md:grid-cols-2 text-sm">
                 <div>
                   <label className="text-xs text-gray-600">Titel</label>
@@ -622,20 +614,6 @@ export default function SettingsControlPointsPage() {
                     placeholder="t.ex. Tätskikt vägg (badrum)"
                   />
                 </div>
-              </div>
-
-              <div className="space-y-1 text-sm">
-                <label className="text-xs text-gray-600">
-                  Fråga (visas för besiktningsman)
-                </label>
-                <input
-                  className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm"
-                  value={p.question}
-                  onChange={e =>
-                    updateLocalPoint(p.id, { question: e.target.value })
-                  }
-                  placeholder="t.ex. Finns tecken på brister i tätskikt på vägg, särskilt i duschzon?"
-                />
               </div>
 
               <div className="space-y-1 text-sm">
@@ -712,3 +690,4 @@ export default function SettingsControlPointsPage() {
     </div>
   )
 }
+
