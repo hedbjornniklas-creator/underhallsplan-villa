@@ -131,7 +131,10 @@ export default function AdminClient() {
   }
   const delDoc = async (id: string) => {
     if (!confirm('Ta bort dokumenttypen?')) return
-    const { error } = await supabase.from('document_types').delete().eq('id', id)
+    const { error } = await (supabase as any)
+      .from('document_types')
+      .delete()
+      .eq('id', id)
     if (error) return alert(error.message)
     setDocs(prev => prev.filter(x => x.id !== id))
   }
@@ -146,7 +149,7 @@ export default function AdminClient() {
   }
   const addComp = async () => {
     const code = `CMP_${Math.random().toString(36).slice(2, 7).toUpperCase()}`
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('component_types')
       .insert({ code, name: 'Ny komponent' })
       .select('id, code, name, category, technical_lifespan_years, maintenance_interval_years, notes')
@@ -156,7 +159,10 @@ export default function AdminClient() {
   }
   const delComp = async (id: string) => {
     if (!confirm('Ta bort komponenttypen?')) return
-    const { error } = await supabase.from('component_types').delete().eq('id', id)
+    const { error } = await (supabase as any)
+      .from('component_types')
+      .delete()
+      .eq('id', id)
     if (error) return alert(error.message)
     setComps(prev => prev.filter(x => x.id !== id))
   }
