@@ -112,8 +112,10 @@ export default function AdminClient() {
     id: string,
     patch: Database['public']['Tables']['document_types']['Update']
   ) => {
-    const docTable: keyof Database['public']['Tables'] = 'document_types'
-    const { error } = await supabase.from(docTable).update(patch).eq('id', id)
+    const { error } = await supabase
+      .from('document_types')
+      .update(patch as any)
+      .eq('id', id)
     if (error) return alert(error.message)
     setDocs(prev => prev.map(x => (x.id === id ? { ...x, ...patch } as DocType : x)))
   }
