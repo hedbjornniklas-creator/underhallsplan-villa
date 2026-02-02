@@ -12,7 +12,7 @@ export default function Topbar() {
   const router = useRouter()
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null))
+    supabase.auth.getUser().then((res: any) => setEmail(res?.data?.user?.email ?? null))
   }, [])
 
   const handleLogout = async () => {

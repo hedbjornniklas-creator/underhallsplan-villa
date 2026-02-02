@@ -138,7 +138,11 @@ export default function ReportCoverPage({
           <img
             src={coverSrc}
             alt="Omslagsillustration"
-            style={{ maxHeight: '100%', maxWidth: '100%' }}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'contain',
+            }}
           />
         ) : (
           <div style={{ color: '#64748b' }}>Omslagsillustration</div>

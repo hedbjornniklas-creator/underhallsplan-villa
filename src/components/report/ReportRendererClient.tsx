@@ -1,6 +1,6 @@
-'use client'
+﻿'use client'
 
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import AppendixPage from '@/components/report/AppendixPage'
 import ReportCoverPage from '@/components/report/ReportCoverPage'
 import ReportPage from '@/components/report/ReportPage'
@@ -9,6 +9,7 @@ import {
   ACCENT_COLOR,
   REPORT_STYLES,
   FONT_FAMILY,
+  BASE_FONT_PT,
   LINE_HEIGHT,
   PAGE_HEIGHT_MM,
   PAGE_PADDING_MM,
@@ -24,6 +25,157 @@ type ReportRendererClientProps = {
   coverNotice: string
 }
 
+const PHOTO_POLICY = {
+  maxLongSidePx: 1600,
+  quality: 0.7,
+}
+
+const TRANSPARENT_PIXEL =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='
+
+const resizedImageCache = new Map<string, string>()
+
+const getImageCacheKey = (src: string) =>
+  `${src}|max=${PHOTO_POLICY.maxLongSidePx}|q=${PHOTO_POLICY.quality}`
+
+const toProxyUrl = (src: string) => {
+  if (!src) return src
+  if (src.startsWith('data:')) return src
+  if (src.startsWith('/')) return src
+  if (typeof window !== 'undefined' && src.startsWith(window.location.origin)) return src
+  return `/api/image-proxy?url=${encodeURIComponent(src)}`
+}
+
+const resizeImage = async (src: string): Promise<string> => {
+  const cacheKey = getImageCacheKey(src)
+  const cached = resizedImageCache.get(cacheKey)
+  if (cached) return cached
+
+  const renderToCanvas = (
+    width: number,
+    height: number,
+    draw: (ctx: CanvasRenderingContext2D) => void
+  ) => {
+    const longestSide = Math.max(width, height)
+    const shouldResize = longestSide > PHOTO_POLICY.maxLongSidePx
+    const scale = shouldResize ? PHOTO_POLICY.maxLongSidePx / longestSide : 1
+    const targetWidth = Math.max(1, Math.round(width * scale))
+    const targetHeight = Math.max(1, Math.round(height * scale))
+
+    const canvas = document.createElement('canvas')
+    canvas.width = targetWidth
+    canvas.height = targetHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return src
+
+    draw(ctx)
+    const dataUrl = canvas.toDataURL('image/jpeg', PHOTO_POLICY.quality)
+    resizedImageCache.set(cacheKey, dataUrl)
+    return dataUrl
+  }
+
+  try {
+    const fetchSrc = toProxyUrl(src)
+    const response = await fetch(fetchSrc, { mode: 'cors', credentials: 'omit' })
+    if (response.ok) {
+      const blob = await response.blob()
+      const bitmap = await createImageBitmap(blob)
+      const dataUrl = renderToCanvas(bitmap.width, bitmap.height, (ctx) => {
+        ctx.drawImage(bitmap, 0, 0, ctx.canvas.width, ctx.canvas.height)
+      })
+      if (typeof bitmap.close === 'function') bitmap.close()
+      return dataUrl
+    }
+  } catch {
+    // fallback below
+  }
+
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      const width = img.naturalWidth || img.width
+      const height = img.naturalHeight || img.height
+      if (!width || !height) {
+        resolve(src)
+        return
+      }
+      try {
+        resolve(
+          renderToCanvas(width, height, (ctx) => {
+            ctx.drawImage(img, 0, 0, ctx.canvas.width, ctx.canvas.height)
+          })
+        )
+      } catch {
+        resolve(src)
+      }
+    }
+    img.onerror = () => resolve(src)
+    img.src = toProxyUrl(src)
+  })
+}
+
+const useResizedImage = (src: string | null) => {
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null)
+
+  useLayoutEffect(() => {
+    let isActive = true
+    if (!src) {
+      setResolvedSrc(null)
+      return () => {
+        isActive = false
+      }
+    }
+
+    setResolvedSrc(null)
+
+    const cacheKey = getImageCacheKey(src)
+    const cached = resizedImageCache.get(cacheKey)
+    if (cached) {
+      setResolvedSrc(cached)
+      return () => {
+        isActive = false
+      }
+    }
+
+    resizeImage(src).then((dataUrl) => {
+      if (!isActive) return
+      setResolvedSrc(dataUrl)
+    })
+
+    return () => {
+      isActive = false
+    }
+  }, [src])
+
+  return resolvedSrc
+}
+
+const ReportPhoto = ({
+  src,
+  alt,
+  className,
+  style,
+}: {
+  src: string
+  alt: string
+  className?: string
+  style?: CSSProperties
+}) => {
+  const resizedSrc = useResizedImage(src)
+  const ready = Boolean(resizedSrc)
+  return (
+    <img
+      src={resizedSrc ?? TRANSPARENT_PIXEL}
+      alt={alt}
+      className={className}
+      style={style}
+      data-report-track="1"
+      data-report-ready={ready ? '1' : '0'}
+    />
+  )
+}
+
 type ResolvedReportSection = ReportSection & { appendixText?: string }
 
 type InspectionBlockItem = {
@@ -36,13 +188,46 @@ type InspectionBlockItem = {
   hasDeviations?: boolean | null
 }
 
+type InspectionBlockItemEntry = {
+  type: 'inspectionBlockItem'
+  item: InspectionBlockItem
+  marginTopMm: number
+  marginBottomMm: number
+}
+
+type RiskItemEntry = {
+  type: 'riskItem'
+  title: string
+  body: string
+  isFirst: boolean
+  isLast: boolean
+  marginTopMm: number
+  marginBottomMm: number
+}
+
+type FtuItemEntry = {
+  type: 'ftuItem'
+  title: string
+  body: string
+  isFirst: boolean
+  isLast: boolean
+  marginTopMm: number
+  marginBottomMm: number
+}
+
+type ExtendedReportBlock =
+  | ReportBlock
+  | InspectionBlockItemEntry
+  | RiskItemEntry
+  | FtuItemEntry
+
 type Entry =
   | {
       kind: 'block'
       id: string
       sectionId: string
       sectionStartOnNewPage: boolean
-      block: ReportBlock
+      block: ExtendedReportBlock
     }
   | {
       kind: 'spacer'
@@ -169,9 +354,23 @@ function parseBuildingDataLines(content: string) {
 const appendxBreakHeadings = [
   'Besiktningen omfattar inte',
   'Besiktningsmannens ansvar',
-  'Äganderätt och nyttjanderätt till besiktningsutlåtandet',
   'Ã„ganderÃ¤tt och nyttjanderÃ¤tt till besiktningsutlÃ¥tandet',
+  'Ãƒâ€žganderÃƒÂ¤tt och nyttjanderÃƒÂ¤tt till besiktningsutlÃƒÂ¥tandet',
 ]
+
+const normalizeAppendixLines = (lines: string[]) => {
+  const normalized: string[] = []
+  lines.forEach((line) => {
+    const isBlank = line.trim().length === 0
+    if (isBlank && normalized.length === 0) return
+    if (isBlank && normalized[normalized.length - 1]?.trim().length === 0) return
+    normalized.push(line)
+  })
+  while (normalized.length && normalized[normalized.length - 1].trim().length === 0) {
+    normalized.pop()
+  }
+  return normalized
+}
 
 const splitAppendixText = (rawText: string) => {
   const lines = rawText.split(/\r?\n/)
@@ -190,7 +389,33 @@ const splitAppendixText = (rawText: string) => {
     }
   })
 
-  return segments.map((segment) => segment.join('\n'))
+  return segments
+    .map((segment) => segment.join('\n'))
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0)
+}
+
+const appendixLineHeightPx = (BASE_FONT_PT * 96) / 72 * LINE_HEIGHT
+const appendixAvailableHeightPx = mmToPxNumber(
+  PAGE_HEIGHT_MM - PAGE_PADDING_MM.top - PAGE_PADDING_MM.bottom - FOOTER_MARK_HEIGHT_MM - 6
+)
+const appendixLinesPerColumn = Math.max(
+  1,
+  Math.floor(appendixAvailableHeightPx / appendixLineHeightPx)
+)
+const appendixLinesPerPage = appendixLinesPerColumn
+const appendixTitleLineReduction = 6
+
+const chunkAppendixLines = (lines: string[], showTitle: boolean) => {
+  const pageSize = Math.max(
+    1,
+    appendixLinesPerPage - (showTitle ? appendixTitleLineReduction : 0)
+  )
+  const chunks: string[][] = []
+  for (let i = 0; i < lines.length; i += pageSize) {
+    chunks.push(lines.slice(i, i + pageSize))
+  }
+  return chunks
 }
 
 export default function ReportRendererClient({
@@ -228,6 +453,127 @@ export default function ReportRendererClient({
     const entries: Entry[] = []
     contentSections.forEach((section, sectionIndex) => {
       section.blocks.forEach((block, blockIndex) => {
+        if (
+          block.type === 'text' &&
+          section.id === 'risk' &&
+          block.source.kind === 'mock' &&
+          block.source.path === 'mock.risk.text'
+        ) {
+          const raw = resolveText(block.source, mockData)
+          const parts = raw
+            ? String(raw)
+                .trim()
+                .split(/\n\s*\n/)
+                .map((chunk) =>
+                  chunk
+                    .split(/\r?\n/)
+                    .map((line) => line.trim())
+                    .filter(Boolean)
+                )
+            : []
+          const items = parts
+            .map((lines) => {
+              if (lines.length === 0) return null
+              const title = lines[0] ?? ''
+              const body = lines.slice(1).join('\n')
+              return { title, body }
+            })
+            .filter((entry): entry is { title: string; body: string } => Boolean(entry))
+
+          items.forEach((item, itemIndex) => {
+            entries.push({
+              kind: 'block',
+              id: `${section.id}-risk-item-${blockIndex}-${itemIndex}`,
+              sectionId: section.id,
+              sectionStartOnNewPage:
+                section.startOnNewPage && blockIndex === 0 && itemIndex === 0,
+              block: {
+                type: 'riskItem',
+                title: item.title,
+                body: item.body,
+                isFirst: itemIndex === 0,
+                isLast: itemIndex === items.length - 1,
+                marginTopMm: itemIndex === 0 ? block.marginTopMm : 0,
+                marginBottomMm:
+                  itemIndex === items.length - 1 ? block.marginBottomMm : 0,
+              },
+            })
+          })
+          return
+        }
+
+        if (
+          block.type === 'text' &&
+          section.id === 'ftu' &&
+          block.source.kind === 'mock' &&
+          block.source.path === 'mock.ftu.text'
+        ) {
+          const raw = resolveText(block.source, mockData)
+          const parts = raw
+            ? String(raw)
+                .trim()
+                .split(/\n\s*\n/)
+                .map((chunk) =>
+                  chunk
+                    .split(/\r?\n/)
+                    .map((line) => line.trim())
+                    .filter(Boolean)
+                )
+            : []
+          const items = parts
+            .map((lines) => {
+              if (lines.length === 0) return null
+              const title = lines[0] ?? ''
+              const body = lines.slice(1).join('\n')
+              return { title, body }
+            })
+            .filter((entry): entry is { title: string; body: string } => Boolean(entry))
+
+          items.forEach((item, itemIndex) => {
+            entries.push({
+              kind: 'block',
+              id: `${section.id}-ftu-item-${blockIndex}-${itemIndex}`,
+              sectionId: section.id,
+              sectionStartOnNewPage:
+                section.startOnNewPage && blockIndex === 0 && itemIndex === 0,
+              block: {
+                type: 'ftuItem',
+                title: item.title,
+                body: item.body,
+                isFirst: itemIndex === 0,
+                isLast: itemIndex === items.length - 1,
+                marginTopMm: itemIndex === 0 ? block.marginTopMm : 0,
+                marginBottomMm:
+                  itemIndex === items.length - 1 ? block.marginBottomMm : 0,
+              },
+            })
+          })
+          return
+        }
+
+        if (block.type === 'inspectionBlocks') {
+          const items = getMockArray<InspectionBlockItem>(mockData, block.itemsPath)
+          if (items.length > 0) {
+            items.forEach((item, itemIndex) => {
+              entries.push({
+                kind: 'block',
+                id: `${section.id}-inspection-item-${blockIndex}-${itemIndex}`,
+                sectionId: section.id,
+                sectionStartOnNewPage:
+                  section.startOnNewPage && blockIndex === 0 && itemIndex === 0,
+                block: {
+                  type: 'inspectionBlockItem',
+                  item,
+                  marginTopMm: itemIndex === 0 ? block.marginTopMm : 0,
+                  marginBottomMm:
+                    itemIndex === items.length - 1 ? block.marginBottomMm : 0,
+                },
+              })
+            })
+            return
+          }
+        }
+
         entries.push({
           kind: 'block',
           id: `${section.id}-block-${blockIndex}`,
@@ -254,8 +600,25 @@ export default function ReportRendererClient({
       const rawText = section.appendixText ?? ''
       if (section.appendixText && section.appendixId === 'APPENDIX_1_VILLKOR_SELLER_SBR_2024') {
         const segments = splitAppendixText(rawText)
-        segments.forEach((segment, index) => {
-          pages.push({ section, rawText: segment, showTitle: index === 0 })
+        let isFirstPage = true
+        segments.forEach((segment) => {
+          const normalizedLines = normalizeAppendixLines(segment.split(/\r?\n/))
+          if (normalizedLines.length === 0) return
+          const chunks = chunkAppendixLines(normalizedLines, isFirstPage)
+          chunks.forEach((chunk, index) => {
+            const showTitle = isFirstPage && index === 0
+            const chunkText = chunk.join('\n')
+            if (chunkText.trim().length === 0) {
+              return
+            }
+            pages.push({ section, rawText: chunkText, showTitle })
+          })
+          if (chunks.length > 0) {
+            const hasContent = chunks.some((chunk) => chunk.join('\n').trim().length > 0)
+            if (hasContent) {
+              isFirstPage = false
+            }
+          }
         })
       } else {
         pages.push({ section, rawText, showTitle: true })
@@ -428,16 +791,164 @@ export default function ReportRendererClient({
   ]
 
   const footerCenterLines = [
-    'VÅR KUNSKAP ÄR DIN TRYGGHET',
-    '© 2025 SBR Byggingenjörerna. Version 2025.1',
+    'VÃ…R KUNSKAP Ã„R DIN TRYGGHET',
+    'Â© 2025 SBR ByggingenjÃ¶rerna. Version 2025.1',
   ]
 
+  const renderInspectionBlockItem = (
+    item: InspectionBlockItem,
+    key: string,
+    marginTopMm: number,
+    marginBottomMm: number
+  ) => {
+    const title = String(item.title ?? '')
+    const noteText = String(item.noteText ?? '').trim()
+    const riskText = String(item.riskText ?? '').trim()
+    const ftuText = String(item.ftuText ?? '').trim()
+    const photoUrls = Array.isArray(item.photoUrls)
+      ? item.photoUrls.filter((url) => typeof url === 'string')
+      : []
+
+    return (
+      <article
+        key={key}
+        className="ob-block border border-gray-200 rounded-lg p-4 mb-6 bg-white"
+        style={blockMargins({ marginTopMm, marginBottomMm } as ReportBlock)}
+      >
+        <header className="ob-block__header mb-3">
+          <h4 className="ob-block__title text-[15px] font-semibold text-gray-900">
+            {title}
+          </h4>
+        </header>
+
+        <section className="ob-section ob-section--note">
+          <div className="ob-section__head flex items-center gap-2">
+            <span className="ob-icon ob-icon--note" aria-hidden="true">
+              {'\u{1F9F1}'}
+            </span>
+            <span className="ob-section__label text-xs font-bold tracking-wide uppercase text-gray-900">
+              Notering
+            </span>
+          </div>
+          <p className="ob-section__text text-sm leading-relaxed mt-1 text-gray-900 whitespace-pre-line">
+            {noteText || '--'}
+          </p>
+          {photoUrls.length > 0 && (
+            <div className="mt-2 space-y-2">
+              <div className="flex items-center gap-1.5 text-xs text-gray-700">
+                <span aria-hidden="true">{'\u{1F4F7}'}</span>
+                <span>Bilder</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {photoUrls.map((url, idx) => (
+                  <div
+                    key={`${key}-photo-${idx}`}
+                    className="h-24 w-32 rounded-md border border-gray-200 bg-white overflow-hidden flex items-center justify-center"
+                  >
+                    <ReportPhoto
+                      src={url}
+                      alt="Notering"
+                      className="max-h-full max-w-full object-contain"
+                      style={{ width: '100%', height: '100%' }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {(riskText || ftuText) && (
+          <section className="mt-4 space-y-3">
+            {riskText && (
+              <div className="rounded-md border border-gray-200 bg-white p-3">
+                <div className="flex items-center gap-2 text-xs font-semibold text-gray-700">
+                  <span className="ob-icon ob-icon--risk" aria-hidden="true">
+                    {'\u26A0\uFE0F'}
+                  </span>
+                  <span>Risk</span>
+                </div>
+                <div className="text-sm text-gray-800 whitespace-pre-line">
+                  {riskText}
+                </div>
+              </div>
+            )}
+            {ftuText && (
+              <div className="rounded-md border border-gray-200 bg-white p-3">
+                <div className="flex items-center gap-2 text-xs font-semibold text-gray-700">
+                  <span className="ob-icon ob-icon--ftu" aria-hidden="true">
+                    {'\u{1F50D}'}
+                  </span>
+                  <span>Fortsatt teknisk utredning</span>
+                </div>
+                <div className="text-sm text-gray-800 whitespace-pre-line">
+                  {ftuText}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+      </article>
+    )
+  }
+
   const renderBlock = (
-    block: ReportBlock,
+    block: ExtendedReportBlock,
     sectionId: string,
     index: number,
     sectionPageMap: Map<string, number>
   ) => {
+    if (block.type === 'inspectionBlockItem') {
+      return renderInspectionBlockItem(
+        block.item,
+        `${sectionId}-inspection-item-${index}`,
+        block.marginTopMm,
+        block.marginBottomMm
+      )
+    }
+    if (block.type === 'riskItem') {
+      return (
+        <div
+          key={`${sectionId}-risk-item-${index}`}
+          style={blockMargins({
+            marginTopMm: block.marginTopMm,
+            marginBottomMm: block.marginBottomMm,
+          } as ReportBlock)}
+        >
+          <div className="flex gap-2">
+            <span className="ob-icon ob-icon--risk" aria-hidden="true">
+              {'\u26A0\uFE0F'}
+            </span>
+            <div className="text-sm text-gray-900 whitespace-pre-line">
+              <div className="font-semibold">{block.title}</div>
+              {block.body && <div className="mt-0.5">{block.body}</div>}
+            </div>
+          </div>
+        </div>
+      )
+    }
+    if (block.type === 'ftuItem') {
+      return (
+        <div
+          key={`${sectionId}-ftu-item-${index}`}
+          style={blockMargins({
+            marginTopMm: block.marginTopMm,
+            marginBottomMm: block.marginBottomMm,
+          } as ReportBlock)}
+        >
+          <div className="flex gap-2">
+            <span className="ob-icon ob-icon--ftu" aria-hidden="true">
+              {'\u{1F50D}'}
+            </span>
+            <div className="text-sm text-gray-900 whitespace-pre-line">
+              <div className="font-semibold">{block.title}</div>
+              {block.body && <div className="mt-0.5">{block.body}</div>}
+            </div>
+          </div>
+        </div>
+      )
+    }
+
     if (block.type === 'heading') {
       const preset =
         block.level === 1
@@ -492,7 +1003,7 @@ export default function ReportRendererClient({
                 }}
               >
                 <span>{entry.label}</span>
-                <span>{pageNumber ?? '–'}</span>
+                <span>{pageNumber ?? 'â€“'}</span>
               </div>
             )
           })}
@@ -569,7 +1080,7 @@ export default function ReportRendererClient({
                 <section className="ob-section ob-section--note">
                   <div className="ob-section__head flex items-center gap-2">
                     <span className="ob-icon ob-icon--note" aria-hidden="true">
-                      🧱
+                      {'\u{1F9F1}'}
                     </span>
                     <span className="ob-section__label text-xs font-bold tracking-wide uppercase text-gray-900">
                       Notering
@@ -581,16 +1092,16 @@ export default function ReportRendererClient({
                   {photoUrls.length > 0 && (
                     <div className="mt-2 space-y-2">
                       <div className="flex items-center gap-1.5 text-xs text-gray-700">
-                        <span aria-hidden="true">📷</span>
+                        <span aria-hidden="true">{'\u{1F4F7}'}</span>
                         <span>Bilder</span>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {photoUrls.map((url, urlIndex) => (
-                          <img
+                          <ReportPhoto
                             key={`${sectionId}-inspection-${index}-${itemIndex}-${urlIndex}`}
                             src={url}
                             alt={`Foto ${urlIndex + 1}`}
-                            className="h-auto rounded border border-gray-200"
+                            className="h-auto rounded border border-gray-200 object-contain bg-white"
                             style={{ width: '60mm' }}
                           />
                         ))}
@@ -605,7 +1116,7 @@ export default function ReportRendererClient({
                     <section className="ob-section ob-section--risk">
                       <div className="ob-section__head flex items-center gap-2">
                         <span className="ob-icon ob-icon--risk" aria-hidden="true">
-                          ⚠️
+                          {'\u26A0\uFE0F'}
                         </span>
                         <span className="ob-section__label text-xs font-bold tracking-wide uppercase text-gray-900">
                           Riskanalys
@@ -624,7 +1135,7 @@ export default function ReportRendererClient({
                     <section className="ob-section ob-section--ftu">
                       <div className="ob-section__head flex items-center gap-2">
                         <span className="ob-icon ob-icon--ftu" aria-hidden="true">
-                          🔍
+                          {'\u{1F50D}'}
                         </span>
                         <span className="ob-section__label text-xs font-bold tracking-wide uppercase text-gray-900">
                           Fortsatt teknisk utredning
@@ -708,7 +1219,7 @@ export default function ReportRendererClient({
         block.source.kind === 'static' &&
         block.source.text.includes('Byggnaden var')
       const boldHeadings = new Set([
-        'Särskilda förutsättningar vid besiktningen:',
+        'SÃ¤rskilda fÃ¶rutsÃ¤ttningar vid besiktningen:',
         'Muntliga uppgifter:',
       ])
       if (isBuildingData) {
@@ -764,9 +1275,9 @@ export default function ReportRendererClient({
               if (
                 furnishingText &&
                 line.includes('Byggnaden var') &&
-                line.includes('vid besiktningstillfället')
+                line.includes('vid besiktningstillfÃ¤llet')
               ) {
-                renderedLine = line.replace('fullt möblerad', furnishingText)
+                renderedLine = line.replace('fullt mÃ¶blerad', furnishingText)
               }
               const trimmed = renderedLine.trim()
               const isBold = boldHeadings.has(trimmed)
@@ -994,3 +1505,7 @@ export default function ReportRendererClient({
     </div>
   )
 }
+
+
+
+

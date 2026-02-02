@@ -16,6 +16,7 @@ settings_control_points
 - Innehåller titel, beskrivning, scope och koppling till komponent
 - Innehåller inga risk- eller FTU-texter
 - question finns kvar men används inte i UI/ÖB just nu (kan vara null)
+- label finns kvar men används inte i UI/ÖB just nu (kan vara null)
 - sort_order kan vara null; används för ordning när den är satt
 
 settings_control_point_outcomes

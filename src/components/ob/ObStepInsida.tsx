@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState, ChangeEvent, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
@@ -75,6 +75,7 @@ type ControlPointOutcome = {
   control_point_id: string
   label: string
   severity: number
+  note_template: string | null
   risk_template: string | null
   ftu_template: string | null
   sort_order: number
@@ -105,6 +106,7 @@ type ObStepInsidaProps = {
 }
 
 const RED_STATUS: InspectionControlItem['status'] = null
+const OTHER_ROOM_TYPE_KEY = 'ovrigt'
 
 // Storage-bucket för bilder
 const IMAGE_BUCKET = 'inspection-images' as const
@@ -157,14 +159,37 @@ const buildFloorsFromAnswers = (answers: Record<string, any>): string[] => {
   return keys
 }
 
+const normalizeSwedish = (value: string) =>
+  value
+    .replace(/Ã¤/g, 'ä')
+    .replace(/Ã¥/g, 'å')
+    .replace(/Ã¶/g, 'ö')
+    .replace(/Ã„/g, 'Ä')
+    .replace(/Ã…/g, 'Å')
+    .replace(/Ã–/g, 'Ö')
+    .replace(/Ã©/g, 'é')
+
+const normalizeRoomTypeKey = (value: string | null | undefined) => {
+  const base = normalizeSwedish(String(value ?? '')).trim().toLowerCase()
+  if (base === 'ovrigt') return 'övrigt'
+  return base
+}
+
+const isOtherRoomKey = (value: string | null | undefined) => {
+  const key = normalizeRoomTypeKey(value)
+  return key === 'ovrigt' || key === 'övrigt'
+}
+
 // Visningslabel för våningsnycklar
 const floorLabelFromKey = (k: string) => {
-  if (k === 'källare') return 'Källare'
-  if (k === 'källare_delvis') return 'Källare (delvis)'
-  if (k === 'entréplan') return 'Entréplan'
-  if (k === 'plan2') return 'Plan 2 / Övre plan'
-  if (k === 'plan3') return 'Plan 3'
-  return k
+  const normalized = normalizeSwedish(k)
+  if (normalized === 'källare') return 'Källare'
+  if (normalized === 'källare_delvis') return 'Källare (delvis)'
+  if (normalized === 'entréplan') return 'Entréplan'
+  if (normalized === 'plan2') return 'Plan 2 / Övre plan'
+  if (normalized === 'plan3') return 'Plan 3'
+  if (normalized.startsWith('plan')) return `Plan ${normalized.replace('plan', '')}`
+  return normalized
 }
 
 // =============================
@@ -207,6 +232,11 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   const [newRoomTypeKey, setNewRoomTypeKey] = useState<string>('')
   const [newRoomLabel, setNewRoomLabel] = useState('')
 
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null)
+  const [editRoomLabel, setEditRoomLabel] = useState('')
+  const [editRoomTypeKey, setEditRoomTypeKey] = useState('')
+  const otherRoomEnsuredRef = useRef(false)
+  const otherRoomItemsEnsuredRef = useRef(false)
   useEffect(() => {
     if (!inspection?.id) return
 
@@ -249,7 +279,13 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
         if (oErr) throw oErr
         if (rErr) throw rErr
 
-        setRoomTypes((rtData ?? []) as RoomType[])
+        const roomTypesArr = (rtData ?? []) as RoomType[]
+        const filteredRoomTypes = roomTypesArr.filter(rt => {
+          const label = normalizeSwedish(rt.label ?? '').toLowerCase()
+          const key = normalizeSwedish(rt.key ?? '').toLowerCase()
+          return label !== 'rum saknas' && key !== 'rum_saknas'
+        })
+        setRoomTypes(filteredRoomTypes)
         setGroups((gData ?? []) as InteriorGroup[])
         setOptions((oData ?? []) as InteriorOption[])
 
@@ -369,7 +405,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
               const { data: outcomesData, error: outcomesErr } = await supabase
                 .from('settings_control_point_outcomes')
                 .select(
-                  'id, control_point_id, label, severity, risk_template, ftu_template, sort_order, is_active'
+                  'id, control_point_id, label, severity, note_template, risk_template, ftu_template, sort_order, is_active'
                 )
                 .in('control_point_id', cpIds)
                 .eq('is_active', true)
@@ -471,6 +507,60 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
     loadAll()
   }, [inspection?.id])
+  useEffect(() => {
+    if (!inspection?.id) return
+    if (!roomTypes.length) return
+    if (otherRoomEnsuredRef.current) return
+
+    const existing = rooms.find(room => isOtherRoomKey(room.room_type_key))
+    if (existing) {
+      otherRoomEnsuredRef.current = true
+      return
+    }
+
+    const label =
+      roomTypes.find(rt => isOtherRoomKey(rt.key))?.label ?? 'Övrigt'
+    const newRoom: InteriorRoom = {
+      inspection_id: inspection.id,
+      floor_label: OTHER_ROOM_TYPE_KEY,
+      order_index: 0,
+      room_type_key: OTHER_ROOM_TYPE_KEY,
+      room_label: label,
+      values: {},
+      note: null,
+    }
+
+    ;(async () => {
+      const saved = await upsertRoom(newRoom)
+      if (saved.id) {
+        setRooms(prev => [saved, ...prev])
+        await createDefaultControlItemsForRoom(saved)
+        if (!activeFloor) setActiveFloor(OTHER_ROOM_TYPE_KEY)
+        otherRoomEnsuredRef.current = true
+      }
+    })()
+  }, [inspection?.id, roomTypes, rooms, activeFloor])
+
+  useEffect(() => {
+    if (loading) return
+    if (otherRoomItemsEnsuredRef.current) return
+    const otherRoom = rooms.find(room => isOtherRoomKey(room.room_type_key))
+    if (!otherRoom?.id) return
+
+    const hasItems = controlItems.some(
+      ci => ci.interior_room_id === otherRoom.id && ci.control_point_id
+    )
+    if (hasItems) {
+      otherRoomItemsEnsuredRef.current = true
+      return
+    }
+
+    ;(async () => {
+      await createDefaultControlItemsForRoom(otherRoom)
+      otherRoomItemsEnsuredRef.current = true
+    })()
+  }, [loading, rooms, controlItems])
+
 
   const optionsByGroup = useMemo(() => {
     const map: Record<string, InteriorOption[]> = {}
@@ -503,7 +593,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       const { data: outcomesData, error: outcomesErr } = await supabase
         .from('settings_control_point_outcomes')
         .select(
-          'id, control_point_id, label, severity, risk_template, ftu_template, sort_order, is_active'
+          'id, control_point_id, label, severity, note_template, risk_template, ftu_template, sort_order, is_active'
         )
         .in('control_point_id', missingOutcomes)
         .eq('is_active', true)
@@ -549,24 +639,73 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
   // Våningar för flikar
   const floorLabels = useMemo(() => {
-    if (derivedFloors.length) return derivedFloors
-    const s = new Set<string>()
-    for (const r of rooms) s.add(r.floor_label)
-    return Array.from(s).sort()
+    const base = derivedFloors.length
+      ? [...derivedFloors]
+      : Array.from(new Set(rooms.map(r => r.floor_label)))
+
+    const withoutOther = base.filter(k => k && k !== OTHER_ROOM_TYPE_KEY)
+    const hasVind = withoutOther.includes('vind')
+    const withoutVind = withoutOther.filter(k => k !== 'vind')
+
+    const ordered = [OTHER_ROOM_TYPE_KEY, ...withoutVind, ...(hasVind ? ['vind'] : [])]
+    return ordered.filter((k, idx) => ordered.indexOf(k) === idx)
   }, [derivedFloors, rooms])
 
+  useEffect(() => {
+    if (!floorLabels.length) return
+    if (!activeFloor || !floorLabels.includes(activeFloor)) {
+      setActiveFloor(floorLabels[0])
+    }
+  }, [floorLabels, activeFloor])
+
   const getFloorLabel = (k: string) => {
+    if (k === OTHER_ROOM_TYPE_KEY) return 'Övrigt'
     if (k === 'vind') return atticLabel || 'Vind'
     return floorLabelFromKey(k)
   }
 
+  const isMissingRoom = (room: InteriorRoom) => {
+    const key = normalizeSwedish(room.room_type_key ?? '').toLowerCase()
+    const label = normalizeSwedish(room.room_label ?? '').toLowerCase()
+    return key === 'rum_saknas' || label === 'rum saknas'
+  }
+
   const filteredRooms = useMemo(() => {
     if (!activeFloor) return rooms
-    return rooms.filter(r => r.floor_label === activeFloor)
+    const target = normalizeSwedish(activeFloor)
+    return rooms.filter(
+      r =>
+        !isMissingRoom(r) &&
+        normalizeSwedish(r.floor_label) === target
+    )
   }, [rooms, activeFloor])
 
   const getRoomTypeLabel = (key: string) =>
-    roomTypes.find(rt => rt.key === key)?.label ?? key
+    roomTypes.find(rt => normalizeRoomTypeKey(rt.key) === normalizeRoomTypeKey(key))
+      ?.label ?? key
+
+  const isOtherRoom = (room: InteriorRoom) =>
+    isOtherRoomKey(room.room_type_key)
+
+  const roomChips = useMemo(() => {
+    if (!activeFloor) return []
+    const target = normalizeSwedish(activeFloor)
+    return rooms
+      .filter(
+        r =>
+          !isMissingRoom(r) &&
+          normalizeSwedish(r.floor_label) === target
+      )
+      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
+  }, [rooms, activeFloor])
+
+  const scrollToRoom = (roomId?: string) => {
+    if (!roomId) return
+    const el = document.getElementById(`room-card-${roomId}`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
 
   const sortRooms = (a: InteriorRoom, b: InteriorRoom) => {
     if (a.floor_label < b.floor_label) return -1
@@ -743,13 +882,16 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
       // Filtrera i JS på trigger_room_types (jsonb-array)
       const cps = all.filter(cp => {
-        if (!cp.trigger_room_types) return false
         try {
           const arr = Array.isArray(cp.trigger_room_types)
             ? cp.trigger_room_types
             : []
-
-          return arr.includes(room.room_type_key)
+          if (arr.length === 0) {
+            return isOtherRoomKey(room.room_type_key)
+          }
+          const roomKey = normalizeRoomTypeKey(room.room_type_key)
+          const normalized = arr.map(val => normalizeRoomTypeKey(val))
+          return normalized.includes(roomKey)
         } catch {
           return false
         }
@@ -813,7 +955,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     )
     const sortOrder =
       existingForRoom.length > 0
-        ? Math.max(...existingForRoom.map(ci => ci.sort_order || 0)) + 10
+        ? Math.min(...existingForRoom.map(ci => ci.sort_order || 0)) - 10
         : 10
 
     const newItem: InspectionControlItem = {
@@ -828,7 +970,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     }
 
     const saved = await upsertControlItem(newItem)
-    setControlItems(prev => [...prev, saved])
+    setControlItems(prev => [saved, ...prev])
     await ensureControlPointData([cp.id])
   }
 
@@ -843,7 +985,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     )
     const sortOrder =
       existingForRoom.length > 0
-        ? Math.max(...existingForRoom.map(ci => ci.sort_order || 0)) + 10
+        ? Math.min(...existingForRoom.map(ci => ci.sort_order || 0)) - 10
         : 10
 
     const newItem: InspectionControlItem = {
@@ -858,7 +1000,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     }
 
     const saved = await upsertControlItem(newItem)
-    setControlItems(prev => [...prev, saved])
+    setControlItems(prev => [saved, ...prev])
   }
 
   // -----------------------------
@@ -1108,6 +1250,28 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     setRooms(prev => prev.map(r => (r.id === id ? saved : r)))
   }
 
+  const startEditRoom = (room: InteriorRoom) => {
+    if (!room.id) return
+    setEditingRoomId(room.id)
+    setEditRoomLabel(room.room_label)
+    setEditRoomTypeKey(room.room_type_key)
+  }
+
+  const cancelEditRoom = () => {
+    setEditingRoomId(null)
+    setEditRoomLabel('')
+    setEditRoomTypeKey('')
+  }
+
+  const saveEditRoom = async () => {
+    if (!editingRoomId) return
+    await updateRoomField(editingRoomId, {
+      room_label: editRoomLabel,
+      room_type_key: editRoomTypeKey,
+    })
+    cancelEditRoom()
+  }
+
   const updateRoomValues = async (
     id: string | undefined,
     patchValues: Record<string, any>
@@ -1217,7 +1381,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           type="button"
           onClick={() => {
             // Alltid förinställ Plan till aktuellt plan om det finns
-            if (activeFloor) {
+            if (activeFloor && activeFloor !== OTHER_ROOM_TYPE_KEY) {
               setNewFloorLabel(activeFloor)
             } else if (derivedFloors.length) {
               setNewFloorLabel(derivedFloors[0])
@@ -1233,6 +1397,21 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           + Lägg till rum
         </button>
       </section>
+
+      {roomChips.length > 0 && (
+        <section className="flex flex-wrap items-center gap-2">
+          {roomChips.map(room => (
+            <button
+              key={room.id ?? room.room_label}
+              type="button"
+              onClick={() => scrollToRoom(room.id)}
+              className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-gray-800 hover:bg-gray-50"
+            >
+              {room.room_label}
+            </button>
+          ))}
+        </section>
+      )}
 
       {/* Ny-rumsformulär */}
       {showNewRoomForm && (
@@ -1323,6 +1502,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           return (
             <article
               key={room.id}
+              id={room.id ? `room-card-${room.id}` : undefined}
               className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-4"
             >
               <header className="flex flex-wrap items-center justify-between gap-2">
@@ -1337,43 +1517,72 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <select
-                    className="rounded-md border px-2 py-1 text-xs bg-white"
-                    value={room.room_type_key}
-                    onChange={e =>
-                      updateRoomField(room.id, { room_type_key: e.target.value })
-                    }
-                  >
-                    {roomTypes.map(rt => (
-                      <option key={rt.id} value={rt.key}>
-                        {rt.label}
-                      </option>
-                    ))}
-                  </select>
-
                   <button
                     type="button"
-                    onClick={() => removeRoom(room.id)}
-                    className="text-xs text-rose-600 hover:underline"
+                    onClick={() => startEditRoom(room)}
+                    className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
                   >
-                    Ta bort rum
+                    Redigera rum
                   </button>
+
+                  {!isOtherRoom(room) && (
+                    <button
+                      type="button"
+                      onClick={() => removeRoom(room.id)}
+                      className="text-xs text-rose-600 hover:underline"
+                    >
+                      Ta bort rum
+                    </button>
+                  )}
                 </div>
               </header>
 
-              {/* Grundfält rum */}
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="md:col-span-3">
-                  <label className="text-xs text-gray-600">Rumnamn</label>
-                  <input
-                    className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm"
-                    value={room.room_label}
-                    onChange={e =>
-                      updateRoomField(room.id, { room_label: e.target.value })
-                    }
-                  />
+              {editingRoomId === room.id && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                      <label className="text-xs text-gray-600">Rumnamn</label>
+                      <input
+                        className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm"
+                        value={editRoomLabel}
+                        onChange={e => setEditRoomLabel(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-600">Rumstyp</label>
+                      <select
+                        className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm bg-white"
+                        value={editRoomTypeKey}
+                        onChange={e => setEditRoomTypeKey(e.target.value)}
+                      >
+                        {roomTypes.map(rt => (
+                          <option key={rt.id} value={rt.key}>
+                            {rt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={cancelEditRoom}
+                      className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs"
+                    >
+                      Avbryt
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveEditRoom}
+                      className="rounded-md bg-gray-900 px-3 py-1.5 text-xs text-white"
+                    >
+                      Spara
+                    </button>
+                  </div>
                 </div>
+              )}
 
+              <div className="grid gap-3 md:grid-cols-3">
                 {filteredGroups.map(g => (
                   <SelectField
                     key={g.id}
@@ -1385,23 +1594,6 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                     }
                   />
                 ))}
-              </div>
-
-              {/* Notering för hela rummet */}
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-gray-700">
-                  Allmän notering (detta rum)
-                </label>
-                <textarea
-                  rows={2}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm
-                             placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
-                  placeholder="Sammanfattande notering för rummet…"
-                  value={room.note ?? ''}
-                  onChange={e =>
-                    updateRoomField(room.id, { note: e.target.value })
-                  }
-                />
               </div>
 
               {/* Kontrollpunkter för rummet */}
@@ -1471,7 +1663,7 @@ function ControlItemImagesSection({
     <section className="space-y-2 border-t pt-2 mt-2">
       <div className="flex items-center justify-between">
         <h5 className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-900">
-          <span aria-hidden="true">📷</span>
+          <span aria-hidden="true">{'\u{1F4F7}'}</span>
           <span>Bilder (denna kontrollpunkt)</span>
         </h5>
         <button
@@ -1598,6 +1790,57 @@ function RoomControlPointsSection({
 
   return (
     <section className="space-y-3 border-t pt-3">
+      {showSearch && (
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-gray-700">
+            Lägg till kontrollpunkt i {room.room_label}
+          </label>
+          <input
+            className="w-full rounded-md border px-2 py-1.5 text-sm"
+            placeholder="Sök t.ex. golvbrunn, kyl, trinett…"
+            value={searchTerm}
+            onChange={handleSearchChange}
+          />
+
+          {searching && (
+            <div className="text-[11px] text-gray-500">Söker…</div>
+          )}
+
+          {!searching && searchTerm.trim().length >= 2 && (
+            <div className="max-h-40 overflow-auto rounded-md border bg-white">
+              {searchResults.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-gray-500">
+                  Inga kontrollpunkter hittades för “{searchTerm.trim()}”.
+                </div>
+              ) : (
+                searchResults.map(cp => (
+                  <button
+                    key={cp.id}
+                    type="button"
+                    onClick={() => {
+                      onAddFromCatalog(room, cp)
+                      setSearchTerm('')
+                      setSearchResults([])
+                      setShowSearch(false)
+                    }}
+                    className="flex w-full flex-col items-start px-3 py-2 text-left text-xs hover:bg-gray-50"
+                  >
+                    <span className="font-medium text-gray-900">
+                      {cp.title || cp.label || cp.key}
+                    </span>
+                    {cp.description && (
+                      <span className="text-[11px] text-gray-500 line-clamp-2">
+                        {cp.description}
+                      </span>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h4 className="text-sm font-semibold text-gray-900">
@@ -1730,9 +1973,15 @@ function RoomControlPointsSection({
                           className={chipClass}
                           onClick={() => {
                             if (!ci.id) return
+                            const nextNote = isActive
+                              ? ci.note ?? null
+                              : (ci.note?.trim()
+                                  ? ci.note
+                                  : (outcome.note_template ?? null))
                             onUpdateItem(ci.id, {
                               status: isActive ? RED_STATUS : 'remark',
                               selected_outcome_id: isActive ? null : outcome.id,
+                              note: nextNote,
                             })
                           }}
                         >
@@ -1857,3 +2106,14 @@ function RoomControlPointsSection({
     </section>
   )
 }
+
+
+
+
+
+
+
+
+
+
+

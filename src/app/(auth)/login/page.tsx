@@ -2,7 +2,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import type { Session } from '@supabase/supabase-js'
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { Auth } from '@supabase/auth-ui-react'
 import { ThemeSupa } from '@supabase/auth-ui-shared'
 
@@ -15,7 +15,7 @@ export default function LoginPage() {
       if (data.session) router.replace('/properties')
     })
     // När inloggning sker nu: gå till /properties
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       if (session) router.replace('/properties')
     })
     return () => data.subscription.unsubscribe()

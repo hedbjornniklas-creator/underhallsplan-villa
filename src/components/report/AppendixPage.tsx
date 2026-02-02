@@ -1,4 +1,5 @@
 import { ACCENT_COLOR, REPORT_STYLES, mmToPx } from '@/lib/report/reportTokens'
+import type { ReactElement } from 'react'
 
 type AppendixPageProps = {
   title: string
@@ -13,14 +14,31 @@ export default function AppendixPage({
   variant = 'longform',
   showTitle = true,
 }: AppendixPageProps) {
-  const lines = rawText.split(/\r?\n/)
+  const rawLines = rawText.split(/\r?\n/)
+  const lines = rawLines.reduce<string[]>((acc, line) => {
+    const isBlank = line.trim().length === 0
+    if (isBlank && acc.length === 0) return acc
+    if (isBlank && acc[acc.length - 1]?.trim().length === 0) return acc
+    acc.push(line)
+    return acc
+  }, [])
+  while (lines.length && lines[lines.length - 1].trim().length === 0) {
+    lines.pop()
+  }
   const firstLineIndex = lines.findIndex(line => line.trim().length > 0)
   const isLongform = variant === 'longform'
   const isGlossary = variant === 'glossary'
   const isLifespan = variant === 'lifespan'
   const baseFontSize = isLifespan ? '10pt' : REPORT_STYLES.BODY.fontSize
   const exceptionFontSize = isLifespan ? '11pt' : baseFontSize
-  const isTwoColumn = variant === 'longform' || variant === 'glossary' || variant === 'lifespan'
+  const isTwoColumn = false
+  const columnStyles = isTwoColumn
+    ? {
+        columnCount: 2,
+        columnGap: mmToPx(12),
+        columnFill: 'auto' as const,
+      }
+    : {}
 
   const exceptionHeadings = [
     'Vid köp av en fastighet bör man räkna med olika intervall för renovering och underhåll.',
@@ -41,7 +59,7 @@ export default function AppendixPage({
   const exceptionEnd = exceptionIndexes.length > 0 ? Math.max(...exceptionIndexes) : -1
 
   const renderGlossaryLines = (segment: string[], offset: number) => {
-    const nodes: JSX.Element[] = []
+    const nodes: ReactElement[] = []
     let i = 0
 
     while (i < segment.length) {
@@ -63,7 +81,7 @@ export default function AppendixPage({
         nodes.push(
           <div
             key={`appendix-pair-${offset + i}`}
-            style={{ breakInside: 'avoid', WebkitColumnBreakInside: 'avoid' }}
+            style={{ breakInside: 'avoid' }}
           >
             <div style={{ fontWeight: 700, fontSize: baseFontSize }}>{trimmed}</div>
             <div style={{ fontSize: baseFontSize }}>{nextTrimmed}</div>
@@ -128,7 +146,7 @@ export default function AppendixPage({
     })
 
   const renderLifespanLines = (segment: string[], offset: number) => {
-    const nodes: JSX.Element[] = []
+    const nodes: ReactElement[] = []
     const separatorCandidates = ['ƒ?', '–', '-']
     const isSeparatorLine = (line: string) =>
       separatorCandidates.some((sep) => line.includes(sep))
@@ -173,7 +191,6 @@ export default function AppendixPage({
                 gap: mmToPx(4),
                 fontSize: baseFontSize,
                 breakInside: 'avoid',
-                WebkitColumnBreakInside: 'avoid',
               }}
             >
               <div style={{ flex: 1, whiteSpace: 'pre-wrap' }}>{parsed.left}</div>
@@ -209,7 +226,6 @@ export default function AppendixPage({
                 gap: mmToPx(4),
                 fontSize: baseFontSize,
                 breakInside: 'avoid',
-                WebkitColumnBreakInside: 'avoid',
               }}
             >
               <div style={{ flex: 1 }}>{`${trimmed} ${parsedNext.left}`}</div>
@@ -234,7 +250,6 @@ export default function AppendixPage({
               fontWeight: 700,
               fontSize: baseFontSize,
               breakInside: 'avoid',
-              WebkitColumnBreakInside: 'avoid',
             }}
           >
             {trimmed}
@@ -248,7 +263,6 @@ export default function AppendixPage({
             fontWeight: 400,
             fontSize: baseFontSize,
             breakInside: 'avoid',
-            WebkitColumnBreakInside: 'avoid',
           }}
         >
             {trimmed}
@@ -293,14 +307,13 @@ export default function AppendixPage({
         <>
           {exceptionStart > 0 && (
             <div
-              style={{
-                fontSize: baseFontSize,
-                color: '#000000',
-                lineHeight: 1.15,
-                columnCount: isTwoColumn ? 2 : 1,
-                columnGap: mmToPx(12),
-                marginBottom: '6pt',
-              }}
+            style={{
+              fontSize: baseFontSize,
+              color: '#000000',
+              lineHeight: 1.15,
+              ...columnStyles,
+              marginBottom: '6pt',
+            }}
             >
               {renderLines(lines.slice(0, exceptionStart), 0)}
             </div>
@@ -318,13 +331,12 @@ export default function AppendixPage({
           </div>
           {exceptionEnd + 1 < lines.length && (
             <div
-              style={{
-                fontSize: baseFontSize,
-                color: '#000000',
-                lineHeight: 1.15,
-                columnCount: isTwoColumn ? 2 : 1,
-                columnGap: mmToPx(12),
-              }}
+            style={{
+              fontSize: baseFontSize,
+              color: '#000000',
+              lineHeight: 1.15,
+              ...columnStyles,
+            }}
             >
               {renderLines(lines.slice(exceptionEnd + 1), exceptionEnd + 1)}
             </div>
@@ -336,8 +348,7 @@ export default function AppendixPage({
             fontSize: baseFontSize,
             color: '#000000',
             lineHeight: 1.15,
-            columnCount: isTwoColumn ? 2 : 1,
-            columnGap: mmToPx(12),
+            ...columnStyles,
           }}
         >
           {renderLines(lines, 0)}

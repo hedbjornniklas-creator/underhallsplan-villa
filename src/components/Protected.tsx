@@ -3,6 +3,7 @@
 import { ReactNode, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 
 type ProtectedProps = {
   children: ReactNode
@@ -30,7 +31,7 @@ export default function Protected({ children }: ProtectedProps) {
 
     checkSession()
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       if (!session) {
         router.push('/login')
       }

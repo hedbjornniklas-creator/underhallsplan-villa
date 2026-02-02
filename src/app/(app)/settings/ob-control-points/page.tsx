@@ -10,7 +10,6 @@ type ControlPoint = {
   scope: Scope
   key: string
   title: string
-  label: string | null
   description: string | null
   sort_order: number
   exterior_item_key: string | null
@@ -113,14 +112,13 @@ export default function SettingsControlPointsPage() {
 
         const cpArr = (cpData ?? []) as any[]
 
-        const normalized: ControlPoint[] = cpArr.map(row => ({
-          id: row.id,
-          scope: row.scope as Scope,
-          key: row.key,
-          title: row.title,
-          label: row.label,
-          description: row.description,
-          sort_order: row.sort_order,
+      const normalized: ControlPoint[] = cpArr.map(row => ({
+        id: row.id,
+        scope: row.scope as Scope,
+        key: row.key,
+        title: row.title,
+        description: row.description,
+        sort_order: row.sort_order,
           exterior_item_key: row.exterior_item_key ?? null,
           room_type_key: row.room_type_key ?? null,
           trigger_room_types: Array.isArray(row.trigger_room_types)
@@ -172,7 +170,6 @@ export default function SettingsControlPointsPage() {
         scope: 'interior',
         key: '',
         title: '',
-        label: '',
         description: '',
         sort_order: 100,
         exterior_item_key: null,
@@ -206,7 +203,6 @@ export default function SettingsControlPointsPage() {
             scope: p.scope,
             key: p.key.trim(),
             title: p.title.trim(),
-            label: p.label?.trim() || null,
             description: p.description?.trim() || null,
             sort_order: p.sort_order ?? 100,
             exterior_item_key: p.scope === 'exterior' ? p.exterior_item_key : null,
@@ -227,7 +223,6 @@ export default function SettingsControlPointsPage() {
           scope: row.scope,
           key: row.key,
           title: row.title,
-          label: row.label,
           description: row.description,
           sort_order: row.sort_order,
           exterior_item_key: row.exterior_item_key,
@@ -253,7 +248,6 @@ export default function SettingsControlPointsPage() {
           .update({
             scope: p.scope,
             title: p.title.trim(),
-            label: p.label?.trim() || null,
             description: p.description?.trim() || null,
             sort_order: p.sort_order ?? 100,
             exterior_item_key: p.scope === 'exterior' ? p.exterior_item_key : null,
@@ -275,7 +269,6 @@ export default function SettingsControlPointsPage() {
           scope: row.scope,
           key: row.key,
           title: row.title,
-          label: row.label,
           description: row.description,
           sort_order: row.sort_order,
           exterior_item_key: row.exterior_item_key,
@@ -334,8 +327,7 @@ export default function SettingsControlPointsPage() {
       const s = search.toLowerCase()
       list = list.filter(p =>
         (p.key && p.key.toLowerCase().includes(s)) ||
-        (p.title && p.title.toLowerCase().includes(s)) ||
-        (p.label && p.label.toLowerCase().includes(s))
+        (p.title && p.title.toLowerCase().includes(s))
       )
     }
     return list
@@ -590,7 +582,7 @@ export default function SettingsControlPointsPage() {
                 )}
               </div>
 
-              {/* Titel + label */}
+              {/* Titel */}
               <div className="grid gap-3 md:grid-cols-2 text-sm">
                 <div>
                   <label className="text-xs text-gray-600">Titel</label>
@@ -601,17 +593,6 @@ export default function SettingsControlPointsPage() {
                       updateLocalPoint(p.id, { title: e.target.value })
                     }
                     placeholder="t.ex. Tätskikt på vägg"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-600">Kort label (valfritt)</label>
-                  <input
-                    className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm"
-                    value={p.label ?? ''}
-                    onChange={e =>
-                      updateLocalPoint(p.id, { label: e.target.value || null })
-                    }
-                    placeholder="t.ex. Tätskikt vägg (badrum)"
                   />
                 </div>
               </div>
