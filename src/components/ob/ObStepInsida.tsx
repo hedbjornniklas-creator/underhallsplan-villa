@@ -658,6 +658,9 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     }
   }, [floorLabels, activeFloor])
 
+  const isOtherFloor =
+    normalizeSwedish(activeFloor ?? '').toLowerCase() === OTHER_ROOM_TYPE_KEY
+
   const getFloorLabel = (k: string) => {
     if (k === OTHER_ROOM_TYPE_KEY) return 'Övrigt'
     if (k === 'vind') return atticLabel || 'Vind'
@@ -686,6 +689,11 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
   const isOtherRoom = (room: InteriorRoom) =>
     isOtherRoomKey(room.room_type_key)
+
+  const isSystemOtherRoom = (room: InteriorRoom) =>
+    isOtherRoom(room) &&
+    normalizeSwedish(room.floor_label) === OTHER_ROOM_TYPE_KEY &&
+    (room.order_index ?? 0) === 0
 
   const roomChips = useMemo(() => {
     if (!activeFloor) return []
@@ -1377,25 +1385,27 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           </span>
         )}
 
-        <button
-          type="button"
-          onClick={() => {
-            // Alltid förinställ Plan till aktuellt plan om det finns
-            if (activeFloor && activeFloor !== OTHER_ROOM_TYPE_KEY) {
-              setNewFloorLabel(activeFloor)
-            } else if (derivedFloors.length) {
-              setNewFloorLabel(derivedFloors[0])
-            } else if (floorLabels.length) {
-              setNewFloorLabel(floorLabels[0])
-            } else {
-              setNewFloorLabel('entréplan')
-            }
-            setShowNewRoomForm(true)
-          }}
-          className="ml-auto inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
-        >
-          + Lägg till rum
-        </button>
+        {!isOtherFloor && (
+          <button
+            type="button"
+            onClick={() => {
+              // Alltid förinställ Plan till aktuellt plan om det finns
+              if (activeFloor && activeFloor !== OTHER_ROOM_TYPE_KEY) {
+                setNewFloorLabel(activeFloor)
+              } else if (derivedFloors.length) {
+                setNewFloorLabel(derivedFloors[0])
+              } else if (floorLabels.length) {
+                setNewFloorLabel(floorLabels[0])
+              } else {
+                setNewFloorLabel('entréplan')
+              }
+              setShowNewRoomForm(true)
+            }}
+            className="ml-auto inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
+          >
+            + Lägg till rum
+          </button>
+        )}
       </section>
 
       {roomChips.length > 0 && (
@@ -1525,7 +1535,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                     Redigera rum
                   </button>
 
-                  {!isOtherRoom(room) && (
+                  {!isSystemOtherRoom(room) && (
                     <button
                       type="button"
                       onClick={() => removeRoom(room.id)}

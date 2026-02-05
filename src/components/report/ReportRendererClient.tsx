@@ -195,6 +195,14 @@ type InspectionBlockItemEntry = {
   marginBottomMm: number
 }
 
+type InspectionRoomGroupEntry = {
+  type: 'inspectionRoomGroup'
+  title: string
+  items: InspectionBlockItem[]
+  marginTopMm: number
+  marginBottomMm: number
+}
+
 type RiskItemEntry = {
   type: 'riskItem'
   title: string
@@ -218,6 +226,7 @@ type FtuItemEntry = {
 type ExtendedReportBlock =
   | ReportBlock
   | InspectionBlockItemEntry
+  | InspectionRoomGroupEntry
   | RiskItemEntry
   | FtuItemEntry
 
@@ -554,6 +563,38 @@ export default function ReportRendererClient({
         if (block.type === 'inspectionBlocks') {
           const items = getMockArray<InspectionBlockItem>(mockData, block.itemsPath)
           if (items.length > 0) {
+            if (section.id === 'notes-interior' || section.id === 'notes') {
+              const groups: Array<{ title: string; items: InspectionBlockItem[] }> = []
+              items.forEach((item) => {
+                const title = String(item.title ?? '').trim()
+                const last = groups[groups.length - 1]
+                if (!last || last.title !== title) {
+                  groups.push({ title, items: [item] })
+                } else {
+                  last.items.push(item)
+                }
+              })
+
+              groups.forEach((group, groupIndex) => {
+                entries.push({
+                  kind: 'block',
+                  id: `${section.id}-room-group-${blockIndex}-${groupIndex}`,
+                  sectionId: section.id,
+                  sectionStartOnNewPage:
+                    section.startOnNewPage && blockIndex === 0 && groupIndex === 0,
+                  block: {
+                    type: 'inspectionRoomGroup',
+                    title: group.title,
+                    items: group.items,
+                    marginTopMm: groupIndex === 0 ? block.marginTopMm : 0,
+                    marginBottomMm:
+                      groupIndex === groups.length - 1 ? block.marginBottomMm : 0,
+                  },
+                })
+              })
+              return
+            }
+
             items.forEach((item, itemIndex) => {
               entries.push({
                 kind: 'block',
@@ -584,11 +625,17 @@ export default function ReportRendererClient({
       })
 
       if (sectionIndex < contentSections.length - 1) {
-        entries.push({
-          kind: 'spacer',
-          id: `${section.id}-spacer`,
-          heightPx: sectionSpacingPx,
-        })
+        const nextSection = contentSections[sectionIndex + 1]
+        const shouldAddSpacer = !(
+          section.id === 'okular' && nextSection?.id === 'building-data'
+        )
+        if (shouldAddSpacer) {
+          entries.push({
+            kind: 'spacer',
+            id: `${section.id}-spacer`,
+            heightPx: sectionSpacingPx,
+          })
+        }
       }
     })
     return entries
@@ -791,17 +838,15 @@ export default function ReportRendererClient({
   ]
 
   const footerCenterLines = [
-    'VÃ…R KUNSKAP Ã„R DIN TRYGGHET',
-    'Â© 2025 SBR ByggingenjÃ¶rerna. Version 2025.1',
+    'VÅR KUNSKAP ÄR DIN TRYGGHET',
+    '© 2025 SBR Byggingenjörerna. Version 2025.1',
   ]
 
-  const renderInspectionBlockItem = (
+  const renderInspectionItemContent = (
     item: InspectionBlockItem,
-    key: string,
-    marginTopMm: number,
-    marginBottomMm: number
+    keyPrefix: string,
+    photoVariant: 'compact' | 'wide' = 'compact'
   ) => {
-    const title = String(item.title ?? '')
     const noteText = String(item.noteText ?? '').trim()
     const riskText = String(item.riskText ?? '').trim()
     const ftuText = String(item.ftuText ?? '').trim()
@@ -810,17 +855,7 @@ export default function ReportRendererClient({
       : []
 
     return (
-      <article
-        key={key}
-        className="ob-block border border-gray-200 rounded-lg p-4 mb-6 bg-white"
-        style={blockMargins({ marginTopMm, marginBottomMm } as ReportBlock)}
-      >
-        <header className="ob-block__header mb-3">
-          <h4 className="ob-block__title text-[15px] font-semibold text-gray-900">
-            {title}
-          </h4>
-        </header>
-
+      <>
         <section className="ob-section ob-section--note">
           <div className="ob-section__head flex items-center gap-2">
             <span className="ob-icon ob-icon--note" aria-hidden="true">
@@ -840,54 +875,85 @@ export default function ReportRendererClient({
                 <span>Bilder</span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {photoUrls.map((url, idx) => (
-                  <div
-                    key={`${key}-photo-${idx}`}
-                    className="h-24 w-32 rounded-md border border-gray-200 bg-white overflow-hidden flex items-center justify-center"
-                  >
-                    <ReportPhoto
-                      src={url}
-                      alt="Notering"
-                      className="max-h-full max-w-full object-contain"
-                      style={{ width: '100%', height: '100%' }}
-                    />
-                  </div>
-                ))}
+                {photoVariant === 'wide'
+                  ? photoUrls.map((url, urlIndex) => (
+                      <ReportPhoto
+                        key={`${keyPrefix}-photo-${urlIndex}`}
+                        src={url}
+                        alt={`Foto ${urlIndex + 1}`}
+                        className="h-auto rounded border border-gray-200 object-contain bg-white"
+                        style={{ width: '60mm' }}
+                      />
+                    ))
+                  : photoUrls.map((url, urlIndex) => (
+                      <div
+                        key={`${keyPrefix}-photo-${urlIndex}`}
+                        className="h-24 w-32 rounded-md border border-gray-200 bg-white overflow-hidden flex items-center justify-center"
+                      >
+                        <ReportPhoto
+                          src={url}
+                          alt={`Foto ${urlIndex + 1}`}
+                          className="max-h-full max-w-full object-contain"
+                          style={{ width: '100%', height: '100%' }}
+                        />
+                      </div>
+                    ))}
               </div>
             </div>
           )}
         </section>
 
-        {(riskText || ftuText) && (
-          <section className="mt-4 space-y-3">
-            {riskText && (
-              <div className="rounded-md border border-gray-200 bg-white p-3">
-                <div className="flex items-center gap-2 text-xs font-semibold text-gray-700">
-                  <span className="ob-icon ob-icon--risk" aria-hidden="true">
-                    {'\u26A0\uFE0F'}
-                  </span>
-                  <span>Risk</span>
-                </div>
-                <div className="text-sm text-gray-800 whitespace-pre-line">
-                  {riskText}
-                </div>
-              </div>
-            )}
-            {ftuText && (
-              <div className="rounded-md border border-gray-200 bg-white p-3">
-                <div className="flex items-center gap-2 text-xs font-semibold text-gray-700">
-                  <span className="ob-icon ob-icon--ftu" aria-hidden="true">
-                    {'\u{1F50D}'}
-                  </span>
-                  <span>Fortsatt teknisk utredning</span>
-                </div>
-                <div className="text-sm text-gray-800 whitespace-pre-line">
-                  {ftuText}
-                </div>
-              </div>
-            )}
-          </section>
+        {riskText.length > 0 && (
+          <div className="mt-4 rounded-md border border-gray-200 bg-white p-3">
+            <div className="flex items-center gap-2 text-xs font-semibold text-gray-700">
+              <span className="ob-icon ob-icon--risk" aria-hidden="true">
+                {'\u26A0\uFE0F'}
+              </span>
+              <span>Riskanalys</span>
+            </div>
+            <div className="text-sm text-gray-800 whitespace-pre-line">
+              {riskText}
+            </div>
+          </div>
         )}
+
+        {ftuText.length > 0 && (
+          <div className="mt-4 rounded-md border border-gray-200 bg-white p-3">
+            <div className="flex items-center gap-2 text-xs font-semibold text-gray-700">
+              <span className="ob-icon ob-icon--ftu" aria-hidden="true">
+                {'\u{1F50D}'}
+              </span>
+              <span>Fortsatt teknisk utredning</span>
+            </div>
+            <div className="text-sm text-gray-800 whitespace-pre-line">
+              {ftuText}
+            </div>
+          </div>
+        )}
+      </>
+    )
+  }
+
+  const renderInspectionBlockItem = (
+    item: InspectionBlockItem,
+    key: string,
+    marginTopMm: number,
+    marginBottomMm: number
+  ) => {
+    const title = String(item.title ?? '')
+    return (
+      <article
+        key={key}
+        className="ob-block border border-gray-200 rounded-lg p-4 mb-6 bg-white"
+        style={blockMargins({ marginTopMm, marginBottomMm } as ReportBlock)}
+      >
+        <header className="ob-block__header mb-3">
+          <h4 className="ob-block__title text-[15px] font-semibold text-gray-900">
+            {title}
+          </h4>
+        </header>
+
+        {renderInspectionItemContent(item, key)}
       </article>
     )
   }
@@ -1058,14 +1124,6 @@ export default function ReportRendererClient({
           style={blockMargins(block)}
         >
           {blocks.map((item, itemIndex) => {
-            const title = String(item.title ?? '')
-            const noteText = String(item.noteText ?? '').trim()
-            const riskText = String(item.riskText ?? '').trim()
-            const ftuText = String(item.ftuText ?? '').trim()
-            const photoUrls = Array.isArray(item.photoUrls)
-              ? item.photoUrls.filter((url) => typeof url === 'string')
-              : []
-
             return (
               <article
                 key={`${sectionId}-inspection-${index}-${itemIndex}`}
@@ -1073,84 +1131,53 @@ export default function ReportRendererClient({
               >
                 <header className="ob-block__header mb-3">
                   <h4 className="ob-block__title text-[15px] font-semibold text-gray-900">
-                    {title}
+                    {String(item.title ?? '')}
                   </h4>
                 </header>
 
-                <section className="ob-section ob-section--note">
-                  <div className="ob-section__head flex items-center gap-2">
-                    <span className="ob-icon ob-icon--note" aria-hidden="true">
-                      {'\u{1F9F1}'}
-                    </span>
-                    <span className="ob-section__label text-xs font-bold tracking-wide uppercase text-gray-900">
-                      Notering
-                    </span>
-                  </div>
-                  <p className="ob-section__text text-sm leading-relaxed mt-1 text-gray-900 whitespace-pre-line">
-                    {noteText || '--'}
-                  </p>
-                  {photoUrls.length > 0 && (
-                    <div className="mt-2 space-y-2">
-                      <div className="flex items-center gap-1.5 text-xs text-gray-700">
-                        <span aria-hidden="true">{'\u{1F4F7}'}</span>
-                        <span>Bilder</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {photoUrls.map((url, urlIndex) => (
-                          <ReportPhoto
-                            key={`${sectionId}-inspection-${index}-${itemIndex}-${urlIndex}`}
-                            src={url}
-                            alt={`Foto ${urlIndex + 1}`}
-                            className="h-auto rounded border border-gray-200 object-contain bg-white"
-                            style={{ width: '60mm' }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </section>
-
-                {riskText.length > 0 && (
-                  <>
-                    <hr className="ob-divider my-4 border-gray-200" />
-                    <section className="ob-section ob-section--risk">
-                      <div className="ob-section__head flex items-center gap-2">
-                        <span className="ob-icon ob-icon--risk" aria-hidden="true">
-                          {'\u26A0\uFE0F'}
-                        </span>
-                        <span className="ob-section__label text-xs font-bold tracking-wide uppercase text-gray-900">
-                          Riskanalys
-                        </span>
-                      </div>
-                      <p className="ob-section__text text-sm leading-relaxed mt-1 text-gray-900 whitespace-pre-line">
-                        {riskText}
-                      </p>
-                    </section>
-                  </>
-                )}
-
-                {ftuText.length > 0 && (
-                  <>
-                    <hr className="ob-divider my-4 border-gray-200" />
-                    <section className="ob-section ob-section--ftu">
-                      <div className="ob-section__head flex items-center gap-2">
-                        <span className="ob-icon ob-icon--ftu" aria-hidden="true">
-                          {'\u{1F50D}'}
-                        </span>
-                        <span className="ob-section__label text-xs font-bold tracking-wide uppercase text-gray-900">
-                          Fortsatt teknisk utredning
-                        </span>
-                      </div>
-                      <p className="ob-section__text text-sm leading-relaxed mt-1 text-gray-900 whitespace-pre-line">
-                        {ftuText}
-                      </p>
-                    </section>
-                  </>
+                {renderInspectionItemContent(
+                  item,
+                  `${sectionId}-inspection-${index}-${itemIndex}`
                 )}
               </article>
             )
           })}
         </div>
+      )
+    }
+
+    if (block.type === 'inspectionRoomGroup') {
+      const title = String(block.title ?? '')
+      const extraGapMm = 2
+      return (
+        <article
+          key={`${sectionId}-room-group-${index}`}
+          style={{
+            ...blockMargins(block),
+            marginBottom: mmToPx((block.marginBottomMm ?? 0) + extraGapMm),
+          }}
+          className="rounded-xl border border-blue-300/70 bg-white p-4 mb-6 break-inside-avoid"
+        >
+          <header className="mb-3">
+            <h4 className="text-[15px] font-semibold text-gray-900">{title}</h4>
+          </header>
+          <div className="space-y-4">
+            {block.items.map((item, itemIndex) => (
+              <div
+                key={`${sectionId}-room-group-${index}-${itemIndex}`}
+                className={
+                  itemIndex === 0 ? '' : 'pt-4 border-t border-blue-200/70'
+                }
+              >
+                {renderInspectionItemContent(
+                  item,
+                  `${sectionId}-room-group-${index}-${itemIndex}`,
+                  'wide'
+                )}
+              </div>
+            ))}
+          </div>
+        </article>
       )
     }
 

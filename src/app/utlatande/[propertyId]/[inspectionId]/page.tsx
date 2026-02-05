@@ -111,6 +111,32 @@ export default async function Page({
     return trimmed.length > 0 ? trimmed : alt
   }
   const trimText = (value: string | null | undefined) => (value ?? '').trim()
+  const normalizeSwedish = (value: string) =>
+    value
+      .replace(/Ã¤/g, 'ä')
+      .replace(/Ã¥/g, 'å')
+      .replace(/Ã¶/g, 'ö')
+      .replace(/Ã„/g, 'Ä')
+      .replace(/Ã…/g, 'Å')
+      .replace(/Ã–/g, 'Ö')
+      .replace(/Ã©/g, 'é')
+      .replace(/Ã‰/g, 'É')
+
+  const normalizeKey = (value: string | null | undefined) =>
+    normalizeSwedish(String(value ?? '')).trim().toLowerCase()
+
+  const floorLabelFromKey = (value: string) => {
+    const key = normalizeKey(value)
+    if (key === 'källare') return 'Källare'
+    if (key === 'källare_delvis') return 'Källare (delvis)'
+    if (key === 'entréplan') return 'Entréplan'
+    if (key === 'plan2') return 'Plan 2'
+    if (key === 'plan3') return 'Plan 3'
+    if (key.startsWith('plan')) return `Plan ${key.replace('plan', '')}`
+    if (key === 'vind') return 'Vind'
+    if (key === 'ovrigt' || key === 'övrigt') return 'Övrigt'
+    return normalizeSwedish(String(value ?? '')).trim()
+  }
   const buildInspectionImageUrl = (path: string | null | undefined) => {
     if (!path) return null
     if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('/')) {
@@ -443,6 +469,15 @@ export default async function Page({
     console.error('Kunde inte hamta insida-rum', interiorRoomsError)
   }
 
+  const { data: interiorRoomTypes, error: interiorRoomTypesError } = await supabase
+    .from('settings_interior_room_types')
+    .select('key, label')
+    .eq('is_active', true)
+
+  if (interiorRoomTypesError) {
+    console.error('Kunde inte hamta rumstyper (insida)', interiorRoomTypesError)
+  }
+
   const interiorRoomRows = (interiorRooms ?? []) as InteriorRoomRow[]
   const OTHER_ROOM_TYPE_KEY = 'ovrigt'
   const FLOOR_ORDER = ['källare', 'källare_delvis', 'entréplan', 'plan2', 'plan3']
@@ -594,19 +629,7 @@ export default async function Page({
       const outcome = controlItem.selected_outcome_id
         ? outcomeById.get(controlItem.selected_outcome_id) ?? null
         : null
-      const outcomeLabel = trimText(outcome?.label ?? '')
       const hasOutcome = Boolean(controlItem.selected_outcome_id)
-
-      if (!hasOutcome && note.length === 0) return
-
-      let line = controlItem.title
-      if (hasOutcome && outcomeLabel.length > 0) {
-        line += ` - ${outcomeLabel}`
-      }
-      if (note.length > 0) {
-        line += `: ${note}`
-      }
-      itemLines.push(line)
 
       const controlItemImages =
         controlItem.id ? imagesByControlItemId.get(controlItem.id) ?? [] : []
@@ -616,17 +639,23 @@ export default async function Page({
 
       const riskText = trimText(outcome?.risk_template ?? '')
       if (riskText.length > 0) {
-        riskLines.push(`${item.label} - ${controlItem.title}`)
+        riskLines.push(item.label)
         riskLines.push(riskText)
         riskLines.push('')
       }
 
       const ftuText = trimText(outcome?.ftu_template ?? '')
       if (ftuText.length > 0) {
-        ftuLines.push(`${item.label} - ${controlItem.title}`)
+        ftuLines.push(item.label)
         ftuLines.push(ftuText)
         ftuLines.push('')
       }
+
+      if (!hasOutcome && note.length === 0) return
+      if (note.length === 0) return
+
+      const line = note
+      itemLines.push(line)
 
       blocksForItem.push({
         title: item.label,
@@ -688,9 +717,20 @@ export default async function Page({
     interiorControlItemsByRoomId.set(key, bucket)
   }
 
+  const roomTypeLabelByKey = new Map<string, string>(
+    (interiorRoomTypes ?? []).map((row: any) => [
+      normalizeKey(row.key),
+      normalizeSwedish(String(row.label ?? row.key ?? '')).trim(),
+    ])
+  )
+
   for (const room of sortedInteriorRooms) {
-    const roomTitle = [room.floor_label, room.room_label]
-      .map((part) => String(part ?? '').trim())
+    const floorLabel = floorLabelFromKey(room.floor_label)
+    const roomTypeLabel =
+      roomTypeLabelByKey.get(normalizeKey(room.room_type_key)) ??
+      normalizeSwedish(String(room.room_type_key ?? '')).trim()
+    const roomName = normalizeSwedish(String(room.room_label ?? '')).trim()
+    const roomTitle = [floorLabel, roomTypeLabel, roomName]
       .filter(Boolean)
       .join(' - ')
     const roomBlocks: InspectionBlock[] = []
@@ -719,19 +759,7 @@ export default async function Page({
       const outcome = controlItem.selected_outcome_id
         ? outcomeById.get(controlItem.selected_outcome_id) ?? null
         : null
-      const outcomeLabel = trimText(outcome?.label ?? '')
       const hasOutcome = Boolean(controlItem.selected_outcome_id)
-
-      if (!hasOutcome && note.length === 0) return
-
-      let line = controlItem.title
-      if (hasOutcome && outcomeLabel.length > 0) {
-        line += ` - ${outcomeLabel}`
-      }
-      if (note.length > 0) {
-        line += `: ${note}`
-      }
-      roomLines.push(line)
 
       const controlItemImages =
         controlItem.id ? imagesByControlItemId.get(controlItem.id) ?? [] : []
@@ -741,17 +769,23 @@ export default async function Page({
 
       const riskText = trimText(outcome?.risk_template ?? '')
       if (riskText.length > 0) {
-        riskLines.push(`${roomTitle} - ${controlItem.title}`)
+        riskLines.push(roomTitle)
         riskLines.push(riskText)
         riskLines.push('')
       }
 
       const ftuText = trimText(outcome?.ftu_template ?? '')
       if (ftuText.length > 0) {
-        ftuLines.push(`${roomTitle} - ${controlItem.title}`)
+        ftuLines.push(roomTitle)
         ftuLines.push(ftuText)
         ftuLines.push('')
       }
+
+      if (!hasOutcome && note.length === 0) return
+      if (note.length === 0) return
+
+      const line = note
+      roomLines.push(line)
 
       roomBlocks.push({
         title: roomTitle,
