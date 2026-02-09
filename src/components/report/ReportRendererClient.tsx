@@ -23,6 +23,7 @@ type ReportRendererClientProps = {
   spec: ResolvedReportSection[]
   mockData: Record<string, unknown>
   coverNotice: string
+  rootClassName?: string
 }
 
 const PHOTO_POLICY = {
@@ -431,6 +432,7 @@ export default function ReportRendererClient({
   spec,
   mockData,
   coverNotice,
+  rootClassName,
 }: ReportRendererClientProps) {
   const [pagePlan, setPagePlan] = useState<{
     pages: PagePlan[]
@@ -645,7 +647,7 @@ export default function ReportRendererClient({
     const pages: Array<{ section: ResolvedReportSection; rawText: string; showTitle: boolean }> = []
     appendixSections.forEach((section) => {
       const rawText = section.appendixText ?? ''
-      if (section.appendixText && section.appendixId === 'APPENDIX_1_VILLKOR_SELLER_SBR_2024') {
+      if (section.appendixText && section.appendixId === 'APPENDIX_1_VILLKOR_SELLER_SBR') {
         const segments = splitAppendixText(rawText)
         let isFirstPage = true
         segments.forEach((segment) => {
@@ -1408,8 +1410,9 @@ export default function ReportRendererClient({
     return null
   }
 
+  const rootClasses = ['report-root', rootClassName].filter(Boolean).join(' ')
   return (
-    <div className="report-root" style={{ backgroundColor: '#f1f5f9', padding: mmToPx(6) }}>
+    <div className={rootClasses} style={{ backgroundColor: '#f1f5f9', padding: mmToPx(6) }}>
       <div
         ref={measureContainerRef}
         style={{

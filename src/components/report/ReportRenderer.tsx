@@ -6,6 +6,7 @@ import ReportRendererClient from '@/components/report/ReportRendererClient'
 type ReportRendererProps = {
   spec: ReportSection[]
   mockData: Record<string, unknown>
+  rootClassName?: string
 }
 
 type ResolvedReportSection = ReportSection & { appendixText?: string }
@@ -35,7 +36,11 @@ const resolveBlock = (block: ReportBlock): ReportBlock => {
   return block
 }
 
-export default function ReportRenderer({ spec, mockData }: ReportRendererProps) {
+export default function ReportRenderer({
+  spec,
+  mockData,
+  rootClassName,
+}: ReportRendererProps) {
   const coverNotice = loadStandardText('STD_COVER_BUYER_DUTY_NOTICE')
   const resolvedSpec: ResolvedReportSection[] = spec.map((section) => {
     const resolvedBlocks = section.blocks.map(resolveBlock)
@@ -51,6 +56,7 @@ export default function ReportRenderer({ spec, mockData }: ReportRendererProps) 
       spec={resolvedSpec}
       mockData={mockData}
       coverNotice={coverNotice}
+      rootClassName={rootClassName}
     />
   )
 }

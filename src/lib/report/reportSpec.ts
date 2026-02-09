@@ -624,7 +624,7 @@ export const REPORT_SPEC: ReportSection[] = [
     title: 'BILAGA 1: Villkor för överlåtelsebesiktning för säljare.',
     startOnNewPage: true,
     type: 'appendix',
-    appendixId: 'APPENDIX_1_VILLKOR_SELLER_SBR_2024',
+    appendixId: 'APPENDIX_1_VILLKOR_SELLER_SBR',
     blocks: [],
   },
   {
@@ -632,7 +632,7 @@ export const REPORT_SPEC: ReportSection[] = [
     title: 'Bilaga 2 – Begreppsförklaringar',
     startOnNewPage: true,
     type: 'appendix',
-    appendixId: 'APPENDIX_2_LITEN_BYGGORDBOK_SBR_2024',
+    appendixId: 'APPENDIX_2_LITEN_BYGGORDBOK_SBR',
     blocks: [],
   },
   {
@@ -640,7 +640,7 @@ export const REPORT_SPEC: ReportSection[] = [
     title: 'Bilaga 3 – Normala livslängder och underhållsintervall',
     startOnNewPage: true,
     type: 'appendix',
-    appendixId: 'APPENDIX_3_LIFESPAN_TABLE_SBR_2024',
+    appendixId: 'APPENDIX_3_LIFESPAN_TABLE_SBR',
     blocks: [],
   },
 ]

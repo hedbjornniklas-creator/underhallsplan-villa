@@ -64,6 +64,18 @@ body {
     page-break-after: always;
   }
 
+  .report-root.report-root--pdf .report-page {
+    height: 297mm !important;
+    min-height: 297mm !important;
+    padding-top: 20mm !important;
+    page-break-after: always;
+    overflow: hidden;
+  }
+
+  .report-root.report-root--pdf .report-page:last-child {
+    page-break-after: auto;
+  }
+
   .report-page,
   .report-page * {
     box-sizing: border-box;

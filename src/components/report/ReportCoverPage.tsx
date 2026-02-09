@@ -1,4 +1,4 @@
-import { defaultCoverIllustrationSrc, sbrLogoSrc } from '@/lib/report/reportAssets'
+﻿import { defaultCoverIllustrationSrc, sbrLogoSrc } from '@/lib/report/reportAssets'
 import {
   ACCENT_COLOR,
   REPORT_STYLES,
@@ -48,26 +48,43 @@ export default function ReportCoverPage({
               objectFit: 'contain',
             }}
           />
-          <div style={{ fontSize: '11pt', color: '#334155' }}>
+          <div style={{ fontSize: '12pt', color: '#334155' }}>
             Besiktningsdag: {inspectionDate ?? 'saknas'}
           </div>
         </div>
         {companyLogoUrl ? (
-          <div style={{ textAlign: 'right' }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              width: mmToPx(SBR_LOGO_WIDTH_MM),
+              marginLeft: 'auto',
+            }}
+          >
             <img
               src={companyLogoUrl}
               alt="Företagslogga"
               style={{
+                width: mmToPx(SBR_LOGO_WIDTH_MM),
                 height: mmToPx(SBR_LOGO_HEIGHT_MM),
                 objectFit: 'contain',
               }}
             />
-            <div style={{ fontSize: '11pt', color: '#334155', marginTop: mmToPx(1) }}>
+            <div style={{ fontSize: '12pt', color: '#334155', marginTop: mmToPx(1) }}>
               UN: {assignmentNumber ?? 'saknas'}
             </div>
           </div>
         ) : (
-          <div style={{ textAlign: 'right' }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              width: mmToPx(SBR_LOGO_WIDTH_MM),
+              marginLeft: 'auto',
+            }}
+          >
             <div
               style={{
                 width: mmToPx(SBR_LOGO_WIDTH_MM),
@@ -82,7 +99,7 @@ export default function ReportCoverPage({
             >
               Företagslogga
             </div>
-            <div style={{ fontSize: '11pt', color: '#334155', marginTop: mmToPx(1) }}>
+            <div style={{ fontSize: '12pt', color: '#334155', marginTop: mmToPx(1) }}>
               UN: {assignmentNumber ?? 'saknas'}
             </div>
           </div>
@@ -161,3 +178,4 @@ export default function ReportCoverPage({
     </div>
   )
 }
+

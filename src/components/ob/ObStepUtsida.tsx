@@ -51,6 +51,7 @@ type InspectionExteriorObservation = {
   exterior_item_id: string
   part_label: string | null
   values: Record<string, any>
+  is_free_note?: boolean | null
   note: string | null
   created_at?: string | null
   updated_at?: string | null
@@ -287,10 +288,12 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           values: (o.values as any) || {},
         }))
 
-        // 4b) Säkerställ att varje komponent har minst EN "main"-observation (utan _free_note)
+        // 4b) Säkerställ att varje komponent har minst EN "main"-observation (utan free_note)
         for (const it of itemsArr) {
           const hasMain = allObs.some(
-            o => o.exterior_item_id === it.id && !o.values?._free_note
+            o =>
+              o.exterior_item_id === it.id &&
+              !(o.is_free_note === true || o.values?._free_note)
           )
 
           if (!hasMain) {
@@ -301,6 +304,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                 exterior_item_id: it.id,
                 part_label: null,
                 values: {},
+                is_free_note: false,
                 note: null,
               })
               .select('*')
@@ -531,9 +535,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     setObservations(prev => ({ ...prev, [itemId]: rows }))
   }
 
-  const upsertObservationRow = async (
-    row: InspectionExteriorObservation
-  ): Promise<InspectionExteriorObservation> => {
+    const upsertObservationRow = async (
+      row: InspectionExteriorObservation
+    ): Promise<InspectionExteriorObservation> => {
     setSaving(true)
     setError(null)
     try {
@@ -543,6 +547,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           .update({
             part_label: row.part_label,
             values: row.values,
+            is_free_note: row.is_free_note ?? false,
             note: row.note,
           })
           .eq('id', row.id)
@@ -560,6 +565,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             exterior_item_id: row.exterior_item_id,
             part_label: row.part_label,
             values: row.values,
+            is_free_note: row.is_free_note ?? false,
             note: row.note,
           })
           .select('*')
@@ -585,6 +591,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       exterior_item_id: item.id,
       part_label: '',
       values: { _free_note: true },
+      is_free_note: true,
       note: '',
     }
 
@@ -602,15 +609,16 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     if (index === -1) return
 
     const current = rows[index]
-    const updated: InspectionExteriorObservation = {
-      ...current,
-      ...patch,
-      values: {
-        ...(current.values || {}),
-        ...(patch.values || {}),
-        _free_note: true,
-      },
-    }
+      const updated: InspectionExteriorObservation = {
+        ...current,
+        ...patch,
+        is_free_note: true,
+        values: {
+          ...(current.values || {}),
+          ...(patch.values || {}),
+          _free_note: true,
+        },
+      }
 
     const optimistic = [...rows]
     optimistic[index] = updated
@@ -1018,13 +1026,15 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       )
     }
 
-    // Huvud-observation (utan _free_note)
-    const mainRow =
-      rows.find(r => !r.values?._free_note) ?? rows[0]
+    const isFreeNote = (row: InspectionExteriorObservation) =>
+      row.is_free_note === true || row.values?._free_note === true
 
-    // Fria noteringar (med _free_note)
+    // Huvud-observation (utan free_note)
+    const mainRow = rows.find(r => !isFreeNote(r)) ?? rows[0]
+
+    // Fria noteringar (med free_note)
     const freeNoteRows = rows.filter(
-      r => r.id !== mainRow.id && r.values?._free_note
+      r => r.id !== mainRow.id && isFreeNote(r)
     )
 
     const rowControlItems = mainRow.id
