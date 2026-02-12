@@ -1,10 +1,10 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 import AutoPrintTrigger from '../../_components/AutoPrintTrigger'
 import ReportToolbar from '../../_components/ReportToolbar'
 import SessionBridge from '../../_components/SessionBridge'
 import ClientSessionDebug from '../../_components/ClientSessionDebug'
 import ReportRenderer from '@/components/report/ReportRenderer'
-import { REPORT_SPEC } from '@/lib/report/reportSpec'
+import { buildReportSpec } from '@/lib/report/reportSpec'
 import {
   buildBuildingDataMap,
   buildBuildingTypeParts,
@@ -115,28 +115,28 @@ export default async function Page({
   const trimText = (value: string | null | undefined) => (value ?? '').trim()
   const normalizeSwedish = (value: string) =>
     value
-      .replace(/Ã¤/g, 'ä')
-      .replace(/Ã¥/g, 'å')
-      .replace(/Ã¶/g, 'ö')
-      .replace(/Ã„/g, 'Ä')
-      .replace(/Ã…/g, 'Å')
-      .replace(/Ã–/g, 'Ö')
-      .replace(/Ã©/g, 'é')
-      .replace(/Ã‰/g, 'É')
+      .replace(/ÃƒÂ¤/g, 'Ã¤')
+      .replace(/ÃƒÂ¥/g, 'Ã¥')
+      .replace(/ÃƒÂ¶/g, 'Ã¶')
+      .replace(/Ãƒâ€ž/g, 'Ã„')
+      .replace(/Ãƒâ€¦/g, 'Ã…')
+      .replace(/Ãƒâ€“/g, 'Ã–')
+      .replace(/ÃƒÂ©/g, 'Ã©')
+      .replace(/Ãƒâ€°/g, 'Ã‰')
 
   const normalizeKey = (value: string | null | undefined) =>
     normalizeSwedish(String(value ?? '')).trim().toLowerCase()
 
   const floorLabelFromKey = (value: string) => {
     const key = normalizeKey(value)
-    if (key === 'källare') return 'Källare'
-    if (key === 'källare_delvis') return 'Källare (delvis)'
-    if (key === 'entréplan') return 'Entréplan'
+    if (key === 'kÃ¤llare') return 'KÃ¤llare'
+    if (key === 'kÃ¤llare_delvis') return 'KÃ¤llare (delvis)'
+    if (key === 'entrÃ©plan') return 'EntrÃ©plan'
     if (key === 'plan2') return 'Plan 2'
     if (key === 'plan3') return 'Plan 3'
     if (key.startsWith('plan')) return `Plan ${key.replace('plan', '')}`
     if (key === 'vind') return 'Vind'
-    if (key === 'ovrigt' || key === 'övrigt') return 'Övrigt'
+    if (key === 'ovrigt' || key === 'Ã¶vrigt') return 'Ã–vrigt'
     return normalizeSwedish(String(value ?? '')).trim()
   }
   const buildInspectionImageUrl = (path: string | null | undefined) => {
@@ -156,24 +156,27 @@ export default async function Page({
     .maybeSingle()
 
   if (propertyError) {
-    console.error('Kunde inte hämta fastighet', propertyError)
+    console.error('Kunde inte hÃ¤mta fastighet', propertyError)
   }
 
   const { data: inspectionData, error: inspectionError } = await supabase
     .from('inspections')
     .select(
-      'id, property_id, date, inspection_time, assignment_number, client_name, client_contact, defect_disclosures, scope, attendees, attendees_other, assignment_confirmation_delivered_date'
+      'id, property_id, date, inspection_time, assignment_number, client_name, client_contact, defect_disclosures, scope, attendees, attendees_other, assignment_confirmation_delivered_date, inspection_side'
     )
     .eq('id', resolvedParams.inspectionId)
     .maybeSingle()
   const inspection = (inspectionData as any) ?? null
 
   if (inspectionError) {
-    console.error('Kunde inte hämta besiktning', inspectionError)
+    console.error('Kunde inte hÃ¤mta besiktning', inspectionError)
   }
 
+  const inspectionSide = (inspection?.inspection_side ?? null) as 'buyer' | 'seller' | null
+
+
   if (inspection && inspection.property_id !== resolvedParams.propertyId) {
-    console.error('Besiktning tillhör inte fastighet', {
+    console.error('Besiktning tillhÃ¶r inte fastighet', {
       inspectionPropertyId: inspection.property_id,
       propertyId: resolvedParams.propertyId,
     })
@@ -193,7 +196,7 @@ export default async function Page({
     : { data: null, error: null }
 
   if (profileError) {
-    console.error('Kunde inte hämta profil', profileError)
+    console.error('Kunde inte hÃ¤mta profil', profileError)
   }
 
   const { data: documentRows, error: documentError } = await supabase
@@ -202,7 +205,7 @@ export default async function Page({
     .eq('inspection_id', resolvedParams.inspectionId)
 
   if (documentError) {
-    console.error('Kunde inte hämta handlingar', documentError)
+    console.error('Kunde inte hÃ¤mta handlingar', documentError)
   }
 
   const providedDocuments =
@@ -223,7 +226,7 @@ export default async function Page({
     .maybeSingle()
 
   if (disclosureError) {
-    console.error('Kunde inte hämta upplysningar', disclosureError)
+    console.error('Kunde inte hÃ¤mta upplysningar', disclosureError)
   }
 
   const { data: inspectionConditions, error: conditionsError } = await supabase
@@ -235,7 +238,7 @@ export default async function Page({
     .maybeSingle()
 
   if (conditionsError) {
-    console.error('Kunde inte hämta förutsättningar', conditionsError)
+    console.error('Kunde inte hÃ¤mta fÃ¶rutsÃ¤ttningar', conditionsError)
   }
 
   
@@ -363,7 +366,7 @@ export default async function Page({
     inspection?.assignment_confirmation_delivered_date ?? null,
     '--'
   )
-  const assignmentConfirmationText = `En uppdragsbekräftelse med bifogad villkorsbilaga överlämnades till uppdragsgivaren den ${assignmentDeliveredDate}.`
+  const assignmentConfirmationText = `En uppdragsbekrÃ¤ftelse med bifogad villkorsbilaga Ã¶verlÃ¤mnades till uppdragsgivaren den ${assignmentDeliveredDate}.`
 
   const parseSemicolonList = (raw: string | null | undefined) => {
     if (!raw) return []
@@ -482,7 +485,7 @@ export default async function Page({
 
   const interiorRoomRows = (interiorRooms ?? []) as InteriorRoomRow[]
   const OTHER_ROOM_TYPE_KEY = 'ovrigt'
-  const FLOOR_ORDER = ['källare', 'källare_delvis', 'entréplan', 'plan2', 'plan3']
+  const FLOOR_ORDER = ['kÃ¤llare', 'kÃ¤llare_delvis', 'entrÃ©plan', 'plan2', 'plan3']
 
   const getFloorRank = (floor: string) => {
     if (floor === 'vind') return 900
@@ -862,7 +865,7 @@ export default async function Page({
         acquisition_text:
           disclosureRow?.note && disclosureRow.note.trim().length > 0
             ? disclosureRow.note
-            : 'Säljaren förvärvade fastigheten --.',
+            : 'SÃ¤ljaren fÃ¶rvÃ¤rvade fastigheten --.',
         renovations: [],
         property_faults: propertyFaultsText ? propertyFaultsText : '',
       },
@@ -874,6 +877,7 @@ export default async function Page({
         client_name: valueOrFallback(inspection?.client_name ?? null),
         scope_text: scopeText,
         attendees_text: attendeesText,
+        assignment_confirmation_date: assignmentDeliveredDate,
         assignment_confirmation_text: assignmentConfirmationText,
       },
       inspection_conditions: {
@@ -908,13 +912,14 @@ export default async function Page({
   try {
     content = (
       <ReportRenderer
-        spec={REPORT_SPEC}
+        spec={buildReportSpec({ inspectionSide })}
         mockData={mockData}
         rootClassName={isPdf ? 'report-root--pdf' : undefined}
+        inspectionSide={inspectionSide}
       />
     )
   } catch (error) {
-    errorMessage = error instanceof Error ? error.message : 'Okänt fel vid rendering.'
+    errorMessage = error instanceof Error ? error.message : 'OkÃ¤nt fel vid rendering.'
   }
 
   const pickErrorDetails = (err: any) =>
@@ -988,7 +993,7 @@ export default async function Page({
         <div className="mx-auto w-full max-w-3xl px-4 pt-4 print:hidden">
           <details className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
             <summary className="cursor-pointer font-semibold">
-              Teknisk felsökning (utlåtande)
+              Teknisk felsÃ¶kning (utlÃ¥tande)
             </summary>
             <pre className="mt-2 whitespace-pre-wrap">
               {JSON.stringify(diagnostics, null, 2)}
@@ -1007,6 +1012,7 @@ export default async function Page({
     </div>
   )
 }
+
 
 
 

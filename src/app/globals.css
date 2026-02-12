@@ -69,7 +69,9 @@ body {
     min-height: 297mm !important;
     padding-top: 20mm !important;
     page-break-after: always;
-    overflow: hidden;
+    overflow: visible;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .report-root.report-root--pdf .report-page:last-child {
@@ -79,6 +81,16 @@ body {
   .report-page,
   .report-page * {
     box-sizing: border-box;
+  }
+
+  .report-root.report-root--pdf .break-inside-avoid {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .report-root.report-root--pdf .ob-block {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
   }
 
   .report-heading {
@@ -96,6 +108,8 @@ body {
     height: auto;
     max-height: 160mm;
     object-fit: contain;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .report-page img[alt="Sidfot"] {

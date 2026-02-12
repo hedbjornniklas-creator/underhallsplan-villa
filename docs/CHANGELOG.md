@@ -1,5 +1,26 @@
 ﻿# Changelog
 
+## 2026-02-12
+
+### Major changes
+- **Report PDF stability fixes (preview -> PDF V.2)**
+  - Pagination safety margin in `ReportRendererClient.tsx`
+  - Skip spacer-only pages to avoid blank output
+  - Appendix 3 pagination + appendix safety margin
+  - Print CSS adjustments in `globals.css` (no silent clipping; allow block/image breaks)
+
+- **Interior rooms: edit floor**
+  - Added plan selection in "Redigera rum" with safe reordering
+  - System room "Övrigt" locked to prevent moving
+
+- **Standard texts: new assignment + okular split**
+  - Added `STD_ASSIGNMENT_SELLER_NOTICE.txt`, `STD_ASSIGNMENT_BUYER_NOTICE.txt`
+  - Added `STD_VISUAL_INSPECTION_CONDITIONS.txt`, `STD_VISUAL_INSPECTION_ORAL.txt`
+  - Updated `reportSpec.ts` + `registry.ts`
+
+- **Appendix 3 formatting**
+  - Updated `APPENDIX_3_LIFESPAN_TABLE_SBR.txt` to use `|` separators for parsing
+
 ## 2026-02-09
 
 ### Major changes
@@ -35,3 +56,4 @@
 
 - **Cover layout adjustment**
   - `src/components/report/ReportCoverPage.tsx` (logo box sizing + header text fixes)
+

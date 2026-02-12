@@ -35,6 +35,13 @@ export type ReportBlock =
       small?: boolean
     }
   | {
+      type: 'boxedText'
+      source: TextSource
+      marginTopMm: number
+      marginBottomMm: number
+      small?: boolean
+    }
+  | {
       type: 'field'
       label: string
       path: string
@@ -81,6 +88,21 @@ export type ReportBlock =
   | {
       type: 'twoColumn'
       rows: TwoColumnRow[]
+      labelWidthMm?: number
+      rowGapMm?: number
+      marginTopMm: number
+      marginBottomMm: number
+    }
+  | {
+      type: 'handlingarLayout'
+      labels: {
+        provided: string
+        info: string
+        faults: string
+      }
+      infoDisclaimer: string
+      renovationsLabel: string
+      emptyPlaceholder?: string
       labelWidthMm?: number
       rowGapMm?: number
       marginTopMm: number
@@ -135,20 +157,12 @@ export const REPORT_SPEC: ReportSection[] = [
             sectionId: 'assignment',
           },
           {
-            label: '1. HANDLINGAR OCH UPPLYSNINGAR',
+            label: 'HANDLINGAR OCH UPPLYSNINGAR',
             sectionId: 'handlingar',
           },
           {
-            label: '2. OKULÄR BESIKTNING',
+            label: 'OKULÄR BESIKTNING',
             sectionId: 'okular',
-          },
-          {
-            label: '3. RISKANALYS',
-            sectionId: 'risk',
-          },
-          {
-            label: '4. FORTSATT TEKNISK UTREDNING',
-            sectionId: 'ftu',
           },
           {
             label: 'BILAGA 1: Villkor för överlåtelsebesiktning för säljare',
@@ -321,45 +335,7 @@ export const REPORT_SPEC: ReportSection[] = [
       },
       {
         type: 'text',
-        source: {
-          kind: 'static',
-          text: 'Uppdraget utförs enligt ”villkor för överlåtelsebesiktning för säljare enligt SBR modellen”.',
-        },
-        marginTopMm: 0,
-        marginBottomMm: 2,
-      },
-      {
-        type: 'text',
-        source: { kind: 'mock', path: 'mock.inspections.assignment_confirmation_text' },
-        marginTopMm: 0,
-        marginBottomMm: 2,
-      },
-      {
-        type: 'text',
-        source: {
-          kind: 'static',
-          text: 'Innan besiktningen påbörjades gjordes en genomgång av uppdragsbekräftelsen.',
-        },
-        marginTopMm: 0,
-        marginBottomMm: 2,
-      },
-      {
-        type: 'text',
-        source: {
-          kind: 'static',
-          text:
-            'Besiktningsmannen ansvarar inte för fel och är inte skyldig att betala för krav som reklamerats respektive framställts senare än två år efter att uppdraget avslutats.',
-        },
-        marginTopMm: 0,
-        marginBottomMm: 2,
-      },
-      {
-        type: 'text',
-        source: {
-          kind: 'static',
-          text:
-            'Uppdraget är avslutat i och med att besiktningsmannen översänt utlåtandet till uppdragsgivaren.',
-        },
+        source: { kind: 'standardText', id: 'STD_ASSIGNMENT_SELLER_NOTICE' },
         marginTopMm: 0,
         marginBottomMm: 4,
       },
@@ -373,7 +349,7 @@ export const REPORT_SPEC: ReportSection[] = [
       {
         type: 'heading',
         level: 2,
-        text: '1. HANDLINGAR OCH UPPLYSNINGAR',
+        text: 'HANDLINGAR OCH UPPLYSNINGAR',
         marginTopMm: 0,
         marginBottomMm: 3,
         accent: true,
@@ -387,74 +363,19 @@ export const REPORT_SPEC: ReportSection[] = [
         marginBottomMm: 4,
       },
       {
-        type: 'heading',
-        level: 3,
-        text: 'Tillhandahållna handlingar:',
-        marginTopMm: 2,
-        marginBottomMm: 2,
-        fontSizePt: 11,
-      },
-      {
-        type: 'list',
-        itemsPath: 'mock.documents.provided',
+        type: 'handlingarLayout',
+        labels: {
+          provided: 'Tillhandahållna handlingar:',
+          info: 'Information från uppdragsgivare, fastighetsägare, eller dess ombud:',
+          faults: 'Upplysningar om fel i fastigheten:',
+        },
+        infoDisclaimer:
+          'Under denna rubrik är samtliga uppgifter lämnade av fastighetsägare eller dess ombud. Uppgifterna är inte kontrollerade av besiktningsmannen.',
+        renovationsLabel: 'Följande renoveringar och underhåll är utförda;',
         emptyPlaceholder: '--',
-        rowGapMm: 1.5,
-        marginTopMm: 0,
-        marginBottomMm: 4,
-      },
-      {
-        type: 'heading',
-        level: 3,
-        text: 'Information från uppdragsgivare, fastighetsägare, eller dess ombud:',
-        marginTopMm: 4,
-        marginBottomMm: 2,
-        fontSizePt: 11,
-      },
-      {
-        type: 'text',
-        source: {
-          kind: 'static',
-          text:
-            'Under denna rubrik är samtliga uppgifter lämnade av fastighetsägare eller dess ombud. Uppgifterna är inte kontrollerade av besiktningsmannen.',
-        },
-        marginTopMm: 0,
-        marginBottomMm: 4,
-      },
-      {
-        type: 'text',
-        source: { kind: 'mock', path: 'mock.disclosures.acquisition_text' },
-        marginTopMm: 0,
-        marginBottomMm: 4,
-      },
-      {
-        type: 'text',
-        source: {
-          kind: 'static',
-          text: 'Följande renoveringar och underhåll är utförda;',
-        },
-        marginTopMm: 0,
-        marginBottomMm: 2,
-      },
-      {
-        type: 'list',
-        itemsPath: 'mock.disclosures.renovations',
-        rowGapMm: 1.5,
-        marginTopMm: 0,
-        marginBottomMm: 4,
-      },
-      {
-        type: 'heading',
-        level: 3,
-        text: 'Upplysningar om fel i fastigheten:',
+        labelWidthMm: 37,
+        rowGapMm: 8,
         marginTopMm: 2,
-        marginBottomMm: 2,
-        fontSizePt: 11,
-      },
-      {
-        type: 'list',
-        itemsPath: 'mock.disclosures.property_faults',
-        rowGapMm: 1.5,
-        marginTopMm: 0,
         marginBottomMm: 4,
       },
     ],
@@ -467,7 +388,7 @@ export const REPORT_SPEC: ReportSection[] = [
       {
         type: 'heading',
         level: 2,
-        text: '2. OKULÄR BESIKTNING',
+        text: 'OKULÄR BESIKTNING',
         marginTopMm: 0,
         marginBottomMm: 3,
         accent: true,
@@ -478,19 +399,24 @@ export const REPORT_SPEC: ReportSection[] = [
         widthMm: 0,
         heightMm: 1.5,
         marginTopMm: 0,
-        marginBottomMm: 4,
+        marginBottomMm: 2,
       },
       {
-        type: 'text',
-        source: { kind: 'standardText', id: 'STD_VISUAL_INSPECTION_PREFACE' },
+        type: 'twoColumn',
+        labelWidthMm: 37,
+        rowGapMm: 4,
         marginTopMm: 0,
-        marginBottomMm: 3,
-      },
-      {
-        type: 'text',
-        source: { kind: 'static', text: '' },
-        marginTopMm: 0,
-        marginBottomMm: 4,
+        marginBottomMm: 2,
+        rows: [
+          {
+            label: 'Särskilda förutsättningar vid besiktningen:',
+            value: { kind: 'standardText', id: 'STD_VISUAL_INSPECTION_CONDITIONS' },
+          },
+          {
+            label: 'Muntliga uppgifter:',
+            value: { kind: 'standardText', id: 'STD_VISUAL_INSPECTION_ORAL' },
+          },
+        ],
       },
     ],
   },
@@ -563,59 +489,11 @@ export const REPORT_SPEC: ReportSection[] = [
         marginTopMm: 0,
         marginBottomMm: 4,
       },
-    ],
-  },
-  {
-    id: 'risk',
-    title: 'Riskanalys',
-    startOnNewPage: true,
-    blocks: [
       {
-        type: 'heading',
-        level: 2,
-        text: '3. RISKANALYS',
-        marginTopMm: 0,
-        marginBottomMm: 3,
-        accent: true,
-      },
-      {
-        type: 'text',
-        source: { kind: 'standardText', id: 'STD_RISK_GENERAL_NOTICE' },
-        marginTopMm: 0,
-        marginBottomMm: 3,
-      },
-      {
-        type: 'text',
-        source: { kind: 'mock', path: 'mock.risk.text' },
-        marginTopMm: 0,
-        marginBottomMm: 4,
-      },
-    ],
-  },
-  {
-    id: 'ftu',
-    title: 'Fortsatt teknisk utredning',
-    startOnNewPage: true,
-    blocks: [
-      {
-        type: 'heading',
-        level: 2,
-        text: '4. FORTSATT TEKNISK UTREDNING',
-        marginTopMm: 0,
-        marginBottomMm: 3,
-        accent: true,
-      },
-      {
-        type: 'text',
+        type: 'boxedText',
         source: { kind: 'standardText', id: 'STD_FTU_GENERAL_NOTICE' },
-        marginTopMm: 0,
-        marginBottomMm: 3,
-      },
-      {
-        type: 'text',
-        source: { kind: 'mock', path: 'mock.ftu.text' },
-        marginTopMm: 0,
-        marginBottomMm: 4,
+        marginTopMm: 2,
+        marginBottomMm: 0,
       },
     ],
   },
@@ -637,13 +515,87 @@ export const REPORT_SPEC: ReportSection[] = [
   },
   {
     id: 'appendix-3',
-    title: 'Bilaga 3 – Normala livslängder och underhållsintervall',
+    title: 'BILAGA 3: TEKNISKA MEDELLIVSLÄNGDER',
     startOnNewPage: true,
     type: 'appendix',
     appendixId: 'APPENDIX_3_LIFESPAN_TABLE_SBR',
     blocks: [],
   },
 ]
+
+const ASSIGNMENT_LABEL_SELLER = 'ÖVERLÅTELSEBESIKTNING FÖR SÄLJARE'
+const ASSIGNMENT_LABEL_BUYER = 'ÖVERLÅTELSEBESIKTNING FÖR KÖPARE'
+const APPENDIX_1_LABEL_SELLER =
+  'BILAGA 1: Villkor för överlåtelsebesiktning för säljare'
+const APPENDIX_1_LABEL_BUYER =
+  'BILAGA 1: Villkor för överlåtelsebesiktning för köpare'
+
+export function buildReportSpec(params?: {
+  inspectionSide?: 'buyer' | 'seller' | null
+}): ReportSection[] {
+  const inspectionSide = params?.inspectionSide === 'seller' ? 'seller' : 'buyer'
+  const assignmentLabel =
+    inspectionSide === 'seller' ? ASSIGNMENT_LABEL_SELLER : ASSIGNMENT_LABEL_BUYER
+  const appendixLabel =
+    inspectionSide === 'seller' ? APPENDIX_1_LABEL_SELLER : APPENDIX_1_LABEL_BUYER
+  const appendixTitle = `${appendixLabel}.`
+  const appendixId =
+    inspectionSide === 'seller'
+      ? 'APPENDIX_1_VILLKOR_SELLER_SBR'
+      : 'APPENDIX_1_VILLKOR_BUYER_SBR'
+
+  const spec = JSON.parse(JSON.stringify(REPORT_SPEC)) as ReportSection[]
+
+  const tocSection = spec.find((section) => section.id === 'toc')
+  const tocBlock = tocSection?.blocks.find((block) => block.type === 'toc') as
+    | { type: 'toc'; entries: { label: string; sectionId?: string }[] }
+    | undefined
+  if (tocBlock?.entries) {
+    tocBlock.entries = tocBlock.entries.map((entry) => {
+      if (entry.sectionId === 'assignment') {
+        return { ...entry, label: assignmentLabel }
+      }
+      if (entry.sectionId === 'appendix-1') {
+        return { ...entry, label: appendixLabel }
+      }
+      return entry
+    })
+  }
+
+  const assignmentSection = spec.find((section) => section.id === 'assignment')
+  if (assignmentSection) {
+    assignmentSection.blocks = assignmentSection.blocks.map((block) => {
+      if (block.type === 'heading' && block.level === 2) {
+        return { ...block, text: assignmentLabel }
+      }
+      if (
+        block.type === 'text' &&
+        block.source.kind === 'standardText' &&
+        block.source.id === 'STD_ASSIGNMENT_SELLER_NOTICE'
+      ) {
+        return {
+          ...block,
+          source: {
+            ...block.source,
+            id:
+              inspectionSide === 'seller'
+                ? 'STD_ASSIGNMENT_SELLER_NOTICE'
+                : 'STD_ASSIGNMENT_BUYER_NOTICE',
+          },
+        }
+      }
+      return block
+    })
+  }
+
+  const appendixSection = spec.find((section) => section.id === 'appendix-1')
+  if (appendixSection) {
+    appendixSection.title = appendixTitle
+    appendixSection.appendixId = appendixId
+  }
+
+  return spec
+}
 
 
 

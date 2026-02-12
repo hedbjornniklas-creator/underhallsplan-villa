@@ -235,6 +235,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null)
   const [editRoomLabel, setEditRoomLabel] = useState('')
   const [editRoomTypeKey, setEditRoomTypeKey] = useState('')
+  const [editRoomFloorLabel, setEditRoomFloorLabel] = useState('')
   const otherRoomEnsuredRef = useRef(false)
   const otherRoomItemsEnsuredRef = useRef(false)
   useEffect(() => {
@@ -1263,20 +1264,36 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     setEditingRoomId(room.id)
     setEditRoomLabel(room.room_label)
     setEditRoomTypeKey(room.room_type_key)
+    setEditRoomFloorLabel(room.floor_label)
   }
 
   const cancelEditRoom = () => {
     setEditingRoomId(null)
     setEditRoomLabel('')
     setEditRoomTypeKey('')
+    setEditRoomFloorLabel('')
   }
 
   const saveEditRoom = async () => {
     if (!editingRoomId) return
+    const current = rooms.find(r => r.id === editingRoomId)
+    if (!current) return
+    const nextFloor = editRoomFloorLabel || current.floor_label
+    const isFloorChanged = nextFloor !== current.floor_label
+    const nextOrder = isFloorChanged
+      ? rooms
+          .filter(r => r.floor_label === nextFloor && r.id !== current.id)
+          .reduce((m, r) => Math.max(m, r.order_index ?? 0), 0) + 10
+      : current.order_index
     await updateRoomField(editingRoomId, {
       room_label: editRoomLabel,
       room_type_key: editRoomTypeKey,
+      floor_label: nextFloor,
+      order_index: nextOrder,
     })
+    if (nextFloor && nextFloor !== activeFloor) {
+      setActiveFloor(nextFloor)
+    }
     cancelEditRoom()
   }
 
@@ -1549,7 +1566,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
               {editingRoomId === room.id && (
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-3 md:grid-cols-3">
                     <div>
                       <label className="text-xs text-gray-600">Rumnamn</label>
                       <input
@@ -1557,6 +1574,35 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                         value={editRoomLabel}
                         onChange={e => setEditRoomLabel(e.target.value)}
                       />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-600">Plan</label>
+                      {isSystemOtherRoom(room) ? (
+                        <>
+                          <input
+                            className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm bg-gray-100 text-gray-700"
+                            value={getFloorLabel(editRoomFloorLabel || room.floor_label)}
+                            readOnly
+                          />
+                          <div className="mt-1 text-[11px] text-gray-500">
+                            Systemrummet kan inte flyttas mellan plan.
+                          </div>
+                        </>
+                      ) : (
+                        <select
+                          className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm bg-white"
+                          value={editRoomFloorLabel}
+                          onChange={e => setEditRoomFloorLabel(e.target.value)}
+                        >
+                          {floorLabels
+                            .filter(fl => fl && fl !== OTHER_ROOM_TYPE_KEY)
+                            .map(fl => (
+                              <option key={fl} value={fl}>
+                                {getFloorLabel(fl)}
+                              </option>
+                            ))}
+                        </select>
+                      )}
                     </div>
                     <div>
                       <label className="text-xs text-gray-600">Rumstyp</label>

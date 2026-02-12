@@ -31,14 +31,7 @@ export default function AppendixPage({
   const isLifespan = variant === 'lifespan'
   const baseFontSize = isLifespan ? '10pt' : REPORT_STYLES.BODY.fontSize
   const exceptionFontSize = isLifespan ? '11pt' : baseFontSize
-  const isTwoColumn = false
-  const columnStyles = isTwoColumn
-    ? {
-        columnCount: 2,
-        columnGap: mmToPx(12),
-        columnFill: 'auto' as const,
-      }
-    : {}
+  const columnStyles = {}
 
   const exceptionHeadings = [
     'Vid köp av en fastighet bör man räkna med olika intervall för renovering och underhåll.',
@@ -59,50 +52,57 @@ export default function AppendixPage({
   const exceptionEnd = exceptionIndexes.length > 0 ? Math.max(...exceptionIndexes) : -1
 
   const renderGlossaryLines = (segment: string[], offset: number) => {
-    const nodes: ReactElement[] = []
+    const entries: Array<{ term: string; definition?: string }> = []
     let i = 0
 
     while (i < segment.length) {
-      const line = segment[i]
-      const trimmed = line.replace(/\s+$/, '')
-
-      if (trimmed.trim().length === 0) {
-        nodes.push(
-          <div key={`appendix-blank-${offset + i}`} style={{ minHeight: '11pt' }} />
-        )
+      const line = segment[i]?.trim() ?? ''
+      if (!line) {
         i += 1
         continue
       }
-
-      const nextLine = segment[i + 1]
-      const nextTrimmed = nextLine ? nextLine.replace(/\s+$/, '') : ''
-
-      if (nextTrimmed.trim().length > 0) {
-        nodes.push(
-          <div
-            key={`appendix-pair-${offset + i}`}
-            style={{ breakInside: 'avoid' }}
-          >
-            <div style={{ fontWeight: 700, fontSize: baseFontSize }}>{trimmed}</div>
-            <div style={{ fontSize: baseFontSize }}>{nextTrimmed}</div>
-          </div>
-        )
+      const nextLine = segment[i + 1]?.trim() ?? ''
+      if (nextLine) {
+        entries.push({ term: line, definition: nextLine })
         i += 2
-        continue
+      } else {
+        entries.push({ term: line })
+        i += 1
       }
-
-      nodes.push(
-        <div
-          key={`appendix-line-${offset + i}`}
-          style={{ fontWeight: 400, fontSize: baseFontSize }}
-        >
-          {trimmed}
-        </div>
-      )
-      i += 1
     }
 
-    return nodes
+    const splitIndex = Math.ceil(entries.length / 2)
+    const left = entries.slice(0, splitIndex)
+    const right = entries.slice(splitIndex)
+
+    const renderColumn = (items: Array<{ term: string; definition?: string }>, colIndex: number) => (
+      <div
+        key={`appendix-col-${colIndex}`}
+        style={{ display: 'flex', flexDirection: 'column', gap: '6pt' }}
+      >
+        {items.map((entry, entryIndex) => (
+          <div
+            key={`appendix-entry-${colIndex}-${entryIndex}`}
+            style={{ breakInside: 'avoid' }}
+          >
+            <div style={{ fontWeight: 700, fontSize: baseFontSize }}>{entry.term}</div>
+            {entry.definition ? (
+              <div style={{ fontSize: baseFontSize }}>{entry.definition}</div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    )
+
+    return [
+      <div
+        key={`appendix-glossary-${offset}`}
+        style={{ display: 'flex', gap: mmToPx(12) }}
+      >
+        <div style={{ flex: 1 }}>{renderColumn(left, 0)}</div>
+        <div style={{ flex: 1 }}>{renderColumn(right, 1)}</div>
+      </div>,
+    ]
   }
 
   const renderPlainLines = (
@@ -145,9 +145,13 @@ export default function AppendixPage({
       )
     })
 
-  const renderLifespanLines = (segment: string[], offset: number) => {
-    const nodes: ReactElement[] = []
-    const separatorCandidates = ['ƒ?', '–', '-']
+  const renderLifespanColumns = (segment: string[], offset: number) => {
+    type LifespanEntry =
+      | { kind: 'heading'; text: string }
+      | { kind: 'row'; left: string; right: string }
+      | { kind: 'gap' }
+
+    const separatorCandidates = ['|', 'Æ’?', 'â€“', '-']
     const isSeparatorLine = (line: string) =>
       separatorCandidates.some((sep) => line.includes(sep))
 
@@ -162,78 +166,46 @@ export default function AppendixPage({
         }
       })
       if (idx === -1) return null
-      const left = line.slice(0, idx).replace(/^[\sƒ–-]+/, '').trim()
+      const left = line.slice(0, idx).replace(/^[\s|Æ’â€“-]+/, '').trim()
       const right = line.slice(idx + sep.length).trim()
       if (!right) return null
       return { left, right }
     }
 
+    const entries: LifespanEntry[] = []
     for (let i = 0; i < segment.length; i += 1) {
-      const line = segment[i]
+      const line = segment[i] ?? ''
       const trimmed = line.trim()
 
       if (!trimmed) {
-        nodes.push(
-          <div key={`appendix-blank-${offset + i}`} style={{ minHeight: baseFontSize }} />
-        )
+        entries.push({ kind: 'gap' })
+        continue
+      }
+
+      if (trimmed.startsWith('#')) {
         continue
       }
 
       if (isSeparatorLine(line)) {
         const parsed = splitLine(line)
         if (parsed) {
-          nodes.push(
-            <div
-              key={`appendix-row-${offset + i}`}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                gap: mmToPx(4),
-                fontSize: baseFontSize,
-                breakInside: 'avoid',
-              }}
-            >
-              <div style={{ flex: 1, whiteSpace: 'pre-wrap' }}>{parsed.left}</div>
-              <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{parsed.right}</div>
-            </div>
-          )
-          if (parsed.left.includes('Nytt undertak, invändigt')) {
-            nodes.push(
-              <div
-                key={`appendix-gap-${offset + i}`}
-                style={{ minHeight: baseFontSize }}
-              />
-            )
+          entries.push({ kind: 'row', left: parsed.left, right: parsed.right })
+          if (parsed.left.includes('Nytt undertak, invÃ¤ndigt')) {
+            entries.push({ kind: 'gap' })
           }
           continue
         }
       }
 
       const nextLine = segment[i + 1] ?? ''
-      if (
-        nextLine &&
-        isSeparatorLine(nextLine) &&
-        nextLine.trim().startsWith('(')
-      ) {
+      if (nextLine && isSeparatorLine(nextLine) && nextLine.trim().startsWith('(')) {
         const parsedNext = splitLine(nextLine)
         if (parsedNext) {
-          nodes.push(
-            <div
-              key={`appendix-row-${offset + i}`}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                gap: mmToPx(4),
-                fontSize: baseFontSize,
-                breakInside: 'avoid',
-              }}
-            >
-              <div style={{ flex: 1 }}>{`${trimmed} ${parsedNext.left}`}</div>
-              <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                {parsedNext.right}
-              </div>
-            </div>
-          )
+          entries.push({
+            kind: 'row',
+            left: `${trimmed} ${parsedNext.left}`,
+            right: parsedNext.right,
+          })
           i += 1
           continue
         }
@@ -242,41 +214,104 @@ export default function AppendixPage({
       const nextHasSeparator = nextLine ? isSeparatorLine(nextLine) : false
       const isHeading = !isSeparatorLine(line) && (!nextLine || nextHasSeparator)
 
-      if (isHeading) {
-        nodes.push(
-          <div
-            key={`appendix-heading-${offset + i}`}
-            style={{
-              fontWeight: 700,
-              fontSize: baseFontSize,
-              breakInside: 'avoid',
-            }}
-          >
-            {trimmed}
-          </div>
-        )
-      } else {
-        nodes.push(
-          <div
-            key={`appendix-line-${offset + i}`}
-            style={{
-            fontWeight: 400,
-            fontSize: baseFontSize,
-            breakInside: 'avoid',
-          }}
-        >
-            {trimmed}
-          </div>
-        )
-      }
+      entries.push(
+        isHeading
+          ? { kind: 'heading', text: trimmed }
+          : { kind: 'row', left: trimmed, right: '' }
+      )
     }
 
-    return nodes
-  }
+    const blocks: LifespanEntry[][] = []
+    let current: LifespanEntry[] = []
+    entries.forEach((entry) => {
+      if (entry.kind === 'heading' && current.length > 0) {
+        blocks.push(current)
+        current = [entry]
+      } else {
+        current.push(entry)
+      }
+    })
+    if (current.length > 0) blocks.push(current)
 
-  const renderLines = (segment: string[], offset: number) => {
+    const blockSize = (block: LifespanEntry[]) =>
+      block.reduce((sum, entry) => sum + (entry.kind === 'gap' ? 0.5 : 1), 0)
+
+    const totalSize = blocks.reduce((sum, block) => sum + blockSize(block), 0)
+    const targetSize = totalSize / 2
+    const leftBlocks: LifespanEntry[][] = []
+    const rightBlocks: LifespanEntry[][] = []
+    let running = 0
+
+    blocks.forEach((block) => {
+      const size = blockSize(block)
+      if (leftBlocks.length === 0 || running + size <= targetSize) {
+        leftBlocks.push(block)
+        running += size
+      } else {
+        rightBlocks.push(block)
+      }
+    })
+
+    const renderColumn = (columnBlocks: LifespanEntry[][], colIndex: number) => (
+      <div
+        key={`appendix-lifespan-col-${offset}-${colIndex}`}
+        style={{ display: 'flex', flexDirection: 'column', gap: '6pt' }}
+      >
+        {columnBlocks.flat().map((entry, entryIndex) => {
+          if (entry.kind === 'gap') {
+            return (
+              <div
+                key={`appendix-lifespan-gap-${colIndex}-${entryIndex}`}
+                style={{ minHeight: baseFontSize }}
+              />
+            )
+          }
+          if (entry.kind === 'heading') {
+            return (
+              <div
+                key={`appendix-lifespan-heading-${colIndex}-${entryIndex}`}
+                style={{
+                  fontWeight: 700,
+                  fontSize: baseFontSize,
+                  breakInside: 'avoid',
+                }}
+              >
+                {entry.text}
+              </div>
+            )
+          }
+          return (
+            <div
+              key={`appendix-lifespan-row-${colIndex}-${entryIndex}`}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: mmToPx(4),
+                fontSize: baseFontSize,
+                breakInside: 'avoid',
+              }}
+            >
+              <div style={{ flex: 1, whiteSpace: 'pre-wrap' }}>{entry.left}</div>
+              <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{entry.right}</div>
+            </div>
+          )
+        })}
+      </div>
+    )
+
+    return [
+      <div
+        key={`appendix-lifespan-${offset}`}
+        style={{ display: 'flex', gap: mmToPx(12) }}
+      >
+        <div style={{ flex: 1 }}>{renderColumn(leftBlocks, 0)}</div>
+        <div style={{ flex: 1 }}>{renderColumn(rightBlocks, 1)}</div>
+      </div>,
+    ]
+  }
+const renderLines = (segment: string[], offset: number) => {
     if (isGlossary) return renderGlossaryLines(segment, offset)
-    if (isLifespan) return renderLifespanLines(segment, offset)
+    if (isLifespan) return renderLifespanColumns(segment, offset)
     return renderPlainLines(segment, offset)
   }
 

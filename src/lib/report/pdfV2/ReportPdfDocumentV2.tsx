@@ -94,6 +94,9 @@ const styles = StyleSheet.create({
   blockFtu: {
     marginBottom: 4,
   },
+  boxedText: {
+    padding: 8,
+  },
   listItem: {
     marginBottom: 2,
   },
@@ -120,6 +123,20 @@ const styles = StyleSheet.create({
 
 const getValueAtPath = (obj: any, path: string) =>
   path.split('.').reduce((acc, key) => (acc ? acc[key] : undefined), obj)
+
+const getListAtPath = (obj: any, path: string): string[] => {
+  const value = getValueAtPath(obj, path)
+  if (Array.isArray(value)) {
+    return value.map((item) => (item == null ? '' : String(item))).filter(Boolean)
+  }
+  if (typeof value === 'string') {
+    return value
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+  }
+  return []
+}
 
 const resolveTextSource = (source: TextSource, data: ReportDataV2) => {
   if (source.kind === 'static') return source.text
@@ -161,6 +178,16 @@ const renderBlock = (
     )
   }
 
+  if (block.type === 'boxedText') {
+    const text = resolveTextSource(block.source, data)
+    if (!text) return null
+    return (
+      <View key={`boxed-text-${block.marginTopMm}`} style={styles.boxedText}>
+        <Text style={styles.text}>{text}</Text>
+      </View>
+    )
+  }
+
   if (block.type === 'field') {
     const value = getValueAtPath(data, block.path)
     return (
@@ -184,6 +211,45 @@ const renderBlock = (
         </View>
       )
     })
+  }
+
+  if (block.type === 'handlingarLayout') {
+    const provided = getListAtPath(data, 'mock.documents.provided')
+    const renovations = getListAtPath(data, 'mock.disclosures.renovations')
+    const faults = getListAtPath(data, 'mock.disclosures.property_faults')
+    const acquisitionText = String(
+      getValueAtPath(data, 'mock.disclosures.acquisition_text') ?? ''
+    )
+
+    const providedText =
+      provided.length > 0 ? provided.join('\n') : block.emptyPlaceholder ?? '--'
+
+    const infoParts = [
+      block.infoDisclaimer,
+      acquisitionText,
+      block.renovationsLabel,
+      ...renovations,
+    ].filter((value) => value && value.length > 0)
+
+    const faultsText = faults.length > 0 ? faults.join('\n') : ''
+
+    const labelStyle = { width: '27%', fontWeight: 600 } as const
+    const valueStyle = { width: '73%' } as const
+
+    return [
+      <View key={`handlingar-provided`} style={styles.row}>
+        <Text style={labelStyle}>{block.labels.provided}</Text>
+        <Text style={valueStyle}>{providedText}</Text>
+      </View>,
+      <View key={`handlingar-info`} style={styles.row}>
+        <Text style={labelStyle}>{block.labels.info}</Text>
+        <Text style={valueStyle}>{infoParts.join('\n')}</Text>
+      </View>,
+      <View key={`handlingar-faults`} style={styles.row}>
+        <Text style={labelStyle}>{block.labels.faults}</Text>
+        <Text style={valueStyle}>{faultsText}</Text>
+      </View>,
+    ]
   }
 
   if (block.type === 'list') {

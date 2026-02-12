@@ -4,7 +4,7 @@ import {
   buildBuildingTypeParts,
   renderBuildingDataTextFromTemplate,
 } from '@/lib/report/buildingData'
-import { REPORT_SPEC } from '@/lib/report/reportSpec'
+import { buildReportSpec } from '@/lib/report/reportSpec'
 
 export default function DebugReportPage() {
   const mockConditions = {
@@ -90,6 +90,8 @@ export default function DebugReportPage() {
         inspector_name: 'Anna Andersson',
         assignment_number: 'UP-2025-001',
         client_name: 'Uppdragsgivare Namn',
+        inspection_side: 'seller',
+        assignment_confirmation_date: '2025-01-10',
         scope_text:
           'En okulär besiktning av huvudbyggnaden\nBesiktning av komplementbyggnader\nFuktmätning eller fuktindikering av riskkonstruktion',
         attendees_text: 'Fastighetsägare\nBesiktningsman\nÖvrig närvarande',
@@ -103,7 +105,13 @@ export default function DebugReportPage() {
   let errorMessage = ''
 
   try {
-    content = <ReportRenderer spec={REPORT_SPEC} mockData={mockData} />
+    content = (
+      <ReportRenderer
+        spec={buildReportSpec({ inspectionSide: 'seller' })}
+        mockData={mockData}
+        inspectionSide="seller"
+      />
+    )
   } catch (error) {
     errorMessage = error instanceof Error ? error.message : 'Okänt fel vid rendering.'
   }

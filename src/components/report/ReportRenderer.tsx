@@ -7,20 +7,44 @@ type ReportRendererProps = {
   spec: ReportSection[]
   mockData: Record<string, unknown>
   rootClassName?: string
+  inspectionSide?: 'buyer' | 'seller' | null
 }
 
 type ResolvedReportSection = ReportSection & { appendixText?: string }
 
-const resolveTextSource = (source: TextSource): TextSource => {
+const getMockValue = (mockData: Record<string, unknown>, path: string): string => {
+  const value = path.split('.').reduce((acc: any, key) => (acc ? acc[key] : undefined), mockData)
+  if (value === null || value === undefined) return '--'
+  return String(value)
+}
+
+const interpolateStandardText = (text: string, mockData: Record<string, unknown>) => {
+  const assignmentDate = getMockValue(
+    mockData,
+    'mock.inspections.assignment_confirmation_date'
+  )
+  return text
+    .replace(/ÅÅÅÅ-MM-DD/g, assignmentDate)
+    .replace(/\{\{\s*assignment_confirmation_date\s*\}\}/g, assignmentDate)
+}
+
+const resolveTextSource = (
+  source: TextSource,
+  mockData: Record<string, unknown>
+): TextSource => {
   if (source.kind === 'standardText') {
-    return { kind: 'static', text: loadStandardText(source.id) }
+    const raw = loadStandardText(source.id)
+    return { kind: 'static', text: interpolateStandardText(raw, mockData) }
   }
   return source
 }
 
-const resolveBlock = (block: ReportBlock): ReportBlock => {
+const resolveBlock = (block: ReportBlock, mockData: Record<string, unknown>): ReportBlock => {
   if (block.type === 'text') {
-    return { ...block, source: resolveTextSource(block.source) }
+    return { ...block, source: resolveTextSource(block.source, mockData) }
+  }
+  if (block.type === 'boxedText') {
+    return { ...block, source: resolveTextSource(block.source, mockData) }
   }
   if (block.type === 'twoColumn') {
     return {
@@ -28,8 +52,8 @@ const resolveBlock = (block: ReportBlock): ReportBlock => {
       rows: block.rows.map((row) => ({
         ...row,
         value: Array.isArray(row.value)
-          ? row.value.map(resolveTextSource)
-          : resolveTextSource(row.value),
+          ? row.value.map((value) => resolveTextSource(value, mockData))
+          : resolveTextSource(row.value, mockData),
       })),
     }
   }
@@ -40,10 +64,13 @@ export default function ReportRenderer({
   spec,
   mockData,
   rootClassName,
+  inspectionSide,
 }: ReportRendererProps) {
-  const coverNotice = loadStandardText('STD_COVER_BUYER_DUTY_NOTICE')
+  const coverNoticeId =
+    inspectionSide === 'seller' ? 'STD_COVER_SELLER_NOTICE' : 'STD_COVER_BUYER_DUTY_NOTICE'
+  const coverNotice = loadStandardText(coverNoticeId)
   const resolvedSpec: ResolvedReportSection[] = spec.map((section) => {
-    const resolvedBlocks = section.blocks.map(resolveBlock)
+    const resolvedBlocks = section.blocks.map((block) => resolveBlock(block, mockData))
     const appendixText =
       section.type === 'appendix' && section.appendixId
         ? loadAppendixText(section.appendixId)

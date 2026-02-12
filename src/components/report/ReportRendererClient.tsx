@@ -362,7 +362,6 @@ function parseBuildingDataLines(content: string) {
 }
 
 const appendxBreakHeadings = [
-  'Besiktningen omfattar inte',
   'Besiktningsmannens ansvar',
   'Ã„ganderÃ¤tt och nyttjanderÃ¤tt till besiktningsutlÃ¥tandet',
   'Ãƒâ€žganderÃƒÂ¤tt och nyttjanderÃƒÂ¤tt till besiktningsutlÃƒÂ¥tandet',
@@ -406,8 +405,14 @@ const splitAppendixText = (rawText: string) => {
 }
 
 const appendixLineHeightPx = (BASE_FONT_PT * 96) / 72 * LINE_HEIGHT
+const APPENDIX_PAGE_SAFETY_MM = 10
 const appendixAvailableHeightPx = mmToPxNumber(
-  PAGE_HEIGHT_MM - PAGE_PADDING_MM.top - PAGE_PADDING_MM.bottom - FOOTER_MARK_HEIGHT_MM - 6
+  PAGE_HEIGHT_MM -
+    PAGE_PADDING_MM.top -
+    PAGE_PADDING_MM.bottom -
+    FOOTER_MARK_HEIGHT_MM -
+    6 -
+    APPENDIX_PAGE_SAFETY_MM
 )
 const appendixLinesPerColumn = Math.max(
   1,
@@ -426,6 +431,27 @@ const chunkAppendixLines = (lines: string[], showTitle: boolean) => {
     chunks.push(lines.slice(i, i + pageSize))
   }
   return chunks
+}
+
+const buildGlossaryEntries = (lines: string[]) => {
+  const entries: Array<{ term: string; definition?: string }> = []
+  let i = 0
+  while (i < lines.length) {
+    const term = lines[i]?.trim() ?? ''
+    if (!term) {
+      i += 1
+      continue
+    }
+    const definition = lines[i + 1]?.trim() ?? ''
+    if (definition) {
+      entries.push({ term, definition })
+      i += 2
+    } else {
+      entries.push({ term })
+      i += 1
+    }
+  }
+  return entries
 }
 
 export default function ReportRendererClient({
@@ -647,7 +673,12 @@ export default function ReportRendererClient({
     const pages: Array<{ section: ResolvedReportSection; rawText: string; showTitle: boolean }> = []
     appendixSections.forEach((section) => {
       const rawText = section.appendixText ?? ''
-      if (section.appendixText && section.appendixId === 'APPENDIX_1_VILLKOR_SELLER_SBR') {
+      const isAppendix1 =
+        section.appendixId === 'APPENDIX_1_VILLKOR_SELLER_SBR' ||
+        section.appendixId === 'APPENDIX_1_VILLKOR_BUYER_SBR'
+      const isGlossary = section.id === 'appendix-2'
+      const isLifespan = section.id === 'appendix-3'
+      if (section.appendixText && isAppendix1) {
         const segments = splitAppendixText(rawText)
         let isFirstPage = true
         segments.forEach((segment) => {
@@ -669,6 +700,48 @@ export default function ReportRendererClient({
             }
           }
         })
+      } else if (section.appendixText && isLifespan) {
+        const normalizedLines = normalizeAppendixLines(rawText.split(/\r?\n/))
+        if (normalizedLines.length === 0) return
+        const entriesPerPage = Math.max(1, appendixLinesPerColumn * 2)
+        const firstPageSize = Math.max(1, entriesPerPage - appendixTitleLineReduction)
+        const firstChunk = normalizedLines.slice(0, firstPageSize)
+        const remaining = normalizedLines.slice(firstPageSize)
+        if (firstChunk.join('\n').trim().length > 0) {
+          pages.push({ section, rawText: firstChunk.join('\n'), showTitle: true })
+        }
+        for (let i = 0; i < remaining.length; i += entriesPerPage) {
+          const chunk = remaining.slice(i, i + entriesPerPage)
+          const chunkText = chunk.join('\n')
+          if (chunkText.trim().length > 0) {
+            pages.push({ section, rawText: chunkText, showTitle: false })
+          }
+        }
+      } else if (section.appendixText && isGlossary) {
+        const normalizedLines = normalizeAppendixLines(rawText.split(/\r?\n/))
+        if (normalizedLines.length === 0) return
+        const entries = buildGlossaryEntries(normalizedLines)
+        let entryIndex = 0
+        let pageIndex = 0
+        while (entryIndex < entries.length) {
+          const isFirstPage = pageIndex === 0
+          const linesPerColumn = Math.max(
+            1,
+            appendixLinesPerColumn - (isFirstPage ? appendixTitleLineReduction : 0)
+          )
+          const entriesPerColumn = Math.max(1, Math.floor(linesPerColumn / 2))
+          const entriesPerPage = entriesPerColumn * 2
+          const chunk = entries.slice(entryIndex, entryIndex + entriesPerPage)
+          const chunkLines = chunk.flatMap((entry) =>
+            entry.definition ? [entry.term, entry.definition] : [entry.term]
+          )
+          const chunkText = chunkLines.join('\n')
+          if (chunkText.trim().length > 0) {
+            pages.push({ section, rawText: chunkText, showTitle: isFirstPage })
+          }
+          entryIndex += entriesPerPage
+          pageIndex += 1
+        }
       } else {
         pages.push({ section, rawText, showTitle: true })
       }
@@ -689,6 +762,9 @@ export default function ReportRendererClient({
       <div>{getMockValue(mockData, 'mock.inspections.date') ?? 'saknas'}</div>
     </div>
   )
+
+  const rootClasses = ['report-root', rootClassName].filter(Boolean).join(' ')
+  const isPdfMode = rootClasses.includes('report-root--pdf')
 
   useLayoutEffect(() => {
     if (!measureContainerRef.current) return
@@ -714,7 +790,14 @@ export default function ReportRendererClient({
     const paddingTopPx = mmToPxNumber(PAGE_PADDING_MM.top)
     const paddingBottomPx = mmToPxNumber(PAGE_PADDING_MM.bottom)
     const footerMarkPx = mmToPxNumber(FOOTER_MARK_HEIGHT_MM)
-    const availableHeight = pageHeightPx - paddingTopPx - paddingBottomPx - footerMarkPx - headerHeight
+    const safetyMm = isPdfMode ? 8 : 0
+    const availableHeight =
+      pageHeightPx -
+      paddingTopPx -
+      paddingBottomPx -
+      footerMarkPx -
+      headerHeight -
+      mmToPxNumber(safetyMm)
 
     const pages: PagePlan[] = []
     const sectionPageMap = new Map<string, number>()
@@ -723,8 +806,16 @@ export default function ReportRendererClient({
     let currentEntries: Entry[] = []
     let currentHeight = 0
 
+    const hasMeaningfulEntry = (entries: Entry[]) =>
+      entries.some((entry) => entry.kind === 'block')
+
     const pushPage = () => {
       if (currentEntries.length === 0) return
+      if (!hasMeaningfulEntry(currentEntries)) {
+        currentEntries = []
+        currentHeight = 0
+        return
+      }
       pages.push({
         kind: 'sections',
         entries: currentEntries,
@@ -796,7 +887,7 @@ export default function ReportRendererClient({
       pages: [...coverPages, ...pages, ...appendixPages],
       sectionPageMap,
     })
-  }, [appendices, contentEntries, coverSection, mockData])
+  }, [appendices, contentEntries, coverSection, mockData, isPdfMode])
 
   const companyLogoValue = getMockValue(mockData, 'mock.company.logo_url')
   const companyLogoUrl = companyLogoValue === 'saknas' ? null : companyLogoValue
@@ -1238,6 +1329,106 @@ export default function ReportRendererClient({
       )
     }
 
+    if (block.type === 'handlingarLayout') {
+      const labelWidth = block.labelWidthMm ?? 55
+      const rowGap = block.rowGapMm ?? 6
+      const emptyPlaceholder = block.emptyPlaceholder ?? '--'
+      const provided = getMockList(mockData, 'mock.documents.provided')
+      const acquisitionText = getMockValue(
+        mockData,
+        'mock.disclosures.acquisition_text'
+      )
+      const renovations = getMockList(mockData, 'mock.disclosures.renovations')
+      const faults = getMockList(mockData, 'mock.disclosures.property_faults')
+
+      const renderLines = (lines: string[], gapMm: number) => (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: mmToPx(gapMm),
+          }}
+        >
+          {lines.map((line, lineIndex) => (
+            <div key={`handlingar-line-${lineIndex}`}>
+              {line.length > 0 ? line : '\u00A0'}
+            </div>
+          ))}
+        </div>
+      )
+
+      const infoBlocks = [
+        { text: block.infoDisclaimer, marginBottomMm: 3 },
+        { text: acquisitionText, marginBottomMm: 3 },
+        {
+          text: block.renovationsLabel,
+          marginBottomMm: renovations.length > 0 ? 1.5 : 0,
+        },
+      ]
+
+      const rowStyle = {
+        display: 'grid',
+        gridTemplateColumns: `${mmToPx(labelWidth)} 1fr`,
+        columnGap: mmToPx(4),
+        breakInside: 'avoid',
+      } as const
+
+      const textStyle = {
+        fontSize: '11pt',
+        color: REPORT_STYLES.BODY.color,
+        whiteSpace: 'pre-wrap',
+      } as const
+
+      return (
+        <div
+          key={`${sectionId}-handlingar-${index}`}
+          style={{
+            ...blockMargins(block),
+            display: 'flex',
+            flexDirection: 'column',
+            gap: mmToPx(rowGap),
+          }}
+        >
+          <div style={rowStyle}>
+            <div style={textStyle}>{block.labels.provided}</div>
+            <div style={textStyle}>
+              {renderLines(
+                provided.length > 0 ? provided : [emptyPlaceholder],
+                1.5
+              )}
+            </div>
+          </div>
+
+          <div style={rowStyle}>
+            <div style={textStyle}>{block.labels.info}</div>
+            <div style={textStyle}>
+              {infoBlocks.map((entry, entryIndex) => (
+                <div
+                  key={`handlingar-info-${entryIndex}`}
+                  style={{
+                    marginBottom: mmToPx(entry.marginBottomMm),
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  {entry.text}
+                </div>
+              ))}
+              {renovations.length > 0
+                ? renderLines(renovations, 1.5)
+                : null}
+            </div>
+          </div>
+
+          <div style={rowStyle}>
+            <div style={textStyle}>{block.labels.faults}</div>
+            <div style={textStyle}>
+              {faults.length > 0 ? renderLines(faults, 1.5) : null}
+            </div>
+          </div>
+        </div>
+      )
+    }
+
     if (block.type === 'text') {
       const preset = block.small ? REPORT_STYLES.SMALL : REPORT_STYLES.BODY
       const content = resolveText(block.source, mockData)
@@ -1256,14 +1447,14 @@ export default function ReportRendererClient({
         return (
           <div
             key={`${sectionId}-text-${index}`}
-            style={{
-              ...blockMargins(block),
-              display: 'grid',
-              gridTemplateColumns: `${mmToPx(50)} 1fr`,
-              columnGap: mmToPx(4),
-              rowGap: mmToPx(4),
-              fontSize: preset.fontSize,
-              color: preset.color,
+          style={{
+            ...blockMargins(block),
+            display: 'grid',
+            gridTemplateColumns: `${mmToPx(50)} 1fr`,
+            columnGap: mmToPx(4),
+            rowGap: mmToPx(4),
+            fontSize: preset.fontSize,
+            color: preset.color,
               lineHeight: 1.15,
             }}
           >
@@ -1341,6 +1532,29 @@ export default function ReportRendererClient({
       )
     }
 
+    if (block.type === 'boxedText') {
+      const preset = block.small ? REPORT_STYLES.SMALL : REPORT_STYLES.BODY
+      const content = resolveText(block.source, mockData)
+      return (
+        <div
+          key={`${sectionId}-boxed-text-${index}`}
+          style={blockMargins(block)}
+          className="rounded-lg border border-transparent bg-white p-4"
+        >
+          <div
+            style={{
+              fontSize: preset.fontSize,
+              fontWeight: preset.fontWeight,
+              color: preset.color,
+              whiteSpace: 'pre-wrap',
+            }}
+          >
+            {content}
+          </div>
+        </div>
+      )
+    }
+
     if (block.type === 'field') {
       const value = getMockValue(mockData, block.path)
       return (
@@ -1410,7 +1624,6 @@ export default function ReportRendererClient({
     return null
   }
 
-  const rootClasses = ['report-root', rootClassName].filter(Boolean).join(' ')
   return (
     <div className={rootClasses} style={{ backgroundColor: '#f1f5f9', padding: mmToPx(6) }}>
       <div
