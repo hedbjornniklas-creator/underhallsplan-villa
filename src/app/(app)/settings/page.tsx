@@ -2,7 +2,6 @@
 
 import { useEffect, useState, ChangeEvent } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
 import Protected from '@/components/Protected'
 import { useProfile } from '@/hooks/useProfile'
 import { supabase } from '@/lib/supabaseClient'
@@ -41,6 +40,30 @@ type ProfileForm = {
   logo_path: string | null
 }
 
+function resolvePublicMediaUrl(path: string | null | undefined) {
+  if (!path) return null
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path
+  }
+
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!base) return null
+
+  if (path.startsWith('/storage/')) {
+    return `${base}${path}`
+  }
+
+  if (path.startsWith('storage/')) {
+    return `${base}/${path}`
+  }
+
+  if (path.startsWith('/')) {
+    return path
+  }
+
+  return `${base}/storage/v1/object/public/property-media/${path}`
+}
+
 export default function SettingsOverview() {
   const { isAdmin, loading: profileLoading } = useProfile()
 
@@ -48,6 +71,8 @@ export default function SettingsOverview() {
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [avatarLoadError, setAvatarLoadError] = useState(false)
+  const [logoLoadError, setLogoLoadError] = useState(false)
 
   const [form, setForm] = useState<ProfileForm>({
     full_name: '',
@@ -64,6 +89,14 @@ export default function SettingsOverview() {
     avatar_path: null,
     logo_path: null,
   })
+
+  useEffect(() => {
+    setAvatarLoadError(false)
+  }, [form.avatar_path])
+
+  useEffect(() => {
+    setLogoLoadError(false)
+  }, [form.logo_path])
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -264,6 +297,9 @@ export default function SettingsOverview() {
     },
   ]
 
+  const avatarSrc = resolvePublicMediaUrl(form.avatar_path)
+  const logoSrc = resolvePublicMediaUrl(form.logo_path)
+
   return (
     <Protected>
       <div className="p-4 md:p-6 space-y-6">
@@ -282,13 +318,13 @@ export default function SettingsOverview() {
                   Bild på besiktningsman
                 </div>
                 <div className="flex items-center gap-3">
-                  {form.avatar_path ? (
-                    <Image
-                      src={form.avatar_path}
+                  {avatarSrc && !avatarLoadError ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={avatarSrc}
                       alt="Besiktningsman"
-                      width={96}
-                      height={96}
-                      className="h-24 w-24 rounded-full object-cover border"
+                      className="h-24 w-24 rounded-full border object-cover"
+                      onError={() => setAvatarLoadError(true)}
                     />
                   ) : (
                     <div className="flex h-24 w-24 items-center justify-center rounded-full border bg-gray-50 text-xs text-gray-400">
@@ -313,13 +349,13 @@ export default function SettingsOverview() {
                   Företagslogga
                 </div>
                 <div className="flex items-center gap-3">
-                  {form.logo_path ? (
-                    <Image
-                      src={form.logo_path}
+                  {logoSrc && !logoLoadError ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={logoSrc}
                       alt="Företagslogga"
-                      width={120}
-                      height={60}
-                      className="h-16 w-32 rounded-md object-contain border bg-white"
+                      className="h-16 w-32 rounded-md border bg-white object-contain"
+                      onError={() => setLogoLoadError(true)}
                     />
                   ) : (
                     <div className="flex h-16 w-32 items-center justify-center rounded-md border bg-gray-50 text-xs text-gray-400">

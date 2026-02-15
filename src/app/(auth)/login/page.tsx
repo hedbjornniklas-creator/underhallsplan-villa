@@ -12,11 +12,11 @@ export default function LoginPage() {
   useEffect(() => {
     // Redan inloggad? Gå direkt till /properties
     supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
-      if (data.session) router.replace('/properties')
+      if (data.session) router.replace('/dashboard-v1')
     })
     // När inloggning sker nu: gå till /properties
     const { data } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
-      if (session) router.replace('/properties')
+      if (session) router.replace('/dashboard-v1')
     })
     return () => data.subscription.unsubscribe()
   }, [router])
