@@ -1,5 +1,30 @@
 ﻿# Changelog
 
+## 2026-02-15
+
+### Major changes
+- **Dashboard/module entry flow (no sidebar shell)**
+  - Added route group `src/app/(dashboard)` with a calm topbar-only layout.
+  - Added `src/app/(dashboard)/dashboard-v1/page.tsx` as v1 operational module overview.
+  - Added `src/app/(dashboard)/ob/page.tsx` as module home for Overlatelsebesiktning.
+
+- **Login redirect update**
+  - `src/app/(auth)/login/page.tsx` now redirects authenticated users to `/dashboard-v1` on load and on auth state changes.
+
+- **`/dashboard-v1` navigation updates**
+  - Primary action `Oppna modul` leads to `/inspections`.
+  - Secondary action `Visa alla besiktningar` leads to `/ob`.
+
+- **Overlatelsebesiktning module page (`/ob`)**
+  - Card 1 now lists the logged-in user's latest inspections (address, customer, status).
+  - Sorting: `inspections.date DESC`, then `created_at DESC`.
+  - Rows are clickable and open `/properties/[propertyId]/ob/[inspectionId]`.
+  - Added card 2: `Skapa ny besiktning`.
+  - Added card 3: `Min information` mini business card with link to `/settings`.
+
+- **Profile image/logo rendering hardening**
+  - `src/app/(dashboard)/ob/page.tsx` and `src/app/(app)/settings/page.tsx` now resolve Supabase media URLs robustly (absolute URL, `/storage/...`, `storage/...`, and bucket-relative paths).
+  - Replaced fragile image rendering with `<img>` + graceful fallback on load error.
 ## 2026-02-12
 
 ### Major changes
@@ -56,4 +81,5 @@
 
 - **Cover layout adjustment**
   - `src/components/report/ReportCoverPage.tsx` (logo box sizing + header text fixes)
+
 

@@ -1,5 +1,22 @@
 Underhållsplan Villa – Tech Overview (v2.2)
 
+Update 2026-02-15 (dashboard and module routing)
+- This section supersedes older route notes below where they conflict.
+- Auth flow:
+  - `/login` redirects authenticated sessions to `/dashboard-v1`.
+- App shell split:
+  - `(app)` layout (`src/app/(app)/layout.tsx`): sidebar + topbar for core CRUD flows (`/properties`, `/settings`, `/admin`).
+  - `(dashboard)` layout (`src/app/(dashboard)/layout.tsx`): no sidebar, calm sticky topbar for module start pages (`/dashboard-v1`, `/ob`, `/inspections`).
+- Module routing:
+  - `/dashboard-v1` is the v1 operational launch page.
+  - OB card primary action goes to `/inspections`.
+  - OB card secondary action goes to `/ob` (module home).
+  - `/inspections` is now served from `(dashboard)` (no sidebar).
+  - `/ob` loads user-owned inspections (via `properties.owner = auth user`) and links each row to `/properties/[propertyId]/ob/[inspectionId]`.
+- Profile media robustness:
+  - `/settings` and `/ob` now resolve Supabase media URLs from absolute URLs, `/storage/...`, `storage/...`, or bucket-relative paths.
+  - Both pages use image fallback handling when avatar/logo cannot be loaded.
+
 Databassanning
 - Faktiskt schema och typer genereras i src/types/supabase.ts. Detta dokument beskriver avsedda flöden; vid konflikt gäller typerna i filen.
 

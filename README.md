@@ -1,38 +1,34 @@
 # underhallsplan-villa
-Next.js + Supabase app för underhållsplaner, besiktningar och fastighetsdata
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Digital Next.js + Supabase platform for property inspections and maintenance planning.
 
-## Getting Started
+## Stack
+- Next.js (App Router) + React + TypeScript
+- Tailwind CSS
+- Supabase (Auth, Postgres, Storage)
 
-First, run the development server:
-
+## Local Development
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Current Route Map (2026-02-15)
+- `/login`: Auth page. Redirects authenticated users to `/dashboard-v1`.
+- `/dashboard-v1`: Operational dashboard v1 (module overview, no sidebar shell).
+- `/ob`: Module home for Overlatelsebesiktning (no sidebar shell).
+- `/inspections`: Global inspections list in dashboard shell (no sidebar).
+- `/properties`: Property-centric flow and links into the inspection wizard.
+- `/settings`: Profile/business card and admin configuration pages.
+- `/utlatande/[propertyId]/[inspectionId]`: Report preview/print route.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Layout Shells
+- `src/app/(app)/layout.tsx`: Standard shell with sidebar + topbar.
+- `src/app/(dashboard)/layout.tsx`: Calm topbar-only shell for module entry pages.
+- `src/app/(auth)/layout.tsx`: Auth shell.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Key Docs
+- `docs/CHANGELOG.md`
+- `docs/TECH_OVERVIEW.md`
+- `docs/SUPABASE_SCHEMA.md`

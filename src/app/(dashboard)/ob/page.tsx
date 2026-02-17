@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -107,9 +108,12 @@ function InspectionsListCard({
 }) {
   return cardShell(
     <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-2">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-600">
+      <Link
+        href="/inspections"
+        className="w-fit text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-600 underline-offset-2 transition hover:text-indigo-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
+      >
         Mina besiktningar
-      </p>
+      </Link>
 
       {inspectionsLoading ? (
         <p className="mt-1 text-xs text-gray-500">Laddar besiktningar...</p>
@@ -147,17 +151,108 @@ function InspectionsListCard({
 }
 
 function CreateInspectionCard() {
+  const router = useRouter()
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+
+  const handleCreateWithoutProperty = async () => {
+    if (creating) return
+
+    try {
+      setCreating(true)
+      setCreateError(null)
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+
+      if (userError) throw userError
+      if (!user) {
+        router.replace('/login')
+        return
+      }
+
+      const today = new Date().toISOString().slice(0, 10)
+      const short = Math.random().toString(36).slice(2, 6).toUpperCase()
+      const tempName = `Fastighet ${today} ${short}`
+
+      const { data: propertyData, error: propertyError } = await supabase
+        .from('properties')
+        .insert({
+          owner: user.id,
+          name: tempName,
+          status: 'Utkast',
+        })
+        .select('id')
+        .single()
+
+      if (propertyError || !propertyData) {
+        throw propertyError ?? new Error('Kunde inte skapa fastighet.')
+      }
+
+      const propertyId = propertyData.id as string
+
+      const { data: inspectionData, error: inspectionError } = await supabase
+        .from('inspections')
+        .insert({
+          property_id: propertyId,
+          type: 'OB',
+          status: 'draft',
+        })
+        .select('id')
+        .single()
+
+      if (inspectionError || !inspectionData) {
+        throw inspectionError ?? new Error('Kunde inte skapa besiktning.')
+      }
+
+      router.push(`/properties/${propertyId}/ob/${inspectionData.id}`)
+    } catch (error) {
+      console.error('Could not create inspection from /ob:', error)
+      setCreateError('Kunde inte skapa ny besiktning. Försök igen.')
+    } finally {
+      setCreating(false)
+    }
+  }
+
   return cardShell(
     <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-3">
-      <h2 className="text-sm font-semibold text-gray-900">Skapa ny besiktning</h2>
-      <p className="mt-2 text-xs leading-relaxed text-gray-600">
-        Starta en ny överlåtelsebesiktning genom att välja fastighet.
-      </p>
+      <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-600">
+        Skapa ny besiktning
+      </h2>
+
+      <section className="mt-2 rounded-md border border-indigo-100 bg-white/90 p-2">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-700">
+          Utan befintlig fastighet
+        </h3>
+        <p className="mt-1 text-[11px] leading-relaxed text-gray-600">
+          Skapar ett utkast och öppnar en ny besiktning direkt.
+        </p>
+        <button
+          type="button"
+          onClick={() => void handleCreateWithoutProperty()}
+          disabled={creating}
+          className="mt-2 inline-flex w-full items-center justify-center rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+        >
+          {creating ? 'Skapar...' : '+ Skapa besiktning'}
+        </button>
+      </section>
+
+      <section className="mt-2 rounded-md border border-dashed border-gray-300 bg-white/70 p-2">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-600">
+          Från befintlig fastighet
+        </h3>
+        <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
+          Nästa steg: välj en befintlig fastighet och starta besiktning därifrån.
+        </p>
+      </section>
+
+      {createError ? <p className="mt-2 text-[11px] text-rose-700">{createError}</p> : null}
     </div>,
     'from-sky-500 to-indigo-500'
   )
 }
-
 function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
   const [avatarLoadError, setAvatarLoadError] = useState(false)
   const avatarSrc =
@@ -370,3 +465,4 @@ export default function OverlatelsebesiktningPage() {
     </Protected>
   )
 }
+

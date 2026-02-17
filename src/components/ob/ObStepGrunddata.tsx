@@ -104,6 +104,30 @@ function deriveFormKind(
   return null
 }
 
+function normalizeInspectionStatus(value: string | null | undefined): string {
+  const raw = (value ?? '').trim()
+  const normalized = raw.toLowerCase()
+
+  if (normalized === '' || normalized === 'draft' || normalized === 'utkast') {
+    return 'draft'
+  }
+  if (
+    normalized === 'ongoing' ||
+    normalized === 'p\u00e5g\u00e5ende' ||
+    normalized === 'pagaende'
+  ) {
+    return 'ongoing'
+  }
+  if (normalized === 'completed' || normalized === 'klar' || normalized === 'done') {
+    return 'completed'
+  }
+  if (normalized === 'archived' || normalized === 'arkiverad') {
+    return 'archived'
+  }
+
+  return raw
+}
+
 export default function ObStepGrunddata({
   property,
   inspection,
@@ -123,6 +147,7 @@ export default function ObStepGrunddata({
   })
 
   const [inspForm, setInspForm] = useState({
+    status: normalizeInspectionStatus(inspection.status),
     client_name: inspection.client_name ?? '',
     assignment_number: inspection.assignment_number ?? '',
     assignment_confirmation_delivered_date:
@@ -155,6 +180,7 @@ export default function ObStepGrunddata({
 
   useEffect(() => {
     setInspForm({
+      status: normalizeInspectionStatus(inspection.status),
       client_name: inspection.client_name ?? '',
       assignment_number: inspection.assignment_number ?? '',
       assignment_confirmation_delivered_date:
@@ -302,6 +328,7 @@ export default function ObStepGrunddata({
     const val = inspForm[field] || null
     const patch: Partial<Inspection> = {}
 
+    if (field === 'status') patch.status = val as any
     if (field === 'client_name') patch.client_name = val as any
     if (field === 'assignment_number') patch.assignment_number = val as any
     if (field === 'assignment_confirmation_delivered_date') {
@@ -523,6 +550,21 @@ export default function ObStepGrunddata({
                 <span>Säljarbesiktning</span>
               </label>
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <div className="text-xs font-medium text-gray-600">Status</div>
+            <select
+              className="w-full rounded-md border px-3 py-2 text-sm"
+              value={inspForm.status}
+              onChange={e => handleInspChange('status', e.target.value)}
+              onBlur={() => handleInspBlur('status')}
+            >
+              <option value="draft">Utkast</option>
+              <option value="ongoing">P&aring;g&aring;ende</option>
+              <option value="completed">Klar</option>
+              <option value="archived">Arkiverad</option>
+            </select>
           </div>
 
           <Field
