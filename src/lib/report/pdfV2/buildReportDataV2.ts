@@ -146,16 +146,34 @@ const supabase: any = createSupabaseServerClient()
       ? resolvedParams.propertyId
       : inspection?.property_id ?? null
 
-  const { data: property, error: propertyError } = resolvedPropertyId
+  const { data: propertyData, error: propertyError } = resolvedPropertyId
     ? await supabase
         .from('properties')
-        .select('id, address, postal_code, city, municipality, cadastral_id, owner_name, cover_path')
+        .select('id, name, address, postal_code, city, municipality, cadastral_id, owner_name, cover_path')
         .eq('id', resolvedPropertyId)
         .maybeSingle()
     : { data: null, error: null }
 
   if (propertyError) {
     console.error('Kunde inte hÃ¤mta fastighet', propertyError)
+  }
+
+  const { data: snapshotData, error: snapshotError } = await (supabase as any)
+    .from('ob_property_snapshot')
+    .select(
+      'inspection_id, source_property_id, name, address, postal_code, city, municipality, cadastral_id, owner_name, cover_path'
+    )
+    .eq('inspection_id', resolvedParams.inspectionId)
+    .maybeSingle()
+
+  if (snapshotError) {
+    console.error('Kunde inte hÃ¤mta OB-snapshot', snapshotError)
+  }
+
+  const property = {
+    ...(propertyData ?? {}),
+    ...(snapshotData ?? {}),
+    id: (propertyData as any)?.id ?? resolvedPropertyId ?? null,
   }
 
   if (inspection && resolvedPropertyId && inspection.property_id !== resolvedPropertyId) {
@@ -362,7 +380,7 @@ const supabase: any = createSupabaseServerClient()
   const attendeesList = parseSemicolonList(inspection?.attendees ?? null)
   const attendeesOtherList = (inspection?.attendees_other ?? '')
     .split(/\r?\n/)
-    .map((line) => line.trim())
+    .map((line: string) => line.trim())
     .filter(Boolean)
 
   const attendeesLines = [...attendeesList, ...attendeesOtherList]
@@ -549,11 +567,13 @@ const supabase: any = createSupabaseServerClient()
     console.error('Kunde inte hamta utsida-bilder', exteriorImagesError)
   }
 
+  const baseOutcomeRows = (outcomeRows ?? []) as ControlPointOutcomeRow[]
+  const interiorOutcomeRowsTyped = (interiorOutcomeRows ?? []) as ControlPointOutcomeRow[]
   const outcomeById = new Map<string, ControlPointOutcomeRow>(
-    (outcomeRows ?? []).map((row) => [row.id, row as ControlPointOutcomeRow])
+    baseOutcomeRows.map((row) => [row.id, row])
   )
-  for (const row of interiorOutcomeRows ?? []) {
-    outcomeById.set(row.id, row as ControlPointOutcomeRow)
+  for (const row of interiorOutcomeRowsTyped) {
+    outcomeById.set(row.id, row)
   }
 
   const exteriorItemsSorted = (exteriorItems ?? []) as ExteriorItemRow[]

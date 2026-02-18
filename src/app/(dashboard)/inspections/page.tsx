@@ -30,6 +30,26 @@ type Property = {
 
 type InspectionWithProperty = Inspection & {
   property?: Property | null
+  snapshot?: ObPropertySnapshotLite | null
+}
+
+type ObPropertySnapshotLite = {
+  inspection_id: string
+  address: string | null
+  postal_code: string | null
+  city: string | null
+  client_name: string | null
+}
+
+type ObSnapshotListClient = {
+  from: (table: 'ob_property_snapshot') => {
+    select: (columns: string) => {
+      in: (
+        column: 'inspection_id',
+        values: string[]
+      ) => Promise<{ data: ObPropertySnapshotLite[] | null; error: unknown | null }>
+    }
+  }
 }
 
 type StatusFilter = 'all' | 'draft' | 'ongoing' | 'completed' | 'archived'
@@ -93,13 +113,22 @@ function getStatusBadgeClass(status: string | null) {
   }
 }
 
-function getAddressText(property?: Property | null) {
-  const postalAndCity = [property?.postal_code, property?.city].filter(Boolean).join(' ')
-  return [property?.address, postalAndCity].filter(Boolean).join(', ') || 'Ingen adress angiven'
+function getAddressText(row: InspectionWithProperty) {
+  const address = row.snapshot?.address ?? row.property?.address ?? null
+  const postalCode = row.snapshot?.postal_code ?? row.property?.postal_code ?? null
+  const city = row.snapshot?.city ?? row.property?.city ?? null
+  const postalAndCity = [postalCode, city].filter(Boolean).join(' ')
+
+  return [address, postalAndCity].filter(Boolean).join(', ') || 'Ingen adress angiven'
 }
 
 function getCustomerText(row: InspectionWithProperty) {
-  return row.client_name?.trim() || row.client_contact?.trim() || '–'
+  return (
+    row.client_name?.trim() ||
+    row.snapshot?.client_name?.trim() ||
+    row.client_contact?.trim() ||
+    '–'
+  )
 }
 
 function getDateValue(row: InspectionWithProperty) {
@@ -260,11 +289,32 @@ export default function InspectionsPage() {
         if (inspectionError) throw inspectionError
 
         const rows = (inspectionData ?? []) as Inspection[]
+        const inspectionIds = rows.map((row) => row.id)
+        const snapshotClient = supabase as unknown as ObSnapshotListClient
+        const { data: snapshotData, error: snapshotError } =
+          inspectionIds.length > 0
+            ? await snapshotClient
+                .from('ob_property_snapshot')
+                .select('inspection_id,address,postal_code,city,client_name')
+                .in('inspection_id', inspectionIds)
+            : { data: [], error: null }
+
+        if (snapshotError) {
+          console.error('Could not load OB snapshots for inspections list:', snapshotError)
+        }
+
+        const snapshotMap = new Map(
+          ((snapshotData ?? []) as ObPropertySnapshotLite[]).map((snapshot) => [
+            snapshot.inspection_id,
+            snapshot,
+          ])
+        )
 
         setInspections(
           rows.map((row) => ({
             ...row,
             property: propertyMap.get(row.property_id) ?? null,
+            snapshot: snapshotMap.get(row.id) ?? null,
           }))
         )
       } catch (loadError: unknown) {
@@ -313,7 +363,7 @@ export default function InspectionsPage() {
         row.client_name ?? '',
         row.client_contact ?? '',
         row.type ?? '',
-        getAddressText(row.property),
+        getAddressText(row),
         getStatusLabel(row.status),
       ]
         .join(' ')
@@ -328,7 +378,7 @@ export default function InspectionsPage() {
       if (sortField === 'date') {
         comparison = getDateValue(a) - getDateValue(b)
       } else if (sortField === 'address') {
-        comparison = COLLATOR.compare(getAddressText(a.property), getAddressText(b.property))
+        comparison = COLLATOR.compare(getAddressText(a), getAddressText(b))
       } else if (sortField === 'customer') {
         comparison = COLLATOR.compare(getCustomerText(a), getCustomerText(b))
       } else {
@@ -648,7 +698,7 @@ export default function InspectionsPage() {
                             <div className="text-sm text-gray-900">{dateText}</div>
                           </td>
 
-                          <td className="px-3 py-2 align-top text-sm text-gray-900">{getAddressText(row.property)}</td>
+                          <td className="px-3 py-2 align-top text-sm text-gray-900">{getAddressText(row)}</td>
 
                           <td className="px-3 py-2 align-top">
                             <div className="text-sm text-gray-900">{customer}</div>
@@ -746,7 +796,7 @@ export default function InspectionsPage() {
                       <div className="mt-3 space-y-2">
                         <div>
                           <div className="text-xs text-gray-500">Adress</div>
-                          <div className="text-sm text-gray-900">{getAddressText(row.property)}</div>
+                          <div className="text-sm text-gray-900">{getAddressText(row)}</div>
                         </div>
                         <div>
                           <div className="text-xs text-gray-500">Kund</div>

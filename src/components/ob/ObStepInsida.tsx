@@ -349,9 +349,11 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
                   if (atticOptErr) throw atticOptErr
 
-                  const match = (atticOptions ?? []).find(
-                    o => o.value === rawAttic
-                  )
+                  const options = (atticOptions ?? []) as Array<{
+                    value: string | null
+                    label: string | null
+                  }>
+                  const match = options.find(o => o.value === rawAttic)
                   setAtticLabel(match?.label ?? String(rawAttic))
                 } else {
                   setAtticLabel(String(rawAttic))
@@ -383,11 +385,11 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             .order('sort_order', { ascending: true })
 
           if (ciErr) throw ciErr
-          const ciArr = (ciData ?? []).map(ci => ({
-            ...(ci as InspectionControlItem),
-            selected_outcome_id:
-              (ci as InspectionControlItem).selected_outcome_id ?? null,
-          })) as InspectionControlItem[]
+          const ciRows = (ciData ?? []) as InspectionControlItem[]
+          const ciArr = ciRows.map(ci => ({
+            ...ci,
+            selected_outcome_id: ci.selected_outcome_id ?? null,
+          }))
           setControlItems(ciArr)
 
           const cpIds = Array.from(

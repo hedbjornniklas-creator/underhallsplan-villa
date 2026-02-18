@@ -31,6 +31,27 @@ type InspectionRow = {
   client_name: string | null
 }
 
+type SnapshotRow = {
+  inspection_id: string
+  address: string | null
+  client_name: string | null
+}
+
+type ObSnapshotClient = {
+  from: (table: 'ob_property_snapshot') => {
+    upsert: (
+      payload: Record<string, unknown>,
+      options: { onConflict: string }
+    ) => Promise<{ error: unknown | null }>
+    select: (columns: string) => {
+      in: (
+        column: 'inspection_id',
+        values: string[]
+      ) => Promise<{ data: SnapshotRow[] | null; error: unknown | null }>
+    }
+  }
+}
+
 type ProfileCardInfo = {
   full_name: string | null
   sbr_group: string | null
@@ -184,7 +205,9 @@ function CreateInspectionCard() {
           name: tempName,
           status: 'Utkast',
         })
-        .select('id')
+        .select(
+          'id,owner,created_at,name,address,postal_code,city,municipality,cadastral_id,owner_name,client_name,contact_person,tenure_type,dwelling_type,property_type,plot_area_m2,area_m2,area_sqm,tax_value,planning_status,type_code,heating,ventilation,roof_type,year_built,cover_path,status,last_inspected,last_inspection_at'
+        )
         .single()
 
       if (propertyError || !propertyData) {
@@ -205,6 +228,53 @@ function CreateInspectionCard() {
 
       if (inspectionError || !inspectionData) {
         throw inspectionError ?? new Error('Kunde inte skapa besiktning.')
+      }
+
+      const snapshotClient = supabase as unknown as ObSnapshotClient
+      const { error: snapshotError } = await snapshotClient
+        .from('ob_property_snapshot')
+        .upsert(
+          {
+            inspection_id: inspectionData.id,
+            source_property_id: propertyData.id,
+            source_property_owner: propertyData.owner ?? null,
+            source_property_created_at: propertyData.created_at ?? null,
+            imported_at: new Date().toISOString(),
+            snapshot_version: 1,
+            name: propertyData.name ?? null,
+            address: propertyData.address ?? null,
+            postal_code: propertyData.postal_code ?? null,
+            city: propertyData.city ?? null,
+            municipality: propertyData.municipality ?? null,
+            cadastral_id: propertyData.cadastral_id ?? null,
+            owner_name: propertyData.owner_name ?? null,
+            client_name: propertyData.client_name ?? null,
+            contact_person: propertyData.contact_person ?? null,
+            tenure_type: propertyData.tenure_type ?? null,
+            dwelling_type: propertyData.dwelling_type ?? null,
+            property_type: propertyData.property_type ?? null,
+            plot_area_m2: propertyData.plot_area_m2 ?? null,
+            area_m2: propertyData.area_m2 ?? null,
+            area_sqm: propertyData.area_sqm ?? null,
+            tax_value: propertyData.tax_value ?? null,
+            planning_status: propertyData.planning_status ?? null,
+            type_code: propertyData.type_code ?? null,
+            heating: propertyData.heating ?? null,
+            ventilation: propertyData.ventilation ?? null,
+            roof_type: propertyData.roof_type ?? null,
+            year_built: propertyData.year_built ?? null,
+            cover_path: propertyData.cover_path ?? null,
+            status: propertyData.status ?? null,
+            last_inspected: propertyData.last_inspected ?? null,
+            last_inspection_at: propertyData.last_inspection_at ?? null,
+          },
+          { onConflict: 'inspection_id' }
+        )
+
+      if (snapshotError) {
+        await supabase.from('inspections').delete().eq('id', inspectionData.id)
+        await supabase.from('properties').delete().eq('id', propertyData.id)
+        throw snapshotError
       }
 
       router.push(`/properties/${propertyId}/ob/${inspectionData.id}`)
@@ -396,13 +466,31 @@ export default function OverlatelsebesiktningPage() {
         if (inspectionError) throw inspectionError
 
         const rows = (inspectionData ?? []) as InspectionRow[]
+        const inspectionIds = rows.map((inspection) => inspection.id)
+        const snapshotClient = supabase as unknown as ObSnapshotClient
+        const { data: snapshotData, error: snapshotError } =
+          inspectionIds.length > 0
+            ? await snapshotClient
+                .from('ob_property_snapshot')
+                .select('inspection_id,address,client_name')
+                .in('inspection_id', inspectionIds)
+            : { data: [], error: null }
+
+        if (snapshotError) {
+          console.error('Could not load OB snapshots for card list:', snapshotError)
+        }
+
+        const snapshotMap = new Map(
+          ((snapshotData ?? []) as SnapshotRow[]).map((snapshot) => [snapshot.inspection_id, snapshot])
+        )
 
         const mapped: InspectionListItem[] = rows.map((inspection) => {
           const property = propertyMap.get(inspection.property_id)
+          const snapshot = snapshotMap.get(inspection.id)
           return {
             id: inspection.id,
-            address: property?.address ?? null,
-            customer: inspection.client_name ?? property?.client_name ?? null,
+            address: snapshot?.address ?? property?.address ?? null,
+            customer: inspection.client_name ?? snapshot?.client_name ?? property?.client_name ?? null,
             status: inspection.status,
             href: `/properties/${inspection.property_id}/ob/${inspection.id}`,
           }

@@ -1,5 +1,34 @@
 ﻿# Changelog
 
+## 2026-02-18
+
+### Major changes
+- **OB snapshot foundation (decoupling from live property data)**
+  - Added DB migration: `docs/db/2026-02-18_ob_snapshot_and_locks.sql`
+  - Added DB migration: `docs/db/2026-02-18_ob_snapshot_backfill.sql`
+  - New table `ob_property_snapshot` for per-inspection property snapshot.
+  - Added `inspections.locked_at` and `inspections.locked_by` (lock foundation).
+
+- **Create-flow hardening**
+  - New inspections now create snapshot rows at creation time:
+    - `src/app/(app)/properties/[id]/ob/page.tsx`
+    - `src/app/(dashboard)/ob/page.tsx`
+  - Added cleanup on snapshot failure to avoid half-created records.
+
+- **Snapshot-first read path**
+  - Inspection detail now reads `ob_property_snapshot` first, with fallback to `properties`:
+    - `src/app/(app)/properties/[id]/ob/[inspectionId]/page.tsx`
+  - Report data now overlays snapshot data (fallback to `properties`):
+    - `src/app/utlatande/[propertyId]/[inspectionId]/page.tsx`
+    - `src/lib/report/pdfV2/buildReportDataV2.ts`
+  - Dashboard inspection lists now prefer snapshot address/customer:
+    - `src/app/(dashboard)/ob/page.tsx`
+    - `src/app/(dashboard)/inspections/page.tsx`
+
+- **OB Grunddata write-path**
+  - Property-like fields in OB Grunddata now save to `ob_property_snapshot` (not live `properties`):
+    - `src/components/ob/ObStepGrunddata.tsx`
+
 ## 2026-02-15
 
 ### Major changes
@@ -81,5 +110,6 @@
 
 - **Cover layout adjustment**
   - `src/components/report/ReportCoverPage.tsx` (logo box sizing + header text fixes)
+
 
 

@@ -199,23 +199,25 @@ export default function ObStepGrunddata({
     setError(null)
     setSavingProp(true)
 
-    const { error: updErr, data } = await supabase
-      .from('properties')
-      .update(patch)
-      .eq('id', property.id)
-      .select('*')
-      .single()
+    const payload = {
+      inspection_id: inspection.id,
+      ...patch,
+    }
+
+    const { error: updErr } = await (supabase as any)
+      .from('ob_property_snapshot')
+      .upsert(payload, { onConflict: 'inspection_id' })
 
     setSavingProp(false)
 
     if (updErr) {
       console.error(updErr)
-      setError('Kunde inte spara objektets uppgifter.')
+      setError('Kunde inte spara objektets uppgifter i ÖB.')
       return
     }
 
-    if (data && onPropertyUpdated) {
-      onPropertyUpdated(data as Property)
+    if (onPropertyUpdated) {
+      onPropertyUpdated({ ...property, ...patch } as Property)
     }
   }
 

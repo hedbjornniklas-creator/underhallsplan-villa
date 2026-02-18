@@ -339,7 +339,7 @@ function resolveText(source: TextSource, mockData: Record<string, unknown>): str
   return ''
 }
 
-function blockMargins(block: ReportBlock) {
+function blockMargins(block: { marginTopMm: number; marginBottomMm: number }) {
   return {
     marginTop: mmToPx(block.marginTopMm),
     marginBottom: mmToPx(block.marginBottomMm),

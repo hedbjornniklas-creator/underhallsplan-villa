@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -12,6 +12,30 @@ import ObWizard, {
 
 type Property = ObWizardPropertyInput
 type Inspection = ObWizardInspectionInput
+type ObPropertySnapshot = {
+  inspection_id: string
+  source_property_id: string | null
+  name: string | null
+  address: string | null
+  postal_code: string | null
+  city: string | null
+  municipality: string | null
+  cadastral_id: string | null
+  owner_name: string | null
+  tenure_type: string | null
+  dwelling_type: string | null
+}
+
+type ObSnapshotSingleClient = {
+  from: (table: 'ob_property_snapshot') => {
+    select: (columns: string) => {
+      eq: (
+        column: 'inspection_id',
+        value: string
+      ) => { maybeSingle: () => Promise<{ data: ObPropertySnapshot | null; error: unknown | null }> }
+    }
+  }
+}
 type ExteriorSidebarItem = {
   id: string
   key: string
@@ -24,8 +48,8 @@ const SECTIONS: { key: ObSectionKey; label: string }[] = [
   { key: 'grunddata', label: 'Grunddata' },
   { key: 'handlingar', label: 'Handlingar & upplysningar' },
   { key: 'forutsattningar', label: 'Förutsättningar' },
-  { key: 'utsida', label: 'Byggnad – utsida' },
-  { key: 'insida', label: 'Byggnad – insida' },
+  { key: 'utsida', label: 'Byggnad - utsida' },
+  { key: 'insida', label: 'Byggnad - insida' },
 ]
 
 export default function InspectionDetailPage() {
@@ -42,7 +66,7 @@ export default function InspectionDetailPage() {
   const [exteriorItems, setExteriorItems] = useState<ExteriorSidebarItem[]>([])
   const [exteriorItemsLoaded, setExteriorItemsLoaded] = useState(false)
 
-  // Starta på Grunddata (som ni gjort hittills)
+  // Starta på Grunddata
   const [activeSection, setActiveSection] = useState<ObSectionKey>('grunddata')
 
   useEffect(() => {
@@ -52,54 +76,31 @@ export default function InspectionDetailPage() {
       setLoading(true)
       setError(null)
 
-      const [
-        { data: inspData, error: inspErr },
-        { data: propData, error: propErr },
-      ] = await Promise.all([
-        supabase
-          .from('inspections')
-          .select(
-            `
-            id,
-            property_id,
-            date,
-            type,
-            status,
-            inspector_name,
-            created_at,
-            client_name,
-            client_contact,
-            assignment_number,
-            assignment_confirmation_delivered_date,
-            scope,
-            inspection_time,
-            attendees,
-            attendees_other,
-            inspection_side,
-            defect_disclosures
+      const { data: inspData, error: inspErr } = await supabase
+        .from('inspections')
+        .select(
           `
-          )
-          .eq('id', inspectionId)
-          .single(),
-        supabase
-          .from('properties')
-          .select(
-            `
-            id,
-            name,
-            address,
-            postal_code,
-            city,
-            municipality,
-            cadastral_id,
-            owner_name,
-            tenure_type,
-            dwelling_type
-          `
-          )
-          .eq('id', propertyId)
-          .single(),
-      ])
+          id,
+          property_id,
+          date,
+          type,
+          status,
+          inspector_name,
+          created_at,
+          client_name,
+          client_contact,
+          assignment_number,
+          assignment_confirmation_delivered_date,
+          scope,
+          inspection_time,
+          attendees,
+          attendees_other,
+          inspection_side,
+          defect_disclosures
+        `
+        )
+        .eq('id', inspectionId)
+        .single()
 
       if (inspErr || !inspData) {
         console.error('Kunde inte hämta besiktning:', inspErr?.message)
@@ -108,19 +109,84 @@ export default function InspectionDetailPage() {
         return
       }
 
-      if (propErr || !propData) {
-        console.error('Kunde inte hämta fastighet:', propErr?.message)
-        setError('Kunde inte hämta fastigheten.')
+      const inspectionRow = inspData as Inspection
+      const resolvedPropertyId = inspectionRow.property_id ?? propertyId
+
+      const [{ data: snapshotData, error: snapshotError }, { data: sourceProperty, error: propertyError }] =
+        await Promise.all([
+          (supabase as unknown as ObSnapshotSingleClient)
+            .from('ob_property_snapshot')
+            .select(
+              `
+              inspection_id,
+              source_property_id,
+              name,
+              address,
+              postal_code,
+              city,
+              municipality,
+              cadastral_id,
+              owner_name,
+              tenure_type,
+              dwelling_type
+            `
+            )
+            .eq('inspection_id', inspectionId)
+            .maybeSingle(),
+          supabase
+            .from('properties')
+            .select(
+              `
+              id,
+              name,
+              address,
+              postal_code,
+              city,
+              municipality,
+              cadastral_id,
+              owner_name,
+              tenure_type,
+              dwelling_type
+            `
+            )
+            .eq('id', resolvedPropertyId)
+            .maybeSingle(),
+        ])
+
+      if (snapshotError) {
+        console.error('Kunde inte hämta OB-snapshot:', snapshotError)
+      }
+
+      if (propertyError) {
+        console.error('Kunde inte hämta fastighet:', propertyError?.message)
+      }
+
+      const snapshot = (snapshotData as ObPropertySnapshot | null) ?? null
+      const prop = (sourceProperty as Property | null) ?? null
+
+      if (!snapshot && !prop) {
+        setError('Kunde inte hämta fastighetsdata för besiktningen.')
         setLoading(false)
         return
       }
 
       setInspection(inspData as Inspection)
-      setProperty(propData as Property)
+      setProperty({
+        id: resolvedPropertyId,
+        name: snapshot?.name ?? prop?.name ?? 'Fastighet',
+        address: snapshot?.address ?? prop?.address ?? null,
+        postal_code: snapshot?.postal_code ?? prop?.postal_code ?? null,
+        city: snapshot?.city ?? prop?.city ?? null,
+        municipality: snapshot?.municipality ?? prop?.municipality ?? null,
+        cadastral_id: snapshot?.cadastral_id ?? prop?.cadastral_id ?? null,
+        owner_name: snapshot?.owner_name ?? prop?.owner_name ?? null,
+        tenure_type: (snapshot?.tenure_type ?? prop?.tenure_type ?? null) as Property['tenure_type'],
+        dwelling_type: (snapshot?.dwelling_type ?? prop?.dwelling_type ?? null) as Property['dwelling_type'],
+      } as Property)
       setLoading(false)
     }
 
-    load()
+    void load()
   }, [propertyId, inspectionId])
 
   useEffect(() => {
@@ -144,7 +210,7 @@ export default function InspectionDetailPage() {
       if (!cancelled) setExteriorItemsLoaded(true)
     }
 
-    loadExteriorItems()
+    void loadExteriorItems()
 
     return () => {
       cancelled = true
@@ -155,7 +221,7 @@ export default function InspectionDetailPage() {
     return (
       <Protected hideSidebar>
         <main className="p-6">
-          <p className="text-sm text-gray-500">Laddar besiktning…</p>
+          <p className="text-sm text-gray-500">Laddar besiktning...</p>
         </main>
       </Protected>
     )
@@ -165,9 +231,7 @@ export default function InspectionDetailPage() {
     return (
       <Protected hideSidebar>
         <main className="p-6">
-          <p className="mb-4 text-sm text-red-600">
-            {error || 'Besiktningen kunde inte hittas.'}
-          </p>
+          <p className="mb-4 text-sm text-red-600">{error || 'Besiktningen kunde inte hittas.'}</p>
           <button
             onClick={() => router.push(`/properties/${propertyId}/ob`)}
             className="rounded-md border px-3 py-2 text-sm"
@@ -181,8 +245,7 @@ export default function InspectionDetailPage() {
 
   return (
     <Protected hideSidebar>
-      <main className="p-6 space-y-4">
-        {/* Tillbaka-knapp högst upp */}
+      <main className="space-y-4 p-6">
         <button
           onClick={() => router.push(`/properties/${propertyId}/ob`)}
           className="text-sm text-blue-600 hover:underline"
@@ -190,56 +253,51 @@ export default function InspectionDetailPage() {
           ← Tillbaka till besiktningar
         </button>
 
-        {/* Layout: lokal OB-sidebar + wizard */}
-        <div className="mt-2 grid gap-6 md:grid-cols-[220px_minmax(0,1fr)] items-start">
-          {/* Lokal OB-sidebar */}
+        <div className="mt-2 grid items-start gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
           <div className="md:w-[220px]">
-            <nav className="rounded-lg border bg-white p-3 space-y-2 md:fixed md:top-28 md:left-6 md:w-[220px] md:max-h-[calc(100vh-7rem)] md:overflow-auto">
-            <div className="mb-2 text-xs font-semibold uppercase text-gray-500">
-              MODULER
-            </div>
+            <nav className="space-y-2 rounded-lg border bg-white p-3 md:fixed md:left-6 md:top-28 md:max-h-[calc(100vh-7rem)] md:w-[220px] md:overflow-auto">
+              <div className="mb-2 text-xs font-semibold uppercase text-gray-500">MODULER</div>
 
-            {SECTIONS.map((section) => (
-              <div key={section.key}>
+              {SECTIONS.map((section) => (
+                <div key={section.key}>
+                  <button
+                    onClick={() => setActiveSection(section.key)}
+                    className={`w-full rounded-md px-3 py-2 text-left text-sm ${
+                      activeSection === section.key
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    {section.label}
+                  </button>
+
+                  {section.key === 'utsida' && activeSection === 'utsida' && exteriorItems.length > 0 && (
+                    <div className="mt-2 space-y-1 border-l border-gray-200 pl-3">
+                      {exteriorItems.map((item) => (
+                        <a
+                          key={item.id}
+                          href={`#utsida-${item.key}`}
+                          className="block text-xs text-gray-600 hover:text-gray-900"
+                        >
+                          {item.label}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              <div className="mt-4 border-t pt-3">
                 <button
-                  onClick={() => setActiveSection(section.key)}
-                  className={`w-full rounded-md px-3 py-2 text-left text-sm ${
-                    activeSection === section.key
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
+                  onClick={() => router.push(`/properties/${propertyId}`)}
+                  className="w-full rounded-md border px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
                 >
-                  {section.label}
+                  ← Till fastighetssidan
                 </button>
-
-                {section.key === 'utsida' && activeSection === 'utsida' && exteriorItems.length > 0 && (
-                  <div className="mt-2 space-y-1 border-l border-gray-200 pl-3">
-                    {exteriorItems.map((item) => (
-                      <a
-                        key={item.id}
-                        href={`#utsida-${item.key}`}
-                        className="block text-xs text-gray-600 hover:text-gray-900"
-                      >
-                        {item.label}
-                      </a>
-                    ))}
-                  </div>
-                )}
               </div>
-            ))}
-
-            <div className="mt-4 border-t pt-3">
-              <button
-                onClick={() => router.push(`/properties/${propertyId}`)}
-                className="w-full rounded-md border px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
-              >
-                ← Till fastighetssidan
-              </button>
-            </div>
             </nav>
           </div>
 
-          {/* Själva OB-wizarden */}
           <div>
             <ObWizard
               property={property}

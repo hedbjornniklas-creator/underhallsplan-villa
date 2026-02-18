@@ -149,16 +149,6 @@ export default async function Page({
     return `${base}/storage/v1/object/public/inspection-images/${path}`
   }
 
-  const { data: property, error: propertyError } = await supabase
-    .from('properties')
-    .select('id, address, postal_code, city, municipality, cadastral_id, owner_name, cover_path')
-    .eq('id', resolvedParams.propertyId)
-    .maybeSingle()
-
-  if (propertyError) {
-    console.error('Kunde inte hÃ¤mta fastighet', propertyError)
-  }
-
   const { data: inspectionData, error: inspectionError } = await supabase
     .from('inspections')
     .select(
@@ -173,6 +163,33 @@ export default async function Page({
   }
 
   const inspectionSide = (inspection?.inspection_side ?? null) as 'buyer' | 'seller' | null
+  const resolvedPropertyId = inspection?.property_id ?? resolvedParams.propertyId
+
+  const { data: propertyData, error: propertyError } = await supabase
+    .from('properties')
+    .select('id, name, address, postal_code, city, municipality, cadastral_id, owner_name, cover_path')
+    .eq('id', resolvedPropertyId)
+    .maybeSingle()
+
+  if (propertyError) {
+    console.error('Kunde inte hÃ¤mta fastighet', propertyError)
+  }
+
+  const { data: snapshotData, error: snapshotError } = await (supabase as any)
+    .from('ob_property_snapshot')
+    .select('inspection_id, source_property_id, name, address, postal_code, city, municipality, cadastral_id, owner_name, cover_path')
+    .eq('inspection_id', resolvedParams.inspectionId)
+    .maybeSingle()
+
+  if (snapshotError) {
+    console.error('Kunde inte hÃ¤mta OB-snapshot', snapshotError)
+  }
+
+  const property = {
+    ...(propertyData ?? {}),
+    ...(snapshotData ?? {}),
+    id: (propertyData as any)?.id ?? resolvedPropertyId ?? null,
+  }
 
 
   if (inspection && inspection.property_id !== resolvedParams.propertyId) {

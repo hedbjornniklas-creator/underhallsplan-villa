@@ -15,12 +15,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true
-    supabase.auth.getUser().then((res) => {
+    const loadUser = async () => {
+      const { data } = await supabase.auth.getUser()
       if (!mounted) return
-      const user = res?.data?.user ?? null
+      const user = data?.user ?? null
       setIsLoggedIn(!!user)
       setEmail(user?.email ?? null)
-    })
+    }
+    void loadUser()
     return () => {
       mounted = false
     }
