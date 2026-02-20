@@ -3,12 +3,12 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Mail, Send } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 
 type DashboardCard = {
-  id: 'list' | 'create' | 'profile'
+  id: 'list' | 'create' | 'profile' | 'assignments'
 }
 
 type InspectionListItem = {
@@ -103,7 +103,7 @@ type ProfileCardInfo = {
   logo_url?: string | null
 }
 
-const MODULES: DashboardCard[] = [{ id: 'list' }, { id: 'create' }, { id: 'profile' }]
+const MODULES: DashboardCard[] = [{ id: 'list' }, { id: 'create' }, { id: 'profile' }, { id: 'assignments' }]
 
 function resolvePublicMediaUrl(path: string | null | undefined) {
   if (!path) return null
@@ -432,6 +432,111 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
     'from-indigo-500 to-violet-500'
   )
 }
+
+function AssignmentConfirmationsCard() {
+  const [email, setEmail] = useState('')
+  const [isSending, setIsSending] = useState(false)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  const handleQuickSend = async () => {
+    const normalized = email.trim().toLowerCase()
+    if (!normalized || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+      setErrorMessage('Ange en giltig mejladress.')
+      setSuccessMessage(null)
+      return
+    }
+
+    try {
+      setIsSending(true)
+      setErrorMessage(null)
+      setSuccessMessage(null)
+
+      const response = await fetch('/api/ob/assignments/quick-send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerEmail: normalized }),
+      })
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string
+        acceptUrl?: string
+      }
+
+      if (!response.ok) {
+        if (payload.acceptUrl) {
+          setErrorMessage(`Mejl kunde inte skickas. Länk skapades: ${payload.acceptUrl}`)
+        } else {
+          setErrorMessage(payload.error ?? 'Kunde inte skicka uppdragsbekräftelse.')
+        }
+        return
+      }
+
+      setEmail('')
+      setSuccessMessage('Uppdragsbekräftelse skickad.')
+    } catch {
+      setErrorMessage('Kunde inte skicka uppdragsbekräftelse.')
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  return cardShell(
+    <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-3">
+      <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-600">
+        Uppdragsbekräftelser
+      </h2>
+
+      <p className="mt-2 text-[11px] leading-relaxed text-gray-600">
+        Skicka en ny uppdragsbekräftelse direkt till beställarens mejl.
+      </p>
+
+      <div className="mt-2 space-y-2">
+        <label className="relative block">
+          <Mail
+            size={14}
+            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-gray-400"
+          />
+          <input
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="kund@epost.se"
+            className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 pl-7 text-xs text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+        </label>
+
+        <button
+          type="button"
+          onClick={() => void handleQuickSend()}
+          disabled={isSending}
+          className="inline-flex w-full items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+        >
+          <Send size={13} />
+          {isSending ? 'Skickar...' : 'Skicka uppdragsbekräftelse'}
+        </button>
+      </div>
+
+      {errorMessage ? (
+        <p className="mt-2 rounded-md bg-rose-100 px-2 py-1 text-[10px] text-rose-700">{errorMessage}</p>
+      ) : null}
+      {successMessage ? (
+        <p className="mt-2 rounded-md bg-emerald-100 px-2 py-1 text-[10px] text-emerald-700">
+          {successMessage}
+        </p>
+      ) : null}
+
+      <div className="mt-auto pt-2">
+        <Link
+          href="/ob/assignments"
+          className="inline-flex items-center justify-center rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
+        >
+          Öppna uppdragsbekräftelser
+        </Link>
+      </div>
+    </div>,
+    'from-indigo-500 to-cyan-500'
+  )
+}
 export default function OverlatelsebesiktningPage() {
   const [inspections, setInspections] = useState<InspectionListItem[]>([])
   const [inspectionsLoading, setInspectionsLoading] = useState(true)
@@ -590,6 +695,8 @@ export default function OverlatelsebesiktningPage() {
                   />
                 ) : module.id === 'create' ? (
                   <CreateInspectionCard />
+                ) : module.id === 'assignments' ? (
+                  <AssignmentConfirmationsCard />
                 ) : (
                   <ProfileMiniCard profile={profileInfo} />
                 )}
