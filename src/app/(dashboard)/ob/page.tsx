@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { ArrowLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -22,6 +23,38 @@ type PropertyRow = {
   id: string
   address: string | null
   client_name: string | null
+}
+
+type PropertySeedRow = {
+  id: string
+  owner: string | null
+  created_at: string | null
+  name: string
+  address: string | null
+  postal_code: string | null
+  city: string | null
+  municipality: string | null
+  cadastral_id: string | null
+  owner_name: string | null
+  client_name: string | null
+  contact_person: string | null
+  tenure_type: string | null
+  dwelling_type: string | null
+  property_type: string | null
+  plot_area_m2: number | null
+  area_m2: number | null
+  area_sqm: number | null
+  tax_value: number | null
+  planning_status: string | null
+  type_code: string | null
+  heating: string | null
+  ventilation: string | null
+  roof_type: string | null
+  year_built: number | null
+  cover_path: string | null
+  status: string | null
+  last_inspected: string | null
+  last_inspection_at: string | null
 }
 
 type InspectionRow = {
@@ -57,6 +90,7 @@ type ProfileCardInfo = {
   sbr_group: string | null
   sbr_status: string | null
   membership_number: string | null
+  certification_number: string | null
   phone: string | null
   email: string | null
   company_name: string | null
@@ -104,10 +138,9 @@ function getStatusLabel(status: string | null) {
     case 'archived':
       return 'Arkiverad'
     default:
-      return status ?? 'Okänd'
+      return status ?? 'Ok\u00e4nd'
   }
 }
-
 function cardShell(children: React.ReactNode, accent = 'from-indigo-500 to-sky-400') {
   return (
     <article className="group relative aspect-square h-full overflow-hidden rounded-2xl border border-white/40 bg-white/90 p-3 shadow-2xl ring-1 ring-black/5 backdrop-blur-md transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-[0_30px_70px_-26px_rgba(15,23,42,0.65)]">
@@ -139,7 +172,7 @@ function InspectionsListCard({
       {inspectionsLoading ? (
         <p className="mt-1 text-xs text-gray-500">Laddar besiktningar...</p>
       ) : inspectionsError ? (
-        <p className="mt-1 text-xs text-rose-700">Kunde inte hämta besiktningar.</p>
+        <p className="mt-1 text-xs text-rose-700">Kunde inte h\u00e4mta besiktningar.</p>
       ) : inspections.length === 0 ? (
         <p className="mt-1 text-xs text-gray-500">Inga besiktningar hittades.</p>
       ) : (
@@ -176,7 +209,42 @@ function CreateInspectionCard() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
-  const handleCreateWithoutProperty = async () => {
+  const buildSnapshotPayload = (inspectionId: string, propertyData: PropertySeedRow) => ({
+    inspection_id: inspectionId,
+    source_property_id: propertyData.id,
+    source_property_owner: propertyData.owner ?? null,
+    source_property_created_at: propertyData.created_at ?? null,
+    imported_at: new Date().toISOString(),
+    snapshot_version: 1,
+    name: propertyData.name ?? null,
+    address: propertyData.address ?? null,
+    postal_code: propertyData.postal_code ?? null,
+    city: propertyData.city ?? null,
+    municipality: propertyData.municipality ?? null,
+    cadastral_id: propertyData.cadastral_id ?? null,
+    owner_name: propertyData.owner_name ?? null,
+    client_name: propertyData.client_name ?? null,
+    contact_person: propertyData.contact_person ?? null,
+    tenure_type: propertyData.tenure_type ?? null,
+    dwelling_type: propertyData.dwelling_type ?? null,
+    property_type: propertyData.property_type ?? null,
+    plot_area_m2: propertyData.plot_area_m2 ?? null,
+    area_m2: propertyData.area_m2 ?? null,
+    area_sqm: propertyData.area_sqm ?? null,
+    tax_value: propertyData.tax_value ?? null,
+    planning_status: propertyData.planning_status ?? null,
+    type_code: propertyData.type_code ?? null,
+    heating: propertyData.heating ?? null,
+    ventilation: propertyData.ventilation ?? null,
+    roof_type: propertyData.roof_type ?? null,
+    year_built: propertyData.year_built ?? null,
+    cover_path: propertyData.cover_path ?? null,
+    status: propertyData.status ?? null,
+    last_inspected: propertyData.last_inspected ?? null,
+    last_inspection_at: propertyData.last_inspection_at ?? null,
+  })
+
+  const handleCreateFromScratch = async () => {
     if (creating) return
 
     try {
@@ -214,12 +282,12 @@ function CreateInspectionCard() {
         throw propertyError ?? new Error('Kunde inte skapa fastighet.')
       }
 
-      const propertyId = propertyData.id as string
+      const sourceProperty = propertyData as PropertySeedRow
 
       const { data: inspectionData, error: inspectionError } = await supabase
         .from('inspections')
         .insert({
-          property_id: propertyId,
+          property_id: sourceProperty.id,
           type: 'OB',
           status: 'draft',
         })
@@ -233,54 +301,20 @@ function CreateInspectionCard() {
       const snapshotClient = supabase as unknown as ObSnapshotClient
       const { error: snapshotError } = await snapshotClient
         .from('ob_property_snapshot')
-        .upsert(
-          {
-            inspection_id: inspectionData.id,
-            source_property_id: propertyData.id,
-            source_property_owner: propertyData.owner ?? null,
-            source_property_created_at: propertyData.created_at ?? null,
-            imported_at: new Date().toISOString(),
-            snapshot_version: 1,
-            name: propertyData.name ?? null,
-            address: propertyData.address ?? null,
-            postal_code: propertyData.postal_code ?? null,
-            city: propertyData.city ?? null,
-            municipality: propertyData.municipality ?? null,
-            cadastral_id: propertyData.cadastral_id ?? null,
-            owner_name: propertyData.owner_name ?? null,
-            client_name: propertyData.client_name ?? null,
-            contact_person: propertyData.contact_person ?? null,
-            tenure_type: propertyData.tenure_type ?? null,
-            dwelling_type: propertyData.dwelling_type ?? null,
-            property_type: propertyData.property_type ?? null,
-            plot_area_m2: propertyData.plot_area_m2 ?? null,
-            area_m2: propertyData.area_m2 ?? null,
-            area_sqm: propertyData.area_sqm ?? null,
-            tax_value: propertyData.tax_value ?? null,
-            planning_status: propertyData.planning_status ?? null,
-            type_code: propertyData.type_code ?? null,
-            heating: propertyData.heating ?? null,
-            ventilation: propertyData.ventilation ?? null,
-            roof_type: propertyData.roof_type ?? null,
-            year_built: propertyData.year_built ?? null,
-            cover_path: propertyData.cover_path ?? null,
-            status: propertyData.status ?? null,
-            last_inspected: propertyData.last_inspected ?? null,
-            last_inspection_at: propertyData.last_inspection_at ?? null,
-          },
-          { onConflict: 'inspection_id' }
-        )
+        .upsert(buildSnapshotPayload(inspectionData.id, sourceProperty), {
+          onConflict: 'inspection_id',
+        })
 
       if (snapshotError) {
         await supabase.from('inspections').delete().eq('id', inspectionData.id)
-        await supabase.from('properties').delete().eq('id', propertyData.id)
+        await supabase.from('properties').delete().eq('id', sourceProperty.id)
         throw snapshotError
       }
 
-      router.push(`/properties/${propertyId}/ob/${inspectionData.id}`)
+      router.push(`/properties/${sourceProperty.id}/ob/${inspectionData.id}`)
     } catch (error) {
-      console.error('Could not create inspection from /ob:', error)
-      setCreateError('Kunde inte skapa ny besiktning. Försök igen.')
+      console.error('Could not create inspection from scratch:', error)
+      setCreateError('Kunde inte skapa besiktning fr\u00e5n scratch.')
     } finally {
       setCreating(false)
     }
@@ -294,28 +328,19 @@ function CreateInspectionCard() {
 
       <section className="mt-2 rounded-md border border-indigo-100 bg-white/90 p-2">
         <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-700">
-          Utan befintlig fastighet
+          {'Fr\u00e5n scratch'}
         </h3>
         <p className="mt-1 text-[11px] leading-relaxed text-gray-600">
-          Skapar ett utkast och öppnar en ny besiktning direkt.
+          Skapar en ny tom besiktning utan vald fastighet.
         </p>
         <button
           type="button"
-          onClick={() => void handleCreateWithoutProperty()}
+          onClick={() => void handleCreateFromScratch()}
           disabled={creating}
           className="mt-2 inline-flex w-full items-center justify-center rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
         >
-          {creating ? 'Skapar...' : '+ Skapa besiktning'}
+          {creating ? 'Skapar...' : 'Skapa besiktning fr\u00e5n scratch'}
         </button>
-      </section>
-
-      <section className="mt-2 rounded-md border border-dashed border-gray-300 bg-white/70 p-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-600">
-          Från befintlig fastighet
-        </h3>
-        <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
-          Nästa steg: välj en befintlig fastighet och starta besiktning därifrån.
-        </p>
       </section>
 
       {createError ? <p className="mt-2 text-[11px] text-rose-700">{createError}</p> : null}
@@ -329,48 +354,49 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
     resolvePublicMediaUrl(profile?.avatar_path) ??
     resolvePublicMediaUrl(profile?.logo_path) ??
     resolvePublicMediaUrl(profile?.logo_url)
-  const name = profile?.full_name ?? 'Niklas Hedbjörn'
-  const sbrGroup = profile?.sbr_group ?? 'Medlem i SBR Överlåtelsebesiktningsgrupp'
-  const sbrStatus = profile?.sbr_status ?? 'Av SBR godkänd besiktningsman'
+  const name = profile?.full_name ?? 'Niklas Hedbj\u00f6rn'
+  const sbrGroup = profile?.sbr_group ?? 'Medlem i SBR \u00d6verl\u00e5telsebesiktningsgrupp'
+  const sbrStatus = profile?.sbr_status ?? 'Av SBR godk\u00e4nd besiktningsman'
   const membership = profile?.membership_number ?? '22015326'
+  const certification = profile?.certification_number ?? null
   const phone = profile?.phone ?? '0735678716'
   const email = profile?.email ?? 'niklas.h@bbsab.nu'
   const company = profile?.company_name ?? 'Besiktningsbolaget Stockholm'
   const orgNo = profile?.company_orgno ?? '559281-0823'
 
-  let addressLine = 'Bryggvägen 7, 117 71 Stockholm'
+  let addressLine = 'Bryggv\u00e4gen 7, 117 71 Stockholm'
   if (profile?.company_address) {
     const postalCity = [profile.company_postal_code, profile.company_city].filter(Boolean).join(' ')
     addressLine = [profile.company_address, postalCity].filter(Boolean).join(', ')
   }
 
   return cardShell(
-    <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-2">
-      <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-600">
-        Min information
-      </div>
+    <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-3">
+      <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-600">
+        Visitkort
+      </h2>
 
-      <div className="flex items-start gap-2 overflow-hidden">
+      <div className="mt-2 flex items-start gap-4 overflow-hidden">
         {avatarSrc && !avatarLoadError ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={avatarSrc}
             alt="Profilbild"
-            className="h-11 w-11 shrink-0 rounded-full border object-cover"
+            className="h-20 w-20 shrink-0 rounded-full border object-cover"
             onError={() => setAvatarLoadError(true)}
           />
         ) : (
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border bg-gray-100 text-[10px] text-gray-500">
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border bg-gray-100 text-[10px] text-gray-500">
             Bild
           </div>
         )}
 
-        <div className="min-w-0 text-[10px] leading-snug text-gray-700">
-          <p className="font-semibold text-gray-900">Visitkort (för utlåtanden)</p>
-          <p className="mt-1 font-semibold text-gray-900">{name}</p>
+        <div className="min-w-0 pl-1 text-[10px] leading-snug text-gray-700">
+          <p className="font-semibold text-gray-900">{name}</p>
           <p>{sbrGroup}</p>
           <p>{sbrStatus}</p>
           <p className="mt-1">Medlemsnummer: {membership}</p>
+          <p>Certifieringsnummer: {certification ?? '\u2013'}</p>
           <p>Telefon: {phone}</p>
           <p>E-post: {email}</p>
           <p className="mt-1">{company}</p>
@@ -381,17 +407,31 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
 
       <div className="mt-auto pt-2">
         <Link
-          href="/settings"
-          className="inline-flex items-center text-[11px] font-medium text-indigo-700 underline underline-offset-2 hover:text-indigo-800"
+          href="/ob/settings"
+          aria-label="Redigera visitkort"
+          title="Redigera visitkort"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-indigo-200 bg-white text-indigo-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-800 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
-          Öppna settings
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-4 w-4"
+          >
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
+          <span className="sr-only">Redigera visitkort</span>
         </Link>
       </div>
     </div>,
     'from-indigo-500 to-violet-500'
   )
 }
-
 export default function OverlatelsebesiktningPage() {
   const [inspections, setInspections] = useState<InspectionListItem[]>([])
   const [inspectionsLoading, setInspectionsLoading] = useState(true)
@@ -430,7 +470,7 @@ export default function OverlatelsebesiktningPage() {
             supabase
               .from('profiles')
               .select(
-                'full_name,sbr_group,sbr_status,membership_number,phone,email,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path,logo_path,logo_url'
+                'full_name,sbr_group,sbr_status,membership_number,certification_number,phone,email,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path,logo_path,logo_url'
               )
               .eq('id', user.id)
               .maybeSingle(),
@@ -499,7 +539,7 @@ export default function OverlatelsebesiktningPage() {
         if (!cancelled) setInspections(mapped)
       } catch (error) {
         console.error('Could not load module data:', error)
-        if (!cancelled) setInspectionsError('Kunde inte hämta besiktningar.')
+        if (!cancelled) setInspectionsError('Kunde inte h\u00e4mta besiktningar.')
       } finally {
         if (!cancelled) setInspectionsLoading(false)
       }
@@ -524,14 +564,22 @@ export default function OverlatelsebesiktningPage() {
         />
         <div className="pointer-events-none absolute inset-0 bg-white/10 backdrop-blur-[1px]" />
 
-        <div className="relative mx-auto w-full max-w-7xl px-4 py-8 md:px-6 md:py-12">
-          <header className="mx-auto max-w-4xl text-center">
-            <h1 className="text-xs font-semibold uppercase tracking-[0.26em] text-white/85">
-              Överlåtelsebesiktning
-            </h1>
+        <div className="relative mx-auto w-full max-w-7xl p-4 md:p-6">
+          <header className="mx-auto w-full max-w-7xl rounded-2xl border border-white/30 bg-white/10 p-4 shadow-sm backdrop-blur-sm md:p-5">
+            <div className="flex items-center gap-3">
+              <Link
+                href="/dashboard-v1"
+                aria-label="Tillbaka"
+                title="Tillbaka"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+              >
+                <ArrowLeft size={16} strokeWidth={2} />
+              </Link>
+              <h1 className="text-2xl font-semibold text-white drop-shadow-sm">{'\u00d6verl\u00e5telsebesiktning'}</h1>
+            </div>
           </header>
 
-          <section className="mx-auto mt-10 grid w-full max-w-7xl grid-cols-1 gap-5 place-items-center sm:grid-cols-2 sm:place-items-center lg:grid-cols-4">
+          <section className="mx-auto mt-4 grid w-full max-w-7xl grid-cols-1 gap-5 place-items-center sm:grid-cols-2 sm:place-items-center lg:grid-cols-4">
             {MODULES.map((module) => (
               <div key={module.id} className="w-full max-w-[260px] sm:max-w-[300px]">
                 {module.id === 'list' ? (

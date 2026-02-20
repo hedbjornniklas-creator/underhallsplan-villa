@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
@@ -45,7 +46,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               href="/dashboard-v1"
               className="inline-flex max-w-full items-center gap-2 text-sm font-medium text-gray-800 transition hover:text-gray-900"
             >
-              <span className="truncate">Underhållsplan Villa</span>
+              <Image
+                src="/report-assets/BesiktApp.png"
+                alt="Underhållsplan Villa"
+                width={156}
+                height={36}
+                className="h-8 w-auto object-contain"
+              />
+              <span className="sr-only">Underhållsplan Villa</span>
             </Link>
           </div>
 

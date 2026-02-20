@@ -1263,6 +1263,7 @@ export type Database = {
       profiles: {
         Row: {
           avatar_path: string | null
+          certification_number: string | null
           company_address: string | null
           company_city: string | null
           company_name: string | null
@@ -1283,6 +1284,7 @@ export type Database = {
         }
         Insert: {
           avatar_path?: string | null
+          certification_number?: string | null
           company_address?: string | null
           company_city?: string | null
           company_name?: string | null
@@ -1303,6 +1305,7 @@ export type Database = {
         }
         Update: {
           avatar_path?: string | null
+          certification_number?: string | null
           company_address?: string | null
           company_city?: string | null
           company_name?: string | null

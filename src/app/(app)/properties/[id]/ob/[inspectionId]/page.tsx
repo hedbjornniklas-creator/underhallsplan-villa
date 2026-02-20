@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { ArrowLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 import ObWizard, {
@@ -245,15 +246,33 @@ export default function InspectionDetailPage() {
 
   return (
     <Protected hideSidebar>
-      <main className="space-y-4 p-6">
-        <button
-          onClick={() => router.push(`/properties/${propertyId}/ob`)}
-          className="text-sm text-blue-600 hover:underline"
-        >
-          ← Tillbaka till besiktningar
-        </button>
+      <main className="relative min-h-full overflow-hidden p-4 md:p-6">
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage:
+              'radial-gradient(100% 70% at 50% 0%, rgba(219,234,254,0.5) 0%, rgba(219,234,254,0) 60%), linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 42%, #60a5fa 100%)',
+          }}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-white/10 backdrop-blur-[1px]" />
 
-        <div className="mt-2 grid items-start gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="relative mx-auto w-full max-w-7xl space-y-4">
+          <header className="rounded-2xl border border-white/30 bg-white/10 p-4 shadow-sm backdrop-blur-sm md:p-5">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => router.push(`/properties/${propertyId}/ob`)}
+                aria-label="Tillbaka"
+                title="Tillbaka"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+              >
+                <ArrowLeft size={16} strokeWidth={2} />
+              </button>
+              <h1 className="text-2xl font-semibold text-white drop-shadow-sm">Överlåtelsebesiktning</h1>
+            </div>
+          </header>
+
+          <div className="grid items-start gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
           <div className="md:w-[220px]">
             <nav className="space-y-2 rounded-lg border bg-white p-3 md:fixed md:left-6 md:top-28 md:max-h-[calc(100vh-7rem)] md:w-[220px] md:overflow-auto">
               <div className="mb-2 text-xs font-semibold uppercase text-gray-500">MODULER</div>
@@ -307,6 +326,7 @@ export default function InspectionDetailPage() {
               onInspectionUpdated={(updated) => setInspection(updated as Inspection)}
             />
           </div>
+        </div>
         </div>
       </main>
     </Protected>

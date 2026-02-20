@@ -21,7 +21,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const hideSidebarForObDetail =
     segments[0] === 'properties' &&
     segments[2] === 'ob' &&
-    segments.length >= 4 // då har vi ett inspectionId efter "ob"
+    segments.length >= 4 // dÃƒÂ¥ har vi ett inspectionId efter "ob"
 
   if (isEmbed) {
     return <main className="min-h-screen bg-white">{children}</main>
@@ -29,7 +29,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      {/* Global sidebar visas på alla sidor UTOM detaljsidan för ÖB */}
+      {/* Global sidebar visas pÃƒÂ¥ alla sidor UTOM detaljsidan fÃƒÂ¶r Ãƒâ€“B */}
       {!hideSidebarForObDetail && <Sidebar />}
 
       <div className="flex flex-1 min-h-0 flex-col">
