@@ -2,16 +2,13 @@
 
 import Link from 'next/link'
 import Protected from '@/components/Protected'
-import { ArrowRight, ClipboardCheck, ListChecks } from 'lucide-react'
+import { ClipboardCheck, Power } from 'lucide-react'
 
 type ModuleCardData = {
   id: string
   title: string
   description: string
   href: string
-  primaryActionLabel: string
-  secondaryLinkLabel: string
-  secondaryHref: string
 }
 
 const MODULES: ModuleCardData[] = [
@@ -20,10 +17,7 @@ const MODULES: ModuleCardData[] = [
     title: 'Överlåtelsebesiktning',
     description:
       'Skapa och hantera överlåtelsebesiktningar med fokus på ett enkelt operativt flöde.',
-    href: '/inspections',
-    primaryActionLabel: 'Öppna modul',
-    secondaryLinkLabel: 'Visa alla besiktningar',
-    secondaryHref: '/ob',
+    href: '/ob',
   },
 ]
 
@@ -53,20 +47,16 @@ function ModuleCard({ module }: { module: ModuleCardData }) {
           </div>
         </div>
 
-        <div className="mt-auto flex flex-col gap-3 pt-4">
+        <div className="flex flex-1 items-center justify-center">
           <Link
             href={module.href}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-lg transition-all duration-300 ease-out hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+            aria-label={`Öppna ${module.title}`}
+            title={`Öppna ${module.title}`}
+            className="inline-flex h-28 w-28 items-center justify-center rounded-full bg-gradient-to-b from-lime-400 to-green-600 p-[9px] shadow-[0_16px_26px_-16px_rgba(22,101,52,0.85)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:shadow-[0_20px_30px_-14px_rgba(22,101,52,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
           >
-            {module.primaryActionLabel}
-            <ArrowRight size={16} aria-hidden />
-          </Link>
-          <Link
-            href={module.secondaryHref}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-all duration-300 ease-out hover:-translate-y-0.5 hover:bg-gray-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
-          >
-            <ListChecks size={16} aria-hidden />
-            {module.secondaryLinkLabel}
+            <span className="flex h-full w-full items-center justify-center rounded-full bg-white ring-1 ring-black/10 shadow-inner">
+              <Power size={42} aria-hidden className="text-gray-500" strokeWidth={2.25} />
+            </span>
           </Link>
         </div>
       </div>

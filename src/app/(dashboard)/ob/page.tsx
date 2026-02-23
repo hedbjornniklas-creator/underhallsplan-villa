@@ -141,18 +141,9 @@ function getStatusLabel(status: string | null) {
       return status ?? 'Ok\u00e4nd'
   }
 }
-function cardShell(
-  children: React.ReactNode,
-  accent = 'from-indigo-500 to-sky-400',
-  sizeClass = 'aspect-square h-full'
-) {
+function cardShell(children: React.ReactNode, accent = 'from-indigo-500 to-sky-400') {
   return (
-    <article
-      className={[
-        'group relative overflow-hidden rounded-2xl border border-white/40 bg-white/90 p-3 shadow-2xl ring-1 ring-black/5 backdrop-blur-md transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-[0_30px_70px_-26px_rgba(15,23,42,0.65)]',
-        sizeClass,
-      ].join(' ')}
-    >
+    <article className="group relative aspect-square h-full overflow-hidden rounded-2xl border border-white/40 bg-white/90 p-3 shadow-2xl ring-1 ring-black/5 backdrop-blur-md transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-[0_30px_70px_-26px_rgba(15,23,42,0.65)]">
       <div className={`pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b ${accent}`} />
       <div className="pointer-events-none absolute left-4 right-4 top-0 h-px bg-white/60" />
       {children}
@@ -380,46 +371,46 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
   }
 
   return cardShell(
-    <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-3">
+    <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-2.5">
       <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-600">
         Visitkort
       </h2>
 
-      <div className="mt-2 flex items-start gap-4">
+      <div className="mt-1.5 flex items-start gap-3">
         {avatarSrc && !avatarLoadError ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={avatarSrc}
             alt="Profilbild"
-            className="h-20 w-20 shrink-0 rounded-full border object-cover"
+            className="h-16 w-16 shrink-0 rounded-full border object-cover"
             onError={() => setAvatarLoadError(true)}
           />
         ) : (
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border bg-gray-100 text-[10px] text-gray-500">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border bg-gray-100 text-[10px] text-gray-500">
             Bild
           </div>
         )}
 
-        <div className="min-w-0 pl-1 text-[10px] leading-snug text-gray-700">
-          <p className="font-semibold text-gray-900">{name}</p>
-          <p>{sbrGroup}</p>
-          <p>{sbrStatus}</p>
-          <p className="mt-1">Medlemsnummer: {membership}</p>
-          <p>Certifieringsnummer: {certification ?? '\u2013'}</p>
-          <p>Telefon: {phone}</p>
-          <p>E-post: {email}</p>
-          <p className="mt-1">{company}</p>
-          <p>Org.nr: {orgNo}</p>
-          <p>{addressLine}</p>
+        <div className="min-w-0 flex-1 text-[10px] leading-snug text-gray-700">
+          <p className="truncate font-semibold text-gray-900">{name}</p>
+          <p className="truncate">{sbrGroup}</p>
+          <p className="truncate">{sbrStatus}</p>
+          <p className="mt-0.5 truncate">Medlem: {membership}</p>
+          <p className="truncate">Cert: {certification ?? '\u2013'}</p>
+          <p className="truncate">Tel: {phone}</p>
+          <p className="truncate">E-post: {email}</p>
+          <p className="mt-0.5 truncate">{company}</p>
+          <p className="truncate">Org.nr: {orgNo}</p>
+          <p className="truncate">{addressLine}</p>
         </div>
       </div>
 
-      <div className="mt-auto pt-2">
+      <div className="mt-auto pt-1.5">
         <Link
           href="/ob/settings"
           aria-label="Redigera visitkort"
           title="Redigera visitkort"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-indigo-200 bg-white text-indigo-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-800 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-indigo-200 bg-white text-indigo-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-800 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <svg
             aria-hidden="true"
@@ -429,7 +420,7 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
             strokeWidth="1.9"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="h-4 w-4"
+            className="h-3.5 w-3.5"
           >
             <path d="M12 20h9" />
             <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
@@ -438,8 +429,7 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
         </Link>
       </div>
     </div>,
-    'from-indigo-500 to-violet-500',
-    'aspect-[4/5] h-full'
+    'from-indigo-500 to-violet-500'
   )
 }
 
@@ -517,7 +507,7 @@ function AssignmentConfirmationsCard() {
     <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-2.5">
       <Link
         href="/ob/assignments"
-        className="inline-flex w-fit text-[10px] font-semibold uppercase tracking-[0.14em] text-indigo-700 underline-offset-2 transition hover:text-indigo-800 hover:underline"
+        className="inline-flex w-fit text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-600 underline-offset-2 transition hover:text-indigo-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
       >
         Uppdragsbekräftelser
       </Link>
