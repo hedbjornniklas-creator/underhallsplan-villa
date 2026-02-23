@@ -4,6 +4,6 @@ import { useRouter } from 'next/navigation'
 
 export default function AppHomeRedirect() {
   const router = useRouter()
-  useEffect(() => { router.replace('/properties') }, [router])
+  useEffect(() => { router.replace('/dashboard-v1') }, [router])
   return null
 }
