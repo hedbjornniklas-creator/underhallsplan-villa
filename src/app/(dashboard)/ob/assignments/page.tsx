@@ -191,6 +191,25 @@ export default function ObAssignmentsPage() {
     }
   }
 
+  const handleSendCompleted = async (id: string) => {
+    try {
+      setBusyId(id)
+      setError(null)
+      const response = await fetch(`/api/ob/assignments/${id}/send-completed`, {
+        method: 'POST',
+      })
+      const body = (await response.json().catch(() => ({}))) as { error?: string }
+      if (!response.ok) {
+        throw new Error(body.error ?? 'Kunde inte skicka slutmejl.')
+      }
+      await loadAssignments()
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : 'Kunde inte skicka slutmejl.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const handleConvert = async (id: string) => {
     try {
       setBusyId(id)
@@ -349,6 +368,7 @@ export default function ObAssignmentsPage() {
                   {visibleItems.map((item) => {
                     const canConvert = item.status === 'booked' && !item.inspection_id
                     const canResend = item.status === 'draft' || item.status === 'sent'
+                    const canSendCompleted = item.status === 'completed'
                     const isBusy = busyId === item.id
 
                     return (
@@ -381,6 +401,16 @@ export default function ObAssignmentsPage() {
                                 className="rounded-md border border-indigo-300 px-2.5 py-1 text-xs text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {isBusy ? 'Skickar...' : 'Skicka igen'}
+                              </button>
+                            ) : null}
+                            {canSendCompleted ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleSendCompleted(item.id)}
+                                disabled={isBusy}
+                                className="rounded-md border border-emerald-300 px-2.5 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {isBusy ? 'Skickar...' : 'Skicka klar-mejl'}
                               </button>
                             ) : null}
                             {canConvert ? (

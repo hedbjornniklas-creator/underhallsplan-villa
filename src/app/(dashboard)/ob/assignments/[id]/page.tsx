@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
 
 type AssignmentStatus = 'draft' | 'sent' | 'booked' | 'completed' | 'expired' | 'cancelled'
 type AssignmentType = 'OB' | 'STATUS' | 'UHP'
+type OrdererRole = 'buyer' | 'seller' | ''
 
 type AssignmentDetails = {
   id: string
@@ -17,12 +18,17 @@ type AssignmentDetails = {
   customer_name: string | null
   customer_email: string
   customer_phone: string | null
+  customer_address: string | null
   preliminary_address: string | null
   preferred_date: string | null
   preferred_time: string | null
+  price_amount: number | null
+  currency: string
   property_address: string | null
   property_postal_code: string | null
   property_city: string | null
+  property_municipality: string | null
+  property_owner_name: string | null
   cadastral_id: string | null
   invoice_name: string | null
   invoice_address: string | null
@@ -37,28 +43,27 @@ type AssignmentDetails = {
   created_at: string
   updated_at: string
   last_sent_at: string | null
-  price_amount: number | null
-  currency: string
 }
 
 type FormState = {
-  customerName: string
-  customerEmail: string
-  customerPhone: string
-  preliminaryAddress: string
-  preferredDate: string
-  preferredTime: string
-  propertyAddress: string
-  propertyPostalCode: string
-  propertyCity: string
-  cadastralId: string
-  invoiceName: string
-  invoiceAddress: string
-  ordererRole: string
-  personalIdentityNumber: string
-  notesInternal: string
   assignmentType: AssignmentType
   status: AssignmentStatus
+  cadastralId: string
+  propertyAddress: string
+  propertyMunicipality: string
+  propertyOwnerName: string
+  customerName: string
+  customerAddress: string
+  customerPhone: string
+  customerEmail: string
+  ordererRole: OrdererRole
+  preferredDate: string
+  preferredTime: string
+  priceAmount: string
+  invoiceName: string
+  invoiceAddress: string
+  personalIdentityNumber: string
+  notesInternal: string
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -70,25 +75,40 @@ function jsonToErrorMessage(payload: unknown, fallback: string) {
   return fallback
 }
 
+function normalizeRole(value: string | null): OrdererRole {
+  if (!value) return ''
+  const lowered = value.toLowerCase()
+  if (lowered.includes('köp') || lowered.includes('kop') || lowered.includes('buy')) return 'buyer'
+  if (lowered.includes('sälj') || lowered.includes('salj') || lowered.includes('sell')) return 'seller'
+  return ''
+}
+
+function roleToLabel(role: OrdererRole) {
+  if (role === 'buyer') return 'Köpare'
+  if (role === 'seller') return 'Säljare'
+  return ''
+}
+
 function toFormState(assignment: AssignmentDetails): FormState {
   return {
-    customerName: assignment.customer_name ?? '',
-    customerEmail: assignment.customer_email ?? '',
-    customerPhone: assignment.customer_phone ?? '',
-    preliminaryAddress: assignment.preliminary_address ?? '',
-    preferredDate: assignment.preferred_date ?? '',
-    preferredTime: assignment.preferred_time ?? '',
-    propertyAddress: assignment.property_address ?? '',
-    propertyPostalCode: assignment.property_postal_code ?? '',
-    propertyCity: assignment.property_city ?? '',
-    cadastralId: assignment.cadastral_id ?? '',
-    invoiceName: assignment.invoice_name ?? '',
-    invoiceAddress: assignment.invoice_address ?? '',
-    ordererRole: assignment.orderer_role ?? '',
-    personalIdentityNumber: assignment.personal_identity_number ?? '',
-    notesInternal: assignment.notes_internal ?? '',
     assignmentType: assignment.assignment_type,
     status: assignment.status,
+    cadastralId: assignment.cadastral_id ?? '',
+    propertyAddress: assignment.property_address ?? assignment.preliminary_address ?? '',
+    propertyMunicipality: assignment.property_municipality ?? assignment.property_city ?? '',
+    propertyOwnerName: assignment.property_owner_name ?? '',
+    customerName: assignment.customer_name ?? '',
+    customerAddress: assignment.customer_address ?? '',
+    customerPhone: assignment.customer_phone ?? '',
+    customerEmail: assignment.customer_email ?? '',
+    ordererRole: normalizeRole(assignment.orderer_role),
+    preferredDate: assignment.preferred_date ?? '',
+    preferredTime: assignment.preferred_time ?? '',
+    priceAmount: assignment.price_amount !== null ? String(assignment.price_amount) : '',
+    invoiceName: assignment.invoice_name ?? '',
+    invoiceAddress: assignment.invoice_address ?? '',
+    personalIdentityNumber: assignment.personal_identity_number ?? '',
+    notesInternal: assignment.notes_internal ?? '',
   }
 }
 
@@ -100,6 +120,7 @@ export default function AssignmentDetailsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
+  const [sendingCompleted, setSendingCompleted] = useState(false)
   const [converting, setConverting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -107,6 +128,7 @@ export default function AssignmentDetailsPage() {
   const [form, setForm] = useState<FormState | null>(null)
 
   const canSend = assignment?.status !== 'completed'
+  const canSendCompleted = assignment?.status === 'completed'
   const canConvert = assignment?.status === 'booked' && !assignment.inspection_id
 
   const loadAssignment = useCallback(async () => {
@@ -143,7 +165,6 @@ export default function AssignmentDetailsPage() {
     const sentAt = assignment.last_sent_at
       ? new Date(assignment.last_sent_at).toLocaleString('sv-SE')
       : 'Ej skickad'
-
     return { acceptedAt, sentAt }
   }, [assignment])
 
@@ -158,6 +179,13 @@ export default function AssignmentDetailsPage() {
       return
     }
 
+    const parsedPrice =
+      form.priceAmount.trim().length > 0 ? Number(form.priceAmount.trim().replace(',', '.')) : null
+    if (parsedPrice !== null && (!Number.isFinite(parsedPrice) || parsedPrice < 0)) {
+      setError('Ange ett giltigt pris.')
+      return
+    }
+
     try {
       setSaving(true)
       setError(null)
@@ -167,23 +195,26 @@ export default function AssignmentDetailsPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          assignment_type: form.assignmentType,
+          status: form.status,
           customer_name: form.customerName,
           customer_email: form.customerEmail,
           customer_phone: form.customerPhone,
-          preliminary_address: form.preliminaryAddress,
+          customer_address: form.customerAddress,
+          property_address: form.propertyAddress,
+          preliminary_address: form.propertyAddress,
+          property_municipality: form.propertyMunicipality,
+          property_owner_name: form.propertyOwnerName,
+          cadastral_id: form.cadastralId,
           preferred_date: form.preferredDate,
           preferred_time: form.preferredTime,
-          property_address: form.propertyAddress,
-          property_postal_code: form.propertyPostalCode,
-          property_city: form.propertyCity,
-          cadastral_id: form.cadastralId,
+          price_amount: parsedPrice,
+          currency: 'SEK',
+          orderer_role: roleToLabel(form.ordererRole),
           invoice_name: form.invoiceName,
           invoice_address: form.invoiceAddress,
-          orderer_role: form.ordererRole,
           personal_identity_number: form.personalIdentityNumber,
           notes_internal: form.notesInternal,
-          assignment_type: form.assignmentType,
-          status: form.status,
         }),
       })
 
@@ -217,9 +248,7 @@ export default function AssignmentDetailsPage() {
       setSuccess('Uppdragsbekräftelse skickad.')
     } catch (sendError) {
       setError(
-        sendError instanceof Error
-          ? sendError.message
-          : 'Kunde inte skicka uppdragsbekräftelsen.'
+        sendError instanceof Error ? sendError.message : 'Kunde inte skicka uppdragsbekräftelsen.'
       )
     } finally {
       setSending(false)
@@ -248,6 +277,24 @@ export default function AssignmentDetailsPage() {
     }
   }
 
+  const handleSendCompleted = async () => {
+    try {
+      setSendingCompleted(true)
+      setError(null)
+      setSuccess(null)
+      const response = await fetch(`/api/ob/assignments/${id}/send-completed`, { method: 'POST' })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(jsonToErrorMessage(payload, 'Kunde inte skicka slutmejl.'))
+      }
+      await loadAssignment()
+      setSuccess('Slutmejl skickat.')
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : 'Kunde inte skicka slutmejl.')
+    } finally {
+      setSendingCompleted(false)
+    }
+  }
   return (
     <Protected>
       <main className="relative min-h-full overflow-hidden">
@@ -271,9 +318,7 @@ export default function AssignmentDetailsPage() {
               >
                 <ArrowLeft size={16} strokeWidth={2} />
               </button>
-              <h1 className="text-2xl font-semibold text-white drop-shadow-sm">
-                Uppdragsbekräftelse
-              </h1>
+              <h1 className="text-2xl font-semibold text-white drop-shadow-sm">Uppdragsbekräftelse</h1>
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -289,7 +334,15 @@ export default function AssignmentDetailsPage() {
                   disabled={!canSend || sending || loading}
                   className="rounded-lg border border-white/60 bg-white/15 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {sending ? 'Skickar...' : 'Skicka uppdragsbekräftelse'}
+                  {sending ? 'Skickar...' : 'Skicka uppdragsbekraftelse'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSendCompleted()}
+                  disabled={!canSendCompleted || sendingCompleted || loading}
+                  className="rounded-lg border border-emerald-300 bg-emerald-500/20 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {sendingCompleted ? 'Skickar...' : 'Skicka klar-mejl'}
                 </button>
                 <button
                   type="button"
@@ -317,142 +370,143 @@ export default function AssignmentDetailsPage() {
               Laddar uppdrag...
             </div>
           ) : (
-            <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
-              <div className="grid gap-3 md:grid-cols-3">
-                <ReadOnly label="Status" value={assignment.status} />
-                <ReadOnly label="Skickad" value={summary?.sentAt ?? '-'} />
-                <ReadOnly label="Accepterad" value={summary?.acceptedAt ?? '-'} />
-              </div>
+            <>
+              <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <ReadOnly label="Status" value={assignment.status} />
+                  <ReadOnly label="Skickad" value={summary?.sentAt ?? '-'} />
+                  <ReadOnly label="Accepterad" value={summary?.acceptedAt ?? '-'} />
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <SectionCard title="Objekt">
+                    <Field
+                      label="Fastighetsbeteckning"
+                      value={form.cadastralId}
+                      onChange={(value) => updateField('cadastralId', value)}
+                    />
+                    <Field
+                      label="Adress"
+                      value={form.propertyAddress}
+                      onChange={(value) => updateField('propertyAddress', value)}
+                    />
+                    <Field
+                      label="Kommun"
+                      value={form.propertyMunicipality}
+                      onChange={(value) => updateField('propertyMunicipality', value)}
+                    />
+                    <Field
+                      label="Fastighetsägare"
+                      value={form.propertyOwnerName}
+                      onChange={(value) => updateField('propertyOwnerName', value)}
+                    />
+                  </SectionCard>
 
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field
-                  label="Kundnamn"
-                  value={form.customerName}
-                  onChange={(value) => updateField('customerName', value)}
-                />
-                <Field
-                  label="Kundmejl"
-                  value={form.customerEmail}
-                  onChange={(value) => updateField('customerEmail', value)}
-                  required
-                />
-              </div>
+                  <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-semibold text-gray-900">Uppdragsgivare</h3>
+                      <div className="flex items-center gap-2">
+                        <RoleChip
+                          label="Säljare"
+                          active={form.ordererRole === 'seller'}
+                          onClick={() => updateField('ordererRole', 'seller')}
+                        />
+                        <RoleChip
+                          label="Köpare"
+                          active={form.ordererRole === 'buyer'}
+                          onClick={() => updateField('ordererRole', 'buyer')}
+                        />
+                      </div>
+                    </div>
+                    <Field
+                      label="Namn"
+                      value={form.customerName}
+                      onChange={(value) => updateField('customerName', value)}
+                    />
+                    <Field
+                      label="Adress"
+                      value={form.customerAddress}
+                      onChange={(value) => updateField('customerAddress', value)}
+                    />
+                    <Field
+                      label="Telefon"
+                      value={form.customerPhone}
+                      onChange={(value) => updateField('customerPhone', value)}
+                      type="tel"
+                    />
+                    <Field
+                      label="E-post"
+                      value={form.customerEmail}
+                      onChange={(value) => updateField('customerEmail', value)}
+                      type="email"
+                    />
+                  </section>
+                </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field
-                  label="Kundtelefon"
-                  value={form.customerPhone}
-                  onChange={(value) => updateField('customerPhone', value)}
-                />
-                <Field
-                  label="Preliminär adress"
-                  value={form.preliminaryAddress}
-                  onChange={(value) => updateField('preliminaryAddress', value)}
-                />
-              </div>
+                <SectionCard title="Besiktningsdag">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <Field
+                      label="Datum"
+                      value={form.preferredDate}
+                      onChange={(value) => updateField('preferredDate', value)}
+                      type="date"
+                    />
+                    <Field
+                      label="Tid"
+                      value={form.preferredTime}
+                      onChange={(value) => updateField('preferredTime', value)}
+                      type="time"
+                    />
+                    <Field
+                      label="Pris (SEK)"
+                      value={form.priceAmount}
+                      onChange={(value) => updateField('priceAmount', value)}
+                      type="number"
+                      step="0.01"
+                      min="0"
+                    />
+                  </div>
+                </SectionCard>
+              </section>
 
-              <div className="grid gap-3 md:grid-cols-3">
-                <Field
-                  label="Datum"
-                  value={form.preferredDate}
-                  onChange={(value) => updateField('preferredDate', value)}
-                  type="date"
-                />
-                <Field
-                  label="Tid"
-                  value={form.preferredTime}
-                  onChange={(value) => updateField('preferredTime', value)}
-                  type="time"
-                />
-                <SelectField
-                  label="Typ"
-                  value={form.assignmentType}
-                  onChange={(value) => updateField('assignmentType', value as AssignmentType)}
-                  options={[
-                    { value: 'OB', label: 'ÖB' },
-                    { value: 'STATUS', label: 'Status' },
-                    { value: 'UHP', label: 'UHP' },
-                  ]}
-                />
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field
-                  label="Fastighetsadress"
-                  value={form.propertyAddress}
-                  onChange={(value) => updateField('propertyAddress', value)}
-                />
-                <Field
-                  label="Fastighetsbeteckning"
-                  value={form.cadastralId}
-                  onChange={(value) => updateField('cadastralId', value)}
-                />
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field
-                  label="Postnummer"
-                  value={form.propertyPostalCode}
-                  onChange={(value) => updateField('propertyPostalCode', value)}
-                />
-                <Field
-                  label="Ort"
-                  value={form.propertyCity}
-                  onChange={(value) => updateField('propertyCity', value)}
-                />
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field
-                  label="Fakturanamn"
-                  value={form.invoiceName}
-                  onChange={(value) => updateField('invoiceName', value)}
-                />
-                <Field
-                  label="Fakturaadress"
-                  value={form.invoiceAddress}
-                  onChange={(value) => updateField('invoiceAddress', value)}
-                />
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field
-                  label="Beställarroll"
-                  value={form.ordererRole}
-                  onChange={(value) => updateField('ordererRole', value)}
-                />
-                <Field
-                  label="Personnummer"
-                  value={form.personalIdentityNumber}
-                  onChange={(value) => updateField('personalIdentityNumber', value)}
-                />
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <SelectField
-                  label="Status"
-                  value={form.status}
-                  onChange={(value) => updateField('status', value as AssignmentStatus)}
-                  options={[
-                    { value: 'draft', label: 'Utkast' },
-                    { value: 'sent', label: 'Skickad' },
-                    { value: 'booked', label: 'Bokad' },
-                    { value: 'completed', label: 'Avklarad' },
-                    { value: 'expired', label: 'Utgången' },
-                    { value: 'cancelled', label: 'Avbruten' },
-                  ]}
-                />
-                <Field
-                  label="Intern anteckning"
-                  value={form.notesInternal}
-                  onChange={(value) => updateField('notesInternal', value)}
-                />
-              </div>
-            </section>
+            </>
           )}
         </div>
       </main>
     </Protected>
+  )
+}
+
+function SectionCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+      {children}
+    </section>
+  )
+}
+
+function RoleChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        'inline-flex h-[18px] items-center rounded-full border px-3 text-[11px] leading-none transition',
+        active
+          ? 'border-indigo-600 bg-indigo-600 text-white'
+          : 'border-gray-300 bg-white text-gray-700 hover:border-indigo-400 hover:text-indigo-700',
+      ].join(' ')}
+    >
+      {label}
+    </button>
   )
 }
 
@@ -461,55 +515,27 @@ function Field({
   value,
   onChange,
   type = 'text',
-  required = false,
+  step,
+  min,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
-  type?: 'text' | 'date' | 'time'
-  required?: boolean
-}) {
-  return (
-    <label className="space-y-1">
-      <span className="block text-xs font-medium text-gray-600">
-        {label}
-        {required ? ' *' : ''}
-      </span>
-      <input
-        type={type}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-      />
-    </label>
-  )
-}
-
-function SelectField({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  options: Array<{ value: string; label: string }>
+  type?: 'text' | 'date' | 'time' | 'email' | 'tel' | 'number'
+  step?: string
+  min?: string
 }) {
   return (
     <label className="space-y-1">
       <span className="block text-xs font-medium text-gray-600">{label}</span>
-      <select
+      <input
+        type={type}
         value={value}
+        step={step}
+        min={min}
         onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      />
     </label>
   )
 }

@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
@@ -141,9 +141,18 @@ function getStatusLabel(status: string | null) {
       return status ?? 'Ok\u00e4nd'
   }
 }
-function cardShell(children: React.ReactNode, accent = 'from-indigo-500 to-sky-400') {
+function cardShell(
+  children: React.ReactNode,
+  accent = 'from-indigo-500 to-sky-400',
+  sizeClass = 'aspect-square h-full'
+) {
   return (
-    <article className="group relative aspect-square h-full overflow-hidden rounded-2xl border border-white/40 bg-white/90 p-3 shadow-2xl ring-1 ring-black/5 backdrop-blur-md transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-[0_30px_70px_-26px_rgba(15,23,42,0.65)]">
+    <article
+      className={[
+        'group relative overflow-hidden rounded-2xl border border-white/40 bg-white/90 p-3 shadow-2xl ring-1 ring-black/5 backdrop-blur-md transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-[0_30px_70px_-26px_rgba(15,23,42,0.65)]',
+        sizeClass,
+      ].join(' ')}
+    >
       <div className={`pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b ${accent}`} />
       <div className="pointer-events-none absolute left-4 right-4 top-0 h-px bg-white/60" />
       {children}
@@ -376,7 +385,7 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
         Visitkort
       </h2>
 
-      <div className="mt-2 flex items-start gap-4 overflow-hidden">
+      <div className="mt-2 flex items-start gap-4">
         {avatarSrc && !avatarLoadError ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -429,22 +438,37 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
         </Link>
       </div>
     </div>,
-    'from-indigo-500 to-violet-500'
+    'from-indigo-500 to-violet-500',
+    'aspect-[4/5] h-full'
   )
 }
 
 function AssignmentConfirmationsCard() {
   const [email, setEmail] = useState('')
+  const [preferredDate, setPreferredDate] = useState('')
+  const [preferredTime, setPreferredTime] = useState('')
+  const [priceAmount, setPriceAmount] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const handleQuickSend = async () => {
     const normalized = email.trim().toLowerCase()
+    const normalizedPrice = priceAmount.trim()
+
     if (!normalized || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
       setErrorMessage('Ange en giltig mejladress.')
       setSuccessMessage(null)
       return
+    }
+
+    if (normalizedPrice) {
+      const parsedPrice = Number(normalizedPrice.replace(',', '.'))
+      if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+        setErrorMessage('Ange ett giltigt pris.')
+        setSuccessMessage(null)
+        return
+      }
     }
 
     try {
@@ -455,7 +479,12 @@ function AssignmentConfirmationsCard() {
       const response = await fetch('/api/ob/assignments/quick-send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerEmail: normalized }),
+        body: JSON.stringify({
+          customerEmail: normalized,
+          preferredDate: preferredDate.trim(),
+          preferredTime: preferredTime.trim(),
+          priceAmount: normalizedPrice,
+        }),
       })
 
       const payload = (await response.json().catch(() => ({}))) as {
@@ -473,6 +502,9 @@ function AssignmentConfirmationsCard() {
       }
 
       setEmail('')
+      setPreferredDate('')
+      setPreferredTime('')
+      setPriceAmount('')
       setSuccessMessage('Uppdragsbekräftelse skickad.')
     } catch {
       setErrorMessage('Kunde inte skicka uppdragsbekräftelse.')
@@ -482,26 +514,64 @@ function AssignmentConfirmationsCard() {
   }
 
   return cardShell(
-    <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-3">
-      <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-600">
+    <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-2.5">
+      <Link
+        href="/ob/assignments"
+        className="inline-flex w-fit text-[10px] font-semibold uppercase tracking-[0.14em] text-indigo-700 underline-offset-2 transition hover:text-indigo-800 hover:underline"
+      >
         Uppdragsbekräftelser
-      </h2>
+      </Link>
 
-      <p className="mt-2 text-[11px] leading-relaxed text-gray-600">
+      <p className="mt-1.5 text-[10px] leading-relaxed text-gray-600">
         Skicka en ny uppdragsbekräftelse direkt till beställarens mejl.
       </p>
 
-      <div className="mt-2 space-y-2">
+      <div className="mt-1.5 space-y-1.5">
         <label className="relative block">
           <Mail
-            size={14}
-            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-gray-400"
+            size={12}
+            className="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400"
           />
           <input
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             placeholder="kund@epost.se"
-            className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 pl-7 text-xs text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="w-full rounded-md border border-gray-300 bg-white px-2 py-1 pl-6 text-[11px] text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+        </label>
+
+        <div className="grid grid-cols-2 gap-1.5">
+          <label className="space-y-1">
+            <span className="block text-[9px] font-medium uppercase tracking-wide text-gray-600">Datum</span>
+            <input
+              type="date"
+              value={preferredDate}
+              onChange={(event) => setPreferredDate(event.target.value)}
+              className="w-full rounded-md border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </label>
+
+          <label className="space-y-1">
+            <span className="block text-[9px] font-medium uppercase tracking-wide text-gray-600">Tid</span>
+            <input
+              type="time"
+              value={preferredTime}
+              onChange={(event) => setPreferredTime(event.target.value)}
+              className="w-full rounded-md border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </label>
+        </div>
+
+        <label className="space-y-1">
+          <span className="block text-[9px] font-medium uppercase tracking-wide text-gray-600">Pris (SEK)</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={priceAmount}
+            onChange={(event) => setPriceAmount(event.target.value)}
+            placeholder="0"
+            className="w-full rounded-md border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
         </label>
 
@@ -509,30 +579,23 @@ function AssignmentConfirmationsCard() {
           type="button"
           onClick={() => void handleQuickSend()}
           disabled={isSending}
-          className="inline-flex w-full items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+          className="mt-5 inline-flex w-full items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
         >
-          <Send size={13} />
+          <Send size={12} />
           {isSending ? 'Skickar...' : 'Skicka uppdragsbekräftelse'}
         </button>
       </div>
 
       {errorMessage ? (
-        <p className="mt-2 rounded-md bg-rose-100 px-2 py-1 text-[10px] text-rose-700">{errorMessage}</p>
+        <p className="mt-1.5 rounded-md bg-rose-100 px-2 py-1 text-[9px] text-rose-700">{errorMessage}</p>
       ) : null}
       {successMessage ? (
-        <p className="mt-2 rounded-md bg-emerald-100 px-2 py-1 text-[10px] text-emerald-700">
+        <p className="mt-1.5 rounded-md bg-emerald-100 px-2 py-1 text-[9px] text-emerald-700">
           {successMessage}
         </p>
       ) : null}
 
-      <div className="mt-auto pt-2">
-        <Link
-          href="/ob/assignments"
-          className="inline-flex items-center justify-center rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
-        >
-          Öppna uppdragsbekräftelser
-        </Link>
-      </div>
+      <div className="mt-auto pt-1.5" />
     </div>,
     'from-indigo-500 to-cyan-500'
   )

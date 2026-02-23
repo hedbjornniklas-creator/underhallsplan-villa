@@ -47,14 +47,27 @@ export async function POST(request: Request) {
     const customerEmail = String(body.customerEmail ?? '').trim().toLowerCase()
     const customerName = String(body.customerName ?? '').trim()
     const customerPhone = String(body.customerPhone ?? '').trim()
+    const customerAddress = String(body.customerAddress ?? '').trim()
     const preliminaryAddress = String(body.preliminaryAddress ?? '').trim()
+    const propertyAddress = String(body.propertyAddress ?? '').trim()
+    const propertyMunicipality = String(body.propertyMunicipality ?? '').trim()
+    const propertyOwnerName = String(body.propertyOwnerName ?? '').trim()
+    const cadastralId = String(body.cadastralId ?? '').trim()
+    const ordererRole = String(body.ordererRole ?? '').trim()
     const preferredDate = String(body.preferredDate ?? '').trim()
     const preferredTime = String(body.preferredTime ?? '').trim()
+    const priceAmountRaw = String(body.priceAmount ?? '').trim()
+    const parsedPrice =
+      priceAmountRaw === '' ? null : Number(priceAmountRaw.replace(',', '.'))
     const notesInternal = String(body.notesInternal ?? '').trim()
     const responsibleProfileId = String(body.responsibleProfileId ?? context.userId).trim()
 
     if (!customerEmail || !EMAIL_REGEX.test(customerEmail)) {
       return jsonError('Ange en giltig kundmejl.', 400)
+    }
+
+    if (parsedPrice !== null && (!Number.isFinite(parsedPrice) || parsedPrice < 0)) {
+      return jsonError('Ange ett giltigt pris.', 400)
     }
 
     const assignment = await createAssignment({
@@ -65,9 +78,17 @@ export async function POST(request: Request) {
       customerEmail,
       customerName: customerName || null,
       customerPhone: customerPhone || null,
+      customerAddress: customerAddress || null,
       preliminaryAddress: preliminaryAddress || null,
+      propertyAddress: propertyAddress || preliminaryAddress || null,
+      propertyMunicipality: propertyMunicipality || null,
+      propertyOwnerName: propertyOwnerName || null,
+      cadastralId: cadastralId || null,
+      ordererRole: ordererRole || null,
       preferredDate: preferredDate || null,
       preferredTime: preferredTime || null,
+      priceAmount: parsedPrice,
+      currency: 'SEK',
       notesInternal: notesInternal || null,
     })
 

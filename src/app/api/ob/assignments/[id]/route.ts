@@ -69,6 +69,11 @@ export async function PATCH(
       patch.customer_phone = customerPhone
     }
 
+    const customerAddress = safeString(body.customer_address ?? body.customerAddress)
+    if (customerAddress !== null || body.customer_address === '' || body.customerAddress === '') {
+      patch.customer_address = customerAddress
+    }
+
     const preliminaryAddress = safeString(body.preliminary_address ?? body.preliminaryAddress)
     if (preliminaryAddress !== null || body.preliminary_address === '' || body.preliminaryAddress === '') {
       patch.preliminary_address = preliminaryAddress
@@ -97,6 +102,20 @@ export async function PATCH(
     const propertyCity = safeString(body.property_city ?? body.propertyCity)
     if (propertyCity !== null || body.property_city === '' || body.propertyCity === '') {
       patch.property_city = propertyCity
+    }
+
+    const propertyMunicipality = safeString(body.property_municipality ?? body.propertyMunicipality)
+    if (
+      propertyMunicipality !== null ||
+      body.property_municipality === '' ||
+      body.propertyMunicipality === ''
+    ) {
+      patch.property_municipality = propertyMunicipality
+    }
+
+    const propertyOwnerName = safeString(body.property_owner_name ?? body.propertyOwnerName)
+    if (propertyOwnerName !== null || body.property_owner_name === '' || body.propertyOwnerName === '') {
+      patch.property_owner_name = propertyOwnerName
     }
 
     const cadastralId = safeString(body.cadastral_id ?? body.cadastralId)

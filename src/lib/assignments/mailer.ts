@@ -18,6 +18,7 @@ export async function sendAssignmentEmail(
   const resendApiKey = process.env.RESEND_API_KEY
 
   if (!resendApiKey) {
+    console.error('[assignments.mailer] missing env', { env: 'RESEND_API_KEY' })
     throw new Error('RESEND_API_KEY saknas. Konfigurera mejlprovider innan utskick.')
   }
 
@@ -40,6 +41,12 @@ export async function sendAssignmentEmail(
   const data = (await response.json().catch(() => ({}))) as { id?: string; message?: string }
 
   if (!response.ok) {
+    console.error('[assignments.mailer] resend request failed', {
+      status: response.status,
+      response: data.message ?? null,
+      to: input.to,
+      subject: input.subject,
+    })
     throw new Error(data.message ?? 'Mejlutskick misslyckades.')
   }
 

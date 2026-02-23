@@ -2,6 +2,10 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
+import {
+  getAssignmentTermsDocument,
+  normalizeAssignmentTermsRole,
+} from '@/lib/assignments/terms'
 
 export type AssignmentStatus =
   | 'draft'
@@ -62,7 +66,11 @@ export type AssignmentListItem = {
 }
 
 export type AssignmentDetails = AssignmentListItem & {
+  customer_address: string | null
+  property_municipality: string | null
+  property_owner_name: string | null
   terms_version: string | null
+  terms_document_hash: string | null
   invoice_name: string | null
   invoice_address: string | null
   orderer_role: string | null
@@ -82,6 +90,10 @@ type AssignmentLinkResult = {
 type ConvertAssignmentResult = {
   propertyId: string
   inspectionId: string
+}
+
+type InspectionCompletedEmailResult = {
+  detailsUrl: string
 }
 
 type PropertySeedRow = {
@@ -178,7 +190,11 @@ const ASSIGNMENT_SELECT_LIST = `
 
 const ASSIGNMENT_DETAIL_SELECT = `
   ${ASSIGNMENT_SELECT_LIST},
+  customer_address,
+  property_municipality,
+  property_owner_name,
   terms_version,
+  terms_document_hash,
   invoice_name,
   invoice_address,
   orderer_role,
@@ -209,21 +225,24 @@ function parseOrganizationValue(member: OrgMemberRow) {
   }
 }
 
-export function buildBaseUrl(request?: Request) {
-  const configured =
-    process.env.APP_BASE_URL ??
-    process.env.NEXT_PUBLIC_APP_BASE_URL ??
-    process.env.NEXT_PUBLIC_SITE_URL
-  if (configured) return configured.replace(/\/+$/, '')
-
-  if (request) {
-    const url = new URL(request.url)
-    const proto = request.headers.get('x-forwarded-proto') ?? url.protocol.replace(':', '')
-    const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? url.host
-    return `${proto}://${host}`.replace(/\/+$/, '')
+function getRequiredEnv(name: 'APP_BASE_URL' | 'ASSIGNMENTS_MAIL_FROM') {
+  const value = process.env[name]
+  if (!value || value.trim() === '') {
+    throw new Error(`MISSING_ENV:${name}`)
   }
+  return value.trim()
+}
 
-  return 'http://localhost:3000'
+export function isMissingEnvError(value: unknown): value is Error {
+  return value instanceof Error && value.message.startsWith('MISSING_ENV:')
+}
+
+export function buildBaseUrl() {
+  return getRequiredEnv('APP_BASE_URL').replace(/\/+$/, '')
+}
+
+function getMailFromAddress() {
+  return getRequiredEnv('ASSIGNMENTS_MAIL_FROM')
 }
 
 export async function requireOrgContext(): Promise<OrgContext> {
@@ -301,9 +320,17 @@ export async function createAssignment(input: {
   customerEmail: string
   customerName?: string | null
   customerPhone?: string | null
+  customerAddress?: string | null
   preliminaryAddress?: string | null
+  propertyAddress?: string | null
+  propertyMunicipality?: string | null
+  propertyOwnerName?: string | null
+  cadastralId?: string | null
+  ordererRole?: string | null
   preferredDate?: string | null
   preferredTime?: string | null
+  priceAmount?: number | null
+  currency?: string | null
   notesInternal?: string | null
 }) {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
@@ -317,9 +344,17 @@ export async function createAssignment(input: {
       customer_email: input.customerEmail,
       customer_name: input.customerName ?? null,
       customer_phone: input.customerPhone ?? null,
+      customer_address: input.customerAddress ?? null,
       preliminary_address: input.preliminaryAddress ?? null,
+      property_address: input.propertyAddress ?? input.preliminaryAddress ?? null,
+      property_municipality: input.propertyMunicipality ?? null,
+      property_owner_name: input.propertyOwnerName ?? null,
+      cadastral_id: input.cadastralId ?? null,
+      orderer_role: input.ordererRole ?? null,
       preferred_date: input.preferredDate ?? null,
       preferred_time: input.preferredTime ?? null,
+      price_amount: input.priceAmount ?? null,
+      currency: input.currency ?? 'SEK',
       notes_internal: input.notesInternal ?? null,
       created_by: input.createdBy,
       updated_by: input.createdBy,
@@ -358,12 +393,15 @@ export async function updateAssignmentById(input: {
     customer_name: string | null
     customer_email: string | null
     customer_phone: string | null
+    customer_address: string | null
     preliminary_address: string | null
     preferred_date: string | null
     preferred_time: string | null
     property_address: string | null
     property_postal_code: string | null
     property_city: string | null
+    property_municipality: string | null
+    property_owner_name: string | null
     cadastral_id: string | null
     invoice_name: string | null
     invoice_address: string | null
@@ -417,7 +455,6 @@ function toSwedishDateString(value: string | null) {
 export async function sendAssignmentConfirmation(input: {
   assignment: AssignmentDetails
   orgName: string | null
-  orgEmailFrom: string | null
   requestedByUserId: string
   responsibleEmail: string | null
   baseUrl: string
@@ -427,6 +464,8 @@ export async function sendAssignmentConfirmation(input: {
   const tokenHash = hashAssignmentToken(token)
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
   const acceptUrl = `${input.baseUrl}/accept/${token}`
+  const termsRole = normalizeAssignmentTermsRole(input.assignment.orderer_role)
+  const terms = getAssignmentTermsDocument(termsRole)
 
   await admin
     .from('assignment_links')
@@ -445,6 +484,7 @@ export async function sendAssignmentConfirmation(input: {
       org_id: input.assignment.org_id,
       token_hash: tokenHash,
       expires_at: expiresAt,
+      terms_version: terms.version,
       created_by: input.requestedByUserId,
     })
     .select('id')
@@ -454,11 +494,7 @@ export async function sendAssignmentConfirmation(input: {
     throw new Error(linkError?.message ?? 'Kunde inte skapa uppdragslänk.')
   }
 
-  const fromAddress =
-    input.orgEmailFrom ??
-    process.env.ASSIGNMENTS_MAIL_FROM ??
-    process.env.RESEND_FROM ??
-    'noreply@besiktapp.local'
+  const fromAddress = getMailFromAddress()
 
   const subject = `Uppdragsbekräftelse - ${input.orgName ?? 'BesiktApp'}`
   const preferredDate = toSwedishDateString(input.assignment.preferred_date)
@@ -554,6 +590,105 @@ export async function sendAssignmentConfirmation(input: {
   }
 }
 
+export class InspectionCompletedEmailSendError extends Error {
+  detailsUrl: string
+
+  constructor(message: string, detailsUrl: string) {
+    super(message)
+    this.detailsUrl = detailsUrl
+  }
+}
+
+export async function sendInspectionCompletedEmail(input: {
+  assignment: AssignmentDetails
+  orgName: string | null
+  requestedByUserId: string
+  responsibleEmail: string | null
+  baseUrl: string
+}): Promise<InspectionCompletedEmailResult> {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  if (!input.assignment.inspection_id || !input.assignment.property_id) {
+    throw new Error('INSPECTION_REFERENCE_MISSING')
+  }
+
+  const fromAddress = getMailFromAddress()
+  const detailsUrl = `${input.baseUrl}/utlatande/${input.assignment.property_id}/${input.assignment.inspection_id}`
+  const subject = `Besiktningen ar klar - ${input.orgName ?? 'BesiktApp'}`
+  const preferredDate = toSwedishDateString(input.assignment.preferred_date)
+  const address =
+    input.assignment.property_address ?? input.assignment.preliminary_address ?? 'Ej satt'
+
+  const html = `
+    <p>Hej,</p>
+    <p>Besiktningen ar nu klar.</p>
+    <p><strong>Adress:</strong> ${address}<br/>
+    <strong>Datum:</strong> ${preferredDate}</p>
+    <p><a href="${detailsUrl}" target="_blank" rel="noreferrer">Oppna underlag</a></p>
+  `
+
+  const text =
+    `Hej,\n\n` +
+    `Besiktningen ar nu klar.\n` +
+    `Adress: ${address}\n` +
+    `Datum: ${preferredDate}\n\n` +
+    `Oppna underlag: ${detailsUrl}`
+
+  const { data: messageData, error: messageError } = await admin
+    .from('outbound_messages')
+    .insert({
+      org_id: input.assignment.org_id,
+      assignment_id: input.assignment.id,
+      channel: 'email',
+      recipient_email: input.assignment.customer_email,
+      subject,
+      template_key: 'inspection_completed',
+      status: 'pending',
+      created_by: input.requestedByUserId,
+      reply_to_email: input.responsibleEmail ?? null,
+    })
+    .select('id')
+    .single()
+
+  if (messageError || !messageData) {
+    throw new Error(messageError?.message ?? 'Kunde inte skapa mejllogg.')
+  }
+
+  try {
+    const sendResult = await sendAssignmentEmail({
+      to: input.assignment.customer_email,
+      from: fromAddress,
+      replyTo: input.responsibleEmail ?? null,
+      subject,
+      html,
+      text,
+    })
+
+    await admin
+      .from('outbound_messages')
+      .update({
+        status: 'sent',
+        provider: sendResult.provider,
+        provider_message_id: sendResult.providerMessageId,
+        sent_at: new Date().toISOString(),
+      })
+      .eq('id', messageData.id)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Okant fel vid mejlutskick.'
+    await admin
+      .from('outbound_messages')
+      .update({
+        status: 'failed',
+        error_message: message,
+      })
+      .eq('id', messageData.id)
+
+    throw new InspectionCompletedEmailSendError(message, detailsUrl)
+  }
+
+  return { detailsUrl }
+}
+
 export async function resolvePublicAssignmentByToken(token: string) {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const tokenHash = hashAssignmentToken(token)
@@ -561,7 +696,7 @@ export async function resolvePublicAssignmentByToken(token: string) {
   const { data, error } = await admin
     .from('assignment_links')
     .select(
-      'id,assignment_id,org_id,expires_at,used_at,revoked_at,assignments(id,status,assignment_type,customer_name,customer_email,customer_phone,preliminary_address,preferred_date,preferred_time,property_address,property_postal_code,property_city,accepted_at)'
+      'id,assignment_id,org_id,expires_at,used_at,revoked_at,terms_version,assignments(id,status,assignment_type,customer_name,customer_email,customer_phone,customer_address,preliminary_address,preferred_date,preferred_time,price_amount,currency,property_address,property_postal_code,property_city,property_municipality,property_owner_name,cadastral_id,orderer_role,accepted_at)'
     )
     .eq('token_hash', tokenHash)
     .maybeSingle()
@@ -578,6 +713,7 @@ export async function resolvePublicAssignmentByToken(token: string) {
         expires_at: string
         used_at: string | null
         revoked_at: string | null
+        terms_version: string | null
         assignments: AssignmentDetails | AssignmentDetails[] | null
       }
     | null
@@ -684,10 +820,11 @@ export async function convertAssignmentToInspection(input: {
       status: 'Utkast',
       address: resolvedAddress,
       postal_code: assignment.property_postal_code,
-      city: assignment.property_city,
+      city: assignment.property_city ?? assignment.property_municipality,
+      municipality: assignment.property_municipality ?? assignment.property_city,
       cadastral_id: assignment.cadastral_id,
       client_name: assignment.customer_name,
-      owner_name: assignment.customer_name,
+      owner_name: assignment.property_owner_name ?? assignment.customer_name,
     })
     .select(PROPERTY_SNAPSHOT_COLUMNS)
     .single()
