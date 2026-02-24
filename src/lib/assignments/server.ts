@@ -17,6 +17,12 @@ export type AssignmentStatus =
 
 export type AssignmentType = 'OB' | 'STATUS' | 'UHP'
 
+type AuthUserLite = {
+  id: string
+  email?: string | null
+  user_metadata?: Record<string, unknown> | null
+}
+
 type OrgMemberRow = {
   org_id: string
   role: 'admin' | 'inspector'
@@ -165,6 +171,26 @@ type SupabaseAdminClient = {
   rpc: (fn: string, args: Record<string, unknown>) => SupabaseResponse<unknown>
 }
 
+type OrgMemberAnyStatusRow = {
+  id: string
+  org_id: string
+  role: 'admin' | 'inspector'
+  is_default: boolean
+}
+
+type ProfileOrgSeedRow = {
+  id: string
+  is_admin: boolean
+  full_name: string | null
+  email: string | null
+  org_name: string | null
+  company_name: string | null
+}
+
+type OrganizationIdRow = {
+  id: string
+}
+
 const ASSIGNMENT_SELECT_LIST = `
   id,
   org_id,
@@ -225,6 +251,202 @@ function parseOrganizationValue(member: OrgMemberRow) {
   }
 }
 
+function normalizeText(value: string | null | undefined) {
+  if (!value) return null
+  const normalized = value.trim()
+  return normalized === '' ? null : normalized
+}
+
+function buildDefaultOrgName(profile: ProfileOrgSeedRow, userEmail: string | null) {
+  const explicitOrg = normalizeText(profile.org_name)
+  if (explicitOrg) return explicitOrg
+
+  const company = normalizeText(profile.company_name)
+  if (company) return company
+
+  const fullName = normalizeText(profile.full_name)
+  if (fullName) return `${fullName}s Organisation`
+
+  const emailPrefix = normalizeText(userEmail)?.split('@')[0]
+  if (emailPrefix) return `${emailPrefix} Organization`
+
+  return 'Organization'
+}
+
+async function fetchActiveOrgMember(admin: SupabaseAdminClient, profileId: string) {
+  const { data, error } = await admin
+    .from('org_members')
+    .select('org_id,role,is_active,is_default,organizations(name,email_from)')
+    .eq('profile_id', profileId)
+    .eq('is_active', true)
+    .order('is_default', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta organisationskoppling.')
+  }
+
+  return (data ?? null) as OrgMemberRow | null
+}
+
+async function ensureProfileOrgMembership(
+  admin: SupabaseAdminClient,
+  user: AuthUserLite
+) {
+  const existingActiveMember = await fetchActiveOrgMember(admin, user.id)
+  if (existingActiveMember) return existingActiveMember
+
+  const profileSelect =
+    'id,is_admin,full_name,email,org_name,company_name'
+  const { data: profileData, error: profileError } = await admin
+    .from('profiles')
+    .select(profileSelect)
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (profileError) {
+    throw new Error(profileError.message ?? 'Kunde inte hämta profil.')
+  }
+
+  let profile = (profileData ?? null) as ProfileOrgSeedRow | null
+
+  if (!profile) {
+    const fullNameFromMetadata = normalizeText(
+      typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : null
+    )
+
+    const { error: createProfileError } = await admin.from('profiles').upsert(
+      {
+        id: user.id,
+        email: normalizeText(user.email ?? null),
+        full_name: fullNameFromMetadata,
+        is_admin: false,
+      },
+      { onConflict: 'id' }
+    )
+
+    if (createProfileError) {
+      throw new Error(createProfileError.message ?? 'Kunde inte skapa profil.')
+    }
+
+    const { data: reloadedProfile, error: reloadProfileError } = await admin
+      .from('profiles')
+      .select(profileSelect)
+      .eq('id', user.id)
+      .maybeSingle()
+
+    if (reloadProfileError) {
+      throw new Error(reloadProfileError.message ?? 'Kunde inte läsa profil efter skapande.')
+    }
+
+    profile = (reloadedProfile ?? null) as ProfileOrgSeedRow | null
+  }
+
+  if (!profile) {
+    throw new Error('Kunde inte läsa profil för organisationskoppling.')
+  }
+
+  const { data: existingMemberAnyStatus, error: existingMemberError } = await admin
+    .from('org_members')
+    .select('id,org_id,role,is_default')
+    .eq('profile_id', user.id)
+    .order('is_default', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (existingMemberError) {
+    throw new Error(existingMemberError.message ?? 'Kunde inte läsa organisationsmedlemskap.')
+  }
+
+  const existingMember = (existingMemberAnyStatus ?? null) as OrgMemberAnyStatusRow | null
+
+  if (existingMember) {
+    const membershipPatch: { is_active: boolean; is_default?: boolean } = {
+      is_active: true,
+    }
+
+    if (!existingMember.is_default) {
+      membershipPatch.is_default = true
+    }
+
+    const { error: activateMemberError } = await admin
+      .from('org_members')
+      .update(membershipPatch)
+      .eq('id', existingMember.id)
+
+    if (activateMemberError) {
+      const errorMessage = activateMemberError.message ?? ''
+      const isUniqueRace =
+        errorMessage.toLowerCase().includes('duplicate') ||
+        errorMessage.toLowerCase().includes('unique') ||
+        errorMessage.toLowerCase().includes('conflict')
+
+      if (!isUniqueRace) {
+        throw new Error(errorMessage || 'Kunde inte aktivera organisationsmedlemskap.')
+      }
+    }
+
+    const activatedMember = await fetchActiveOrgMember(admin, user.id)
+    if (activatedMember) return activatedMember
+  }
+
+  const { data: existingOrgData, error: existingOrgError } = await admin
+    .from('organizations')
+    .select('id')
+    .eq('created_by', user.id)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (existingOrgError) {
+    throw new Error(existingOrgError.message ?? 'Kunde inte läsa organisation.')
+  }
+
+  let orgId = ((existingOrgData ?? null) as OrganizationIdRow | null)?.id ?? null
+
+  if (!orgId) {
+    const orgName = buildDefaultOrgName(profile, normalizeText(user.email ?? null))
+    const { data: createdOrg, error: createOrgError } = await admin
+      .from('organizations')
+      .insert({
+        name: orgName,
+        created_by: user.id,
+      })
+      .select('id')
+      .single()
+
+    if (createOrgError || !createdOrg) {
+      throw new Error(createOrgError?.message ?? 'Kunde inte skapa organisation.')
+    }
+
+    orgId = (createdOrg as OrganizationIdRow).id
+  }
+
+  const role: 'admin' | 'inspector' = profile.is_admin ? 'admin' : 'inspector'
+  const { error: createMemberError } = await admin.from('org_members').insert({
+    org_id: orgId,
+    profile_id: user.id,
+    role,
+    is_active: true,
+    is_default: true,
+  })
+
+  if (createMemberError) {
+    const errorMessage = createMemberError.message ?? ''
+    const isUniqueRace =
+      errorMessage.toLowerCase().includes('duplicate') ||
+      errorMessage.toLowerCase().includes('unique') ||
+      errorMessage.toLowerCase().includes('conflict')
+
+    if (!isUniqueRace) {
+      throw new Error(errorMessage || 'Kunde inte skapa organisationsmedlemskap.')
+    }
+  }
+
+  return fetchActiveOrgMember(admin, user.id)
+}
+
 function getRequiredEnv(name: 'APP_BASE_URL' | 'ASSIGNMENTS_MAIL_FROM') {
   const value = process.env[name]
   if (!value || value.trim() === '') {
@@ -257,16 +479,9 @@ export async function requireOrgContext(): Promise<OrgContext> {
   }
 
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
-  const { data, error } = await admin
-    .from('org_members')
-    .select('org_id,role,is_active,is_default,organizations(name,email_from)')
-    .eq('profile_id', user.id)
-    .eq('is_active', true)
-    .order('is_default', { ascending: false })
-    .limit(1)
-    .maybeSingle()
 
-  if (error || !data) {
+  const data = await ensureProfileOrgMembership(admin, user as AuthUserLite)
+  if (!data) {
     throw new Error('ORG_MEMBERSHIP_REQUIRED')
   }
 
