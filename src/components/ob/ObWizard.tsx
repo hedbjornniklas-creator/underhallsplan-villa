@@ -92,7 +92,7 @@ export default function ObWizard({
     [property]
   )
 
-  // SÃ¤kerstÃ¤ll att attendees_other aldrig Ã¤r undefined
+  // Säkerställ att attendees_other aldrig är undefined
   const normalizedInspection = useMemo<ObWizardInspection>(
     () => ({
       ...inspection,
@@ -240,7 +240,7 @@ export default function ObWizard({
             Fortsatt teknisk utredning (FTU)
           </h2>
           <p>
-            HÃ¤r kommer systemet sammanstÃ¤lla FTU-punkter utifrÃ¥n risker.
+            Här kommer systemet sammanställa FTU-punkter utifrån risker.
           </p>
         </div>
       )
@@ -251,9 +251,9 @@ export default function ObWizard({
           <p>
             Steget{' '}
             <span className="font-mono">
-              {activeSection ?? '(okÃ¤nt vÃ¤rde)'}
+              {activeSection ?? '(okänt värde)'}
             </span>{' '}
-            Ã¤r Ã¤nnu inte byggt.
+            är ännu inte byggt.
           </p>
         </div>
       )

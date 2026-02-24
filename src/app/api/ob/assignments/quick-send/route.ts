@@ -125,6 +125,24 @@ export async function POST(request: Request) {
       return jsonError('Servern saknar mejlkonfiguration i env.', 500)
     }
 
+    const schemaMismatch =
+      message.includes('does not exist') ||
+      message.includes('relation') ||
+      message.includes('column')
+
+    if (schemaMismatch) {
+      console.error('[assignments.quick-send] schema mismatch', { error: message })
+      return jsonError(
+        'Databasen saknar fält/tabeller som krävs för uppdragsbekräftelser. Kör senaste SQL-migrationer.',
+        500
+      )
+    }
+
+    if (message.startsWith('Kunde inte ')) {
+      console.error('[assignments.quick-send] handled domain error', { error: message })
+      return jsonError(message, 500)
+    }
+
     console.error('[assignments.quick-send] unhandled error', { error: message })
     return jsonError('Kunde inte skapa och skicka uppdragsbekraftelse.', 500)
   }

@@ -246,36 +246,29 @@ export default function InspectionDetailPage() {
 
   return (
     <Protected hideSidebar>
-      <main className="relative min-h-full overflow-hidden p-4 md:p-6">
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage:
-              'radial-gradient(100% 70% at 50% 0%, rgba(219,234,254,0.5) 0%, rgba(219,234,254,0) 60%), linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 42%, #60a5fa 100%)',
-          }}
-        />
-        <div className="pointer-events-none absolute inset-0 bg-white/10 backdrop-blur-[1px]" />
-
+      <main className="relative min-h-full overflow-hidden bg-white p-4 md:p-6">
         <div className="relative mx-auto w-full max-w-7xl space-y-4">
-          <header className="rounded-2xl border border-white/30 bg-white/10 p-4 shadow-sm backdrop-blur-sm md:p-5">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => router.push(`/properties/${propertyId}/ob`)}
-                aria-label="Tillbaka"
-                title="Tillbaka"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
-              >
-                <ArrowLeft size={16} strokeWidth={2} />
-              </button>
-              <h1 className="text-2xl font-semibold text-white drop-shadow-sm">Överlåtelsebesiktning</h1>
-            </div>
-          </header>
-
           <div className="grid items-start gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
-          <div className="md:w-[220px]">
+            <div className="md:w-[220px]">
             <nav className="space-y-2 rounded-lg border bg-white p-3 md:fixed md:left-6 md:top-28 md:max-h-[calc(100vh-7rem)] md:w-[220px] md:overflow-auto">
-              <div className="mb-2 text-xs font-semibold uppercase text-gray-500">MODULER</div>
+              <div className="mb-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window !== 'undefined' && window.history.length > 1) {
+                      router.back()
+                      return
+                    }
+                    router.push(`/properties/${propertyId}/ob`)
+                  }}
+                  aria-label="Tillbaka"
+                  title="Tillbaka"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                >
+                  <ArrowLeft size={16} strokeWidth={2} />
+                </button>
+                <div className="text-sm font-semibold text-gray-900">Överlåtelsebesiktning</div>
+              </div>
 
               {SECTIONS.map((section) => (
                 <div key={section.key}>
@@ -305,28 +298,19 @@ export default function InspectionDetailPage() {
                   )}
                 </div>
               ))}
-
-              <div className="mt-4 border-t pt-3">
-                <button
-                  onClick={() => router.push(`/properties/${propertyId}`)}
-                  className="w-full rounded-md border px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
-                >
-                  ← Till fastighetssidan
-                </button>
-              </div>
             </nav>
-          </div>
+            </div>
 
-          <div>
-            <ObWizard
-              property={property}
-              inspection={inspection}
-              activeSection={activeSection}
-              onPropertyUpdated={(updated) => setProperty(updated as Property)}
-              onInspectionUpdated={(updated) => setInspection(updated as Inspection)}
-            />
+            <div>
+              <ObWizard
+                property={property}
+                inspection={inspection}
+                activeSection={activeSection}
+                onPropertyUpdated={(updated) => setProperty(updated as Property)}
+                onInspectionUpdated={(updated) => setInspection(updated as Inspection)}
+              />
+            </div>
           </div>
-        </div>
         </div>
       </main>
     </Protected>

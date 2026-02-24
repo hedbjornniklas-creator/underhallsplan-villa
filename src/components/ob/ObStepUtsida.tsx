@@ -126,6 +126,26 @@ const getImagePublicUrl = (filePath: string) => {
   return data.publicUrl
 }
 
+const serializeDbError = (err: any) => {
+  if (!err) return null
+  return {
+    code: err.code ?? null,
+    message: err.message ?? null,
+    details: err.details ?? null,
+    hint: err.hint ?? null,
+  }
+}
+
+const isMissingIsFreeNoteColumnError = (err: any) => {
+  const text = `${err?.message ?? ''} ${err?.details ?? ''} ${err?.hint ?? ''}`.toLowerCase()
+  return err?.code === '42703' || (text.includes('is_free_note') && text.includes('column'))
+}
+
+const isUniqueViolationError = (err: any) => {
+  const text = `${err?.message ?? ''} ${err?.details ?? ''}`.toLowerCase()
+  return err?.code === '23505' || text.includes('duplicate key') || text.includes('unique')
+}
+
 export default function ObStepUtsida({ inspection }: { inspection: Inspection }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -147,6 +167,54 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   const [imagesByControlItemId, setImagesByControlItemId] = useState<
     Record<string, InspectionImage[]>
   >({})
+  const supportsIsFreeNoteRef = useRef<boolean | null>(null)
+
+  const buildObservationPayload = (base: Record<string, any>, isFreeNote: boolean) => {
+    if (supportsIsFreeNoteRef.current === false) return base
+    return { ...base, is_free_note: isFreeNote }
+  }
+
+  const fetchMainObservation = async (
+    inspectionId: string,
+    exteriorItemId: string
+  ): Promise<{ data: InspectionExteriorObservation | null; error: any }> => {
+    let query = supabase
+      .from('inspection_exterior_observations')
+      .select('*')
+      .eq('inspection_id', inspectionId)
+      .eq('exterior_item_id', exteriorItemId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+
+    if (supportsIsFreeNoteRef.current !== false) {
+      query = query.eq('is_free_note', false)
+    }
+
+    const firstTry = await query.maybeSingle()
+    if (!firstTry.error) {
+      return { data: (firstTry.data as InspectionExteriorObservation | null) ?? null, error: null }
+    }
+
+    if (!isMissingIsFreeNoteColumnError(firstTry.error)) {
+      return { data: null, error: firstTry.error }
+    }
+
+    supportsIsFreeNoteRef.current = false
+
+    const fallback = await supabase
+      .from('inspection_exterior_observations')
+      .select('*')
+      .eq('inspection_id', inspectionId)
+      .eq('exterior_item_id', exteriorItemId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    return {
+      data: (fallback.data as InspectionExteriorObservation | null) ?? null,
+      error: fallback.error ?? null,
+    }
+  }
 
   useEffect(() => {
     const missingOutcomeControlPointIds = Array.from(
@@ -297,21 +365,73 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           )
 
           if (!hasMain) {
-            const { data: newObsData, error: newObsErr } = await supabase
-              .from('inspection_exterior_observations')
-              .insert({
-                inspection_id: inspection.id,
-                exterior_item_id: it.id,
-                part_label: null,
-                values: {},
-                is_free_note: false,
-                note: null,
+            const { data: existingMain, error: existingMainErr } = await fetchMainObservation(
+              inspection.id,
+              it.id
+            )
+
+            if (existingMainErr) {
+              console.error(
+                'fetch existing main exterior observation failed:',
+                serializeDbError(existingMainErr) ?? existingMainErr
+              )
+            }
+
+            if (existingMain) {
+              allObs.push({
+                ...(existingMain as any),
+                values: (existingMain.values as any) || {},
               })
+              continue
+            }
+
+            const baseInsertPayload = {
+              inspection_id: inspection.id,
+              exterior_item_id: it.id,
+              part_label: null,
+              values: {},
+              note: null,
+            }
+
+            let { data: newObsData, error: newObsErr } = await supabase
+              .from('inspection_exterior_observations')
+              .insert(buildObservationPayload(baseInsertPayload, false))
               .select('*')
               .single()
 
+            if (newObsErr && isMissingIsFreeNoteColumnError(newObsErr)) {
+              supportsIsFreeNoteRef.current = false
+              const retry = await supabase
+                .from('inspection_exterior_observations')
+                .insert(baseInsertPayload)
+                .select('*')
+                .single()
+              newObsData = retry.data
+              newObsErr = retry.error
+            }
+
+            if (newObsErr && isUniqueViolationError(newObsErr)) {
+              const { data: existingAfterConflict, error: fetchErr } = await fetchMainObservation(
+                inspection.id,
+                it.id
+              )
+              if (fetchErr) {
+                console.error(
+                  'fetch main exterior observation after unique conflict failed:',
+                  serializeDbError(fetchErr) ?? fetchErr
+                )
+              }
+              if (existingAfterConflict) {
+                newObsData = existingAfterConflict as any
+                newObsErr = null
+              }
+            }
+
             if (newObsErr) {
-              console.error('create default exterior observation failed:', newObsErr)
+              console.error(
+                'create default exterior observation failed:',
+                serializeDbError(newObsErr) ?? newObsErr
+              )
               continue
             }
 
@@ -542,34 +662,59 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     setError(null)
     try {
       if (row.id) {
-        const { data, error } = await supabase
+        const baseUpdatePayload = {
+          part_label: row.part_label,
+          values: row.values,
+          note: row.note,
+        }
+
+        let { data, error } = await supabase
           .from('inspection_exterior_observations')
-          .update({
-            part_label: row.part_label,
-            values: row.values,
-            is_free_note: row.is_free_note ?? false,
-            note: row.note,
-          })
+          .update(buildObservationPayload(baseUpdatePayload, row.is_free_note ?? false))
           .eq('id', row.id)
           .select('*')
           .single()
+
+        if (error && isMissingIsFreeNoteColumnError(error)) {
+          supportsIsFreeNoteRef.current = false
+          const retry = await supabase
+            .from('inspection_exterior_observations')
+            .update(baseUpdatePayload)
+            .eq('id', row.id)
+            .select('*')
+            .single()
+          data = retry.data
+          error = retry.error
+        }
 
         if (error) throw error
         const r = data as any
         return { ...r, values: (r.values as any) || {} }
       } else {
-        const { data, error } = await supabase
+        const baseInsertPayload = {
+          inspection_id: row.inspection_id,
+          exterior_item_id: row.exterior_item_id,
+          part_label: row.part_label,
+          values: row.values,
+          note: row.note,
+        }
+
+        let { data, error } = await supabase
           .from('inspection_exterior_observations')
-          .insert({
-            inspection_id: row.inspection_id,
-            exterior_item_id: row.exterior_item_id,
-            part_label: row.part_label,
-            values: row.values,
-            is_free_note: row.is_free_note ?? false,
-            note: row.note,
-          })
+          .insert(buildObservationPayload(baseInsertPayload, row.is_free_note ?? false))
           .select('*')
           .single()
+
+        if (error && isMissingIsFreeNoteColumnError(error)) {
+          supportsIsFreeNoteRef.current = false
+          const retry = await supabase
+            .from('inspection_exterior_observations')
+            .insert(baseInsertPayload)
+            .select('*')
+            .single()
+          data = retry.data
+          error = retry.error
+        }
 
         if (error) throw error
         const r = data as any

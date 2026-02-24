@@ -32,42 +32,42 @@ interface ObStepGrunddataProps {
   onInspectionUpdated?: (i: ObInspection) => void
 }
 
-// Ã°Å¸â€Â¹ Standardval fÃƒÂ¶r Omfattning Ã¢â‚¬â€œ gÃƒÂ¥r lÃƒÂ¤tt att ÃƒÂ¤ndra senare
+// Standardval för Omfattning - går lätt att ändra senare
 const SCOPE_OPTIONS: { key: string; label: string }[] = [
-  { key: 'main_building', label: 'OkulÃƒÂ¤r besiktning av huvudbyggnaden' },
+  { key: 'main_building', label: 'Okulär besiktning av huvudbyggnaden' },
   { key: 'outbuildings', label: 'Besiktning av komplementbyggnader' },
   {
     key: 'moisture_risk',
-    label: 'FuktmÃƒÂ¤tning eller fuktindikering av riskkonstruktion',
+    label: 'Fuktmätning eller fuktindikering av riskkonstruktion',
   },
-  { key: 'area', label: 'AreamÃƒÂ¤tning' },
+  { key: 'area', label: 'Areamätning' },
   { key: 'radon', label: 'Radonindikering' },
-  { key: 'mould', label: 'MÃƒÂ¶gelprov' },
+  { key: 'mould', label: 'Mögelprov' },
 ]
 
-// Ã°Å¸â€Â¹ Standardval fÃƒÂ¶r NÃƒÂ¤rvarande (huvudroller)
+// Standardval för Närvarande (huvudroller)
 const ATTENDEE_OPTIONS: { key: 'owner' | 'buyer'; label: string }[] = [
-  { key: 'owner', label: 'FastighetsÃƒÂ¤gare' },
-  { key: 'buyer', label: 'KÃƒÂ¶pare' },
+  { key: 'owner', label: 'Fastighetsägare' },
+  { key: 'buyer', label: 'Köpare' },
 ]
 
-// Ã°Å¸â€Â¹ Ãƒâ€žgandeform-alternativ
+// Ägandeform-alternativ
 const TENURE_OPTIONS: { value: NonNullable<Property['tenure_type']>; label: string }[] =
   [
-    { value: 'freehold', label: 'Ãƒâ€žganderÃƒÂ¤tt' },
-    { value: 'bostadsratt', label: 'BostadsrÃƒÂ¤tt' },
+    { value: 'freehold', label: 'Äganderätt' },
+    { value: 'bostadsratt', label: 'Bostadsrätt' },
   ]
 
-// Ã°Å¸â€Â¹ Typ av objekt
+// Typ av objekt
 const DWELLING_OPTIONS: {
   value: NonNullable<Property['dwelling_type']>
   label: string
 }[] = [
   { value: 'house', label: 'Hus (villa/radhus/parhus)' },
-  { value: 'apartment', label: 'LÃƒÂ¤genhet' },
+  { value: 'apartment', label: 'Lägenhet' },
 ]
 
-// Ã°Å¸â€Â¹ Visitkort / besiktningsinfo (statisk tills vi kopplar mot profil)
+// Visitkort / besiktningsinfo (statisk tills vi kopplar mot profil)
 const INSPECTOR_CARD = {
   name: 'Ej angivet',
   sbrLine1: 'SBR-grupp saknas',
@@ -80,7 +80,7 @@ const INSPECTOR_CARD = {
   addressLine: '-',
 }
 
-// HjÃƒÂ¤lpare: tolka/spara listor som semikolon-separerad text
+// Hjälpare: tolka/spara listor som semikolon-separerad text
 function parseList(raw: string | null): string[] {
   if (!raw) return []
   return raw
@@ -109,13 +109,13 @@ function formatAttendeeLabels(labels: string[]): string {
   return formatList(labels)
 }
 
-// Ã°Å¸â€Â¹ HÃƒÂ¤r bestÃƒÂ¤mmer vi om kombinationen ska behandlas som villa-mall eller lÃƒÂ¤genhets-mall
+// Här bestämmer vi om kombinationen ska behandlas som villa-mall eller lägenhets-mall
 function deriveFormKind(
   dwelling: Property['dwelling_type']
-): 'villa' | 'lÃƒÂ¤genhet' | null {
+): 'villa' | 'lägenhet' | null {
   if (!dwelling) return null
   if (dwelling === 'house') return 'villa'
-  if (dwelling === 'apartment') return 'lÃƒÂ¤genhet'
+  if (dwelling === 'apartment') return 'lägenhet'
   return null
 }
 
@@ -172,7 +172,7 @@ export default function ObStepGrunddata({
   onPropertyUpdated,
   onInspectionUpdated,
 }: ObStepGrunddataProps) {
-  // Lokalt formulÃƒÂ¤r-state Ã¢â‚¬â€œ vi utgÃƒÂ¥r frÃƒÂ¥n inkommande props
+  // Lokalt formulär-state - vi utgår från inkommande props
   const [propForm, setPropForm] = useState({
     cadastral_id: property.cadastral_id ?? '',
     address: property.address ?? '',
@@ -204,7 +204,7 @@ export default function ObStepGrunddata({
   const [inspectorProfile, setInspectorProfile] = useState<InspectorProfile | null>(null)
   const [inspectorAvatarLoadError, setInspectorAvatarLoadError] = useState(false)
 
-  // Om vi fÃƒÂ¥r nya props (t.ex. efter save utifrÃƒÂ¥n) uppdaterar vi lokalt state
+  // Om vi får nya props (t.ex. efter save utifrån) uppdaterar vi lokalt state
   useEffect(() => {
     setPropForm({
       cadastral_id: property.cadastral_id ?? '',
@@ -265,7 +265,7 @@ export default function ObStepGrunddata({
     }
   }, [])
 
-  // HjÃƒÂ¤lpare: spara property-fÃƒÂ¤lt
+  // Hjälpare: spara property-fält
   const saveProperty = async (patch: Partial<Property>) => {
     setError(null)
     setSavingProp(true)
@@ -283,7 +283,7 @@ export default function ObStepGrunddata({
 
     if (updErr) {
       console.error(updErr)
-      setError('Kunde inte spara objektets uppgifter i Ãƒâ€“B.')
+      setError('Kunde inte spara objektets uppgifter i ÖB.')
       return
     }
 
@@ -292,7 +292,7 @@ export default function ObStepGrunddata({
     }
   }
 
-  // HjÃƒÂ¤lpare: spara inspection-fÃƒÂ¤lt
+  // Hjälpare: spara inspection-fält
   const saveInspection = async (patch: Partial<Inspection>) => {
     setError(null)
     setSavingInsp(true)
@@ -317,7 +317,7 @@ export default function ObStepGrunddata({
     }
   }
 
-  // Ã°Å¸â€Â¹ Autogenerera uppdragsnummer baserat pÃƒÂ¥ datum + lÃƒÂ¶pnummer
+  // Autogenerera uppdragsnummer baserat på datum + löpnummer
   useEffect(() => {
     const maybeGenerateAssignmentNumber = async () => {
       if (inspection.assignment_number && inspection.assignment_number !== '') return
@@ -368,7 +368,7 @@ export default function ObStepGrunddata({
     void maybeGenerateAssignmentNumber()
   }, [inspection.id, inspection.assignment_number, inspection.date])
 
-  // Handlers fÃƒÂ¶r formulÃƒÂ¤rfÃƒÂ¤lt Ã¢â‚¬â€œ spara vid blur
+  // Handlers för formulärfält - spara vid blur
   const handlePropChange = (
     field: keyof typeof propForm,
     value: string | Property['tenure_type'] | Property['dwelling_type']
@@ -420,7 +420,7 @@ export default function ObStepGrunddata({
     if (Object.keys(patch).length > 0) void saveInspection(patch)
   }
 
-  // Ã°Å¸â€Â¹ Checkboxar fÃƒÂ¶r omfattning
+  // Checkboxar för omfattning
   const selectedScopeLabels = parseScopeLabels(inspForm.scope)
 
   const handleScopeToggle = async (label: string) => {
@@ -431,7 +431,7 @@ export default function ObStepGrunddata({
     await saveInspection({ scope: newScope } as Partial<Inspection>)
   }
 
-  // Ã°Å¸â€Â¹ Checkboxar fÃƒÂ¶r nÃƒÂ¤rvarande
+  // Checkboxar för närvarande
   const selectedAttendees = parseAttendeeLabels(inspForm.attendees)
 
   const handleAttendeeToggle = async (label: string) => {
@@ -442,15 +442,15 @@ export default function ObStepGrunddata({
     await saveInspection({ attendees: newAttendees } as Partial<Inspection>)
   }
 
-  // Ã°Å¸â€Â¹ KÃƒÂ¶par-/sÃƒÂ¤ljarbesiktning Ã¢â‚¬â€œ radioknappar
+  // Köpar-/säljarbesiktning - radioknappar
   const handleInspectionSideChange = async (side: NonNullable<InspectionSide>) => {
     const patch: Partial<Inspection> = { inspection_side: side }
 
-    // Om vi vÃƒÂ¤xlar till sÃƒÂ¤ljarbesiktning ska "KÃƒÂ¶pare" inte vara markerad
+    // Om vi växlar till säljarbesiktning ska "Köpare" inte vara markerad
     if (side === 'seller') {
       const current = parseAttendeeLabels(inspForm.attendees)
-      if (current.includes('KÃƒÂ¶pare')) {
-        const next = current.filter(l => l !== 'KÃƒÂ¶pare')
+      if (current.includes('Köpare')) {
+        const next = current.filter(l => l !== 'Köpare')
         const newAttendees = formatAttendeeLabels(next)
         patch.attendees = newAttendees as any
         setInspForm(prev => ({
@@ -467,13 +467,13 @@ export default function ObStepGrunddata({
     await saveInspection(patch)
   }
 
-  // Vilka nÃƒÂ¤rvarorutor vi ska visa: vid sÃƒÂ¤ljarbesiktning, ingen "KÃƒÂ¶pare"
+  // Vilka närvarorutor vi ska visa: vid säljarbesiktning, ingen "Köpare"
   const attendeeOptionsToShow =
     inspForm.inspection_side === 'seller'
       ? ATTENDEE_OPTIONS.filter(opt => opt.key !== 'buyer')
       : ATTENDEE_OPTIONS
 
-  // Ã°Å¸â€Â¹ HÃƒÂ¤r rÃƒÂ¤knar vi fram vilken mall som gÃƒÂ¤ller (villa/lÃƒÂ¤genhet)
+  // Här räknar vi fram vilken mall som gäller (villa/lägenhet)
   const formKind = deriveFormKind(propForm.dwelling_type)
   const inspectorName = inspectorProfile?.full_name || inspection.inspector_name || INSPECTOR_CARD.name
   const inspectorSbrLine1 = inspectorProfile?.sbr_group || INSPECTOR_CARD.sbrLine1
@@ -500,10 +500,10 @@ export default function ObStepGrunddata({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-900">
-        Grunduppgifter fÃƒÂ¶r objekt, uppdragsgivare och besiktningsman. Ãƒâ€žndringar sparas
-        automatiskt nÃƒÂ¤r du lÃƒÂ¤mnar ett fÃƒÂ¤lt. Uppdragsnummer skapas automatiskt nÃƒÂ¤r
-        besiktningsdatum ÃƒÂ¤r satt.
+      <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700">
+        Grunduppgifter för objekt, uppdragsgivare och besiktningsman. Ändringar sparas
+        automatiskt när du lämnar ett fält. Uppdragsnummer skapas automatiskt när
+        besiktningsdatum är satt.
       </div>
 
       {error && <p className="text-xs text-red-600">{error}</p>}
@@ -550,14 +550,14 @@ export default function ObStepGrunddata({
           />
 
           <Field
-            label="FastighetsÃƒÂ¤gare"
+            label="Fastighetsägare"
             value={propForm.owner_name ?? ''}
             onChange={v => handlePropChange('owner_name', v)}
             onBlur={() => handlePropBlur('owner_name')}
           />
 
           <div className="space-y-1">
-            <div className="text-xs font-medium text-gray-600">Ãƒâ€žgandeform</div>
+            <div className="text-xs font-medium text-gray-600">Ägandeform</div>
             <select
               className="w-full rounded-md border px-3 py-2 text-sm"
               value={propForm.tenure_type ?? ''}
@@ -569,7 +569,7 @@ export default function ObStepGrunddata({
               }
               onBlur={() => handlePropBlur('tenure_type')}
             >
-              <option value="">VÃƒÂ¤lj ÃƒÂ¤gandeformÃ¢â‚¬Â¦</option>
+              <option value="">Välj ägandeform...</option>
               {TENURE_OPTIONS.map(opt => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
@@ -591,7 +591,7 @@ export default function ObStepGrunddata({
               }
               onBlur={() => handlePropBlur('dwelling_type')}
             >
-              <option value="">VÃƒÂ¤lj typÃ¢â‚¬Â¦</option>
+              <option value="">Välj typ...</option>
               {DWELLING_OPTIONS.map(opt => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
@@ -605,16 +605,16 @@ export default function ObStepGrunddata({
               <>
                 Denna kombination behandlas som{' '}
                 <span className="font-semibold">
-                  {formKind === 'villa' ? 'villamall' : 'lÃƒÂ¤genhetsmall'}
+                  {formKind === 'villa' ? 'villamall' : 'lägenhetsmall'}
                 </span>{' '}
-                i utlÃƒÂ¥tandet.
+                i utlåtandet.
               </>
             ) : (
-              'VÃƒÂ¤lj ÃƒÂ¤gandeform och typ fÃƒÂ¶r att styra om utlÃƒÂ¥tandet fÃƒÂ¶ljer villa- eller lÃƒÂ¤genhetsmall.'
+              'Välj ägandeform och typ för att styra om utlåtandet följer villa- eller lägenhetsmall.'
             )}
           </p>
 
-          {savingProp && <p className="mt-1 text-[11px] text-gray-400">Sparar objektÃ¢â‚¬Â¦</p>}
+          {savingProp && <p className="mt-1 text-[11px] text-gray-400">Sparar objekt...</p>}
         </section>
 
         {/* --- Kolumn 2: Uppdragsgivare & besiktningsuppdrag --- */}
@@ -633,7 +633,7 @@ export default function ObStepGrunddata({
                   checked={inspForm.inspection_side === 'buyer'}
                   onChange={() => void handleInspectionSideChange('buyer')}
                 />
-                <span>KÃƒÂ¶parbesiktning</span>
+                <span>Köparbesiktning</span>
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -642,7 +642,7 @@ export default function ObStepGrunddata({
                   checked={inspForm.inspection_side === 'seller'}
                   onChange={() => void handleInspectionSideChange('seller')}
                 />
-                <span>SÃƒÂ¤ljarbesiktning</span>
+                <span>Säljarbesiktning</span>
               </label>
             </div>
           </div>
@@ -667,7 +667,7 @@ export default function ObStepGrunddata({
             value={inspForm.client_name}
             onChange={v => handleInspChange('client_name', v)}
             onBlur={() => handleInspBlur('client_name')}
-            placeholder="T.ex. kÃƒÂ¶pare, sÃƒÂ¤ljare eller juridisk person"
+            placeholder="T.ex. köpare, säljare eller juridisk person"
           />
 
           <Field
@@ -675,7 +675,8 @@ export default function ObStepGrunddata({
             value={inspForm.assignment_number}
             onChange={v => handleInspChange('assignment_number', v)}
             onBlur={() => handleInspBlur('assignment_number')}
-            placeholder="Skapas automatiskt nÃƒÂ¤r datum ÃƒÂ¤r satt (kan justeras)"
+            placeholder="Skapas automatiskt när datum är satt"
+            readOnly
           />
 
           <div className="space-y-2">
@@ -695,9 +696,9 @@ export default function ObStepGrunddata({
             </div>
             <div className="mt-1 text-[11px] text-gray-500">
               {inspForm.scope && inspForm.scope.trim() !== '' ? (
-                <>Vald omfattning (sparas i utlÃƒÂ¥tandet): {inspForm.scope}</>
+                <>Vald omfattning (sparas i utlåtandet): {inspForm.scope}</>
               ) : (
-                'Ingen omfattning vald ÃƒÂ¤nnu.'
+                'Ingen omfattning vald ännu.'
               )}
             </div>
           </div>
@@ -719,7 +720,7 @@ export default function ObStepGrunddata({
           </div>
 
           <div className="mt-3 space-y-3">
-            <div className="text-xs font-medium text-gray-600">NÃƒÂ¤rvarande</div>
+            <div className="text-xs font-medium text-gray-600">Närvarande</div>
 
             <div className="space-y-1">
               {attendeeOptionsToShow.map(opt => (
@@ -737,12 +738,12 @@ export default function ObStepGrunddata({
 
               <div className="space-y-1">
                 <div className="text-xs font-medium text-gray-600">
-                  Ãƒâ€“vriga nÃƒÂ¤rvarande (namn och roll)
+                  Övriga närvarande (namn och roll)
                 </div>
                 <textarea
                   className="w-full rounded-md border px-3 py-2 text-xs"
                   rows={2}
-                  placeholder="T.ex. Anna Andersson (mÃƒÂ¤klare), Kalle Karlsson (besiktningsman sÃƒÂ¤ljare)"
+                  placeholder="T.ex. Anna Andersson (mäklare), Kalle Karlsson (besiktningsman säljare)"
                   value={inspForm.attendees_other}
                   onChange={e => handleInspChange('attendees_other', e.target.value)}
                   onBlur={() => handleInspBlur('attendees_other')}
@@ -750,7 +751,7 @@ export default function ObStepGrunddata({
               </div>
 
               <Field
-                label="UppdragsbekrÃƒÂ¤ftelse ÃƒÂ¶verlÃƒÂ¤mnad"
+                label="Uppdragsbekräftelse överlämnad"
                 type="date"
                 value={inspForm.assignment_confirmation_delivered_date}
                 onChange={v =>
@@ -763,14 +764,14 @@ export default function ObStepGrunddata({
 
               <div className="mt-1 text-[11px] text-gray-500">
                 {inspForm.attendees && inspForm.attendees.trim() !== '' ? (
-                  <>Registrerade nÃƒÂ¤rvarande (huvudroller): {inspForm.attendees}</>
+                  <>Registrerade närvarande (huvudroller): {inspForm.attendees}</>
                 ) : (
-                'Inga huvudroller markerade ÃƒÂ¤nnu.'
+                  'Inga huvudroller markerade ännu.'
               )}
             </div>
           </div>
 
-          {savingInsp && <p className="mt-1 text-[11px] text-gray-400">Sparar uppdragÃ¢â‚¬Â¦</p>}
+          {savingInsp && <p className="mt-1 text-[11px] text-gray-400">Sparar uppdrag...</p>}
         </section>
 
         {/* --- Kolumn 3: Besiktningsman (read-only) --- */}
@@ -816,7 +817,7 @@ export default function ObStepGrunddata({
   )
 }
 
-/** Enkel field-komponent fÃƒÂ¶r att slippa upprepning */
+/** Enkel field-komponent för att slippa upprepning */
 function Field({
   label,
   value,
@@ -825,6 +826,7 @@ function Field({
   placeholder,
   type = 'text',
   multiline,
+  readOnly = false,
 }: {
   label: string
   value: string
@@ -833,27 +835,30 @@ function Field({
   placeholder?: string
   type?: 'text' | 'date'
   multiline?: boolean
+  readOnly?: boolean
 }) {
   return (
     <div className="space-y-1">
       <div className="text-xs font-medium text-gray-600">{label}</div>
       {multiline ? (
         <textarea
-          className="w-full rounded-md border px-3 py-2 text-sm"
+          className={`w-full rounded-md border px-3 py-2 text-sm ${readOnly ? 'bg-gray-100 text-gray-600' : ''}`}
           value={value}
           onChange={e => onChange(e.target.value)}
           onBlur={onBlur}
           placeholder={placeholder}
           rows={3}
+          readOnly={readOnly}
         />
       ) : (
         <input
           type={type}
-          className="w-full rounded-md border px-3 py-2 text-sm"
+          className={`w-full rounded-md border px-3 py-2 text-sm ${readOnly ? 'bg-gray-100 text-gray-600' : ''}`}
           value={value}
           onChange={e => onChange(e.target.value)}
           onBlur={onBlur}
           placeholder={placeholder}
+          readOnly={readOnly}
         />
       )}
     </div>
