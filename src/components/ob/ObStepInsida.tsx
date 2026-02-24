@@ -87,6 +87,7 @@ type ControlPointMeta = {
   title: string
   label: string | null
   description: string | null
+  trigger_room_types?: any | null
 }
 
 type InspectionImage = {
@@ -178,6 +179,34 @@ const normalizeRoomTypeKey = (value: string | null | undefined) => {
 const isOtherRoomKey = (value: string | null | undefined) => {
   const key = normalizeRoomTypeKey(value)
   return key === 'ovrigt' || key === 'övrigt'
+}
+
+const getNormalizedTriggerRoomTypes = (triggerRoomTypes: any | null | undefined) => {
+  const raw = Array.isArray(triggerRoomTypes) ? triggerRoomTypes : []
+  return raw
+    .map(val => normalizeRoomTypeKey(val))
+    .filter((val): val is string => !!val)
+}
+
+const triggerRoomTypesMatchRoom = (
+  triggerRoomTypes: any | null | undefined,
+  roomTypeKey: string | null | undefined
+) => {
+  const roomKey = normalizeRoomTypeKey(roomTypeKey)
+  if (!roomKey) return false
+
+  // Endast kontrollpunkter med explicit tagg för rumstyp får visas/läggas till.
+  const normalizedTriggerRoomTypes = getNormalizedTriggerRoomTypes(triggerRoomTypes)
+  if (normalizedTriggerRoomTypes.length === 0) return false
+
+  return normalizedTriggerRoomTypes.includes(roomKey)
+}
+
+const controlPointMatchesRoom = (
+  cp: ControlPointLite,
+  roomTypeKey: string | null | undefined
+) => {
+  return triggerRoomTypesMatchRoom(cp.trigger_room_types, roomTypeKey)
 }
 
 // Visningslabel för våningsnycklar
@@ -435,7 +464,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             try {
               const { data: metaData, error: metaErr } = await supabase
                 .from('settings_control_points')
-                .select('id, title, label, description')
+                .select('id, title, label, description, trigger_room_types')
                 .in('id', cpIds)
                 .eq('is_active', true)
 
@@ -623,7 +652,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     if (missingMeta.length > 0) {
       const { data: metaData, error: metaErr } = await supabase
         .from('settings_control_points')
-        .select('id, title, label, description')
+        .select('id, title, label, description, trigger_room_types')
         .in('id', missingMeta)
         .eq('is_active', true)
 
@@ -891,22 +920,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
       const all = (data ?? []) as ControlPointLite[]
 
-      // Filtrera i JS på trigger_room_types (jsonb-array)
-      const cps = all.filter(cp => {
-        try {
-          const arr = Array.isArray(cp.trigger_room_types)
-            ? cp.trigger_room_types
-            : []
-          if (arr.length === 0) {
-            return isOtherRoomKey(room.room_type_key)
-          }
-          const roomKey = normalizeRoomTypeKey(room.room_type_key)
-          const normalized = arr.map(val => normalizeRoomTypeKey(val))
-          return normalized.includes(roomKey)
-        } catch {
-          return false
-        }
-      })
+      // Filtrera på trigger_room_types (jsonb-array): endast explicit taggade för rumstypen.
+      const cps = all.filter(cp => controlPointMatchesRoom(cp, room.room_type_key))
 
       if (!cps.length) return
 
@@ -1828,7 +1843,7 @@ function RoomControlPointsSection({
 
       const { data, error } = await supabase
         .from('settings_control_points')
-        .select('id, key, title, label, description, tags')
+        .select('id, key, title, label, description, tags, trigger_room_types')
         .eq('scope', 'interior')
         .eq('is_active', true)
         .or(
