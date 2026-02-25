@@ -790,7 +790,8 @@ export default function ReportRendererClient({
     const paddingTopPx = mmToPxNumber(PAGE_PADDING_MM.top)
     const paddingBottomPx = mmToPxNumber(PAGE_PADDING_MM.bottom)
     const footerMarkPx = mmToPxNumber(FOOTER_MARK_HEIGHT_MM)
-    const safetyMm = isPdfMode ? 8 : 0
+    // Extra safety in PDF mode to avoid late-page collisions with fixed footer artwork.
+    const safetyMm = isPdfMode ? 14 : 0
     const availableHeight =
       pageHeightPx -
       paddingTopPx -
@@ -950,17 +951,17 @@ export default function ReportRendererClient({
     return (
       <>
         <section className="ob-section ob-section--note">
-          <div className="ob-section__head flex items-center gap-2">
-            <span className="ob-icon ob-icon--note" aria-hidden="true">
+          <div className="ob-section__head grid grid-cols-[auto_auto_1fr] items-baseline gap-x-2">
+            <span className="ob-icon ob-icon--note self-start mt-[1px]" aria-hidden="true">
               {'\u{1F9F1}'}
             </span>
-            <span className="ob-section__label text-xs font-bold tracking-wide uppercase text-gray-900">
-              Notering
+            <span className="ob-section__label text-sm font-bold tracking-wide uppercase leading-relaxed text-gray-900">
+              NOTERING
+            </span>
+            <span className="ob-section__text text-sm leading-relaxed text-gray-900 whitespace-pre-line">
+              {noteText || '--'}
             </span>
           </div>
-          <p className="ob-section__text text-sm leading-relaxed mt-1 text-gray-900 whitespace-pre-line">
-            {noteText || '--'}
-          </p>
           {photoUrls.length > 0 && (
             <div className="mt-2 space-y-2">
               <div className="flex items-center gap-1.5 text-xs text-gray-700">

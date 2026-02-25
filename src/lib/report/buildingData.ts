@@ -178,6 +178,11 @@ const valueOrFallback = (value: string | number | null | undefined, fallback = '
   return text.length > 0 ? text : fallback
 }
 
+const warnBuildingData = (...args: unknown[]) => {
+  if (process.env.NODE_ENV !== 'development') return
+  console.warn(...args)
+}
+
 const normalizeValue = (value: unknown): string[] => {
   if (value === null || value === undefined) return []
   if (Array.isArray(value)) {
@@ -349,7 +354,7 @@ const createBuildingDataContext = ({
   selections.forEach((row) => {
     const item = itemsById.get(row.overview_item_id)
     if (!item) {
-      console.warn('BuildingData: saknar settings_overview_item for selection', row.overview_item_id)
+      warnBuildingData('BuildingData: saknar settings_overview_item for selection', row.overview_item_id)
       return
     }
     const list = selectionsByItemKey.get(item.key) ?? []
@@ -448,7 +453,7 @@ export function buildBuildingDataMap({
   COMPONENT_DEFS.forEach((def) => {
     const itemKey = def.itemKeys.find((key) => context.itemsByKey.has(key)) ?? null
     if (!itemKey && def.itemKeys.length > 0) {
-      console.warn('BuildingData: saknar itemKey for komponent', {
+      warnBuildingData('BuildingData: saknar itemKey for komponent', {
         rubric: def.rubric,
         candidates: def.itemKeys,
       })

@@ -1,6 +1,6 @@
-'use client'
+﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ChangeEvent } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
 
@@ -80,6 +80,8 @@ const INSPECTOR_CARD = {
   addressLine: '-',
 }
 
+const COVER_IMAGE_BUCKET = 'inspection-images' as const
+
 // Hjälpare: tolka/spara listor som semikolon-separerad text
 function parseList(raw: string | null): string[] {
   if (!raw) return []
@@ -109,16 +111,6 @@ function formatAttendeeLabels(labels: string[]): string {
   return formatList(labels)
 }
 
-// Här bestämmer vi om kombinationen ska behandlas som villa-mall eller lägenhets-mall
-function deriveFormKind(
-  dwelling: Property['dwelling_type']
-): 'villa' | 'lägenhet' | null {
-  if (!dwelling) return null
-  if (dwelling === 'house') return 'villa'
-  if (dwelling === 'apartment') return 'lägenhet'
-  return null
-}
-
 function resolvePublicMediaUrl(path: string | null | undefined) {
   if (!path) return null
   if (path.startsWith('http://') || path.startsWith('https://')) {
@@ -141,6 +133,30 @@ function resolvePublicMediaUrl(path: string | null | undefined) {
   }
 
   return `${base}/storage/v1/object/public/property-media/${path}`
+}
+
+function resolveInspectionImageUrl(path: string | null | undefined) {
+  if (!path) return null
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path
+  }
+
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!base) return null
+
+  if (path.startsWith('/storage/')) {
+    return `${base}${path}`
+  }
+
+  if (path.startsWith('storage/')) {
+    return `${base}/${path}`
+  }
+
+  if (path.startsWith('/')) {
+    return path
+  }
+
+  return `${base}/storage/v1/object/public/${COVER_IMAGE_BUCKET}/${path}`
 }
 function normalizeInspectionStatus(value: string | null | undefined): string {
   const raw = (value ?? '').trim()
@@ -186,6 +202,7 @@ export default function ObStepGrunddata({
 
   const [inspForm, setInspForm] = useState({
     status: normalizeInspectionStatus(inspection.status),
+    cover_path: inspection.cover_path ?? '',
     client_name: inspection.client_name ?? '',
     assignment_number: inspection.assignment_number ?? '',
     assignment_confirmation_delivered_date:
@@ -200,6 +217,7 @@ export default function ObStepGrunddata({
 
   const [savingProp, setSavingProp] = useState(false)
   const [savingInsp, setSavingInsp] = useState(false)
+  const [uploadingCover, setUploadingCover] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [inspectorProfile, setInspectorProfile] = useState<InspectorProfile | null>(null)
   const [inspectorAvatarLoadError, setInspectorAvatarLoadError] = useState(false)
@@ -221,6 +239,7 @@ export default function ObStepGrunddata({
   useEffect(() => {
     setInspForm({
       status: normalizeInspectionStatus(inspection.status),
+      cover_path: inspection.cover_path ?? '',
       client_name: inspection.client_name ?? '',
       assignment_number: inspection.assignment_number ?? '',
       assignment_confirmation_delivered_date:
@@ -293,7 +312,7 @@ export default function ObStepGrunddata({
   }
 
   // Hjälpare: spara inspection-fält
-  const saveInspection = async (patch: Partial<Inspection>) => {
+  const saveInspection = async (patch: Partial<Inspection>): Promise<Inspection | null> => {
     setError(null)
     setSavingInsp(true)
 
@@ -309,12 +328,14 @@ export default function ObStepGrunddata({
     if (updErr) {
       console.error(updErr)
       setError('Kunde inte spara uppdragsuppgifterna.')
-      return
+      return null
     }
 
     if (data && onInspectionUpdated) {
       onInspectionUpdated(data as Inspection)
     }
+
+    return (data as Inspection | null) ?? null
   }
 
   // Autogenerera uppdragsnummer baserat på datum + löpnummer
@@ -473,8 +494,61 @@ export default function ObStepGrunddata({
       ? ATTENDEE_OPTIONS.filter(opt => opt.key !== 'buyer')
       : ATTENDEE_OPTIONS
 
-  // Här räknar vi fram vilken mall som gäller (villa/lägenhet)
-  const formKind = deriveFormKind(propForm.dwelling_type)
+  const isInspectionLocked = normalizeInspectionStatus(inspForm.status) === 'completed'
+
+  const handleInspectionCoverUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (isInspectionLocked) {
+      setError('Besiktningen är klar. Omslagsbild kan inte ändras.')
+      event.target.value = ''
+      return
+    }
+
+    try {
+      setError(null)
+      setUploadingCover(true)
+
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+      const fileName = `cover-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+      const filePath = `${inspection.id}/cover/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from(COVER_IMAGE_BUCKET)
+        .upload(filePath, file, { upsert: false, cacheControl: '3600' })
+
+      if (uploadError) throw uploadError
+
+      const previousPath = inspForm.cover_path || null
+      const saved = await saveInspection({ cover_path: filePath } as Partial<Inspection>)
+      if (!saved) return
+
+      setInspForm(prev => ({ ...prev, cover_path: saved.cover_path ?? filePath }))
+
+      if (
+        previousPath &&
+        previousPath !== filePath &&
+        !previousPath.startsWith('http://') &&
+        !previousPath.startsWith('https://') &&
+        !previousPath.startsWith('/')
+      ) {
+        const { error: removeError } = await supabase.storage
+          .from(COVER_IMAGE_BUCKET)
+          .remove([previousPath])
+        if (removeError) {
+          console.warn('Kunde inte ta bort tidigare omslagsbild:', removeError.message)
+        }
+      }
+    } catch (e: any) {
+      console.error('handleInspectionCoverUpload failed:', e)
+      setError(e?.message ?? 'Kunde inte ladda upp omslagsbild.')
+    } finally {
+      setUploadingCover(false)
+      event.target.value = ''
+    }
+  }
+
   const inspectorName = inspectorProfile?.full_name || inspection.inspector_name || INSPECTOR_CARD.name
   const inspectorSbrLine1 = inspectorProfile?.sbr_group || INSPECTOR_CARD.sbrLine1
   const inspectorSbrLine2 = inspectorProfile?.sbr_status || INSPECTOR_CARD.sbrLine2
@@ -497,6 +571,7 @@ export default function ObStepGrunddata({
           .join(', ')
       : INSPECTOR_CARD.addressLine
   const inspectorAvatarSrc = resolvePublicMediaUrl(inspectorProfile?.avatar_path)
+  const inspectionCoverSrc = resolveInspectionImageUrl(inspForm.cover_path || null)
 
   return (
     <div className="space-y-4">
@@ -600,19 +675,47 @@ export default function ObStepGrunddata({
             </select>
           </div>
 
-          <p className="mt-1 text-[11px] text-gray-500">
-            {propForm.tenure_type && propForm.dwelling_type && formKind ? (
-              <>
-                Denna kombination behandlas som{' '}
-                <span className="font-semibold">
-                  {formKind === 'villa' ? 'villamall' : 'lägenhetsmall'}
-                </span>{' '}
-                i utlåtandet.
-              </>
-            ) : (
-              'Välj ägandeform och typ för att styra om utlåtandet följer villa- eller lägenhetsmall.'
-            )}
-          </p>
+          <div className="space-y-2">
+            <div className="text-xs font-medium text-gray-600">Omslagsbild</div>
+            <label
+              className={`group relative block h-40 w-full overflow-hidden rounded-md border border-gray-300 bg-gray-50 ${isInspectionLocked ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
+            >
+              {inspectionCoverSrc ? (
+                <img
+                  src={inspectionCoverSrc}
+                  alt="Omslagsbild"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
+                  Ingen omslagsbild vald
+                </div>
+              )}
+
+              {!isInspectionLocked ? (
+                <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/45 text-xs font-medium text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+                  {inspectionCoverSrc ? 'Byt omslagsbild' : 'Ladda upp omslagsbild'}
+                </span>
+              ) : null}
+
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                disabled={isInspectionLocked || uploadingCover || savingInsp}
+                onChange={e => void handleInspectionCoverUpload(e)}
+              />
+            </label>
+            {uploadingCover ? (
+              <p className="text-[11px] text-gray-400">Laddar upp omslagsbild...</p>
+            ) : null}
+            {isInspectionLocked ? (
+              <p className="text-[11px] text-gray-500">
+                Besiktningen är klar och omslagsbilden är låst.
+              </p>
+            ) : null}
+          </div>
+
 
           {savingProp && <p className="mt-1 text-[11px] text-gray-400">Sparar objekt...</p>}
         </section>
@@ -864,3 +967,4 @@ function Field({
     </div>
   )
 }
+

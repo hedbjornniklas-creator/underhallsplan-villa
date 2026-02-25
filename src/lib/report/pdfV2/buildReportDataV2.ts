@@ -93,29 +93,39 @@ const supabase: any = createSupabaseServerClient()
   }
   const trimText = (value: string | null | undefined) => (value ?? '').trim()
   const normalizeSwedish = (value: string) =>
-    value
-      .replace(/ÃƒÂ¤/g, 'Ã¤')
-      .replace(/ÃƒÂ¥/g, 'Ã¥')
-      .replace(/ÃƒÂ¶/g, 'Ã¶')
-      .replace(/Ãƒâ€ž/g, 'Ã„')
-      .replace(/Ãƒâ€¦/g, 'Ã…')
-      .replace(/Ãƒâ€“/g, 'Ã–')
-      .replace(/ÃƒÂ©/g, 'Ã©')
-      .replace(/Ãƒâ€°/g, 'Ã‰')
+    String(value ?? '')
+      // Double-encoded mojibake (UTF-8 -> Latin-1 -> UTF-8)
+      .replace(/\u00c3\u0192\u00c2\u00a4/g, '\u00e4')
+      .replace(/\u00c3\u0192\u00c2\u00a5/g, '\u00e5')
+      .replace(/\u00c3\u0192\u00c2\u00b6/g, '\u00f6')
+      .replace(/\u00c3\u0192\u00e2\u20ac\u017e/g, '\u00c4')
+      .replace(/\u00c3\u0192\u00e2\u20ac\u00a6/g, '\u00c5')
+      .replace(/\u00c3\u0192\u00e2\u20ac\u201c/g, '\u00d6')
+      .replace(/\u00c3\u0192\u00c2\u00a9/g, '\u00e9')
+      .replace(/\u00c3\u0192\u00e2\u20ac\u00b0/g, '\u00c9')
+      // Single-encoded mojibake (UTF-8 bytes read as Latin-1/CP1252)
+      .replace(/\u00c3\u00a4/g, '\u00e4')
+      .replace(/\u00c3\u00a5/g, '\u00e5')
+      .replace(/\u00c3\u00b6/g, '\u00f6')
+      .replace(/\u00c3\u201e/g, '\u00c4')
+      .replace(/\u00c3\u2026/g, '\u00c5')
+      .replace(/\u00c3\u2013/g, '\u00d6')
+      .replace(/\u00c3\u00a9/g, '\u00e9')
+      .replace(/\u00c3\u2030/g, '\u00c9')
 
   const normalizeKey = (value: string | null | undefined) =>
     normalizeSwedish(String(value ?? '')).trim().toLowerCase()
 
   const floorLabelFromKey = (value: string) => {
     const key = normalizeKey(value)
-    if (key === 'kÃ¤llare') return 'KÃ¤llare'
-    if (key === 'kÃ¤llare_delvis') return 'KÃ¤llare (delvis)'
-    if (key === 'entrÃ©plan') return 'EntrÃ©plan'
+    if (key === 'k\u00e4llare') return 'K\u00e4llare'
+    if (key === 'k\u00e4llare_delvis') return 'K\u00e4llare (delvis)'
+    if (key === 'entr\u00e9plan') return 'Entr\u00e9plan'
     if (key === 'plan2') return 'Plan 2'
     if (key === 'plan3') return 'Plan 3'
     if (key.startsWith('plan')) return `Plan ${key.replace('plan', '')}`
     if (key === 'vind') return 'Vind'
-    if (key === 'ovrigt' || key === 'Ã¶vrigt') return 'Ã–vrigt'
+    if (key === 'ovrigt' || key === '\u00f6vrigt') return '\u00d6vrigt'
     return normalizeSwedish(String(value ?? '')).trim()
   }
   const buildInspectionImageUrl = (path: string | null | undefined) => {
@@ -131,7 +141,7 @@ const supabase: any = createSupabaseServerClient()
   const { data: inspectionData, error: inspectionError } = await supabase
     .from('inspections')
     .select(
-      'id, property_id, date, inspection_time, assignment_number, client_name, client_contact, defect_disclosures, scope, attendees, attendees_other, assignment_confirmation_delivered_date'
+      'id, property_id, date, inspection_time, assignment_number, client_name, client_contact, defect_disclosures, scope, attendees, attendees_other, assignment_confirmation_delivered_date, cover_path'
     )
     .eq('id', resolvedParams.inspectionId)
     .maybeSingle()
@@ -337,17 +347,7 @@ const supabase: any = createSupabaseServerClient()
     property?.city ?? null,
   ].filter((part) => part && String(part).trim().length > 0)
 
-  const resolveCoverImage = (path: string | null | undefined) => {
-    if (!path) return null
-    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('/')) {
-      return path
-    }
-    const base = process.env.NEXT_PUBLIC_SUPABASE_URL
-    if (!base) return null
-    return `${base}/storage/v1/object/public/property-media/${path}`
-  }
-
-  const coverImageUrl = resolveCoverImage(property?.cover_path ?? null)
+  const coverImageUrl = buildInspectionImageUrl(inspection?.cover_path ?? null)
 
   let fullAddress = fallback
   if (addressParts.length > 0) {
@@ -475,18 +475,9 @@ const supabase: any = createSupabaseServerClient()
     console.error('Kunde inte hamta insida-rum', interiorRoomsError)
   }
 
-  const { data: interiorRoomTypes, error: interiorRoomTypesError } = await supabase
-    .from('settings_interior_room_types')
-    .select('key, label')
-    .eq('is_active', true)
-
-  if (interiorRoomTypesError) {
-    console.error('Kunde inte hamta rumstyper (insida)', interiorRoomTypesError)
-  }
-
   const interiorRoomRows = (interiorRooms ?? []) as InteriorRoomRow[]
   const OTHER_ROOM_TYPE_KEY = 'ovrigt'
-  const FLOOR_ORDER = ['kÃ¤llare', 'kÃ¤llare_delvis', 'entrÃ©plan', 'plan2', 'plan3']
+  const FLOOR_ORDER = ['k\u00e4llare', 'k\u00e4llare_delvis', 'entr\u00e9plan', 'plan2', 'plan3']
 
   const getFloorRank = (floor: string) => {
     if (floor === 'vind') return 900
@@ -728,20 +719,10 @@ const supabase: any = createSupabaseServerClient()
     interiorControlItemsByRoomId.set(key, bucket)
   }
 
-  const roomTypeLabelByKey = new Map<string, string>(
-    (interiorRoomTypes ?? []).map((row: any) => [
-      normalizeKey(row.key),
-      normalizeSwedish(String(row.label ?? row.key ?? '')).trim(),
-    ])
-  )
-
   for (const room of sortedInteriorRooms) {
     const floorLabel = floorLabelFromKey(room.floor_label)
-    const roomTypeLabel =
-      roomTypeLabelByKey.get(normalizeKey(room.room_type_key)) ??
-      normalizeSwedish(String(room.room_type_key ?? '')).trim()
     const roomName = normalizeSwedish(String(room.room_label ?? '')).trim()
-    const roomTitle = [floorLabel, roomTypeLabel, roomName]
+    const roomTitle = [floorLabel, roomName]
       .filter(Boolean)
       .join(' - ')
     const roomBlocks: InspectionBlock[] = []

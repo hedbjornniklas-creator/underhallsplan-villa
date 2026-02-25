@@ -111,6 +111,20 @@ export default function PropertyInspectionsPage() {
 
     const newId = data.id as string
 
+    const { error: conditionsError } = await supabase
+      .from('inspection_conditions')
+      .insert({
+        inspection_id: newId,
+        furnishing_level: 'fullt_moblerad',
+      })
+
+    if (conditionsError) {
+      console.error('Kunde inte skapa inspection_conditions för besiktning:', conditionsError)
+      await supabase.from('inspections').delete().eq('id', newId)
+      alert('Kunde inte skapa förutsättningar för besiktningen.')
+      return
+    }
+
     const { data: sourceProperty, error: sourcePropertyError } = await supabase
       .from('properties')
       .select(

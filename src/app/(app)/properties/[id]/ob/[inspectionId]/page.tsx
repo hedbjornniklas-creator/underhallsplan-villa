@@ -92,6 +92,7 @@ export default function InspectionDetailPage() {
           client_contact,
           assignment_number,
           assignment_confirmation_delivered_date,
+          cover_path,
           scope,
           inspection_time,
           attendees,
@@ -246,62 +247,71 @@ export default function InspectionDetailPage() {
 
   return (
     <Protected hideSidebar>
-      <main className="relative min-h-full overflow-hidden bg-white p-4 md:p-6">
+      <main className="relative min-h-full overflow-hidden p-4 md:p-6">
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage:
+              'radial-gradient(100% 70% at 50% 0%, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 58%), linear-gradient(135deg, #5a86dc 0%, #6eaeea 45%, #87CEFA 100%)',
+          }}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-white/8" />
+
         <div className="relative mx-auto w-full max-w-7xl space-y-4">
-          <div className="grid items-start gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
-            <div className="md:w-[220px]">
-            <nav className="space-y-2 rounded-lg border bg-white p-3 md:fixed md:left-6 md:top-28 md:max-h-[calc(100vh-7rem)] md:w-[220px] md:overflow-auto">
-              <div className="mb-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (typeof window !== 'undefined' && window.history.length > 1) {
-                      router.back()
-                      return
-                    }
-                    router.push(`/properties/${propertyId}/ob`)
-                  }}
-                  aria-label="Tillbaka"
-                  title="Tillbaka"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                >
-                  <ArrowLeft size={16} strokeWidth={2} />
-                </button>
-                <div className="text-sm font-semibold text-gray-900">Överlåtelsebesiktning</div>
-              </div>
-
-              {SECTIONS.map((section) => (
-                <div key={section.key}>
+          <div className="grid items-start gap-6 md:grid-cols-[240px_minmax(0,1fr)]">
+            <div className="md:w-[240px]">
+              <nav className="space-y-2 rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:sticky md:top-24 md:max-h-[calc(100vh-7rem)] md:w-[240px] md:overflow-auto">
+                <div className="mb-2 flex items-center gap-2">
                   <button
-                    onClick={() => setActiveSection(section.key)}
-                    className={`w-full rounded-md px-3 py-2 text-left text-sm ${
-                      activeSection === section.key
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-700 hover:bg-gray-100'
-                    }`}
+                    type="button"
+                    onClick={() => {
+                      if (typeof window !== 'undefined' && window.history.length > 1) {
+                        router.back()
+                        return
+                      }
+                      router.push(`/properties/${propertyId}/ob`)
+                    }}
+                    aria-label="Tillbaka"
+                    title="Tillbaka"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
-                    {section.label}
+                    <ArrowLeft size={16} strokeWidth={2} />
                   </button>
-
-                  {section.key === 'utsida' && activeSection === 'utsida' && exteriorItems.length > 0 && (
-                    <div className="mt-2 space-y-1 border-l border-gray-200 pl-3">
-                      {exteriorItems.map((item) => (
-                        <a
-                          key={item.id}
-                          href={`#utsida-${item.key}`}
-                          className="block text-xs text-gray-600 hover:text-gray-900"
-                        >
-                          {item.label}
-                        </a>
-                      ))}
-                    </div>
-                  )}
+                  <div className="text-sm font-semibold text-gray-900">Överlåtelsebesiktning</div>
                 </div>
-              ))}
-            </nav>
+
+                {SECTIONS.map((section) => (
+                  <div key={section.key}>
+                    <button
+                      onClick={() => setActiveSection(section.key)}
+                      className={`w-full rounded-md px-3 py-2 text-left text-sm ${
+                        activeSection === section.key
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      {section.label}
+                    </button>
+
+                    {section.key === 'utsida' && activeSection === 'utsida' && exteriorItems.length > 0 && (
+                      <div className="mt-2 space-y-1 rounded-lg bg-white/65 px-3 py-2 ring-1 ring-gray-200/80">
+                        {exteriorItems.map((item) => (
+                          <a
+                            key={item.id}
+                            href={`#utsida-${item.key}`}
+                            className="block text-xs text-gray-600 hover:text-gray-900"
+                          >
+                            {item.label}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </nav>
             </div>
 
-            <div>
+            <div className="rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:p-4">
               <ObWizard
                 property={property}
                 inspection={inspection}

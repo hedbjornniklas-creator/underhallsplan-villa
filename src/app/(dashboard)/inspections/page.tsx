@@ -568,6 +568,19 @@ export default function InspectionsPage() {
         throw inspectionError ?? new Error('Kunde inte skapa besiktning.')
       }
 
+      const { error: conditionsError } = await supabase
+        .from('inspection_conditions')
+        .insert({
+          inspection_id: inspectionData.id,
+          furnishing_level: 'fullt_moblerad',
+        })
+
+      if (conditionsError) {
+        await supabase.from('inspections').delete().eq('id', inspectionData.id)
+        await supabase.from('properties').delete().eq('id', sourceProperty.id)
+        throw conditionsError
+      }
+
       const snapshotClient = supabase as unknown as ObSnapshotClient
       const { error: snapshotError } = await snapshotClient
         .from('ob_property_snapshot')

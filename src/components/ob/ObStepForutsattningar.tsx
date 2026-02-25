@@ -63,6 +63,22 @@ type ItemBundle = SettingsOverviewItem & {
   groups: (SettingsOverviewGroup & { options: SettingsOverviewOption[] })[]
 }
 
+const serializeLoadError = (error: any) => {
+  if (!error) return null
+  return {
+    code: error.code ?? null,
+    message: error.message ?? null,
+    details: error.details ?? null,
+    hint: error.hint ?? null,
+    status: error.status ?? null,
+  }
+}
+
+const isUniqueViolation = (error: any) => {
+  const text = `${error?.message ?? ''} ${error?.details ?? ''}`.toLowerCase()
+  return error?.code === '23505' || text.includes('duplicate key')
+}
+
 export default function ObStepForutsattningar({
   property,
   inspection,
@@ -117,10 +133,27 @@ export default function ObStepForutsattningar({
             .select('*')
             .single()
 
-          if (insErr) throw insErr
-          const r = inserted as InspectionConditionsRow
-          setCondRow(r)
-          setFurnishing((r.furnishing_level ?? 'fullt_moblerad') as FurnishingLevel)
+          if (insErr) {
+            if (!isUniqueViolation(insErr)) throw insErr
+
+            const { data: raceRow, error: raceErr } = await supabase
+              .from('inspection_conditions')
+              .select('*')
+              .eq('inspection_id', inspection.id)
+              .maybeSingle()
+
+            if (raceErr || !raceRow) {
+              throw raceErr ?? insErr
+            }
+
+            const r = raceRow as InspectionConditionsRow
+            setCondRow(r)
+            setFurnishing((r.furnishing_level ?? 'fullt_moblerad') as FurnishingLevel)
+          } else {
+            const r = inserted as InspectionConditionsRow
+            setCondRow(r)
+            setFurnishing((r.furnishing_level ?? 'fullt_moblerad') as FurnishingLevel)
+          }
         }
 
         // B) settings items
@@ -135,27 +168,33 @@ export default function ObStepForutsattningar({
         const itemIds = itemsArr.map(i => i.id)
 
         // C) groups
-        const { data: groupsData, error: groupsErr } = await supabase
-          .from('settings_overview_groups')
-          .select('*')
-          .in('overview_item_id', itemIds)
-          .eq('is_active', true)
-          .order('sort_order', { ascending: true })
+        let groupsArr: SettingsOverviewGroup[] = []
+        if (itemIds.length > 0) {
+          const { data: groupsData, error: groupsErr } = await supabase
+            .from('settings_overview_groups')
+            .select('*')
+            .in('overview_item_id', itemIds)
+            .eq('is_active', true)
+            .order('sort_order', { ascending: true })
 
-        if (groupsErr) throw groupsErr
-        const groupsArr = (groupsData ?? []) as SettingsOverviewGroup[]
+          if (groupsErr) throw groupsErr
+          groupsArr = (groupsData ?? []) as SettingsOverviewGroup[]
+        }
         const groupIds = groupsArr.map(g => g.id)
 
         // D) options
-        const { data: optionsData, error: optErr } = await supabase
-          .from('settings_overview_options')
-          .select('*')
-          .in('group_id', groupIds)
-          .eq('is_active', true)
-          .order('sort_order', { ascending: true })
+        let optionsArr: SettingsOverviewOption[] = []
+        if (groupIds.length > 0) {
+          const { data: optionsData, error: optErr } = await supabase
+            .from('settings_overview_options')
+            .select('*')
+            .in('group_id', groupIds)
+            .eq('is_active', true)
+            .order('sort_order', { ascending: true })
 
-        if (optErr) throw optErr
-        const optionsArr = (optionsData ?? []) as SettingsOverviewOption[]
+          if (optErr) throw optErr
+          optionsArr = (optionsData ?? []) as SettingsOverviewOption[]
+        }
 
         // E) selections for inspection
         const { data: selData, error: selDataErr } = await supabase
@@ -204,7 +243,7 @@ export default function ObStepForutsattningar({
         }
         setSelections(selMap)
       } catch (e: any) {
-        console.error('loadAll failed:', e)
+        console.error('loadAll failed:', serializeLoadError(e) ?? e)
         setError(e?.message ?? 'Kunde inte läsa inställningar/besiktningsdata.')
       } finally {
         setLoading(false)

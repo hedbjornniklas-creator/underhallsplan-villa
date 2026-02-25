@@ -1143,6 +1143,7 @@ export type Database = {
         Row: {
           assignment_number: string | null
             assignment_confirmation_delivered_date: string | null
+          cover_path: string | null
           attendees: string | null
           attendees_other: string | null
           client_contact: string | null
@@ -1162,6 +1163,7 @@ export type Database = {
         Insert: {
           assignment_number?: string | null
             assignment_confirmation_delivered_date?: string | null
+          cover_path?: string | null
           attendees?: string | null
           attendees_other?: string | null
           client_contact?: string | null
@@ -1181,6 +1183,7 @@ export type Database = {
         Update: {
           assignment_number?: string | null
             assignment_confirmation_delivered_date?: string | null
+          cover_path?: string | null
           attendees?: string | null
           attendees_other?: string | null
           client_contact?: string | null

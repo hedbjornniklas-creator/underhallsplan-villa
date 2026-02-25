@@ -1076,6 +1076,19 @@ export async function convertAssignmentToInspection(input: {
 
   const inspection = inspectionData as { id: string }
 
+  const { error: conditionsError } = await admin
+    .from('inspection_conditions')
+    .insert({
+      inspection_id: inspection.id,
+      furnishing_level: 'fullt_moblerad',
+    })
+
+  if (conditionsError) {
+    await admin.from('inspections').delete().eq('id', inspection.id)
+    await admin.from('properties').delete().eq('id', property.id)
+    throw new Error(conditionsError.message ?? 'Kunde inte skapa förutsättningar för besiktning.')
+  }
+
   if (assignment.assignment_type === 'OB') {
     const { error: snapshotError } = await admin
       .from('ob_property_snapshot')

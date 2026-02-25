@@ -447,6 +447,14 @@ export const REPORT_SPEC: ReportSection[] = [
         accent: true,
       },
       {
+        type: 'image',
+        label: '',
+        widthMm: 0,
+        heightMm: 1.5,
+        marginTopMm: 0,
+        marginBottomMm: 2,
+      },
+      {
         type: 'heading',
         level: 3,
         text: 'Byggnad - utsida',
@@ -474,6 +482,14 @@ export const REPORT_SPEC: ReportSection[] = [
         marginTopMm: 0,
         marginBottomMm: 3,
         accent: true,
+      },
+      {
+        type: 'image',
+        label: '',
+        widthMm: 0,
+        heightMm: 1.5,
+        marginTopMm: 0,
+        marginBottomMm: 2,
       },
       {
         type: 'heading',

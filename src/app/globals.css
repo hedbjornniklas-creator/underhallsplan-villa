@@ -69,7 +69,7 @@ body {
     min-height: 297mm !important;
     padding-top: 20mm !important;
     page-break-after: always;
-    overflow: visible;
+    overflow: hidden;
     break-inside: avoid;
     page-break-inside: avoid;
   }
@@ -84,13 +84,13 @@ body {
   }
 
   .report-root.report-root--pdf .break-inside-avoid {
-    break-inside: auto !important;
-    page-break-inside: auto !important;
+    break-inside: avoid-page !important;
+    page-break-inside: avoid !important;
   }
 
   .report-root.report-root--pdf .ob-block {
-    break-inside: auto !important;
-    page-break-inside: auto !important;
+    break-inside: avoid-page !important;
+    page-break-inside: avoid !important;
   }
 
   .report-heading {
