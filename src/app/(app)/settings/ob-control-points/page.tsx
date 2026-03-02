@@ -48,7 +48,7 @@ const exteriorKeyLabel = (key: string, label: string) => {
   if (key === 'fasad') return 'Fasad'
   if (key === 'dorrar_fonster') return 'Dörrar / fönster'
   if (key === 'yttertak') return 'Yttertak'
-  if (key === 'ovrigt') return 'Övrigt'
+  if (key === 'ovrigt') return 'Allmänt'
   return label || key
 }
 

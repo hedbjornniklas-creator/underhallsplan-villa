@@ -2,6 +2,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
+import { buildAssignmentConfirmationEmail } from '@/lib/assignments/emailTemplates'
 import {
   getAssignmentTermsDocument,
   normalizeAssignmentTermsRole,
@@ -710,32 +711,14 @@ export async function sendAssignmentConfirmation(input: {
   }
 
   const fromAddress = getMailFromAddress()
-
-  const subject = `Uppdragsbekräftelse - ${input.orgName ?? 'BesiktApp'}`
-  const preferredDate = toSwedishDateString(input.assignment.preferred_date)
-  const preferredTime = input.assignment.preferred_time ?? 'Ej satt'
-  const address = input.assignment.preliminary_address ?? 'Ej satt'
-
-  const html = `
-    <p>Hej,</p>
-    <p>Du har fått en uppdragsbekräftelse för besiktning.</p>
-    <p><strong>Typ:</strong> ${input.assignment.assignment_type}<br/>
-    <strong>Preliminär adress:</strong> ${address}<br/>
-    <strong>Preliminärt datum:</strong> ${preferredDate}<br/>
-    <strong>Preliminär tid:</strong> ${preferredTime}</p>
-    <p><a href="${acceptUrl}" target="_blank" rel="noreferrer">Öppna uppdragsbekräftelse</a></p>
-    <p>Länken är giltig i 7 dagar.</p>
-  `
-
-  const text =
-    `Hej,\n\n` +
-    `Du har fått en uppdragsbekräftelse för besiktning.\n` +
-    `Typ: ${input.assignment.assignment_type}\n` +
-    `Preliminär adress: ${address}\n` +
-    `Preliminärt datum: ${preferredDate}\n` +
-    `Preliminär tid: ${preferredTime}\n\n` +
-    `Öppna uppdragsbekräftelse: ${acceptUrl}\n\n` +
-    `Länken är giltig i 7 dagar.`
+  const { subject, html, text } = buildAssignmentConfirmationEmail({
+    assignment: input.assignment,
+    orgName: input.orgName,
+    acceptUrl,
+    expiresAt,
+    termsVersion: terms.version,
+    termsRole,
+  })
 
   const { data: messageData, error: messageError } = await admin
     .from('outbound_messages')

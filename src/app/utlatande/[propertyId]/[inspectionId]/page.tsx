@@ -137,6 +137,11 @@ export default async function Page({
   const normalizeKey = (value: string | null | undefined) =>
     normalizeSwedish(String(value ?? '')).trim().toLowerCase()
 
+  const isOtherKey = (value: string | null | undefined) => {
+    const key = normalizeKey(value)
+    return key === 'ovrigt' || key === '\u00f6vrigt'
+  }
+
   const floorLabelFromKey = (value: string) => {
     const key = normalizeKey(value)
     if (key === 'k\u00e4llare') return 'K\u00e4llare'
@@ -146,7 +151,7 @@ export default async function Page({
     if (key === 'plan3') return 'Plan 3'
     if (key.startsWith('plan')) return `Plan ${key.replace('plan', '')}`
     if (key === 'vind') return 'Vind'
-    if (key === 'ovrigt' || key === '\u00f6vrigt') return '\u00d6vrigt'
+    if (key === 'ovrigt' || key === '\u00f6vrigt') return 'Allm\u00e4nt'
     return normalizeSwedish(String(value ?? '')).trim()
   }
   const buildInspectionImageUrl = (path: string | null | undefined) => {
@@ -492,7 +497,6 @@ export default async function Page({
   }
 
   const interiorRoomRows = (interiorRooms ?? []) as InteriorRoomRow[]
-  const OTHER_ROOM_TYPE_KEY = 'ovrigt'
   const FLOOR_ORDER = ['k\u00e4llare', 'k\u00e4llare_delvis', 'entr\u00e9plan', 'plan2', 'plan3']
 
   const getFloorRank = (floor: string) => {
@@ -503,8 +507,8 @@ export default async function Page({
   }
 
   const sortedInteriorRooms = [...interiorRoomRows].sort((a, b) => {
-    const aIsOther = a.room_type_key === OTHER_ROOM_TYPE_KEY
-    const bIsOther = b.room_type_key === OTHER_ROOM_TYPE_KEY
+    const aIsOther = isOtherKey(a.room_type_key)
+    const bIsOther = isOtherKey(b.room_type_key)
     if (aIsOther && !bIsOther) return -1
     if (!aIsOther && bIsOther) return 1
 
@@ -735,7 +739,9 @@ export default async function Page({
 
   for (const room of sortedInteriorRooms) {
     const floorLabel = floorLabelFromKey(room.floor_label)
-    const roomName = normalizeSwedish(String(room.room_label ?? '')).trim()
+    const roomName = isOtherKey(room.room_type_key)
+      ? ''
+      : normalizeSwedish(String(room.room_label ?? '')).trim()
     const roomTitle = [floorLabel, roomName]
       .filter(Boolean)
       .join(' - ')

@@ -108,6 +108,7 @@ type ObStepInsidaProps = {
 
 const RED_STATUS: InspectionControlItem['status'] = null
 const OTHER_ROOM_TYPE_KEY = 'ovrigt'
+const OTHER_ROOM_DISPLAY_LABEL = 'Allm\u00e4nt'
 
 // Storage-bucket för bilder
 const IMAGE_BUCKET = 'inspection-images' as const
@@ -180,6 +181,11 @@ const isOtherRoomKey = (value: string | null | undefined) => {
   const key = normalizeRoomTypeKey(value)
   return key === 'ovrigt' || key === 'övrigt'
 }
+
+const isPgUniqueViolation = (error: any) =>
+  error?.code === '23505' ||
+  error?.details?.includes?.('duplicate key value violates unique constraint') ||
+  error?.message?.includes?.('duplicate key value violates unique constraint')
 
 const getNormalizedTriggerRoomTypes = (triggerRoomTypes: any | null | undefined) => {
   const raw = Array.isArray(triggerRoomTypes) ? triggerRoomTypes : []
@@ -267,6 +273,12 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   const [editRoomFloorLabel, setEditRoomFloorLabel] = useState('')
   const otherRoomEnsuredRef = useRef(false)
   const otherRoomItemsEnsuredRef = useRef(false)
+
+  useEffect(() => {
+    otherRoomEnsuredRef.current = false
+    otherRoomItemsEnsuredRef.current = false
+  }, [inspection?.id])
+
   useEffect(() => {
     if (!inspection?.id) return
 
@@ -541,6 +553,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   }, [inspection?.id])
   useEffect(() => {
     if (!inspection?.id) return
+    if (loading) return
     if (!roomTypes.length) return
     if (otherRoomEnsuredRef.current) return
 
@@ -550,8 +563,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       return
     }
 
-    const label =
-      roomTypes.find(rt => isOtherRoomKey(rt.key))?.label ?? 'Övrigt'
+    otherRoomEnsuredRef.current = true
+    const label = OTHER_ROOM_DISPLAY_LABEL
     const newRoom: InteriorRoom = {
       inspection_id: inspection.id,
       floor_label: OTHER_ROOM_TYPE_KEY,
@@ -564,14 +577,21 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
     ;(async () => {
       const saved = await upsertRoom(newRoom)
-      if (saved.id) {
-        setRooms(prev => [saved, ...prev])
-        await createDefaultControlItemsForRoom(saved)
-        if (!activeFloor) setActiveFloor(OTHER_ROOM_TYPE_KEY)
-        otherRoomEnsuredRef.current = true
+      if (!saved.id) {
+        otherRoomEnsuredRef.current = false
+        return
       }
+
+      setRooms(prev => {
+        const alreadyExists = prev.some(r => r.id === saved.id)
+        const merged = alreadyExists
+          ? prev.map(r => (r.id === saved.id ? saved : r))
+          : [saved, ...prev]
+        return merged.sort(sortRooms)
+      })
+      if (!activeFloor) setActiveFloor(OTHER_ROOM_TYPE_KEY)
     })()
-  }, [inspection?.id, roomTypes, rooms, activeFloor])
+  }, [inspection?.id, loading, roomTypes, rooms, activeFloor])
 
   useEffect(() => {
     if (loading) return
@@ -587,9 +607,13 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       return
     }
 
+    otherRoomItemsEnsuredRef.current = true
     ;(async () => {
-      await createDefaultControlItemsForRoom(otherRoom)
-      otherRoomItemsEnsuredRef.current = true
+      try {
+        await createDefaultControlItemsForRoom(otherRoom)
+      } catch (e) {
+        console.error('ensure default control items for Allm\u00e4nt failed:', e)
+      }
     })()
   }, [loading, rooms, controlItems])
 
@@ -694,7 +718,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     normalizeSwedish(activeFloor ?? '').toLowerCase() === OTHER_ROOM_TYPE_KEY
 
   const getFloorLabel = (k: string) => {
-    if (k === OTHER_ROOM_TYPE_KEY) return 'Övrigt'
+    if (k === OTHER_ROOM_TYPE_KEY) return OTHER_ROOM_DISPLAY_LABEL
     if (k === 'vind') return atticLabel || 'Vind'
     return floorLabelFromKey(k)
   }
@@ -715,9 +739,13 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     )
   }, [rooms, activeFloor])
 
-  const getRoomTypeLabel = (key: string) =>
-    roomTypes.find(rt => normalizeRoomTypeKey(rt.key) === normalizeRoomTypeKey(key))
-      ?.label ?? key
+  const getRoomTypeLabel = (key: string) => {
+    if (isOtherRoomKey(key)) return OTHER_ROOM_DISPLAY_LABEL
+    return (
+      roomTypes.find(rt => normalizeRoomTypeKey(rt.key) === normalizeRoomTypeKey(key))
+        ?.label ?? key
+    )
+  }
 
   const isOtherRoom = (room: InteriorRoom) =>
     isOtherRoomKey(room.room_type_key)
@@ -726,6 +754,9 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     isOtherRoom(room) &&
     normalizeSwedish(room.floor_label) === OTHER_ROOM_TYPE_KEY &&
     (room.order_index ?? 0) === 0
+
+  const getRoomDisplayLabel = (room: InteriorRoom) =>
+    isOtherRoom(room) ? OTHER_ROOM_DISPLAY_LABEL : room.room_label
 
   const roomChips = useMemo(() => {
     if (!activeFloor) return []
@@ -807,7 +838,31 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           .select('*')
           .single()
 
-        if (error) throw error
+        if (error) {
+          if (
+            isPgUniqueViolation(error) &&
+            item.interior_room_id &&
+            item.control_point_id
+          ) {
+            const { data: existing, error: existingErr } = await supabase
+              .from('inspection_control_items')
+              .select('*')
+              .eq('interior_room_id', item.interior_room_id)
+              .eq('control_point_id', item.control_point_id)
+              .order('created_at', { ascending: true })
+              .limit(1)
+              .maybeSingle()
+
+            if (!existingErr && existing) {
+              return {
+                ...(existing as InspectionControlItem),
+                selected_outcome_id:
+                  (existing as InspectionControlItem).selected_outcome_id ?? null,
+              }
+            }
+          }
+          throw error
+        }
         return data as InspectionControlItem
       }
     } catch (e: any) {
@@ -900,70 +955,118 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   // -----------------------------
   // Skapa default-kontrollpunkter vid nytt rum
   // -----------------------------
-  const createDefaultControlItemsForRoom = async (room: InteriorRoom) => {
-    if (!room.id) return
+  const createDefaultControlItemsForRoom = async (
+    room: InteriorRoom
+  ): Promise<number> => {
+    if (!room.id) return 0
 
     try {
-      const { data, error } = await supabase
+      const { data: cpData, error: cpErr } = await supabase
         .from('settings_control_points')
         .select('id, key, title, label, description, tags, trigger_room_types')
         .eq('scope', 'interior')
         .eq('is_active', true)
 
-      if (error) {
+      if (cpErr) {
         console.error(
           'fetch control points failed:',
-          (error as any)?.message || error
+          (cpErr as any)?.message || cpErr
         )
-        return
+        return 0
       }
 
-      const all = (data ?? []) as ControlPointLite[]
-
-      // Filtrera på trigger_room_types (jsonb-array): endast explicit taggade för rumstypen.
-      const cps = all.filter(cp => controlPointMatchesRoom(cp, room.room_type_key))
-
-      if (!cps.length) return
-
-      const existingForRoom = controlItems.filter(
-        ci => ci.interior_room_id === room.id
+      const allControlPoints = (cpData ?? []) as ControlPointLite[]
+      const roomControlPoints = allControlPoints.filter(cp =>
+        controlPointMatchesRoom(cp, room.room_type_key)
       )
+      if (!roomControlPoints.length) return 0
+
+      const { data: existingRows, error: existingErr } = await supabase
+        .from('inspection_control_items')
+        .select('id, control_point_id, sort_order')
+        .eq('interior_room_id', room.id)
+
+      if (existingErr) {
+        console.error('fetch existing room control items failed:', existingErr)
+        return 0
+      }
+
+      const existingRoomItems = (existingRows ??
+        []) as Array<Pick<InspectionControlItem, 'id' | 'control_point_id' | 'sort_order'>>
+      const existingControlPointIds = new Set(
+        existingRoomItems
+          .map(row => row.control_point_id)
+          .filter((id): id is string => !!id)
+      )
+
+      const missingControlPoints = roomControlPoints.filter(
+        cp => !existingControlPointIds.has(cp.id)
+      )
+
       let sortBase =
-        existingForRoom.length > 0
-          ? Math.max(...existingForRoom.map(ci => ci.sort_order || 0))
+        existingRoomItems.length > 0
+          ? Math.max(...existingRoomItems.map(ci => ci.sort_order || 0))
           : 0
 
-      const payload = cps.map(cp => {
-        sortBase += 10
-        return {
-          inspection_id: inspection.id,
-          interior_room_id: room.id!,
-          control_point_id: cp.id,
-          title: cp.title || cp.label || cp.key,
-          status: RED_STATUS,
-          note: null,
-          sort_order: sortBase,
-          selected_outcome_id: null,
+      if (missingControlPoints.length > 0) {
+        const payload = missingControlPoints.map(cp => {
+          sortBase += 10
+          return {
+            inspection_id: inspection.id,
+            interior_room_id: room.id!,
+            control_point_id: cp.id,
+            title: cp.title || cp.label || cp.key,
+            status: RED_STATUS,
+            note: null,
+            sort_order: sortBase,
+            selected_outcome_id: null,
+          }
+        })
+
+        const { error: upsertErr } = await supabase
+          .from('inspection_control_items')
+          .upsert(payload, {
+            onConflict: 'interior_room_id,control_point_id',
+            ignoreDuplicates: true,
+          })
+
+        if (upsertErr) {
+          if (upsertErr.code === '42P10') {
+            const { error: insertErr } = await supabase
+              .from('inspection_control_items')
+              .insert(payload)
+            if (insertErr && !isPgUniqueViolation(insertErr)) {
+              console.error('insert default control items failed:', insertErr)
+              return 0
+            }
+          } else if (!isPgUniqueViolation(upsertErr)) {
+            console.error('upsert default control items failed:', upsertErr)
+            return 0
+          }
         }
-      })
-
-      const { data: insData, error: insErr } = await supabase
-        .from('inspection_control_items')
-        .insert(payload)
-        .select('*')
-
-      if (insErr) {
-        console.error('insert default control items failed:', insErr)
-        return
       }
 
-      setControlItems(prev => [
-        ...prev,
-        ...((insData ?? []) as InspectionControlItem[]),
-      ])
-      await ensureControlPointData(cps.map(cp => cp.id))
+      const { data: roomItemsData, error: roomItemsErr } = await supabase
+        .from('inspection_control_items')
+        .select('*')
+        .eq('interior_room_id', room.id)
+        .order('sort_order', { ascending: true })
+
+      if (roomItemsErr) {
+        console.error('refresh room control items failed:', roomItemsErr)
+      } else {
+        const refreshedRoomItems = (roomItemsData ?? []) as InspectionControlItem[]
+        setControlItems(prev => [
+          ...prev.filter(ci => ci.interior_room_id !== room.id),
+          ...refreshedRoomItems,
+        ])
+      }
+
+      await ensureControlPointData(roomControlPoints.map(cp => cp.id))
+      return missingControlPoints.length
     } catch (e) {
       console.error('createDefaultControlItemsForRoom error:', e)
+      return 0
     }
   }
 
@@ -975,6 +1078,34 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     cp: ControlPointLite
   ) => {
     if (!room.id) return
+
+    const existingLocal = controlItems.find(
+      ci => ci.interior_room_id === room.id && ci.control_point_id === cp.id
+    )
+    if (existingLocal) {
+      await ensureControlPointData([cp.id])
+      return
+    }
+
+    const { data: existingDb, error: existingDbErr } = await supabase
+      .from('inspection_control_items')
+      .select('*')
+      .eq('interior_room_id', room.id)
+      .eq('control_point_id', cp.id)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (!existingDbErr && existingDb) {
+      const existing = existingDb as InspectionControlItem
+      setControlItems(prev => {
+        const alreadyExists = prev.some(ci => ci.id === existing.id)
+        if (alreadyExists) return prev
+        return [existing, ...prev]
+      })
+      await ensureControlPointData([cp.id])
+      return
+    }
 
     const existingForRoom = controlItems.filter(
       ci => ci.interior_room_id === room.id
@@ -996,7 +1127,18 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     }
 
     const saved = await upsertControlItem(newItem)
-    setControlItems(prev => [saved, ...prev])
+    if (!saved.id) return
+
+    setControlItems(prev => {
+      const withoutSamePair = prev.filter(
+        ci =>
+          !(
+            ci.interior_room_id === saved.interior_room_id &&
+            ci.control_point_id === saved.control_point_id
+          )
+      )
+      return [saved, ...withoutSamePair]
+    })
     await ensureControlPointData([cp.id])
   }
 
@@ -1026,6 +1168,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     }
 
     const saved = await upsertControlItem(newItem)
+    if (!saved.id) return
     setControlItems(prev => [saved, ...prev])
   }
 
@@ -1191,7 +1334,32 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           .select('*')
           .single()
 
-        if (error) throw error
+        if (error) {
+          const isSystemOtherCandidate =
+            isOtherRoomKey(room.room_type_key) &&
+            normalizeSwedish(room.floor_label) === OTHER_ROOM_TYPE_KEY
+
+          if (isSystemOtherCandidate && isPgUniqueViolation(error)) {
+            const { data: existingRows, error: existingErr } = await supabase
+              .from('inspection_interior_rooms')
+              .select('*')
+              .eq('inspection_id', room.inspection_id)
+              .order('created_at', { ascending: true })
+
+            if (!existingErr) {
+              const existing = ((existingRows ?? []) as InteriorRoom[]).find(
+                r =>
+                  isOtherRoomKey(r.room_type_key) &&
+                  normalizeSwedish(r.floor_label) === OTHER_ROOM_TYPE_KEY
+              )
+              if (existing) {
+                return { ...existing, values: (existing.values as any) || {} }
+              }
+            }
+          }
+
+          throw error
+        }
         const r = data as any
         return { ...r, values: (r.values as any) || {} }
       }
@@ -1238,6 +1406,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     }
 
     const saved = await upsertRoom(newRoom)
+    if (!saved.id) return
     setRooms(prev => [...prev, saved].sort(sortRooms))
     setShowNewRoomForm(false)
     setNewRoomLabel('')
@@ -1451,7 +1620,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
               onClick={() => scrollToRoom(room.id)}
               className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-gray-800 hover:bg-gray-50"
             >
-              {room.room_label}
+              {getRoomDisplayLabel(room)}
             </button>
           ))}
         </section>
@@ -1555,7 +1724,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                     {getFloorLabel(room.floor_label)}
                   </div>
                   <h3 className="text-base font-semibold text-gray-900">
-                    {room.room_label}{' '}
+                    {getRoomDisplayLabel(room)}{' '}
                     <span className="text-gray-500 text-xs">({rtLabel})</span>
                   </h3>
                 </div>
@@ -1826,6 +1995,9 @@ function RoomControlPointsSection({
   const [searchResults, setSearchResults] = useState<ControlPointLite[]>([])
   const [searching, setSearching] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
+  const roomDisplayLabel = isOtherRoomKey(room.room_type_key)
+    ? OTHER_ROOM_DISPLAY_LABEL
+    : room.room_label
 
   const handleSearchChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const term = e.target.value
@@ -1866,7 +2038,7 @@ function RoomControlPointsSection({
       {showSearch && (
         <div className="space-y-2">
           <label className="text-xs font-medium text-gray-700">
-            Lägg till kontrollpunkt i {room.room_label}
+            Lägg till kontrollpunkt i {roomDisplayLabel}
           </label>
           <input
             className="w-full rounded-md border px-2 py-1.5 text-sm"
@@ -2129,7 +2301,7 @@ function RoomControlPointsSection({
       {showSearch && (
         <div className="space-y-2">
           <label className="text-xs font-medium text-gray-700">
-            Lägg till kontrollpunkt i {room.room_label}
+            Lägg till kontrollpunkt i {roomDisplayLabel}
           </label>
           <input
             className="w-full rounded-md border px-2 py-1.5 text-sm"
