@@ -68,6 +68,19 @@ type FormState = {
   termsAccepted: boolean
 }
 
+const INSPECTOR_FALLBACK = {
+  name: 'Besiktningsman',
+  sbrLine1: 'Information visas av besiktningsföretaget',
+  sbrLine2: '',
+  memberNumber: '-',
+  certificationNumber: null as string | null,
+  phone: '-',
+  email: '-',
+  company: '-',
+  orgNumber: '-',
+  addressLine: '-',
+}
+
 function normalizeRole(value: string | null): OrdererRole {
   if (!value) return ''
   const lowered = value
@@ -269,146 +282,203 @@ export default function AssignmentAcceptPage() {
         className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage:
-            'radial-gradient(100% 70% at 50% 0%, rgba(219,234,254,0.6) 0%, rgba(219,234,254,0) 60%), linear-gradient(145deg, #f4f7ff 0%, #eef4ff 42%, #f6f8ff 100%)',
+            'radial-gradient(100% 70% at 50% 0%, rgba(219,234,254,0.5) 0%, rgba(219,234,254,0) 60%), linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 42%, #60a5fa 100%)',
         }}
       />
-      <div className="relative mx-auto w-full max-w-5xl p-4 md:p-8">
-        <section className="rounded-2xl border border-indigo-100 bg-white/95 p-5 shadow-xl backdrop-blur-sm md:p-7">
-          <h1 className="text-2xl font-semibold text-gray-900">Uppdragsbekräftelse</h1>
-          <p className="mt-2 text-sm text-gray-600">Fyll i uppgifterna och godkänn villkoren.</p>
+      <div className="pointer-events-none absolute inset-0 bg-white/10 backdrop-blur-[1px]" />
 
-          {loading ? <p className="mt-4 text-sm text-gray-600">Laddar uppdrag...</p> : null}
-          {error ? <p className="mt-4 rounded-md bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
-          {success ? (
-            <p className="mt-4 rounded-md bg-emerald-50 p-3 text-sm text-emerald-700">{success}</p>
-          ) : null}
+      <div className="relative mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
+        <header className="rounded-2xl border border-white/30 bg-white/10 p-4 shadow-sm backdrop-blur-sm md:p-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-semibold text-white drop-shadow-sm">UPPDRAGSBEKRÄFTELSE</h1>
+          </div>
+          <p className="mt-2 text-sm text-white/90">Fyll i uppgifterna och godkänn villkoren.</p>
+        </header>
 
-          {!loading && data && form ? (
-            <div className="mt-5 space-y-4">
-              {stateText ? (
-                <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                  {stateText}
-                </div>
-              ) : null}
+        {loading ? (
+          <div className="rounded-md border border-white/30 bg-white/90 p-3 text-sm text-gray-700">
+            Laddar uppdrag...
+          </div>
+        ) : null}
+        {error ? (
+          <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div>
+        ) : null}
+        {success ? (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+            {success}
+          </div>
+        ) : null}
 
-              <ReadOnly label="Typ" value={data.assignment.assignment_type} />
+        {!loading && data && form ? (
+          <>
+            {stateText ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                {stateText}
+              </div>
+            ) : null}
+
+            <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-sky-50 px-4 py-3 shadow-sm md:gap-3">
+                <p className="pr-1 text-base font-bold uppercase tracking-wide text-indigo-900 md:text-lg">
+                  ÖVERLÅTELSEBESIKTNING FÖR
+                </p>
+                <RoleChip
+                  label="Säljare"
+                  active={form.ordererRole === 'seller'}
+                  onClick={() => updateField('ordererRole', 'seller')}
+                  disabled={!canSubmit}
+                />
+                <RoleChip
+                  label="Köpare"
+                  active={form.ordererRole === 'buyer'}
+                  onClick={() => updateField('ordererRole', 'buyer')}
+                  disabled={!canSubmit}
+                />
+                <RoleChip
+                  label="Lägenhet"
+                  active={form.ordererRole === 'apartment'}
+                  onClick={() => updateField('ordererRole', 'apartment')}
+                  disabled={!canSubmit}
+                />
+              </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <SectionCard title="Objekt">
                   <Field
-                    label="Fastighetsbeteckning *"
+                    label="Fastighetsbeteckning"
                     value={form.cadastralId}
                     onChange={(value) => updateField('cadastralId', value)}
                     disabled={!canSubmit}
                   />
                   <Field
-                    label="Adress *"
+                    label="Adress"
                     value={form.propertyAddress}
                     onChange={(value) => updateField('propertyAddress', value)}
                     disabled={!canSubmit}
                   />
                   <Field
-                    label="Kommun *"
+                    label="Kommun"
                     value={form.propertyMunicipality}
                     onChange={(value) => updateField('propertyMunicipality', value)}
                     disabled={!canSubmit}
                   />
                   <Field
-                    label="Fastighetsägare *"
+                    label="Fastighetsägare"
                     value={form.propertyOwnerName}
                     onChange={(value) => updateField('propertyOwnerName', value)}
                     disabled={!canSubmit}
                   />
                 </SectionCard>
 
-                <SectionCard title="Uppdragsgivare">
+                <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-gray-900">Uppdragsgivare</h3>
                   <Field
-                    label="Namn *"
+                    label="Namn"
                     value={form.customerName}
                     onChange={(value) => updateField('customerName', value)}
                     disabled={!canSubmit}
                   />
                   <Field
-                    label="Adress *"
+                    label="Adress"
                     value={form.customerAddress}
                     onChange={(value) => updateField('customerAddress', value)}
                     disabled={!canSubmit}
                   />
                   <Field
-                    label="Telefon *"
+                    label="Telefon"
                     value={form.customerPhone}
                     onChange={(value) => updateField('customerPhone', value)}
-                    disabled={!canSubmit}
                     type="tel"
+                    disabled={!canSubmit}
                   />
                   <Field
                     label="E-post *"
                     value={form.customerEmail}
                     onChange={(value) => updateField('customerEmail', value)}
-                    disabled={!canSubmit}
                     type="email"
+                    disabled={!canSubmit}
                   />
-                  <div className="space-y-1">
-                    <span className="block text-xs font-medium text-gray-600">Jag är... *</span>
-                    <div className="flex flex-wrap gap-2">
-                      <RoleChip
-                        active={form.ordererRole === 'seller'}
-                        onClick={() => updateField('ordererRole', 'seller')}
-                        disabled={!canSubmit}
-                        label="Säljare"
-                      />
-                      <RoleChip
-                        active={form.ordererRole === 'buyer'}
-                        onClick={() => updateField('ordererRole', 'buyer')}
-                        disabled={!canSubmit}
-                        label="Köpare"
-                      />
-                      <RoleChip
-                        active={form.ordererRole === 'apartment'}
-                        onClick={() => updateField('ordererRole', 'apartment')}
-                        disabled={!canSubmit}
-                        label="Lägenhet"
-                      />
+                </section>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <SectionCard title="Besiktningsman">
+                  <div className="flex flex-wrap items-start gap-4">
+                    <div className="flex h-20 w-20 items-center justify-center rounded-full border border-gray-300 bg-gray-100 text-xs text-gray-500">
+                      Ingen bild
+                    </div>
+
+                    <div className="min-w-0 space-y-1 text-sm text-gray-800">
+                      <div className="font-semibold">{INSPECTOR_FALLBACK.name}</div>
+                      <div className="text-xs text-gray-600">{INSPECTOR_FALLBACK.sbrLine1}</div>
+                      {INSPECTOR_FALLBACK.sbrLine2 ? (
+                        <div className="text-xs text-gray-600">{INSPECTOR_FALLBACK.sbrLine2}</div>
+                      ) : null}
+                      <div className="pt-1 text-xs text-gray-600">
+                        Medlemsnummer: {INSPECTOR_FALLBACK.memberNumber}
+                      </div>
+                      {INSPECTOR_FALLBACK.certificationNumber ? (
+                        <div className="text-xs text-gray-600">
+                          Certifieringsnummer: {INSPECTOR_FALLBACK.certificationNumber}
+                        </div>
+                      ) : null}
+                      <div className="text-xs text-gray-600">Telefon: {INSPECTOR_FALLBACK.phone}</div>
+                      <div className="text-xs text-gray-600">E-post: {INSPECTOR_FALLBACK.email}</div>
+                      <div className="pt-1 text-xs text-gray-600">{INSPECTOR_FALLBACK.company}</div>
+                      <div className="text-xs text-gray-600">Org.nr: {INSPECTOR_FALLBACK.orgNumber}</div>
+                      <div className="text-xs text-gray-600">{INSPECTOR_FALLBACK.addressLine}</div>
                     </div>
                   </div>
                 </SectionCard>
+
+                <SectionCard title="Besiktningsdag">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-3">
+                      <Field
+                        label="Datum"
+                        type="date"
+                        value={form.preferredDate}
+                        onChange={(value) => updateField('preferredDate', value)}
+                        disabled={!canSubmit}
+                      />
+                      <div className="space-y-2 pt-5">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-700">Kostnad</p>
+                        <Field
+                          label="Pris (SEK)"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={form.priceAmount}
+                          onChange={(value) => updateField('priceAmount', value)}
+                          disabled={!canSubmit}
+                        />
+                      </div>
+                    </div>
+                    <Field
+                      label="Tid"
+                      type="time"
+                      value={form.preferredTime}
+                      onChange={(value) => updateField('preferredTime', value)}
+                      disabled={!canSubmit}
+                    />
+                  </div>
+                </SectionCard>
+              </div>
+            </section>
+
+            <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">
+                  Villkor för besiktning
+                </h2>
+                <span className="text-xs font-medium text-gray-500">Version {data.terms.version}</span>
               </div>
 
-              <SectionCard title="Besiktningsdag">
-                <div className="grid gap-3 md:grid-cols-3">
-                  <Field
-                    label="Datum *"
-                    value={form.preferredDate}
-                    onChange={(value) => updateField('preferredDate', value)}
-                    disabled={!canSubmit}
-                    type="date"
-                  />
-                  <Field
-                    label="Tid *"
-                    value={form.preferredTime}
-                    onChange={(value) => updateField('preferredTime', value)}
-                    disabled={!canSubmit}
-                    type="time"
-                  />
-                  <Field
-                    label="Pris (SEK) *"
-                    value={form.priceAmount}
-                    onChange={(value) => updateField('priceAmount', value)}
-                    disabled={!canSubmit}
-                    type="number"
-                    step="0.01"
-                    min="0"
-                  />
-                </div>
-              </SectionCard>
-
-              <SectionCard title={`Villkor (${data.terms.version})`}>
-                <div className="rounded-lg border border-gray-200 bg-white p-3">
-                  <pre className="max-h-[24rem] overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-gray-700">
-                    {activeTerms?.text ?? ''}
-                  </pre>
-                </div>
-              </SectionCard>
+              <div className="rounded-xl border border-gray-200 bg-white p-3">
+                <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-gray-700">
+                  {activeTerms?.text ?? ''}
+                </pre>
+              </div>
 
               <label className="mt-1 flex items-start gap-2 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
                 <input
@@ -429,9 +499,9 @@ export default function AssignmentAcceptPage() {
               >
                 {saving ? 'Sparar...' : 'Godkänn villkor och skicka uppdrag'}
               </button>
-            </div>
-          ) : null}
-        </section>
+            </section>
+          </>
+        ) : null}
       </div>
     </main>
   )
@@ -440,22 +510,22 @@ export default function AssignmentAcceptPage() {
 function SectionCard({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-      <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+      <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
       {children}
     </section>
   )
 }
 
 function RoleChip({
+  label,
   active,
   onClick,
   disabled,
-  label,
 }: {
+  label: string
   active: boolean
   onClick: () => void
   disabled?: boolean
-  label: string
 }) {
   return (
     <button
@@ -463,11 +533,11 @@ function RoleChip({
       onClick={onClick}
       disabled={disabled}
       className={[
-        'inline-flex h-9 items-center rounded-full border px-4 text-sm transition',
+        'inline-flex h-8 items-center rounded-full border px-4 text-sm font-semibold leading-none transition-colors',
         active
-          ? 'border-indigo-600 bg-indigo-600 text-white'
-          : 'border-gray-300 bg-white text-gray-700 hover:border-indigo-400 hover:text-indigo-700',
-        disabled ? 'cursor-not-allowed opacity-60 hover:border-gray-300 hover:text-gray-700' : '',
+          ? 'border-indigo-700 bg-indigo-700 text-white shadow-sm'
+          : 'border-indigo-200 bg-white text-indigo-900 hover:border-indigo-400 hover:bg-indigo-50',
+        disabled ? 'cursor-not-allowed opacity-60' : '',
       ].join(' ')}
     >
       {label}
@@ -505,14 +575,5 @@ function Field({
         className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-gray-100 disabled:text-gray-500"
       />
     </label>
-  )
-}
-
-function ReadOnly({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-      <div className="text-xs font-medium text-gray-500">{label}</div>
-      <div className="mt-0.5 text-sm text-gray-900">{value}</div>
-    </div>
   )
 }
