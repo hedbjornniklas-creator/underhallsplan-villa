@@ -105,8 +105,11 @@ function toState(link: PublicLink): PublicState {
   const expired = expiresAt ? new Date(expiresAt).getTime() <= now : true
   const used = Boolean(link.used_at)
   const revoked = Boolean(link.revoked_at)
+  const assignment = normalizeAssignment(link)
+  const cancelled = assignment?.status?.toLowerCase() === 'cancelled'
   const outdated = !link.terms_version || link.terms_version !== ASSIGNMENT_TERMS_VERSION
 
+  if (cancelled) return 'revoked'
   if (revoked) return 'revoked'
   if (expired) return 'expired'
   if (used) return 'used'
@@ -123,7 +126,7 @@ export async function GET(
     if (!token || token.length < 20) return jsonError('Ogiltig l√§nk.', 400)
 
     const link = await resolvePublicAssignmentByToken(token)
-    if (!link) return jsonError('L√§nken √§r ogiltig eller borttagen.', 404)
+    if (!link) return jsonError('L‰nken ‰r ogiltig eller borttagen.', 404)
 
     const assignment = normalizeAssignment(link as PublicLink)
     if (!assignment) return jsonError('Uppdraget kunde inte hittas.', 404)
@@ -183,6 +186,15 @@ export async function POST(
   try {
     const { token } = await context.params
     if (!token || token.length < 20) return jsonError('Ogiltig l√§nk.', 400)
+
+    const link = await resolvePublicAssignmentByToken(token)
+    if (!link) return jsonError('L‰nken ‰r ogiltig eller borttagen.', 404)
+
+    const assignment = normalizeAssignment(link as PublicLink)
+    if (!assignment) return jsonError('Uppdraget kunde inte hittas.', 404)
+    if (assignment.status?.toLowerCase() === 'cancelled') {
+      return jsonError('Den h‰r l‰nken ‰r inte l‰ngre aktiv.', 410)
+    }
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const termsAccepted = body.termsAccepted === true
@@ -279,6 +291,9 @@ export async function POST(
       message.includes('terms_version_mismatch')
     ) {
       return jsonError('Villkoren har uppdaterats. Beg√§r en ny l√§nk fr√•n besiktningsf√∂retaget.', 409)
+    }
+    if (message.includes('assignment_cancelled')) {
+      return jsonError('Den h‰r l‰nken ‰r inte l‰ngre aktiv.', 410)
     }
     if (message.includes('missing_terms_version')) {
       return jsonError('Villkorsversion saknas.', 400)

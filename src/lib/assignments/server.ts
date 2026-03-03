@@ -649,6 +649,23 @@ export async function updateAssignmentById(input: {
     throw new Error(error?.message ?? 'Kunde inte uppdatera uppdrag.')
   }
 
+  // Soft-delete flow: revoke all still-active public accept links when an assignment is cancelled.
+  if (input.patch.status === 'cancelled') {
+    const { error: revokeError } = await admin
+      .from('assignment_links')
+      .update({
+        revoked_at: new Date().toISOString(),
+      })
+      .eq('org_id', input.orgId)
+      .eq('assignment_id', input.assignmentId)
+      .is('used_at', null)
+      .is('revoked_at', null)
+
+    if (revokeError) {
+      throw new Error(revokeError.message ?? 'Kunde inte inaktivera uppdragslankar.')
+    }
+  }
+
   return data as AssignmentDetails
 }
 

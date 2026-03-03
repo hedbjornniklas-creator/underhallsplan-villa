@@ -1,10 +1,10 @@
 ﻿'use client'
 
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Loader2, Mail, Plus, Send } from 'lucide-react'
+import { ArrowLeft, Loader2, Mail, Plus, Send, Trash2 } from 'lucide-react'
 import Protected from '@/components/Protected'
+import DeleteConfirmOverlay from '@/components/ui/DeleteConfirmOverlay'
 
 type AssignmentItem = {
   id: string
@@ -33,9 +33,37 @@ type ListResponse = {
   items: AssignmentItem[]
 }
 
-type Scope = 'upcoming' | 'done'
+type StatusFilter = 'all' | 'draft' | 'sent' | 'booked' | 'completed' | 'expired'
+type SortField = 'date' | 'address' | 'customer' | 'status'
+type SortDirection = 'asc' | 'desc'
+
+type SavedListView = {
+  search: string
+  statusFilter: StatusFilter
+  sortField: SortField
+  sortDirection: SortDirection
+  pageSize: number
+}
+
+type ToastState = {
+  kind: 'success' | 'error'
+  message: string
+}
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const STORAGE_KEY = 'ob:assignments:list:view:v1'
+const DEFAULT_PAGE_SIZE = 25
+const PAGE_SIZE_OPTIONS = [10, 25, 50]
+const COLLATOR = new Intl.Collator('sv', { sensitivity: 'base', numeric: true })
+
+const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
+  { key: 'all', label: 'Alla' },
+  { key: 'draft', label: 'Utkast' },
+  { key: 'sent', label: 'Skickade' },
+  { key: 'booked', label: 'Bokade' },
+  { key: 'completed', label: 'Avklarade' },
+  { key: 'expired', label: 'Utgångna' },
+]
 
 function getStatusLabel(status: AssignmentItem['status']) {
   switch (status) {
@@ -54,8 +82,27 @@ function getStatusLabel(status: AssignmentItem['status']) {
   }
 }
 
-function isUpcoming(item: AssignmentItem) {
-  return item.status !== 'completed'
+function getStatusBucket(status: AssignmentItem['status']): Exclude<StatusFilter, 'all'> {
+  if (status === 'draft') return 'draft'
+  if (status === 'sent') return 'sent'
+  if (status === 'booked') return 'booked'
+  if (status === 'completed') return 'completed'
+  return 'expired'
+}
+
+function getStatusBadgeClass(status: AssignmentItem['status']) {
+  switch (getStatusBucket(status)) {
+    case 'draft':
+      return 'border-amber-200 bg-amber-50 text-amber-700'
+    case 'sent':
+      return 'border-indigo-200 bg-indigo-50 text-indigo-700'
+    case 'booked':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    case 'completed':
+      return 'border-sky-200 bg-sky-50 text-sky-700'
+    default:
+      return 'border-slate-200 bg-slate-100 text-slate-700'
+  }
 }
 
 function getAddress(item: AssignmentItem) {
@@ -77,18 +124,34 @@ function formatType(value: AssignmentItem['assignment_type']) {
   return 'UHP'
 }
 
+function getDateValue(item: AssignmentItem) {
+  return new Date(item.preferred_date ?? item.created_at).getTime()
+}
+
+function getSortIndicator(active: boolean, direction: SortDirection) {
+  if (!active) return '↕'
+  return direction === 'asc' ? '↑' : '↓'
+}
+
 export default function ObAssignmentsPage() {
   const router = useRouter()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<AssignmentItem[]>([])
-  const [scope, setScope] = useState<Scope>('upcoming')
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [sortField, setSortField] = useState<SortField>('date')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
+  const [currentPage, setCurrentPage] = useState(1)
   const [quickEmail, setQuickEmail] = useState('')
   const [quickSending, setQuickSending] = useState(false)
   const [quickError, setQuickError] = useState<string | null>(null)
   const [quickSuccess, setQuickSuccess] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
+  const [toast, setToast] = useState<ToastState | null>(null)
 
   const loadAssignments = async () => {
     try {
@@ -115,14 +178,146 @@ export default function ObAssignmentsPage() {
     void loadAssignments()
   }, [])
 
-  const visibleItems = useMemo(() => {
-    const filtered = scope === 'upcoming' ? items.filter(isUpcoming) : items.filter((item) => !isUpcoming(item))
-    return [...filtered].sort((a, b) => {
-      const dateA = new Date(a.preferred_date ?? a.created_at).getTime()
-      const dateB = new Date(b.preferred_date ?? b.created_at).getTime()
-      return dateA - dateB
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY)
+      if (!raw) return
+
+      const saved = JSON.parse(raw) as Partial<SavedListView>
+      if (typeof saved.search === 'string') setSearch(saved.search)
+      if (saved.statusFilter && STATUS_TABS.some((tab) => tab.key === saved.statusFilter)) {
+        setStatusFilter(saved.statusFilter)
+      }
+      if (saved.sortField && ['date', 'address', 'customer', 'status'].includes(saved.sortField)) {
+        setSortField(saved.sortField as SortField)
+      }
+      if (saved.sortDirection === 'asc' || saved.sortDirection === 'desc') {
+        setSortDirection(saved.sortDirection)
+      }
+      if (typeof saved.pageSize === 'number' && PAGE_SIZE_OPTIONS.includes(saved.pageSize)) {
+        setPageSize(saved.pageSize)
+      }
+    } catch {
+      // Ignore malformed localStorage payloads
+    }
+  }, [])
+
+  useEffect(() => {
+    const payload: SavedListView = {
+      search,
+      statusFilter,
+      sortField,
+      sortDirection,
+      pageSize,
+    }
+
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  }, [search, statusFilter, sortField, sortDirection, pageSize])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [search, statusFilter, sortField, sortDirection, pageSize])
+
+  const activeItems = useMemo(() => items.filter((item) => item.status !== 'cancelled'), [items])
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<StatusFilter, number> = {
+      all: activeItems.length,
+      draft: 0,
+      sent: 0,
+      booked: 0,
+      completed: 0,
+      expired: 0,
+    }
+
+    for (const item of activeItems) {
+      counts[getStatusBucket(item.status)] += 1
+    }
+
+    return counts
+  }, [activeItems])
+
+  const filteredAndSorted = useMemo(() => {
+    const q = search.trim().toLowerCase()
+
+    const filtered = activeItems.filter((item) => {
+      if (statusFilter !== 'all' && getStatusBucket(item.status) !== statusFilter) {
+        return false
+      }
+
+      if (!q) return true
+
+      const searchable = [
+        item.customer_name ?? '',
+        item.customer_email ?? '',
+        item.customer_phone ?? '',
+        getAddress(item),
+        formatType(item.assignment_type),
+        getStatusLabel(item.status),
+      ]
+        .join(' ')
+        .toLowerCase()
+
+      return searchable.includes(q)
     })
-  }, [items, scope])
+
+    return [...filtered].sort((a, b) => {
+      let comparison = 0
+
+      if (sortField === 'date') {
+        comparison = getDateValue(a) - getDateValue(b)
+      } else if (sortField === 'address') {
+        comparison = COLLATOR.compare(getAddress(a), getAddress(b))
+      } else if (sortField === 'customer') {
+        comparison = COLLATOR.compare(a.customer_name ?? a.customer_email, b.customer_name ?? b.customer_email)
+      } else {
+        comparison = COLLATOR.compare(getStatusLabel(a.status), getStatusLabel(b.status))
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison
+    })
+  }, [activeItems, search, sortField, sortDirection, statusFilter])
+
+  const totalItems = filteredAndSorted.length
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+  const safePage = Math.min(currentPage, totalPages)
+
+  const pagedRows = useMemo(() => {
+    const start = (safePage - 1) * pageSize
+    return filteredAndSorted.slice(start, start + pageSize)
+  }, [filteredAndSorted, pageSize, safePage])
+
+  useEffect(() => {
+    if (currentPage !== safePage) {
+      setCurrentPage(safePage)
+    }
+  }, [currentPage, safePage])
+
+  const hasActiveFilters =
+    search.trim().length > 0 ||
+    statusFilter !== 'all' ||
+    sortField !== 'date' ||
+    sortDirection !== 'desc' ||
+    pageSize !== DEFAULT_PAGE_SIZE
+
+  const resetView = () => {
+    setSearch('')
+    setStatusFilter('all')
+    setSortField('date')
+    setSortDirection('desc')
+    setPageSize(DEFAULT_PAGE_SIZE)
+    setCurrentPage(1)
+  }
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+
+    setSortField(field)
+    setSortDirection(field === 'date' ? 'desc' : 'asc')
+  }
 
   const handleQuickSend = async () => {
     const email = quickEmail.trim().toLowerCase()
@@ -191,51 +386,47 @@ export default function ObAssignmentsPage() {
     }
   }
 
-  const handleSendCompleted = async (id: string) => {
+  const handleDelete = async (id: string) => {
     try {
       setBusyId(id)
       setError(null)
-      const response = await fetch(`/api/ob/assignments/${id}/send-completed`, {
-        method: 'POST',
+      const response = await fetch(`/api/ob/assignments/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'cancelled' }),
       })
       const body = (await response.json().catch(() => ({}))) as { error?: string }
       if (!response.ok) {
-        throw new Error(body.error ?? 'Kunde inte skicka slutmejl.')
+        throw new Error(body.error ?? 'Kunde inte radera uppdragsbekräftelsen.')
       }
       await loadAssignments()
-    } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : 'Kunde inte skicka slutmejl.')
+    } catch (deleteError) {
+      const message =
+        deleteError instanceof Error
+          ? deleteError.message
+          : 'Kunde inte radera uppdragsbekräftelsen.'
+      setError(message)
+      throw new Error(message)
     } finally {
       setBusyId(null)
     }
   }
 
-  const handleConvert = async (id: string) => {
-    try {
-      setBusyId(id)
-      setError(null)
-      const response = await fetch(`/api/ob/assignments/${id}/convert`, {
-        method: 'POST',
-      })
-      const body = (await response.json().catch(() => ({}))) as {
-        error?: string
-        propertyId?: string
-        inspectionId?: string
-      }
-
-      if (!response.ok || !body.propertyId || !body.inspectionId) {
-        throw new Error(body.error ?? 'Kunde inte starta besiktning.')
-      }
-
-      router.push(`/properties/${body.propertyId}/ob/${body.inspectionId}`)
-    } catch (convertError) {
-      setError(
-        convertError instanceof Error ? convertError.message : 'Kunde inte starta besiktning.'
-      )
-    } finally {
-      setBusyId(null)
-    }
+  const handleDeleteConfirm = async () => {
+    if (!deleteTargetId) return
+    await handleDelete(deleteTargetId)
   }
+
+  const activeDeleteTarget = useMemo(
+    () => items.find((item) => item.id === deleteTargetId) ?? null,
+    [deleteTargetId, items]
+  )
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(null), 3200)
+    return () => window.clearTimeout(timer)
+  }, [toast])
 
   return (
     <Protected>
@@ -313,30 +504,72 @@ export default function ObAssignmentsPage() {
             ) : null}
           </header>
 
-          <section className="rounded-2xl border border-white/30 bg-white/90 p-3 shadow-sm backdrop-blur md:p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setScope('upcoming')}
-                className={
-                  scope === 'upcoming'
-                    ? 'rounded-md border border-indigo-600 bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white'
-                    : 'rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50'
-                }
-              >
-                Bokade / Aktiva
-              </button>
-              <button
-                type="button"
-                onClick={() => setScope('done')}
-                className={
-                  scope === 'done'
-                    ? 'rounded-md border border-indigo-600 bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white'
-                    : 'rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50'
-                }
-              >
-                Avklarade
-              </button>
+          <section className="rounded-xl border border-white/30 bg-white/90 p-2 shadow-sm backdrop-blur md:p-3">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <div className="min-w-[165px] flex-1 lg:w-[270px] lg:flex-none">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Sök på adress, kund, mejl eller status"
+                  className="w-full rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              {STATUS_TABS.map((tab) => {
+                const active = statusFilter === tab.key
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setStatusFilter(tab.key)}
+                    className={
+                      active
+                        ? 'inline-flex items-center gap-1.5 rounded-md border border-indigo-600 bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white'
+                        : 'inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50'
+                    }
+                  >
+                    <span>{tab.label}</span>
+                    <span
+                      className={
+                        active
+                          ? 'rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] text-white'
+                          : 'rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600'
+                      }
+                    >
+                      {statusCounts[tab.key]}
+                    </span>
+                  </button>
+                )
+              })}
+
+              <div className="ml-auto flex items-center gap-1.5">
+                <label className="text-[10px] text-gray-600" htmlFor="assignmentsPageSize">
+                  Rader/sida
+                </label>
+                <select
+                  id="assignmentsPageSize"
+                  value={pageSize}
+                  onChange={(event) => setPageSize(Number(event.target.value))}
+                  className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 text-xs text-gray-700"
+                >
+                  {PAGE_SIZE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+
+                {hasActiveFilters ? (
+                  <button
+                    type="button"
+                    onClick={resetView}
+                    className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                  >
+                    Rensa filter
+                  </button>
+                ) : null}
+              </div>
             </div>
           </section>
 
@@ -345,95 +578,171 @@ export default function ObAssignmentsPage() {
             <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div>
           ) : null}
 
-          {!loading && visibleItems.length === 0 ? (
+          {!loading && totalItems === 0 ? (
             <div className="rounded-md border border-dashed border-white/40 bg-white/75 p-4 text-sm text-gray-700">
               Inga uppdragsbekräftelser i denna vy.
             </div>
           ) : null}
 
-          {!loading && visibleItems.length > 0 ? (
-            <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-              <table className="min-w-full text-left text-sm">
-                <thead className="border-b bg-gray-50 text-xs uppercase text-gray-500">
-                  <tr>
-                    <th className="px-3 py-2">Datum</th>
-                    <th className="px-3 py-2">Typ</th>
-                    <th className="px-3 py-2">Kund</th>
-                    <th className="px-3 py-2">Adress</th>
-                    <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2 text-right">Åtgärder</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleItems.map((item) => {
-                    const canConvert = item.status === 'booked' && !item.inspection_id
-                    const canResend = item.status === 'draft' || item.status === 'sent'
-                    const canSendCompleted = item.status === 'completed'
-                    const isBusy = busyId === item.id
+          {!loading && totalItems > 0 ? (
+            <>
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="border-b bg-gray-50 text-xs uppercase text-gray-500">
+                    <tr>
+                      <th className="px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSort('date')}
+                          className="inline-flex items-center gap-1 font-semibold hover:text-gray-900"
+                        >
+                          Datum <span>{getSortIndicator(sortField === 'date', sortDirection)}</span>
+                        </button>
+                      </th>
+                      <th className="px-3 py-2">Typ</th>
+                      <th className="px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSort('customer')}
+                          className="inline-flex items-center gap-1 font-semibold hover:text-gray-900"
+                        >
+                          Kund <span>{getSortIndicator(sortField === 'customer', sortDirection)}</span>
+                        </button>
+                      </th>
+                      <th className="px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSort('address')}
+                          className="inline-flex items-center gap-1 font-semibold hover:text-gray-900"
+                        >
+                          Adress <span>{getSortIndicator(sortField === 'address', sortDirection)}</span>
+                        </button>
+                      </th>
+                      <th className="px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSort('status')}
+                          className="inline-flex items-center gap-1 font-semibold hover:text-gray-900"
+                        >
+                          Status <span>{getSortIndicator(sortField === 'status', sortDirection)}</span>
+                        </button>
+                      </th>
+                      <th className="px-3 py-2 text-right">Åtgärder</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedRows.map((item) => {
+                      const canResend = item.status === 'draft' || item.status === 'sent'
+                      const isBusy = busyId === item.id
 
-                    return (
-                      <tr key={item.id} className="border-b last:border-b-0 hover:bg-indigo-50/40">
-                        <td className="px-3 py-2 align-top whitespace-nowrap">{formatDate(item)}</td>
-                        <td className="px-3 py-2 align-top">{formatType(item.assignment_type)}</td>
-                        <td className="px-3 py-2 align-top">
-                          <div className="text-gray-900">{item.customer_name || 'Namn saknas'}</div>
-                          <div className="text-xs text-gray-500">{item.customer_email}</div>
-                        </td>
-                        <td className="px-3 py-2 align-top text-gray-900">{getAddress(item)}</td>
-                        <td className="px-3 py-2 align-top">
-                          <span className="inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
-                            {getStatusLabel(item.status)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 align-top">
-                          <div className="flex justify-end gap-2">
-                            <Link
-                              href={`/ob/assignments/${item.id}`}
-                              className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                      return (
+                        <tr key={item.id} className="border-b last:border-b-0 hover:bg-indigo-50/40">
+                          <td className="px-3 py-2 align-top whitespace-nowrap">{formatDate(item)}</td>
+                          <td className="px-3 py-2 align-top">{formatType(item.assignment_type)}</td>
+                          <td className="px-3 py-2 align-top">
+                            <div className="text-gray-900">{item.customer_name || 'Namn saknas'}</div>
+                            <div className="text-xs text-gray-500">{item.customer_email}</div>
+                          </td>
+                          <td className="px-3 py-2 align-top text-gray-900">{getAddress(item)}</td>
+                          <td className="px-3 py-2 align-top">
+                            <span
+                              className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${getStatusBadgeClass(
+                                item.status
+                              )}`}
                             >
-                              Öppna
-                            </Link>
-                            {canResend ? (
+                              {getStatusLabel(item.status)}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 align-top">
+                            <div className="flex justify-end gap-2">
                               <button
                                 type="button"
                                 onClick={() => void handleResend(item.id)}
-                                disabled={isBusy}
-                                className="rounded-md border border-indigo-300 px-2.5 py-1 text-xs text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                disabled={isBusy || !canResend}
+                                aria-label="Skicka igen"
+                                title="Skicka igen"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-indigo-300 bg-indigo-50 text-indigo-700 transition hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
                               >
-                                {isBusy ? 'Skickar...' : 'Skicka igen'}
+                                {isBusy && canResend ? (
+                                  <Loader2 size={14} className="animate-spin" />
+                                ) : (
+                                  <Send size={14} />
+                                )}
                               </button>
-                            ) : null}
-                            {canSendCompleted ? (
                               <button
                                 type="button"
-                                onClick={() => void handleSendCompleted(item.id)}
+                                onClick={() => setDeleteTargetId(item.id)}
                                 disabled={isBusy}
-                                className="rounded-md border border-emerald-300 px-2.5 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                aria-label="Radera"
+                                title="Radera"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-rose-300 bg-rose-50 text-rose-700 transition hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
                               >
-                                {isBusy ? 'Skickar...' : 'Skicka klar-mejl'}
+                                <Trash2 size={14} />
                               </button>
-                            ) : null}
-                            {canConvert ? (
-                              <button
-                                type="button"
-                                onClick={() => void handleConvert(item.id)}
-                                disabled={isBusy}
-                                className="rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
-                              >
-                                {isBusy ? 'Startar...' : 'Starta besiktning'}
-                              </button>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <footer className="flex flex-col items-start justify-between gap-3 rounded-xl border border-white/30 bg-white/85 px-3 py-2 text-sm text-gray-700 md:flex-row md:items-center">
+                <div>
+                  Sida {safePage} av {totalPages} ({totalItems} totalt)
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                    disabled={safePage <= 1}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Föregående
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                    disabled={safePage >= totalPages}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Nästa
+                  </button>
+                </div>
+              </footer>
+            </>
           ) : null}
         </div>
       </main>
+      <DeleteConfirmOverlay
+        open={Boolean(deleteTargetId)}
+        targetLabel="Uppdragsbekräftelse"
+        targetDetails={
+          activeDeleteTarget
+            ? `${activeDeleteTarget.customer_name ?? activeDeleteTarget.customer_email} • ${formatDate(activeDeleteTarget)}`
+            : undefined
+        }
+        onClose={() => setDeleteTargetId(null)}
+        onExecute={handleDeleteConfirm}
+        onSuccess={() => setToast({ kind: 'success', message: 'Command executed' })}
+        onError={(message) => setToast({ kind: 'error', message })}
+        abortLabel="Abort Mission"
+        executeLabel="Execute Order"
+      />
+      {toast ? (
+        <div className="pointer-events-none fixed bottom-4 right-4 z-[95] w-[min(92vw,360px)]">
+          <div
+            className={`rounded-lg border px-3 py-2 text-sm shadow-xl ${
+              toast.kind === 'success'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-rose-200 bg-rose-50 text-rose-700'
+            }`}
+          >
+            {toast.message}
+          </div>
+        </div>
+      ) : null}
     </Protected>
   )
 }
