@@ -138,7 +138,7 @@ function toFormState(assignment: AssignmentSummary): FormState {
     customerAddress: assignment.customer_address ?? '',
     customerPhone: assignment.customer_phone ?? '',
     customerEmail: assignment.customer_email ?? '',
-    ordererRole: role || 'seller',
+    ordererRole: role,
     preferredDate: assignment.preferred_date ?? '',
     preferredTime: assignment.preferred_time ?? '',
     priceAmount: assignment.price_amount !== null ? String(assignment.price_amount) : '',
@@ -221,7 +221,8 @@ export default function AssignmentAcceptPage() {
     if (!data || !form) return null
     if (form.ordererRole === 'buyer') return data.terms.documents.buyer
     if (form.ordererRole === 'apartment') return data.terms.documents.apartment
-    return data.terms.documents.seller
+    if (form.ordererRole === 'seller') return data.terms.documents.seller
+    return null
   }, [data, form])
 
   const inspectorName = data?.inspector?.full_name || INSPECTOR_FALLBACK.name
@@ -250,7 +251,7 @@ export default function AssignmentAcceptPage() {
   }
 
   const handleSubmit = async () => {
-    if (!form || !data || !canSubmit || !activeTerms) return
+    if (!form || !data || !canSubmit) return
 
     if (!form.termsAccepted) {
       setError(`Du måste acceptera villkoren (version ${data.terms.version}) för att fortsätta.`)
@@ -273,6 +274,11 @@ export default function AssignmentAcceptPage() {
 
     if (requiredFieldMissing) {
       setError('Fyll i alla obligatoriska fält.')
+      return
+    }
+
+    if (!activeTerms) {
+      setError('Valj uppdragsgivare innan du godkanner villkoren.')
       return
     }
 
@@ -376,9 +382,8 @@ export default function AssignmentAcceptPage() {
             <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-sky-50 px-4 py-3 shadow-sm md:gap-3">
                 <p className="pr-1 text-base font-bold uppercase tracking-wide text-indigo-900 md:text-lg">
-                  ÖVERLÅTELSEBESIKTNING FÖR
+                  ÖVERLÅTELSEBESIKTNING FÖR *
                 </p>
-                <span className="text-xs font-semibold uppercase tracking-wide text-indigo-700/90">Roll *</span>
                 <RoleChip
                   label="Säljare"
                   active={form.ordererRole === 'seller'}
@@ -540,7 +545,7 @@ export default function AssignmentAcceptPage() {
 
               <div className="rounded-xl border border-gray-200 bg-white p-3">
                 <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-gray-700">
-                  {activeTerms?.text ?? ''}
+                  {activeTerms?.text ?? 'Valj uppdragsgivare for att visa villkoren.'}
                 </pre>
               </div>
 

@@ -5,7 +5,7 @@ import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { buildAssignmentConfirmationEmail } from '@/lib/assignments/emailTemplates'
 import {
   getAssignmentTermsDocument,
-  normalizeAssignmentTermsRole,
+  parseAssignmentTermsRole,
 } from '@/lib/assignments/terms'
 
 export type AssignmentStatus =
@@ -697,7 +697,10 @@ export async function sendAssignmentConfirmation(input: {
   const tokenHash = hashAssignmentToken(token)
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
   const acceptUrl = `${input.baseUrl}/accept/${token}`
-  const termsRole = normalizeAssignmentTermsRole(input.assignment.orderer_role)
+  const termsRole = parseAssignmentTermsRole(input.assignment.orderer_role)
+  if (!termsRole) {
+    throw new Error('ORDERER_ROLE_REQUIRED')
+  }
   const terms = getAssignmentTermsDocument(termsRole)
 
   await admin

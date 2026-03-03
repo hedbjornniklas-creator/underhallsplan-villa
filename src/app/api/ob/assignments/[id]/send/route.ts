@@ -58,6 +58,10 @@ export async function POST(
       return jsonError('Ingen organisationskoppling hittades.', 403)
     }
 
+    if (message === 'ORDERER_ROLE_REQUIRED') {
+      return jsonError('Valj uppdragsgivare (Säljare, Köpare eller Lägenhet) innan utskick.', 400)
+    }
+
     if (message.includes('SUPABASE_SERVICE_ROLE_KEY')) {
       console.error('[assignments.send] missing env', { env: 'SUPABASE_SERVICE_ROLE_KEY' })
       return jsonError('Servern saknar SUPABASE_SERVICE_ROLE_KEY i env.', 500)

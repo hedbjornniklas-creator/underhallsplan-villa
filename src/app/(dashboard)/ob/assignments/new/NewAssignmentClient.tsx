@@ -60,7 +60,7 @@ const INITIAL_FORM: FormState = {
   customerAddress: '',
   customerPhone: '',
   customerEmail: '',
-  ordererRole: 'seller',
+  ordererRole: '',
   preferredDate: '',
   preferredTime: '',
   priceAmount: '',
@@ -118,14 +118,9 @@ export default function NewAssignmentClient({
       ? buyerTemplate
       : form.ordererRole === 'apartment'
         ? apartmentTemplate
-        : sellerTemplate
-  const activeTemplateLabel =
-    form.ordererRole === 'buyer'
-      ? 'Köpare'
-      : form.ordererRole === 'apartment'
-        ? 'Lägenhet'
-        : 'Säljare'
-
+        : form.ordererRole === 'seller'
+          ? sellerTemplate
+          : ''
   const trimmedEmail = form.customerEmail.trim().toLowerCase()
   const canCreate = useMemo(() => EMAIL_REGEX.test(trimmedEmail), [trimmedEmail])
   const isBusy = savingDraft || sending
@@ -261,6 +256,10 @@ export default function NewAssignmentClient({
       setError('Ange en giltig kundmejl innan du skickar uppdraget.')
       return
     }
+    if (!form.ordererRole) {
+      setError('Valj uppdragsgivare (Säljare, Köpare eller Lägenhet) innan du skickar.')
+      return
+    }
 
     try {
       setSending(true)
@@ -331,7 +330,7 @@ export default function NewAssignmentClient({
                 <button
                   type="button"
                   onClick={() => void handleSend()}
-                  disabled={isBusy || !canCreate}
+                  disabled={isBusy || !canCreate || !form.ordererRole}
                   aria-label="Skicka"
                   title="Skicka"
                   className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/70 bg-white/25 text-white shadow-sm transition hover:bg-white/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-white/25"
@@ -353,7 +352,7 @@ export default function NewAssignmentClient({
           <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-sky-50 px-4 py-3 shadow-sm md:gap-3">
               <p className="pr-1 text-base font-bold uppercase tracking-wide text-indigo-900 md:text-lg">
-                ÖVERLÅTELSEBESIKTNING FÖR
+                ÖVERLÅTELSEBESIKTNING FÖR *
               </p>
               <RoleChip
                 label="Säljare"
@@ -497,7 +496,7 @@ export default function NewAssignmentClient({
 
             <div className="rounded-xl border border-gray-200 bg-white p-3">
               <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-gray-700">
-                {activeTemplate}
+                {activeTemplate || 'Valj uppdragsgivare for att visa villkorstexten.'}
               </pre>
             </div>
           </section>

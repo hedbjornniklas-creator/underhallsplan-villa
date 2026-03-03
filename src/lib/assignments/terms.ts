@@ -39,8 +39,10 @@ export function parseAssignmentTermsRole(value: string | null | undefined): Assi
   return null
 }
 
-export function normalizeAssignmentTermsRole(value: string | null | undefined): AssignmentTermsRole {
-  return parseAssignmentTermsRole(value) ?? 'seller'
+export function normalizeAssignmentTermsRole(
+  value: string | null | undefined
+): AssignmentTermsRole | null {
+  return parseAssignmentTermsRole(value)
 }
 
 export function getAssignmentTermsTemplateId(role: AssignmentTermsRole): StandardTextId {

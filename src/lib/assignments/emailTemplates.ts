@@ -83,14 +83,14 @@ function formatPriceAmount(value: number | null, currency: string | null) {
 
 function assignmentTypeToLabel(type: AssignmentType) {
   if (type === 'STATUS') return 'Statusbesiktning'
-  if (type === 'UHP') return 'Underhallsplan'
-  return 'Overlatelsebesiktning'
+  if (type === 'UHP') return 'Underhållsplan'
+  return 'Överlåtelsebesiktning'
 }
 
 function termsRoleToLabel(role: TermsRole, format: 'html' | 'text' = 'text') {
-  if (role === 'buyer') return format === 'html' ? 'K&ouml;pare' : 'Kopare'
-  if (role === 'apartment') return format === 'html' ? 'L&auml;genhet' : 'Lagenhet'
-  return format === 'html' ? 'S&auml;ljare' : 'Saljare'
+  if (role === 'buyer') return format === 'html' ? 'Köpare' : 'Köpare'
+  if (role === 'apartment') return format === 'html' ? 'Lägenhet' : 'Lägenhet'
+  return format === 'html' ? 'Säljare' : 'Säljare'
 }
 
 export function buildAssignmentConfirmationEmail(
@@ -151,7 +151,7 @@ export function buildAssignmentConfirmationEmail(
                           <div style="font-size:13px;line-height:1.5;"><strong>Fastighetsbeteckning:</strong> ${escapeHtml(cadastralId)}</div>
                           <div style="font-size:13px;line-height:1.5;"><strong>Adress:</strong> ${escapeHtml(propertyAddress)}</div>
                           <div style="font-size:13px;line-height:1.5;"><strong>Kommun:</strong> ${escapeHtml(municipality)}</div>
-                          <div style="font-size:13px;line-height:1.5;"><strong>Fastighetsagare:</strong> ${escapeHtml(propertyOwner)}</div>
+                          <div style="font-size:13px;line-height:1.5;"><strong>Fastighetsägare:</strong> ${escapeHtml(propertyOwner)}</div>
                         </td></tr>
                       </table>
                     </td>
@@ -179,12 +179,12 @@ export function buildAssignmentConfirmationEmail(
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:20px;">
                   <tr>
                     <td align="left">
-                      <a href="${escapeHtml(input.acceptUrl)}" target="_blank" rel="noreferrer" style="display:inline-block;padding:11px 18px;border-radius:10px;background:#4f46e5;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">Oppna uppdragsbekraftelse</a>
+                      <a href="${escapeHtml(input.acceptUrl)}" target="_blank" rel="noreferrer" style="display:inline-block;padding:11px 18px;border-radius:10px;background:#4f46e5;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">Öppna uppdragsbekräftelse</a>
                     </td>
                   </tr>
                 </table>
                 <p style="margin:16px 0 0;font-size:12px;line-height:1.5;color:#4b5563;">
-                  Lanken ar giltig till ${escapeHtml(expiresDate)}.
+                  Länken är giltig till ${escapeHtml(expiresDate)}.
                   Villkorsversion: ${escapeHtml(input.termsVersion)}.
                 </p>
               </td>
@@ -199,12 +199,12 @@ export function buildAssignmentConfirmationEmail(
 
   const text =
     `Hej ${customerName},\n\n` +
-    `Du har fatt en uppdragsbekraftelse for ${assignmentType} (${roleLabelText}).\n\n` +
+    `Du har fått en uppdragsbekräftelse för ${assignmentType} (${roleLabelText}).\n\n` +
     `Objekt\n` +
     `- Fastighetsbeteckning: ${cadastralId}\n` +
     `- Adress: ${propertyAddress}\n` +
     `- Kommun: ${municipality}\n` +
-    `- Fastighetsagare: ${propertyOwner}\n\n` +
+    `- Fastighetsägare: ${propertyOwner}\n\n` +
     `Uppdragsgivare\n` +
     `- Namn: ${customerName}\n` +
     `- Adress: ${customerAddress}\n` +
@@ -214,8 +214,8 @@ export function buildAssignmentConfirmationEmail(
     `- Datum: ${inspectionDate}\n` +
     `- Tid: ${inspectionTime}\n` +
     `- Kostnad: ${priceText}\n\n` +
-    `Oppna uppdragsbekraftelse: ${input.acceptUrl}\n` +
-    `Lanken ar giltig till ${expiresDate}.\n` +
+    `Öppna uppdragsbekräftelse: ${input.acceptUrl}\n` +
+    `Länken är giltig till ${expiresDate}.\n` +
     `Villkorsversion: ${input.termsVersion}.`
 
   return { subject, html, text }
