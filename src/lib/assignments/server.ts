@@ -894,7 +894,7 @@ export async function resolvePublicAssignmentByToken(token: string) {
   const { data, error } = await admin
     .from('assignment_links')
     .select(
-      'id,assignment_id,org_id,expires_at,used_at,revoked_at,terms_version,assignments(id,status,assignment_type,customer_name,customer_email,customer_phone,customer_address,preliminary_address,preferred_date,preferred_time,price_amount,currency,property_address,property_postal_code,property_city,property_municipality,property_owner_name,cadastral_id,orderer_role,accepted_at)'
+      'id,assignment_id,org_id,expires_at,used_at,revoked_at,terms_version,assignments(id,status,assignment_type,responsible_profile_id,customer_name,customer_email,customer_phone,customer_address,preliminary_address,preferred_date,preferred_time,price_amount,currency,property_address,property_postal_code,property_city,property_municipality,property_owner_name,cadastral_id,orderer_role,accepted_at)'
     )
     .eq('token_hash', tokenHash)
     .maybeSingle()

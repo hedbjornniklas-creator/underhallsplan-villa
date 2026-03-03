@@ -37,11 +37,28 @@ type TermsDocument = {
   templateId: string
 }
 
+type InspectorProfile = {
+  full_name: string | null
+  sbr_group: string | null
+  sbr_status: string | null
+  membership_number: string | null
+  certification_number: string | null
+  phone: string | null
+  email: string | null
+  company_name: string | null
+  company_orgno: string | null
+  company_address: string | null
+  company_postal_code: string | null
+  company_city: string | null
+  avatar_path: string | null
+}
+
 type AcceptReadResponse = {
   state: AcceptState
   expiresAt: string | null
   usedAt: string | null
   assignment: AssignmentSummary
+  inspector: InspectorProfile | null
   terms: {
     version: string
     documents: {
@@ -79,6 +96,19 @@ const INSPECTOR_FALLBACK = {
   company: '-',
   orgNumber: '-',
   addressLine: '-',
+}
+
+function resolvePublicMediaUrl(path: string | null | undefined) {
+  if (!path) return null
+  if (path.startsWith('http://') || path.startsWith('https://')) return path
+
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!base) return null
+
+  if (path.startsWith('/storage/')) return `${base}${path}`
+  if (path.startsWith('storage/')) return `${base}/${path}`
+  if (path.startsWith('/')) return path
+  return `${base}/storage/v1/object/public/property-media/${path}`
 }
 
 function normalizeRole(value: string | null): OrdererRole {
@@ -140,6 +170,7 @@ export default function AssignmentAcceptPage() {
   const [success, setSuccess] = useState<string | null>(null)
   const [data, setData] = useState<AcceptReadResponse | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
+  const [inspectorAvatarLoadError, setInspectorAvatarLoadError] = useState(false)
 
   const canSubmit = data?.state === 'open'
 
@@ -171,6 +202,10 @@ export default function AssignmentAcceptPage() {
     void load()
   }, [token])
 
+  useEffect(() => {
+    setInspectorAvatarLoadError(false)
+  }, [data?.inspector?.avatar_path])
+
   const stateText = useMemo(() => {
     if (!data) return ''
     if (data.state === 'used') return 'Den här länken är redan använd.'
@@ -188,6 +223,27 @@ export default function AssignmentAcceptPage() {
     if (form.ordererRole === 'apartment') return data.terms.documents.apartment
     return data.terms.documents.seller
   }, [data, form])
+
+  const inspectorName = data?.inspector?.full_name || INSPECTOR_FALLBACK.name
+  const inspectorSbrLine1 = data?.inspector?.sbr_group || INSPECTOR_FALLBACK.sbrLine1
+  const inspectorSbrLine2 = data?.inspector?.sbr_status || INSPECTOR_FALLBACK.sbrLine2
+  const inspectorMemberNumber = data?.inspector?.membership_number || INSPECTOR_FALLBACK.memberNumber
+  const inspectorCertificationNumber =
+    data?.inspector?.certification_number ?? INSPECTOR_FALLBACK.certificationNumber
+  const inspectorPhone = data?.inspector?.phone || INSPECTOR_FALLBACK.phone
+  const inspectorEmail = data?.inspector?.email || INSPECTOR_FALLBACK.email
+  const inspectorCompany = data?.inspector?.company_name || INSPECTOR_FALLBACK.company
+  const inspectorOrgNumber = data?.inspector?.company_orgno || INSPECTOR_FALLBACK.orgNumber
+  const inspectorAddressLine =
+    data?.inspector?.company_address
+      ? [
+          data.inspector.company_address,
+          [data.inspector.company_postal_code, data.inspector.company_city].filter(Boolean).join(' '),
+        ]
+          .filter(Boolean)
+          .join(', ')
+      : INSPECTOR_FALLBACK.addressLine
+  const inspectorAvatarSrc = resolvePublicMediaUrl(data?.inspector?.avatar_path)
 
   const updateField = (key: keyof FormState, value: string | boolean) => {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev))
@@ -322,6 +378,7 @@ export default function AssignmentAcceptPage() {
                 <p className="pr-1 text-base font-bold uppercase tracking-wide text-indigo-900 md:text-lg">
                   ÖVERLÅTELSEBESIKTNING FÖR
                 </p>
+                <span className="text-xs font-semibold uppercase tracking-wide text-indigo-700/90">Roll *</span>
                 <RoleChip
                   label="Säljare"
                   active={form.ordererRole === 'seller'}
@@ -345,25 +402,25 @@ export default function AssignmentAcceptPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <SectionCard title="Objekt">
                   <Field
-                    label="Fastighetsbeteckning"
+                    label="Fastighetsbeteckning *"
                     value={form.cadastralId}
                     onChange={(value) => updateField('cadastralId', value)}
                     disabled={!canSubmit}
                   />
                   <Field
-                    label="Adress"
+                    label="Adress *"
                     value={form.propertyAddress}
                     onChange={(value) => updateField('propertyAddress', value)}
                     disabled={!canSubmit}
                   />
                   <Field
-                    label="Kommun"
+                    label="Kommun *"
                     value={form.propertyMunicipality}
                     onChange={(value) => updateField('propertyMunicipality', value)}
                     disabled={!canSubmit}
                   />
                   <Field
-                    label="Fastighetsägare"
+                    label="Fastighetsägare *"
                     value={form.propertyOwnerName}
                     onChange={(value) => updateField('propertyOwnerName', value)}
                     disabled={!canSubmit}
@@ -373,19 +430,19 @@ export default function AssignmentAcceptPage() {
                 <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                   <h3 className="text-sm font-semibold text-gray-900">Uppdragsgivare</h3>
                   <Field
-                    label="Namn"
+                    label="Namn *"
                     value={form.customerName}
                     onChange={(value) => updateField('customerName', value)}
                     disabled={!canSubmit}
                   />
                   <Field
-                    label="Adress"
+                    label="Adress *"
                     value={form.customerAddress}
                     onChange={(value) => updateField('customerAddress', value)}
                     disabled={!canSubmit}
                   />
                   <Field
-                    label="Telefon"
+                    label="Telefon *"
                     value={form.customerPhone}
                     onChange={(value) => updateField('customerPhone', value)}
                     type="tel"
@@ -404,29 +461,36 @@ export default function AssignmentAcceptPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <SectionCard title="Besiktningsman">
                   <div className="flex flex-wrap items-start gap-4">
-                    <div className="flex h-20 w-20 items-center justify-center rounded-full border border-gray-300 bg-gray-100 text-xs text-gray-500">
-                      Ingen bild
-                    </div>
+                    {inspectorAvatarSrc && !inspectorAvatarLoadError ? (
+                      <img
+                        src={inspectorAvatarSrc}
+                        alt="Profilbild"
+                        className="h-20 w-20 rounded-full border border-gray-300 object-cover"
+                        onError={() => setInspectorAvatarLoadError(true)}
+                      />
+                    ) : (
+                      <div className="flex h-20 w-20 items-center justify-center rounded-full border border-gray-300 bg-gray-100 text-xs text-gray-500">
+                        Ingen bild
+                      </div>
+                    )}
 
                     <div className="min-w-0 space-y-1 text-sm text-gray-800">
-                      <div className="font-semibold">{INSPECTOR_FALLBACK.name}</div>
-                      <div className="text-xs text-gray-600">{INSPECTOR_FALLBACK.sbrLine1}</div>
-                      {INSPECTOR_FALLBACK.sbrLine2 ? (
-                        <div className="text-xs text-gray-600">{INSPECTOR_FALLBACK.sbrLine2}</div>
+                      <div className="font-semibold">{inspectorName}</div>
+                      <div className="text-xs text-gray-600">{inspectorSbrLine1}</div>
+                      {inspectorSbrLine2 ? (
+                        <div className="text-xs text-gray-600">{inspectorSbrLine2}</div>
                       ) : null}
-                      <div className="pt-1 text-xs text-gray-600">
-                        Medlemsnummer: {INSPECTOR_FALLBACK.memberNumber}
-                      </div>
-                      {INSPECTOR_FALLBACK.certificationNumber ? (
+                      <div className="pt-1 text-xs text-gray-600">Medlemsnummer: {inspectorMemberNumber}</div>
+                      {inspectorCertificationNumber ? (
                         <div className="text-xs text-gray-600">
-                          Certifieringsnummer: {INSPECTOR_FALLBACK.certificationNumber}
+                          Certifieringsnummer: {inspectorCertificationNumber}
                         </div>
                       ) : null}
-                      <div className="text-xs text-gray-600">Telefon: {INSPECTOR_FALLBACK.phone}</div>
-                      <div className="text-xs text-gray-600">E-post: {INSPECTOR_FALLBACK.email}</div>
-                      <div className="pt-1 text-xs text-gray-600">{INSPECTOR_FALLBACK.company}</div>
-                      <div className="text-xs text-gray-600">Org.nr: {INSPECTOR_FALLBACK.orgNumber}</div>
-                      <div className="text-xs text-gray-600">{INSPECTOR_FALLBACK.addressLine}</div>
+                      <div className="text-xs text-gray-600">Telefon: {inspectorPhone}</div>
+                      <div className="text-xs text-gray-600">E-post: {inspectorEmail}</div>
+                      <div className="pt-1 text-xs text-gray-600">{inspectorCompany}</div>
+                      <div className="text-xs text-gray-600">Org.nr: {inspectorOrgNumber}</div>
+                      <div className="text-xs text-gray-600">{inspectorAddressLine}</div>
                     </div>
                   </div>
                 </SectionCard>
@@ -435,7 +499,7 @@ export default function AssignmentAcceptPage() {
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-3">
                       <Field
-                        label="Datum"
+                        label="Datum *"
                         type="date"
                         value={form.preferredDate}
                         onChange={(value) => updateField('preferredDate', value)}
@@ -444,7 +508,7 @@ export default function AssignmentAcceptPage() {
                       <div className="space-y-2 pt-5">
                         <p className="text-xs font-semibold uppercase tracking-wide text-gray-700">Kostnad</p>
                         <Field
-                          label="Pris (SEK)"
+                          label="Pris (SEK) *"
                           type="number"
                           step="0.01"
                           min="0"
@@ -455,7 +519,7 @@ export default function AssignmentAcceptPage() {
                       </div>
                     </div>
                     <Field
-                      label="Tid"
+                      label="Tid *"
                       type="time"
                       value={form.preferredTime}
                       onChange={(value) => updateField('preferredTime', value)}
@@ -488,7 +552,7 @@ export default function AssignmentAcceptPage() {
                   disabled={!canSubmit}
                   className="mt-0.5 h-4 w-4 rounded border-gray-300"
                 />
-                <span>Jag har läst och godkänner villkoren (version {data.terms.version}).</span>
+                <span>Jag har läst och godkänner villkoren (version {data.terms.version}). *</span>
               </label>
 
               <button

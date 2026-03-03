@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { consumeAssignmentToken, resolvePublicAssignmentByToken } from '@/lib/assignments/server'
+import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
   ASSIGNMENT_TERMS_VERSION,
   getAllAssignmentTermsDocuments,
@@ -21,6 +22,7 @@ type PublicAssignmentSummary = {
   id: string
   status: string
   assignment_type: string
+  responsible_profile_id: string | null
   customer_name: string | null
   customer_email: string
   customer_phone: string | null
@@ -38,6 +40,22 @@ type PublicAssignmentSummary = {
   cadastral_id: string | null
   orderer_role: string | null
   accepted_at: string | null
+}
+
+type PublicInspectorProfile = {
+  full_name: string | null
+  sbr_group: string | null
+  sbr_status: string | null
+  membership_number: string | null
+  certification_number: string | null
+  phone: string | null
+  email: string | null
+  company_name: string | null
+  company_orgno: string | null
+  company_address: string | null
+  company_postal_code: string | null
+  company_city: string | null
+  avatar_path: string | null
 }
 
 type PublicLink = {
@@ -111,12 +129,27 @@ export async function GET(
     if (!assignment) return jsonError('Uppdraget kunde inte hittas.', 404)
 
     const terms = getAllAssignmentTermsDocuments()
+    let inspector: PublicInspectorProfile | null = null
+
+    if (assignment.responsible_profile_id) {
+      const admin = createSupabaseAdminClient()
+      const { data: inspectorData } = await admin
+        .from('profiles')
+        .select(
+          'full_name,sbr_group,sbr_status,membership_number,certification_number,phone,email,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path'
+        )
+        .eq('id', assignment.responsible_profile_id)
+        .maybeSingle()
+
+      inspector = (inspectorData ?? null) as PublicInspectorProfile | null
+    }
 
     return NextResponse.json({
       state: toState(link as PublicLink),
       expiresAt: link.expires_at ?? null,
       usedAt: link.used_at ?? null,
       assignment,
+      inspector,
       terms: {
         version: ASSIGNMENT_TERMS_VERSION,
         documents: {
