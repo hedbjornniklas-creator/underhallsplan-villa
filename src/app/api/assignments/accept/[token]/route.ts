@@ -126,7 +126,7 @@ export async function GET(
     if (!token || token.length < 20) return jsonError('Ogiltig l√§nk.', 400)
 
     const link = await resolvePublicAssignmentByToken(token)
-    if (!link) return jsonError('L‰nken ‰r ogiltig eller borttagen.', 404)
+    if (!link) return jsonError('L√§nken √§r ogiltig eller borttagen.', 404)
 
     const assignment = normalizeAssignment(link as PublicLink)
     if (!assignment) return jsonError('Uppdraget kunde inte hittas.', 404)
@@ -188,12 +188,12 @@ export async function POST(
     if (!token || token.length < 20) return jsonError('Ogiltig l√§nk.', 400)
 
     const link = await resolvePublicAssignmentByToken(token)
-    if (!link) return jsonError('L‰nken ‰r ogiltig eller borttagen.', 404)
+    if (!link) return jsonError('L√§nken √§r ogiltig eller borttagen.', 404)
 
     const assignment = normalizeAssignment(link as PublicLink)
     if (!assignment) return jsonError('Uppdraget kunde inte hittas.', 404)
     if (assignment.status?.toLowerCase() === 'cancelled') {
-      return jsonError('Den h‰r l‰nken ‰r inte l‰ngre aktiv.', 410)
+      return jsonError('Den h√§r l√§nken √§r inte l√§ngre aktiv.', 410)
     }
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
@@ -293,7 +293,7 @@ export async function POST(
       return jsonError('Villkoren har uppdaterats. Beg√§r en ny l√§nk fr√•n besiktningsf√∂retaget.', 409)
     }
     if (message.includes('assignment_cancelled')) {
-      return jsonError('Den h‰r l‰nken ‰r inte l‰ngre aktiv.', 410)
+      return jsonError('Den h√§r l√§nken √§r inte l√§ngre aktiv.', 410)
     }
     if (message.includes('missing_terms_version')) {
       return jsonError('Villkorsversion saknas.', 400)
