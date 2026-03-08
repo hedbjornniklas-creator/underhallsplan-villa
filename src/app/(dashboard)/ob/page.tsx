@@ -172,7 +172,7 @@ function InspectionsListCard({
       {inspectionsLoading ? (
         <p className="mt-1 text-xs text-gray-500">Laddar besiktningar...</p>
       ) : inspectionsError ? (
-        <p className="mt-1 text-xs text-rose-700">Kunde inte h\u00e4mta besiktningar.</p>
+        <p className="mt-1 text-xs text-rose-700">Kunde inte hämta besiktningar.</p>
       ) : inspections.length === 0 ? (
         <p className="mt-1 text-xs text-gray-500">Inga besiktningar hittades.</p>
       ) : (
@@ -447,7 +447,10 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
 }
 
 function AssignmentConfirmationsCard() {
+  type QuickOrdererRole = 'seller' | 'buyer' | 'apartment' | ''
+
   const [email, setEmail] = useState('')
+  const [ordererRole, setOrdererRole] = useState<QuickOrdererRole>('')
   const [preferredDate, setPreferredDate] = useState('')
   const [preferredTime, setPreferredTime] = useState('')
   const [priceAmount, setPriceAmount] = useState('')
@@ -461,6 +464,12 @@ function AssignmentConfirmationsCard() {
 
     if (!normalized || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
       setErrorMessage('Ange en giltig mejladress.')
+      setSuccessMessage(null)
+      return
+    }
+
+    if (!ordererRole) {
+      setErrorMessage('V\u00e4lj uppdragsgivare (S\u00e4ljare, K\u00f6pare eller L\u00e4genhet).')
       setSuccessMessage(null)
       return
     }
@@ -484,6 +493,7 @@ function AssignmentConfirmationsCard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerEmail: normalized,
+          ordererRole,
           preferredDate: preferredDate.trim(),
           preferredTime: preferredTime.trim(),
           priceAmount: normalizedPrice,
@@ -526,8 +536,34 @@ function AssignmentConfirmationsCard() {
       </Link>
 
       <p className="mt-1.5 text-[10px] leading-relaxed text-gray-600">
-        Skicka en ny uppdragsbekräftelse direkt till beställarens mejl.
+        Skicka en ny uppdragsbekräftelse direkt.
       </p>
+
+      <div className="mt-1.5 flex flex-wrap gap-1">
+        {[
+          { value: 'seller' as const, label: 'S\u00e4ljare' },
+          { value: 'buyer' as const, label: 'K\u00f6pare' },
+          { value: 'apartment' as const, label: 'L\u00e4genhet' },
+        ].map((chip) => {
+          const active = ordererRole === chip.value
+          return (
+            <button
+              key={chip.value}
+              type="button"
+              aria-pressed={active}
+              onClick={() => setOrdererRole(chip.value)}
+              className={[
+                'inline-flex h-5 items-center rounded-full border px-2 text-[10px] font-medium leading-none transition-colors',
+                active
+                  ? 'border-indigo-600 bg-indigo-600 text-white'
+                  : 'border-gray-300 bg-white text-gray-700 hover:border-indigo-400 hover:text-indigo-700',
+              ].join(' ')}
+            >
+              {chip.label}
+            </button>
+          )
+        })}
+      </div>
 
       <div className="mt-1.5 space-y-1.5">
         <label className="relative block">
@@ -582,7 +618,7 @@ function AssignmentConfirmationsCard() {
           type="button"
           onClick={() => void handleQuickSend()}
           disabled={isSending}
-          className="mt-5 inline-flex w-full items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+          className="mt-3 inline-flex w-full items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
         >
           <Send size={12} />
           {isSending ? 'Skickar...' : 'Skicka uppdragsbekräftelse'}

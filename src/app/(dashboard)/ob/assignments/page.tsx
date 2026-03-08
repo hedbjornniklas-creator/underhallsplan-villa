@@ -417,6 +417,10 @@ export default function ObAssignmentsPage() {
     await handleDelete(deleteTargetId)
   }
 
+  const openAssignment = (assignmentId: string) => {
+    router.push(`/ob/assignments/${assignmentId}`)
+  }
+
   const activeDeleteTarget = useMemo(
     () => items.find((item) => item.id === deleteTargetId) ?? null,
     [deleteTargetId, items]
@@ -636,7 +640,20 @@ export default function ObAssignmentsPage() {
                       const isBusy = busyId === item.id
 
                       return (
-                        <tr key={item.id} className="border-b last:border-b-0 hover:bg-indigo-50/40">
+                        <tr
+                          key={item.id}
+                          tabIndex={0}
+                          role="button"
+                          aria-label={`Öppna uppdragsbekräftelse ${item.customer_name ?? item.customer_email}`}
+                          onClick={() => openAssignment(item.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              openAssignment(item.id)
+                            }
+                          }}
+                          className="cursor-pointer border-b last:border-b-0 hover:bg-indigo-50/40 focus-visible:bg-indigo-50/50 focus-visible:outline-none"
+                        >
                           <td className="px-3 py-2 align-top whitespace-nowrap">{formatDate(item)}</td>
                           <td className="px-3 py-2 align-top">{formatType(item.assignment_type)}</td>
                           <td className="px-3 py-2 align-top">
@@ -657,7 +674,10 @@ export default function ObAssignmentsPage() {
                             <div className="flex justify-end gap-2">
                               <button
                                 type="button"
-                                onClick={() => void handleResend(item.id)}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void handleResend(item.id)
+                                }}
                                 disabled={isBusy || !canResend}
                                 aria-label="Skicka igen"
                                 title="Skicka igen"
@@ -671,7 +691,10 @@ export default function ObAssignmentsPage() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => setDeleteTargetId(item.id)}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  setDeleteTargetId(item.id)
+                                }}
                                 disabled={isBusy}
                                 aria-label="Radera"
                                 title="Radera"
