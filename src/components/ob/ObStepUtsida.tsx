@@ -1,4 +1,4 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 'use client'
 
 import { useEffect, useState, ChangeEvent, useRef, useMemo } from 'react'
@@ -9,6 +9,7 @@ type Inspection = {
   property_id: string
   date: string | null
   assignment_number: string | null
+  status?: string | null
 }
 
 type SettingsExteriorItem = {
@@ -53,6 +54,8 @@ type InspectionExteriorObservation = {
   values: Record<string, any>
   is_free_note?: boolean | null
   note: string | null
+  risk_text?: string | null
+  ftu_text?: string | null
   created_at?: string | null
   updated_at?: string | null
 }
@@ -70,6 +73,8 @@ type InspectionControlItem = {
   title: string
   status: string | null
   note: string | null
+  risk_text?: string | null
+  ftu_text?: string | null
   sort_order: number
   selected_outcome_id: string | null
 }
@@ -120,6 +125,13 @@ type InspectionImage = {
 // Storage-bucket för bilder
 const IMAGE_BUCKET = 'inspection-images' as const
 const RED_STATUS: InspectionControlItem['status'] = null
+const normalizeInspectionStatus = (value: string | null | undefined) => {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'completed' || normalized === 'klar' || normalized === 'done') {
+    return 'completed'
+  }
+  return normalized
+}
 
 const getImagePublicUrl = (filePath: string) => {
   const { data } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(filePath)
@@ -150,6 +162,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const isInspectionLocked = normalizeInspectionStatus(inspection?.status) === 'completed'
 
   const [items, setItems] = useState<ItemBundle[]>([])
   const [observations, setObservations] = useState<
@@ -165,6 +178,10 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
 
   // Bilder per kontrollpunkt (inspection_control_items)
   const [imagesByControlItemId, setImagesByControlItemId] = useState<
+    Record<string, InspectionImage[]>
+  >({})
+  // Bilder per observation/fri notering (inspection_images.exterior_observation_id)
+  const [imagesByObservationId, setImagesByObservationId] = useState<
     Record<string, InspectionImage[]>
   >({})
   const supportsIsFreeNoteRef = useRef<boolean | null>(null)
@@ -635,6 +652,31 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           imgCtrlMap[key].push(img)
         }
         setImagesByControlItemId(imgCtrlMap)
+
+        // 7) Bilder kopplade till fria noteringar/observationer (control_item_id = null)
+        const { data: imgObsData, error: imgObsErr } = await supabase
+          .from('inspection_images')
+          .select('*')
+          .eq('inspection_id', inspection.id)
+          .is('control_item_id', null)
+          .not('exterior_observation_id', 'is', null)
+          .order('sort_order', { ascending: true })
+          .order('created_at', { ascending: true })
+
+        if (imgObsErr) {
+          console.error('inspection_images (observationer) error:', imgObsErr)
+          throw new Error(imgObsErr.message)
+        }
+
+        const imgsObsArr = (imgObsData ?? []) as InspectionImage[]
+        const imgObsMap: Record<string, InspectionImage[]> = {}
+        for (const img of imgsObsArr) {
+          if (!img.exterior_observation_id) continue
+          const key = img.exterior_observation_id
+          imgObsMap[key] = imgObsMap[key] || []
+          imgObsMap[key].push(img)
+        }
+        setImagesByObservationId(imgObsMap)
       } catch (e: any) {
         console.error('loadAll utsida failed:', e)
         setError(e?.message ?? 'Kunde inte ladda Utsida-data.')
@@ -658,6 +700,10 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     const upsertObservationRow = async (
       row: InspectionExteriorObservation
     ): Promise<InspectionExteriorObservation> => {
+    if (isInspectionLocked) {
+      setError('Besiktningen är låst (klar) och kan inte redigeras.')
+      return row
+    }
     setSaving(true)
     setError(null)
     try {
@@ -666,6 +712,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           part_label: row.part_label,
           values: row.values,
           note: row.note,
+          risk_text: row.risk_text ?? null,
+          ftu_text: row.ftu_text ?? null,
         }
 
         let { data, error } = await supabase
@@ -697,6 +745,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           part_label: row.part_label,
           values: row.values,
           note: row.note,
+          risk_text: row.risk_text ?? null,
+          ftu_text: row.ftu_text ?? null,
         }
 
         let { data, error } = await supabase
@@ -730,6 +780,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   }
 
   const addFreeNoteRow = async (item: ItemBundle) => {
+    if (isInspectionLocked) return
     const rows = getItemRows(item.id)
     const newRow: InspectionExteriorObservation = {
       inspection_id: inspection.id,
@@ -738,6 +789,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       values: { _free_note: true },
       is_free_note: true,
       note: '',
+      risk_text: null,
+      ftu_text: null,
     }
 
     const saved = await upsertObservationRow(newRow)
@@ -749,6 +802,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     rowId: string,
     patch: Partial<InspectionExteriorObservation>
   ) => {
+    if (isInspectionLocked) return
     const rows = getItemRows(itemId)
     const index = rows.findIndex(r => r.id === rowId)
     if (index === -1) return
@@ -779,9 +833,17 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   }
 
   const deleteFreeNoteRow = async (itemId: string, rowId: string) => {
+    if (isInspectionLocked) return
     try {
       setSaving(true)
       setError(null)
+
+      await supabase
+        .from('inspection_images')
+        .delete()
+        .eq('inspection_id', inspection.id)
+        .eq('exterior_observation_id', rowId)
+        .is('control_item_id', null)
 
       await supabase
         .from('inspection_exterior_observations')
@@ -791,6 +853,11 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       const rows = getItemRows(itemId)
       const filtered = rows.filter(r => r.id !== rowId)
       setItemRows(itemId, filtered)
+      setImagesByObservationId(prev => {
+        const next = { ...prev }
+        delete next[rowId]
+        return next
+      })
     } catch (e: any) {
       console.error('deleteFreeNoteRow utsida failed:', e)
       setError(e?.message ?? 'Kunde inte ta bort fri notering.')
@@ -805,6 +872,10 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   const upsertControlItem = async (
     item: InspectionControlItem
   ): Promise<InspectionControlItem> => {
+    if (isInspectionLocked) {
+      setError('Besiktningen är låst (klar) och kan inte redigeras.')
+      return item
+    }
     setSaving(true)
     setError(null)
     try {
@@ -815,6 +886,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             title: item.title,
             status: item.status,
             note: item.note,
+            risk_text: item.risk_text ?? null,
+            ftu_text: item.ftu_text ?? null,
             sort_order: item.sort_order,
             selected_outcome_id: item.selected_outcome_id ?? null,
             updated_at: new Date().toISOString(),
@@ -835,6 +908,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             title: item.title,
             status: item.status,
             note: item.note,
+            risk_text: item.risk_text ?? null,
+            ftu_text: item.ftu_text ?? null,
             sort_order: item.sort_order,
             selected_outcome_id: item.selected_outcome_id ?? null,
           })
@@ -857,6 +932,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     itemId: string,
     patch: Partial<InspectionControlItem>
   ) => {
+    if (isInspectionLocked) return
     const current = controlItems.find(ci => ci.id === itemId)
     if (!current) return
 
@@ -868,6 +944,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   }
 
   const deleteControlItem = async (itemId: string, skipConfirm?: boolean) => {
+    if (isInspectionLocked) return
     const item = controlItems.find(ci => ci.id === itemId)
     if (!item) return
     if (!skipConfirm && !confirm('Ta bort denna kontrollpunkt?')) return
@@ -938,6 +1015,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     row: InspectionExteriorObservation,
     cp: ControlPointLite
   ) => {
+    if (isInspectionLocked) return
     if (!row.id) return
 
     const existingForRow = controlItems.filter(
@@ -955,6 +1033,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       title: cp.title || cp.key,
       status: RED_STATUS,
       note: null,
+      risk_text: null,
+      ftu_text: null,
       sort_order: sortOrder,
       selected_outcome_id: null,
     }
@@ -967,6 +1047,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     baseItem: InspectionControlItem,
     outcome: ControlPointOutcome
   ) => {
+    if (isInspectionLocked) return
     if (!baseItem.control_point_id) return
     const group = controlItems.filter(
       ci =>
@@ -982,6 +1063,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       title: baseItem.title,
       status: 'remark',
       note: (outcome.note_template ?? '').trim() || null,
+      risk_text: (outcome.risk_template ?? '').trim() || null,
+      ftu_text: (outcome.ftu_template ?? '').trim() || null,
       sort_order: maxSort + 10,
       selected_outcome_id: outcome.id,
     }
@@ -995,6 +1078,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   const deleteControlItemGroup = async (
     baseItem: InspectionControlItem
   ) => {
+    if (isInspectionLocked) return
     if (!confirm('Ta bort denna kontrollpunkt?')) return
     const group = controlItems.filter(
       ci =>
@@ -1015,6 +1099,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     controlItem: InspectionControlItem,
     file: File
   ) => {
+    if (isInspectionLocked) return
     if (!controlItem.id) return
 
     try {
@@ -1087,6 +1172,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   }
 
   const handleDeleteControlItemImage = async (imageId: string) => {
+    if (isInspectionLocked) return
     try {
       setSaving(true)
       setError(null)
@@ -1128,16 +1214,133 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     }
   }
 
+  const handleUploadImageForObservation = async (
+    observation: InspectionExteriorObservation,
+    file: File
+  ) => {
+    if (isInspectionLocked) return
+    if (!observation.id) return
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const obsId = observation.id
+      const currentImages = imagesByObservationId[obsId] || []
+      const maxSort =
+        currentImages.length > 0
+          ? Math.max(...currentImages.map(img => img.sort_order || 0))
+          : 0
+
+      const ext = file.name.split('.').pop() || 'jpg'
+      const safeExt = ext.toLowerCase()
+      const fileName = `${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}.${safeExt}`
+
+      const path = `${inspection.id}/exterior/observation/${obsId}/${fileName}`
+
+      const { error: uploadErr } = await supabase.storage
+        .from(IMAGE_BUCKET)
+        .upload(path, file, {
+          cacheControl: '3600',
+          upsert: false,
+        })
+
+      if (uploadErr) {
+        console.error('upload observation image failed', uploadErr)
+        throw new Error(uploadErr.message)
+      }
+
+      const { data, error: insErr } = await supabase
+        .from('inspection_images')
+        .insert({
+          inspection_id: inspection.id,
+          exterior_observation_id: obsId,
+          interior_room_id: null,
+          control_item_id: null,
+          file_path: path,
+          label: null,
+          sort_order: maxSort + 10,
+        })
+        .select('*')
+        .single()
+
+      if (insErr) {
+        console.error('insert inspection_image (observation) failed', insErr)
+        throw new Error(insErr.message)
+      }
+
+      const img = data as InspectionImage
+      setImagesByObservationId(prev => {
+        const prevArr = prev[obsId] || []
+        return {
+          ...prev,
+          [obsId]: [...prevArr, img].sort(
+            (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+          ),
+        }
+      })
+    } catch (e: any) {
+      console.error('handleUploadImageForObservation failed', e)
+      setError(e?.message ?? 'Kunde inte ladda upp bild för fri notering.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeleteObservationImage = async (imageId: string) => {
+    if (isInspectionLocked) return
+    try {
+      setSaving(true)
+      setError(null)
+
+      let targetObservationId: string | null = null
+      for (const [obsId, arr] of Object.entries(imagesByObservationId)) {
+        const found = arr.find(img => img.id === imageId)
+        if (found) {
+          targetObservationId = obsId
+          break
+        }
+      }
+
+      if (!targetObservationId) return
+
+      const { error: delErr } = await supabase
+        .from('inspection_images')
+        .delete()
+        .eq('id', imageId)
+
+      if (delErr) {
+        console.error('delete inspection_image (observation) failed', delErr)
+        throw new Error(delErr.message)
+      }
+
+      setImagesByObservationId(prev => {
+        const prevArr = prev[targetObservationId!] || []
+        return {
+          ...prev,
+          [targetObservationId!]: prevArr.filter(img => img.id !== imageId),
+        }
+      })
+    } catch (e: any) {
+      console.error('handleDeleteObservationImage failed', e)
+      setError(e?.message ?? 'Kunde inte ta bort bild för fri notering.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // -----------------------------
   // UI HELPERS
   // -----------------------------
   const itemEmoji: Record<string, string> = {
-    mark: '🌱',
-    grundmur_sockel: '🧱',
-    fasad: '🏠',
-    dorrar_fonster: '🚪',
-    yttertak: '🏡',
-    ovrigt: '➕',
+    mark: '\u{1F331}',
+    grundmur_sockel: '\u{1F9F1}',
+    fasad: '\u{1F3E0}',
+    dorrar_fonster: '\u{1F6AA}',
+    yttertak: '\u{1F3E1}',
+    ovrigt: '\u2795',
   }
 
   const controlItemsByObservationId: Record<string, InspectionControlItem[]> =
@@ -1205,6 +1408,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             item={item}
             row={mainRow}
             items={rowControlItems}
+            isInspectionLocked={isInspectionLocked}
             onUpdateItem={updateControlItem}
             onDeleteItem={deleteControlItem}
             onDeleteItemGroup={deleteControlItemGroup}
@@ -1221,14 +1425,18 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         <FreeNotesSection
           item={item}
           rows={freeNoteRows}
+          imagesByObservationId={imagesByObservationId}
           onAddFreeNote={() => addFreeNoteRow(item)}
           onUpdateFreeNote={(rowId, patch) =>
             updateFreeNoteRow(item.id, rowId, patch)
           }
           onDeleteFreeNote={(rowId) => deleteFreeNoteRow(item.id, rowId)}
+          onUploadImageForObservation={handleUploadImageForObservation}
+          onDeleteObservationImage={handleDeleteObservationImage}
           onAddControlFromCatalog={cp =>
             addControlItemFromCatalog(item, mainRow, cp)
           }
+          isInspectionLocked={isInspectionLocked}
         />
       </section>
     )
@@ -1288,16 +1496,21 @@ type ControlPointImagesSectionProps = {
   images: InspectionImage[]
   onUpload: (file: File) => void
   onDelete: (imageId: string) => void
+  title?: string
+  disabled?: boolean
 }
 
 function ControlPointImagesSection({
   images,
   onUpload,
   onDelete,
+  title,
+  disabled = false,
 }: ControlPointImagesSectionProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (disabled) return
     const file = e.target.files?.[0]
     if (!file) return
     onUpload(file)
@@ -1309,12 +1522,13 @@ function ControlPointImagesSection({
       <header className="flex items-center justify-between">
         <h5 className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-900">
           <span aria-hidden="true">{'\u{1F4F7}'}</span>
-          <span>Bilder (denna kontrollpunkt)</span>
+          <span>{title ?? 'Bilder (denna kontrollpunkt)'}</span>
         </h5>
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
           className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-800 hover:bg-gray-50"
+          disabled={disabled}
         >
           + Lägg till bild
         </button>
@@ -1370,6 +1584,7 @@ type ExteriorControlPointsSectionProps = {
   item: ItemBundle
   row: InspectionExteriorObservation
   items: InspectionControlItem[]
+  isInspectionLocked: boolean
   onUpdateItem: (itemId: string, patch: Partial<InspectionControlItem>) => void
   onDeleteItem: (itemId: string, skipConfirm?: boolean) => void
   onDeleteItemGroup: (baseItem: InspectionControlItem) => void
@@ -1391,6 +1606,7 @@ function ExteriorControlPointsSection({
   item,
   row,
   items,
+  isInspectionLocked,
   onUpdateItem,
   onDeleteItem,
   onDeleteItemGroup,
@@ -1430,7 +1646,7 @@ function ExteriorControlPointsSection({
       <div className="space-y-2">
         {items.length === 0 && (
           <div className="text-xs text-gray-500">
-            Inga kontrollpunkter ännu. Lägg till via knappen “Lägg till ytterligare kontrollpunkt”.
+            Inga kontrollpunkter ännu. Lägg till via knappen "Lägg till ytterligare kontrollpunkt".
           </div>
         )}
 
@@ -1501,14 +1717,19 @@ function ExteriorControlPointsSection({
                           status: 'ok',
                           selected_outcome_id: null,
                           note: null,
+                          risk_text: null,
+                          ftu_text: null,
                         })
                       } else {
                         onUpdateItem(baseItem.id, {
                           status: RED_STATUS,
                           selected_outcome_id: null,
+                          risk_text: null,
+                          ftu_text: null,
                         })
                       }
                     }}
+                    disabled={isInspectionLocked}
                   >
                     Inget att notera
                   </button>
@@ -1535,6 +1756,8 @@ function ExteriorControlPointsSection({
                                 status: RED_STATUS,
                                 selected_outcome_id: null,
                                 note: null,
+                                risk_text: null,
+                                ftu_text: null,
                               })
                             } else {
                               onDeleteItem(activeItem.id, true)
@@ -1545,12 +1768,21 @@ function ExteriorControlPointsSection({
                                 status: 'remark',
                                 selected_outcome_id: outcome.id,
                                 note: (outcome.note_template ?? '').trim() || null,
+                                risk_text:
+                                  (baseItem.risk_text ?? '').trim().length > 0
+                                    ? baseItem.risk_text
+                                    : (outcome.risk_template ?? '').trim() || null,
+                                ftu_text:
+                                  (baseItem.ftu_text ?? '').trim().length > 0
+                                    ? baseItem.ftu_text
+                                    : (outcome.ftu_template ?? '').trim() || null,
                               })
                             } else {
                               onAddOutcomeItem(baseItem, outcome)
                             }
                           }
                         }}
+                        disabled={isInspectionLocked}
                       >
                         {outcome.label}
                       </button>
@@ -1560,20 +1792,31 @@ function ExteriorControlPointsSection({
               </div>
 
               {selectedItems.length === 0 && (
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-600">
-                    Förtydligande
-                  </label>
-                  <textarea
-                    rows={2}
-                    className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
-                    placeholder="Specifik notering för just denna kontrollpunkt…"
-                    value={baseItem.note ?? ''}
-                    onChange={e =>
-                      baseItem.id &&
-                      onUpdateItem(baseItem.id, { note: e.target.value })
-                    }
-                  />
+                <div className="space-y-2">
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-gray-600">
+                      Förtydligande
+                    </label>
+                    <textarea
+                      rows={2}
+                      className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                      placeholder="Specifik notering för just denna kontrollpunkt…"
+                      value={baseItem.note ?? ''}
+                      onChange={e =>
+                        baseItem.id &&
+                        onUpdateItem(baseItem.id, { note: e.target.value })
+                      }
+                      readOnly={isInspectionLocked}
+                    />
+                  </div>
+                  {baseItem.id && (
+                    <ControlPointImagesSection
+                      images={imagesByControlItemId[baseItem.id] || []}
+                      onUpload={file => onUploadImageForControlItem(baseItem, file)}
+                      onDelete={onDeleteControlItemImage}
+                      disabled={isInspectionLocked}
+                    />
+                  )}
                 </div>
               )}
 
@@ -1586,8 +1829,8 @@ function ExteriorControlPointsSection({
                     if (!selectedOutcome) return null
                     const riskTemplate = (selectedOutcome.risk_template ?? '').trim()
                     const ftuTemplate = (selectedOutcome.ftu_template ?? '').trim()
-                    const hasRiskTemplate = riskTemplate.length > 0
-                    const hasFtuTemplate = ftuTemplate.length > 0
+                    const riskText = (ci.risk_text ?? riskTemplate).trim()
+                    const ftuText = (ci.ftu_text ?? ftuTemplate).trim()
                     const ciId = ci.id ?? ''
                     const ciImages = ciId ? imagesByControlItemId[ciId] || [] : []
 
@@ -1611,26 +1854,42 @@ function ExteriorControlPointsSection({
                           )}
                         </div>
 
-                        {(hasRiskTemplate || hasFtuTemplate) && (
+                        {(riskText.length > 0 || ftuText.length > 0) && (
                           <div className="space-y-2">
-                            {hasRiskTemplate && (
+                            {riskText.length > 0 && (
                               <div className="rounded-lg border border-gray-200 bg-white p-3">
                                 <div className="text-xs font-semibold text-gray-700">
-                                  Risk (från databas)
+                                  Riskanalys
                                 </div>
-                                <div className="text-sm text-gray-800 whitespace-pre-line">
-                                  {riskTemplate}
-                                </div>
+                                <textarea
+                                  rows={3}
+                                  className="mt-1 w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                                  placeholder="Beskriv riskanalys..."
+                                  value={riskText}
+                                  onChange={e =>
+                                    ci.id &&
+                                    onUpdateItem(ci.id, { risk_text: e.target.value })
+                                  }
+                                  readOnly={isInspectionLocked}
+                                />
                               </div>
                             )}
-                            {hasFtuTemplate && (
+                            {ftuText.length > 0 && (
                               <div className="rounded-lg border border-gray-200 bg-white p-3">
                                 <div className="text-xs font-semibold text-gray-700">
-                                  Fortsatt teknisk utredning (från databas)
+                                  Fortsatt teknisk utredning (FTU)
                                 </div>
-                                <div className="text-sm text-gray-800 whitespace-pre-line">
-                                  {ftuTemplate}
-                                </div>
+                                <textarea
+                                  rows={3}
+                                  className="mt-1 w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                                  placeholder="Beskriv fortsatt teknisk utredning..."
+                                  value={ftuText}
+                                  onChange={e =>
+                                    ci.id &&
+                                    onUpdateItem(ci.id, { ftu_text: e.target.value })
+                                  }
+                                  readOnly={isInspectionLocked}
+                                />
                               </div>
                             )}
                           </div>
@@ -1649,6 +1908,7 @@ function ExteriorControlPointsSection({
                               ci.id &&
                               onUpdateItem(ci.id, { note: e.target.value })
                             }
+                            readOnly={isInspectionLocked}
                           />
                         </div>
 
@@ -1657,6 +1917,7 @@ function ExteriorControlPointsSection({
                             images={ciImages}
                             onUpload={file => onUploadImageForControlItem(ci, file)}
                             onDelete={onDeleteControlItemImage}
+                            disabled={isInspectionLocked}
                           />
                         )}
                       </div>
@@ -1676,21 +1937,32 @@ function ExteriorControlPointsSection({
 type FreeNotesSectionProps = {
   item: ItemBundle
   rows: InspectionExteriorObservation[]
+  imagesByObservationId: Record<string, InspectionImage[]>
+  isInspectionLocked: boolean
   onAddFreeNote: () => void
   onUpdateFreeNote: (
     rowId: string,
     patch: Partial<InspectionExteriorObservation>
   ) => void
   onDeleteFreeNote: (rowId: string) => void
+  onUploadImageForObservation: (
+    observation: InspectionExteriorObservation,
+    file: File
+  ) => void
+  onDeleteObservationImage: (imageId: string) => void
   onAddControlFromCatalog: (cp: ControlPointLite) => void
 }
 
 function FreeNotesSection({
   item,
   rows,
+  imagesByObservationId,
+  isInspectionLocked,
   onAddFreeNote,
   onUpdateFreeNote,
   onDeleteFreeNote,
+  onUploadImageForObservation,
+  onDeleteObservationImage,
   onAddControlFromCatalog,
 }: FreeNotesSectionProps) {
   const [showSearch, setShowSearch] = useState(false)
@@ -1755,6 +2027,7 @@ function FreeNotesSection({
             type="button"
             onClick={onAddFreeNote}
             className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
+            disabled={isInspectionLocked}
           >
             + Lägg till fri notering
           </button>
@@ -1762,6 +2035,7 @@ function FreeNotesSection({
             type="button"
             onClick={handleToggleSearch}
             className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
+            disabled={isInspectionLocked}
           >
             + Lägg till ytterligare kontrollpunkt
           </button>
@@ -1779,6 +2053,7 @@ function FreeNotesSection({
             placeholder="Sök t.ex. sprickor, rost, avrinning…"
             value={searchTerm}
             onChange={handleSearchChange}
+            readOnly={isInspectionLocked}
           />
 
           {searching && (
@@ -1789,7 +2064,7 @@ function FreeNotesSection({
             <div className="max-h-40 overflow-auto rounded-md border bg-white">
               {searchResults.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-gray-500">
-                  Inga kontrollpunkter hittades för “{searchTerm.trim()}”.
+                  Inga kontrollpunkter hittades för "{searchTerm.trim()}".
                 </div>
               ) : (
                 searchResults.map(cp => (
@@ -1803,6 +2078,7 @@ function FreeNotesSection({
                       setSearchResults([])
                     }}
                     className="flex w-full flex-col items-start px-3 py-2 text-left text-xs hover:bg-gray-50"
+                    disabled={isInspectionLocked}
                   >
                     <span className="font-medium text-gray-900">
                       {cp.title || cp.key}
@@ -1848,12 +2124,14 @@ function FreeNotesSection({
                       row.id &&
                       onUpdateFreeNote(row.id, { part_label: e.target.value })
                     }
+                    readOnly={isInspectionLocked}
                   />
                 </div>
                 <button
                   type="button"
                   onClick={() => row.id && onDeleteFreeNote(row.id)}
                   className="text-[11px] text-red-600 hover:underline"
+                  disabled={isInspectionLocked}
                 >
                   Ta bort
                 </button>
@@ -1872,8 +2150,53 @@ function FreeNotesSection({
                     row.id &&
                     onUpdateFreeNote(row.id, { note: e.target.value })
                   }
+                  readOnly={isInspectionLocked}
                 />
               </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-600">
+                  Riskanalys
+                </label>
+                <textarea
+                  rows={3}
+                  className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                  placeholder="Beskriv riskanalys..."
+                  value={row.risk_text ?? ''}
+                  onChange={e =>
+                    row.id &&
+                    onUpdateFreeNote(row.id, { risk_text: e.target.value })
+                  }
+                  readOnly={isInspectionLocked}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-600">
+                  Fortsatt teknisk utredning (FTU)
+                </label>
+                <textarea
+                  rows={3}
+                  className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                  placeholder="Beskriv fortsatt teknisk utredning..."
+                  value={row.ftu_text ?? ''}
+                  onChange={e =>
+                    row.id &&
+                    onUpdateFreeNote(row.id, { ftu_text: e.target.value })
+                  }
+                  readOnly={isInspectionLocked}
+                />
+              </div>
+
+              {row.id && (
+                <ControlPointImagesSection
+                  images={imagesByObservationId[row.id] || []}
+                  onUpload={file => onUploadImageForObservation(row, file)}
+                  onDelete={onDeleteObservationImage}
+                  title="Bilder (fri notering)"
+                  disabled={isInspectionLocked}
+                />
+              )}
             </div>
           ))}
         </div>
@@ -1881,6 +2204,13 @@ function FreeNotesSection({
     </section>
   )
 }
+
+
+
+
+
+
+
 
 
 

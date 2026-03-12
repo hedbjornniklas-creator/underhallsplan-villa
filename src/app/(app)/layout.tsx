@@ -23,7 +23,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     segments[2] === 'ob' &&
     segments.length >= 4 // dÃƒÂ¥ har vi ett inspectionId efter "ob"
 
-  if (isEmbed) {
+  const isLandingPage = pathname === '/'
+
+  if (isEmbed || isLandingPage) {
     return <main className="min-h-screen bg-white">{children}</main>
   }
 

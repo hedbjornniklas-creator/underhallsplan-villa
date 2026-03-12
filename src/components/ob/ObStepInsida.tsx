@@ -8,6 +8,7 @@ type Inspection = {
   property_id: string
   date: string | null
   assignment_number: string | null
+  status?: string | null
 }
 
 type RoomType = {
@@ -56,6 +57,8 @@ type InspectionControlItem = {
   title: string
   status: string | null
   note: string | null
+  risk_text?: string | null
+  ftu_text?: string | null
   sort_order: number
   selected_outcome_id: string | null
 }
@@ -109,6 +112,13 @@ type ObStepInsidaProps = {
 const RED_STATUS: InspectionControlItem['status'] = null
 const OTHER_ROOM_TYPE_KEY = 'ovrigt'
 const OTHER_ROOM_DISPLAY_LABEL = 'Allm\u00e4nt'
+const normalizeInspectionStatus = (value: string | null | undefined) => {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'completed' || normalized === 'klar' || normalized === 'done') {
+    return 'completed'
+  }
+  return normalized
+}
 
 // Storage-bucket för bilder
 const IMAGE_BUCKET = 'inspection-images' as const
@@ -234,6 +244,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const isInspectionLocked = normalizeInspectionStatus(inspection?.status) === 'completed'
 
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([])
   const [groups, setGroups] = useState<InteriorGroup[]>([])
@@ -430,6 +441,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           const ciArr = ciRows.map(ci => ({
             ...ci,
             selected_outcome_id: ci.selected_outcome_id ?? null,
+            risk_text: ci.risk_text ?? null,
+            ftu_text: ci.ftu_text ?? null,
           }))
           setControlItems(ciArr)
 
@@ -803,6 +816,10 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   const upsertControlItem = async (
     item: InspectionControlItem
   ): Promise<InspectionControlItem> => {
+    if (isInspectionLocked) {
+      setError('Besiktningen är låst (klar) och kan inte redigeras.')
+      return item
+    }
     setSaving(true)
     setError(null)
     try {
@@ -813,6 +830,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             title: item.title,
             status: item.status,
             note: item.note,
+            risk_text: item.risk_text ?? null,
+            ftu_text: item.ftu_text ?? null,
             sort_order: item.sort_order,
             selected_outcome_id: item.selected_outcome_id ?? null,
           })
@@ -832,6 +851,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             title: item.title,
             status: item.status,
             note: item.note,
+            risk_text: item.risk_text ?? null,
+            ftu_text: item.ftu_text ?? null,
             sort_order: item.sort_order,
             selected_outcome_id: item.selected_outcome_id ?? null,
           })
@@ -858,6 +879,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                 ...(existing as InspectionControlItem),
                 selected_outcome_id:
                   (existing as InspectionControlItem).selected_outcome_id ?? null,
+                risk_text: (existing as InspectionControlItem).risk_text ?? null,
+                ftu_text: (existing as InspectionControlItem).ftu_text ?? null,
               }
             }
           }
@@ -878,6 +901,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     itemId: string,
     patch: Partial<InspectionControlItem>
   ) => {
+    if (isInspectionLocked) return
     const current = controlItems.find(ci => ci.id === itemId)
     if (!current) return
 
@@ -889,6 +913,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   }
 
   const deleteControlItem = async (itemId: string) => {
+    if (isInspectionLocked) return
     const item = controlItems.find(ci => ci.id === itemId)
     if (!item) return
 
@@ -958,6 +983,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   const createDefaultControlItemsForRoom = async (
     room: InteriorRoom
   ): Promise<number> => {
+    if (isInspectionLocked) return 0
     if (!room.id) return 0
 
     try {
@@ -1018,6 +1044,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             title: cp.title || cp.label || cp.key,
             status: RED_STATUS,
             note: null,
+            risk_text: null,
+            ftu_text: null,
             sort_order: sortBase,
             selected_outcome_id: null,
           }
@@ -1077,6 +1105,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     room: InteriorRoom,
     cp: ControlPointLite
   ) => {
+    if (isInspectionLocked) return
     if (!room.id) return
 
     const existingLocal = controlItems.find(
@@ -1122,6 +1151,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       title: cp.title || cp.label || cp.key,
       status: RED_STATUS,
       note: null,
+      risk_text: null,
+      ftu_text: null,
       sort_order: sortOrder,
       selected_outcome_id: null,
     }
@@ -1146,6 +1177,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   // Lägg till fri notering som egen kontrollpunkt
   // -----------------------------
   const addFreeNoteControlItem = async (room: InteriorRoom) => {
+    if (isInspectionLocked) return
     if (!room.id) return
 
     const existingForRoom = controlItems.filter(
@@ -1163,6 +1195,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       title: 'Fri notering',
       status: RED_STATUS,
       note: '',
+      risk_text: null,
+      ftu_text: null,
       sort_order: sortOrder,
       selected_outcome_id: null,
     }
@@ -1847,6 +1881,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                   onDeleteItem={deleteControlItem}
                   onAddFromCatalog={addControlItemFromCatalog}
                   onAddFreeNote={addFreeNoteControlItem}
+                  isInspectionLocked={isInspectionLocked}
                   outcomesByControlPointId={outcomesByControlPointId}
                   controlPointMetaById={controlPointMetaById}
                   imagesByControlItemId={imagesByControlItemId}
@@ -1967,6 +2002,7 @@ function ControlItemImagesSection({
 type RoomControlPointsSectionProps = {
   room: InteriorRoom
   items: InspectionControlItem[]
+  isInspectionLocked: boolean
   onUpdateItem: (itemId: string, patch: Partial<InspectionControlItem>) => void
   onDeleteItem: (itemId: string) => void
   onAddFromCatalog: (room: InteriorRoom, cp: ControlPointLite) => void
@@ -1981,6 +2017,7 @@ type RoomControlPointsSectionProps = {
 function RoomControlPointsSection({
   room,
   items,
+  isInspectionLocked,
   onUpdateItem,
   onDeleteItem,
   onAddFromCatalog,
@@ -2045,6 +2082,7 @@ function RoomControlPointsSection({
             placeholder="Sök t.ex. golvbrunn, kyl, trinett…"
             value={searchTerm}
             onChange={handleSearchChange}
+            readOnly={isInspectionLocked}
           />
 
           {searching && (
@@ -2069,6 +2107,7 @@ function RoomControlPointsSection({
                       setShowSearch(false)
                     }}
                     className="flex w-full flex-col items-start px-3 py-2 text-left text-xs hover:bg-gray-50"
+                    disabled={isInspectionLocked}
                   >
                     <span className="font-medium text-gray-900">
                       {cp.title || cp.label || cp.key}
@@ -2101,6 +2140,7 @@ function RoomControlPointsSection({
             type="button"
             onClick={() => onAddFreeNote(room)}
             className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
+            disabled={isInspectionLocked}
           >
             + Lägg till fri notering
           </button>
@@ -2108,6 +2148,7 @@ function RoomControlPointsSection({
             type="button"
             onClick={() => setShowSearch(prev => !prev)}
             className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
+            disabled={isInspectionLocked}
           >
             + Lägg till ytterligare kontrollpunkt
           </button>
@@ -2139,8 +2180,8 @@ function RoomControlPointsSection({
             : null
           const riskTemplate = (selectedOutcome?.risk_template ?? '').trim()
           const ftuTemplate = (selectedOutcome?.ftu_template ?? '').trim()
-          const hasRiskTemplate = riskTemplate.length > 0
-          const hasFtuTemplate = ftuTemplate.length > 0
+          const riskText = (ci.risk_text ?? riskTemplate).trim()
+          const ftuText = (ci.ftu_text ?? ftuTemplate).trim()
           const effectiveStatus = ci.status
           const isGreen = !ci.selected_outcome_id && effectiveStatus === 'ok'
           const isYellow = !!ci.selected_outcome_id
@@ -2168,6 +2209,7 @@ function RoomControlPointsSection({
                     type="button"
                     onClick={() => onDeleteItem(ci.id!)}
                     className="text-[11px] text-rose-600 hover:underline"
+                    disabled={isInspectionLocked}
                   >
                     {isFreeNote ? 'Ta bort notering' : 'Ta bort kontrollpunkt'}
                   </button>
@@ -2199,8 +2241,12 @@ function RoomControlPointsSection({
                         onUpdateItem(ci.id, {
                           status: isGreen ? RED_STATUS : 'ok',
                           selected_outcome_id: null,
+                          note: null,
+                          risk_text: null,
+                          ftu_text: null,
                         })
                       }}
+                      disabled={isInspectionLocked}
                     >
                       Inget att notera
                     </button>
@@ -2227,8 +2273,19 @@ function RoomControlPointsSection({
                               status: isActive ? RED_STATUS : 'remark',
                               selected_outcome_id: isActive ? null : outcome.id,
                               note: nextNote,
+                              risk_text: isActive
+                                ? null
+                                : ((ci.risk_text ?? '').trim().length > 0
+                                    ? ci.risk_text
+                                    : (outcome.risk_template ?? '').trim() || null),
+                              ftu_text: isActive
+                                ? null
+                                : ((ci.ftu_text ?? '').trim().length > 0
+                                    ? ci.ftu_text
+                                    : (outcome.ftu_template ?? '').trim() || null),
                             })
                           }}
+                          disabled={isInspectionLocked}
                         >
                           {outcome.label}
                         </button>
@@ -2238,26 +2295,42 @@ function RoomControlPointsSection({
                 </div>
               )}
 
-              {!isFreeNote && selectedOutcome && (hasRiskTemplate || hasFtuTemplate) && (
+              {!isFreeNote && selectedOutcome && (riskText.length > 0 || ftuText.length > 0) && (
                 <div className="space-y-2">
-                  {hasRiskTemplate && (
+                  {riskText.length > 0 && (
                     <div className="rounded-lg border border-gray-200 bg-white p-3">
                       <div className="text-xs font-semibold text-gray-700">
-                        Risk (från databas)
+                        Riskanalys
                       </div>
-                      <div className="text-sm text-gray-800 whitespace-pre-line">
-                        {riskTemplate}
-                      </div>
+                      <textarea
+                        rows={3}
+                        className="mt-1 w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                        placeholder="Beskriv riskanalys..."
+                        value={riskText}
+                        onChange={e =>
+                          ci.id &&
+                          onUpdateItem(ci.id, { risk_text: e.target.value })
+                        }
+                        readOnly={isInspectionLocked}
+                      />
                     </div>
                   )}
-                  {hasFtuTemplate && (
+                  {ftuText.length > 0 && (
                     <div className="rounded-lg border border-gray-200 bg-white p-3">
                       <div className="text-xs font-semibold text-gray-700">
-                        Fortsatt teknisk utredning (från databas)
+                        Fortsatt teknisk utredning (FTU)
                       </div>
-                      <div className="text-sm text-gray-800 whitespace-pre-line">
-                        {ftuTemplate}
-                      </div>
+                      <textarea
+                        rows={3}
+                        className="mt-1 w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                        placeholder="Beskriv fortsatt teknisk utredning..."
+                        value={ftuText}
+                        onChange={e =>
+                          ci.id &&
+                          onUpdateItem(ci.id, { ftu_text: e.target.value })
+                        }
+                        readOnly={isInspectionLocked}
+                      />
                     </div>
                   )}
                 </div>
@@ -2280,6 +2353,7 @@ function RoomControlPointsSection({
                     ci.id &&
                     onUpdateItem(ci.id, { note: e.target.value })
                   }
+                  readOnly={isInspectionLocked}
                 />
               </div>
 

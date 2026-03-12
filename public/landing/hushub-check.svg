@@ -1,0 +1,15 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1200 800"
+  role="img"
+  aria-label="Hushub check"
+>
+  <polyline
+    points="170 430 430 630 1020 130"
+    fill="none"
+    stroke="#0b0d12"
+    stroke-width="80"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

@@ -30,10 +30,12 @@ export default function LoginPage() {
   const [resetError, setResetError] = useState<string | null>(null)
   const [resetInfo, setResetInfo] = useState<string | null>(null)
   const [resetSuccess, setResetSuccess] = useState(false)
+  const [authRedirectTo, setAuthRedirectTo] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     setResetSuccess(params.get('reset') === 'success')
+    setAuthRedirectTo(`${window.location.origin}/auth/reset-password`)
 
     if (isRecoveryContext()) {
       const query = window.location.search ?? ''
@@ -103,7 +105,12 @@ export default function LoginPage() {
         </p>
       ) : null}
 
-      <Auth supabaseClient={supabase} appearance={{ theme: ThemeSupa }} providers={[]} />
+      <Auth
+        supabaseClient={supabase}
+        appearance={{ theme: ThemeSupa }}
+        providers={[]}
+        redirectTo={authRedirectTo}
+      />
 
       <form onSubmit={handleResetPassword} style={{ marginTop: 20 }}>
         <label htmlFor="resetEmail" style={{ display: 'block', marginBottom: 8 }}>

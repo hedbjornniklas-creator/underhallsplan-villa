@@ -587,10 +587,12 @@ export type Database = {
           control_point_id: string | null
           created_at: string
           exterior_observation_id: string | null
+          ftu_text: string | null
           id: string
           inspection_id: string
           interior_room_id: string | null
           note: string | null
+          risk_text: string | null
           selected_outcome_id: string | null
           sort_order: number
           status: string | null
@@ -601,10 +603,12 @@ export type Database = {
           control_point_id?: string | null
           created_at?: string
           exterior_observation_id?: string | null
+          ftu_text?: string | null
           id?: string
           inspection_id: string
           interior_room_id?: string | null
           note?: string | null
+          risk_text?: string | null
           selected_outcome_id?: string | null
           sort_order?: number
           status?: string | null
@@ -615,10 +619,12 @@ export type Database = {
           control_point_id?: string | null
           created_at?: string
           exterior_observation_id?: string | null
+          ftu_text?: string | null
           id?: string
           inspection_id?: string
           interior_room_id?: string | null
           note?: string | null
+          risk_text?: string | null
           selected_outcome_id?: string | null
           sort_order?: number
           status?: string | null
@@ -833,30 +839,36 @@ export type Database = {
         Row: {
           created_at: string | null
           exterior_item_id: string
+          ftu_text: string | null
           id: string
           inspection_id: string
           note: string | null
           part_label: string | null
+          risk_text: string | null
           updated_at: string | null
           values: Json
         }
         Insert: {
           created_at?: string | null
           exterior_item_id: string
+          ftu_text?: string | null
           id?: string
           inspection_id: string
           note?: string | null
           part_label?: string | null
+          risk_text?: string | null
           updated_at?: string | null
           values?: Json
         }
         Update: {
           created_at?: string | null
           exterior_item_id?: string
+          ftu_text?: string | null
           id?: string
           inspection_id?: string
           note?: string | null
           part_label?: string | null
+          risk_text?: string | null
           updated_at?: string | null
           values?: Json
         }

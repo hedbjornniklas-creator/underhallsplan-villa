@@ -13,6 +13,8 @@ type ExteriorObservationRow = {
   exterior_item_id: string
   part_label: string | null
   note: string | null
+  risk_text: string | null
+  ftu_text: string | null
   values: Record<string, any> | null
   is_free_note?: boolean | null
   created_at?: string | null
@@ -24,6 +26,8 @@ type ExteriorControlItemRow = {
   control_point_id: string | null
   title: string
   note: string | null
+  risk_text: string | null
+  ftu_text: string | null
   sort_order: number | null
   selected_outcome_id: string | null
 }
@@ -53,6 +57,8 @@ type InteriorControlItemRow = {
   control_point_id: string | null
   title: string
   note: string | null
+  risk_text: string | null
+  ftu_text: string | null
   sort_order: number | null
   selected_outcome_id: string | null
 }
@@ -424,7 +430,7 @@ const supabase: any = createSupabaseServerClient()
 
   const { data: exteriorObservations, error: exteriorObservationsError } = await supabase
     .from('inspection_exterior_observations')
-    .select('id, exterior_item_id, part_label, note, values, created_at')
+    .select('id, exterior_item_id, part_label, note, risk_text, ftu_text, values, created_at')
     .eq('inspection_id', resolvedParams.inspectionId)
     .order('created_at', { ascending: true })
 
@@ -435,7 +441,7 @@ const supabase: any = createSupabaseServerClient()
   const { data: exteriorControlItems, error: exteriorControlItemsError } = await supabase
     .from('inspection_control_items')
     .select(
-      'id, exterior_observation_id, control_point_id, title, note, sort_order, selected_outcome_id'
+      'id, exterior_observation_id, control_point_id, title, note, risk_text, ftu_text, sort_order, selected_outcome_id'
     )
     .eq('inspection_id', resolvedParams.inspectionId)
     .not('exterior_observation_id', 'is', null)
@@ -513,7 +519,7 @@ const supabase: any = createSupabaseServerClient()
       ? await supabase
           .from('inspection_control_items')
           .select(
-            'id, interior_room_id, control_point_id, title, note, sort_order, selected_outcome_id'
+            'id, interior_room_id, control_point_id, title, note, risk_text, ftu_text, sort_order, selected_outcome_id'
           )
           .eq('inspection_id', resolvedParams.inspectionId)
           .in('interior_room_id', interiorRoomIds)
@@ -643,14 +649,14 @@ const supabase: any = createSupabaseServerClient()
         .map((image) => buildInspectionImageUrl(image.file_path))
         .filter((url): url is string => Boolean(url))
 
-      const riskText = trimText(outcome?.risk_template ?? '')
+      const riskText = trimText(controlItem.risk_text ?? outcome?.risk_template ?? '')
       if (riskText.length > 0) {
         riskLines.push(item.label)
         riskLines.push(riskText)
         riskLines.push('')
       }
 
-      const ftuText = trimText(outcome?.ftu_template ?? '')
+      const ftuText = trimText(controlItem.ftu_text ?? outcome?.ftu_template ?? '')
       if (ftuText.length > 0) {
         ftuLines.push(item.label)
         ftuLines.push(ftuText)
@@ -675,15 +681,27 @@ const supabase: any = createSupabaseServerClient()
 
     freeNoteRows.forEach((row) => {
       const note = trimText(row.note)
-      if (!note) return
       const label = trimText(row.part_label) || 'Fri notering'
-      const line = `${label}: ${note}`
+      const freeRiskText = trimText(row.risk_text ?? '')
+      const freeFtuText = trimText(row.ftu_text ?? '')
+      if (!note && freeRiskText.length === 0 && freeFtuText.length === 0) return
+      const line = note ? `${label}: ${note}` : `${label}: --`
+      if (freeRiskText.length > 0) {
+        riskLines.push(label)
+        riskLines.push(freeRiskText)
+        riskLines.push('')
+      }
+      if (freeFtuText.length > 0) {
+        ftuLines.push(label)
+        ftuLines.push(freeFtuText)
+        ftuLines.push('')
+      }
       itemLines.push(line)
       blocksForItem.push({
         title: item.label,
         noteText: line,
-        riskText: '',
-        ftuText: '',
+        riskText: freeRiskText,
+        ftuText: freeFtuText,
         photoUrls: [],
         hasDeviations: true,
       })
@@ -765,14 +783,14 @@ const supabase: any = createSupabaseServerClient()
         .map((image) => buildInspectionImageUrl(image.file_path))
         .filter((url): url is string => Boolean(url))
 
-      const riskText = trimText(outcome?.risk_template ?? '')
+      const riskText = trimText(controlItem.risk_text ?? outcome?.risk_template ?? '')
       if (riskText.length > 0) {
         riskLines.push(roomTitle)
         riskLines.push(riskText)
         riskLines.push('')
       }
 
-      const ftuText = trimText(outcome?.ftu_template ?? '')
+      const ftuText = trimText(controlItem.ftu_text ?? outcome?.ftu_template ?? '')
       if (ftuText.length > 0) {
         ftuLines.push(roomTitle)
         ftuLines.push(ftuText)
