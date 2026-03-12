@@ -1,8 +1,9 @@
 ﻿'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import Protected from '@/components/Protected'
-import { ClipboardCheck, Power } from 'lucide-react'
+import { Power } from 'lucide-react'
 
 type ModuleCardData = {
   id: string
@@ -27,24 +28,25 @@ function ModuleCard({ module }: { module: ModuleCardData }) {
       <div className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b from-indigo-500 to-sky-400" />
       <div className="pointer-events-none absolute left-4 right-4 top-0 h-px bg-white/60" />
       <div className="relative flex h-full flex-col">
-        <div className="space-y-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200/70">
-                <ClipboardCheck size={20} aria-hidden />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 md:text-xl">{module.title}</h2>
-                <p className="mt-1 text-sm leading-relaxed text-gray-700">{module.description}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <span className="inline-flex shrink-0 items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700">
+        <div className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <Image
+              src="/landing/BesiktApp.png"
+              alt="BesiktApp"
+              width={120}
+              height={28}
+              className="h-6 w-auto object-contain"
+            />
+            <span className="mt-0.5 inline-flex shrink-0 items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700">
               Aktiv modul
             </span>
           </div>
+
+          <h2 className="text-2xl font-semibold leading-tight tracking-tight text-gray-900 md:text-3xl">
+            {module.title}
+          </h2>
+
+          <p className="text-sm leading-relaxed text-gray-700">{module.description}</p>
         </div>
 
         <div className="flex flex-1 items-center justify-center">
@@ -52,10 +54,15 @@ function ModuleCard({ module }: { module: ModuleCardData }) {
             href={module.href}
             aria-label={`Öppna ${module.title}`}
             title={`Öppna ${module.title}`}
-            className="inline-flex h-28 w-28 items-center justify-center rounded-full bg-gradient-to-b from-lime-400 to-green-600 p-[9px] shadow-[0_16px_26px_-16px_rgba(22,101,52,0.85)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:shadow-[0_20px_30px_-14px_rgba(22,101,52,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+            className="inline-flex h-28 w-28 cursor-pointer items-center justify-center rounded-full bg-gradient-to-b from-lime-400 to-green-600 p-[9px] shadow-[0_16px_26px_-16px_rgba(22,101,52,0.85)] transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-105 hover:from-cyan-400 hover:to-blue-600 hover:shadow-[0_22px_34px_-10px_rgba(14,165,233,0.98)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
           >
-            <span className="flex h-full w-full items-center justify-center rounded-full bg-white ring-1 ring-black/10 shadow-inner">
-              <Power size={42} aria-hidden className="text-gray-500" strokeWidth={2.25} />
+            <span className="flex h-full w-full items-center justify-center rounded-full bg-white ring-1 ring-black/10 shadow-inner transition-all duration-300 hover:bg-slate-50">
+              <Power
+                size={42}
+                aria-hidden
+                className="text-gray-500 transition-transform duration-300 ease-out group-hover:rotate-12 group-hover:scale-110"
+                strokeWidth={2.25}
+              />
             </span>
           </Link>
         </div>
@@ -80,7 +87,7 @@ export default function DashboardV1Page() {
         <div className="relative mx-auto w-full max-w-6xl px-4 py-8 md:px-6 md:py-12">
           <header className="mx-auto max-w-4xl text-center">
             <h1 className="text-xs font-semibold uppercase tracking-[0.26em] text-indigo-900/70">
-              Dashboard v1
+              Dashboard
             </h1>
           </header>
 

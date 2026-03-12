@@ -48,13 +48,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               className="inline-flex max-w-full items-center gap-2 text-sm font-medium text-gray-800 transition hover:text-gray-900"
             >
               <Image
-                src="/report-assets/BesiktApp.png"
-                alt="Underhållsplan Villa"
-                width={156}
-                height={36}
+                src="/landing/Hushub-check.png"
+                alt="HusHub"
+                width={52}
+                height={32}
                 className="h-8 w-auto object-contain"
               />
-              <span className="sr-only">Underhållsplan Villa</span>
+              <span className="text-xl font-semibold tracking-tight text-gray-900">HusHub</span>
             </Link>
           </div>
 
@@ -76,7 +76,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <div className="flex items-center justify-end">
             <button
               onClick={handleLogout}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-b from-rose-400 to-red-600 p-[3px] shadow-[0_10px_18px_-10px_rgba(185,28,28,0.95)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_20px_-10px_rgba(185,28,28,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+              className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-gradient-to-b from-rose-400 to-red-600 p-[3px] shadow-[0_10px_18px_-10px_rgba(185,28,28,0.95)] transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-[0_14px_20px_-10px_rgba(185,28,28,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
               type="button"
               aria-label="Logga ut"
               title="Logga ut"
