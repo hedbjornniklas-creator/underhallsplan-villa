@@ -45,7 +45,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <div className="min-w-0">
             <Link
               href="/dashboard-v1"
-              className="inline-flex max-w-full items-center gap-2 text-sm font-medium text-gray-800 transition hover:text-gray-900"
+              className="inline-flex max-w-full items-center gap-1 text-sm font-medium text-gray-800 transition hover:text-gray-900"
             >
               <Image
                 src="/landing/Hushub-check.png"

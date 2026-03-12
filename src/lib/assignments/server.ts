@@ -135,7 +135,12 @@ type PropertySeedRow = {
   last_inspection_at: string | null
 }
 
-type SupabaseError = { message?: string } | null
+type SupabaseError = {
+  message?: string
+  details?: string | null
+  hint?: string | null
+  code?: string | null
+} | null
 
 type SupabaseResponse<T> = Promise<{ data: T | null; error: SupabaseError }>
 
@@ -954,7 +959,11 @@ export async function consumeAssignmentToken(input: {
   })
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte acceptera uppdrag.')
+    const parts = [error.message ?? 'Kunde inte acceptera uppdrag.']
+    if (error.code) parts.push(`code=${error.code}`)
+    if (error.details) parts.push(`details=${error.details}`)
+    if (error.hint) parts.push(`hint=${error.hint}`)
+    throw new Error(parts.join(' | '))
   }
 
   return data

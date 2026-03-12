@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isIP } from 'node:net'
 import { consumeAssignmentToken, resolvePublicAssignmentByToken } from '@/lib/assignments/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
@@ -80,10 +81,32 @@ function normalizeAssignment(row: PublicLink) {
   return assignmentValue
 }
 
+function normalizeClientIp(value: string | null) {
+  if (!value) return null
+  let candidate = value.trim()
+  if (!candidate) return null
+
+  if (/^\d{1,3}(?:\.\d{1,3}){3}:\d+$/.test(candidate)) {
+    candidate = candidate.split(':')[0] ?? candidate
+  }
+
+  const bracketedIpv6 = candidate.match(/^\[([0-9a-fA-F:]+)\]:(\d+)$/)
+  if (bracketedIpv6?.[1]) {
+    candidate = bracketedIpv6[1]
+  }
+
+  return isIP(candidate) ? candidate : null
+}
+
 function getClientIp(request: Request) {
   const forwarded = request.headers.get('x-forwarded-for')
-  if (!forwarded) return null
-  return forwarded.split(',')[0]?.trim() || null
+  if (forwarded) {
+    const first = forwarded.split(',')[0] ?? null
+    const normalized = normalizeClientIp(first)
+    if (normalized) return normalized
+  }
+
+  return normalizeClientIp(request.headers.get('x-real-ip'))
 }
 
 function parsePrice(value: unknown) {
@@ -183,8 +206,11 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ token: string }> }
 ) {
+  let tokenForLog = ''
+
   try {
     const { token } = await context.params
+    tokenForLog = token
     if (!token || token.length < 20) return jsonError('Ogiltig länk.', 400)
 
     const link = await resolvePublicAssignmentByToken(token)
@@ -240,7 +266,13 @@ export async function POST(
       return jsonError('Ange en giltig tid.', 400)
     }
 
-    const roleLabel = termsRole === 'buyer' ? 'Köpare' : termsRole === 'apartment' ? 'Lägenhet' : 'Säljare'
+    const roleLabel =
+      termsRole === 'buyer'
+        ? 'Köpare'
+        : termsRole === 'apartment'
+          ? 'Lägenhet'
+          : 'Säljare'
+
     const priceAmount = parsePrice(body.priceAmount)
     if (priceAmount === null) {
       return jsonError('Pris är obligatoriskt och måste vara giltigt.', 400)
@@ -280,6 +312,13 @@ export async function POST(
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
+    const lowered = message.toLowerCase()
+
+    console.error('[assignments.accept] unhandled error', {
+      token_prefix: tokenForLog.slice(0, 8),
+      message,
+    })
+
     if (message.includes('token_not_valid_or_expired')) {
       return jsonError('Länken är ogiltig eller har gått ut.', 410)
     }
@@ -301,6 +340,16 @@ export async function POST(
     if (message.includes('missing_terms_document_hash') || message.includes('invalid_terms_document_hash')) {
       return jsonError('Dokumentfingeravtryck saknas eller är ogiltigt.', 400)
     }
+    if (lowered.includes('invalid input syntax for type inet')) {
+      return jsonError('Kunde inte verifiera anslutningsinformation. Försök igen.', 400)
+    }
+    if (
+      lowered.includes('could not find the function public.consume_assignment_token') ||
+      lowered.includes('schema cache')
+    ) {
+      return jsonError('Servern saknar senaste databasfunktion för godkännande.', 500)
+    }
+
     return jsonError('Kunde inte acceptera uppdraget.', 500)
   }
 }
