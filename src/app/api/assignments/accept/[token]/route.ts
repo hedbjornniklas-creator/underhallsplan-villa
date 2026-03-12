@@ -349,6 +349,9 @@ export async function POST(
     ) {
       return jsonError('Servern saknar senaste databasfunktion för godkännande.', 500)
     }
+    if (lowered.includes('function digest(') && lowered.includes('does not exist')) {
+      return jsonError('Servern saknar pgcrypto-konfiguration för godkännande.', 500)
+    }
 
     return jsonError('Kunde inte acceptera uppdraget.', 500)
   }
