@@ -170,12 +170,12 @@ export function buildAssignmentConfirmationEmail(
     <title>Uppdragsbekräftelse</title>
   </head>
   <body style="margin:0;padding:0;background:#eef3ff;font-family:Segoe UI,Arial,sans-serif;color:#1f2937;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef3ff;padding:24px 12px;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef3ff;padding:12px 12px;">
       <tr>
         <td align="center">
           <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="width:100%;max-width:640px;background:#ffffff;border:1px solid #dbe4ff;border-radius:16px;overflow:hidden;">
             <tr>
-              <td style="padding:20px 24px;background:linear-gradient(135deg,#1e3a8a 0%,#1d4ed8 48%,#60a5fa 100%);color:#ffffff;">
+              <td style="padding:14px 20px;background:#1d4ed8;background-image:linear-gradient(135deg,#1e3a8a 0%,#1d4ed8 48%,#60a5fa 100%);color:#ffffff;">
                 <div style="font-size:20px;font-weight:700;letter-spacing:0.02em;">UPPDRAGSBEKR&Auml;FTELSE</div>
                 <div style="margin-top:10px;font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
                   &Ouml;verl&aring;telsebesiktning f&ouml;r
@@ -184,7 +184,7 @@ export function buildAssignmentConfirmationEmail(
               </td>
             </tr>
             <tr>
-              <td style="padding:24px;">
+              <td style="padding:12px 24px 24px;">
                 <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 14px;">
                   <tr>
                     <td

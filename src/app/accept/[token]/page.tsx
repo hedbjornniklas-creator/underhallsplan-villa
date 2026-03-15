@@ -554,12 +554,6 @@ export default function AssignmentAcceptPage() {
                 <span>Jag har läst och godkänner villkoren nedan (version {data.terms.version}). *</span>
               </label>
 
-              <div className="rounded-xl border border-gray-200 bg-white p-3">
-                <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-gray-700">
-                  {activeTerms?.text ?? 'Valj uppdragsgivare for att visa villkoren.'}
-                </pre>
-              </div>
-
               <button
                 type="button"
                 onClick={() => void handleSubmit()}
@@ -568,6 +562,12 @@ export default function AssignmentAcceptPage() {
               >
                 {saving ? 'Sparar...' : 'Godkänn villkor och skicka uppdrag'}
               </button>
+
+              <div className="rounded-xl border border-gray-200 bg-white p-3">
+                <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-gray-700">
+                  {activeTerms?.text ?? 'Valj uppdragsgivare for att visa villkoren.'}
+                </pre>
+              </div>
             </section>
           </>
         ) : null}

@@ -54,6 +54,24 @@ type RoomTypeDraft = {
   is_active: boolean
 }
 
+type AddonServiceType = {
+  id: string
+  key: string
+  name: string
+  description: string | null
+  sort_order: number
+  is_active: boolean
+}
+
+type AddonServiceDraft = {
+  id?: string
+  key: string
+  name: string
+  description: string | null
+  sort_order: number
+  is_active: boolean
+}
+
 type ExteriorItem = {
   id: string
   key: string
@@ -126,15 +144,23 @@ export default function AdminClient() {
         ? 'forutsattningar'
       : search.get('tab') === 'room-types'
         ? 'room-types'
-        : 'docs') as 'docs' | 'comps' | 'control-points' | 'room-types' | 'forutsattningar'
-  const [tab, setTab] = useState<'docs' | 'comps' | 'control-points' | 'room-types' | 'forutsattningar'>(initialTab)
+      : search.get('tab') === 'addon-services'
+        ? 'addon-services'
+        : 'docs') as
+    | 'docs'
+    | 'comps'
+    | 'control-points'
+    | 'room-types'
+    | 'forutsattningar'
+    | 'addon-services'
+  const [tab, setTab] = useState<'docs' | 'comps' | 'control-points' | 'room-types' | 'forutsattningar' | 'addon-services'>(initialTab)
 
   // Synka tab <-> URL
   useEffect(() => {
     const t = search.get('tab')
-    if (t === 'docs' || t === 'comps' || t === 'control-points' || t === 'room-types' || t === 'forutsattningar') setTab(t)
+    if (t === 'docs' || t === 'comps' || t === 'control-points' || t === 'room-types' || t === 'forutsattningar' || t === 'addon-services') setTab(t)
   }, [search])
-  const setTabAndPush = (t: 'docs' | 'comps' | 'control-points' | 'room-types' | 'forutsattningar') => {
+  const setTabAndPush = (t: 'docs' | 'comps' | 'control-points' | 'room-types' | 'forutsattningar' | 'addon-services') => {
     setTab(t)
     router.replace(`/admin?tab=${t}`)
   }
@@ -188,6 +214,14 @@ export default function AdminClient() {
   }>({ key: 'sort_order', dir: 'asc' })
   const [roomTypeModalOpen, setRoomTypeModalOpen] = useState(false)
   const [roomTypeDraft, setRoomTypeDraft] = useState<RoomTypeDraft | null>(null)
+  const [addonServicesAll, setAddonServicesAll] = useState<AddonServiceType[]>([])
+  const [qAddonServices, setQAddonServices] = useState('')
+  const [addonServiceSort, setAddonServiceSort] = useState<{
+    key: keyof AddonServiceType
+    dir: 'asc' | 'desc'
+  }>({ key: 'sort_order', dir: 'asc' })
+  const [addonServiceModalOpen, setAddonServiceModalOpen] = useState(false)
+  const [addonServiceDraft, setAddonServiceDraft] = useState<AddonServiceDraft | null>(null)
 
   useEffect(() => {
     if (loading || !isAdmin) return
@@ -197,6 +231,7 @@ export default function AdminClient() {
     loadRoomTypes()
     loadRoomTypesAll()
     loadExteriorItems()
+    loadAddonServices()
   }, [loading, isAdmin])
 
   useEffect(() => {
@@ -336,6 +371,19 @@ export default function AdminClient() {
     setExteriorItems((data ?? []) as ExteriorItem[])
   }
 
+  const loadAddonServices = async () => {
+    const { data, error } = await (supabase as any)
+      .from('settings_addon_services')
+      .select('id, key, name, description, sort_order, is_active')
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true })
+    if (error) {
+      console.error(error.message)
+      return
+    }
+    setAddonServicesAll((data ?? []) as AddonServiceType[])
+  }
+
   const filteredDocs = useMemo(() => {
     const s = qDocs.trim().toLowerCase()
     const rows = !s
@@ -402,6 +450,34 @@ export default function AdminClient() {
 
     return sorted
   }, [roomTypesAll, qRoomTypes, roomTypeSort])
+
+  const filteredAddonServices = useMemo(() => {
+    const s = qAddonServices.trim().toLowerCase()
+    const rows = !s
+      ? addonServicesAll
+      : addonServicesAll.filter(
+          r =>
+            (r.key ?? '').toLowerCase().includes(s) ||
+            (r.name ?? '').toLowerCase().includes(s) ||
+            (r.description ?? '').toLowerCase().includes(s)
+        )
+
+    const sorted = [...rows].sort((a, b) => {
+      const dir = addonServiceSort.dir === 'asc' ? 1 : -1
+      const aVal = (a[addonServiceSort.key] ?? '') as any
+      const bVal = (b[addonServiceSort.key] ?? '') as any
+      const aNum = typeof aVal === 'number' ? aVal : NaN
+      const bNum = typeof bVal === 'number' ? bVal : NaN
+      if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+        return (aNum - bNum) * dir
+      }
+      const aStr = typeof aVal === 'boolean' ? (aVal ? '1' : '0') : String(aVal).toLowerCase()
+      const bStr = typeof bVal === 'boolean' ? (bVal ? '1' : '0') : String(bVal).toLowerCase()
+      return aStr.localeCompare(bStr) * dir
+    })
+
+    return sorted
+  }, [addonServicesAll, qAddonServices, addonServiceSort])
 
   const buildPointDraft = (
     row?: ControlPointRow,
@@ -897,6 +973,49 @@ export default function AdminClient() {
     setRoomTypeDraft(null)
   }
 
+  const normalizeAddonKey = (value: string) =>
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+
+  const toggleAddonServiceSort = (key: keyof AddonServiceType) => {
+    setAddonServiceSort(prev => {
+      if (prev.key === key) {
+        return { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+      }
+      return { key, dir: 'asc' }
+    })
+  }
+
+  const openAddonServiceModal = (row?: AddonServiceType) => {
+    if (row) {
+      setAddonServiceDraft({
+        id: row.id,
+        key: row.key ?? '',
+        name: row.name ?? '',
+        description: row.description ?? null,
+        sort_order: row.sort_order ?? 100,
+        is_active: !!row.is_active,
+      })
+    } else {
+      setAddonServiceDraft({
+        key: '',
+        name: '',
+        description: null,
+        sort_order: 100,
+        is_active: true,
+      })
+    }
+    setAddonServiceModalOpen(true)
+  }
+
+  const closeAddonServiceModal = () => {
+    setAddonServiceModalOpen(false)
+    setAddonServiceDraft(null)
+  }
+
   // --- INLINE SAVE HELPERS ---
   const saveDoc = async () => {
     if (!docDraft) return
@@ -1025,6 +1144,56 @@ export default function AdminClient() {
     if (roomTypeDraft?.id === id) closeRoomTypeModal()
   }
 
+  const saveAddonService = async () => {
+    if (!addonServiceDraft) return
+    const name = addonServiceDraft.name.trim()
+    const key = (addonServiceDraft.id ? addonServiceDraft.key : normalizeAddonKey(addonServiceDraft.key || name)).trim()
+    const payload = {
+      key,
+      name,
+      description: addonServiceDraft.description || null,
+      sort_order: addonServiceDraft.sort_order ?? 100,
+      is_active: addonServiceDraft.is_active,
+    }
+
+    if (!payload.key || !payload.name) {
+      return alert('Key och namn måste fyllas i.')
+    }
+
+    if (addonServiceDraft.id) {
+      const { error } = await (supabase as any)
+        .from('settings_addon_services')
+        .update(payload)
+        .eq('id', addonServiceDraft.id)
+      if (error) return alert(error.message)
+      setAddonServicesAll(prev =>
+        prev.map(r => (r.id === addonServiceDraft.id ? ({ ...r, ...payload } as AddonServiceType) : r))
+      )
+      closeAddonServiceModal()
+      return
+    }
+
+    const { data, error } = await (supabase as any)
+      .from('settings_addon_services')
+      .insert(payload)
+      .select('id, key, name, description, sort_order, is_active')
+      .single()
+    if (error) return alert(error.message)
+    setAddonServicesAll(prev => [data as AddonServiceType, ...prev])
+    closeAddonServiceModal()
+  }
+
+  const delAddonService = async (id: string) => {
+    if (!confirm('Ta bort tilläggsuppdraget?')) return
+    const { error } = await (supabase as any)
+      .from('settings_addon_services')
+      .delete()
+      .eq('id', id)
+    if (error) return alert(error.message)
+    setAddonServicesAll(prev => prev.filter(r => r.id !== id))
+    if (addonServiceDraft?.id === id) closeAddonServiceModal()
+  }
+
   if (loading)
     return (
       <Protected>
@@ -1061,6 +1230,12 @@ export default function AdminClient() {
               className={`px-3 py-1.5 text-sm ${tab === 'room-types' ? 'bg-gray-100' : ''}`}
             >
               Rumstyper
+            </button>
+            <button
+              onClick={() => setTabAndPush('addon-services')}
+              className={`px-3 py-1.5 text-sm ${tab === 'addon-services' ? 'bg-gray-100' : ''}`}
+            >
+              Tilläggsuppdrag
             </button>
             <button
               onClick={() => setTabAndPush('forutsattningar')}
@@ -1382,6 +1557,118 @@ export default function AdminClient() {
                   {filteredRoomTypes.length === 0 && (
                     <tr>
                       <td className="py-4 text-gray-500" colSpan={5}>
+                        Inga rader.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {tab === 'addon-services' && (
+          <div className="bg-white rounded-xl shadow p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="font-semibold">Tilläggsuppdrag</h2>
+                <div className="text-xs text-gray-500">settings_addon_services</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  value={qAddonServices}
+                  onChange={e => setQAddonServices(e.target.value)}
+                  placeholder="Sok..."
+                  className="border rounded px-2 py-1 text-sm"
+                />
+                <button
+                  onClick={() => openAddonServiceModal()}
+                  className="bg-emerald-600 text-white text-sm px-3 py-1.5 rounded"
+                >
+                  + Ny
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-600">
+                    <th className="py-2 pr-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleAddonServiceSort('key')}
+                        className="inline-flex items-center gap-1 hover:text-gray-800"
+                      >
+                        Key
+                        {renderSortIcon(addonServiceSort.key === 'key', addonServiceSort.dir)}
+                      </button>
+                    </th>
+                    <th className="py-2 pr-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleAddonServiceSort('name')}
+                        className="inline-flex items-center gap-1 hover:text-gray-800"
+                      >
+                        Namn
+                        {renderSortIcon(addonServiceSort.key === 'name', addonServiceSort.dir)}
+                      </button>
+                    </th>
+                    <th className="py-2 pr-3 max-w-[30rem]">
+                      <button
+                        type="button"
+                        onClick={() => toggleAddonServiceSort('description')}
+                        className="inline-flex items-center gap-1 hover:text-gray-800"
+                      >
+                        Beskrivning
+                        {renderSortIcon(addonServiceSort.key === 'description', addonServiceSort.dir)}
+                      </button>
+                    </th>
+                    <th className="py-2 pr-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleAddonServiceSort('sort_order')}
+                        className="inline-flex items-center gap-1 hover:text-gray-800"
+                      >
+                        Sortering
+                        {renderSortIcon(addonServiceSort.key === 'sort_order', addonServiceSort.dir)}
+                      </button>
+                    </th>
+                    <th className="py-2 pr-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleAddonServiceSort('is_active')}
+                        className="inline-flex items-center gap-1 hover:text-gray-800"
+                      >
+                        Aktiv
+                        {renderSortIcon(addonServiceSort.key === 'is_active', addonServiceSort.dir)}
+                      </button>
+                    </th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredAddonServices.map(r => (
+                    <tr key={r.id}>
+                      <td className="py-2 pr-3">{r.key}</td>
+                      <td className="py-2 pr-3">{r.name}</td>
+                      <td className="py-2 pr-3 truncate max-w-[28rem]" title={r.description ?? ''}>
+                        {r.description ?? ''}
+                      </td>
+                      <td className="py-2 pr-3">{r.sort_order}</td>
+                      <td className="py-2 pr-3">{r.is_active ? 'Ja' : 'Nej'}</td>
+                      <td className="py-2 text-right">
+                        <button
+                          onClick={() => openAddonServiceModal(r)}
+                          className="text-emerald-700 underline"
+                        >
+                          Editera
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredAddonServices.length === 0 && (
+                    <tr>
+                      <td className="py-4 text-gray-500" colSpan={6}>
                         Inga rader.
                       </td>
                     </tr>
@@ -1849,6 +2136,116 @@ export default function AdminClient() {
                   className="mt-2"
                   checked={!!roomTypeDraft.is_active}
                   onChange={e => setRoomTypeDraft({ ...roomTypeDraft, is_active: e.target.checked })}
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {addonServiceModalOpen && addonServiceDraft && (
+        <div className="fixed inset-0 z-[60] bg-black/40 flex items-start justify-center p-4 overflow-auto">
+          <div className="bg-white w-full max-w-3xl rounded-xl shadow-lg p-4 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold">
+                  {addonServiceDraft.id ? 'Redigera tilläggsuppdrag' : 'Nytt tilläggsuppdrag'}
+                </h3>
+                {addonServiceDraft.id && (
+                  <div className="text-xs text-gray-500 mt-1">ID: {addonServiceDraft.id}</div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {addonServiceDraft.id && (
+                  <button
+                    onClick={() => delAddonService(addonServiceDraft.id!)}
+                    className="text-rose-700 border border-rose-200 bg-rose-50 text-sm px-3 py-1.5 rounded-md hover:bg-rose-100"
+                  >
+                    Ta bort
+                  </button>
+                )}
+                <button
+                  onClick={closeAddonServiceModal}
+                  className="text-sm px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+                >
+                  Avbryt
+                </button>
+                <button
+                  onClick={saveAddonService}
+                  className="bg-emerald-600 text-white text-sm px-3 py-1.5 rounded-md hover:bg-emerald-700"
+                >
+                  Spara
+                </button>
+                <button
+                  onClick={closeAddonServiceModal}
+                  className="text-sm px-2 py-1.5 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50"
+                  aria-label="Stäng"
+                  title="Stäng"
+                >
+                  Stäng
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className="text-sm">
+                <div className="mb-1 text-gray-600">Key</div>
+                <input
+                  className="border rounded px-2 py-1 w-full"
+                  value={addonServiceDraft.key}
+                  readOnly={!!addonServiceDraft.id}
+                  onChange={e => setAddonServiceDraft({ ...addonServiceDraft, key: e.target.value })}
+                />
+              </label>
+              <label className="text-sm">
+                <div className="mb-1 text-gray-600">Sortering</div>
+                <input
+                  type="number"
+                  className="border rounded px-2 py-1 w-full"
+                  value={addonServiceDraft.sort_order}
+                  onChange={e =>
+                    setAddonServiceDraft({
+                      ...addonServiceDraft,
+                      sort_order: e.target.value === '' ? 100 : Number(e.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label className="text-sm md:col-span-2">
+                <div className="mb-1 text-gray-600">Namn</div>
+                <input
+                  className="border rounded px-2 py-1 w-full"
+                  value={addonServiceDraft.name}
+                  onChange={e => {
+                    const nameValue = e.target.value
+                    setAddonServiceDraft(prev =>
+                      prev
+                        ? {
+                            ...prev,
+                            name: nameValue,
+                            key: prev.id ? prev.key : normalizeAddonKey(nameValue),
+                          }
+                        : prev
+                    )
+                  }}
+                />
+              </label>
+              <label className="text-sm md:col-span-2">
+                <div className="mb-1 text-gray-600">Beskrivning</div>
+                <textarea
+                  className="border rounded px-2 py-1 w-full"
+                  rows={3}
+                  value={addonServiceDraft.description ?? ''}
+                  onChange={e => setAddonServiceDraft({ ...addonServiceDraft, description: e.target.value || null })}
+                />
+              </label>
+              <label className="text-sm">
+                <div className="mb-1 text-gray-600">Aktiv</div>
+                <input
+                  type="checkbox"
+                  className="mt-2"
+                  checked={!!addonServiceDraft.is_active}
+                  onChange={e => setAddonServiceDraft({ ...addonServiceDraft, is_active: e.target.checked })}
                 />
               </label>
             </div>
