@@ -119,7 +119,7 @@ export function buildAssignmentConfirmationEmail(
   const subject = `Uppdragsbekr\u00e4ftelse - ${orgName}`
   let brandLogoUrl: string | null = null
   try {
-    brandLogoUrl = new URL('/landing/Hushub-check.png', input.acceptUrl).toString()
+    brandLogoUrl = new URL('/landing/hushub-check.svg', input.acceptUrl).toString()
   } catch {
     brandLogoUrl = null
   }
@@ -148,11 +148,11 @@ export function buildAssignmentConfirmationEmail(
                     <td style="vertical-align:middle;">
                       ${
                         brandLogoUrl
-                          ? `<img src="${escapeHtml(brandLogoUrl)}" alt="HusHub" width="24" height="24" style="display:block;width:24px;height:24px;object-fit:contain;" />`
+                          ? `<img src="${escapeHtml(brandLogoUrl)}" alt="HusHub" width="46" height="30" style="display:block;width:46px;height:30px;object-fit:contain;" />`
                           : ''
                       }
                     </td>
-                    <td style="vertical-align:middle;padding-left:8px;font-size:17px;font-weight:700;color:#111827;">
+                    <td style="vertical-align:middle;padding-left:6px;font-size:30px;font-weight:800;line-height:1;color:#111827;">
                       HusHub
                     </td>
                   </tr>
@@ -162,15 +162,30 @@ export function buildAssignmentConfirmationEmail(
                   Vi har skapat en uppdragsbekr&auml;ftelse f&ouml;r er ${escapeHtml(assignmentType)}.
                 </p>
                 <p style="margin:0 0 16px;font-size:14px;line-height:1.55;">
-                  Best&auml;llaren beh&ouml;ver fylla i eller kontrollera uppgifterna och sedan godk&auml;nna villkoren
-                  f&ouml;r att bekr&auml;fta uppdraget.
+                  F&ouml;r att bekr&auml;fta uppdraget, klicka p&aring; knappen
+                  &ldquo;&Ouml;ppna uppdragsbekr&auml;ftelsen&rdquo;, fyll i eller kontrollera uppgifterna i formul&auml;ret
+                  och godk&auml;nn villkoren.
                 </p>
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 16px;">
                   <tr>
                     <td align="left">
-                      <a href="${escapeHtml(input.acceptUrl)}" target="_blank" rel="noreferrer" style="display:inline-block;padding:13px 20px;border-radius:10px;background:#4338ca;color:#ffffff;text-decoration:none;font-size:14px;font-weight:800;letter-spacing:0.01em;">
-                        &Ouml;ppna uppdragsbekr&auml;ftelsen
-                      </a>
+                      <table role="presentation" cellspacing="0" cellpadding="0">
+                        <tr>
+                          <td
+                            bgcolor="#3730a3"
+                            style="border-radius:12px;border:1px solid #312e81;box-shadow:0 4px 10px rgba(55,48,163,0.35);"
+                          >
+                            <a
+                              href="${escapeHtml(input.acceptUrl)}"
+                              target="_blank"
+                              rel="noreferrer"
+                              style="display:inline-block;padding:13px 20px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:800;letter-spacing:0.01em;"
+                            >
+                              &#8599; &Ouml;ppna uppdragsbekr&auml;ftelsen
+                            </a>
+                          </td>
+                        </tr>
+                      </table>
                     </td>
                   </tr>
                 </table>
@@ -211,7 +226,23 @@ export function buildAssignmentConfirmationEmail(
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:20px;">
                   <tr>
                     <td align="left">
-                      <a href="${escapeHtml(input.acceptUrl)}" target="_blank" rel="noreferrer" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#4f46e5;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">&Ouml;ppna uppdragsbekr&auml;ftelsen</a>
+                      <table role="presentation" cellspacing="0" cellpadding="0">
+                        <tr>
+                          <td
+                            bgcolor="#eef2ff"
+                            style="border-radius:10px;border:1px solid #6366f1;box-shadow:0 2px 6px rgba(99,102,241,0.2);"
+                          >
+                            <a
+                              href="${escapeHtml(input.acceptUrl)}"
+                              target="_blank"
+                              rel="noreferrer"
+                              style="display:inline-block;padding:11px 16px;color:#3730a3;text-decoration:none;font-size:14px;font-weight:800;"
+                            >
+                              &#8599; &Ouml;ppna uppdragsbekr&auml;ftelsen
+                            </a>
+                          </td>
+                        </tr>
+                      </table>
                     </td>
                   </tr>
                 </table>
@@ -232,7 +263,7 @@ export function buildAssignmentConfirmationEmail(
   const text =
     `Hej ${customerName},\n\n` +
     `Vi har skapat en uppdragsbekräftelse för er ${assignmentType} (${roleLabelText}).\n` +
-    `Beställaren behöver fylla i eller kontrollera uppgifterna och sedan godkänna villkoren för att bekräfta uppdraget.\n\n` +
+    `För att bekräfta uppdraget, klicka på knappen “Öppna uppdragsbekräftelsen”, fyll i eller kontrollera uppgifterna i formuläret och godkänn villkoren.\n\n` +
     `Öppna uppdragsbekräftelsen: ${input.acceptUrl}\n\n` +
     `Objekt\n` +
     `- Fastighetsbeteckning: ${cadastralId}\n` +
