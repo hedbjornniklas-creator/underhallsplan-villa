@@ -36,6 +36,15 @@ export type BuildAssignmentConfirmationEmailResult = {
   text: string
 }
 
+type CtaButtonOptions = {
+  href: string
+  label: string
+  width: number
+  backgroundColor: string
+  textColor: string
+  borderColor: string
+}
+
 function toSwedishDateString(value: string | null) {
   if (!value) return 'Ej satt'
   const date = new Date(value)
@@ -93,6 +102,30 @@ function termsRoleToLabel(role: TermsRole, format: 'html' | 'text' = 'text') {
   return format === 'html' ? 'Säljare' : 'Säljare'
 }
 
+function buildBulletproofButton(options: CtaButtonOptions) {
+  const href = escapeHtml(options.href)
+  const label = escapeHtml(options.label)
+
+  return `
+<!--[if mso]>
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+  href="${href}" style="height:44px;v-text-anchor:middle;width:${options.width}px;" arcsize="12%"
+  strokecolor="${options.borderColor}" fillcolor="${options.backgroundColor}">
+  <w:anchorlock/>
+  <center style="color:${options.textColor};font-family:Arial,sans-serif;font-size:15px;font-weight:700;">
+    ${label}
+  </center>
+</v:roundrect>
+<![endif]-->
+<!--[if !mso]><!-- -->
+<a href="${href}" target="_blank" rel="noreferrer"
+  style="display:inline-block;border:1px solid ${options.borderColor};background:${options.backgroundColor};border-radius:10px;color:${options.textColor};font-size:15px;font-weight:700;line-height:1;text-decoration:none;padding:14px 20px;">
+  ${label}
+</a>
+<!--<![endif]-->
+  `
+}
+
 export function buildAssignmentConfirmationEmail(
   input: BuildAssignmentConfirmationEmailInput
 ): BuildAssignmentConfirmationEmailResult {
@@ -119,14 +152,37 @@ export function buildAssignmentConfirmationEmail(
   const subject = `Uppdragsbekr\u00e4ftelse - ${orgName}`
   let brandLogoUrl: string | null = null
   try {
-    brandLogoUrl = new URL('/landing/hushub-check.svg', input.acceptUrl).toString()
+    brandLogoUrl = new URL('/landing/Hushub-check.png', input.acceptUrl).toString()
   } catch {
     brandLogoUrl = null
   }
+  const primaryCta = buildBulletproofButton({
+    href: input.acceptUrl,
+    label: 'Öppna uppdragsbekräftelsen',
+    width: 300,
+    backgroundColor: '#3730a3',
+    textColor: '#ffffff',
+    borderColor: '#312e81',
+  })
+  const secondaryCta = buildBulletproofButton({
+    href: input.acceptUrl,
+    label: 'Öppna uppdragsbekräftelsen',
+    width: 290,
+    backgroundColor: '#eef2ff',
+    textColor: '#3730a3',
+    borderColor: '#6366f1',
+  })
 
   const html = `
 <!doctype html>
 <html lang="sv">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta charset="utf-8" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Uppdragsbekräftelse</title>
+  </head>
   <body style="margin:0;padding:0;background:#eef3ff;font-family:Segoe UI,Arial,sans-serif;color:#1f2937;">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef3ff;padding:24px 12px;">
       <tr>
@@ -148,11 +204,11 @@ export function buildAssignmentConfirmationEmail(
                     <td style="vertical-align:middle;">
                       ${
                         brandLogoUrl
-                          ? `<img src="${escapeHtml(brandLogoUrl)}" alt="HusHub" width="46" height="30" style="display:block;width:46px;height:30px;object-fit:contain;" />`
+                          ? `<img src="${escapeHtml(brandLogoUrl)}" alt="HusHub" width="80" height="56" style="display:block;width:80px;height:56px;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;" />`
                           : ''
                       }
                     </td>
-                    <td style="vertical-align:middle;padding-left:6px;font-size:30px;font-weight:800;line-height:1;color:#111827;">
+                    <td style="vertical-align:middle;padding-left:8px;font-size:36px;font-weight:800;line-height:1;color:#111827;">
                       HusHub
                     </td>
                   </tr>
@@ -169,23 +225,7 @@ export function buildAssignmentConfirmationEmail(
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 16px;">
                   <tr>
                     <td align="left">
-                      <table role="presentation" cellspacing="0" cellpadding="0">
-                        <tr>
-                          <td
-                            bgcolor="#3730a3"
-                            style="border-radius:12px;border:1px solid #312e81;box-shadow:0 4px 10px rgba(55,48,163,0.35);"
-                          >
-                            <a
-                              href="${escapeHtml(input.acceptUrl)}"
-                              target="_blank"
-                              rel="noreferrer"
-                              style="display:inline-block;padding:13px 20px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:800;letter-spacing:0.01em;"
-                            >
-                              &#8599; &Ouml;ppna uppdragsbekr&auml;ftelsen
-                            </a>
-                          </td>
-                        </tr>
-                      </table>
+                      ${primaryCta}
                     </td>
                   </tr>
                 </table>
@@ -226,23 +266,7 @@ export function buildAssignmentConfirmationEmail(
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:20px;">
                   <tr>
                     <td align="left">
-                      <table role="presentation" cellspacing="0" cellpadding="0">
-                        <tr>
-                          <td
-                            bgcolor="#eef2ff"
-                            style="border-radius:10px;border:1px solid #6366f1;box-shadow:0 2px 6px rgba(99,102,241,0.2);"
-                          >
-                            <a
-                              href="${escapeHtml(input.acceptUrl)}"
-                              target="_blank"
-                              rel="noreferrer"
-                              style="display:inline-block;padding:11px 16px;color:#3730a3;text-decoration:none;font-size:14px;font-weight:800;"
-                            >
-                              &#8599; &Ouml;ppna uppdragsbekr&auml;ftelsen
-                            </a>
-                          </td>
-                        </tr>
-                      </table>
+                      ${secondaryCta}
                     </td>
                   </tr>
                 </table>
