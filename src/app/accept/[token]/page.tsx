@@ -543,12 +543,6 @@ export default function AssignmentAcceptPage() {
                 <span className="text-xs font-medium text-gray-500">Version {data.terms.version}</span>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white p-3">
-                <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-gray-700">
-                  {activeTerms?.text ?? 'Valj uppdragsgivare for att visa villkoren.'}
-                </pre>
-              </div>
-
               <label className="mt-1 flex items-start gap-2 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
                 <input
                   type="checkbox"
@@ -557,8 +551,14 @@ export default function AssignmentAcceptPage() {
                   disabled={!canSubmit}
                   className="mt-0.5 h-4 w-4 rounded border-gray-300"
                 />
-                <span>Jag har läst och godkänner villkoren (version {data.terms.version}). *</span>
+                <span>Jag har läst och godkänner villkoren nedan (version {data.terms.version}). *</span>
               </label>
+
+              <div className="rounded-xl border border-gray-200 bg-white p-3">
+                <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-gray-700">
+                  {activeTerms?.text ?? 'Valj uppdragsgivare for att visa villkoren.'}
+                </pre>
+              </div>
 
               <button
                 type="button"

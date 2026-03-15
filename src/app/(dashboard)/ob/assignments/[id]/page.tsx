@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
@@ -89,6 +89,25 @@ function roleToLabel(role: OrdererRole) {
   return ''
 }
 
+function assignmentStatusToLabel(status: AssignmentStatus) {
+  switch (status) {
+    case 'draft':
+      return 'Utkast'
+    case 'sent':
+      return 'Skickad'
+    case 'booked':
+      return 'Bokad'
+    case 'completed':
+      return 'Konverterad'
+    case 'expired':
+      return 'Utg\u00e5ngen'
+    case 'cancelled':
+      return 'Avbruten'
+    default:
+      return status
+  }
+}
+
 function toFormState(assignment: AssignmentDetails): FormState {
   return {
     assignmentType: assignment.assignment_type,
@@ -112,6 +131,10 @@ function toFormState(assignment: AssignmentDetails): FormState {
   }
 }
 
+function formFingerprint(form: FormState) {
+  return JSON.stringify(form)
+}
+
 export default function AssignmentDetailsPage() {
   const router = useRouter()
   const params = useParams<{ id: string }>()
@@ -119,16 +142,17 @@ export default function AssignmentDetailsPage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [sending, setSending] = useState(false)
-  const [sendingCompleted, setSendingCompleted] = useState(false)
   const [converting, setConverting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [assignment, setAssignment] = useState<AssignmentDetails | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastSavedFingerprintRef = useRef<string>('')
 
   const canSend = assignment?.status !== 'completed'
-  const canSendCompleted = assignment?.status === 'completed'
   const canConvert = assignment?.status === 'booked' && !assignment.inspection_id
 
   const loadAssignment = useCallback(async () => {
@@ -144,8 +168,11 @@ export default function AssignmentDetailsPage() {
       }
 
       const row = (payload as { assignment: AssignmentDetails }).assignment
+      const nextForm = toFormState(row)
       setAssignment(row)
-      setForm(toFormState(row))
+      setForm(nextForm)
+      lastSavedFingerprintRef.current = formFingerprint(nextForm)
+      setSaveState('idle')
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta uppdraget.')
     } finally {
@@ -172,67 +199,100 @@ export default function AssignmentDetailsPage() {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev))
   }
 
-  const handleSave = async () => {
-    if (!form) return
-    if (!EMAIL_REGEX.test(form.customerEmail.trim())) {
-      setError('Ange en giltig kundmejl.')
-      return
-    }
-
-    const parsedPrice =
-      form.priceAmount.trim().length > 0 ? Number(form.priceAmount.trim().replace(',', '.')) : null
-    if (parsedPrice !== null && (!Number.isFinite(parsedPrice) || parsedPrice < 0)) {
-      setError('Ange ett giltigt pris.')
-      return
-    }
-
-    try {
-      setSaving(true)
-      setError(null)
-      setSuccess(null)
-
-      const response = await fetch(`/api/ob/assignments/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          assignment_type: form.assignmentType,
-          status: form.status,
-          customer_name: form.customerName,
-          customer_email: form.customerEmail,
-          customer_phone: form.customerPhone,
-          customer_address: form.customerAddress,
-          property_address: form.propertyAddress,
-          preliminary_address: form.propertyAddress,
-          property_municipality: form.propertyMunicipality,
-          property_owner_name: form.propertyOwnerName,
-          cadastral_id: form.cadastralId,
-          preferred_date: form.preferredDate,
-          preferred_time: form.preferredTime,
-          price_amount: parsedPrice,
-          currency: 'SEK',
-          orderer_role: roleToLabel(form.ordererRole),
-          invoice_name: form.invoiceName,
-          invoice_address: form.invoiceAddress,
-          personal_identity_number: form.personalIdentityNumber,
-          notes_internal: form.notesInternal,
-        }),
-      })
-
-      const payload = await response.json().catch(() => null)
-      if (!response.ok) {
-        throw new Error(jsonToErrorMessage(payload, 'Kunde inte spara uppdraget.'))
+  const saveForm = useCallback(
+    async (nextForm: FormState, options?: { silentValidation?: boolean }) => {
+      const silentValidation = options?.silentValidation ?? false
+      if (!EMAIL_REGEX.test(nextForm.customerEmail.trim())) {
+        if (!silentValidation) setError('Ange en giltig kundmejl.')
+        return false
       }
 
-      const updated = (payload as { assignment: AssignmentDetails }).assignment
-      setAssignment(updated)
-      setForm(toFormState(updated))
-      setSuccess('Uppdraget sparades.')
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara uppdraget.')
-    } finally {
-      setSaving(false)
+      const parsedPrice =
+        nextForm.priceAmount.trim().length > 0
+          ? Number(nextForm.priceAmount.trim().replace(',', '.'))
+          : null
+      if (parsedPrice !== null && (!Number.isFinite(parsedPrice) || parsedPrice < 0)) {
+        if (!silentValidation) setError('Ange ett giltigt pris.')
+        return false
+      }
+
+      try {
+        setSaving(true)
+        setSaveState('saving')
+        setError(null)
+
+        const response = await fetch(`/api/ob/assignments/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            assignment_type: nextForm.assignmentType,
+            status: nextForm.status,
+            customer_name: nextForm.customerName,
+            customer_email: nextForm.customerEmail,
+            customer_phone: nextForm.customerPhone,
+            customer_address: nextForm.customerAddress,
+            property_address: nextForm.propertyAddress,
+            preliminary_address: nextForm.propertyAddress,
+            property_municipality: nextForm.propertyMunicipality,
+            property_owner_name: nextForm.propertyOwnerName,
+            cadastral_id: nextForm.cadastralId,
+            preferred_date: nextForm.preferredDate,
+            preferred_time: nextForm.preferredTime,
+            price_amount: parsedPrice,
+            currency: 'SEK',
+            orderer_role: roleToLabel(nextForm.ordererRole),
+            invoice_name: nextForm.invoiceName,
+            invoice_address: nextForm.invoiceAddress,
+            personal_identity_number: nextForm.personalIdentityNumber,
+            notes_internal: nextForm.notesInternal,
+          }),
+        })
+
+        const payload = await response.json().catch(() => null)
+        if (!response.ok) {
+          throw new Error(jsonToErrorMessage(payload, 'Kunde inte spara uppdraget.'))
+        }
+
+        const updated = (payload as { assignment: AssignmentDetails }).assignment
+        const updatedForm = toFormState(updated)
+        setAssignment(updated)
+        setForm(updatedForm)
+        lastSavedFingerprintRef.current = formFingerprint(updatedForm)
+        setSaveState('saved')
+        return true
+      } catch (saveError) {
+        setSaveState('idle')
+        setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara uppdraget.')
+        return false
+      } finally {
+        setSaving(false)
+      }
+    },
+    [id]
+  )
+
+  useEffect(() => {
+    if (loading || !form) return
+
+    const nextFingerprint = formFingerprint(form)
+    if (nextFingerprint === lastSavedFingerprintRef.current) return
+
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current)
     }
-  }
+
+    setSaveState('idle')
+    autosaveTimerRef.current = setTimeout(() => {
+      void saveForm(form, { silentValidation: true })
+    }, 650)
+
+    return () => {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current)
+        autosaveTimerRef.current = null
+      }
+    }
+  }, [form, loading, saveForm])
 
   const handleSend = async () => {
     try {
@@ -276,25 +336,6 @@ export default function AssignmentDetailsPage() {
       setConverting(false)
     }
   }
-
-  const handleSendCompleted = async () => {
-    try {
-      setSendingCompleted(true)
-      setError(null)
-      setSuccess(null)
-      const response = await fetch(`/api/ob/assignments/${id}/send-completed`, { method: 'POST' })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok) {
-        throw new Error(jsonToErrorMessage(payload, 'Kunde inte skicka slutmejl.'))
-      }
-      await loadAssignment()
-      setSuccess('Slutmejl skickat.')
-    } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : 'Kunde inte skicka slutmejl.')
-    } finally {
-      setSendingCompleted(false)
-    }
-  }
   return (
     <Protected>
       <main className="relative min-h-full overflow-hidden">
@@ -320,34 +361,21 @@ export default function AssignmentDetailsPage() {
               </button>
               <h1 className="text-2xl font-semibold text-white drop-shadow-sm">Uppdragsbekräftelse</h1>
               <div className="ml-auto flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => void handleSave()}
-                  disabled={saving || loading || !form}
-                  className="rounded-lg bg-white/95 px-3 py-2 text-sm font-medium text-gray-800 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {saving ? 'Sparar...' : 'Spara'}
-                </button>
+                <span className="px-2 text-xs font-medium text-white/95">
+                  {saveState === 'saving' ? 'Sparar...' : saveState === 'saved' ? 'Sparat' : ''}
+                </span>
                 <button
                   type="button"
                   onClick={() => void handleSend()}
-                  disabled={!canSend || sending || loading}
+                  disabled={!canSend || sending || saving || loading}
                   className="rounded-lg border border-white/60 bg-white/15 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {sending ? 'Skickar...' : 'Skicka uppdragsbekraftelse'}
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleSendCompleted()}
-                  disabled={!canSendCompleted || sendingCompleted || loading}
-                  className="rounded-lg border border-emerald-300 bg-emerald-500/20 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {sendingCompleted ? 'Skickar...' : 'Skicka klar-mejl'}
-                </button>
-                <button
-                  type="button"
                   onClick={() => void handleConvert()}
-                  disabled={!canConvert || converting || loading}
+                  disabled={!canConvert || converting || saving || loading}
                   className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
                 >
                   {converting ? 'Startar...' : 'Starta besiktning'}
@@ -373,7 +401,7 @@ export default function AssignmentDetailsPage() {
             <>
               <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
                 <div className="grid gap-3 md:grid-cols-3">
-                  <ReadOnly label="Status" value={assignment.status} />
+                  <ReadOnly label="Status" value={assignmentStatusToLabel(assignment.status)} />
                   <ReadOnly label="Skickad" value={summary?.sentAt ?? '-'} />
                   <ReadOnly label="Accepterad" value={summary?.acceptedAt ?? '-'} />
                 </div>
