@@ -977,6 +977,10 @@ export default function AdminClient() {
     value
       .trim()
       .toLowerCase()
+      .replace(/[åä]/g, 'a')
+      .replace(/ö/g, 'o')
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]+/g, '_')
       .replace(/^_+|_+$/g, '')
 
@@ -1147,7 +1151,12 @@ export default function AdminClient() {
   const saveAddonService = async () => {
     if (!addonServiceDraft) return
     const name = addonServiceDraft.name.trim()
-    const key = (addonServiceDraft.id ? addonServiceDraft.key : normalizeAddonKey(addonServiceDraft.key || name)).trim()
+    const autoKey = normalizeAddonKey(name)
+    const key = (
+      addonServiceDraft.id
+        ? addonServiceDraft.key
+        : autoKey || `addon_${Math.random().toString(36).slice(2, 8)}`
+    ).trim()
     const payload = {
       key,
       name,
@@ -1156,8 +1165,8 @@ export default function AdminClient() {
       is_active: addonServiceDraft.is_active,
     }
 
-    if (!payload.key || !payload.name) {
-      return alert('Key och namn måste fyllas i.')
+    if (!payload.name) {
+      return alert('Namn måste fyllas i.')
     }
 
     if (addonServiceDraft.id) {
@@ -2189,13 +2198,19 @@ export default function AdminClient() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <label className="text-sm">
-                <div className="mb-1 text-gray-600">Key</div>
+                <div className="mb-1 text-gray-600">Key (automatisk)</div>
                 <input
                   className="border rounded px-2 py-1 w-full"
-                  value={addonServiceDraft.key}
-                  readOnly={!!addonServiceDraft.id}
-                  onChange={e => setAddonServiceDraft({ ...addonServiceDraft, key: e.target.value })}
+                  value={
+                    addonServiceDraft.id
+                      ? addonServiceDraft.key
+                      : normalizeAddonKey(addonServiceDraft.name)
+                  }
+                  readOnly
                 />
+                <div className="mt-1 text-xs text-gray-500">
+                  Skapas automatiskt från namn vid första sparning.
+                </div>
               </label>
               <label className="text-sm">
                 <div className="mb-1 text-gray-600">Sortering</div>
@@ -2216,18 +2231,7 @@ export default function AdminClient() {
                 <input
                   className="border rounded px-2 py-1 w-full"
                   value={addonServiceDraft.name}
-                  onChange={e => {
-                    const nameValue = e.target.value
-                    setAddonServiceDraft(prev =>
-                      prev
-                        ? {
-                            ...prev,
-                            name: nameValue,
-                            key: prev.id ? prev.key : normalizeAddonKey(nameValue),
-                          }
-                        : prev
-                    )
-                  }}
+                  onChange={e => setAddonServiceDraft({ ...addonServiceDraft, name: e.target.value })}
                 />
               </label>
               <label className="text-sm md:col-span-2">
