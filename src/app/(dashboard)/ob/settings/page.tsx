@@ -42,6 +42,35 @@ type ProfileForm = {
   logo_path: string | null
 }
 
+type AddonServiceRow = {
+  id: string
+  key: string
+  name: string
+  description: string | null
+  sort_order: number
+  is_active: boolean
+}
+
+type ProfileAddonServiceRow = {
+  id: string
+  org_id: string
+  profile_id: string
+  addon_service_id: string
+  is_enabled: boolean
+  price_amount: number | null
+  currency: string | null
+}
+
+type AddonOfferFormRow = {
+  addon_service_id: string
+  key: string
+  name: string
+  description: string | null
+  is_enabled: boolean
+  price_amount: string
+  currency: string
+}
+
 function resolvePublicMediaUrl(path: string | null | undefined) {
   if (!path) return null
   if (path.startsWith('http://') || path.startsWith('https://')) return path
@@ -65,6 +94,12 @@ export default function ObSettingsPage() {
   const [success, setSuccess] = useState<string | null>(null)
   const [avatarLoadError, setAvatarLoadError] = useState(false)
   const [logoLoadError, setLogoLoadError] = useState(false)
+  const [orgId, setOrgId] = useState<string | null>(null)
+  const [addonLoading, setAddonLoading] = useState(false)
+  const [addonSaving, setAddonSaving] = useState(false)
+  const [addonError, setAddonError] = useState<string | null>(null)
+  const [addonSuccess, setAddonSuccess] = useState<string | null>(null)
+  const [addonRows, setAddonRows] = useState<AddonOfferFormRow[]>([])
 
   const [form, setForm] = useState<ProfileForm>({
     full_name: '',
@@ -142,11 +177,99 @@ export default function ObSettingsPage() {
         logo_path: profile?.logo_path ?? null,
       })
 
+      await loadAddonSettingsForProfile(user.id)
+
       setLoading(false)
     }
 
     void loadProfile()
   }, [])
+
+  const loadAddonSettingsForProfile = async (profileId: string) => {
+    setAddonLoading(true)
+    setAddonError(null)
+    setAddonSuccess(null)
+
+    const { data: memberData, error: memberError } = await (supabase as any)
+      .from('org_members')
+      .select('org_id')
+      .eq('profile_id', profileId)
+      .eq('is_active', true)
+      .order('is_default', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (memberError) {
+      setAddonError('Kunde inte hamta organisationskoppling.')
+      setAddonRows([])
+      setAddonLoading(false)
+      return
+    }
+
+    const activeOrgId = (memberData?.org_id as string | undefined) ?? null
+    setOrgId(activeOrgId)
+
+    if (!activeOrgId) {
+      setAddonError('Ingen organisationskoppling hittades.')
+      setAddonRows([])
+      setAddonLoading(false)
+      return
+    }
+
+    const { data: catalogData, error: catalogError } = await (supabase as any)
+      .from('settings_addon_services')
+      .select('id,key,name,description,sort_order,is_active')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true })
+
+    if (catalogError) {
+      setAddonError('Kunde inte hamta tillaggsuppdrag.')
+      setAddonRows([])
+      setAddonLoading(false)
+      return
+    }
+
+    const catalogRows = (catalogData ?? []) as AddonServiceRow[]
+    if (catalogRows.length === 0) {
+      setAddonRows([])
+      setAddonLoading(false)
+      return
+    }
+
+    const { data: profileAddonsData, error: profileAddonsError } = await (supabase as any)
+      .from('profile_addon_services')
+      .select('id,org_id,profile_id,addon_service_id,is_enabled,price_amount,currency')
+      .eq('org_id', activeOrgId)
+      .eq('profile_id', profileId)
+
+    if (profileAddonsError) {
+      setAddonError('Kunde inte hamta dina tillaggsuppdrag.')
+      setAddonRows([])
+      setAddonLoading(false)
+      return
+    }
+
+    const profileRows = (profileAddonsData ?? []) as ProfileAddonServiceRow[]
+    const byAddonId = new Map(profileRows.map((row) => [row.addon_service_id, row]))
+
+    setAddonRows(
+      catalogRows.map((service) => {
+        const existing = byAddonId.get(service.id)
+        return {
+          addon_service_id: service.id,
+          key: service.key,
+          name: service.name,
+          description: service.description,
+          is_enabled: existing?.is_enabled ?? false,
+          price_amount: existing?.price_amount != null ? String(existing.price_amount) : '',
+          currency: (existing?.currency ?? 'SEK').toUpperCase(),
+        }
+      })
+    )
+
+    setAddonLoading(false)
+  }
 
   const handleChange = (key: keyof ProfileForm, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -187,6 +310,79 @@ export default function ObSettingsPage() {
 
     setSuccess('Profilen sparades.')
     setSaving(false)
+  }
+
+  const handleAddonToggle = (addonServiceId: string, checked: boolean) => {
+    setAddonRows((prev) =>
+      prev.map((row) =>
+        row.addon_service_id === addonServiceId ? { ...row, is_enabled: checked } : row
+      )
+    )
+  }
+
+  const handleAddonPriceChange = (addonServiceId: string, value: string) => {
+    setAddonRows((prev) =>
+      prev.map((row) =>
+        row.addon_service_id === addonServiceId ? { ...row, price_amount: value } : row
+      )
+    )
+  }
+
+  const handleSaveAddons = async () => {
+    if (!userId || !orgId) {
+      setAddonError('Ingen organisationskoppling hittades.')
+      return
+    }
+
+    setAddonSaving(true)
+    setAddonError(null)
+    setAddonSuccess(null)
+
+    const rows: Array<{
+      org_id: string
+      profile_id: string
+      addon_service_id: string
+      is_enabled: boolean
+      price_amount: number | null
+      currency: string
+    }> = []
+
+    for (const row of addonRows) {
+      const raw = row.price_amount.trim()
+      let parsedPrice: number | null = null
+
+      if (raw !== '') {
+        const parsed = Number(raw.replace(',', '.'))
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          setAddonError(`Ogiltigt pris for: ${row.name}`)
+          setAddonSaving(false)
+          return
+        }
+        parsedPrice = Number(parsed.toFixed(2))
+      }
+
+      rows.push({
+        org_id: orgId,
+        profile_id: userId,
+        addon_service_id: row.addon_service_id,
+        is_enabled: row.is_enabled,
+        price_amount: parsedPrice,
+        currency: 'SEK',
+      })
+    }
+
+    const { error: saveError } = await (supabase as any)
+      .from('profile_addon_services')
+      .upsert(rows, { onConflict: 'org_id,profile_id,addon_service_id' })
+
+    if (saveError) {
+      setAddonError('Kunde inte spara tillaggsuppdrag.')
+      setAddonSaving(false)
+      return
+    }
+
+    setAddonSuccess('Tillaggsuppdrag sparades.')
+    setAddonSaving(false)
   }
 
   const handleImageUpload = async (
@@ -426,6 +622,77 @@ export default function ObSettingsPage() {
               </div>
             ) : null}
 
+          </section>
+
+          <section className="rounded-2xl border border-white/30 bg-white/90 p-5 shadow-sm backdrop-blur-sm">
+            <div className="mb-3 flex items-center gap-3">
+              <h2 className="text-lg font-semibold text-gray-900">Tillaggsuppdrag</h2>
+              <button
+                type="button"
+                onClick={() => void handleSaveAddons()}
+                disabled={addonSaving || addonLoading || loading}
+                className="ml-auto rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+              >
+                {addonSaving ? 'Sparar...' : 'Spara tillaggsuppdrag'}
+              </button>
+            </div>
+
+            {addonLoading ? <p className="text-sm text-gray-600">Laddar tillaggsuppdrag...</p> : null}
+            {addonError ? <p className="mb-3 text-sm text-rose-700">{addonError}</p> : null}
+            {addonSuccess ? <p className="mb-3 text-sm text-emerald-700">{addonSuccess}</p> : null}
+
+            {!addonLoading && addonRows.length === 0 ? (
+              <p className="text-sm text-gray-600">Inga aktiva tillaggsuppdrag finns i admin just nu.</p>
+            ) : null}
+
+            {!addonLoading && addonRows.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-600">
+                      <th className="py-2 pr-3">Tjanst</th>
+                      <th className="py-2 pr-3">Erbjuds</th>
+                      <th className="py-2 pr-3">Pris (SEK)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {addonRows.map((row) => (
+                      <tr key={row.addon_service_id}>
+                        <td className="py-2 pr-3 align-top">
+                          <div className="font-medium text-gray-900">{row.name}</div>
+                          <div className="text-xs text-gray-500">{row.key}</div>
+                          {row.description ? (
+                            <div className="mt-1 text-xs text-gray-600">{row.description}</div>
+                          ) : null}
+                        </td>
+                        <td className="py-2 pr-3 align-middle">
+                          <input
+                            type="checkbox"
+                            checked={row.is_enabled}
+                            onChange={(event) =>
+                              handleAddonToggle(row.addon_service_id, event.target.checked)
+                            }
+                            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                        </td>
+                        <td className="py-2 pr-3 align-middle">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={row.price_amount}
+                            onChange={(event) =>
+                              handleAddonPriceChange(row.addon_service_id, event.target.value)
+                            }
+                            placeholder="t.ex. 750"
+                            className="w-32 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
           </section>
         </div>
       </main>
