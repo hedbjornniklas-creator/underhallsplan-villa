@@ -150,27 +150,13 @@ export function buildAssignmentConfirmationEmail(
   const assignmentType = assignmentTypeToLabel(input.assignment.assignment_type)
   const orgName = toDisplayValue(input.orgName, 'BesiktApp')
   const subject = `Uppdragsbekr\u00e4ftelse - ${orgName}`
-  let brandLogoUrl: string | null = null
-  try {
-    brandLogoUrl = new URL('/landing/Hushub-check.png', input.acceptUrl).toString()
-  } catch {
-    brandLogoUrl = null
-  }
-  const primaryCta = buildBulletproofButton({
+  const ctaButton = buildBulletproofButton({
     href: input.acceptUrl,
     label: 'Öppna uppdragsbekräftelsen',
     width: 300,
     backgroundColor: '#3730a3',
     textColor: '#ffffff',
     borderColor: '#312e81',
-  })
-  const secondaryCta = buildBulletproofButton({
-    href: input.acceptUrl,
-    label: 'Öppna uppdragsbekräftelsen',
-    width: 290,
-    backgroundColor: '#eef2ff',
-    textColor: '#3730a3',
-    borderColor: '#6366f1',
   })
 
   const html = `
@@ -201,12 +187,10 @@ export function buildAssignmentConfirmationEmail(
               <td style="padding:24px;">
                 <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 14px;">
                   <tr>
-                    <td style="vertical-align:middle;">
-                      ${
-                        brandLogoUrl
-                          ? `<img src="${escapeHtml(brandLogoUrl)}" alt="HusHub" width="80" height="56" style="display:block;width:80px;height:56px;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;" />`
-                          : ''
-                      }
+                    <td
+                      style="vertical-align:middle;font-size:44px;line-height:1;font-weight:700;color:#111827;mso-line-height-rule:exactly;"
+                    >
+                      &#10003;
                     </td>
                     <td style="vertical-align:middle;padding-left:8px;font-size:36px;font-weight:800;line-height:1;color:#111827;">
                       HusHub
@@ -225,7 +209,7 @@ export function buildAssignmentConfirmationEmail(
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 16px;">
                   <tr>
                     <td align="left">
-                      ${primaryCta}
+                      ${ctaButton}
                     </td>
                   </tr>
                 </table>
@@ -266,7 +250,7 @@ export function buildAssignmentConfirmationEmail(
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:20px;">
                   <tr>
                     <td align="left">
-                      ${secondaryCta}
+                      ${ctaButton}
                     </td>
                   </tr>
                 </table>
