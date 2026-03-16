@@ -48,6 +48,10 @@ export async function POST(request: Request) {
       return jsonError('Ange en giltig mejladress.', 400)
     }
 
+    if (parsedPrice === null) {
+      return jsonError('Pris är obligatoriskt innan utskick.', 400)
+    }
+
     if (parsedPrice !== null && (!Number.isFinite(parsedPrice) || parsedPrice < 0)) {
       return jsonError('Ange ett giltigt pris.', 400)
     }
@@ -104,6 +108,10 @@ export async function POST(request: Request) {
 
     if (message === 'ORDERER_ROLE_REQUIRED') {
       return jsonError('Valj uppdragsgivare (Säljare, Köpare eller Lägenhet) innan utskick.', 400)
+    }
+
+    if (message === 'PRICE_REQUIRED') {
+      return jsonError('Ange pris (SEK) innan utskick.', 400)
     }
 
     if (message.includes('SUPABASE_SERVICE_ROLE_KEY')) {

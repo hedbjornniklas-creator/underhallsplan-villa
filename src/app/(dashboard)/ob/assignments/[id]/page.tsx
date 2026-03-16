@@ -165,7 +165,16 @@ export default function AssignmentDetailsPage() {
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSavedFingerprintRef = useRef<string>('')
 
-  const canSend = assignment?.status !== 'completed'
+  const hasOrdererRole = Boolean(form?.ordererRole)
+  const hasValidPrice = useMemo(() => {
+    if (!form) return false
+    const raw = form.priceAmount.trim()
+    if (raw.length === 0) return false
+    const parsed = Number(raw.replace(',', '.'))
+    return Number.isFinite(parsed) && parsed >= 0
+  }, [form])
+
+  const canSend = assignment?.status !== 'completed' && hasOrdererRole && hasValidPrice
   const canConvert = assignment?.status === 'booked' && !assignment.inspection_id
   const isBookedLocked = assignment?.status === 'booked'
 

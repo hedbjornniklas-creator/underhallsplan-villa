@@ -851,6 +851,11 @@ export async function sendAssignmentConfirmation(input: {
   if (!termsRole) {
     throw new Error('ORDERER_ROLE_REQUIRED')
   }
+  const assignmentPrice =
+    typeof input.assignment.price_amount === 'number' ? input.assignment.price_amount : null
+  if (assignmentPrice === null || !Number.isFinite(assignmentPrice) || assignmentPrice < 0) {
+    throw new Error('PRICE_REQUIRED')
+  }
   const terms = getAssignmentTermsDocument(termsRole)
 
   await admin

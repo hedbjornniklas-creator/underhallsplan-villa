@@ -474,13 +474,17 @@ function AssignmentConfirmationsCard() {
       return
     }
 
-    if (normalizedPrice) {
-      const parsedPrice = Number(normalizedPrice.replace(',', '.'))
-      if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
-        setErrorMessage('Ange ett giltigt pris.')
-        setSuccessMessage(null)
-        return
-      }
+    if (!normalizedPrice) {
+      setErrorMessage('Pris är obligatoriskt innan utskick.')
+      setSuccessMessage(null)
+      return
+    }
+
+    const parsedPrice = Number(normalizedPrice.replace(',', '.'))
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+      setErrorMessage('Ange ett giltigt pris.')
+      setSuccessMessage(null)
+      return
     }
 
     try {

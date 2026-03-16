@@ -165,13 +165,6 @@ function toFormState(
   }
 }
 
-function roleToPayloadValue(role: OrdererRole) {
-  if (role === 'buyer') return 'Köpare'
-  if (role === 'apartment') return 'Lägenhet'
-  if (role === 'seller') return 'Säljare'
-  return ''
-}
-
 function roleToLabel(role: OrdererRole) {
   if (role === 'buyer') return 'Köpare'
   if (role === 'apartment') return 'Lägenhet'
@@ -242,13 +235,18 @@ export default function AssignmentAcceptPage() {
     return ''
   }, [data])
 
+  const lockedOrdererRole = useMemo<OrdererRole>(() => {
+    if (!data) return ''
+    return normalizeRole(data.assignment.orderer_role)
+  }, [data])
+
   const activeTerms = useMemo(() => {
-    if (!data || !form) return null
-    if (form.ordererRole === 'buyer') return data.terms.documents.buyer
-    if (form.ordererRole === 'apartment') return data.terms.documents.apartment
-    if (form.ordererRole === 'seller') return data.terms.documents.seller
+    if (!data) return null
+    if (lockedOrdererRole === 'buyer') return data.terms.documents.buyer
+    if (lockedOrdererRole === 'apartment') return data.terms.documents.apartment
+    if (lockedOrdererRole === 'seller') return data.terms.documents.seller
     return null
-  }, [data, form])
+  }, [data, lockedOrdererRole])
 
   const inspectorName = data?.inspector?.full_name || INSPECTOR_FALLBACK.name
   const inspectorSbrLine1 = data?.inspector?.sbr_group || INSPECTOR_FALLBACK.sbrLine1
@@ -327,9 +325,7 @@ export default function AssignmentAcceptPage() {
       !form.customerPhone.trim() ||
       !form.customerEmail.trim() ||
       !form.preferredDate.trim() ||
-      !form.preferredTime.trim() ||
-      !form.priceAmount.trim() ||
-      !form.ordererRole
+      !form.preferredTime.trim()
 
     if (requiredFieldMissing) {
       setError('Fyll i alla obligatoriska fält.')
@@ -337,18 +333,12 @@ export default function AssignmentAcceptPage() {
     }
 
     if (!activeTerms) {
-      setError('Valj uppdragsgivare innan du godkanner villkoren.')
+      setError('Uppdraget saknar fastställd uppdragsgivare. Kontakta besiktningsföretaget.')
       return
     }
 
     if (!EMAIL_REGEX.test(form.customerEmail.trim())) {
       setError('Ange en giltig e-postadress.')
-      return
-    }
-
-    const numericPrice = Number(form.priceAmount.replace(',', '.'))
-    if (!Number.isFinite(numericPrice) || numericPrice < 0) {
-      setError('Ange ett giltigt pris.')
       return
     }
 
@@ -370,10 +360,8 @@ export default function AssignmentAcceptPage() {
           customerAddress: form.customerAddress,
           customerPhone: form.customerPhone,
           customerEmail: form.customerEmail,
-          ordererRole: roleToPayloadValue(form.ordererRole),
           preferredDate: form.preferredDate,
           preferredTime: form.preferredTime,
-          priceAmount: numericPrice,
           selectedAddonServiceIds: form.selectedAddonServiceIds,
           termsAccepted: form.termsAccepted,
           termsVersion: data.terms.version,
@@ -388,7 +376,7 @@ export default function AssignmentAcceptPage() {
       }
 
       setSuccess(
-        `Tack. Uppdragsbekräftelsen är registrerad (${data.terms.version}, ${roleToLabel(form.ordererRole)}).`
+        `Tack. Uppdragsbekräftelsen är registrerad (${data.terms.version}, ${roleToLabel(lockedOrdererRole)}).`
       )
       setData((prev) => (prev ? { ...prev, state: 'used' } : prev))
     } catch (submitError) {
@@ -442,25 +430,25 @@ export default function AssignmentAcceptPage() {
             <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-sky-50 px-4 py-3 shadow-sm md:gap-3">
                 <p className="pr-1 text-base font-bold uppercase tracking-wide text-indigo-900 md:text-lg">
-                  ÖVERLÅTELSEBESIKTNING FÖR *
+                  ÖVERLÅTELSEBESIKTNING FÖR
                 </p>
                 <RoleChip
                   label="Säljare"
-                  active={form.ordererRole === 'seller'}
-                  onClick={() => updateField('ordererRole', 'seller')}
-                  disabled={!canSubmit}
+                  active={lockedOrdererRole === 'seller'}
+                  onClick={() => undefined}
+                  disabled
                 />
                 <RoleChip
                   label="Köpare"
-                  active={form.ordererRole === 'buyer'}
-                  onClick={() => updateField('ordererRole', 'buyer')}
-                  disabled={!canSubmit}
+                  active={lockedOrdererRole === 'buyer'}
+                  onClick={() => undefined}
+                  disabled
                 />
                 <RoleChip
                   label="Lägenhet"
-                  active={form.ordererRole === 'apartment'}
-                  onClick={() => updateField('ordererRole', 'apartment')}
-                  disabled={!canSubmit}
+                  active={lockedOrdererRole === 'apartment'}
+                  onClick={() => undefined}
+                  disabled
                 />
               </div>
 
@@ -579,7 +567,7 @@ export default function AssignmentAcceptPage() {
                           min="0"
                           value={form.priceAmount}
                           onChange={(value) => updateField('priceAmount', value)}
-                          disabled={!canSubmit}
+                          disabled
                         />
                       </div>
                     </div>
@@ -680,7 +668,7 @@ export default function AssignmentAcceptPage() {
 
               <div className="rounded-xl border border-gray-200 bg-white p-3">
                 <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-gray-700">
-                  {activeTerms?.text ?? 'Valj uppdragsgivare for att visa villkoren.'}
+                  {activeTerms?.text ?? 'Uppdraget saknar fastställd uppdragsgivare. Kontakta besiktningsföretaget.'}
                 </pre>
               </div>
             </section>

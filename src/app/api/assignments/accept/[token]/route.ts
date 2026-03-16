@@ -267,10 +267,9 @@ export async function POST(
       return jsonError('Du måste acceptera villkoren.', 400)
     }
 
-    const ordererRoleRaw = typeof body.ordererRole === 'string' ? body.ordererRole.trim() : ''
-    const termsRole = parseAssignmentTermsRole(ordererRoleRaw)
+    const termsRole = parseAssignmentTermsRole(assignment.orderer_role)
     if (!termsRole) {
-      return jsonError('Välj om du är köpare, säljare eller lägenhetsköpare.', 400)
+      return jsonError('Välj om du är köpare, säljare eller lägenhetsköpare.', 409)
     }
     const terms = getAssignmentTermsDocument(termsRole)
 
@@ -312,9 +311,9 @@ export async function POST(
           ? 'Lägenhet'
           : 'Säljare'
 
-    const priceAmount = parsePrice(body.priceAmount)
+    const priceAmount = parsePrice(assignment.price_amount)
     if (priceAmount === null) {
-      return jsonError('Pris är obligatoriskt och måste vara giltigt.', 400)
+      return jsonError('Pris är obligatoriskt och måste vara giltigt.', 409)
     }
 
     const selectedAddonServiceIdsInput = body.selectedAddonServiceIds

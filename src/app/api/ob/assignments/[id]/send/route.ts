@@ -61,6 +61,9 @@ export async function POST(
     if (message === 'ORDERER_ROLE_REQUIRED') {
       return jsonError('Valj uppdragsgivare (Säljare, Köpare eller Lägenhet) innan utskick.', 400)
     }
+    if (message === 'PRICE_REQUIRED') {
+      return jsonError('Ange pris (SEK) innan utskick.', 400)
+    }
 
     if (message.includes('SUPABASE_SERVICE_ROLE_KEY')) {
       console.error('[assignments.send] missing env', { env: 'SUPABASE_SERVICE_ROLE_KEY' })
