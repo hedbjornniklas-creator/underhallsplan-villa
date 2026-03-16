@@ -177,7 +177,7 @@ export async function PATCH(
     const statusRaw = safeString(body.status)
     if (statusRaw) {
       const normalized = statusRaw.toLowerCase()
-      const allowed = ['draft', 'sent', 'booked', 'completed', 'expired', 'cancelled']
+      const allowed = ['draft', 'sent', 'ordered', 'booked', 'completed', 'expired', 'cancelled']
       if (!allowed.includes(normalized)) return jsonError('Ogiltig status.', 400)
       patch.status = normalized as AssignmentStatus
     }

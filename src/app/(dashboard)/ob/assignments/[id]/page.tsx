@@ -5,7 +5,14 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
 
-type AssignmentStatus = 'draft' | 'sent' | 'booked' | 'completed' | 'expired' | 'cancelled'
+type AssignmentStatus =
+  | 'draft'
+  | 'sent'
+  | 'ordered'
+  | 'booked'
+  | 'completed'
+  | 'expired'
+  | 'cancelled'
 type AssignmentType = 'OB' | 'STATUS' | 'UHP'
 type OrdererRole = 'buyer' | 'seller' | ''
 
@@ -107,6 +114,8 @@ function assignmentStatusToLabel(status: AssignmentStatus) {
       return 'Utkast'
     case 'sent':
       return 'Skickad'
+    case 'ordered':
+      return 'Beställd'
     case 'booked':
       return 'Bokad'
     case 'completed':
@@ -156,6 +165,7 @@ export default function AssignmentDetailsPage() {
   const [saving, setSaving] = useState(false)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [sending, setSending] = useState(false)
+  const [booking, setBooking] = useState(false)
   const [converting, setConverting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -175,8 +185,11 @@ export default function AssignmentDetailsPage() {
   }, [form])
 
   const canSend = assignment?.status !== 'completed' && hasOrdererRole && hasValidPrice
+  const canBook = assignment?.status === 'ordered' && !assignment.inspection_id
   const canConvert = assignment?.status === 'booked' && !assignment.inspection_id
+  const isOrdered = assignment?.status === 'ordered'
   const isBookedLocked = assignment?.status === 'booked'
+  const canSendCopy = isOrdered || isBookedLocked
 
   const loadAssignment = useCallback(async () => {
     try {
@@ -346,13 +359,38 @@ export default function AssignmentDetailsPage() {
         throw new Error(jsonToErrorMessage(payload, 'Kunde inte skicka uppdragsbekräftelsen.'))
       }
       await loadAssignment()
-      setSuccess(isBookedLocked ? 'Kopia skickad.' : 'Uppdragsbekräftelse skickad.')
+      setSuccess(canSendCopy ? 'Kopia skickad.' : 'Uppdragsbekräftelse skickad.')
     } catch (sendError) {
       setError(
         sendError instanceof Error ? sendError.message : 'Kunde inte skicka uppdragsbekräftelsen.'
       )
     } finally {
       setSending(false)
+    }
+  }
+
+  const handleBook = async () => {
+    try {
+      setBooking(true)
+      setError(null)
+      setSuccess(null)
+
+      const response = await fetch(`/api/ob/assignments/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'booked' }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(jsonToErrorMessage(payload, 'Kunde inte boka uppdraget.'))
+      }
+
+      await loadAssignment()
+      setSuccess('Uppdraget är nu bokat.')
+    } catch (bookError) {
+      setError(bookError instanceof Error ? bookError.message : 'Kunde inte boka uppdraget.')
+    } finally {
+      setBooking(false)
     }
   }
 
@@ -414,19 +452,27 @@ export default function AssignmentDetailsPage() {
                 <button
                   type="button"
                   onClick={() => void handleSend()}
-                  disabled={!canSend || sending || saving || loading}
+                  disabled={!canSend || sending || booking || converting || saving || loading}
                   className="rounded-lg border border-white/60 bg-white/15 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {sending
                     ? 'Skickar...'
-                    : isBookedLocked
+                    : canSendCopy
                       ? 'Skicka kopia'
                       : 'Skicka uppdragsbekraftelse'}
                 </button>
                 <button
                   type="button"
+                  onClick={() => void handleBook()}
+                  disabled={!canBook || booking || sending || converting || saving || loading}
+                  className="rounded-lg border border-emerald-300 bg-emerald-500/20 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {booking ? 'Bokar...' : 'Boka uppdrag'}
+                </button>
+                <button
+                  type="button"
                   onClick={() => void handleConvert()}
-                  disabled={!canConvert || converting || saving || loading}
+                  disabled={!canConvert || converting || booking || sending || saving || loading}
                   className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
                 >
                   {converting ? 'Startar...' : 'Starta besiktning'}
@@ -446,6 +492,10 @@ export default function AssignmentDetailsPage() {
           {isBookedLocked ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
               Uppdragsbekräftelsen är bokad och låst för redigering. Starta besiktning för att gå vidare.
+            </div>
+          ) : isOrdered ? (
+            <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800">
+              Uppdragsbekräftelsen är beställd. Granska uppgifterna och klicka på Boka uppdrag.
             </div>
           ) : null}
 

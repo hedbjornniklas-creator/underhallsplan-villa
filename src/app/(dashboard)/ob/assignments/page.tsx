@@ -9,7 +9,7 @@ import DeleteConfirmOverlay from '@/components/ui/DeleteConfirmOverlay'
 type AssignmentItem = {
   id: string
   org_id: string
-  status: 'draft' | 'sent' | 'booked' | 'completed' | 'expired' | 'cancelled'
+  status: 'draft' | 'sent' | 'ordered' | 'booked' | 'completed' | 'expired' | 'cancelled'
   assignment_type: 'OB' | 'STATUS' | 'UHP'
   customer_name: string | null
   customer_email: string
@@ -33,7 +33,7 @@ type ListResponse = {
   items: AssignmentItem[]
 }
 
-type StatusFilter = 'all' | 'draft' | 'sent' | 'booked' | 'completed' | 'expired'
+type StatusFilter = 'all' | 'draft' | 'sent' | 'ordered' | 'booked' | 'completed' | 'expired'
 type SortField = 'date' | 'address' | 'customer' | 'status'
 type SortDirection = 'asc' | 'desc'
 
@@ -60,6 +60,7 @@ const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'Alla' },
   { key: 'draft', label: 'Utkast' },
   { key: 'sent', label: 'Skickade' },
+  { key: 'ordered', label: 'Beställda' },
   { key: 'booked', label: 'Bokade' },
   { key: 'completed', label: 'Avklarade' },
   { key: 'expired', label: 'Utgångna' },
@@ -67,6 +68,8 @@ const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
 
 function getStatusLabel(status: AssignmentItem['status']) {
   switch (status) {
+    case 'ordered':
+      return 'Beställd'
     case 'booked':
       return 'Bokad'
     case 'completed':
@@ -85,6 +88,7 @@ function getStatusLabel(status: AssignmentItem['status']) {
 function getStatusBucket(status: AssignmentItem['status']): Exclude<StatusFilter, 'all'> {
   if (status === 'draft') return 'draft'
   if (status === 'sent') return 'sent'
+  if (status === 'ordered') return 'ordered'
   if (status === 'booked') return 'booked'
   if (status === 'completed') return 'completed'
   return 'expired'
@@ -96,6 +100,8 @@ function getStatusBadgeClass(status: AssignmentItem['status']) {
       return 'border-amber-200 bg-amber-50 text-amber-700'
     case 'sent':
       return 'border-indigo-200 bg-indigo-50 text-indigo-700'
+    case 'ordered':
+      return 'border-violet-200 bg-violet-50 text-violet-700'
     case 'booked':
       return 'border-emerald-200 bg-emerald-50 text-emerald-700'
     case 'completed':
@@ -225,6 +231,7 @@ export default function ObAssignmentsPage() {
       all: activeItems.length,
       draft: 0,
       sent: 0,
+      ordered: 0,
       booked: 0,
       completed: 0,
       expired: 0,
@@ -636,7 +643,8 @@ export default function ObAssignmentsPage() {
                   </thead>
                   <tbody>
                     {pagedRows.map((item) => {
-                      const canResend = item.status === 'draft' || item.status === 'sent'
+                      const canResend =
+                        item.status === 'draft' || item.status === 'sent' || item.status === 'ordered'
                       const isBusy = busyId === item.id
 
                       return (

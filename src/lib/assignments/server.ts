@@ -11,6 +11,7 @@ import {
 export type AssignmentStatus =
   | 'draft'
   | 'sent'
+  | 'ordered'
   | 'booked'
   | 'completed'
   | 'expired'
@@ -936,7 +937,9 @@ export async function sendAssignmentConfirmation(input: {
       .eq('id', messageData.id)
 
     const nextAssignmentStatus: AssignmentStatus =
-      input.assignment.status === 'booked' ? 'booked' : 'sent'
+      input.assignment.status === 'ordered' || input.assignment.status === 'booked'
+        ? input.assignment.status
+        : 'sent'
 
     await admin
       .from('assignments')
