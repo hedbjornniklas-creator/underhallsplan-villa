@@ -41,7 +41,7 @@ export async function POST(
 
     return NextResponse.json({
       assignmentId: assignment.id,
-      status: 'sent',
+      status: assignment.status === 'booked' ? 'booked' : 'sent',
       acceptUrl: sendResult.acceptUrl,
       expiresAt: sendResult.expiresAt,
     })

@@ -930,10 +930,13 @@ export async function sendAssignmentConfirmation(input: {
       })
       .eq('id', messageData.id)
 
+    const nextAssignmentStatus: AssignmentStatus =
+      input.assignment.status === 'booked' ? 'booked' : 'sent'
+
     await admin
       .from('assignments')
       .update({
-        status: 'sent',
+        status: nextAssignmentStatus,
         last_sent_at: new Date().toISOString(),
         updated_by: input.requestedByUserId,
       })

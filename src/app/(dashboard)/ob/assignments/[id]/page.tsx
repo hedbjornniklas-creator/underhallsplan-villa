@@ -337,7 +337,7 @@ export default function AssignmentDetailsPage() {
         throw new Error(jsonToErrorMessage(payload, 'Kunde inte skicka uppdragsbekräftelsen.'))
       }
       await loadAssignment()
-      setSuccess('Uppdragsbekräftelse skickad.')
+      setSuccess(isBookedLocked ? 'Kopia skickad.' : 'Uppdragsbekräftelse skickad.')
     } catch (sendError) {
       setError(
         sendError instanceof Error ? sendError.message : 'Kunde inte skicka uppdragsbekräftelsen.'
@@ -408,7 +408,11 @@ export default function AssignmentDetailsPage() {
                   disabled={!canSend || sending || saving || loading}
                   className="rounded-lg border border-white/60 bg-white/15 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {sending ? 'Skickar...' : 'Skicka uppdragsbekraftelse'}
+                  {sending
+                    ? 'Skickar...'
+                    : isBookedLocked
+                      ? 'Skicka kopia'
+                      : 'Skicka uppdragsbekraftelse'}
                 </button>
                 <button
                   type="button"
