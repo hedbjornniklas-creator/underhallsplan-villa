@@ -89,6 +89,27 @@ export type AssignmentDetails = AssignmentListItem & {
   property_id: string | null
 }
 
+export type AssignmentAddonOffer = {
+  addon_service_id: string
+  key: string
+  name: string
+  description: string | null
+  price_amount: number
+  currency: string
+}
+
+export type AssignmentAddonOrder = {
+  id: string
+  assignment_id: string
+  org_id: string
+  addon_service_id: string | null
+  addon_key: string
+  addon_name_snapshot: string
+  price_amount_snapshot: number
+  currency_snapshot: string
+  created_at: string
+}
+
 type AssignmentLinkResult = {
   acceptUrl: string
   expiresAt: string
@@ -531,6 +552,130 @@ export async function getProfileContact(profileId: string) {
   }
 
   return (data ?? null) as { id: string; full_name: string | null; email: string | null } | null
+}
+
+export async function listAddonOffersForProfile(input: {
+  orgId: string
+  profileId: string
+}): Promise<AssignmentAddonOffer[]> {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const { data: profileAddonData, error: profileAddonError } = await (admin as any)
+    .from('profile_addon_services')
+    .select('addon_service_id,price_amount,currency')
+    .eq('org_id', input.orgId)
+    .eq('profile_id', input.profileId)
+    .eq('is_enabled', true)
+
+  if (profileAddonError) {
+    throw new Error(profileAddonError.message ?? 'Kunde inte hämta tilläggsuppdrag för besiktningsman.')
+  }
+
+  const profileRows = (profileAddonData ?? []) as Array<{
+    addon_service_id: string
+    price_amount: number | null
+    currency: string | null
+  }>
+
+  if (profileRows.length === 0) return []
+
+  const addonIds = [...new Set(profileRows.map((row) => row.addon_service_id).filter(Boolean))]
+  if (addonIds.length === 0) return []
+
+  const { data: catalogData, error: catalogError } = await (admin as any)
+    .from('settings_addon_services')
+    .select('id,key,name,description,sort_order')
+    .in('id', addonIds)
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true })
+
+  if (catalogError) {
+    throw new Error(catalogError.message ?? 'Kunde inte hämta tilläggskatalog.')
+  }
+
+  const catalogRows = (catalogData ?? []) as Array<{
+    id: string
+    key: string
+    name: string
+    description: string | null
+  }>
+  const profileByAddonId = new Map(profileRows.map((row) => [row.addon_service_id, row]))
+
+  return catalogRows.flatMap((service) => {
+    const profileOffer = profileByAddonId.get(service.id)
+    if (!profileOffer) return []
+
+    const rawPrice =
+      typeof profileOffer.price_amount === 'number'
+        ? profileOffer.price_amount
+        : Number(profileOffer.price_amount ?? 0)
+    const normalizedPrice = Number.isFinite(rawPrice) && rawPrice >= 0 ? Number(rawPrice.toFixed(2)) : 0
+    const normalizedCurrency = (profileOffer.currency ?? 'SEK').trim().toUpperCase() || 'SEK'
+
+    return [
+      {
+        addon_service_id: service.id,
+        key: service.key,
+        name: service.name,
+        description: service.description,
+        price_amount: normalizedPrice,
+        currency: normalizedCurrency,
+      } satisfies AssignmentAddonOffer,
+    ]
+  })
+}
+
+export async function listAssignmentAddonOrders(input: {
+  orgId: string
+  assignmentId: string
+}): Promise<AssignmentAddonOrder[]> {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const { data, error } = await (admin as any)
+    .from('assignment_addon_orders')
+    .select(
+      'id,assignment_id,org_id,addon_service_id,addon_key,addon_name_snapshot,price_amount_snapshot,currency_snapshot,created_at'
+    )
+    .eq('org_id', input.orgId)
+    .eq('assignment_id', input.assignmentId)
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta beställda tilläggsuppdrag.')
+  }
+
+  const rows = (data ?? []) as Array<{
+    id: string
+    assignment_id: string
+    org_id: string
+    addon_service_id: string | null
+    addon_key: string
+    addon_name_snapshot: string
+    price_amount_snapshot: number | string
+    currency_snapshot: string | null
+    created_at: string
+  }>
+
+  return rows.map((row) => {
+    const rawPrice =
+      typeof row.price_amount_snapshot === 'number'
+        ? row.price_amount_snapshot
+        : Number(String(row.price_amount_snapshot ?? '0'))
+    const normalizedPrice = Number.isFinite(rawPrice) && rawPrice >= 0 ? Number(rawPrice.toFixed(2)) : 0
+
+    return {
+      id: row.id,
+      assignment_id: row.assignment_id,
+      org_id: row.org_id,
+      addon_service_id: row.addon_service_id,
+      addon_key: row.addon_key,
+      addon_name_snapshot: row.addon_name_snapshot,
+      price_amount_snapshot: normalizedPrice,
+      currency_snapshot: (row.currency_snapshot ?? 'SEK').trim().toUpperCase() || 'SEK',
+      created_at: row.created_at,
+    } satisfies AssignmentAddonOrder
+  })
 }
 
 export async function createAssignment(input: {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import {
   getAssignmentById,
+  listAssignmentAddonOrders,
   requireOrgContext,
   type AssignmentStatus,
   type AssignmentType,
@@ -32,7 +33,20 @@ export async function GET(
     const assignment = await getAssignmentById(org.orgId, id)
 
     if (!assignment) return jsonError('Uppdraget hittades inte.', 404)
-    return NextResponse.json({ assignment })
+    let addonOrders: Awaited<ReturnType<typeof listAssignmentAddonOrders>> = []
+    try {
+      addonOrders = await listAssignmentAddonOrders({
+        orgId: org.orgId,
+        assignmentId: id,
+      })
+    } catch (addonError) {
+      console.error('[assignments.get] failed to load addon orders', {
+        assignmentId: id,
+        error: addonError instanceof Error ? addonError.message : String(addonError),
+      })
+    }
+
+    return NextResponse.json({ assignment, addonOrders })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)

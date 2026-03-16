@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { isIP } from 'node:net'
-import { consumeAssignmentToken, resolvePublicAssignmentByToken } from '@/lib/assignments/server'
+import {
+  consumeAssignmentToken,
+  listAddonOffersForProfile,
+  resolvePublicAssignmentByToken,
+} from '@/lib/assignments/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
   ASSIGNMENT_TERMS_VERSION,
@@ -57,6 +61,15 @@ type PublicInspectorProfile = {
   company_postal_code: string | null
   company_city: string | null
   avatar_path: string | null
+}
+
+type PublicAddonOffer = {
+  addon_service_id: string
+  key: string
+  name: string
+  description: string | null
+  price_amount: number
+  currency: string
 }
 
 type PublicLink = {
@@ -156,6 +169,8 @@ export async function GET(
 
     const terms = getAllAssignmentTermsDocuments()
     let inspector: PublicInspectorProfile | null = null
+    let addonOffers: PublicAddonOffer[] = []
+    let selectedAddonServiceIds: string[] = []
 
     if (assignment.responsible_profile_id) {
       const admin = createSupabaseAdminClient()
@@ -168,6 +183,28 @@ export async function GET(
         .maybeSingle()
 
       inspector = (inspectorData ?? null) as PublicInspectorProfile | null
+
+      try {
+        addonOffers = await listAddonOffersForProfile({
+          orgId: link.org_id,
+          profileId: assignment.responsible_profile_id,
+        })
+      } catch (addonError) {
+        console.error('[assignments.accept] failed to load addon offers', {
+          token_prefix: token.slice(0, 8),
+          error: addonError instanceof Error ? addonError.message : String(addonError),
+        })
+      }
+
+      const { data: addonOrderData } = await admin
+        .from('assignment_addon_orders')
+        .select('addon_service_id')
+        .eq('assignment_id', assignment.id)
+        .eq('org_id', link.org_id)
+
+      selectedAddonServiceIds = ((addonOrderData ?? []) as Array<{ addon_service_id: string | null }>)
+        .map((row) => row.addon_service_id)
+        .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
     }
 
     return NextResponse.json({
@@ -176,6 +213,8 @@ export async function GET(
       usedAt: link.used_at ?? null,
       assignment,
       inspector,
+      addonOffers,
+      selectedAddonServiceIds,
       terms: {
         version: ASSIGNMENT_TERMS_VERSION,
         documents: {
@@ -278,6 +317,24 @@ export async function POST(
       return jsonError('Pris är obligatoriskt och måste vara giltigt.', 400)
     }
 
+    const selectedAddonServiceIdsInput = body.selectedAddonServiceIds
+    let selectedAddonServiceIds: string[] = []
+    if (selectedAddonServiceIdsInput !== undefined) {
+      if (!Array.isArray(selectedAddonServiceIdsInput)) {
+        return jsonError('Ogiltigt format för tilläggsuppdrag.', 400)
+      }
+
+      for (const value of selectedAddonServiceIdsInput) {
+        if (typeof value !== 'string') {
+          return jsonError('Ogiltigt format för tilläggsuppdrag.', 400)
+        }
+        const normalized = value.trim()
+        if (normalized !== '') selectedAddonServiceIds.push(normalized)
+      }
+
+      selectedAddonServiceIds = [...new Set(selectedAddonServiceIds)]
+    }
+
     const payload = {
       customer_name: typeof body.customerName === 'string' ? body.customerName.trim() : null,
       customer_email: customerEmail,
@@ -295,6 +352,7 @@ export async function POST(
       currency: 'SEK',
       orderer_role: roleLabel,
       terms_document_hash: terms.documentHash,
+      addon_service_ids: selectedAddonServiceIds,
     }
 
     await consumeAssignmentToken({
@@ -339,6 +397,15 @@ export async function POST(
     }
     if (message.includes('missing_terms_document_hash') || message.includes('invalid_terms_document_hash')) {
       return jsonError('Dokumentfingeravtryck saknas eller är ogiltigt.', 400)
+    }
+    if (message.includes('invalid_addon_service_ids')) {
+      return jsonError('Ogiltigt format för tilläggsuppdrag.', 400)
+    }
+    if (message.includes('invalid_selected_addon_services')) {
+      return jsonError('Ett eller flera valda tilläggsuppdrag är inte tillgängliga.', 400)
+    }
+    if (message.includes('responsible_profile_missing')) {
+      return jsonError('Uppdraget saknar ansvarig besiktningsman.', 409)
     }
     if (lowered.includes('invalid input syntax for type inet')) {
       return jsonError('Kunde inte verifiera anslutningsinformation. Försök igen.', 400)

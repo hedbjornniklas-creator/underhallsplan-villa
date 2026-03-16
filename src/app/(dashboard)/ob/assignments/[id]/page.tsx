@@ -45,6 +45,18 @@ type AssignmentDetails = {
   last_sent_at: string | null
 }
 
+type AssignmentAddonOrder = {
+  id: string
+  assignment_id: string
+  org_id: string
+  addon_service_id: string | null
+  addon_key: string
+  addon_name_snapshot: string
+  price_amount_snapshot: number
+  currency_snapshot: string
+  created_at: string
+}
+
 type FormState = {
   assignmentType: AssignmentType
   status: AssignmentStatus
@@ -148,6 +160,7 @@ export default function AssignmentDetailsPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [assignment, setAssignment] = useState<AssignmentDetails | null>(null)
+  const [addonOrders, setAddonOrders] = useState<AssignmentAddonOrder[]>([])
   const [form, setForm] = useState<FormState | null>(null)
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSavedFingerprintRef = useRef<string>('')
@@ -160,6 +173,7 @@ export default function AssignmentDetailsPage() {
       setLoading(true)
       setError(null)
       setSuccess(null)
+      setAddonOrders([])
 
       const response = await fetch(`/api/ob/assignments/${id}`, { cache: 'no-store' })
       const payload = await response.json().catch(() => null)
@@ -167,9 +181,14 @@ export default function AssignmentDetailsPage() {
         throw new Error(jsonToErrorMessage(payload, 'Kunde inte hämta uppdraget.'))
       }
 
-      const row = (payload as { assignment: AssignmentDetails }).assignment
+      const typedPayload = payload as {
+        assignment: AssignmentDetails
+        addonOrders?: AssignmentAddonOrder[]
+      }
+      const row = typedPayload.assignment
       const nextForm = toFormState(row)
       setAssignment(row)
+      setAddonOrders(typedPayload.addonOrders ?? [])
       setForm(nextForm)
       lastSavedFingerprintRef.current = formFingerprint(nextForm)
       setSaveState('idle')
@@ -194,6 +213,16 @@ export default function AssignmentDetailsPage() {
       : 'Ej skickad'
     return { acceptedAt, sentAt }
   }, [assignment])
+
+  const addonSummary = useMemo(() => {
+    const total = addonOrders.reduce((sum, row) => sum + row.price_amount_snapshot, 0)
+    const currency = addonOrders[0]?.currency_snapshot || 'SEK'
+    return {
+      count: addonOrders.length,
+      total: Number(total.toFixed(2)),
+      currency,
+    }
+  }, [addonOrders])
 
   const updateField = (key: keyof FormState, value: string) => {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev))
@@ -493,6 +522,52 @@ export default function AssignmentDetailsPage() {
                       min="0"
                     />
                   </div>
+                </SectionCard>
+
+                <SectionCard title="Beställda tilläggsuppdrag">
+                  {addonOrders.length === 0 ? (
+                    <p className="text-sm text-gray-600">Inga tilläggsuppdrag är valda ännu.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="overflow-hidden rounded-lg border border-gray-200">
+                        <table className="min-w-full text-sm">
+                          <thead>
+                            <tr className="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-600">
+                              <th className="px-3 py-2">Tjänst</th>
+                              <th className="px-3 py-2">Pris</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {addonOrders.map((order) => (
+                              <tr key={order.id} className="border-t border-gray-100">
+                                <td className="px-3 py-2 text-gray-900">{order.addon_name_snapshot}</td>
+                                <td className="px-3 py-2 text-gray-800">
+                                  {order.price_amount_snapshot.toLocaleString('sv-SE', {
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 2,
+                                  })}{' '}
+                                  {order.currency_snapshot}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+                        Valda tilläggsuppdrag: <strong>{addonSummary.count}</strong>
+                        {' · '}
+                        Summa:{' '}
+                        <strong>
+                          {addonSummary.total.toLocaleString('sv-SE', {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 2,
+                          })}{' '}
+                          {addonSummary.currency}
+                        </strong>
+                      </div>
+                    </div>
+                  )}
                 </SectionCard>
               </section>
 

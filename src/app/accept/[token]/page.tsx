@@ -53,12 +53,23 @@ type InspectorProfile = {
   avatar_path: string | null
 }
 
+type AddonOffer = {
+  addon_service_id: string
+  key: string
+  name: string
+  description: string | null
+  price_amount: number
+  currency: string
+}
+
 type AcceptReadResponse = {
   state: AcceptState
   expiresAt: string | null
   usedAt: string | null
   assignment: AssignmentSummary
   inspector: InspectorProfile | null
+  addonOffers: AddonOffer[]
+  selectedAddonServiceIds?: string[]
   terms: {
     version: string
     documents: {
@@ -82,6 +93,7 @@ type FormState = {
   preferredDate: string
   preferredTime: string
   priceAmount: string
+  selectedAddonServiceIds: string[]
   termsAccepted: boolean
 }
 
@@ -127,8 +139,14 @@ function normalizeRole(value: string | null): OrdererRole {
   return ''
 }
 
-function toFormState(assignment: AssignmentSummary): FormState {
+function toFormState(
+  assignment: AssignmentSummary,
+  addonOffers: AddonOffer[],
+  selectedAddonServiceIds: string[] = []
+): FormState {
   const role = normalizeRole(assignment.orderer_role)
+  const availableAddonIds = new Set(addonOffers.map((offer) => offer.addon_service_id))
+  const normalizedSelectedAddons = selectedAddonServiceIds.filter((id) => availableAddonIds.has(id))
   return {
     cadastralId: assignment.cadastral_id ?? '',
     propertyAddress: assignment.property_address ?? assignment.preliminary_address ?? '',
@@ -142,6 +160,7 @@ function toFormState(assignment: AssignmentSummary): FormState {
     preferredDate: assignment.preferred_date ?? '',
     preferredTime: assignment.preferred_time ?? '',
     priceAmount: assignment.price_amount !== null ? String(assignment.price_amount) : '',
+    selectedAddonServiceIds: [...new Set(normalizedSelectedAddons)],
     termsAccepted: false,
   }
 }
@@ -191,7 +210,13 @@ export default function AssignmentAcceptPage() {
 
         const resolved = payload as AcceptReadResponse
         setData(resolved)
-        setForm(toFormState(resolved.assignment))
+        setForm(
+          toFormState(
+            resolved.assignment,
+            resolved.addonOffers ?? [],
+            resolved.selectedAddonServiceIds ?? []
+          )
+        )
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : 'Kunde inte läsa uppdragslänken.')
       } finally {
@@ -249,6 +274,40 @@ export default function AssignmentAcceptPage() {
   const updateField = (key: keyof FormState, value: string | boolean) => {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev))
   }
+
+  const updateAddonSelection = (addonServiceId: string, checked: boolean) => {
+    setForm((prev) => {
+      if (!prev) return prev
+      const nextIds = checked
+        ? [...prev.selectedAddonServiceIds, addonServiceId]
+        : prev.selectedAddonServiceIds.filter((id) => id !== addonServiceId)
+      return {
+        ...prev,
+        selectedAddonServiceIds: [...new Set(nextIds)],
+      }
+    })
+  }
+
+  const selectedAddonLookup = useMemo(() => {
+    if (!form) return new Set<string>()
+    return new Set(form.selectedAddonServiceIds)
+  }, [form])
+
+  const selectedAddonSummary = useMemo(() => {
+    if (!data || !form) return { count: 0, total: 0, currency: 'SEK' }
+
+    const selectedOffers = data.addonOffers.filter((offer) =>
+      form.selectedAddonServiceIds.includes(offer.addon_service_id)
+    )
+    const total = selectedOffers.reduce((sum, offer) => sum + offer.price_amount, 0)
+    const currency = selectedOffers[0]?.currency || data.addonOffers[0]?.currency || 'SEK'
+
+    return {
+      count: selectedOffers.length,
+      total: Number(total.toFixed(2)),
+      currency,
+    }
+  }, [data, form])
 
   const handleSubmit = async () => {
     if (!form || !data || !canSubmit) return
@@ -315,6 +374,7 @@ export default function AssignmentAcceptPage() {
           preferredDate: form.preferredDate,
           preferredTime: form.preferredTime,
           priceAmount: numericPrice,
+          selectedAddonServiceIds: form.selectedAddonServiceIds,
           termsAccepted: form.termsAccepted,
           termsVersion: data.terms.version,
           termsDocumentHash: activeTerms.hash,
@@ -533,6 +593,61 @@ export default function AssignmentAcceptPage() {
                   </div>
                 </SectionCard>
               </div>
+
+              {data.addonOffers.length > 0 ? (
+                <SectionCard title="Tilläggsuppdrag">
+                  <p className="text-xs text-gray-600">
+                    Välj eventuella tilläggsuppdrag utöver överlåtelsebesiktningen.
+                  </p>
+
+                  <div className="space-y-2">
+                    {data.addonOffers.map((offer) => (
+                      <label
+                        key={offer.addon_service_id}
+                        className="flex items-start justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
+                      >
+                        <div className="flex min-w-0 items-start gap-2">
+                          <input
+                            type="checkbox"
+                            className="mt-1 h-4 w-4 rounded border-gray-300"
+                            checked={selectedAddonLookup.has(offer.addon_service_id)}
+                            onChange={(event) =>
+                              updateAddonSelection(offer.addon_service_id, event.target.checked)
+                            }
+                            disabled={!canSubmit}
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium text-gray-900">{offer.name}</span>
+                            {offer.description ? (
+                              <span className="mt-0.5 block text-xs text-gray-600">{offer.description}</span>
+                            ) : null}
+                          </span>
+                        </div>
+                        <span className="whitespace-nowrap text-sm font-medium text-gray-800">
+                          {offer.price_amount.toLocaleString('sv-SE', {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 2,
+                          })}{' '}
+                          {offer.currency}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+                    Valda tilläggsuppdrag: <strong>{selectedAddonSummary.count}</strong>
+                    {' · '}
+                    Summa:{' '}
+                    <strong>
+                      {selectedAddonSummary.total.toLocaleString('sv-SE', {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 2,
+                      })}{' '}
+                      {selectedAddonSummary.currency}
+                    </strong>
+                  </div>
+                </SectionCard>
+              ) : null}
             </section>
 
             <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">

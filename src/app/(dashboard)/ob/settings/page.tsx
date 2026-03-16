@@ -224,7 +224,7 @@ export default function ObSettingsPage() {
       .order('name', { ascending: true })
 
     if (catalogError) {
-      setAddonError('Kunde inte hamta tillaggsuppdrag.')
+      setAddonError('Kunde inte hämta tilläggsuppdrag.')
       setAddonRows([])
       setAddonLoading(false)
       return
@@ -244,7 +244,7 @@ export default function ObSettingsPage() {
       .eq('profile_id', profileId)
 
     if (profileAddonsError) {
-      setAddonError('Kunde inte hamta dina tillaggsuppdrag.')
+      setAddonError('Kunde inte hämta dina tilläggsuppdrag.')
       setAddonRows([])
       setAddonLoading(false)
       return
@@ -376,12 +376,12 @@ export default function ObSettingsPage() {
       .upsert(rows, { onConflict: 'org_id,profile_id,addon_service_id' })
 
     if (saveError) {
-      setAddonError('Kunde inte spara tillaggsuppdrag.')
+      setAddonError('Kunde inte spara tilläggsuppdrag.')
       setAddonSaving(false)
       return
     }
 
-    setAddonSuccess('Tillaggsuppdrag sparades.')
+    setAddonSuccess('Tilläggsuppdrag sparades.')
     setAddonSaving(false)
   }
 
@@ -626,23 +626,23 @@ export default function ObSettingsPage() {
 
           <section className="rounded-2xl border border-white/30 bg-white/90 p-5 shadow-sm backdrop-blur-sm">
             <div className="mb-3 flex items-center gap-3">
-              <h2 className="text-lg font-semibold text-gray-900">Tillaggsuppdrag</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Tilläggsuppdrag</h2>
               <button
                 type="button"
                 onClick={() => void handleSaveAddons()}
                 disabled={addonSaving || addonLoading || loading}
                 className="ml-auto rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
               >
-                {addonSaving ? 'Sparar...' : 'Spara tillaggsuppdrag'}
+                {addonSaving ? 'Sparar...' : 'Spara tilläggsuppdrag'}
               </button>
             </div>
 
-            {addonLoading ? <p className="text-sm text-gray-600">Laddar tillaggsuppdrag...</p> : null}
+            {addonLoading ? <p className="text-sm text-gray-600">Laddar tilläggsuppdrag...</p> : null}
             {addonError ? <p className="mb-3 text-sm text-rose-700">{addonError}</p> : null}
             {addonSuccess ? <p className="mb-3 text-sm text-emerald-700">{addonSuccess}</p> : null}
 
             {!addonLoading && addonRows.length === 0 ? (
-              <p className="text-sm text-gray-600">Inga aktiva tillaggsuppdrag finns i admin just nu.</p>
+              <p className="text-sm text-gray-600">Inga aktiva tilläggsuppdrag finns i admin just nu.</p>
             ) : null}
 
             {!addonLoading && addonRows.length > 0 ? (
@@ -650,7 +650,7 @@ export default function ObSettingsPage() {
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="text-left text-gray-600">
-                      <th className="py-2 pr-3">Tjanst</th>
+                      <th className="py-2 pr-3">Tjänst</th>
                       <th className="py-2 pr-3">Erbjuds</th>
                       <th className="py-2 pr-3">Pris (SEK)</th>
                     </tr>
@@ -660,7 +660,6 @@ export default function ObSettingsPage() {
                       <tr key={row.addon_service_id}>
                         <td className="py-2 pr-3 align-top">
                           <div className="font-medium text-gray-900">{row.name}</div>
-                          <div className="text-xs text-gray-500">{row.key}</div>
                           {row.description ? (
                             <div className="mt-1 text-xs text-gray-600">{row.description}</div>
                           ) : null}
