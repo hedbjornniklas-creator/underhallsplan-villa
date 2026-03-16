@@ -121,19 +121,6 @@ function formatAttendeeLabels(labels: string[]): string {
   return formatList(labels)
 }
 
-function toAddonPrice(value: number | string | null | undefined): number {
-  const parsed = typeof value === 'number' ? value : Number(String(value ?? '0'))
-  if (!Number.isFinite(parsed) || parsed < 0) return 0
-  return Number(parsed.toFixed(2))
-}
-
-function toAddonCurrency(value: string | null | undefined): string {
-  const normalized = String(value ?? '')
-    .trim()
-    .toUpperCase()
-  return normalized.length === 3 ? normalized : 'SEK'
-}
-
 function resolvePublicMediaUrl(path: string | null | undefined) {
   if (!path) return null
   if (path.startsWith('http://') || path.startsWith('https://')) {
@@ -623,9 +610,6 @@ export default function ObStepGrunddata({
       : ATTENDEE_OPTIONS
 
   const isInspectionLocked = normalizeInspectionStatus(inspForm.status) === 'completed'
-  const selectedScopeSummary = hasInspectionAddonSnapshot
-    ? scopeFromInspectionAddons(inspectionAddonOrders)
-    : inspForm.scope ?? ''
 
   const handleInspectionCoverUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -927,16 +911,7 @@ export default function ObStepGrunddata({
                       checked={row.is_selected}
                       onChange={() => void handleInspectionAddonToggle(row)}
                     />
-                    <span>
-                      {row.addon_name_snapshot}
-                      <span className="ml-1 text-gray-500">
-                        ({toAddonPrice(row.price_amount_snapshot).toLocaleString('sv-SE', {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 2,
-                        })}{' '}
-                        {toAddonCurrency(row.currency_snapshot)})
-                      </span>
-                    </span>
+                    <span>{row.addon_name_snapshot}</span>
                   </label>
                 ))
               ) : (
@@ -951,13 +926,6 @@ export default function ObStepGrunddata({
                     <span>{opt.label}</span>
                   </label>
                 ))
-              )}
-            </div>
-            <div className="mt-1 text-[11px] text-gray-500">
-              {selectedScopeSummary && selectedScopeSummary.trim() !== '' ? (
-                <>Vald omfattning (sparas i utlåtandet): {selectedScopeSummary}</>
-              ) : (
-                'Ingen omfattning vald ännu.'
               )}
             </div>
           </div>

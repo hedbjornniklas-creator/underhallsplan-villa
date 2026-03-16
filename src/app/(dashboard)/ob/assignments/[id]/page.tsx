@@ -167,6 +167,7 @@ export default function AssignmentDetailsPage() {
 
   const canSend = assignment?.status !== 'completed'
   const canConvert = assignment?.status === 'booked' && !assignment.inspection_id
+  const isBookedLocked = assignment?.status === 'booked'
 
   const loadAssignment = useCallback(async () => {
     try {
@@ -225,11 +226,13 @@ export default function AssignmentDetailsPage() {
   }, [addonOrders])
 
   const updateField = (key: keyof FormState, value: string) => {
+    if (isBookedLocked) return
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev))
   }
 
   const saveForm = useCallback(
     async (nextForm: FormState, options?: { silentValidation?: boolean }) => {
+      if (isBookedLocked) return false
       const silentValidation = options?.silentValidation ?? false
       if (!EMAIL_REGEX.test(nextForm.customerEmail.trim())) {
         if (!silentValidation) setError('Ange en giltig kundmejl.')
@@ -297,11 +300,11 @@ export default function AssignmentDetailsPage() {
         setSaving(false)
       }
     },
-    [id]
+    [id, isBookedLocked]
   )
 
   useEffect(() => {
-    if (loading || !form) return
+    if (loading || !form || isBookedLocked) return
 
     const nextFingerprint = formFingerprint(form)
     if (nextFingerprint === lastSavedFingerprintRef.current) return
@@ -321,7 +324,7 @@ export default function AssignmentDetailsPage() {
         autosaveTimerRef.current = null
       }
     }
-  }, [form, loading, saveForm])
+  }, [form, loading, saveForm, isBookedLocked])
 
   const handleSend = async () => {
     try {
@@ -391,7 +394,13 @@ export default function AssignmentDetailsPage() {
               <h1 className="text-2xl font-semibold text-white drop-shadow-sm">Uppdragsbekräftelse</h1>
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 <span className="px-2 text-xs font-medium text-white/95">
-                  {saveState === 'saving' ? 'Sparar...' : saveState === 'saved' ? 'Sparat' : ''}
+                  {isBookedLocked
+                    ? 'Låst'
+                    : saveState === 'saving'
+                      ? 'Sparar...'
+                      : saveState === 'saved'
+                        ? 'Sparat'
+                        : ''}
                 </span>
                 <button
                   type="button"
@@ -421,6 +430,11 @@ export default function AssignmentDetailsPage() {
               {success}
             </div>
           ) : null}
+          {isBookedLocked ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              Uppdragsbekräftelsen är bokad och låst för redigering. Starta besiktning för att gå vidare.
+            </div>
+          ) : null}
 
           {loading || !form || !assignment ? (
             <div className="rounded-2xl border border-white/30 bg-white/85 p-5 text-sm text-gray-700">
@@ -434,6 +448,11 @@ export default function AssignmentDetailsPage() {
                   <ReadOnly label="Skickad" value={summary?.sentAt ?? '-'} />
                   <ReadOnly label="Accepterad" value={summary?.acceptedAt ?? '-'} />
                 </div>
+                <fieldset
+                  className="space-y-4 border-0 p-0"
+                  disabled={isBookedLocked}
+                  aria-label="Uppdragsdata"
+                >
                 <div className="grid gap-4 md:grid-cols-2">
                   <SectionCard title="Objekt">
                     <Field
@@ -523,6 +542,7 @@ export default function AssignmentDetailsPage() {
                     />
                   </div>
                 </SectionCard>
+                </fieldset>
 
                 <SectionCard title="Beställda tilläggsuppdrag">
                   {addonOrders.length === 0 ? (

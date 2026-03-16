@@ -62,6 +62,12 @@ export async function PATCH(
   try {
     const { id } = await context.params
     const org = await requireOrgContext()
+    const existing = await getAssignmentById(org.orgId, id)
+    if (!existing) return jsonError('Uppdraget hittades inte.', 404)
+    if (existing.status === 'booked') {
+      return jsonError('Bokad uppdragsbekräftelse är låst för redigering.', 409)
+    }
+
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
 
     const patch: Parameters<typeof updateAssignmentById>[0]['patch'] = {}
