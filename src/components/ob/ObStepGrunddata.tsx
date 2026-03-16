@@ -32,6 +32,16 @@ interface ObStepGrunddataProps {
   onInspectionUpdated?: (i: ObInspection) => void
 }
 
+type InspectionAddonOrder = {
+  id: string
+  addon_key: string
+  addon_name_snapshot: string
+  sort_order: number | null
+  price_amount_snapshot: number | string | null
+  currency_snapshot: string | null
+  is_selected: boolean
+}
+
 // Standardval för Omfattning - går lätt att ändra senare
 const SCOPE_OPTIONS: { key: string; label: string }[] = [
   { key: 'main_building', label: 'Okulär besiktning av huvudbyggnaden' },
@@ -109,6 +119,19 @@ function parseAttendeeLabels(raw: string | null): string[] {
 
 function formatAttendeeLabels(labels: string[]): string {
   return formatList(labels)
+}
+
+function toAddonPrice(value: number | string | null | undefined): number {
+  const parsed = typeof value === 'number' ? value : Number(String(value ?? '0'))
+  if (!Number.isFinite(parsed) || parsed < 0) return 0
+  return Number(parsed.toFixed(2))
+}
+
+function toAddonCurrency(value: string | null | undefined): string {
+  const normalized = String(value ?? '')
+    .trim()
+    .toUpperCase()
+  return normalized.length === 3 ? normalized : 'SEK'
 }
 
 function resolvePublicMediaUrl(path: string | null | undefined) {
@@ -221,6 +244,8 @@ export default function ObStepGrunddata({
   const [error, setError] = useState<string | null>(null)
   const [inspectorProfile, setInspectorProfile] = useState<InspectorProfile | null>(null)
   const [inspectorAvatarLoadError, setInspectorAvatarLoadError] = useState(false)
+  const [inspectionAddonOrders, setInspectionAddonOrders] = useState<InspectionAddonOrder[]>([])
+  const [inspectionAddonLoading, setInspectionAddonLoading] = useState(false)
 
   // Om vi får nya props (t.ex. efter save utifrån) uppdaterar vi lokalt state
   useEffect(() => {
@@ -283,6 +308,53 @@ export default function ObStepGrunddata({
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadInspectionAddons = async () => {
+      setInspectionAddonLoading(true)
+      try {
+        const response = await fetch(`/api/ob/inspections/${inspection.id}/addon-orders`, {
+          cache: 'no-store',
+        })
+        const payload = (await response.json().catch(() => null)) as
+          | { addonOrders?: InspectionAddonOrder[]; error?: string }
+          | null
+
+        if (!response.ok) {
+          throw new Error(payload?.error ?? 'Kunde inte hämta tilläggsuppdrag för besiktningen.')
+        }
+
+        if (cancelled) return
+        const rows = Array.isArray(payload?.addonOrders) ? payload.addonOrders : []
+        setInspectionAddonOrders(rows)
+
+        if ((inspection.scope ?? '').trim() === '' && rows.length > 0) {
+          const selectedFromSnapshot = formatScopeLabels(
+            rows
+              .filter(row => row.is_selected)
+              .map(row => row.addon_name_snapshot)
+              .filter(Boolean)
+          )
+          if (selectedFromSnapshot !== '') {
+            setInspForm(prev => ({ ...prev, scope: selectedFromSnapshot }))
+          }
+        }
+      } catch (addonError) {
+        console.error('Kunde inte hämta tilläggsuppdrag för Grunddata:', addonError)
+        if (!cancelled) setInspectionAddonOrders([])
+      } finally {
+        if (!cancelled) setInspectionAddonLoading(false)
+      }
+    }
+
+    void loadInspectionAddons()
+
+    return () => {
+      cancelled = true
+    }
+  }, [inspection.id, inspection.scope])
 
   // Hjälpare: spara property-fält
   const saveProperty = async (patch: Partial<Property>) => {
@@ -443,6 +515,62 @@ export default function ObStepGrunddata({
 
   // Checkboxar för omfattning
   const selectedScopeLabels = parseScopeLabels(inspForm.scope)
+  const hasInspectionAddonSnapshot = inspectionAddonOrders.length > 0
+
+  const scopeFromInspectionAddons = (rows: InspectionAddonOrder[]) =>
+    formatScopeLabels(
+      rows
+        .filter(row => row.is_selected)
+        .map(row => row.addon_name_snapshot)
+        .filter(Boolean)
+    )
+
+  const handleInspectionAddonToggle = async (row: InspectionAddonOrder) => {
+    const nextSelected = !row.is_selected
+    const optimisticRows = inspectionAddonOrders.map(current =>
+      current.id === row.id ? { ...current, is_selected: nextSelected } : current
+    )
+    setInspectionAddonOrders(optimisticRows)
+
+    try {
+      const response = await fetch(`/api/ob/inspections/${inspection.id}/addon-orders`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          addon_key: row.addon_key,
+          is_selected: nextSelected,
+        }),
+      })
+      const payload = (await response.json().catch(() => null)) as
+        | { addonOrders?: InspectionAddonOrder[]; error?: string }
+        | null
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'Kunde inte uppdatera tilläggsuppdrag.')
+      }
+
+      const persistedRows = Array.isArray(payload?.addonOrders)
+        ? payload.addonOrders
+        : optimisticRows
+      setInspectionAddonOrders(persistedRows)
+
+      const newScope = scopeFromInspectionAddons(persistedRows)
+      setInspForm(prev => ({ ...prev, scope: newScope }))
+      await saveInspection({ scope: newScope } as Partial<Inspection>)
+    } catch (addonUpdateError) {
+      console.error('Kunde inte uppdatera tilläggsuppdrag:', addonUpdateError)
+      setInspectionAddonOrders(prev =>
+        prev.map(current =>
+          current.id === row.id ? { ...current, is_selected: row.is_selected } : current
+        )
+      )
+      setError(
+        addonUpdateError instanceof Error
+          ? addonUpdateError.message
+          : 'Kunde inte uppdatera tilläggsuppdrag.'
+      )
+    }
+  }
 
   const handleScopeToggle = async (label: string) => {
     const current = parseScopeLabels(inspForm.scope)
@@ -495,6 +623,9 @@ export default function ObStepGrunddata({
       : ATTENDEE_OPTIONS
 
   const isInspectionLocked = normalizeInspectionStatus(inspForm.status) === 'completed'
+  const selectedScopeSummary = hasInspectionAddonSnapshot
+    ? scopeFromInspectionAddons(inspectionAddonOrders)
+    : inspForm.scope ?? ''
 
   const handleInspectionCoverUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -785,21 +916,46 @@ export default function ObStepGrunddata({
           <div className="space-y-2">
             <div className="text-xs font-medium text-gray-600">Omfattning</div>
             <div className="space-y-1">
-              {SCOPE_OPTIONS.map(opt => (
-                <label key={opt.key} className="flex items-start gap-2 text-xs text-gray-700">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 h-3 w-3"
-                    checked={selectedScopeLabels.includes(opt.label)}
-                    onChange={() => void handleScopeToggle(opt.label)}
-                  />
-                  <span>{opt.label}</span>
-                </label>
-              ))}
+              {inspectionAddonLoading && hasInspectionAddonSnapshot === false ? (
+                <div className="text-xs text-gray-500">Laddar omfattning...</div>
+              ) : hasInspectionAddonSnapshot ? (
+                inspectionAddonOrders.map(row => (
+                  <label key={row.id} className="flex items-start gap-2 text-xs text-gray-700">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-3 w-3"
+                      checked={row.is_selected}
+                      onChange={() => void handleInspectionAddonToggle(row)}
+                    />
+                    <span>
+                      {row.addon_name_snapshot}
+                      <span className="ml-1 text-gray-500">
+                        ({toAddonPrice(row.price_amount_snapshot).toLocaleString('sv-SE', {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 2,
+                        })}{' '}
+                        {toAddonCurrency(row.currency_snapshot)})
+                      </span>
+                    </span>
+                  </label>
+                ))
+              ) : (
+                SCOPE_OPTIONS.map(opt => (
+                  <label key={opt.key} className="flex items-start gap-2 text-xs text-gray-700">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-3 w-3"
+                      checked={selectedScopeLabels.includes(opt.label)}
+                      onChange={() => void handleScopeToggle(opt.label)}
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                ))
+              )}
             </div>
             <div className="mt-1 text-[11px] text-gray-500">
-              {inspForm.scope && inspForm.scope.trim() !== '' ? (
-                <>Vald omfattning (sparas i utlåtandet): {inspForm.scope}</>
+              {selectedScopeSummary && selectedScopeSummary.trim() !== '' ? (
+                <>Vald omfattning (sparas i utlåtandet): {selectedScopeSummary}</>
               ) : (
                 'Ingen omfattning vald ännu.'
               )}

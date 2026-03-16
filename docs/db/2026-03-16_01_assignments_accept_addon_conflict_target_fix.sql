@@ -1,8 +1,7 @@
--- Assignments accept: validate selected add-ons and snapshot them atomically
--- Date: 2026-03-15
+-- Assignments accept: fix ambiguous assignment_id in upsert conflict target
+-- Date: 2026-03-16
 -- Prerequisites:
---  - 2026-03-12_02_assignments_accept_status_ambiguity_fix.sql
---  - 2026-03-15_01_addon_services_foundation.sql
+--  - 2026-03-15_02_assignments_accept_addon_snapshots.sql
 
 create extension if not exists pgcrypto;
 
@@ -289,3 +288,4 @@ $$;
 
 revoke all on function public.consume_assignment_token(text, text, jsonb, inet, text) from public;
 grant execute on function public.consume_assignment_token(text, text, jsonb, inet, text) to service_role;
+

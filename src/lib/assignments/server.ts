@@ -1119,6 +1119,19 @@ function toPropertyName(address: string | null, assignmentId: string) {
   return `Fastighet ${assignmentId.slice(0, 8)}`
 }
 
+function toAddonPrice(value: unknown): number {
+  const parsed = typeof value === 'number' ? value : Number(String(value ?? '0'))
+  if (!Number.isFinite(parsed) || parsed < 0) return 0
+  return Number(parsed.toFixed(2))
+}
+
+function toAddonCurrency(value: unknown): string {
+  const normalized = String(value ?? '')
+    .trim()
+    .toUpperCase()
+  return normalized.length === 3 ? normalized : 'SEK'
+}
+
 function buildSnapshotPayload(inspectionId: string, propertyData: PropertySeedRow) {
   return {
     inspection_id: inspectionId,
@@ -1244,6 +1257,161 @@ export async function convertAssignmentToInspection(input: {
     await admin.from('inspections').delete().eq('id', inspection.id)
     await admin.from('properties').delete().eq('id', property.id)
     throw new Error(conditionsError.message ?? 'Kunde inte skapa förutsättningar för besiktning.')
+  }
+
+  const { data: profileAddonDataRaw, error: profileAddonError } = await (admin as any)
+    .from('profile_addon_services')
+    .select('addon_service_id, price_amount, currency')
+    .eq('org_id', input.orgId)
+    .eq('profile_id', ownerId)
+    .eq('is_enabled', true)
+
+  if (profileAddonError) {
+    await admin.from('inspections').delete().eq('id', inspection.id)
+    await admin.from('properties').delete().eq('id', property.id)
+    throw new Error(profileAddonError.message ?? 'Kunde inte hämta tilläggsuppdrag för besiktningsmannen.')
+  }
+
+  const profileAddonRows = Array.isArray(profileAddonDataRaw)
+    ? (profileAddonDataRaw as Array<{
+        addon_service_id: string
+        price_amount: number | string | null
+        currency: string | null
+      }>)
+    : []
+
+  if (profileAddonRows.length > 0) {
+    const addonServiceIds = Array.from(
+      new Set(
+        profileAddonRows
+          .map(row => row.addon_service_id)
+          .filter((value): value is string => typeof value === 'string' && value.length > 0)
+      )
+    )
+    const addonServiceFilter =
+      addonServiceIds.length > 0
+        ? addonServiceIds
+        : ['00000000-0000-0000-0000-000000000000']
+
+    const { data: catalogDataRaw, error: catalogError } = await (admin as any)
+      .from('settings_addon_services')
+      .select('id, key, name, sort_order')
+      .eq('is_active', true)
+      .in('id', addonServiceFilter)
+
+    if (catalogError) {
+      await admin.from('inspections').delete().eq('id', inspection.id)
+      await admin.from('properties').delete().eq('id', property.id)
+      throw new Error(catalogError.message ?? 'Kunde inte hämta tilläggskatalogen.')
+    }
+
+    const catalogRows = Array.isArray(catalogDataRaw)
+      ? (catalogDataRaw as Array<{
+          id: string
+          key: string
+          name: string
+          sort_order: number | null
+        }>)
+      : []
+
+    const { data: assignmentAddonDataRaw, error: assignmentAddonError } = await (admin as any)
+      .from('assignment_addon_orders')
+      .select(
+        'id, addon_service_id, addon_key, addon_name_snapshot, price_amount_snapshot, currency_snapshot'
+      )
+      .eq('org_id', input.orgId)
+      .eq('assignment_id', assignment.id)
+
+    if (assignmentAddonError) {
+      await admin.from('inspections').delete().eq('id', inspection.id)
+      await admin.from('properties').delete().eq('id', property.id)
+      throw new Error(
+        assignmentAddonError.message ?? 'Kunde inte hämta valda tilläggsuppdrag från uppdraget.'
+      )
+    }
+
+    const assignmentAddonRows = Array.isArray(assignmentAddonDataRaw)
+      ? (assignmentAddonDataRaw as Array<{
+          id: string
+          addon_service_id: string | null
+          addon_key: string
+          addon_name_snapshot: string
+          price_amount_snapshot: number | string
+          currency_snapshot: string | null
+        }>)
+      : []
+
+    const catalogById = new Map(catalogRows.map(row => [row.id, row]))
+    const selectedByServiceId = new Map(
+      assignmentAddonRows
+        .filter((row): row is typeof row & { addon_service_id: string } => !!row.addon_service_id)
+        .map(row => [row.addon_service_id, row])
+    )
+    const selectedByKey = new Map(assignmentAddonRows.map(row => [row.addon_key, row]))
+
+    const inspectionAddonRows = profileAddonRows
+      .map(row => {
+        const catalog = catalogById.get(row.addon_service_id)
+        if (!catalog) return null
+
+        const selected = selectedByServiceId.get(catalog.id) ?? selectedByKey.get(catalog.key)
+        return {
+          inspection_id: inspection.id,
+          org_id: input.orgId,
+          assignment_addon_order_id: selected?.id ?? null,
+          addon_service_id: catalog.id,
+          addon_key: catalog.key,
+          addon_name_snapshot:
+            selected?.addon_name_snapshot?.trim() && selected.addon_name_snapshot.trim().length > 0
+              ? selected.addon_name_snapshot.trim()
+              : catalog.name,
+          sort_order: typeof catalog.sort_order === 'number' ? catalog.sort_order : 100,
+          price_amount_snapshot: selected
+            ? toAddonPrice(selected.price_amount_snapshot)
+            : toAddonPrice(row.price_amount),
+          currency_snapshot: selected
+            ? toAddonCurrency(selected.currency_snapshot)
+            : toAddonCurrency(row.currency),
+          is_selected: !!selected,
+          selected_source: selected ? 'assignment' : 'inspection',
+        }
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null)
+
+    if (inspectionAddonRows.length > 0) {
+      const { error: inspectionAddonError } = await (admin as any)
+        .from('inspection_addon_orders')
+        .insert(inspectionAddonRows)
+
+      if (inspectionAddonError) {
+        await admin.from('inspections').delete().eq('id', inspection.id)
+        await admin.from('properties').delete().eq('id', property.id)
+        throw new Error(
+          inspectionAddonError.message ?? 'Kunde inte skapa tilläggsuppdragssnapshot för besiktningen.'
+        )
+      }
+
+      const selectedScope = inspectionAddonRows
+        .filter(row => row.is_selected)
+        .map(row => row.addon_name_snapshot)
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        .join('; ')
+
+      if (selectedScope !== '') {
+        const { error: scopeUpdateError } = await admin
+          .from('inspections')
+          .update({ scope: selectedScope })
+          .eq('id', inspection.id)
+
+        if (scopeUpdateError) {
+          await admin.from('inspections').delete().eq('id', inspection.id)
+          await admin.from('properties').delete().eq('id', property.id)
+          throw new Error(
+            scopeUpdateError.message ?? 'Kunde inte sätta omfattning från valda tilläggsuppdrag.'
+          )
+        }
+      }
+    }
   }
 
   if (assignment.assignment_type === 'OB') {
