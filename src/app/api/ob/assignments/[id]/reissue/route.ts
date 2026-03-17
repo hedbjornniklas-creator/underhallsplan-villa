@@ -39,10 +39,12 @@ export async function POST(
       return jsonError('Uppdraget hittades inte.', 404)
     }
     if (message === 'ASSIGNMENT_REISSUE_NOT_ALLOWED') {
-      return jsonError('Omgiltigering är endast tillåten för beställd eller bokad uppdragsbekräftelse.', 409)
+      return jsonError(
+        'Omgiltigering är endast tillåten för skickad, beställd eller bokad uppdragsbekräftelse.',
+        409
+      )
     }
 
     return jsonError('Kunde inte skapa ny version av uppdragsbekräftelsen.', 500)
   }
 }
-

@@ -842,7 +842,7 @@ export async function createReissuedAssignmentDraft(input: {
     throw new Error('ASSIGNMENT_NOT_FOUND')
   }
 
-  if (source.status !== 'ordered' && source.status !== 'booked') {
+  if (source.status !== 'sent' && source.status !== 'ordered' && source.status !== 'booked') {
     throw new Error('ASSIGNMENT_REISSUE_NOT_ALLOWED')
   }
 

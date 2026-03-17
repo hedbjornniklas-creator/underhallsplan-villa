@@ -202,9 +202,9 @@ export default function AssignmentDetailsPage() {
   const isSent = assignment?.status === 'sent'
   const isOrdered = assignment?.status === 'ordered'
   const isBookedLocked = assignment?.status === 'booked'
-  const isAcceptedLocked = isOrdered || isBookedLocked
-  const canSendCopy = isAcceptedLocked
-  const canReissue = isAcceptedLocked
+  const isEditingLocked = isSent || isOrdered || isBookedLocked
+  const canSendCopy = isOrdered || isBookedLocked
+  const canReissue = isEditingLocked
 
   const loadAssignment = useCallback(async () => {
     try {
@@ -266,13 +266,13 @@ export default function AssignmentDetailsPage() {
   }, [addonOrders])
 
   const updateField = (key: keyof FormState, value: string) => {
-    if (isAcceptedLocked) return
+    if (isEditingLocked) return
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev))
   }
 
   const saveForm = useCallback(
     async (nextForm: FormState, options?: { silentValidation?: boolean }) => {
-      if (isAcceptedLocked) return false
+      if (isEditingLocked) return false
       const silentValidation = options?.silentValidation ?? false
       if (!EMAIL_REGEX.test(nextForm.customerEmail.trim())) {
         if (!silentValidation) setError('Ange en giltig kundmejl.')
@@ -340,11 +340,11 @@ export default function AssignmentDetailsPage() {
         setSaving(false)
       }
     },
-    [id, isAcceptedLocked]
+    [id, isEditingLocked]
   )
 
   useEffect(() => {
-    if (loading || !form || isAcceptedLocked) return
+    if (loading || !form || isEditingLocked) return
 
     const nextFingerprint = formFingerprint(form)
     if (nextFingerprint === lastSavedFingerprintRef.current) return
@@ -364,7 +364,7 @@ export default function AssignmentDetailsPage() {
         autosaveTimerRef.current = null
       }
     }
-  }, [form, loading, saveForm, isAcceptedLocked])
+  }, [form, loading, saveForm, isEditingLocked])
 
   const handleSend = async () => {
     const sendMode = canSendCopy ? 'copy' : isSent ? 'new-link' : 'initial'
@@ -576,6 +576,10 @@ export default function AssignmentDetailsPage() {
             <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800">
               Uppdragsbekräftelsen är beställd och låst för redigering. Klicka på Acceptera uppdrag eller Skicka om uppdragsbekräftelse.
             </div>
+          ) : isSent ? (
+            <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
+              Uppdragsbekräftelsen är skickad och låst för redigering. Klicka på Skicka ny länk eller Skicka om uppdragsbekräftelse.
+            </div>
           ) : null}
 
           {loading || !form || !assignment ? (
@@ -597,7 +601,7 @@ export default function AssignmentDetailsPage() {
                 </div>
                 <fieldset
                   className="space-y-4 border-0 p-0"
-                  disabled={isAcceptedLocked}
+                  disabled={isEditingLocked}
                   aria-label="Uppdragsdata"
                 >
                 <div className="grid gap-4 md:grid-cols-2">

@@ -77,10 +77,12 @@ export async function PATCH(
       isStatusOnlyPatch
 
     if (
-      (existing.status === 'ordered' || existing.status === 'booked') &&
+      (existing.status === 'sent' ||
+        existing.status === 'ordered' ||
+        existing.status === 'booked') &&
       !allowOrderedToBookedTransition
     ) {
-      return jsonError('Beställd eller bokad uppdragsbekräftelse är låst för redigering.', 409)
+      return jsonError('Skickad, beställd eller bokad uppdragsbekräftelse är låst för redigering.', 409)
     }
     const patch: Parameters<typeof updateAssignmentById>[0]['patch'] = {}
 
