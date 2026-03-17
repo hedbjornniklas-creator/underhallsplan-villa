@@ -45,12 +45,12 @@ type ExteriorSidebarItem = {
 }
 
 const SECTIONS: { key: ObSectionKey; label: string }[] = [
-  { key: 'overview', label: 'Översikt' },
   { key: 'grunddata', label: 'Grunddata' },
   { key: 'handlingar', label: 'Handlingar & upplysningar' },
   { key: 'forutsattningar', label: 'Förutsättningar' },
   { key: 'utsida', label: 'Byggnad - utsida' },
   { key: 'insida', label: 'Byggnad - insida' },
+  { key: 'overview', label: 'Granska utlåtande' },
 ]
 
 export default function InspectionDetailPage() {
