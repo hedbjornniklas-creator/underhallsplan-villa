@@ -121,19 +121,19 @@ function getStatusSortRank(status: AssignmentItem['status']) {
 function getStatusRowClass(status: AssignmentItem['status']) {
   switch (status) {
     case 'draft':
-      return 'bg-[#F9FAFB] text-[#111827] hover:bg-[#F3F4F6] focus-visible:bg-[#F3F4F6]'
+      return 'bg-[#F9FAFB] text-black hover:bg-[#F3F4F6] focus-visible:bg-[#F3F4F6]'
     case 'sent':
-      return 'bg-[#DBEAFE] text-[#1E3A8A] hover:bg-[#BFDBFE] focus-visible:bg-[#BFDBFE]'
+      return 'bg-[#DBEAFE] text-black hover:bg-[#BFDBFE] focus-visible:bg-[#BFDBFE]'
     case 'ordered':
-      return 'bg-[#FEF3C7] text-[#92400E] hover:bg-[#FDE68A] focus-visible:bg-[#FDE68A]'
+      return 'bg-[#FEF3C7] text-black hover:bg-[#FDE68A] focus-visible:bg-[#FDE68A]'
     case 'booked':
-      return 'bg-[#FFEDD5] text-[#9A3412] hover:bg-[#FED7AA] focus-visible:bg-[#FED7AA]'
+      return 'bg-[#FFEDD5] text-black hover:bg-[#FED7AA] focus-visible:bg-[#FED7AA]'
     case 'completed':
-      return 'bg-[#DCFCE7] text-[#14532D] hover:bg-[#BBF7D0] focus-visible:bg-[#BBF7D0]'
+      return 'bg-[#DCFCE7] text-black hover:bg-[#BBF7D0] focus-visible:bg-[#BBF7D0]'
     case 'cancelled':
-      return 'bg-[#FEE2E2] text-[#7F1D1D] hover:bg-[#FECACA] focus-visible:bg-[#FECACA]'
+      return 'bg-[#FEE2E2] text-black hover:bg-[#FECACA] focus-visible:bg-[#FECACA]'
     default:
-      return 'bg-[#E5E7EB] text-[#374151] hover:bg-[#D1D5DB] focus-visible:bg-[#D1D5DB]'
+      return 'bg-[#E5E7EB] text-black hover:bg-[#D1D5DB] focus-visible:bg-[#D1D5DB]'
   }
 }
 
@@ -614,8 +614,8 @@ export default function ObAssignmentsPage() {
           {!loading && totalItems > 0 ? (
             <>
               <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="border-b bg-gray-50 text-xs uppercase text-gray-500">
+                <table className="min-w-full text-left text-sm text-black">
+                  <thead className="border-b bg-gray-50 text-xs uppercase text-black">
                     <tr>
                       <th className="px-3 py-2">
                         <button
