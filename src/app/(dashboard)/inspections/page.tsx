@@ -285,9 +285,9 @@ function PrintActionButton({ href }: { href: string }) {
       onClick={(event) => event.stopPropagation()}
       aria-label="Skriv ut PDF"
       title="Skriv ut PDF"
-      className="group inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white/95 text-slate-700 shadow-sm ring-1 ring-white/80 transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+      className="group inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white/95 text-slate-700 shadow-sm ring-1 ring-white/80 transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
     >
-      <Printer size={15} strokeWidth={1.9} />
+      <Printer size={13} strokeWidth={1.9} />
       <span className="sr-only">Skriv ut PDF</span>
     </Link>
   )
@@ -844,24 +844,19 @@ export default function InspectionsPage() {
                             }
                           }}
                         >
-                          <td className="px-3 py-2 align-middle whitespace-nowrap">
+                          <td className="px-3 py-1.5 align-middle whitespace-nowrap">
                             <div>{dateText}</div>
                           </td>
 
-                          <td className="px-3 py-2 align-middle">
-                            <div>{customer}</div>
-                            {row.client_contact ? (
-                              <div className="text-xs text-gray-500">{row.client_contact}</div>
-                            ) : null}
-                          </td>
+                          <td className="px-3 py-1.5 align-middle">{customer}</td>
 
-                          <td className="px-3 py-2 align-middle">{getAddressText(row)}</td>
+                          <td className="px-3 py-1.5 align-middle">{getAddressText(row)}</td>
 
-                          <td className="px-3 py-2 align-middle whitespace-nowrap font-medium">
+                          <td className="px-3 py-1.5 align-middle whitespace-nowrap font-medium">
                             {getStatusLabel(row.status)}
                           </td>
 
-                          <td className="px-3 py-2 align-middle text-right">
+                          <td className="px-3 py-1.5 align-middle text-right">
                             <div className="flex items-center justify-end">
                               <PrintActionButton href={printHref} />
                             </div>
