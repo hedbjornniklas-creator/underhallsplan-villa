@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Mail, Send } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Mail, Send } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -103,7 +103,7 @@ type ProfileCardInfo = {
   logo_url?: string | null
 }
 
-const MODULES: DashboardCard[] = [{ id: 'list' }, { id: 'create' }, { id: 'profile' }, { id: 'assignments' }]
+const MODULES: DashboardCard[] = [{ id: 'assignments' }, { id: 'create' }, { id: 'list' }, { id: 'profile' }]
 
 function resolvePublicMediaUrl(path: string | null | undefined) {
   if (!path) return null
@@ -534,9 +534,10 @@ function AssignmentConfirmationsCard() {
     <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-2.5">
       <Link
         href="/ob/assignments"
-        className="inline-flex w-fit text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-600 underline-offset-2 transition hover:text-indigo-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
+        className="inline-flex w-fit items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-600 underline-offset-2 transition hover:text-indigo-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
       >
         Uppdragsbekräftelser
+        <ArrowRight size={11} aria-hidden="true" />
       </Link>
 
       <p className="mt-1.5 text-[10px] leading-relaxed text-gray-600">
