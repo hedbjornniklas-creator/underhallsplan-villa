@@ -2,7 +2,9 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Loader2, Mail, Plus, Send, Trash2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react'
+import Image from 'next/image'
+import Link from 'next/link'
 import Protected from '@/components/Protected'
 import DeleteConfirmOverlay from '@/components/ui/DeleteConfirmOverlay'
 
@@ -33,8 +35,16 @@ type ListResponse = {
   items: AssignmentItem[]
 }
 
-type StatusFilter = 'all' | 'draft' | 'sent' | 'ordered' | 'booked' | 'completed' | 'expired'
-type SortField = 'date' | 'address' | 'customer' | 'status'
+type StatusFilter =
+  | 'all'
+  | 'draft'
+  | 'sent'
+  | 'ordered'
+  | 'booked'
+  | 'completed'
+  | 'expired'
+  | 'cancelled'
+type SortField = 'status' | 'created' | 'customer' | 'address' | 'preferred_date'
 type SortDirection = 'asc' | 'desc'
 
 type SavedListView = {
@@ -43,14 +53,11 @@ type SavedListView = {
   sortField: SortField
   sortDirection: SortDirection
   pageSize: number
+  showCancelled: boolean
 }
 
-type ToastState = {
-  kind: 'success' | 'error'
-  message: string
-}
+type ToastState = { kind: 'success' | 'error'; message: string }
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const STORAGE_KEY = 'ob:assignments:list:view:v1'
 const DEFAULT_PAGE_SIZE = 25
 const PAGE_SIZE_OPTIONS = [10, 25, 50]
@@ -59,17 +66,18 @@ const COLLATOR = new Intl.Collator('sv', { sensitivity: 'base', numeric: true })
 const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'Alla' },
   { key: 'draft', label: 'Utkast' },
-  { key: 'sent', label: 'Skickade' },
-  { key: 'ordered', label: 'Beställda' },
-  { key: 'booked', label: 'Bokade' },
-  { key: 'completed', label: 'Avklarade' },
-  { key: 'expired', label: 'Utgångna' },
+  { key: 'sent', label: 'Skickad' },
+  { key: 'ordered', label: 'Godkänd' },
+  { key: 'booked', label: 'Bokad' },
+  { key: 'completed', label: 'Avklarad' },
+  { key: 'cancelled', label: 'Makulerad' },
+  { key: 'expired', label: 'Utgången' },
 ]
 
 function getStatusLabel(status: AssignmentItem['status']) {
   switch (status) {
     case 'ordered':
-      return 'Beställd'
+      return 'Godkänd'
     case 'booked':
       return 'Bokad'
     case 'completed':
@@ -85,7 +93,8 @@ function getStatusLabel(status: AssignmentItem['status']) {
   }
 }
 
-function getStatusBucket(status: AssignmentItem['status']): Exclude<StatusFilter, 'all'> {
+function getStatusBucket(status: AssignmentItem['status']): StatusFilter {
+  if (status === 'cancelled') return 'cancelled'
   if (status === 'draft') return 'draft'
   if (status === 'sent') return 'sent'
   if (status === 'ordered') return 'ordered'
@@ -94,20 +103,41 @@ function getStatusBucket(status: AssignmentItem['status']): Exclude<StatusFilter
   return 'expired'
 }
 
-function getStatusBadgeClass(status: AssignmentItem['status']) {
-  switch (getStatusBucket(status)) {
+function getStatusSortRank(status: AssignmentItem['status']) {
+  switch (status) {
     case 'draft':
-      return 'border-amber-200 bg-amber-50 text-amber-700'
+      return 0
     case 'sent':
-      return 'border-indigo-200 bg-indigo-50 text-indigo-700'
+      return 1
     case 'ordered':
-      return 'border-violet-200 bg-violet-50 text-violet-700'
+      return 2
     case 'booked':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      return 3
     case 'completed':
-      return 'border-sky-200 bg-sky-50 text-sky-700'
+      return 4
+    case 'cancelled':
+      return 5
     default:
-      return 'border-slate-200 bg-slate-100 text-slate-700'
+      return 6
+  }
+}
+
+function getStatusRowClass(status: AssignmentItem['status']) {
+  switch (status) {
+    case 'draft':
+      return 'bg-amber-50/60 hover:bg-amber-100/70 focus-visible:bg-amber-100/80'
+    case 'sent':
+      return 'bg-indigo-50/60 hover:bg-indigo-100/70 focus-visible:bg-indigo-100/80'
+    case 'ordered':
+      return 'bg-violet-50/60 hover:bg-violet-100/70 focus-visible:bg-violet-100/80'
+    case 'booked':
+      return 'bg-emerald-50/60 hover:bg-emerald-100/70 focus-visible:bg-emerald-100/80'
+    case 'completed':
+      return 'bg-sky-50/60 hover:bg-sky-100/70 focus-visible:bg-sky-100/80'
+    case 'cancelled':
+      return 'bg-rose-50/60 hover:bg-rose-100/70 focus-visible:bg-rose-100/80'
+    default:
+      return 'bg-slate-50/60 hover:bg-slate-100/70 focus-visible:bg-slate-100/80'
   }
 }
 
@@ -117,21 +147,11 @@ function getAddress(item: AssignmentItem) {
   return [line, postalCity].filter(Boolean).join(', ') || 'Adress saknas'
 }
 
-function formatDate(item: AssignmentItem) {
-  const raw = item.preferred_date ?? item.created_at
+function formatDate(raw: string | null) {
+  if (!raw) return '-'
   const date = new Date(raw)
   if (Number.isNaN(date.getTime())) return raw
   return date.toLocaleDateString('sv-SE')
-}
-
-function formatType(value: AssignmentItem['assignment_type']) {
-  if (value === 'OB') return 'ÖB'
-  if (value === 'STATUS') return 'Status'
-  return 'UHP'
-}
-
-function getDateValue(item: AssignmentItem) {
-  return new Date(item.preferred_date ?? item.created_at).getTime()
 }
 
 function getSortIndicator(active: boolean, direction: SortDirection) {
@@ -147,14 +167,11 @@ export default function ObAssignmentsPage() {
   const [items, setItems] = useState<AssignmentItem[]>([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [sortField, setSortField] = useState<SortField>('date')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [sortField, setSortField] = useState<SortField>('status')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [showCancelled, setShowCancelled] = useState(false)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [currentPage, setCurrentPage] = useState(1)
-  const [quickEmail, setQuickEmail] = useState('')
-  const [quickSending, setQuickSending] = useState(false)
-  const [quickError, setQuickError] = useState<string | null>(null)
-  const [quickSuccess, setQuickSuccess] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
   const [toast, setToast] = useState<ToastState | null>(null)
@@ -194,7 +211,10 @@ export default function ObAssignmentsPage() {
       if (saved.statusFilter && STATUS_TABS.some((tab) => tab.key === saved.statusFilter)) {
         setStatusFilter(saved.statusFilter)
       }
-      if (saved.sortField && ['date', 'address', 'customer', 'status'].includes(saved.sortField)) {
+      if (
+        saved.sortField &&
+        ['status', 'created', 'customer', 'address', 'preferred_date'].includes(saved.sortField)
+      ) {
         setSortField(saved.sortField as SortField)
       }
       if (saved.sortDirection === 'asc' || saved.sortDirection === 'desc') {
@@ -202,6 +222,9 @@ export default function ObAssignmentsPage() {
       }
       if (typeof saved.pageSize === 'number' && PAGE_SIZE_OPTIONS.includes(saved.pageSize)) {
         setPageSize(saved.pageSize)
+      }
+      if (typeof saved.showCancelled === 'boolean') {
+        setShowCancelled(saved.showCancelled)
       }
     } catch {
       // Ignore malformed localStorage payloads
@@ -215,39 +238,55 @@ export default function ObAssignmentsPage() {
       sortField,
       sortDirection,
       pageSize,
+      showCancelled,
     }
 
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  }, [search, statusFilter, sortField, sortDirection, pageSize])
+  }, [search, statusFilter, sortField, sortDirection, pageSize, showCancelled])
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [search, statusFilter, sortField, sortDirection, pageSize])
+  }, [search, statusFilter, sortField, sortDirection, pageSize, showCancelled])
 
-  const activeItems = useMemo(() => items.filter((item) => item.status !== 'cancelled'), [items])
+  const visibleItems = useMemo(
+    () => items.filter((item) => showCancelled || item.status !== 'cancelled'),
+    [items, showCancelled]
+  )
+
+  useEffect(() => {
+    if (!showCancelled && statusFilter === 'cancelled') {
+      setStatusFilter('all')
+    }
+  }, [showCancelled, statusFilter])
+
+  const statusTabs = useMemo(
+    () => (showCancelled ? STATUS_TABS : STATUS_TABS.filter((tab) => tab.key !== 'cancelled')),
+    [showCancelled]
+  )
 
   const statusCounts = useMemo(() => {
     const counts: Record<StatusFilter, number> = {
-      all: activeItems.length,
+      all: visibleItems.length,
       draft: 0,
       sent: 0,
       ordered: 0,
       booked: 0,
       completed: 0,
       expired: 0,
+      cancelled: 0,
     }
 
-    for (const item of activeItems) {
+    for (const item of visibleItems) {
       counts[getStatusBucket(item.status)] += 1
     }
 
     return counts
-  }, [activeItems])
+  }, [visibleItems])
 
   const filteredAndSorted = useMemo(() => {
     const q = search.trim().toLowerCase()
 
-    const filtered = activeItems.filter((item) => {
+    const filtered = visibleItems.filter((item) => {
       if (statusFilter !== 'all' && getStatusBucket(item.status) !== statusFilter) {
         return false
       }
@@ -259,7 +298,6 @@ export default function ObAssignmentsPage() {
         item.customer_email ?? '',
         item.customer_phone ?? '',
         getAddress(item),
-        formatType(item.assignment_type),
         getStatusLabel(item.status),
       ]
         .join(' ')
@@ -271,19 +309,26 @@ export default function ObAssignmentsPage() {
     return [...filtered].sort((a, b) => {
       let comparison = 0
 
-      if (sortField === 'date') {
-        comparison = getDateValue(a) - getDateValue(b)
+      if (sortField === 'status') {
+        comparison = getStatusSortRank(a.status) - getStatusSortRank(b.status)
+        if (comparison === 0) {
+          comparison = new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        }
+      } else if (sortField === 'created') {
+        comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      } else if (sortField === 'preferred_date') {
+        const aValue = a.preferred_date ? new Date(a.preferred_date).getTime() : Number.MAX_SAFE_INTEGER
+        const bValue = b.preferred_date ? new Date(b.preferred_date).getTime() : Number.MAX_SAFE_INTEGER
+        comparison = aValue - bValue
       } else if (sortField === 'address') {
         comparison = COLLATOR.compare(getAddress(a), getAddress(b))
       } else if (sortField === 'customer') {
         comparison = COLLATOR.compare(a.customer_name ?? a.customer_email, b.customer_name ?? b.customer_email)
-      } else {
-        comparison = COLLATOR.compare(getStatusLabel(a.status), getStatusLabel(b.status))
       }
 
       return sortDirection === 'asc' ? comparison : -comparison
     })
-  }, [activeItems, search, sortField, sortDirection, statusFilter])
+  }, [visibleItems, search, sortField, sortDirection, statusFilter])
 
   const totalItems = filteredAndSorted.length
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
@@ -303,16 +348,18 @@ export default function ObAssignmentsPage() {
   const hasActiveFilters =
     search.trim().length > 0 ||
     statusFilter !== 'all' ||
-    sortField !== 'date' ||
-    sortDirection !== 'desc' ||
-    pageSize !== DEFAULT_PAGE_SIZE
+    sortField !== 'status' ||
+    sortDirection !== 'asc' ||
+    pageSize !== DEFAULT_PAGE_SIZE ||
+    showCancelled
 
   const resetView = () => {
     setSearch('')
     setStatusFilter('all')
-    setSortField('date')
-    setSortDirection('desc')
+    setSortField('status')
+    setSortDirection('asc')
     setPageSize(DEFAULT_PAGE_SIZE)
+    setShowCancelled(false)
     setCurrentPage(1)
   }
 
@@ -323,74 +370,15 @@ export default function ObAssignmentsPage() {
     }
 
     setSortField(field)
-    setSortDirection(field === 'date' ? 'desc' : 'asc')
-  }
-
-  const handleQuickSend = async () => {
-    const email = quickEmail.trim().toLowerCase()
-    if (!EMAIL_REGEX.test(email)) {
-      setQuickError('Ange en giltig mejladress.')
+    if (field === 'status') {
+      setSortDirection('asc')
       return
     }
-
-    try {
-      setQuickSending(true)
-      setQuickError(null)
-      setQuickSuccess(null)
-
-      const response = await fetch('/api/ob/assignments/quick-send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerEmail: email }),
-      })
-
-      const body = (await response.json().catch(() => ({}))) as {
-        error?: string
-        acceptUrl?: string
-      }
-
-      if (!response.ok) {
-        if (body.acceptUrl) {
-          setQuickError(`Mejl kunde inte skickas. Länk skapades: ${body.acceptUrl}`)
-        } else {
-          setQuickError(body.error ?? 'Kunde inte skapa uppdragsbekräftelse.')
-        }
-        return
-      }
-
-      setQuickSuccess('Uppdragsbekräftelse skickad.')
-      setQuickEmail('')
-      await loadAssignments()
-    } catch (sendError) {
-      const message =
-        sendError instanceof Error ? sendError.message : 'Kunde inte skapa uppdragsbekräftelse.'
-      setQuickError(message)
-    } finally {
-      setQuickSending(false)
+    if (field === 'created' || field === 'preferred_date') {
+      setSortDirection('desc')
+      return
     }
-  }
-
-  const handleResend = async (id: string) => {
-    try {
-      setBusyId(id)
-      setError(null)
-      const response = await fetch(`/api/ob/assignments/${id}/send`, {
-        method: 'POST',
-      })
-      const body = (await response.json().catch(() => ({}))) as { error?: string }
-      if (!response.ok) {
-        throw new Error(body.error ?? 'Kunde inte skicka om uppdragsbekräftelsen.')
-      }
-      await loadAssignments()
-    } catch (resendError) {
-      setError(
-        resendError instanceof Error
-          ? resendError.message
-          : 'Kunde inte skicka om uppdragsbekräftelsen.'
-      )
-    } finally {
-      setBusyId(null)
-    }
+    setSortDirection('asc')
   }
 
   const handleDelete = async (id: string) => {
@@ -455,6 +443,20 @@ export default function ObAssignmentsPage() {
           <header className="rounded-2xl border border-white/30 bg-white/10 p-4 shadow-sm backdrop-blur-sm md:p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-center gap-3">
+                <Link
+                  href="/ob"
+                  aria-label="BesiktApp startsida"
+                  title="Till BesiktApp"
+                  className="inline-flex items-center rounded-md border border-white/40 bg-white/10 px-2 py-1 transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                >
+                  <Image
+                    src="/report-assets/BesiktApp.png"
+                    alt="BesiktApp"
+                    width={124}
+                    height={28}
+                    className="h-7 w-auto object-contain"
+                  />
+                </Link>
                 <button
                   type="button"
                   onClick={() => router.push('/ob')}
@@ -467,52 +469,18 @@ export default function ObAssignmentsPage() {
                 <h1 className="text-2xl font-semibold text-white drop-shadow-sm">Uppdragsbekräftelser</h1>
               </div>
 
-              <div className="flex w-full items-center gap-2 lg:w-auto">
-                <div className="relative min-w-[240px] flex-1 lg:w-[360px] lg:flex-none">
-                  <Mail
-                    size={15}
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                  />
-                  <input
-                    value={quickEmail}
-                    onChange={(event) => setQuickEmail(event.target.value)}
-                    placeholder="kund@epost.se"
-                    className="w-full rounded-lg border border-white/40 bg-white/95 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void handleQuickSend()}
-                  disabled={quickSending}
-                  className="inline-flex h-9 items-center justify-center gap-2 rounded-full border border-white/50 bg-white/15 px-4 text-sm font-medium text-white transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {quickSending ? (
-                    <Loader2 size={15} className="animate-spin" />
-                  ) : (
-                    <Send size={15} />
-                  )}
-                  Skicka uppdragsbekräftelse
-                </button>
+              <div className="flex w-full items-center justify-end gap-2 lg:w-auto">
                 <button
                   type="button"
                   onClick={() => router.push('/ob/assignments/new')}
-                  disabled={quickSending}
                   aria-label="Skapa tom uppdragsbekräftelse"
                   title="Skapa tom uppdragsbekräftelse"
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
                 >
                   <Plus size={16} strokeWidth={2.2} />
                 </button>
               </div>
             </div>
-            {quickError ? (
-              <p className="mt-3 rounded-md bg-rose-100/95 px-3 py-2 text-sm text-rose-700">{quickError}</p>
-            ) : null}
-            {quickSuccess ? (
-              <p className="mt-3 rounded-md bg-emerald-100/95 px-3 py-2 text-sm text-emerald-700">
-                {quickSuccess}
-              </p>
-            ) : null}
           </header>
 
           <section className="rounded-xl border border-white/30 bg-white/90 p-2 shadow-sm backdrop-blur md:p-3">
@@ -527,7 +495,7 @@ export default function ObAssignmentsPage() {
                 />
               </div>
 
-              {STATUS_TABS.map((tab) => {
+              {statusTabs.map((tab) => {
                 const active = statusFilter === tab.key
                 return (
                   <button
@@ -555,6 +523,17 @@ export default function ObAssignmentsPage() {
               })}
 
               <div className="ml-auto flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowCancelled((prev) => !prev)}
+                  className={
+                    showCancelled
+                      ? 'rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs text-rose-700'
+                      : 'rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50'
+                  }
+                >
+                  {showCancelled ? 'Dölj makulerade' : 'Visa makulerade'}
+                </button>
                 <label className="text-[10px] text-gray-600" htmlFor="assignmentsPageSize">
                   Rader/sida
                 </label>
@@ -604,13 +583,12 @@ export default function ObAssignmentsPage() {
                       <th className="px-3 py-2">
                         <button
                           type="button"
-                          onClick={() => handleSort('date')}
+                          onClick={() => handleSort('created')}
                           className="inline-flex items-center gap-1 font-semibold hover:text-gray-900"
                         >
-                          Datum <span>{getSortIndicator(sortField === 'date', sortDirection)}</span>
+                          Skapad <span>{getSortIndicator(sortField === 'created', sortDirection)}</span>
                         </button>
                       </th>
-                      <th className="px-3 py-2">Typ</th>
                       <th className="px-3 py-2">
                         <button
                           type="button"
@@ -632,10 +610,11 @@ export default function ObAssignmentsPage() {
                       <th className="px-3 py-2">
                         <button
                           type="button"
-                          onClick={() => handleSort('status')}
+                          onClick={() => handleSort('preferred_date')}
                           className="inline-flex items-center gap-1 font-semibold hover:text-gray-900"
                         >
-                          Status <span>{getSortIndicator(sortField === 'status', sortDirection)}</span>
+                          Besiktningsdag{' '}
+                          <span>{getSortIndicator(sortField === 'preferred_date', sortDirection)}</span>
                         </button>
                       </th>
                       <th className="px-3 py-2 text-right">Åtgärder</th>
@@ -643,8 +622,6 @@ export default function ObAssignmentsPage() {
                   </thead>
                   <tbody>
                     {pagedRows.map((item) => {
-                      const canResend =
-                        item.status === 'draft' || item.status === 'sent' || item.status === 'ordered'
                       const isBusy = busyId === item.id
 
                       return (
@@ -660,43 +637,16 @@ export default function ObAssignmentsPage() {
                               openAssignment(item.id)
                             }
                           }}
-                          className="cursor-pointer border-b last:border-b-0 hover:bg-indigo-50/40 focus-visible:bg-indigo-50/50 focus-visible:outline-none"
+                          className={`cursor-pointer border-b last:border-b-0 focus-visible:outline-none ${getStatusRowClass(item.status)}`}
                         >
-                          <td className="px-3 py-2 align-top whitespace-nowrap">{formatDate(item)}</td>
-                          <td className="px-3 py-2 align-top">{formatType(item.assignment_type)}</td>
+                          <td className="px-3 py-2 align-top whitespace-nowrap">{formatDate(item.created_at)}</td>
                           <td className="px-3 py-2 align-top">
-                            <div className="text-gray-900">{item.customer_name || 'Namn saknas'}</div>
-                            <div className="text-xs text-gray-500">{item.customer_email}</div>
+                            <div className="text-gray-900">{item.customer_name || '-'}</div>
                           </td>
                           <td className="px-3 py-2 align-top text-gray-900">{getAddress(item)}</td>
-                          <td className="px-3 py-2 align-top">
-                            <span
-                              className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${getStatusBadgeClass(
-                                item.status
-                              )}`}
-                            >
-                              {getStatusLabel(item.status)}
-                            </span>
-                          </td>
+                          <td className="px-3 py-2 align-top whitespace-nowrap">{formatDate(item.preferred_date)}</td>
                           <td className="px-3 py-2 align-top">
                             <div className="flex justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  void handleResend(item.id)
-                                }}
-                                disabled={isBusy || !canResend}
-                                aria-label="Skicka igen"
-                                title="Skicka igen"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-indigo-300 bg-indigo-50 text-indigo-700 transition hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {isBusy && canResend ? (
-                                  <Loader2 size={14} className="animate-spin" />
-                                ) : (
-                                  <Send size={14} />
-                                )}
-                              </button>
                               <button
                                 type="button"
                                 onClick={(event) => {
@@ -708,7 +658,7 @@ export default function ObAssignmentsPage() {
                                 title="Radera"
                                 className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-rose-300 bg-rose-50 text-rose-700 transition hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
                               >
-                                <Trash2 size={14} />
+                                {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                               </button>
                             </div>
                           </td>
@@ -751,15 +701,15 @@ export default function ObAssignmentsPage() {
         targetLabel="Uppdragsbekräftelse"
         targetDetails={
           activeDeleteTarget
-            ? `${activeDeleteTarget.customer_name ?? activeDeleteTarget.customer_email} • ${formatDate(activeDeleteTarget)}`
+            ? `${activeDeleteTarget.customer_name ?? activeDeleteTarget.customer_email} • ${formatDate(activeDeleteTarget.created_at)}`
             : undefined
         }
         onClose={() => setDeleteTargetId(null)}
         onExecute={handleDeleteConfirm}
-        onSuccess={() => setToast({ kind: 'success', message: 'Command executed' })}
+        onSuccess={() => setToast({ kind: 'success', message: 'Uppdragsbekräftelsen har makulerats.' })}
         onError={(message) => setToast({ kind: 'error', message })}
-        abortLabel="Abort Mission"
-        executeLabel="Execute Order"
+        abortLabel="Avbryt"
+        executeLabel="Makulera"
       />
       {toast ? (
         <div className="pointer-events-none fixed bottom-4 right-4 z-[95] w-[min(92vw,360px)]">
