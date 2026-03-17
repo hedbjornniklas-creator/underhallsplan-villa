@@ -69,6 +69,7 @@ export type AssignmentListItem = {
   property_postal_code: string | null
   property_city: string | null
   accepted_at: string | null
+  booked_at: string | null
   converted_at: string | null
   inspection_id: string | null
   responsible_profile_id: string
@@ -239,6 +240,7 @@ const ASSIGNMENT_SELECT_LIST = `
   property_postal_code,
   property_city,
   accepted_at,
+  booked_at,
   converted_at,
   inspection_id,
   created_at,
@@ -787,8 +789,12 @@ export async function updateAssignmentById(input: {
   }>
 }) {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const patch: Record<string, unknown> = { ...input.patch }
+  if (input.patch.status === 'booked') {
+    patch.booked_at = new Date().toISOString()
+  }
   const payload = {
-    ...input.patch,
+    ...patch,
     updated_by: input.updatedBy,
   }
 

@@ -44,6 +44,7 @@ type AssignmentDetails = {
   notes_internal: string | null
   terms_version: string | null
   accepted_at: string | null
+  booked_at: string | null
   property_id: string | null
   inspection_id: string | null
   converted_at: string | null
@@ -198,6 +199,7 @@ export default function AssignmentDetailsPage() {
   const canSend = assignment?.status !== 'completed' && hasOrdererRole && hasValidPrice
   const canBook = assignment?.status === 'ordered' && !assignment.inspection_id
   const canConvert = assignment?.status === 'booked' && !assignment.inspection_id
+  const isSent = assignment?.status === 'sent'
   const isOrdered = assignment?.status === 'ordered'
   const isBookedLocked = assignment?.status === 'booked'
   const isAcceptedLocked = isOrdered || isBookedLocked
@@ -241,13 +243,16 @@ export default function AssignmentDetailsPage() {
 
   const summary = useMemo(() => {
     if (!assignment) return null
-    const acceptedAt = assignment.accepted_at
+    const approvedByCustomerAt = assignment.accepted_at
       ? new Date(assignment.accepted_at).toLocaleString('sv-SE')
+      : 'Inte godkänd'
+    const acceptedByInspectorAt = assignment.booked_at
+      ? new Date(assignment.booked_at).toLocaleString('sv-SE')
       : 'Inte accepterad'
     const sentAt = assignment.last_sent_at
       ? new Date(assignment.last_sent_at).toLocaleString('sv-SE')
       : 'Ej skickad'
-    return { acceptedAt, sentAt }
+    return { approvedByCustomerAt, acceptedByInspectorAt, sentAt }
   }, [assignment])
 
   const addonSummary = useMemo(() => {
@@ -362,6 +367,14 @@ export default function AssignmentDetailsPage() {
   }, [form, loading, saveForm, isAcceptedLocked])
 
   const handleSend = async () => {
+    const sendMode = canSendCopy ? 'copy' : isSent ? 'new-link' : 'initial'
+    if (sendMode === 'new-link') {
+      const shouldContinue = window.confirm(
+        'Detta skickar en ny länk till kunden och den tidigare länken blir ogiltig. Fortsätt?'
+      )
+      if (!shouldContinue) return
+    }
+
     try {
       setSending(true)
       setError(null)
@@ -372,7 +385,13 @@ export default function AssignmentDetailsPage() {
         throw new Error(jsonToErrorMessage(payload, 'Kunde inte skicka uppdragsbekräftelsen.'))
       }
       await loadAssignment()
-      setSuccess(canSendCopy ? 'Kopia skickad.' : 'Uppdragsbekräftelse skickad.')
+      if (sendMode === 'copy') {
+        setSuccess('Kopia skickad.')
+      } else if (sendMode === 'new-link') {
+        setSuccess('Ny länk skickad.')
+      } else {
+        setSuccess('Uppdragsbekräftelse skickad.')
+      }
     } catch (sendError) {
       setError(
         sendError instanceof Error ? sendError.message : 'Kunde inte skicka uppdragsbekräftelsen.'
@@ -494,7 +513,9 @@ export default function AssignmentDetailsPage() {
                   title={
                     canSendCopy
                       ? 'Skickar en kopia av bekräftelsen till kunden.'
-                      : 'Skickar uppdragsbekräftelsen till kunden för godkännande.'
+                      : isSent
+                        ? 'Skickar en ny länk och ogiltigförklarar den tidigare.'
+                        : 'Skickar uppdragsbekräftelsen till kunden för godkännande.'
                   }
                   className="rounded-lg border border-white/60 bg-white/15 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-white/25 hover:shadow-[0_10px_20px_-14px_rgba(255,255,255,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -502,7 +523,9 @@ export default function AssignmentDetailsPage() {
                     ? 'Skickar...'
                     : canSendCopy
                       ? 'Skicka kopia'
-                      : 'Skicka uppdragsbekräftelse'}
+                      : isSent
+                        ? 'Skicka ny länk'
+                        : 'Skicka uppdragsbekräftelse'}
                 </button>
                 {canReissue ? (
                   <button
@@ -562,10 +585,15 @@ export default function AssignmentDetailsPage() {
           ) : (
             <>
               <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
-                <div className="grid gap-3 md:grid-cols-3">
-                  <ReadOnly label="Status" value={assignmentStatusToLabel(assignment.status)} />
-                  <ReadOnly label="Skickad" value={summary?.sentAt ?? '-'} />
-                  <ReadOnly label="Accepterad" value={summary?.acceptedAt ?? '-'} />
+                <div className="grid gap-2 md:grid-cols-4">
+                  <ReadOnly compact label="Status" value={assignmentStatusToLabel(assignment.status)} />
+                  <ReadOnly compact label="Skickad" value={summary?.sentAt ?? '-'} />
+                  <ReadOnly compact label="Godkänd (kund)" value={summary?.approvedByCustomerAt ?? '-'} />
+                  <ReadOnly
+                    compact
+                    label="Accepterad (besiktningsman)"
+                    value={summary?.acceptedByInspectorAt ?? '-'}
+                  />
                 </div>
                 <fieldset
                   className="space-y-4 border-0 p-0"
@@ -787,12 +815,27 @@ function Field({
   )
 }
 
-function ReadOnly({ label, value }: { label: string; value: string }) {
+function ReadOnly({
+  label,
+  value,
+  compact = false,
+}: {
+  label: string
+  value: string
+  compact?: boolean
+}) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-      <div className="text-xs font-medium text-gray-500">{label}</div>
-      <div className="mt-0.5 text-sm text-gray-900">{value}</div>
+    <div
+      className={
+        compact
+          ? 'rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5'
+          : 'rounded-lg border border-gray-200 bg-gray-50 px-3 py-2'
+      }
+    >
+      <div className={compact ? 'text-[10px] font-medium text-gray-500' : 'text-xs font-medium text-gray-500'}>
+        {label}
+      </div>
+      <div className={compact ? 'mt-0.5 text-xs text-gray-900' : 'mt-0.5 text-sm text-gray-900'}>{value}</div>
     </div>
   )
 }
-
