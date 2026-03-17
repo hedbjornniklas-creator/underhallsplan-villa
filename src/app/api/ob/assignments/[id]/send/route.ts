@@ -7,6 +7,7 @@ import {
   isMissingEnvError,
   requireOrgContext,
   sendAssignmentConfirmation,
+  sendAssignmentOrderReceipt,
 } from '@/lib/assignments/server'
 
 export const runtime = 'nodejs'
@@ -31,6 +32,21 @@ export async function POST(
     }
 
     const responsibleProfile = await getProfileContact(assignment.responsible_profile_id)
+    if (assignment.status === 'ordered' || assignment.status === 'booked') {
+      await sendAssignmentOrderReceipt({
+        assignment,
+        orgName: org.orgName,
+        requestedByUserId: org.userId,
+        responsibleEmail: responsibleProfile?.email ?? null,
+      })
+
+      return NextResponse.json({
+        assignmentId: assignment.id,
+        status: assignment.status,
+        mode: 'order_receipt',
+      })
+    }
+
     const sendResult = await sendAssignmentConfirmation({
       assignment,
       orgName: org.orgName,
@@ -41,10 +57,7 @@ export async function POST(
 
     return NextResponse.json({
       assignmentId: assignment.id,
-      status:
-        assignment.status === 'ordered' || assignment.status === 'booked'
-          ? assignment.status
-          : 'sent',
+      status: 'sent',
       acceptUrl: sendResult.acceptUrl,
       expiresAt: sendResult.expiresAt,
     })
@@ -66,6 +79,9 @@ export async function POST(
     }
     if (message === 'PRICE_REQUIRED') {
       return jsonError('Ange pris (SEK) innan utskick.', 400)
+    }
+    if (message === 'ASSIGNMENT_NOT_ACCEPTED') {
+      return jsonError('Uppdraget är inte godkänt och kan inte skickas som kopia ännu.', 409)
     }
 
     if (message.includes('SUPABASE_SERVICE_ROLE_KEY')) {

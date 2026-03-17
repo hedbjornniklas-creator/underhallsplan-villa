@@ -2,7 +2,10 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
-import { buildAssignmentConfirmationEmail } from '@/lib/assignments/emailTemplates'
+import {
+  buildAssignmentConfirmationEmail,
+  buildAssignmentOrderReceiptEmail,
+} from '@/lib/assignments/emailTemplates'
 import {
   getAssignmentTermsDocument,
   parseAssignmentTermsRole,
@@ -1039,6 +1042,106 @@ export async function sendAssignmentConfirmation(input: {
   return {
     acceptUrl,
     expiresAt,
+  }
+}
+
+export async function sendAssignmentOrderReceipt(input: {
+  assignment: AssignmentDetails
+  orgName: string | null
+  requestedByUserId?: string | null
+  responsibleEmail: string | null
+}): Promise<void> {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const termsRole = parseAssignmentTermsRole(input.assignment.orderer_role)
+  if (!termsRole) {
+    throw new Error('ORDERER_ROLE_REQUIRED')
+  }
+  if (!input.assignment.accepted_at || !input.assignment.terms_version) {
+    throw new Error('ASSIGNMENT_NOT_ACCEPTED')
+  }
+
+  const terms = getAssignmentTermsDocument(termsRole)
+  const addonOrders = await listAssignmentAddonOrders({
+    orgId: input.assignment.org_id,
+    assignmentId: input.assignment.id,
+  })
+
+  const { subject, html, text } = buildAssignmentOrderReceiptEmail({
+    assignment: input.assignment,
+    orgName: input.orgName,
+    termsVersion: input.assignment.terms_version,
+    termsRole,
+    termsText: terms.text,
+    acceptedAt: input.assignment.accepted_at,
+    addonOrders: addonOrders.map((row) => ({
+      addon_name_snapshot: row.addon_name_snapshot,
+      price_amount_snapshot: row.price_amount_snapshot,
+      currency_snapshot: row.currency_snapshot,
+    })),
+  })
+
+  const fromAddress = getMailFromAddress()
+  const createdBy = input.requestedByUserId ?? input.assignment.responsible_profile_id ?? null
+
+  const { data: messageData, error: messageError } = await admin
+    .from('outbound_messages')
+    .insert({
+      org_id: input.assignment.org_id,
+      assignment_id: input.assignment.id,
+      channel: 'email',
+      recipient_email: input.assignment.customer_email,
+      subject,
+      template_key: 'assignment_order_receipt',
+      status: 'pending',
+      created_by: createdBy,
+      reply_to_email: input.responsibleEmail ?? null,
+    })
+    .select('id')
+    .single()
+
+  if (messageError || !messageData) {
+    throw new Error(messageError?.message ?? 'Kunde inte skapa mejllogg.')
+  }
+
+  try {
+    const sendResult = await sendAssignmentEmail({
+      to: input.assignment.customer_email,
+      from: fromAddress,
+      replyTo: input.responsibleEmail ?? null,
+      subject,
+      html,
+      text,
+    })
+
+    await admin
+      .from('outbound_messages')
+      .update({
+        status: 'sent',
+        provider: sendResult.provider,
+        provider_message_id: sendResult.providerMessageId,
+        sent_at: new Date().toISOString(),
+      })
+      .eq('id', messageData.id)
+
+    await admin
+      .from('assignments')
+      .update({
+        last_sent_at: new Date().toISOString(),
+        updated_by: createdBy,
+      })
+      .eq('id', input.assignment.id)
+      .eq('org_id', input.assignment.org_id)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'OkÃ¤nt fel vid mejlutskick.'
+    await admin
+      .from('outbound_messages')
+      .update({
+        status: 'failed',
+        error_message: message,
+      })
+      .eq('id', messageData.id)
+
+    throw new Error(message)
   }
 }
 

@@ -2,8 +2,11 @@ import { NextResponse } from 'next/server'
 import { isIP } from 'node:net'
 import {
   consumeAssignmentToken,
+  getAssignmentById,
+  getProfileContact,
   listAddonOffersForProfile,
   resolvePublicAssignmentByToken,
+  sendAssignmentOrderReceipt,
 } from '@/lib/assignments/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
@@ -362,10 +365,31 @@ export async function POST(
       userAgent: request.headers.get('user-agent'),
     })
 
+    let confirmationEmailSent = false
+    try {
+      const updatedAssignment = await getAssignmentById(link.org_id, assignment.id)
+      if (updatedAssignment) {
+        const responsibleProfile = await getProfileContact(updatedAssignment.responsible_profile_id)
+        await sendAssignmentOrderReceipt({
+          assignment: updatedAssignment,
+          orgName: null,
+          requestedByUserId: updatedAssignment.responsible_profile_id,
+          responsibleEmail: responsibleProfile?.email ?? null,
+        })
+        confirmationEmailSent = true
+      }
+    } catch (mailError) {
+      console.error('[assignments.accept] failed to send automatic confirmation email', {
+        token_prefix: token.slice(0, 8),
+        error: mailError instanceof Error ? mailError.message : String(mailError),
+      })
+    }
+
     return NextResponse.json({
       ok: true,
       assignmentId: typeof body.assignmentId === 'string' ? body.assignmentId : null,
       termsVersion: terms.version,
+      confirmationEmailSent,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
