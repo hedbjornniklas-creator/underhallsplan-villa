@@ -121,19 +121,19 @@ function getStatusSortRank(status: AssignmentItem['status']) {
 function getStatusRowClass(status: AssignmentItem['status']) {
   switch (status) {
     case 'draft':
-      return 'bg-[#FFFFFF] text-[#111827] hover:bg-[#F9FAFB] focus-visible:bg-[#F9FAFB]'
+      return 'bg-[#F9FAFB] text-[#111827] hover:bg-[#F3F4F6] focus-visible:bg-[#F3F4F6]'
     case 'sent':
-      return 'bg-[#2563EB] text-[#FFFFFF] hover:bg-[#1D4ED8] focus-visible:bg-[#1D4ED8]'
+      return 'bg-[#DBEAFE] text-[#1E3A8A] hover:bg-[#BFDBFE] focus-visible:bg-[#BFDBFE]'
     case 'ordered':
-      return 'bg-[#FACC15] text-[#111827] hover:bg-[#EAB308] focus-visible:bg-[#EAB308]'
+      return 'bg-[#FEF3C7] text-[#92400E] hover:bg-[#FDE68A] focus-visible:bg-[#FDE68A]'
     case 'booked':
-      return 'bg-[#C2410C] text-[#FFFFFF] hover:bg-[#9A3412] focus-visible:bg-[#9A3412]'
+      return 'bg-[#FFEDD5] text-[#9A3412] hover:bg-[#FED7AA] focus-visible:bg-[#FED7AA]'
     case 'completed':
-      return 'bg-[#15803D] text-[#FFFFFF] hover:bg-[#166534] focus-visible:bg-[#166534]'
+      return 'bg-[#DCFCE7] text-[#14532D] hover:bg-[#BBF7D0] focus-visible:bg-[#BBF7D0]'
     case 'cancelled':
-      return 'bg-[#DC2626] text-[#FFFFFF] hover:bg-[#B91C1C] focus-visible:bg-[#B91C1C]'
+      return 'bg-[#FEE2E2] text-[#7F1D1D] hover:bg-[#FECACA] focus-visible:bg-[#FECACA]'
     default:
-      return 'bg-[#6B7280] text-[#FFFFFF] hover:bg-[#4B5563] focus-visible:bg-[#4B5563]'
+      return 'bg-[#E5E7EB] text-[#374151] hover:bg-[#D1D5DB] focus-visible:bg-[#D1D5DB]'
   }
 }
 
