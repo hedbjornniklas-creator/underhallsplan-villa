@@ -1,3 +1,9 @@
+type SendAssignmentEmailAttachment = {
+  filename: string
+  contentBase64: string
+  contentType?: string | null
+}
+
 type SendAssignmentEmailInput = {
   to: string
   from: string
@@ -5,6 +11,7 @@ type SendAssignmentEmailInput = {
   subject: string
   html: string
   text: string
+  attachments?: SendAssignmentEmailAttachment[]
 }
 
 type SendAssignmentEmailResult = {
@@ -35,6 +42,14 @@ export async function sendAssignmentEmail(
       subject: input.subject,
       html: input.html,
       text: input.text,
+      attachments:
+        input.attachments && input.attachments.length > 0
+          ? input.attachments.map((attachment) => ({
+              filename: attachment.filename,
+              content: attachment.contentBase64,
+              content_type: attachment.contentType ?? undefined,
+            }))
+          : undefined,
     }),
   })
 

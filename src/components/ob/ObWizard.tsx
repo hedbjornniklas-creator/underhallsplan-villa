@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import ObStepGrunddata from './ObStepGrunddata'
 import ObStepHandlingar from './ObStepHandlingar'
 import ObStepForutsattningar from './ObStepForutsattningar'
@@ -47,8 +47,49 @@ interface ObWizardProps {
   onInspectionUpdated?: (i: ObWizardInspection) => void
 }
 
+type ReportDeliveryHistoryRow = {
+  id: string
+  recipient_email: string
+  status: 'pending' | 'sent' | 'failed'
+  sent_at: string | null
+  created_at: string
+  error_message: string | null
+  subject: string
+}
+
+type ReportDeliveryMeta = {
+  inspectionId: string
+  inspectionStatus: string
+  canSend: boolean
+  reason: string | null
+  ordererEmail: string | null
+  history: ReportDeliveryHistoryRow[]
+}
+
+type ReportDeliverySendResponse = {
+  inspectionId: string
+  inspectionStatus: string
+  deliveryMode: 'link_pdf'
+  publicLink: string
+  ordererEmail: string
+  sentRecipients: string[]
+  failedRecipients: Array<{ email: string; error: string }>
+  history: ReportDeliveryHistoryRow[]
+  linkId: string
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const isValidUuid = (value?: string | null) => !!value && UUID_RE.test(value)
+
+function parseExtraRecipientsInput(value: string) {
+  const unique = new Set<string>()
+  value
+    .split(/[\n,;]+/)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+    .forEach((email) => unique.add(email))
+  return Array.from(unique)
+}
 
 export default function ObWizard({
   property,
@@ -106,12 +147,141 @@ export default function ObWizard({
     console.log('ObWizard activeSection =', activeSection)
   }, [activeSection])
 
+  const propertyId = normalizedProperty.id ?? null
+  const inspectionId = normalizedInspection.id ?? null
+  const hasValidIds = isValidUuid(propertyId) && isValidUuid(inspectionId)
+
+  const [deliveryMeta, setDeliveryMeta] = useState<ReportDeliveryMeta | null>(null)
+  const [deliveryMetaLoading, setDeliveryMetaLoading] = useState(false)
+  const [deliveryMetaError, setDeliveryMetaError] = useState<string | null>(null)
+  const [extraRecipientsInput, setExtraRecipientsInput] = useState('')
+  const [sendingReport, setSendingReport] = useState(false)
+  const [deliveryError, setDeliveryError] = useState<string | null>(null)
+  const [deliveryResult, setDeliveryResult] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (activeSection !== 'overview' || !hasValidIds || !inspectionId) return
+
+    let cancelled = false
+
+    const loadDeliveryMeta = async () => {
+      setDeliveryMetaLoading(true)
+      setDeliveryMetaError(null)
+
+      try {
+        const response = await fetch(`/api/ob/inspections/${inspectionId}/report-delivery`, {
+          cache: 'no-store',
+        })
+        const payload = (await response.json().catch(() => null)) as
+          | (ReportDeliveryMeta & { error?: string })
+          | { error?: string }
+          | null
+
+        if (!response.ok) {
+          throw new Error(
+            (payload && 'error' in payload ? payload.error : null) ??
+              'Kunde inte läsa utskicksstatus.'
+          )
+        }
+
+        if (cancelled) return
+        setDeliveryMeta(payload as ReportDeliveryMeta)
+      } catch (error) {
+        if (cancelled) return
+        const message =
+          error instanceof Error ? error.message : 'Kunde inte läsa utskicksstatus.'
+        setDeliveryMetaError(message)
+        setDeliveryMeta(null)
+      } finally {
+        if (!cancelled) setDeliveryMetaLoading(false)
+      }
+    }
+
+    void loadDeliveryMeta()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeSection, hasValidIds, inspectionId])
+
+  const handleSendInspectionReport = async () => {
+    if (!hasValidIds || !inspectionId) return
+
+    setSendingReport(true)
+    setDeliveryError(null)
+    setDeliveryResult(null)
+
+    const extraRecipients = parseExtraRecipientsInput(extraRecipientsInput)
+
+    try {
+      const response = await fetch(`/api/ob/inspections/${inspectionId}/report-delivery`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          extra_recipients: extraRecipients,
+        }),
+      })
+
+      const payload = (await response.json().catch(() => null)) as
+        | (ReportDeliverySendResponse & { error?: string })
+        | { error?: string; failedRecipients?: Array<{ email: string; error: string }> }
+        | null
+
+      if (!response.ok) {
+        const baseError =
+          (payload && 'error' in payload ? payload.error : null) ??
+          'Kunde inte skicka utlåtandet.'
+        const failedList =
+          payload && 'failedRecipients' in payload && Array.isArray(payload.failedRecipients)
+            ? payload.failedRecipients
+            : []
+        const failedText =
+          failedList.length > 0
+            ? ` Misslyckade mottagare: ${failedList.map((row) => row.email).join(', ')}.`
+            : ''
+        throw new Error(`${baseError}${failedText}`)
+      }
+
+      const okPayload = payload as ReportDeliverySendResponse
+
+      if (onInspectionUpdated && okPayload.inspectionStatus) {
+        onInspectionUpdated({
+          ...normalizedInspection,
+          status: okPayload.inspectionStatus,
+        } as ObWizardInspection)
+      }
+
+      setDeliveryMeta((prev) => ({
+        inspectionId: okPayload.inspectionId,
+        inspectionStatus: okPayload.inspectionStatus,
+        canSend: prev?.canSend ?? true,
+        reason: prev?.reason ?? null,
+        ordererEmail: okPayload.ordererEmail,
+        history: okPayload.history ?? [],
+      }))
+
+      const failedText =
+        okPayload.failedRecipients.length > 0
+          ? ` Vissa extra mottagare misslyckades: ${okPayload.failedRecipients
+              .map((row) => row.email)
+              .join(', ')}.`
+          : ''
+      setDeliveryResult(
+        `Utlåtandet skickades till ${okPayload.sentRecipients.length} mottagare.${failedText} Länk: ${okPayload.publicLink}`
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Kunde inte skicka utlåtandet.'
+      setDeliveryError(message)
+    } finally {
+      setSendingReport(false)
+    }
+  }
+
   switch (activeSection) {
     case 'overview':
       {
-        const propertyId = normalizedProperty.id ?? null
-        const inspectionId = normalizedInspection.id ?? null
-        const hasValidIds = isValidUuid(propertyId) && isValidUuid(inspectionId)
         const reportHref = hasValidIds
           ? `/utlatande/${propertyId}/${inspectionId}`
           : ''
@@ -123,7 +293,7 @@ export default function ObWizard({
         const iframeSrc = hasValidIds ? `${reportHref}?embed=1` : ''
         return (
           <div className="rounded-xl border bg-white p-4 text-sm text-gray-700 space-y-3">
-            <h2 className="text-base font-semibold text-gray-900">Översikt och förhandsgranskning</h2>
+            <h2 className="text-base font-semibold text-gray-900">Granska utlåtande</h2>
             <p>
               Här visas utlåtandet i förhandsgranskning. Använd knapparna för att öppna i ny flik eller skriva ut.
             </p>
@@ -180,6 +350,113 @@ export default function ObWizard({
                     </Link>
                     .
                   </div>
+                </div>
+
+                <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">Skicka utlåtande</h3>
+                    <p className="mt-1 text-xs text-gray-600">
+                      Skicksätt: <strong>Länk + PDF (PDF V.2)</strong>. Beställaren är obligatorisk mottagare.
+                    </p>
+                  </div>
+
+                  {deliveryMetaLoading ? (
+                    <div className="rounded-md border border-gray-200 bg-white p-2 text-xs text-gray-600">
+                      Hämtar mottagarinformation...
+                    </div>
+                  ) : null}
+
+                  {deliveryMetaError ? (
+                    <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                      {deliveryMetaError}
+                    </div>
+                  ) : null}
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-gray-700">Beställare (obligatorisk)</span>
+                      <input
+                        type="text"
+                        readOnly
+                        value={deliveryMeta?.ordererEmail ?? 'Saknas'}
+                        className="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-800"
+                      />
+                    </label>
+
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-gray-700">Extra mottagare</span>
+                      <textarea
+                        value={extraRecipientsInput}
+                        onChange={(event) => setExtraRecipientsInput(event.target.value)}
+                        rows={3}
+                        placeholder="namn@epost.se, annan@epost.se"
+                        className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </label>
+                  </div>
+
+                  {deliveryMeta && !deliveryMeta.canSend ? (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                      {deliveryMeta.reason ?? 'Utskicket är låst för den här besiktningen.'}
+                    </div>
+                  ) : null}
+
+                  {deliveryError ? (
+                    <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                      {deliveryError}
+                    </div>
+                  ) : null}
+
+                  {deliveryResult ? (
+                    <div className="rounded-md border border-green-200 bg-green-50 p-2 text-xs text-green-800">
+                      {deliveryResult}
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleSendInspectionReport()}
+                      disabled={
+                        sendingReport ||
+                        deliveryMetaLoading ||
+                        !deliveryMeta?.ordererEmail ||
+                        deliveryMeta?.canSend === false
+                      }
+                      className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {sendingReport ? 'Skickar utlåtande...' : 'Skicka utlåtande'}
+                    </button>
+                  </div>
+
+                  {deliveryMeta?.history?.length ? (
+                    <div className="rounded-md border border-gray-200 bg-white p-2">
+                      <div className="mb-1 text-xs font-semibold text-gray-800">Senaste utskick</div>
+                      <ul className="space-y-1 text-xs text-gray-700">
+                        {deliveryMeta.history.slice(0, 5).map((row) => (
+                          <li key={row.id} className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium">{row.recipient_email}</span>
+                            <span
+                              className={
+                                row.status === 'sent'
+                                  ? 'rounded bg-green-100 px-1.5 py-0.5 text-green-800'
+                                  : row.status === 'failed'
+                                    ? 'rounded bg-red-100 px-1.5 py-0.5 text-red-800'
+                                    : 'rounded bg-gray-100 px-1.5 py-0.5 text-gray-700'
+                              }
+                            >
+                              {row.status}
+                            </span>
+                            <span className="text-gray-500">
+                              {row.sent_at
+                                ? new Date(row.sent_at).toLocaleString('sv-SE')
+                                : new Date(row.created_at).toLocaleString('sv-SE')}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                 </div>
               </>
             ) : (
