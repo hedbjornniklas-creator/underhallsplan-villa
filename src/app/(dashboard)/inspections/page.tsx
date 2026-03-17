@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
-import { Archive, ArrowLeft, Loader2, Plus, Printer, Trash2 } from 'lucide-react'
+import { Archive, ArrowLeft, ChevronsLeft, Loader2, Plus, Printer, Trash2 } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -149,6 +149,66 @@ function getStatusBadgeClass(status: string | null) {
       return 'border-slate-200 bg-slate-100 text-slate-700'
     default:
       return 'border-sky-200 bg-sky-50 text-sky-700'
+  }
+}
+
+function getStatusRowClass(status: string | null) {
+  switch (getStatusBucket(status)) {
+    case 'draft':
+      return 'bg-[#F9FAFB] text-black hover:bg-[#F3F4F6] focus-visible:bg-[#F3F4F6]'
+    case 'completed':
+      return 'bg-[#DCFCE7] text-black hover:bg-[#BBF7D0] focus-visible:bg-[#BBF7D0]'
+    case 'archived':
+      return 'bg-[#E5E7EB] text-black hover:bg-[#D1D5DB] focus-visible:bg-[#D1D5DB]'
+    default:
+      return 'bg-[#DBEAFE] text-black hover:bg-[#BFDBFE] focus-visible:bg-[#BFDBFE]'
+  }
+}
+
+type StatusTabStyle = {
+  inactive: string
+  active: string
+  countInactive: string
+  countActive: string
+}
+
+function getStatusTabStyle(key: StatusFilter): StatusTabStyle {
+  switch (key) {
+    case 'draft':
+      return {
+        inactive: 'border-gray-300 bg-[#F9FAFB] text-[#111827] hover:bg-[#F3F4F6]',
+        active: 'border-gray-400 bg-[#FFFFFF] text-[#111827]',
+        countInactive: 'bg-gray-200 text-[#111827]',
+        countActive: 'bg-gray-200 text-[#111827]',
+      }
+    case 'ongoing':
+      return {
+        inactive: 'border-[#93C5FD] bg-[#DBEAFE] text-[#1E3A8A] hover:bg-[#BFDBFE]',
+        active: 'border-[#2563EB] bg-[#2563EB] text-[#FFFFFF]',
+        countInactive: 'bg-[#BFDBFE] text-[#1E3A8A]',
+        countActive: 'bg-white/20 text-white',
+      }
+    case 'completed':
+      return {
+        inactive: 'border-[#86EFAC] bg-[#DCFCE7] text-[#14532D] hover:bg-[#BBF7D0]',
+        active: 'border-[#15803D] bg-[#15803D] text-[#FFFFFF]',
+        countInactive: 'bg-[#BBF7D0] text-[#14532D]',
+        countActive: 'bg-white/20 text-white',
+      }
+    case 'archived':
+      return {
+        inactive: 'border-[#9CA3AF] bg-[#E5E7EB] text-[#374151] hover:bg-[#D1D5DB]',
+        active: 'border-[#6B7280] bg-[#6B7280] text-[#FFFFFF]',
+        countInactive: 'bg-[#D1D5DB] text-[#374151]',
+        countActive: 'bg-white/20 text-white',
+      }
+    default:
+      return {
+        inactive: 'border-indigo-300 bg-indigo-100 text-indigo-900 hover:bg-indigo-200',
+        active: 'border-indigo-700 bg-indigo-700 text-white',
+        countInactive: 'bg-indigo-200 text-indigo-900',
+        countActive: 'bg-white/20 text-white',
+      }
   }
 }
 
@@ -677,56 +737,63 @@ export default function InspectionsPage() {
         <div className="relative mx-auto w-full max-w-7xl space-y-4 p-4 md:p-6">
           <header className="rounded-2xl border border-white/30 bg-white/10 p-4 shadow-sm backdrop-blur-sm md:p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handleBack}
-                    aria-label="Tillbaka"
-                    title="Tillbaka"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
-                  >
-                    <ArrowLeft size={16} strokeWidth={2} />
-                  </button>
-                  <h1 className="text-2xl font-semibold text-white drop-shadow-sm">Mina besiktningar</h1>
-                </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => router.push('/ob')}
+                  aria-label="Till huvudsidan"
+                  title="Till huvudsidan"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                >
+                  <ChevronsLeft size={15} strokeWidth={2.2} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  aria-label="Tillbaka"
+                  title="Tillbaka"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                >
+                  <ArrowLeft size={16} strokeWidth={2} />
+                </button>
+                <h1 className="text-2xl font-semibold text-white drop-shadow-sm">Mina besiktningar</h1>
               </div>
 
-              <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 lg:w-auto lg:overflow-visible lg:pb-0">
-                <div className="min-w-[220px] flex-1 lg:w-[360px] lg:flex-none">
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Sök på adress, kund, uppdragsnr eller status"
-                    className="w-full rounded-lg border border-white/40 bg-white/95 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleCreateFromScratch()}
-                    disabled={Boolean(creatingMode)}
-                    aria-label="Skapa besiktning"
-                    title="Skapa besiktning"
-                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {creatingMode === 'scratch' ? (
-                      <Loader2 size={16} strokeWidth={2} className="animate-spin" />
-                    ) : (
-                      <Plus size={16} strokeWidth={2} />
-                    )}
-                  </button>
-                </div>
+              <div className="flex w-full items-center justify-end gap-2 lg:w-auto">
+                <button
+                  type="button"
+                  onClick={() => void handleCreateFromScratch()}
+                  disabled={Boolean(creatingMode)}
+                  aria-label="Ny besiktning"
+                  title="Ny besiktning"
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/60 bg-white/15 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {creatingMode === 'scratch' ? (
+                    <Loader2 size={14} strokeWidth={2.3} className="animate-spin" />
+                  ) : (
+                    <Plus size={14} strokeWidth={2.3} />
+                  )}
+                  Ny besiktning
+                </button>
               </div>
             </div>
           </header>
 
-          <section className="rounded-2xl border border-white/30 bg-white/90 p-3 shadow-sm backdrop-blur md:p-4">
-            <div className="flex flex-wrap items-center gap-2">
+          <section className="rounded-xl border border-white/30 bg-white/90 p-2 shadow-sm backdrop-blur md:p-3">
+            <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-0.5">
+              <div className="w-[230px] shrink-0">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Sök på adress, kund, uppdragsnr eller status"
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
               {STATUS_TABS.map((tab) => {
                 const active = statusFilter === tab.key
+                const style = getStatusTabStyle(tab.key)
                 return (
                   <button
                     key={tab.key}
@@ -734,16 +801,16 @@ export default function InspectionsPage() {
                     onClick={() => setStatusFilter(tab.key)}
                     className={
                       active
-                        ? 'inline-flex items-center gap-2 rounded-md border border-indigo-600 bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white'
-                        : 'inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50'
+                        ? `inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${style.active}`
+                        : `inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] ${style.inactive}`
                     }
                   >
                     <span>{tab.label}</span>
                     <span
                       className={
                         active
-                          ? 'rounded-full bg-white/20 px-2 py-0.5 text-xs text-white'
-                          : 'rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600'
+                          ? `rounded-full px-1.5 py-0 text-[10px] ${style.countActive}`
+                          : `rounded-full px-1.5 py-0 text-[10px] ${style.countInactive}`
                       }
                     >
                       {statusCounts[tab.key]}
@@ -752,15 +819,15 @@ export default function InspectionsPage() {
                 )
               })}
 
-              <div className="ml-auto flex items-center gap-2">
-                <label className="text-xs text-gray-600" htmlFor="pageSize">
+              <div className="ml-auto flex shrink-0 items-center gap-1">
+                <label className="text-[10px] text-gray-600" htmlFor="pageSize">
                   Rader/sida
                 </label>
                 <select
                   id="pageSize"
                   value={pageSize}
                   onChange={(event) => setPageSize(Number(event.target.value))}
-                  className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700"
+                  className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 text-[11px] text-gray-700"
                 >
                   {PAGE_SIZE_OPTIONS.map((option) => (
                     <option key={option} value={option}>
@@ -773,7 +840,7 @@ export default function InspectionsPage() {
                   <button
                     type="button"
                     onClick={resetView}
-                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                    className="rounded-md border border-gray-300 px-2 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50"
                   >
                     Rensa filter
                   </button>
@@ -803,8 +870,8 @@ export default function InspectionsPage() {
           {!loading && !error && totalItems > 0 ? (
             <>
               <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white md:block">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="border-b bg-gray-50 text-xs uppercase text-gray-500">
+                <table className="min-w-full text-left text-sm text-black">
+                  <thead className="border-b bg-gray-50 text-xs uppercase text-black">
                     <tr>
                       <th className="px-3 py-2">
                         <button
@@ -858,7 +925,9 @@ export default function InspectionsPage() {
                       return (
                         <tr
                           key={row.id}
-                          className="cursor-pointer border-b last:border-b-0 hover:bg-indigo-50/40"
+                          className={`cursor-pointer border-b last:border-b-0 focus-visible:outline-none ${getStatusRowClass(
+                            row.status
+                          )}`}
                           tabIndex={0}
                           onClick={() => openInspection(row)}
                           onKeyDown={(event) => {
@@ -868,30 +937,24 @@ export default function InspectionsPage() {
                             }
                           }}
                         >
-                          <td className="px-3 py-2 align-top whitespace-nowrap">
-                            <div className="text-sm text-gray-900">{dateText}</div>
+                          <td className="px-3 py-2 align-middle whitespace-nowrap">
+                            <div>{dateText}</div>
                           </td>
 
-                          <td className="px-3 py-2 align-top text-sm text-gray-900">{getAddressText(row)}</td>
+                          <td className="px-3 py-2 align-middle">{getAddressText(row)}</td>
 
-                          <td className="px-3 py-2 align-top">
-                            <div className="text-sm text-gray-900">{customer}</div>
+                          <td className="px-3 py-2 align-middle">
+                            <div>{customer}</div>
                             {row.client_contact ? (
                               <div className="text-xs text-gray-500">{row.client_contact}</div>
                             ) : null}
                           </td>
 
-                          <td className="px-3 py-2 align-top">
-                            <span
-                              className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${getStatusBadgeClass(
-                                row.status
-                              )}`}
-                            >
-                              {getStatusLabel(row.status)}
-                            </span>
+                          <td className="px-3 py-2 align-middle whitespace-nowrap font-medium">
+                            {getStatusLabel(row.status)}
                           </td>
 
-                          <td className="px-3 py-2 align-top text-right">
+                          <td className="px-3 py-2 align-middle text-right">
                             <div className="flex items-center justify-end gap-2">
                               <PrintActionButton href={printHref} />
                               {isDraft ? (
@@ -913,7 +976,7 @@ export default function InspectionsPage() {
                                 />
                               ) : (
                                 <RowActionButton
-                                  title={isArchived ? 'Redan arkiverad' : 'Arkivera besiktning'}
+                                  title={isArchived ? 'Arkiverad (låst)' : 'Arkivera besiktning'}
                                   disabled={isArchived || isMutating}
                                   onClick={(event) => {
                                     event.stopPropagation()
@@ -999,7 +1062,7 @@ export default function InspectionsPage() {
                           />
                         ) : (
                           <RowActionButton
-                            title={isArchived ? 'Redan arkiverad' : 'Arkivera besiktning'}
+                            title={isArchived ? 'Arkiverad (låst)' : 'Arkivera besiktning'}
                             disabled={isArchived || isMutating}
                             onClick={(event) => {
                               event.stopPropagation()
