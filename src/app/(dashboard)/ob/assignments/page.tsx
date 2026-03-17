@@ -53,6 +53,7 @@ type SavedListView = {
   sortDirection: SortDirection
   pageSize: number
   showCancelled: boolean
+  showExpired: boolean
 }
 
 const STORAGE_KEY = 'ob:assignments:list:view:v1'
@@ -128,9 +129,9 @@ function getStatusRowClass(status: AssignmentItem['status']) {
     case 'ordered':
       return 'bg-violet-200/65 hover:bg-violet-300/75 focus-visible:bg-violet-300/85'
     case 'booked':
-      return 'bg-emerald-200/65 hover:bg-emerald-300/75 focus-visible:bg-emerald-300/85'
+      return 'bg-blue-200/65 hover:bg-blue-300/75 focus-visible:bg-blue-300/85'
     case 'completed':
-      return 'bg-teal-200/65 hover:bg-teal-300/75 focus-visible:bg-teal-300/85'
+      return 'bg-emerald-200/65 hover:bg-emerald-300/75 focus-visible:bg-emerald-300/85'
     case 'cancelled':
       return 'bg-rose-200/65 hover:bg-rose-300/75 focus-visible:bg-rose-300/85'
     default:
@@ -170,16 +171,16 @@ function getStatusTabStyle(key: StatusFilter): StatusTabStyle {
       }
     case 'booked':
       return {
-        inactive: 'border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-200',
-        active: 'border-emerald-700 bg-emerald-700 text-white',
-        countInactive: 'bg-emerald-200 text-emerald-900',
+        inactive: 'border-blue-300 bg-blue-100 text-blue-900 hover:bg-blue-200',
+        active: 'border-blue-700 bg-blue-700 text-white',
+        countInactive: 'bg-blue-200 text-blue-900',
         countActive: 'bg-white/20 text-white',
       }
     case 'completed':
       return {
-        inactive: 'border-teal-300 bg-teal-100 text-teal-900 hover:bg-teal-200',
-        active: 'border-teal-700 bg-teal-700 text-white',
-        countInactive: 'bg-teal-200 text-teal-900',
+        inactive: 'border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-200',
+        active: 'border-emerald-700 bg-emerald-700 text-white',
+        countInactive: 'bg-emerald-200 text-emerald-900',
         countActive: 'bg-white/20 text-white',
       }
     case 'cancelled':
@@ -235,6 +236,7 @@ export default function ObAssignmentsPage() {
   const [sortField, setSortField] = useState<SortField>('status')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [showCancelled, setShowCancelled] = useState(false)
+  const [showExpired, setShowExpired] = useState(false)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [currentPage, setCurrentPage] = useState(1)
 
@@ -273,20 +275,14 @@ export default function ObAssignmentsPage() {
       if (saved.statusFilter && STATUS_TABS.some((tab) => tab.key === saved.statusFilter)) {
         setStatusFilter(saved.statusFilter)
       }
-      if (
-        saved.sortField &&
-        ['status', 'created', 'customer', 'address', 'preferred_date'].includes(saved.sortField)
-      ) {
-        setSortField(saved.sortField as SortField)
-      }
-      if (saved.sortDirection === 'asc' || saved.sortDirection === 'desc') {
-        setSortDirection(saved.sortDirection)
-      }
       if (typeof saved.pageSize === 'number' && PAGE_SIZE_OPTIONS.includes(saved.pageSize)) {
         setPageSize(saved.pageSize)
       }
       if (typeof saved.showCancelled === 'boolean') {
         setShowCancelled(saved.showCancelled)
+      }
+      if (typeof saved.showExpired === 'boolean') {
+        setShowExpired(saved.showExpired)
       }
     } catch {
       // Ignore malformed localStorage payloads
@@ -301,29 +297,42 @@ export default function ObAssignmentsPage() {
       sortDirection,
       pageSize,
       showCancelled,
+      showExpired,
     }
 
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  }, [search, statusFilter, sortField, sortDirection, pageSize, showCancelled])
+  }, [search, statusFilter, sortField, sortDirection, pageSize, showCancelled, showExpired])
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [search, statusFilter, sortField, sortDirection, pageSize, showCancelled])
+  }, [search, statusFilter, sortField, sortDirection, pageSize, showCancelled, showExpired])
 
   const visibleItems = useMemo(
-    () => items.filter((item) => showCancelled || item.status !== 'cancelled'),
-    [items, showCancelled]
+    () =>
+      items.filter(
+        (item) =>
+          (showCancelled || item.status !== 'cancelled') && (showExpired || item.status !== 'expired')
+      ),
+    [items, showCancelled, showExpired]
   )
 
   useEffect(() => {
-    if (!showCancelled && statusFilter === 'cancelled') {
+    if (
+      (!showCancelled && statusFilter === 'cancelled') ||
+      (!showExpired && statusFilter === 'expired')
+    ) {
       setStatusFilter('all')
     }
-  }, [showCancelled, statusFilter])
+  }, [showCancelled, showExpired, statusFilter])
 
   const statusTabs = useMemo(
-    () => (showCancelled ? STATUS_TABS : STATUS_TABS.filter((tab) => tab.key !== 'cancelled')),
-    [showCancelled]
+    () =>
+      STATUS_TABS.filter((tab) => {
+        if (tab.key === 'cancelled' && !showCancelled) return false
+        if (tab.key === 'expired' && !showExpired) return false
+        return true
+      }),
+    [showCancelled, showExpired]
   )
 
   const statusCounts = useMemo(() => {
@@ -413,7 +422,8 @@ export default function ObAssignmentsPage() {
     sortField !== 'status' ||
     sortDirection !== 'asc' ||
     pageSize !== DEFAULT_PAGE_SIZE ||
-    showCancelled
+    showCancelled ||
+    showExpired
 
   const resetView = () => {
     setSearch('')
@@ -422,6 +432,7 @@ export default function ObAssignmentsPage() {
     setSortDirection('asc')
     setPageSize(DEFAULT_PAGE_SIZE)
     setShowCancelled(false)
+    setShowExpired(false)
     setCurrentPage(1)
   }
 
@@ -556,6 +567,17 @@ export default function ObAssignmentsPage() {
                 >
                   {showCancelled ? 'Dölj makulerade' : 'Visa makulerade'}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShowExpired((prev) => !prev)}
+                  className={
+                    showExpired
+                      ? 'rounded-md border border-slate-500 bg-slate-200 px-2 py-0.5 text-[11px] text-slate-900'
+                      : 'rounded-md border border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50'
+                  }
+                >
+                  {showExpired ? 'Dölj utgången länk' : 'Visa utgången länk'}
+                </button>
                 <label className="text-[10px] text-gray-600" htmlFor="assignmentsPageSize">
                   Rader/sida
                 </label>
@@ -667,15 +689,15 @@ export default function ObAssignmentsPage() {
                           }}
                           className={`cursor-pointer border-b last:border-b-0 focus-visible:outline-none ${getStatusRowClass(item.status)}`}
                         >
-                          <td className="px-3 py-3 align-middle whitespace-nowrap">{formatDate(item.created_at)}</td>
-                          <td className="px-3 py-3 align-middle whitespace-nowrap font-medium text-gray-900">
+                          <td className="px-3 py-2 align-middle whitespace-nowrap">{formatDate(item.created_at)}</td>
+                          <td className="px-3 py-2 align-middle whitespace-nowrap font-medium text-gray-900">
                             {getStatusLabel(item.status)}
                           </td>
-                          <td className="px-3 py-3 align-middle">
+                          <td className="px-3 py-2 align-middle">
                             <div className="text-gray-900">{item.customer_name || '-'}</div>
                           </td>
-                          <td className="px-3 py-3 align-middle text-gray-900">{getAddress(item)}</td>
-                          <td className="px-3 py-3 align-middle whitespace-nowrap">{formatDate(item.preferred_date)}</td>
+                          <td className="px-3 py-2 align-middle text-gray-900">{getAddress(item)}</td>
+                          <td className="px-3 py-2 align-middle whitespace-nowrap">{formatDate(item.preferred_date)}</td>
                         </tr>
                       )
                     })}
