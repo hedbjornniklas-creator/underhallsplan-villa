@@ -873,7 +873,11 @@ export default function ObStepGrunddata({
               onChange={e => handleInspChange('status', e.target.value)}
               onBlur={() => handleInspBlur('status')}
             >
-              <option value="draft">Utkast</option>
+              {inspForm.status === 'draft' ? (
+                <option value="draft" disabled>
+                  Utkast (intern)
+                </option>
+              ) : null}
               <option value="ongoing">P&aring;g&aring;ende</option>
               <option value="completed">Klar</option>
               <option value="archived">Arkiverad</option>

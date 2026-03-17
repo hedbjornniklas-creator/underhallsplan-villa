@@ -98,10 +98,11 @@ type SavedListView = {
   sortField: SortField
   sortDirection: SortDirection
   pageSize: number
+  showDraft: boolean
   showArchived: boolean
 }
 
-const STORAGE_KEY = 'inspections:list:view:v2'
+const STORAGE_KEY = 'inspections:list:view:v3'
 const DEFAULT_PAGE_SIZE = 25
 const PAGE_SIZE_OPTIONS = [10, 25, 50]
 const COLLATOR = new Intl.Collator('sv', { sensitivity: 'base', numeric: true })
@@ -319,6 +320,7 @@ export default function InspectionsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [sortField, setSortField] = useState<SortField>('status')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [showDraft, setShowDraft] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [currentPage, setCurrentPage] = useState(1)
@@ -341,6 +343,9 @@ export default function InspectionsPage() {
       if (saved.sortDirection === 'asc' || saved.sortDirection === 'desc') {
         setSortDirection(saved.sortDirection)
       }
+      if (typeof saved.showDraft === 'boolean') {
+        setShowDraft(saved.showDraft)
+      }
       if (typeof saved.showArchived === 'boolean') {
         setShowArchived(saved.showArchived)
       }
@@ -359,11 +364,12 @@ export default function InspectionsPage() {
       sortField,
       sortDirection,
       pageSize,
+      showDraft,
       showArchived,
     }
 
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  }, [search, statusFilter, sortField, sortDirection, pageSize, showArchived])
+  }, [search, statusFilter, sortField, sortDirection, pageSize, showDraft, showArchived])
 
   useEffect(() => {
     const load = async () => {
@@ -453,22 +459,33 @@ export default function InspectionsPage() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [search, statusFilter, sortField, sortDirection, pageSize, showArchived])
+  }, [search, statusFilter, sortField, sortDirection, pageSize, showDraft, showArchived])
 
   const visibleInspections = useMemo(
-    () => inspections.filter((row) => showArchived || getStatusBucket(row.status) !== 'archived'),
-    [inspections, showArchived]
+    () =>
+      inspections.filter((row) => {
+        const bucket = getStatusBucket(row.status)
+        if (!showDraft && bucket === 'draft') return false
+        if (!showArchived && bucket === 'archived') return false
+        return true
+      }),
+    [inspections, showDraft, showArchived]
   )
 
   useEffect(() => {
-    if (!showArchived && statusFilter === 'archived') {
+    if ((!showDraft && statusFilter === 'draft') || (!showArchived && statusFilter === 'archived')) {
       setStatusFilter('all')
     }
-  }, [showArchived, statusFilter])
+  }, [showDraft, showArchived, statusFilter])
 
   const statusTabs = useMemo(
-    () => STATUS_TABS.filter((tab) => (tab.key === 'archived' ? showArchived : true)),
-    [showArchived]
+    () =>
+      STATUS_TABS.filter((tab) => {
+        if (tab.key === 'draft' && !showDraft) return false
+        if (tab.key === 'archived' && !showArchived) return false
+        return true
+      }),
+    [showDraft, showArchived]
   )
 
   const statusCounts = useMemo(() => {
@@ -552,6 +569,7 @@ export default function InspectionsPage() {
     sortField !== 'status' ||
     sortDirection !== 'asc' ||
     pageSize !== DEFAULT_PAGE_SIZE ||
+    showDraft ||
     showArchived
 
   const resetView = () => {
@@ -560,6 +578,7 @@ export default function InspectionsPage() {
     setSortField('status')
     setSortDirection('asc')
     setPageSize(DEFAULT_PAGE_SIZE)
+    setShowDraft(false)
     setShowArchived(false)
     setCurrentPage(1)
   }
@@ -775,6 +794,17 @@ export default function InspectionsPage() {
               })}
 
               <div className="ml-auto flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setShowDraft((prev) => !prev)}
+                  className={
+                    showDraft
+                      ? 'rounded-md border border-gray-500 bg-gray-200 px-2 py-0.5 text-[11px] text-gray-900'
+                      : 'rounded-md border border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50'
+                  }
+                >
+                  {showDraft ? 'Dölj utkast' : 'Visa utkast'}
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowArchived((prev) => !prev)}
