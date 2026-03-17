@@ -7,7 +7,6 @@ import {
   isMissingEnvError,
   requireOrgContext,
   sendAssignmentConfirmation,
-  sendAssignmentOrderReceipt,
 } from '@/lib/assignments/server'
 
 export const runtime = 'nodejs'
@@ -27,26 +26,14 @@ export async function POST(
     const assignment = await getAssignmentById(org.orgId, id)
 
     if (!assignment) return jsonError('Uppdraget hittades inte.', 404)
-    if (assignment.status === 'completed') {
-      return jsonError('Uppdraget ar redan avslutat och kan inte skickas igen.', 400)
+    if (assignment.status !== 'draft') {
+      return jsonError(
+        'Uppdragsbekraftelsen kan endast skickas fran utkast. Anvand "Skicka om uppdragsbekraftelse" for ny version.',
+        409
+      )
     }
 
     const responsibleProfile = await getProfileContact(assignment.responsible_profile_id)
-    if (assignment.status === 'ordered' || assignment.status === 'booked') {
-      await sendAssignmentOrderReceipt({
-        assignment,
-        orgName: org.orgName,
-        requestedByUserId: org.userId,
-        responsibleEmail: responsibleProfile?.email ?? null,
-      })
-
-      return NextResponse.json({
-        assignmentId: assignment.id,
-        status: assignment.status,
-        mode: 'order_receipt',
-      })
-    }
-
     const sendResult = await sendAssignmentConfirmation({
       assignment,
       orgName: org.orgName,

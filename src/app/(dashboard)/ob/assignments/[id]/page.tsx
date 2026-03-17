@@ -134,7 +134,7 @@ function assignmentStatusToLabel(status: AssignmentStatus) {
     case 'expired':
       return 'Utg\u00e5ngen'
     case 'cancelled':
-      return 'Avbruten'
+      return 'Makulerad'
     default:
       return status
   }
@@ -196,14 +196,13 @@ export default function AssignmentDetailsPage() {
     return Number.isFinite(parsed) && parsed >= 0
   }, [form])
 
-  const canSend = assignment?.status !== 'completed' && hasOrdererRole && hasValidPrice
+  const canSend = assignment?.status === 'draft' && hasOrdererRole && hasValidPrice
   const canBook = assignment?.status === 'ordered' && !assignment.inspection_id
   const canConvert = assignment?.status === 'booked' && !assignment.inspection_id
   const isSent = assignment?.status === 'sent'
   const isOrdered = assignment?.status === 'ordered'
   const isBookedLocked = assignment?.status === 'booked'
   const isEditingLocked = isSent || isOrdered || isBookedLocked
-  const canSendCopy = isOrdered || isBookedLocked
   const canReissue = isEditingLocked
 
   const loadAssignment = useCallback(async () => {
@@ -367,14 +366,6 @@ export default function AssignmentDetailsPage() {
   }, [form, loading, saveForm, isEditingLocked])
 
   const handleSend = async () => {
-    const sendMode = canSendCopy ? 'copy' : isSent ? 'new-link' : 'initial'
-    if (sendMode === 'new-link') {
-      const shouldContinue = window.confirm(
-        'Detta skickar en ny länk till kunden och den tidigare länken blir ogiltig. Fortsätt?'
-      )
-      if (!shouldContinue) return
-    }
-
     try {
       setSending(true)
       setError(null)
@@ -385,13 +376,7 @@ export default function AssignmentDetailsPage() {
         throw new Error(jsonToErrorMessage(payload, 'Kunde inte skicka uppdragsbekräftelsen.'))
       }
       await loadAssignment()
-      if (sendMode === 'copy') {
-        setSuccess('Kopia skickad.')
-      } else if (sendMode === 'new-link') {
-        setSuccess('Ny länk skickad.')
-      } else {
-        setSuccess('Uppdragsbekräftelse skickad.')
-      }
+      setSuccess('Uppdragsbekräftelse skickad.')
     } catch (sendError) {
       setError(
         sendError instanceof Error ? sendError.message : 'Kunde inte skicka uppdragsbekräftelsen.'
@@ -420,7 +405,7 @@ export default function AssignmentDetailsPage() {
       const typedPayload = payload as { bookingEmailSent?: boolean } | null
       await loadAssignment()
       if (typedPayload?.bookingEmailSent === false) {
-        setSuccess('Uppdraget är nu bokat. Mejlet kunde inte skickas automatiskt, använd Skicka kopia.')
+        setSuccess('Uppdraget är nu bokat. Mejlet kunde inte skickas automatiskt.')
       } else {
         setSuccess('Uppdraget är nu bokat och bekräftelsemejl har skickats.')
       }
@@ -506,33 +491,23 @@ export default function AssignmentDetailsPage() {
                 <span className="px-2 text-xs font-medium text-white/95">
                   {saveState === 'saving' ? 'Sparar...' : saveState === 'saved' ? 'Sparat' : ''}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => void handleSend()}
-                  disabled={!canSend || sending || booking || converting || reissuing || saving || loading}
-                  title={
-                    canSendCopy
-                      ? 'Skickar en kopia av bekräftelsen till kunden.'
-                      : isSent
-                        ? 'Skickar en ny länk och ogiltigförklarar den tidigare.'
-                        : 'Skickar uppdragsbekräftelsen till kunden för godkännande.'
-                  }
-                  className="rounded-lg border border-white/60 bg-white/15 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-white/25 hover:shadow-[0_10px_20px_-14px_rgba(255,255,255,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {sending
-                    ? 'Skickar...'
-                    : canSendCopy
-                      ? 'Skicka kopia'
-                      : isSent
-                        ? 'Skicka ny länk'
-                        : 'Skicka uppdragsbekräftelse'}
-                </button>
+                {assignment?.status === 'draft' ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleSend()}
+                    disabled={!canSend || sending || booking || converting || reissuing || saving || loading}
+                    title="Skickar uppdragsbekräftelsen till kunden för godkännande."
+                    className="rounded-lg border border-white/60 bg-white/15 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-white/25 hover:shadow-[0_10px_20px_-14px_rgba(255,255,255,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {sending ? 'Skickar...' : 'Skicka uppdragsbekräftelse'}
+                  </button>
+                ) : null}
                 {canReissue ? (
                   <button
                     type="button"
                     onClick={() => void handleReissue()}
                     disabled={reissuing || sending || booking || converting || saving || loading}
-                    title="Skapar en ny utkastversion och skickar om för nytt godkännande."
+                    title="Skapar en ny utkastversion baserad på befintliga uppgifter. Du kan redigera den och sedan skicka för nytt godkännande."
                     className="rounded-lg border border-amber-200 bg-amber-500/20 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-amber-500/30 hover:shadow-[0_10px_20px_-12px_rgba(245,158,11,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {reissuing ? 'Skapar ny...' : 'Skicka om uppdragsbekräftelse'}
@@ -578,7 +553,7 @@ export default function AssignmentDetailsPage() {
             </div>
           ) : isSent ? (
             <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
-              Uppdragsbekräftelsen är skickad och låst för redigering. Klicka på Skicka ny länk eller Skicka om uppdragsbekräftelse.
+              Uppdragsbekräftelsen är skickad och låst för redigering. Klicka på Skicka om uppdragsbekräftelse för att skapa en ny redigerbar version.
             </div>
           ) : null}
 

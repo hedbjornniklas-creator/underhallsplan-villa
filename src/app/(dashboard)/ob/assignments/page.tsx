@@ -79,7 +79,7 @@ function getStatusLabel(status: AssignmentItem['status']) {
     case 'expired':
       return 'Utgången'
     case 'cancelled':
-      return 'Avbruten'
+      return 'Makulerad'
     default:
       return 'Utkast'
   }

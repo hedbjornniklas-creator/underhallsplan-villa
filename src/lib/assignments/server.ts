@@ -5,6 +5,7 @@ import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import {
   buildAssignmentConfirmationEmail,
   buildAssignmentAcceptedNoticeEmail,
+  buildAssignmentCancelledNoticeEmail,
   buildAssignmentOrderReceiptEmail,
 } from '@/lib/assignments/emailTemplates'
 import {
@@ -834,7 +835,7 @@ export async function createReissuedAssignmentDraft(input: {
   orgId: string
   sourceAssignmentId: string
   createdBy: string
-}): Promise<AssignmentDetails> {
+}): Promise<{ draft: AssignmentDetails; cancelledSource: AssignmentDetails }> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const source = await getAssignmentById(input.orgId, input.sourceAssignmentId)
 
@@ -893,14 +894,20 @@ export async function createReissuedAssignmentDraft(input: {
         throw new Error(addonInsertError.message ?? 'Kunde inte kopiera tilläggsuppdrag.')
       }
     }
+    const cancelledSource = await updateAssignmentById({
+      orgId: input.orgId,
+      assignmentId: source.id,
+      updatedBy: input.createdBy,
+      patch: { status: 'cancelled' },
+    })
+
+    return { draft, cancelledSource }
   } catch (error) {
     await admin.from('assignments').delete().eq('org_id', input.orgId).eq('id', draft.id)
     throw error instanceof Error
       ? error
       : new Error('Kunde inte skapa ny version av uppdragsbekräftelsen.')
   }
-
-  return draft
 }
 
 export class AssignmentEmailSendError extends Error {
@@ -1213,6 +1220,75 @@ export async function sendAssignmentAcceptedNotice(input: {
       .eq('id', messageData.id)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel vid mejlutskick.'
+    await admin
+      .from('outbound_messages')
+      .update({
+        status: 'failed',
+        error_message: message,
+      })
+      .eq('id', messageData.id)
+
+    throw new Error(message)
+  }
+}
+
+export async function sendAssignmentCancelledNotice(input: {
+  assignment: AssignmentDetails
+  orgName: string | null
+  requestedByUserId?: string | null
+  responsibleEmail: string | null
+}): Promise<void> {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const { subject, html, text } = buildAssignmentCancelledNoticeEmail({
+    assignment: input.assignment,
+    orgName: input.orgName,
+  })
+
+  const fromAddress = getMailFromAddress()
+  const createdBy = input.requestedByUserId ?? input.assignment.responsible_profile_id ?? null
+
+  const { data: messageData, error: messageError } = await admin
+    .from('outbound_messages')
+    .insert({
+      org_id: input.assignment.org_id,
+      assignment_id: input.assignment.id,
+      channel: 'email',
+      recipient_email: input.assignment.customer_email,
+      subject,
+      template_key: 'assignment_cancelled_notice',
+      status: 'pending',
+      created_by: createdBy,
+      reply_to_email: input.responsibleEmail ?? null,
+    })
+    .select('id')
+    .single()
+
+  if (messageError || !messageData) {
+    throw new Error(messageError?.message ?? 'Kunde inte skapa mejllogg.')
+  }
+
+  try {
+    const sendResult = await sendAssignmentEmail({
+      to: input.assignment.customer_email,
+      from: fromAddress,
+      replyTo: input.responsibleEmail ?? null,
+      subject,
+      html,
+      text,
+    })
+
+    await admin
+      .from('outbound_messages')
+      .update({
+        status: 'sent',
+        provider: sendResult.provider,
+        provider_message_id: sendResult.providerMessageId,
+        sent_at: new Date().toISOString(),
+      })
+      .eq('id', messageData.id)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Okant fel vid mejlutskick.'
     await admin
       .from('outbound_messages')
       .update({

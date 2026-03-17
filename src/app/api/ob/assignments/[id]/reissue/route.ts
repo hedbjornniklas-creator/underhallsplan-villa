@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import {
   createReissuedAssignmentDraft,
+  getProfileContact,
   requireOrgContext,
+  sendAssignmentCancelledNotice,
 } from '@/lib/assignments/server'
 
 export const runtime = 'nodejs'
@@ -18,15 +20,33 @@ export async function POST(
   try {
     const { id } = await context.params
     const org = await requireOrgContext()
-    const assignment = await createReissuedAssignmentDraft({
+    const { draft, cancelledSource } = await createReissuedAssignmentDraft({
       orgId: org.orgId,
       sourceAssignmentId: id,
       createdBy: org.userId,
     })
+    let cancelledNoticeEmailSent = false
+    try {
+      const responsibleProfile = await getProfileContact(cancelledSource.responsible_profile_id)
+      await sendAssignmentCancelledNotice({
+        assignment: cancelledSource,
+        orgName: org.orgName,
+        requestedByUserId: org.userId,
+        responsibleEmail: responsibleProfile?.email ?? null,
+      })
+      cancelledNoticeEmailSent = true
+    } catch (mailError) {
+      console.error('[assignments.reissue] failed to send cancelled notice', {
+        assignmentId: cancelledSource.id,
+        error: mailError instanceof Error ? mailError.message : String(mailError),
+      })
+    }
 
     return NextResponse.json({
-      assignmentId: assignment.id,
-      status: assignment.status,
+      assignmentId: draft.id,
+      status: draft.status,
+      cancelledAssignmentId: cancelledSource.id,
+      cancelledNoticeEmailSent,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'

@@ -70,6 +70,17 @@ export type BuildAssignmentAcceptedNoticeEmailResult = {
   text: string
 }
 
+export type BuildAssignmentCancelledNoticeEmailInput = {
+  assignment: AssignmentForEmail
+  orgName: string | null
+}
+
+export type BuildAssignmentCancelledNoticeEmailResult = {
+  subject: string
+  html: string
+  text: string
+}
+
 type CtaButtonOptions = {
   href: string
   label: string
@@ -593,6 +604,67 @@ export function buildAssignmentAcceptedNoticeEmail(
     `Vi har mottagit er godkända uppdragsbekräftelse för ${assignmentType}.\n` +
     `Besiktningsmannen går nu igenom beställningen och bekräftar uppdraget.\n\n` +
     `Mottagen: ${acceptedAt}`
+
+  return { subject, html, text }
+}
+
+export function buildAssignmentCancelledNoticeEmail(
+  input: BuildAssignmentCancelledNoticeEmailInput
+): BuildAssignmentCancelledNoticeEmailResult {
+  const customerName = toDisplayValue(input.assignment.customer_name, 'kund')
+  const assignmentType = assignmentTypeToLabel(input.assignment.assignment_type)
+  const orgName = toDisplayValue(input.orgName, 'HusHub')
+  const subject = `Tidigare uppdragsbekräftelse är makulerad - ${orgName}`
+
+  const html = `
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta charset="utf-8" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Uppdragsbekräftelse makulerad</title>
+  </head>
+  <body style="margin:0;padding:0;background:#eef3ff;font-family:Segoe UI,Arial,sans-serif;color:#111827;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef3ff;padding:24px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="width:100%;max-width:640px;background:#ffffff;border:1px solid #dbe4ff;border-radius:16px;overflow:hidden;">
+            <tr>
+              <td style="padding:14px 20px;background:#1d4ed8;background-image:linear-gradient(135deg,#1e3a8a 0%,#1d4ed8 48%,#60a5fa 100%);color:#ffffff;">
+                <div style="font-size:20px;font-weight:700;letter-spacing:0.02em;">UPPDRAGSBEKRÄFTELSE MAKULERAD</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 24px 22px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 14px;">
+                  <tr>
+                    <td style="vertical-align:middle;font-size:36px;line-height:1;font-weight:700;color:#111827;mso-line-height-rule:exactly;">&#10003;</td>
+                    <td style="vertical-align:middle;padding-left:8px;font-size:30px;font-weight:800;line-height:1;color:#111827;">HusHub</td>
+                  </tr>
+                </table>
+                <p style="margin:0 0 10px;font-size:15px;">Hej ${escapeHtml(customerName)},</p>
+                <p style="margin:0 0 10px;font-size:14px;line-height:1.55;">
+                  Den tidigare uppdragsbekräftelsen för ${escapeHtml(assignmentType)} har makulerats.
+                </p>
+                <p style="margin:0;font-size:14px;line-height:1.55;">
+                  En ny uppdragsbekräftelse skickas separat för nytt godkännande.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+  `
+
+  const text =
+    `Hej ${customerName},\n\n` +
+    `Den tidigare uppdragsbekräftelsen för ${assignmentType} har makulerats.\n` +
+    `En ny uppdragsbekräftelse skickas separat för nytt godkännande.`
 
   return { subject, html, text }
 }
