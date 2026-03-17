@@ -2,9 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Plus } from 'lucide-react'
-import Image from 'next/image'
-import Link from 'next/link'
+import { ArrowLeft, ChevronsLeft, Plus } from 'lucide-react'
 import Protected from '@/components/Protected'
 
 type AssignmentItem = {
@@ -123,19 +121,19 @@ function getStatusSortRank(status: AssignmentItem['status']) {
 function getStatusRowClass(status: AssignmentItem['status']) {
   switch (status) {
     case 'draft':
-      return 'bg-amber-200/65 hover:bg-amber-300/75 focus-visible:bg-amber-300/85'
+      return 'bg-[#FFFFFF] text-[#111827] hover:bg-[#F9FAFB] focus-visible:bg-[#F9FAFB]'
     case 'sent':
-      return 'bg-sky-200/65 hover:bg-sky-300/75 focus-visible:bg-sky-300/85'
+      return 'bg-[#2563EB] text-[#FFFFFF] hover:bg-[#1D4ED8] focus-visible:bg-[#1D4ED8]'
     case 'ordered':
-      return 'bg-violet-200/65 hover:bg-violet-300/75 focus-visible:bg-violet-300/85'
+      return 'bg-[#FACC15] text-[#111827] hover:bg-[#EAB308] focus-visible:bg-[#EAB308]'
     case 'booked':
-      return 'bg-blue-200/65 hover:bg-blue-300/75 focus-visible:bg-blue-300/85'
+      return 'bg-[#C2410C] text-[#FFFFFF] hover:bg-[#9A3412] focus-visible:bg-[#9A3412]'
     case 'completed':
-      return 'bg-emerald-200/65 hover:bg-emerald-300/75 focus-visible:bg-emerald-300/85'
+      return 'bg-[#15803D] text-[#FFFFFF] hover:bg-[#166534] focus-visible:bg-[#166534]'
     case 'cancelled':
-      return 'bg-rose-200/65 hover:bg-rose-300/75 focus-visible:bg-rose-300/85'
+      return 'bg-[#DC2626] text-[#FFFFFF] hover:bg-[#B91C1C] focus-visible:bg-[#B91C1C]'
     default:
-      return 'bg-slate-300/55 hover:bg-slate-300/70 focus-visible:bg-slate-300/80'
+      return 'bg-[#6B7280] text-[#FFFFFF] hover:bg-[#4B5563] focus-visible:bg-[#4B5563]'
   }
 }
 
@@ -150,51 +148,51 @@ function getStatusTabStyle(key: StatusFilter): StatusTabStyle {
   switch (key) {
     case 'draft':
       return {
-        inactive: 'border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200',
-        active: 'border-amber-700 bg-amber-700 text-white',
-        countInactive: 'bg-amber-200 text-amber-900',
-        countActive: 'bg-white/20 text-white',
+        inactive: 'border-gray-300 bg-[#F9FAFB] text-[#111827] hover:bg-[#F3F4F6]',
+        active: 'border-gray-400 bg-[#FFFFFF] text-[#111827]',
+        countInactive: 'bg-gray-200 text-[#111827]',
+        countActive: 'bg-gray-200 text-[#111827]',
       }
     case 'sent':
       return {
-        inactive: 'border-sky-300 bg-sky-100 text-sky-900 hover:bg-sky-200',
-        active: 'border-sky-700 bg-sky-700 text-white',
-        countInactive: 'bg-sky-200 text-sky-900',
+        inactive: 'border-[#93C5FD] bg-[#DBEAFE] text-[#1E3A8A] hover:bg-[#BFDBFE]',
+        active: 'border-[#2563EB] bg-[#2563EB] text-[#FFFFFF]',
+        countInactive: 'bg-[#BFDBFE] text-[#1E3A8A]',
         countActive: 'bg-white/20 text-white',
       }
     case 'ordered':
       return {
-        inactive: 'border-violet-300 bg-violet-100 text-violet-900 hover:bg-violet-200',
-        active: 'border-violet-700 bg-violet-700 text-white',
-        countInactive: 'bg-violet-200 text-violet-900',
-        countActive: 'bg-white/20 text-white',
+        inactive: 'border-[#FDE68A] bg-[#FEF3C7] text-[#92400E] hover:bg-[#FDE68A]',
+        active: 'border-[#FACC15] bg-[#FACC15] text-[#111827]',
+        countInactive: 'bg-[#FDE68A] text-[#92400E]',
+        countActive: 'bg-[#EAB308] text-[#111827]',
       }
     case 'booked':
       return {
-        inactive: 'border-blue-300 bg-blue-100 text-blue-900 hover:bg-blue-200',
-        active: 'border-blue-700 bg-blue-700 text-white',
-        countInactive: 'bg-blue-200 text-blue-900',
+        inactive: 'border-[#FDBA74] bg-[#FFEDD5] text-[#9A3412] hover:bg-[#FED7AA]',
+        active: 'border-[#C2410C] bg-[#C2410C] text-[#FFFFFF]',
+        countInactive: 'bg-[#FED7AA] text-[#9A3412]',
         countActive: 'bg-white/20 text-white',
       }
     case 'completed':
       return {
-        inactive: 'border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-200',
-        active: 'border-emerald-700 bg-emerald-700 text-white',
-        countInactive: 'bg-emerald-200 text-emerald-900',
+        inactive: 'border-[#86EFAC] bg-[#DCFCE7] text-[#14532D] hover:bg-[#BBF7D0]',
+        active: 'border-[#15803D] bg-[#15803D] text-[#FFFFFF]',
+        countInactive: 'bg-[#BBF7D0] text-[#14532D]',
         countActive: 'bg-white/20 text-white',
       }
     case 'cancelled':
       return {
-        inactive: 'border-rose-300 bg-rose-100 text-rose-900 hover:bg-rose-200',
-        active: 'border-rose-700 bg-rose-700 text-white',
-        countInactive: 'bg-rose-200 text-rose-900',
+        inactive: 'border-[#FCA5A5] bg-[#FEE2E2] text-[#7F1D1D] hover:bg-[#FECACA]',
+        active: 'border-[#DC2626] bg-[#DC2626] text-[#FFFFFF]',
+        countInactive: 'bg-[#FECACA] text-[#7F1D1D]',
         countActive: 'bg-white/20 text-white',
       }
     case 'expired':
       return {
-        inactive: 'border-slate-400 bg-slate-200 text-slate-900 hover:bg-slate-300',
-        active: 'border-slate-700 bg-slate-700 text-white',
-        countInactive: 'bg-slate-300 text-slate-900',
+        inactive: 'border-[#9CA3AF] bg-[#E5E7EB] text-[#374151] hover:bg-[#D1D5DB]',
+        active: 'border-[#6B7280] bg-[#6B7280] text-[#FFFFFF]',
+        countInactive: 'bg-[#D1D5DB] text-[#374151]',
         countActive: 'bg-white/20 text-white',
       }
     default:
@@ -474,20 +472,15 @@ export default function ObAssignmentsPage() {
           <header className="rounded-2xl border border-white/30 bg-white/10 p-4 shadow-sm backdrop-blur-sm md:p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-center gap-3">
-                <Link
-                  href="/ob"
-                  aria-label="BesiktApp startsida"
-                  title="Till BesiktApp"
-                  className="inline-flex items-center rounded-sm transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                <button
+                  type="button"
+                  onClick={() => router.push('/ob')}
+                  aria-label="Till huvudsidan"
+                  title="Till huvudsidan"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
                 >
-                  <Image
-                    src="/report-assets/BesiktApp.png"
-                    alt="BesiktApp"
-                    width={124}
-                    height={28}
-                    className="h-7 w-auto object-contain"
-                  />
-                </Link>
+                  <ChevronsLeft size={15} strokeWidth={2.2} />
+                </button>
                 <button
                   type="button"
                   onClick={() => router.push('/ob')}
@@ -690,13 +683,13 @@ export default function ObAssignmentsPage() {
                           className={`cursor-pointer border-b last:border-b-0 focus-visible:outline-none ${getStatusRowClass(item.status)}`}
                         >
                           <td className="px-3 py-2 align-middle whitespace-nowrap">{formatDate(item.created_at)}</td>
-                          <td className="px-3 py-2 align-middle whitespace-nowrap font-medium text-gray-900">
+                          <td className="px-3 py-2 align-middle whitespace-nowrap font-medium">
                             {getStatusLabel(item.status)}
                           </td>
                           <td className="px-3 py-2 align-middle">
-                            <div className="text-gray-900">{item.customer_name || '-'}</div>
+                            <div>{item.customer_name || '-'}</div>
                           </td>
-                          <td className="px-3 py-2 align-middle text-gray-900">{getAddress(item)}</td>
+                          <td className="px-3 py-2 align-middle">{getAddress(item)}</td>
                           <td className="px-3 py-2 align-middle whitespace-nowrap">{formatDate(item.preferred_date)}</td>
                         </tr>
                       )

@@ -1,10 +1,8 @@
 'use client'
 
-import Image from 'next/image'
-import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ChevronsLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
 
 type AssignmentStatus =
@@ -480,20 +478,15 @@ export default function AssignmentDetailsPage() {
         <div className="relative mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
           <header className="rounded-2xl border border-white/30 bg-white/10 p-4 shadow-sm backdrop-blur-sm md:p-5">
             <div className="flex flex-wrap items-center gap-3">
-              <Link
-                href="/ob"
-                aria-label="BesiktApp startsida"
-                title="Till BesiktApp"
-                className="inline-flex items-center rounded-md border border-white/40 bg-white/10 px-2 py-1 transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+              <button
+                type="button"
+                onClick={() => router.push('/ob')}
+                aria-label="Till huvudsidan"
+                title="Till huvudsidan"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
               >
-                <Image
-                  src="/report-assets/BesiktApp.png"
-                  alt="BesiktApp"
-                  width={124}
-                  height={28}
-                  className="h-7 w-auto object-contain"
-                />
-              </Link>
+                <ChevronsLeft size={15} strokeWidth={2.2} />
+              </button>
               <button
                 type="button"
                 onClick={() => router.push('/ob/assignments')}
