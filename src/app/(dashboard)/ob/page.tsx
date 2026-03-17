@@ -371,16 +371,15 @@ function CreateInspectionCard({
   return cardShell(
     <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-3">
       <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-600">
-        Skapa ny tom besiktning
+        Starta besiktning
       </h2>
 
       <section className="mt-2 rounded-md border border-indigo-100 bg-white/90 p-2">
-        <p className="mt-1 text-[11px] leading-relaxed text-gray-600">Skapar en ny tom besiktning</p>
         <button
           type="button"
           onClick={() => void handleCreateFromScratch()}
           disabled={creating}
-          className="mt-2 inline-flex w-full items-center justify-center rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+          className="inline-flex w-full items-center justify-center rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
         >
           {creating ? 'Skapar...' : 'Skapa ny tom besiktning'}
         </button>
@@ -388,7 +387,7 @@ function CreateInspectionCard({
 
       <section className="mt-2 flex min-h-0 flex-1 flex-col rounded-md border border-indigo-100 bg-white/90 p-2">
         <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-600">
-          Bokade uppdragsbekräftelser
+          Skapa från uppdragsbekräftelse
         </h3>
         {bookedAssignmentsLoading ? (
           <p className="mt-1 text-[10px] text-gray-500">Laddar bokade uppdragsbekräftelser...</p>
