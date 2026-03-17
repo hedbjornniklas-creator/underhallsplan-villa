@@ -62,6 +62,7 @@ type ReportDeliveryMeta = {
   inspectionStatus: string
   canSend: boolean
   reason: string | null
+  defaultRecipientEmail: string | null
   ordererEmail: string | null
   history: ReportDeliveryHistoryRow[]
 }
@@ -71,7 +72,9 @@ type ReportDeliverySendResponse = {
   inspectionStatus: string
   deliveryMode: 'link_pdf'
   publicLink: string
-  ordererEmail: string
+  primaryRecipientEmail: string
+  defaultRecipientEmail: string | null
+  ordererEmail: string | null
   sentRecipients: string[]
   failedRecipients: Array<{ email: string; error: string }>
   history: ReportDeliveryHistoryRow[]
@@ -89,6 +92,11 @@ function parseExtraRecipientsInput(value: string) {
     .filter(Boolean)
     .forEach((email) => unique.add(email))
   return Array.from(unique)
+}
+
+function isValidEmail(value: string) {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  return emailRegex.test(value.trim())
 }
 
 export default function ObWizard({
@@ -154,6 +162,7 @@ export default function ObWizard({
   const [deliveryMeta, setDeliveryMeta] = useState<ReportDeliveryMeta | null>(null)
   const [deliveryMetaLoading, setDeliveryMetaLoading] = useState(false)
   const [deliveryMetaError, setDeliveryMetaError] = useState<string | null>(null)
+  const [primaryRecipientInput, setPrimaryRecipientInput] = useState('')
   const [extraRecipientsInput, setExtraRecipientsInput] = useState('')
   const [sendingReport, setSendingReport] = useState(false)
   const [deliveryError, setDeliveryError] = useState<string | null>(null)
@@ -204,6 +213,13 @@ export default function ObWizard({
     }
   }, [activeSection, hasValidIds, inspectionId])
 
+  useEffect(() => {
+    if (!deliveryMeta?.defaultRecipientEmail) return
+    setPrimaryRecipientInput((prev) =>
+      prev.trim() ? prev : deliveryMeta.defaultRecipientEmail ?? ''
+    )
+  }, [deliveryMeta?.defaultRecipientEmail])
+
   const handleSendInspectionReport = async () => {
     if (!hasValidIds || !inspectionId) return
 
@@ -220,6 +236,7 @@ export default function ObWizard({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          primary_recipient: primaryRecipientInput,
           extra_recipients: extraRecipients,
         }),
       })
@@ -258,9 +275,11 @@ export default function ObWizard({
         inspectionStatus: okPayload.inspectionStatus,
         canSend: prev?.canSend ?? true,
         reason: prev?.reason ?? null,
+        defaultRecipientEmail: okPayload.defaultRecipientEmail ?? null,
         ordererEmail: okPayload.ordererEmail,
         history: okPayload.history ?? [],
       }))
+      setPrimaryRecipientInput(okPayload.primaryRecipientEmail ?? '')
 
       const failedText =
         okPayload.failedRecipients.length > 0
@@ -356,7 +375,7 @@ export default function ObWizard({
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900">Skicka utlåtande</h3>
                     <p className="mt-1 text-xs text-gray-600">
-                      Skicksätt: <strong>Länk + PDF (PDF V.2)</strong>. Beställaren är obligatorisk mottagare.
+                      Skicksätt: <strong>Länk + PDF (PDF V.2)</strong>. Ange huvudmottagare.
                     </p>
                   </div>
 
@@ -374,13 +393,22 @@ export default function ObWizard({
 
                   <div className="grid gap-3 md:grid-cols-2">
                     <label className="space-y-1">
-                      <span className="text-xs font-medium text-gray-700">Beställare (obligatorisk)</span>
+                      <span className="text-xs font-medium text-gray-700">Huvudmottagare (obligatorisk)</span>
                       <input
-                        type="text"
-                        readOnly
-                        value={deliveryMeta?.ordererEmail ?? 'Saknas'}
-                        className="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-800"
+                        type="email"
+                        value={primaryRecipientInput}
+                        onChange={(event) => setPrimaryRecipientInput(event.target.value)}
+                        placeholder="namn@epost.se"
+                        className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       />
+                      <div className="text-[11px] text-gray-500">
+                        Beställare från uppdragsbekräftelse:{' '}
+                        {deliveryMeta?.ordererEmail ? (
+                          <span className="font-medium text-gray-700">{deliveryMeta.ordererEmail}</span>
+                        ) : (
+                          'Saknas'
+                        )}
+                      </div>
                     </label>
 
                     <label className="space-y-1">
@@ -420,7 +448,7 @@ export default function ObWizard({
                       disabled={
                         sendingReport ||
                         deliveryMetaLoading ||
-                        !deliveryMeta?.ordererEmail ||
+                        !isValidEmail(primaryRecipientInput) ||
                         deliveryMeta?.canSend === false
                       }
                       className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"

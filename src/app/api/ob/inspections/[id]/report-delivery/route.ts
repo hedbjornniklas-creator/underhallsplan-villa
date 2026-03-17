@@ -11,7 +11,6 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
-
 type DeliveryStatus = 'pending' | 'sent' | 'failed'
 
 type AssignmentForDelivery = {
@@ -71,18 +70,29 @@ function normalizeInspectionStatus(value: string | null | undefined): string {
   return 'ongoing'
 }
 
-function parseExtraRecipients(input: unknown, requiredEmail: string) {
-  const requiredLower = requiredEmail.toLowerCase()
+function isValidEmail(value: string) {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  return emailRegex.test(value)
+}
+
+function parsePrimaryRecipient(input: unknown, fallbackEmail: string | null) {
+  const candidate = typeof input === 'string' ? input.trim().toLowerCase() : ''
+  if (candidate && isValidEmail(candidate)) return candidate
+  if (fallbackEmail && isValidEmail(fallbackEmail)) return fallbackEmail
+  return null
+}
+
+function parseExtraRecipients(input: unknown, primaryEmail: string) {
   if (!Array.isArray(input)) return []
 
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  const primaryLower = primaryEmail.toLowerCase()
   const unique = new Set<string>()
 
   for (const value of input) {
     if (typeof value !== 'string') continue
     const normalized = value.trim().toLowerCase()
-    if (!normalized || normalized === requiredLower) continue
-    if (!emailRegex.test(normalized)) continue
+    if (!normalized || normalized === primaryLower) continue
+    if (!isValidEmail(normalized)) continue
     unique.add(normalized)
   }
 
@@ -128,6 +138,27 @@ async function getAssignmentByInspection(admin: AdminClient, orgId: string, insp
   return (data ?? null) as AssignmentForDelivery | null
 }
 
+async function isInspectionOwnedByUser(
+  admin: AdminClient,
+  propertyId: string | null,
+  userId: string
+) {
+  if (!propertyId) return false
+
+  const { data, error } = await admin
+    .from('properties')
+    .select('id')
+    .eq('id', propertyId)
+    .eq('owner', userId)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte verifiera access till besiktningen.')
+  }
+
+  return Boolean(data)
+}
+
 async function getDeliveryHistory(admin: AdminClient, assignmentId: string) {
   const { data, error } = await admin
     .from('outbound_messages')
@@ -148,7 +179,7 @@ async function createOutboundMessage(
   admin: AdminClient,
   input: {
     orgId: string
-    assignmentId: string
+    assignmentId: string | null
     createdBy: string
     recipientEmail: string
     subject: string
@@ -189,10 +220,7 @@ async function updateOutboundMessage(
     sent_at?: string | null
   }
 ) {
-  const { error } = await admin
-    .from('outbound_messages')
-    .update(patch)
-    .eq('id', id)
+  const { error } = await admin.from('outbound_messages').update(patch).eq('id', id)
 
   if (error) {
     console.error('[inspections.report-delivery] failed to update outbound_messages', {
@@ -215,20 +243,15 @@ export async function GET(
     if (!inspection) return jsonError('Besiktningen hittades inte.', 404)
 
     const assignment = await getAssignmentByInspection(admin, org.orgId, id)
-    const ordererEmail = assignment?.customer_email?.trim().toLowerCase() ?? null
-
-    if (!assignment || !ordererEmail) {
-      return NextResponse.json({
-        inspectionId: id,
-        inspectionStatus: normalizeInspectionStatus(inspection.status),
-        canSend: false,
-        reason: 'Mottagare saknas. Besiktningen måste vara kopplad till en godkänd uppdragsbekräftelse.',
-        ordererEmail: null,
-        history: [],
-      })
+    if (!assignment) {
+      const ownedByUser = await isInspectionOwnedByUser(admin, inspection.property_id, org.userId)
+      if (!ownedByUser) {
+        return jsonError('Besiktningen tillhör inte din organisation/användare.', 403)
+      }
     }
 
-    const history = await getDeliveryHistory(admin, assignment.id)
+    const ordererEmail = assignment?.customer_email?.trim().toLowerCase() ?? null
+    const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
 
     return NextResponse.json({
       inspectionId: id,
@@ -238,6 +261,7 @@ export async function GET(
         normalizeInspectionStatus(inspection.status) === 'archived'
           ? 'Arkiverad besiktning kan inte skickas.'
           : null,
+      defaultRecipientEmail: ordererEmail,
       ordererEmail,
       history,
     })
@@ -259,6 +283,7 @@ export async function POST(
     const admin = createSupabaseAdminClient()
     const body = (await request.json().catch(() => null)) as
       | {
+          primary_recipient?: unknown
           extra_recipients?: unknown
         }
       | null
@@ -273,24 +298,25 @@ export async function POST(
 
     const assignment = await getAssignmentByInspection(admin, org.orgId, id)
     if (!assignment) {
-      return jsonError(
-        'Besiktningen saknar kopplad uppdragsbekräftelse. Beställare måste finnas innan utskick.',
-        400
-      )
+      const ownedByUser = await isInspectionOwnedByUser(admin, inspection.property_id, org.userId)
+      if (!ownedByUser) {
+        return jsonError('Besiktningen tillhör inte din organisation/användare.', 403)
+      }
     }
 
-    const ordererEmail = assignment.customer_email?.trim().toLowerCase() ?? ''
-    if (!ordererEmail) {
-      return jsonError('Beställarens e-post saknas i uppdragsbekräftelsen.', 400)
+    const fallbackOrdererEmail = assignment?.customer_email?.trim().toLowerCase() ?? null
+    const primaryRecipient = parsePrimaryRecipient(body?.primary_recipient, fallbackOrdererEmail)
+    if (!primaryRecipient) {
+      return jsonError('Ange en giltig huvudmottagare.', 400)
     }
 
-    const propertyId = assignment.property_id ?? inspection.property_id
+    const propertyId = assignment?.property_id ?? inspection.property_id
     if (!propertyId) {
       return jsonError('Besiktningen saknar kopplad fastighet.', 400)
     }
 
-    const extraRecipients = parseExtraRecipients(body?.extra_recipients, ordererEmail)
-    const recipients = [ordererEmail, ...extraRecipients]
+    const extraRecipients = parseExtraRecipients(body?.extra_recipients, primaryRecipient)
+    const recipients = [primaryRecipient, ...extraRecipients]
 
     const reportUrl = `${buildOrigin(request)}/utlatande/${propertyId}/${id}?embed=1&pdf=1`
     const pdfBuffer = await renderPreviewPdf({
@@ -308,7 +334,7 @@ export async function POST(
       .insert({
         org_id: org.orgId,
         inspection_id: id,
-        assignment_id: assignment.id,
+        assignment_id: assignment?.id ?? null,
         token_hash: tokenHash,
         pdf_base64: pdfBase64,
         pdf_sha256: pdfSha256,
@@ -323,24 +349,26 @@ export async function POST(
 
     const linkUrl = `${resolvePublicBaseUrl(request)}/api/reports/public/${token}`
     const fromAddress = getMailFromAddress()
-    const responsibleProfile = await getProfileContact(assignment.responsible_profile_id)
+    const responsibleProfile = await getProfileContact(
+      assignment?.responsible_profile_id ?? org.userId
+    )
     const replyToEmail = responsibleProfile?.email?.trim() || null
     const emailContent = buildInspectionReportDeliveryEmail({
       orgName: org.orgName,
-      customerName: assignment.customer_name,
-      propertyAddress: assignment.property_address ?? assignment.preliminary_address,
-      inspectionDate: assignment.preferred_date,
+      customerName: assignment?.customer_name ?? null,
+      propertyAddress: assignment?.property_address ?? assignment?.preliminary_address ?? null,
+      inspectionDate: assignment?.preferred_date ?? null,
       detailsUrl: linkUrl,
     })
 
     const failedRecipients: Array<{ email: string; error: string }> = []
     const sentRecipients: string[] = []
-    let ordererSent = false
+    let primarySent = false
 
     for (const recipient of recipients) {
       const messageId = await createOutboundMessage(admin, {
         orgId: org.orgId,
-        assignmentId: assignment.id,
+        assignmentId: assignment?.id ?? null,
         createdBy: org.userId,
         recipientEmail: recipient,
         subject: emailContent.subject,
@@ -372,10 +400,9 @@ export async function POST(
         })
 
         sentRecipients.push(recipient)
-        if (recipient === ordererEmail) ordererSent = true
+        if (recipient === primaryRecipient) primarySent = true
       } catch (sendError) {
-        const message =
-          sendError instanceof Error ? sendError.message : 'Okänt fel vid mejlutskick.'
+        const message = sendError instanceof Error ? sendError.message : 'Okänt fel vid mejlutskick.'
         failedRecipients.push({ email: recipient, error: message })
 
         await updateOutboundMessage(admin, messageId, {
@@ -383,8 +410,8 @@ export async function POST(
           error_message: message,
         })
 
-        if (recipient === ordererEmail) {
-          return jsonError('Kunde inte skicka till beställaren.', 502, {
+        if (recipient === primaryRecipient) {
+          return jsonError('Kunde inte skicka till huvudmottagaren.', 502, {
             failedRecipients,
             sentRecipients,
           })
@@ -392,7 +419,7 @@ export async function POST(
       }
     }
 
-    if (ordererSent && inspectionStatus !== 'completed') {
+    if (primarySent && inspectionStatus !== 'completed') {
       const { error: updateInspectionError } = await admin
         .from('inspections')
         .update({ status: 'completed' })
@@ -403,14 +430,16 @@ export async function POST(
       }
     }
 
-    const history = await getDeliveryHistory(admin, assignment.id)
+    const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
 
     return NextResponse.json({
       inspectionId: id,
-      inspectionStatus: ordererSent ? 'completed' : inspectionStatus,
+      inspectionStatus: primarySent ? 'completed' : inspectionStatus,
       deliveryMode: 'link_pdf',
       publicLink: linkUrl,
-      ordererEmail,
+      primaryRecipientEmail: primaryRecipient,
+      defaultRecipientEmail: fallbackOrdererEmail,
+      ordererEmail: fallbackOrdererEmail,
       sentRecipients,
       failedRecipients,
       history,
@@ -433,3 +462,4 @@ export async function POST(
     return jsonError(message || 'Kunde inte skicka utlåtandet.', 500)
   }
 }
+
