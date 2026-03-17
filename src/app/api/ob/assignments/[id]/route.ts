@@ -48,10 +48,10 @@ export async function GET(
 
     return NextResponse.json({ assignment, addonOrders })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okänt fel.'
+    const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
-    return jsonError('Kunde inte hämta uppdrag.', 500)
+    return jsonError('Kunde inte hÃ¤mta uppdrag.', 500)
   }
 }
 
@@ -64,12 +64,22 @@ export async function PATCH(
     const org = await requireOrgContext()
     const existing = await getAssignmentById(org.orgId, id)
     if (!existing) return jsonError('Uppdraget hittades inte.', 404)
-    if (existing.status === 'ordered' || existing.status === 'booked') {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const requestedStatusRaw = safeString(body.status)
+    const requestedStatus = requestedStatusRaw ? requestedStatusRaw.toLowerCase() : null
+    const bodyKeys = Object.keys(body)
+    const isStatusOnlyPatch = bodyKeys.length === 1 && bodyKeys[0] === 'status'
+    const allowOrderedToBookedTransition =
+      existing.status === 'ordered' &&
+      requestedStatus === 'booked' &&
+      isStatusOnlyPatch
+
+    if (
+      (existing.status === 'ordered' || existing.status === 'booked') &&
+      !allowOrderedToBookedTransition
+    ) {
       return jsonError('Beställd eller bokad uppdragsbekräftelse är låst för redigering.', 409)
     }
-
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
-
     const patch: Parameters<typeof updateAssignmentById>[0]['patch'] = {}
 
     const customerEmail = safeString(body.customer_email ?? body.customerEmail)
@@ -223,7 +233,7 @@ export async function PATCH(
 
     return NextResponse.json({ assignment })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okänt fel.'
+    const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     return jsonError('Kunde inte uppdatera uppdrag.', 500)

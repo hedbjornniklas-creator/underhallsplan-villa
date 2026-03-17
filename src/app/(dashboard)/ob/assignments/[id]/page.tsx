@@ -480,13 +480,7 @@ export default function AssignmentDetailsPage() {
               <h1 className="text-2xl font-semibold text-white drop-shadow-sm">Uppdragsbekräftelse</h1>
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 <span className="px-2 text-xs font-medium text-white/95">
-                  {isAcceptedLocked
-                    ? 'Låst'
-                    : saveState === 'saving'
-                      ? 'Sparar...'
-                      : saveState === 'saved'
-                        ? 'Sparat'
-                        : ''}
+                  {saveState === 'saving' ? 'Sparar...' : saveState === 'saved' ? 'Sparat' : ''}
                 </span>
                 <button
                   type="button"
@@ -516,7 +510,7 @@ export default function AssignmentDetailsPage() {
                   disabled={!canBook || booking || sending || converting || reissuing || saving || loading}
                   className="rounded-lg border border-emerald-300 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-emerald-500/35 hover:shadow-[0_12px_24px_-12px_rgba(16,185,129,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {booking ? 'Bokar...' : 'Boka uppdrag'}
+                  {booking ? 'Accepterar...' : 'Acceptera uppdrag'}
                 </button>
                 <button
                   type="button"
@@ -524,7 +518,7 @@ export default function AssignmentDetailsPage() {
                   disabled={!canConvert || converting || booking || sending || reissuing || saving || loading}
                   className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-[0_10px_20px_-12px_rgba(79,70,229,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 disabled:cursor-not-allowed disabled:bg-indigo-300"
                 >
-                  {converting ? 'Markerar...' : 'Avklarad'}
+                  {converting ? 'Startar...' : 'Starta besiktning'}
                 </button>
               </div>
             </div>
@@ -540,11 +534,11 @@ export default function AssignmentDetailsPage() {
           ) : null}
           {isBookedLocked ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              Uppdragsbekräftelsen är bokad och låst för redigering. Klicka på Avklarad för att gå vidare.
+              Uppdragsbekräftelsen är bokad och låst för redigering. Klicka på Starta besiktning för att gå vidare.
             </div>
           ) : isOrdered ? (
             <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800">
-              Uppdragsbekräftelsen är beställd och låst för redigering. Klicka på Boka uppdrag eller Skicka om uppdragsbekräftelse.
+              Uppdragsbekräftelsen är beställd och låst för redigering. Klicka på Acceptera uppdrag eller Skicka om uppdragsbekräftelse.
             </div>
           ) : null}
 
