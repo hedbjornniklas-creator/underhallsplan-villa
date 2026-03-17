@@ -64,6 +64,24 @@ type InspectionRow = {
   client_name: string | null
 }
 
+type BookedAssignmentRow = {
+  id: string
+  customer_name: string | null
+  customer_email: string | null
+  property_address: string | null
+  preliminary_address: string | null
+  preferred_date: string | null
+  booked_at: string | null
+}
+
+type BookedAssignmentListItem = {
+  id: string
+  customer: string | null
+  address: string | null
+  preferredDate: string | null
+  bookedAt: string | null
+}
+
 type SnapshotRow = {
   inspection_id: string
   address: string | null
@@ -141,6 +159,14 @@ function getStatusLabel(status: string | null) {
       return status ?? 'Ok\u00e4nd'
   }
 }
+
+function formatDate(raw: string | null) {
+  if (!raw) return '-'
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return raw
+  return date.toLocaleDateString('sv-SE')
+}
+
 function cardShell(children: React.ReactNode, accent = 'from-indigo-500 to-sky-400') {
   return (
     <article className="group relative aspect-square h-full overflow-hidden rounded-2xl border border-white/40 bg-white/90 p-3 shadow-2xl ring-1 ring-black/5 backdrop-blur-md transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-[0_30px_70px_-26px_rgba(15,23,42,0.65)]">
@@ -164,9 +190,10 @@ function InspectionsListCard({
     <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-2">
       <Link
         href="/inspections"
-        className="w-fit text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-600 underline-offset-2 transition hover:text-indigo-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
+        className="inline-flex w-fit items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-600 underline-offset-2 transition hover:text-indigo-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
       >
         Mina besiktningar
+        <ArrowRight size={11} aria-hidden="true" />
       </Link>
 
       {inspectionsLoading ? (
@@ -204,7 +231,15 @@ function InspectionsListCard({
   )
 }
 
-function CreateInspectionCard() {
+function CreateInspectionCard({
+  bookedAssignments,
+  bookedAssignmentsLoading,
+  bookedAssignmentsError,
+}: {
+  bookedAssignments: BookedAssignmentListItem[]
+  bookedAssignmentsLoading: boolean
+  bookedAssignmentsError: string | null
+}) {
   const router = useRouter()
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -327,7 +362,7 @@ function CreateInspectionCard() {
       router.push(`/properties/${sourceProperty.id}/ob/${inspectionData.id}`)
     } catch (error) {
       console.error('Could not create inspection from scratch:', error)
-      setCreateError('Kunde inte skapa besiktning fr\u00e5n scratch.')
+      setCreateError('Kunde inte skapa ny tom besiktning.')
     } finally {
       setCreating(false)
     }
@@ -336,24 +371,48 @@ function CreateInspectionCard() {
   return cardShell(
     <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-3">
       <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-600">
-        Skapa ny besiktning
+        Skapa ny tom besiktning
       </h2>
 
       <section className="mt-2 rounded-md border border-indigo-100 bg-white/90 p-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-700">
-          {'Fr\u00e5n scratch'}
-        </h3>
-        <p className="mt-1 text-[11px] leading-relaxed text-gray-600">
-          Skapar en ny tom besiktning utan vald fastighet.
-        </p>
+        <p className="mt-1 text-[11px] leading-relaxed text-gray-600">Skapar en ny tom besiktning</p>
         <button
           type="button"
           onClick={() => void handleCreateFromScratch()}
           disabled={creating}
           className="mt-2 inline-flex w-full items-center justify-center rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
         >
-          {creating ? 'Skapar...' : 'Skapa besiktning fr\u00e5n scratch'}
+          {creating ? 'Skapar...' : 'Skapa ny tom besiktning'}
         </button>
+      </section>
+
+      <section className="mt-2 flex min-h-0 flex-1 flex-col rounded-md border border-indigo-100 bg-white/90 p-2">
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-600">
+          Bokade uppdragsbekräftelser
+        </h3>
+        {bookedAssignmentsLoading ? (
+          <p className="mt-1 text-[10px] text-gray-500">Laddar bokade uppdragsbekräftelser...</p>
+        ) : bookedAssignmentsError ? (
+          <p className="mt-1 text-[10px] text-rose-700">Kunde inte hämta bokade uppdragsbekräftelser.</p>
+        ) : bookedAssignments.length === 0 ? (
+          <p className="mt-1 text-[10px] text-gray-500">Inga bokade uppdragsbekräftelser.</p>
+        ) : (
+          <ul className="mt-1 min-h-0 flex-1 space-y-1 overflow-auto pr-1">
+            {bookedAssignments.map((assignment) => (
+              <li key={assignment.id} className="rounded-md border border-gray-200 bg-white px-2 py-1">
+                <div className="truncate text-[10px] font-medium text-gray-900">
+                  {assignment.address ?? 'Adress saknas'}
+                </div>
+                <div className="truncate text-[10px] text-gray-600">
+                  {assignment.customer ?? 'Kund saknas'}
+                </div>
+                <div className="mt-0.5 text-[9px] text-indigo-700">
+                  Besiktningsdag: {formatDate(assignment.preferredDate)}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       {createError ? <p className="mt-2 text-[11px] text-rose-700">{createError}</p> : null}
@@ -648,6 +707,9 @@ export default function OverlatelsebesiktningPage() {
   const [inspections, setInspections] = useState<InspectionListItem[]>([])
   const [inspectionsLoading, setInspectionsLoading] = useState(true)
   const [inspectionsError, setInspectionsError] = useState<string | null>(null)
+  const [bookedAssignments, setBookedAssignments] = useState<BookedAssignmentListItem[]>([])
+  const [bookedAssignmentsLoading, setBookedAssignmentsLoading] = useState(true)
+  const [bookedAssignmentsError, setBookedAssignmentsError] = useState<string | null>(null)
   const [profileInfo, setProfileInfo] = useState<ProfileCardInfo | null>(null)
 
   useEffect(() => {
@@ -657,6 +719,8 @@ export default function OverlatelsebesiktningPage() {
       try {
         setInspectionsLoading(true)
         setInspectionsError(null)
+        setBookedAssignmentsLoading(true)
+        setBookedAssignmentsError(null)
 
         const {
           data: { user },
@@ -668,12 +732,18 @@ export default function OverlatelsebesiktningPage() {
         if (!user) {
           if (!cancelled) {
             setInspections([])
+            setBookedAssignments([])
             setInspectionsLoading(false)
+            setBookedAssignmentsLoading(false)
           }
           return
         }
 
-        const [{ data: propertyData, error: propertyError }, { data: profileData, error: profileError }] =
+        const [
+          { data: propertyData, error: propertyError },
+          { data: profileData, error: profileError },
+          { data: bookedAssignmentsData, error: bookedAssignmentsLoadError },
+        ] =
           await Promise.all([
             supabase
               .from('properties')
@@ -686,74 +756,99 @@ export default function OverlatelsebesiktningPage() {
               )
               .eq('id', user.id)
               .maybeSingle(),
+            supabase
+              .from('assignments')
+              .select(
+                'id,customer_name,customer_email,property_address,preliminary_address,preferred_date,booked_at'
+              )
+              .eq('responsible_profile_id', user.id)
+              .eq('status', 'booked')
+              .is('inspection_id', null)
+              .order('booked_at', { ascending: false, nullsFirst: false })
+              .order('accepted_at', { ascending: false, nullsFirst: false })
+              .order('updated_at', { ascending: false })
+              .limit(8),
           ])
 
         if (!profileError && profileData && !cancelled) {
           setProfileInfo(profileData as ProfileCardInfo)
         }
 
+        if (bookedAssignmentsLoadError) {
+          console.error('Could not load booked assignments for create card:', bookedAssignmentsLoadError)
+          if (!cancelled) setBookedAssignmentsError('Kunde inte hämta bokade uppdragsbekräftelser.')
+        } else if (!cancelled) {
+          const mappedBookedAssignments = ((bookedAssignmentsData ?? []) as BookedAssignmentRow[]).map(
+            (assignment) => ({
+              id: assignment.id,
+              customer: assignment.customer_name ?? assignment.customer_email ?? null,
+              address: assignment.property_address ?? assignment.preliminary_address ?? null,
+              preferredDate: assignment.preferred_date ?? null,
+              bookedAt: assignment.booked_at ?? null,
+            })
+          )
+          setBookedAssignments(mappedBookedAssignments)
+        }
+
         if (propertyError) throw propertyError
 
         const properties = (propertyData ?? []) as PropertyRow[]
+        let mapped: InspectionListItem[] = []
+        if (properties.length > 0) {
+          const propertyMap = new Map(properties.map((property) => [property.id, property]))
+          const propertyIds = properties.map((property) => property.id)
 
-        if (!properties.length) {
-          if (!cancelled) {
-            setInspections([])
-            setInspectionsLoading(false)
+          const { data: inspectionData, error: inspectionError } = await supabase
+            .from('inspections')
+            .select('id,property_id,status,client_name')
+            .in('property_id', propertyIds)
+            .order('date', { ascending: false, nullsFirst: false })
+            .order('created_at', { ascending: false })
+            .limit(8)
+
+          if (inspectionError) throw inspectionError
+
+          const rows = (inspectionData ?? []) as InspectionRow[]
+          const inspectionIds = rows.map((inspection) => inspection.id)
+          const snapshotClient = supabase as unknown as ObSnapshotClient
+          const { data: snapshotData, error: snapshotError } =
+            inspectionIds.length > 0
+              ? await snapshotClient
+                  .from('ob_property_snapshot')
+                  .select('inspection_id,address,client_name')
+                  .in('inspection_id', inspectionIds)
+              : { data: [], error: null }
+
+          if (snapshotError) {
+            console.error('Could not load OB snapshots for card list:', snapshotError)
           }
-          return
+
+          const snapshotMap = new Map(
+            ((snapshotData ?? []) as SnapshotRow[]).map((snapshot) => [snapshot.inspection_id, snapshot])
+          )
+
+          mapped = rows.map((inspection) => {
+            const property = propertyMap.get(inspection.property_id)
+            const snapshot = snapshotMap.get(inspection.id)
+            return {
+              id: inspection.id,
+              address: snapshot?.address ?? property?.address ?? null,
+              customer: inspection.client_name ?? snapshot?.client_name ?? property?.client_name ?? null,
+              status: inspection.status,
+              href: `/properties/${inspection.property_id}/ob/${inspection.id}`,
+            }
+          })
         }
-
-        const propertyMap = new Map(properties.map((property) => [property.id, property]))
-        const propertyIds = properties.map((property) => property.id)
-
-        const { data: inspectionData, error: inspectionError } = await supabase
-          .from('inspections')
-          .select('id,property_id,status,client_name')
-          .in('property_id', propertyIds)
-          .order('date', { ascending: false, nullsFirst: false })
-          .order('created_at', { ascending: false })
-          .limit(8)
-
-        if (inspectionError) throw inspectionError
-
-        const rows = (inspectionData ?? []) as InspectionRow[]
-        const inspectionIds = rows.map((inspection) => inspection.id)
-        const snapshotClient = supabase as unknown as ObSnapshotClient
-        const { data: snapshotData, error: snapshotError } =
-          inspectionIds.length > 0
-            ? await snapshotClient
-                .from('ob_property_snapshot')
-                .select('inspection_id,address,client_name')
-                .in('inspection_id', inspectionIds)
-            : { data: [], error: null }
-
-        if (snapshotError) {
-          console.error('Could not load OB snapshots for card list:', snapshotError)
-        }
-
-        const snapshotMap = new Map(
-          ((snapshotData ?? []) as SnapshotRow[]).map((snapshot) => [snapshot.inspection_id, snapshot])
-        )
-
-        const mapped: InspectionListItem[] = rows.map((inspection) => {
-          const property = propertyMap.get(inspection.property_id)
-          const snapshot = snapshotMap.get(inspection.id)
-          return {
-            id: inspection.id,
-            address: snapshot?.address ?? property?.address ?? null,
-            customer: inspection.client_name ?? snapshot?.client_name ?? property?.client_name ?? null,
-            status: inspection.status,
-            href: `/properties/${inspection.property_id}/ob/${inspection.id}`,
-          }
-        })
 
         if (!cancelled) setInspections(mapped)
       } catch (error) {
         console.error('Could not load module data:', error)
         if (!cancelled) setInspectionsError('Kunde inte h\u00e4mta besiktningar.')
       } finally {
-        if (!cancelled) setInspectionsLoading(false)
+        if (!cancelled) {
+          setInspectionsLoading(false)
+          setBookedAssignmentsLoading(false)
+        }
       }
     }
 
@@ -801,7 +896,11 @@ export default function OverlatelsebesiktningPage() {
                     inspectionsError={inspectionsError}
                   />
                 ) : module.id === 'create' ? (
-                  <CreateInspectionCard />
+                  <CreateInspectionCard
+                    bookedAssignments={bookedAssignments}
+                    bookedAssignmentsLoading={bookedAssignmentsLoading}
+                    bookedAssignmentsError={bookedAssignmentsError}
+                  />
                 ) : module.id === 'assignments' ? (
                   <AssignmentConfirmationsCard />
                 ) : (
