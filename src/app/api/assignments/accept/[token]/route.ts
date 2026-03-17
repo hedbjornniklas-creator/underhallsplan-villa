@@ -6,7 +6,7 @@ import {
   getProfileContact,
   listAddonOffersForProfile,
   resolvePublicAssignmentByToken,
-  sendAssignmentOrderReceipt,
+  sendAssignmentAcceptedNotice,
 } from '@/lib/assignments/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
@@ -370,7 +370,7 @@ export async function POST(
       const updatedAssignment = await getAssignmentById(link.org_id, assignment.id)
       if (updatedAssignment) {
         const responsibleProfile = await getProfileContact(updatedAssignment.responsible_profile_id)
-        await sendAssignmentOrderReceipt({
+        await sendAssignmentAcceptedNotice({
           assignment: updatedAssignment,
           orgName: null,
           requestedByUserId: updatedAssignment.responsible_profile_id,

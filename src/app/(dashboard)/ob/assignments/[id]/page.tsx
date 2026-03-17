@@ -398,8 +398,13 @@ export default function AssignmentDetailsPage() {
         throw new Error(jsonToErrorMessage(payload, 'Kunde inte boka uppdraget.'))
       }
 
+      const typedPayload = payload as { bookingEmailSent?: boolean } | null
       await loadAssignment()
-      setSuccess('Uppdraget är nu bokat.')
+      if (typedPayload?.bookingEmailSent === false) {
+        setSuccess('Uppdraget är nu bokat. Mejlet kunde inte skickas automatiskt, använd Skicka kopia.')
+      } else {
+        setSuccess('Uppdraget är nu bokat och bekräftelsemejl har skickats.')
+      }
     } catch (bookError) {
       setError(bookError instanceof Error ? bookError.message : 'Kunde inte boka uppdraget.')
     } finally {
@@ -486,6 +491,11 @@ export default function AssignmentDetailsPage() {
                   type="button"
                   onClick={() => void handleSend()}
                   disabled={!canSend || sending || booking || converting || reissuing || saving || loading}
+                  title={
+                    canSendCopy
+                      ? 'Skickar en kopia av bekräftelsen till kunden.'
+                      : 'Skickar uppdragsbekräftelsen till kunden för godkännande.'
+                  }
                   className="rounded-lg border border-white/60 bg-white/15 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-white/25 hover:shadow-[0_10px_20px_-14px_rgba(255,255,255,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {sending
@@ -499,6 +509,7 @@ export default function AssignmentDetailsPage() {
                     type="button"
                     onClick={() => void handleReissue()}
                     disabled={reissuing || sending || booking || converting || saving || loading}
+                    title="Skapar en ny utkastversion och skickar om för nytt godkännande."
                     className="rounded-lg border border-amber-200 bg-amber-500/20 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-amber-500/30 hover:shadow-[0_10px_20px_-12px_rgba(245,158,11,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {reissuing ? 'Skapar ny...' : 'Skicka om uppdragsbekräftelse'}
@@ -508,6 +519,7 @@ export default function AssignmentDetailsPage() {
                   type="button"
                   onClick={() => void handleBook()}
                   disabled={!canBook || booking || sending || converting || reissuing || saving || loading}
+                  title="Bekräftar uppdraget som bokat och skickar full beställningsbekräftelse."
                   className="rounded-lg border border-emerald-300 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-emerald-500/35 hover:shadow-[0_12px_24px_-12px_rgba(16,185,129,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {booking ? 'Accepterar...' : 'Acceptera uppdrag'}
@@ -516,6 +528,7 @@ export default function AssignmentDetailsPage() {
                   type="button"
                   onClick={() => void handleConvert()}
                   disabled={!canConvert || converting || booking || sending || reissuing || saving || loading}
+                  title="Startar besiktningen och öppnar besiktningsvyn."
                   className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-[0_10px_20px_-12px_rgba(79,70,229,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 disabled:cursor-not-allowed disabled:bg-indigo-300"
                 >
                   {converting ? 'Startar...' : 'Starta besiktning'}
@@ -782,3 +795,4 @@ function ReadOnly({ label, value }: { label: string; value: string }) {
     </div>
   )
 }
+

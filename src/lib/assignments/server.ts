@@ -4,6 +4,7 @@ import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import {
   buildAssignmentConfirmationEmail,
+  buildAssignmentAcceptedNoticeEmail,
   buildAssignmentOrderReceiptEmail,
 } from '@/lib/assignments/emailTemplates'
 import {
@@ -1133,6 +1134,79 @@ export async function sendAssignmentOrderReceipt(input: {
       .eq('org_id', input.assignment.org_id)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'OkÃ¤nt fel vid mejlutskick.'
+    await admin
+      .from('outbound_messages')
+      .update({
+        status: 'failed',
+        error_message: message,
+      })
+      .eq('id', messageData.id)
+
+    throw new Error(message)
+  }
+}
+
+export async function sendAssignmentAcceptedNotice(input: {
+  assignment: AssignmentDetails
+  orgName: string | null
+  requestedByUserId?: string | null
+  responsibleEmail: string | null
+}): Promise<void> {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  if (!input.assignment.accepted_at) {
+    throw new Error('ASSIGNMENT_NOT_ACCEPTED')
+  }
+
+  const { subject, html, text } = buildAssignmentAcceptedNoticeEmail({
+    assignment: input.assignment,
+    orgName: input.orgName,
+    acceptedAt: input.assignment.accepted_at,
+  })
+
+  const fromAddress = getMailFromAddress()
+  const createdBy = input.requestedByUserId ?? input.assignment.responsible_profile_id ?? null
+
+  const { data: messageData, error: messageError } = await admin
+    .from('outbound_messages')
+    .insert({
+      org_id: input.assignment.org_id,
+      assignment_id: input.assignment.id,
+      channel: 'email',
+      recipient_email: input.assignment.customer_email,
+      subject,
+      template_key: 'assignment_accept_notice',
+      status: 'pending',
+      created_by: createdBy,
+      reply_to_email: input.responsibleEmail ?? null,
+    })
+    .select('id')
+    .single()
+
+  if (messageError || !messageData) {
+    throw new Error(messageError?.message ?? 'Kunde inte skapa mejllogg.')
+  }
+
+  try {
+    const sendResult = await sendAssignmentEmail({
+      to: input.assignment.customer_email,
+      from: fromAddress,
+      replyTo: input.responsibleEmail ?? null,
+      subject,
+      html,
+      text,
+    })
+
+    await admin
+      .from('outbound_messages')
+      .update({
+        status: 'sent',
+        provider: sendResult.provider,
+        provider_message_id: sendResult.providerMessageId,
+        sent_at: new Date().toISOString(),
+      })
+      .eq('id', messageData.id)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Okänt fel vid mejlutskick.'
     await admin
       .from('outbound_messages')
       .update({

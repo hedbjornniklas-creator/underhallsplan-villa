@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import {
   getAssignmentById,
+  getProfileContact,
   listAssignmentAddonOrders,
   requireOrgContext,
+  sendAssignmentOrderReceipt,
   type AssignmentStatus,
   type AssignmentType,
   updateAssignmentById,
@@ -224,14 +226,34 @@ export async function PATCH(
       return jsonError('Ingen giltig uppdatering skickades.', 400)
     }
 
+    const shouldSendBookingReceipt = existing.status === 'ordered' && patch.status === 'booked'
+
     const assignment = await updateAssignmentById({
       orgId: org.orgId,
       assignmentId: id,
       updatedBy: org.userId,
       patch,
     })
+    let bookingEmailSent = false
+    if (shouldSendBookingReceipt) {
+      try {
+        const responsibleProfile = await getProfileContact(assignment.responsible_profile_id)
+        await sendAssignmentOrderReceipt({
+          assignment,
+          orgName: org.orgName,
+          requestedByUserId: org.userId,
+          responsibleEmail: responsibleProfile?.email ?? null,
+        })
+        bookingEmailSent = true
+      } catch (mailError) {
+        console.error('[assignments.patch] failed to send booking receipt', {
+          assignmentId: id,
+          error: mailError instanceof Error ? mailError.message : String(mailError),
+        })
+      }
+    }
 
-    return NextResponse.json({ assignment })
+    return NextResponse.json({ assignment, bookingEmailSent })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
