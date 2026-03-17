@@ -2,11 +2,10 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Plus } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import Protected from '@/components/Protected'
-import DeleteConfirmOverlay from '@/components/ui/DeleteConfirmOverlay'
 
 type AssignmentItem = {
   id: string
@@ -56,8 +55,6 @@ type SavedListView = {
   showCancelled: boolean
 }
 
-type ToastState = { kind: 'success' | 'error'; message: string }
-
 const STORAGE_KEY = 'ob:assignments:list:view:v1'
 const DEFAULT_PAGE_SIZE = 25
 const PAGE_SIZE_OPTIONS = [10, 25, 50]
@@ -69,9 +66,9 @@ const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'sent', label: 'Skickad' },
   { key: 'ordered', label: 'Godkänd' },
   { key: 'booked', label: 'Bokad' },
-  { key: 'completed', label: 'Avklarad' },
+  { key: 'completed', label: 'Klar' },
   { key: 'cancelled', label: 'Makulerad' },
-  { key: 'expired', label: 'Utgången' },
+  { key: 'expired', label: 'Utgången länk' },
 ]
 
 function getStatusLabel(status: AssignmentItem['status']) {
@@ -81,11 +78,11 @@ function getStatusLabel(status: AssignmentItem['status']) {
     case 'booked':
       return 'Bokad'
     case 'completed':
-      return 'Avklarad'
+      return 'Klar'
     case 'sent':
       return 'Skickad'
     case 'expired':
-      return 'Utgången'
+      return 'Utgången länk'
     case 'cancelled':
       return 'Makulerad'
     default:
@@ -125,19 +122,87 @@ function getStatusSortRank(status: AssignmentItem['status']) {
 function getStatusRowClass(status: AssignmentItem['status']) {
   switch (status) {
     case 'draft':
-      return 'bg-amber-50/60 hover:bg-amber-100/70 focus-visible:bg-amber-100/80'
+      return 'bg-amber-200/65 hover:bg-amber-300/75 focus-visible:bg-amber-300/85'
     case 'sent':
-      return 'bg-indigo-50/60 hover:bg-indigo-100/70 focus-visible:bg-indigo-100/80'
+      return 'bg-sky-200/65 hover:bg-sky-300/75 focus-visible:bg-sky-300/85'
     case 'ordered':
-      return 'bg-violet-50/60 hover:bg-violet-100/70 focus-visible:bg-violet-100/80'
+      return 'bg-violet-200/65 hover:bg-violet-300/75 focus-visible:bg-violet-300/85'
     case 'booked':
-      return 'bg-emerald-50/60 hover:bg-emerald-100/70 focus-visible:bg-emerald-100/80'
+      return 'bg-emerald-200/65 hover:bg-emerald-300/75 focus-visible:bg-emerald-300/85'
     case 'completed':
-      return 'bg-sky-50/60 hover:bg-sky-100/70 focus-visible:bg-sky-100/80'
+      return 'bg-teal-200/65 hover:bg-teal-300/75 focus-visible:bg-teal-300/85'
     case 'cancelled':
-      return 'bg-rose-50/60 hover:bg-rose-100/70 focus-visible:bg-rose-100/80'
+      return 'bg-rose-200/65 hover:bg-rose-300/75 focus-visible:bg-rose-300/85'
     default:
-      return 'bg-slate-50/60 hover:bg-slate-100/70 focus-visible:bg-slate-100/80'
+      return 'bg-slate-300/55 hover:bg-slate-300/70 focus-visible:bg-slate-300/80'
+  }
+}
+
+type StatusTabStyle = {
+  inactive: string
+  active: string
+  countInactive: string
+  countActive: string
+}
+
+function getStatusTabStyle(key: StatusFilter): StatusTabStyle {
+  switch (key) {
+    case 'draft':
+      return {
+        inactive: 'border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200',
+        active: 'border-amber-700 bg-amber-700 text-white',
+        countInactive: 'bg-amber-200 text-amber-900',
+        countActive: 'bg-white/20 text-white',
+      }
+    case 'sent':
+      return {
+        inactive: 'border-sky-300 bg-sky-100 text-sky-900 hover:bg-sky-200',
+        active: 'border-sky-700 bg-sky-700 text-white',
+        countInactive: 'bg-sky-200 text-sky-900',
+        countActive: 'bg-white/20 text-white',
+      }
+    case 'ordered':
+      return {
+        inactive: 'border-violet-300 bg-violet-100 text-violet-900 hover:bg-violet-200',
+        active: 'border-violet-700 bg-violet-700 text-white',
+        countInactive: 'bg-violet-200 text-violet-900',
+        countActive: 'bg-white/20 text-white',
+      }
+    case 'booked':
+      return {
+        inactive: 'border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-200',
+        active: 'border-emerald-700 bg-emerald-700 text-white',
+        countInactive: 'bg-emerald-200 text-emerald-900',
+        countActive: 'bg-white/20 text-white',
+      }
+    case 'completed':
+      return {
+        inactive: 'border-teal-300 bg-teal-100 text-teal-900 hover:bg-teal-200',
+        active: 'border-teal-700 bg-teal-700 text-white',
+        countInactive: 'bg-teal-200 text-teal-900',
+        countActive: 'bg-white/20 text-white',
+      }
+    case 'cancelled':
+      return {
+        inactive: 'border-rose-300 bg-rose-100 text-rose-900 hover:bg-rose-200',
+        active: 'border-rose-700 bg-rose-700 text-white',
+        countInactive: 'bg-rose-200 text-rose-900',
+        countActive: 'bg-white/20 text-white',
+      }
+    case 'expired':
+      return {
+        inactive: 'border-slate-400 bg-slate-200 text-slate-900 hover:bg-slate-300',
+        active: 'border-slate-700 bg-slate-700 text-white',
+        countInactive: 'bg-slate-300 text-slate-900',
+        countActive: 'bg-white/20 text-white',
+      }
+    default:
+      return {
+        inactive: 'border-indigo-300 bg-indigo-100 text-indigo-900 hover:bg-indigo-200',
+        active: 'border-indigo-700 bg-indigo-700 text-white',
+        countInactive: 'bg-indigo-200 text-indigo-900',
+        countActive: 'bg-white/20 text-white',
+      }
   }
 }
 
@@ -172,9 +237,6 @@ export default function ObAssignmentsPage() {
   const [showCancelled, setShowCancelled] = useState(false)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [currentPage, setCurrentPage] = useState(1)
-  const [busyId, setBusyId] = useState<string | null>(null)
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
-  const [toast, setToast] = useState<ToastState | null>(null)
 
   const loadAssignments = async () => {
     try {
@@ -381,51 +443,9 @@ export default function ObAssignmentsPage() {
     setSortDirection('asc')
   }
 
-  const handleDelete = async (id: string) => {
-    try {
-      setBusyId(id)
-      setError(null)
-      const response = await fetch(`/api/ob/assignments/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'cancelled' }),
-      })
-      const body = (await response.json().catch(() => ({}))) as { error?: string }
-      if (!response.ok) {
-        throw new Error(body.error ?? 'Kunde inte radera uppdragsbekräftelsen.')
-      }
-      await loadAssignments()
-    } catch (deleteError) {
-      const message =
-        deleteError instanceof Error
-          ? deleteError.message
-          : 'Kunde inte radera uppdragsbekräftelsen.'
-      setError(message)
-      throw new Error(message)
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  const handleDeleteConfirm = async () => {
-    if (!deleteTargetId) return
-    await handleDelete(deleteTargetId)
-  }
-
   const openAssignment = (assignmentId: string) => {
     router.push(`/ob/assignments/${assignmentId}`)
   }
-
-  const activeDeleteTarget = useMemo(
-    () => items.find((item) => item.id === deleteTargetId) ?? null,
-    [deleteTargetId, items]
-  )
-
-  useEffect(() => {
-    if (!toast) return
-    const timer = window.setTimeout(() => setToast(null), 3200)
-    return () => window.clearTimeout(timer)
-  }, [toast])
 
   return (
     <Protected>
@@ -447,7 +467,7 @@ export default function ObAssignmentsPage() {
                   href="/ob"
                   aria-label="BesiktApp startsida"
                   title="Till BesiktApp"
-                  className="inline-flex items-center rounded-md border border-white/40 bg-white/10 px-2 py-1 transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                  className="inline-flex items-center rounded-sm transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
                 >
                   <Image
                     src="/report-assets/BesiktApp.png"
@@ -473,30 +493,32 @@ export default function ObAssignmentsPage() {
                 <button
                   type="button"
                   onClick={() => router.push('/ob/assignments/new')}
-                  aria-label="Skapa tom uppdragsbekräftelse"
-                  title="Skapa tom uppdragsbekräftelse"
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                  aria-label="Ny uppdragsbekräftelse"
+                  title="Ny uppdragsbekräftelse"
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/60 bg-white/15 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
                 >
-                  <Plus size={16} strokeWidth={2.2} />
+                  <Plus size={14} strokeWidth={2.3} />
+                  Ny uppdragsbekräftelse
                 </button>
               </div>
             </div>
           </header>
 
           <section className="rounded-xl border border-white/30 bg-white/90 p-2 shadow-sm backdrop-blur md:p-3">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <div className="min-w-[165px] flex-1 lg:w-[270px] lg:flex-none">
+            <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-0.5">
+              <div className="w-[210px] shrink-0">
                 <input
                   type="text"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Sök på adress, kund, mejl eller status"
-                  className="w-full rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
               </div>
 
               {statusTabs.map((tab) => {
                 const active = statusFilter === tab.key
+                const style = getStatusTabStyle(tab.key)
                 return (
                   <button
                     key={tab.key}
@@ -504,16 +526,16 @@ export default function ObAssignmentsPage() {
                     onClick={() => setStatusFilter(tab.key)}
                     className={
                       active
-                        ? 'inline-flex items-center gap-1.5 rounded-md border border-indigo-600 bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white'
-                        : 'inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50'
+                        ? `inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${style.active}`
+                        : `inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] ${style.inactive}`
                     }
                   >
                     <span>{tab.label}</span>
                     <span
                       className={
                         active
-                          ? 'rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] text-white'
-                          : 'rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600'
+                          ? `rounded-full px-1.5 py-0 text-[10px] ${style.countActive}`
+                          : `rounded-full px-1.5 py-0 text-[10px] ${style.countInactive}`
                       }
                     >
                       {statusCounts[tab.key]}
@@ -522,14 +544,14 @@ export default function ObAssignmentsPage() {
                 )
               })}
 
-              <div className="ml-auto flex items-center gap-1.5">
+              <div className="ml-auto flex shrink-0 items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setShowCancelled((prev) => !prev)}
                   className={
                     showCancelled
-                      ? 'rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs text-rose-700'
-                      : 'rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50'
+                      ? 'rounded-md border border-rose-400 bg-rose-100 px-2 py-0.5 text-[11px] text-rose-900'
+                      : 'rounded-md border border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50'
                   }
                 >
                   {showCancelled ? 'Dölj makulerade' : 'Visa makulerade'}
@@ -541,7 +563,7 @@ export default function ObAssignmentsPage() {
                   id="assignmentsPageSize"
                   value={pageSize}
                   onChange={(event) => setPageSize(Number(event.target.value))}
-                  className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 text-xs text-gray-700"
+                  className="rounded-md border border-gray-300 bg-white px-1.5 py-0.5 text-[11px] text-gray-700"
                 >
                   {PAGE_SIZE_OPTIONS.map((option) => (
                     <option key={option} value={option}>
@@ -554,7 +576,7 @@ export default function ObAssignmentsPage() {
                   <button
                     type="button"
                     onClick={resetView}
-                    className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                    className="rounded-md border border-gray-300 px-2 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50"
                   >
                     Rensa filter
                   </button>
@@ -592,6 +614,15 @@ export default function ObAssignmentsPage() {
                       <th className="px-3 py-2">
                         <button
                           type="button"
+                          onClick={() => handleSort('status')}
+                          className="inline-flex items-center gap-1 font-semibold hover:text-gray-900"
+                        >
+                          Status <span>{getSortIndicator(sortField === 'status', sortDirection)}</span>
+                        </button>
+                      </th>
+                      <th className="px-3 py-2">
+                        <button
+                          type="button"
                           onClick={() => handleSort('customer')}
                           className="inline-flex items-center gap-1 font-semibold hover:text-gray-900"
                         >
@@ -617,13 +648,10 @@ export default function ObAssignmentsPage() {
                           <span>{getSortIndicator(sortField === 'preferred_date', sortDirection)}</span>
                         </button>
                       </th>
-                      <th className="px-3 py-2 text-right">Åtgärder</th>
                     </tr>
                   </thead>
                   <tbody>
                     {pagedRows.map((item) => {
-                      const isBusy = busyId === item.id
-
                       return (
                         <tr
                           key={item.id}
@@ -639,29 +667,15 @@ export default function ObAssignmentsPage() {
                           }}
                           className={`cursor-pointer border-b last:border-b-0 focus-visible:outline-none ${getStatusRowClass(item.status)}`}
                         >
-                          <td className="px-3 py-2 align-top whitespace-nowrap">{formatDate(item.created_at)}</td>
-                          <td className="px-3 py-2 align-top">
+                          <td className="px-3 py-3 align-middle whitespace-nowrap">{formatDate(item.created_at)}</td>
+                          <td className="px-3 py-3 align-middle whitespace-nowrap font-medium text-gray-900">
+                            {getStatusLabel(item.status)}
+                          </td>
+                          <td className="px-3 py-3 align-middle">
                             <div className="text-gray-900">{item.customer_name || '-'}</div>
                           </td>
-                          <td className="px-3 py-2 align-top text-gray-900">{getAddress(item)}</td>
-                          <td className="px-3 py-2 align-top whitespace-nowrap">{formatDate(item.preferred_date)}</td>
-                          <td className="px-3 py-2 align-top">
-                            <div className="flex justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  setDeleteTargetId(item.id)
-                                }}
-                                disabled={isBusy}
-                                aria-label="Radera"
-                                title="Radera"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-rose-300 bg-rose-50 text-rose-700 transition hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                              </button>
-                            </div>
-                          </td>
+                          <td className="px-3 py-3 align-middle text-gray-900">{getAddress(item)}</td>
+                          <td className="px-3 py-3 align-middle whitespace-nowrap">{formatDate(item.preferred_date)}</td>
                         </tr>
                       )
                     })}
@@ -696,34 +710,6 @@ export default function ObAssignmentsPage() {
           ) : null}
         </div>
       </main>
-      <DeleteConfirmOverlay
-        open={Boolean(deleteTargetId)}
-        targetLabel="Uppdragsbekräftelse"
-        targetDetails={
-          activeDeleteTarget
-            ? `${activeDeleteTarget.customer_name ?? activeDeleteTarget.customer_email} • ${formatDate(activeDeleteTarget.created_at)}`
-            : undefined
-        }
-        onClose={() => setDeleteTargetId(null)}
-        onExecute={handleDeleteConfirm}
-        onSuccess={() => setToast({ kind: 'success', message: 'Uppdragsbekräftelsen har makulerats.' })}
-        onError={(message) => setToast({ kind: 'error', message })}
-        abortLabel="Avbryt"
-        executeLabel="Makulera"
-      />
-      {toast ? (
-        <div className="pointer-events-none fixed bottom-4 right-4 z-[95] w-[min(92vw,360px)]">
-          <div
-            className={`rounded-lg border px-3 py-2 text-sm shadow-xl ${
-              toast.kind === 'success'
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                : 'border-rose-200 bg-rose-50 text-rose-700'
-            }`}
-          >
-            {toast.message}
-          </div>
-        </div>
-      ) : null}
     </Protected>
   )
 }
