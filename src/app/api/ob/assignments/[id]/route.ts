@@ -64,8 +64,8 @@ export async function PATCH(
     const org = await requireOrgContext()
     const existing = await getAssignmentById(org.orgId, id)
     if (!existing) return jsonError('Uppdraget hittades inte.', 404)
-    if (existing.status === 'booked') {
-      return jsonError('Bokad uppdragsbekräftelse är låst för redigering.', 409)
+    if (existing.status === 'ordered' || existing.status === 'booked') {
+      return jsonError('Beställd eller bokad uppdragsbekräftelse är låst för redigering.', 409)
     }
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
@@ -229,3 +229,4 @@ export async function PATCH(
     return jsonError('Kunde inte uppdatera uppdrag.', 500)
   }
 }
+

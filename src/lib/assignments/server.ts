@@ -820,6 +820,79 @@ export async function updateAssignmentById(input: {
   return data as AssignmentDetails
 }
 
+export async function createReissuedAssignmentDraft(input: {
+  orgId: string
+  sourceAssignmentId: string
+  createdBy: string
+}): Promise<AssignmentDetails> {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const source = await getAssignmentById(input.orgId, input.sourceAssignmentId)
+
+  if (!source) {
+    throw new Error('ASSIGNMENT_NOT_FOUND')
+  }
+
+  if (source.status !== 'ordered' && source.status !== 'booked') {
+    throw new Error('ASSIGNMENT_REISSUE_NOT_ALLOWED')
+  }
+
+  const draft = await createAssignment({
+    orgId: input.orgId,
+    createdBy: input.createdBy,
+    responsibleProfileId: source.responsible_profile_id,
+    assignmentType: source.assignment_type,
+    customerEmail: source.customer_email,
+    customerName: source.customer_name,
+    customerPhone: source.customer_phone,
+    customerAddress: source.customer_address,
+    preliminaryAddress: source.preliminary_address,
+    propertyAddress: source.property_address,
+    propertyMunicipality: source.property_municipality,
+    propertyOwnerName: source.property_owner_name,
+    cadastralId: source.cadastral_id,
+    ordererRole: source.orderer_role,
+    preferredDate: source.preferred_date,
+    preferredTime: source.preferred_time,
+    priceAmount: source.price_amount,
+    currency: source.currency,
+    notesInternal: source.notes_internal,
+  })
+
+  try {
+    const addonOrders = await listAssignmentAddonOrders({
+      orgId: input.orgId,
+      assignmentId: source.id,
+    })
+
+    if (addonOrders.length > 0) {
+      const payload = addonOrders.map((row) => ({
+        assignment_id: draft.id,
+        org_id: input.orgId,
+        addon_service_id: row.addon_service_id,
+        addon_key: row.addon_key,
+        addon_name_snapshot: row.addon_name_snapshot,
+        price_amount_snapshot: row.price_amount_snapshot,
+        currency_snapshot: row.currency_snapshot,
+      }))
+
+      const { error: addonInsertError } = await (admin as any)
+        .from('assignment_addon_orders')
+        .insert(payload)
+
+      if (addonInsertError) {
+        throw new Error(addonInsertError.message ?? 'Kunde inte kopiera tilläggsuppdrag.')
+      }
+    }
+  } catch (error) {
+    await admin.from('assignments').delete().eq('org_id', input.orgId).eq('id', draft.id)
+    throw error instanceof Error
+      ? error
+      : new Error('Kunde inte skapa ny version av uppdragsbekräftelsen.')
+  }
+
+  return draft
+}
+
 export class AssignmentEmailSendError extends Error {
   acceptUrl: string
 
