@@ -2,8 +2,8 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
-import { Archive, ArrowLeft, ChevronsLeft, Loader2, Plus, Printer, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowLeft, ChevronsLeft, Loader2, Plus, Printer } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -293,46 +293,12 @@ function PrintActionButton({ href }: { href: string }) {
   )
 }
 
-function RowActionButton({
-  icon,
-  title,
-  variant = 'default',
-  disabled = false,
-  onClick,
-}: {
-  icon: ReactNode
-  title: string
-  variant?: 'default' | 'danger'
-  disabled?: boolean
-  onClick: (event: MouseEvent<HTMLButtonElement>) => void
-}) {
-  const variantClass =
-    variant === 'danger'
-      ? 'text-rose-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 focus-visible:ring-rose-500'
-      : 'text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 focus-visible:ring-indigo-500'
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={title}
-      title={title}
-      disabled={disabled}
-      className={`group inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white/95 shadow-sm ring-1 ring-white/80 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-sm ${variantClass}`}
-    >
-      {icon}
-      <span className="sr-only">{title}</span>
-    </button>
-  )
-}
-
 export default function InspectionsPage() {
   const router = useRouter()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mutationError, setMutationError] = useState<string | null>(null)
-  const [mutatingInspectionId, setMutatingInspectionId] = useState<string | null>(null)
   const [inspections, setInspections] = useState<InspectionWithProperty[]>([])
 
   const [search, setSearch] = useState('')
@@ -667,61 +633,6 @@ export default function InspectionsPage() {
     }
   }
 
-  const handleDeleteInspection = async (inspectionId: string) => {
-    const confirmed = window.confirm(
-      'Vill du radera detta utkast? Detta tar bort besiktningen permanent och kan inte ångras.'
-    )
-    if (!confirmed) return
-
-    try {
-      setMutationError(null)
-      setMutatingInspectionId(inspectionId)
-
-      const { error: deleteError } = await supabase.from('inspections').delete().eq('id', inspectionId)
-
-      if (deleteError) throw deleteError
-
-      setInspections((prev) => prev.filter((inspection) => inspection.id !== inspectionId))
-    } catch (deleteError: unknown) {
-      console.error('Could not delete inspection:', deleteError)
-      setMutationError(
-        deleteError instanceof Error ? deleteError.message : 'Kunde inte radera besiktningen.'
-      )
-    } finally {
-      setMutatingInspectionId(null)
-    }
-  }
-
-  const handleArchiveInspection = async (inspectionId: string) => {
-    const confirmed = window.confirm('Vill du arkivera denna besiktning?')
-    if (!confirmed) return
-
-    try {
-      setMutationError(null)
-      setMutatingInspectionId(inspectionId)
-
-      const { error: archiveError } = await supabase
-        .from('inspections')
-        .update({ status: 'archived' })
-        .eq('id', inspectionId)
-
-      if (archiveError) throw archiveError
-
-      setInspections((prev) =>
-        prev.map((inspection) =>
-          inspection.id === inspectionId ? { ...inspection, status: 'archived' } : inspection
-        )
-      )
-    } catch (archiveError: unknown) {
-      console.error('Could not archive inspection:', archiveError)
-      setMutationError(
-        archiveError instanceof Error ? archiveError.message : 'Kunde inte arkivera besiktningen.'
-      )
-    } finally {
-      setMutatingInspectionId(null)
-    }
-  }
-
   return (
     <Protected>
       <main className="relative min-h-full overflow-hidden">
@@ -885,19 +796,19 @@ export default function InspectionsPage() {
                       <th className="px-3 py-2">
                         <button
                           type="button"
-                          onClick={() => handleSort('address')}
+                          onClick={() => handleSort('customer')}
                           className="inline-flex items-center gap-1 font-semibold hover:text-gray-900"
                         >
-                          Adress <span>{getSortIndicator(sortField === 'address', sortDirection)}</span>
+                          Kund <span>{getSortIndicator(sortField === 'customer', sortDirection)}</span>
                         </button>
                       </th>
                       <th className="px-3 py-2">
                         <button
                           type="button"
-                          onClick={() => handleSort('customer')}
+                          onClick={() => handleSort('address')}
                           className="inline-flex items-center gap-1 font-semibold hover:text-gray-900"
                         >
-                          Kund <span>{getSortIndicator(sortField === 'customer', sortDirection)}</span>
+                          Adress <span>{getSortIndicator(sortField === 'address', sortDirection)}</span>
                         </button>
                       </th>
                       <th className="px-3 py-2">
@@ -917,10 +828,6 @@ export default function InspectionsPage() {
                       const dateText = row.date ?? new Date(row.created_at).toLocaleDateString('sv-SE')
                       const customer = getCustomerText(row)
                       const printHref = `/utlatande-v2/${row.property_id}/${row.id}`
-                      const statusBucket = getStatusBucket(row.status)
-                      const isDraft = statusBucket === 'draft'
-                      const isArchived = statusBucket === 'archived'
-                      const isMutating = mutatingInspectionId === row.id
 
                       return (
                         <tr
@@ -941,8 +848,6 @@ export default function InspectionsPage() {
                             <div>{dateText}</div>
                           </td>
 
-                          <td className="px-3 py-2 align-middle">{getAddressText(row)}</td>
-
                           <td className="px-3 py-2 align-middle">
                             <div>{customer}</div>
                             {row.client_contact ? (
@@ -950,48 +855,15 @@ export default function InspectionsPage() {
                             ) : null}
                           </td>
 
+                          <td className="px-3 py-2 align-middle">{getAddressText(row)}</td>
+
                           <td className="px-3 py-2 align-middle whitespace-nowrap font-medium">
                             {getStatusLabel(row.status)}
                           </td>
 
                           <td className="px-3 py-2 align-middle text-right">
-                            <div className="flex items-center justify-end gap-2">
+                            <div className="flex items-center justify-end">
                               <PrintActionButton href={printHref} />
-                              {isDraft ? (
-                                <RowActionButton
-                                  title="Radera utkast"
-                                  variant="danger"
-                                  disabled={isMutating}
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    void handleDeleteInspection(row.id)
-                                  }}
-                                  icon={
-                                    isMutating ? (
-                                      <Loader2 size={15} strokeWidth={1.9} className="animate-spin" />
-                                    ) : (
-                                      <Trash2 size={15} strokeWidth={1.9} />
-                                    )
-                                  }
-                                />
-                              ) : (
-                                <RowActionButton
-                                  title={isArchived ? 'Arkiverad (låst)' : 'Arkivera besiktning'}
-                                  disabled={isArchived || isMutating}
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    if (isArchived) return
-                                    void handleArchiveInspection(row.id)
-                                  }}
-                                  icon={
-                                    isMutating ? (
-                                      <Loader2 size={15} strokeWidth={1.9} className="animate-spin" />
-                                    ) : (
-                                      <Archive size={15} strokeWidth={1.9} />
-                                    )
-                                  }
-                                />
-                              )}
                             </div>
                           </td>
                         </tr>
@@ -1005,10 +877,6 @@ export default function InspectionsPage() {
                 {pagedRows.map((row) => {
                   const dateText = row.date ?? new Date(row.created_at).toLocaleDateString('sv-SE')
                   const printHref = `/utlatande-v2/${row.property_id}/${row.id}`
-                  const statusBucket = getStatusBucket(row.status)
-                  const isDraft = statusBucket === 'draft'
-                  const isArchived = statusBucket === 'archived'
-                  const isMutating = mutatingInspectionId === row.id
 
                   return (
                     <article
@@ -1041,43 +909,8 @@ export default function InspectionsPage() {
                         </div>
                       </div>
 
-                      <div className="mt-3 flex justify-end gap-2">
+                      <div className="mt-3 flex justify-end">
                         <PrintActionButton href={printHref} />
-                        {isDraft ? (
-                          <RowActionButton
-                            title="Radera utkast"
-                            variant="danger"
-                            disabled={isMutating}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              void handleDeleteInspection(row.id)
-                            }}
-                            icon={
-                              isMutating ? (
-                                <Loader2 size={15} strokeWidth={1.9} className="animate-spin" />
-                              ) : (
-                                <Trash2 size={15} strokeWidth={1.9} />
-                              )
-                            }
-                          />
-                        ) : (
-                          <RowActionButton
-                            title={isArchived ? 'Arkiverad (låst)' : 'Arkivera besiktning'}
-                            disabled={isArchived || isMutating}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              if (isArchived) return
-                              void handleArchiveInspection(row.id)
-                            }}
-                            icon={
-                              isMutating ? (
-                                <Loader2 size={15} strokeWidth={1.9} className="animate-spin" />
-                              ) : (
-                                <Archive size={15} strokeWidth={1.9} />
-                              )
-                            }
-                          />
-                        )}
                       </div>
                     </article>
                   )
