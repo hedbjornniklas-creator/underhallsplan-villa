@@ -243,6 +243,9 @@ function CreateInspectionCard({
   const router = useRouter()
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [convertError, setConvertError] = useState<string | null>(null)
+  const [selectedAssignment, setSelectedAssignment] = useState<BookedAssignmentListItem | null>(null)
+  const [convertingAssignmentId, setConvertingAssignmentId] = useState<string | null>(null)
 
   const buildSnapshotPayload = (inspectionId: string, propertyData: PropertySeedRow) => ({
     inspection_id: inspectionId,
@@ -368,6 +371,36 @@ function CreateInspectionCard({
     }
   }
 
+  const handleConvertFromAssignment = async () => {
+    if (!selectedAssignment || convertingAssignmentId) return
+
+    try {
+      setConvertError(null)
+      setConvertingAssignmentId(selectedAssignment.id)
+      const response = await fetch(`/api/ob/assignments/${selectedAssignment.id}/convert`, {
+        method: 'POST',
+      })
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; propertyId?: string; inspectionId?: string }
+        | null
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'Kunde inte starta besiktning från uppdragsbekräftelse.')
+      }
+
+      if (!payload?.propertyId || !payload?.inspectionId) {
+        throw new Error('Konvertering saknar property/inspection-id.')
+      }
+
+      setSelectedAssignment(null)
+      router.push(`/properties/${payload.propertyId}/ob/${payload.inspectionId}`)
+    } catch (error) {
+      setConvertError(error instanceof Error ? error.message : 'Kunde inte starta besiktning.')
+    } finally {
+      setConvertingAssignmentId(null)
+    }
+  }
+
   return cardShell(
     <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-3">
       <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-600">
@@ -399,15 +432,26 @@ function CreateInspectionCard({
           <ul className="mt-1 min-h-0 flex-1 space-y-1 overflow-auto pr-1">
             {bookedAssignments.map((assignment) => (
               <li key={assignment.id} className="rounded-md border border-gray-200 bg-white px-2 py-1">
-                <div className="truncate text-[10px] font-medium text-gray-900">
-                  {assignment.address ?? 'Adress saknas'}
-                </div>
-                <div className="truncate text-[10px] text-gray-600">
-                  {assignment.customer ?? 'Kund saknas'}
-                </div>
-                <div className="mt-0.5 text-[9px] text-indigo-700">
-                  Besiktningsdag: {formatDate(assignment.preferredDate)}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreateError(null)
+                    setConvertError(null)
+                    setSelectedAssignment(assignment)
+                  }}
+                  className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
+                  title="Klicka för att starta besiktning från uppdragsbekräftelsen"
+                >
+                  <div className="truncate text-[10px] font-medium text-gray-900">
+                    {assignment.address ?? 'Adress saknas'}
+                  </div>
+                  <div className="truncate text-[10px] text-gray-600">
+                    {assignment.customer ?? 'Kund saknas'}
+                  </div>
+                  <div className="mt-0.5 text-[9px] text-indigo-700">
+                    Besiktningsdag: {formatDate(assignment.preferredDate)}
+                  </div>
+                </button>
               </li>
             ))}
           </ul>
@@ -415,6 +459,54 @@ function CreateInspectionCard({
       </section>
 
       {createError ? <p className="mt-2 text-[11px] text-rose-700">{createError}</p> : null}
+      {convertError ? <p className="mt-2 text-[11px] text-rose-700">{convertError}</p> : null}
+
+      {selectedAssignment ? (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/55 p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-md rounded-xl border border-indigo-200 bg-white p-4 shadow-xl">
+            <h3 className="text-sm font-semibold text-gray-900">Starta besiktning?</h3>
+            <p className="mt-2 text-xs text-gray-700">
+              Detta skapar en besiktning från uppdragsbekräftelsen och kan inte ångras.
+            </p>
+            <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+              <p className="truncate">
+                <span className="font-medium text-gray-900">Adress:</span>{' '}
+                {selectedAssignment.address ?? 'Adress saknas'}
+              </p>
+              <p className="truncate">
+                <span className="font-medium text-gray-900">Kund:</span>{' '}
+                {selectedAssignment.customer ?? 'Kund saknas'}
+              </p>
+              <p>
+                <span className="font-medium text-gray-900">Besiktningsdag:</span>{' '}
+                {formatDate(selectedAssignment.preferredDate)}
+              </p>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedAssignment(null)}
+                disabled={Boolean(convertingAssignmentId)}
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Avbryt
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConvertFromAssignment()}
+                disabled={Boolean(convertingAssignmentId)}
+                className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+              >
+                {convertingAssignmentId ? 'Startar...' : 'Starta besiktning'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>,
     'from-sky-500 to-indigo-500'
   )
