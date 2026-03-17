@@ -98,9 +98,10 @@ type SavedListView = {
   sortField: SortField
   sortDirection: SortDirection
   pageSize: number
+  showArchived: boolean
 }
 
-const STORAGE_KEY = 'inspections:list:view:v1'
+const STORAGE_KEY = 'inspections:list:view:v2'
 const DEFAULT_PAGE_SIZE = 25
 const PAGE_SIZE_OPTIONS = [10, 25, 50]
 const COLLATOR = new Intl.Collator('sv', { sensitivity: 'base', numeric: true })
@@ -110,7 +111,7 @@ const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'draft', label: 'Utkast' },
   { key: 'ongoing', label: 'Pågående' },
   { key: 'completed', label: 'Klar' },
-  { key: 'archived', label: 'Arkiverad' },
+  { key: 'archived', label: 'Makulerad' },
 ]
 
 const PROPERTY_SNAPSHOT_COLUMNS =
@@ -239,6 +240,19 @@ function getSortIndicator(active: boolean, direction: SortDirection) {
   return direction === 'asc' ? '↑' : '↓'
 }
 
+function getStatusSortRank(status: string | null) {
+  switch (getStatusBucket(status)) {
+    case 'draft':
+      return 0
+    case 'ongoing':
+      return 1
+    case 'completed':
+      return 2
+    default:
+      return 3
+  }
+}
+
 function buildSnapshotPayload(inspectionId: string, propertyData: PropertySeedRow) {
   return {
     inspection_id: inspectionId,
@@ -303,8 +317,9 @@ export default function InspectionsPage() {
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [sortField, setSortField] = useState<SortField>('date')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [sortField, setSortField] = useState<SortField>('status')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [showArchived, setShowArchived] = useState(false)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [currentPage, setCurrentPage] = useState(1)
   const [creatingMode, setCreatingMode] = useState<'scratch' | null>(null)
@@ -326,6 +341,9 @@ export default function InspectionsPage() {
       if (saved.sortDirection === 'asc' || saved.sortDirection === 'desc') {
         setSortDirection(saved.sortDirection)
       }
+      if (typeof saved.showArchived === 'boolean') {
+        setShowArchived(saved.showArchived)
+      }
       if (typeof saved.pageSize === 'number' && PAGE_SIZE_OPTIONS.includes(saved.pageSize)) {
         setPageSize(saved.pageSize)
       }
@@ -341,10 +359,11 @@ export default function InspectionsPage() {
       sortField,
       sortDirection,
       pageSize,
+      showArchived,
     }
 
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  }, [search, statusFilter, sortField, sortDirection, pageSize])
+  }, [search, statusFilter, sortField, sortDirection, pageSize, showArchived])
 
   useEffect(() => {
     const load = async () => {
@@ -434,28 +453,44 @@ export default function InspectionsPage() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [search, statusFilter, sortField, sortDirection, pageSize])
+  }, [search, statusFilter, sortField, sortDirection, pageSize, showArchived])
+
+  const visibleInspections = useMemo(
+    () => inspections.filter((row) => showArchived || getStatusBucket(row.status) !== 'archived'),
+    [inspections, showArchived]
+  )
+
+  useEffect(() => {
+    if (!showArchived && statusFilter === 'archived') {
+      setStatusFilter('all')
+    }
+  }, [showArchived, statusFilter])
+
+  const statusTabs = useMemo(
+    () => STATUS_TABS.filter((tab) => (tab.key === 'archived' ? showArchived : true)),
+    [showArchived]
+  )
 
   const statusCounts = useMemo(() => {
     const counts: Record<StatusFilter, number> = {
-      all: inspections.length,
+      all: visibleInspections.length,
       draft: 0,
       ongoing: 0,
       completed: 0,
       archived: 0,
     }
 
-    for (const row of inspections) {
+    for (const row of visibleInspections) {
       counts[getStatusBucket(row.status)] += 1
     }
 
     return counts
-  }, [inspections])
+  }, [visibleInspections])
 
   const filteredAndSorted = useMemo(() => {
     const q = search.trim().toLowerCase()
 
-    const filtered = inspections.filter((row) => {
+    const filtered = visibleInspections.filter((row) => {
       if (statusFilter !== 'all' && getStatusBucket(row.status) !== statusFilter) {
         return false
       }
@@ -479,19 +514,22 @@ export default function InspectionsPage() {
     return [...filtered].sort((a, b) => {
       let comparison = 0
 
-      if (sortField === 'date') {
+      if (sortField === 'status') {
+        comparison = getStatusSortRank(a.status) - getStatusSortRank(b.status)
+        if (comparison === 0) {
+          comparison = new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        }
+      } else if (sortField === 'date') {
         comparison = getDateValue(a) - getDateValue(b)
       } else if (sortField === 'address') {
         comparison = COLLATOR.compare(getAddressText(a), getAddressText(b))
       } else if (sortField === 'customer') {
         comparison = COLLATOR.compare(getCustomerText(a), getCustomerText(b))
-      } else {
-        comparison = COLLATOR.compare(getStatusLabel(a.status), getStatusLabel(b.status))
       }
 
       return sortDirection === 'asc' ? comparison : -comparison
     })
-  }, [inspections, search, statusFilter, sortField, sortDirection])
+  }, [visibleInspections, search, statusFilter, sortField, sortDirection])
 
   const totalItems = filteredAndSorted.length
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
@@ -511,16 +549,18 @@ export default function InspectionsPage() {
   const hasActiveFilters =
     search.trim().length > 0 ||
     statusFilter !== 'all' ||
-    sortField !== 'date' ||
-    sortDirection !== 'desc' ||
-    pageSize !== DEFAULT_PAGE_SIZE
+    sortField !== 'status' ||
+    sortDirection !== 'asc' ||
+    pageSize !== DEFAULT_PAGE_SIZE ||
+    showArchived
 
   const resetView = () => {
     setSearch('')
     setStatusFilter('all')
-    setSortField('date')
-    setSortDirection('desc')
+    setSortField('status')
+    setSortDirection('asc')
     setPageSize(DEFAULT_PAGE_SIZE)
+    setShowArchived(false)
     setCurrentPage(1)
   }
 
@@ -531,6 +571,10 @@ export default function InspectionsPage() {
     }
 
     setSortField(field)
+    if (field === 'status') {
+      setSortDirection('asc')
+      return
+    }
     setSortDirection(field === 'date' ? 'desc' : 'asc')
   }
 
@@ -702,7 +746,7 @@ export default function InspectionsPage() {
                 />
               </div>
 
-              {STATUS_TABS.map((tab) => {
+              {statusTabs.map((tab) => {
                 const active = statusFilter === tab.key
                 const style = getStatusTabStyle(tab.key)
                 return (
@@ -731,6 +775,17 @@ export default function InspectionsPage() {
               })}
 
               <div className="ml-auto flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setShowArchived((prev) => !prev)}
+                  className={
+                    showArchived
+                      ? 'rounded-md border border-slate-500 bg-slate-200 px-2 py-0.5 text-[11px] text-slate-900'
+                      : 'rounded-md border border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50'
+                  }
+                >
+                  {showArchived ? 'Dölj makulerade' : 'Visa makulerade'}
+                </button>
                 <label className="text-[10px] text-gray-600" htmlFor="pageSize">
                   Rader/sida
                 </label>
