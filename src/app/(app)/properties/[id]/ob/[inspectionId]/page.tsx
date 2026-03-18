@@ -50,6 +50,7 @@ const SECTIONS: { key: ObSectionKey; label: string }[] = [
   { key: 'forutsattningar', label: 'Förutsättningar' },
   { key: 'utsida', label: 'Byggnad - utsida' },
   { key: 'insida', label: 'Byggnad - insida' },
+  { key: 'delivery', label: 'Skicka utlåtande' },
   { key: 'overview', label: 'Granska utlåtande' },
 ]
 

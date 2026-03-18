@@ -31,6 +31,7 @@ export type InspectionSide = Tables<'inspections'>['inspection_side']
 
 export type ObSectionKey =
   | 'overview'
+  | 'delivery'
   | 'grunddata'
   | 'handlingar'
   | 'forutsattningar'
@@ -169,7 +170,7 @@ export default function ObWizard({
   const [deliveryResult, setDeliveryResult] = useState<string | null>(null)
 
   useEffect(() => {
-    if (activeSection !== 'overview' || !hasValidIds || !inspectionId) return
+    if (activeSection !== 'delivery' || !hasValidIds || !inspectionId) return
 
     let cancelled = false
 
@@ -390,7 +391,30 @@ export default function ObWizard({
                     .
                   </div>
                 </div>
+                <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
+                  Utskicket är flyttat till sektionen <strong>Skicka utlåtande</strong> i sidomenyn.
+                </div>
+              </>
+            ) : (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                Utlåtande kan inte öppnas innan fastighet och besiktning är valda.
+              </div>
+            )}
+          </div>
+        )
+      }
 
+    case 'delivery':
+      {
+        return (
+          <div className="rounded-xl border bg-white p-4 text-sm text-gray-700 space-y-3">
+            <h2 className="text-base font-semibold text-gray-900">Skicka utlåtande</h2>
+            <p>
+              Utlåtandet skickas som länk till en låst snapshotsida.
+            </p>
+
+            {hasValidIds ? (
+              <>
                 <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-3">
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900">Skicka utlåtande</h3>
@@ -509,7 +533,7 @@ export default function ObWizard({
               </>
             ) : (
               <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                Utlåtande kan inte öppnas innan fastighet och besiktning är valda.
+                Utskicket kan inte användas innan fastighet och besiktning är valda.
               </div>
             )}
           </div>
