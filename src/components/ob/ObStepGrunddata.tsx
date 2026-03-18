@@ -944,10 +944,7 @@ export default function ObStepGrunddata({
           ) : null}
 
           {inspForm.inspection_side === 'apartment' ? (
-            <div className="space-y-3 rounded-md border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">
-                Lägenhetsuppgifter
-              </div>
+            <>
               <Field
                 label="Bostadsrättsförening"
                 value={propForm.brf_name ?? ''}
@@ -966,7 +963,7 @@ export default function ObStepGrunddata({
                 onChange={v => handlePropChange('apartment_holder_name', v)}
                 onBlur={() => handlePropBlur('apartment_holder_name')}
               />
-            </div>
+            </>
           ) : null}
 
           <div className="space-y-2">
