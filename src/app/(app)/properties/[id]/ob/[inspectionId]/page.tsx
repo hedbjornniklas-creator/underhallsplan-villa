@@ -90,6 +90,11 @@ const SECTIONS: { key: ObSectionKey; label: string }[] = [
   { key: 'overview', label: 'Granska utlåtande' },
 ]
 
+function getVisibleSections(isApartmentInspection: boolean) {
+  if (!isApartmentInspection) return SECTIONS
+  return SECTIONS.filter(section => section.key !== 'utsida')
+}
+
 export default function InspectionDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -293,6 +298,16 @@ export default function InspectionDetailPage() {
     }
   }, [activeSection, exteriorItemsLoaded])
 
+  const isApartmentInspection =
+    normalizeAssignmentRoleToInspectionSide(inspection?.inspection_side) === 'apartment'
+  const visibleSections = getVisibleSections(isApartmentInspection)
+
+  useEffect(() => {
+    if (isApartmentInspection && activeSection === 'utsida') {
+      setActiveSection('insida')
+    }
+  }, [isApartmentInspection, activeSection])
+
   if (loading) {
     return (
       <Protected hideSidebar>
@@ -354,7 +369,7 @@ export default function InspectionDetailPage() {
                   <div className="text-sm font-semibold text-gray-900">Överlåtelsebesiktning</div>
                 </div>
 
-                {SECTIONS.map((section) => (
+                {visibleSections.map((section) => (
                   <div key={section.key}>
                     <button
                       onClick={() => setActiveSection(section.key)}
