@@ -39,7 +39,7 @@ function resolveConfiguredExecutablePath() {
   if (!envPath) return null
   if (!existsSync(envPath)) {
     throw new Error(
-      `PUPPETEER_EXECUTABLE_PATH/CHROME_PATH pekar på en fil som inte finns: ${envPath}`
+      `PUPPETEER_EXECUTABLE_PATH/CHROME_PATH pekar pa en fil som inte finns: ${envPath}`
     )
   }
   return envPath
