@@ -3,6 +3,7 @@ import { renderPreviewPdf } from '@/lib/report/pdfV2/renderPreviewPdf'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 
 const buildOrigin = (request: Request) => {
   const url = new URL(request.url)

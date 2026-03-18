@@ -9,6 +9,7 @@ import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmai
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 type DeliveryStatus = 'pending' | 'sent' | 'failed'
@@ -462,4 +463,3 @@ export async function POST(
     return jsonError(message || 'Kunde inte skicka utlåtandet.', 500)
   }
 }
-

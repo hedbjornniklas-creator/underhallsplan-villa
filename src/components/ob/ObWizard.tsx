@@ -241,18 +241,38 @@ export default function ObWizard({
         }),
       })
 
-      const payload = (await response.json().catch(() => null)) as
+      const rawBody = await response.text()
+      let payload: unknown = null
+      if (rawBody) {
+        try {
+          payload = JSON.parse(rawBody)
+        } catch {
+          payload = null
+        }
+      }
+      const parsedPayload = payload as
         | (ReportDeliverySendResponse & { error?: string })
         | { error?: string; failedRecipients?: Array<{ email: string; error: string }> }
         | null
 
       if (!response.ok) {
+        const plainErrorText =
+          parsedPayload == null && rawBody.trim()
+            ? rawBody.trim().replace(/\s+/g, ' ').slice(0, 240)
+            : null
+        const statusHint =
+          response.status === 504
+            ? ' Tidsgränsen i servern nåddes (timeout).'
+            : ` (HTTP ${response.status})`
         const baseError =
-          (payload && 'error' in payload ? payload.error : null) ??
-          'Kunde inte skicka utlåtandet.'
+          (parsedPayload && 'error' in parsedPayload ? parsedPayload.error : null) ??
+          plainErrorText ??
+          `Kunde inte skicka utlåtandet.${statusHint}`
         const failedList =
-          payload && 'failedRecipients' in payload && Array.isArray(payload.failedRecipients)
-            ? payload.failedRecipients
+          parsedPayload &&
+          'failedRecipients' in parsedPayload &&
+          Array.isArray(parsedPayload.failedRecipients)
+            ? parsedPayload.failedRecipients
             : []
         const failedText =
           failedList.length > 0
@@ -261,7 +281,7 @@ export default function ObWizard({
         throw new Error(`${baseError}${failedText}`)
       }
 
-      const okPayload = payload as ReportDeliverySendResponse
+      const okPayload = parsedPayload as ReportDeliverySendResponse
 
       if (onInspectionUpdated && okPayload.inspectionStatus) {
         onInspectionUpdated({
