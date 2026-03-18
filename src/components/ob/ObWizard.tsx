@@ -322,6 +322,9 @@ export default function ObWizard({
   const reportHref = hasValidIds
     ? `/utlatande/${propertyId}/${inspectionId}`
     : ''
+  const reportWebPreviewHref = hasValidIds
+    ? `/rapport/preview/${inspectionId}`
+    : ''
   const newTabHref = reportHref
   const autoPrintHref = hasValidIds ? `${reportHref}?autoprint=1` : ''
   const pdfV2Href = hasValidIds
@@ -419,28 +422,12 @@ export default function ObWizard({
                 <div className="rounded-xl border bg-gray-100 p-3">
                   <div className="mb-2 flex flex-wrap items-center gap-2 print:hidden">
                     <Link
-                      href={newTabHref}
+                      href={reportWebPreviewHref}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
                     >
-                      Öppna i ny flik
-                    </Link>
-                    <Link
-                      href={autoPrintHref}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-black"
-                    >
-                      Skriv ut
-                    </Link>
-                    <Link
-                      href={pdfV2Href}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-100"
-                    >
-                      PDF V.2
+                      Öppna webbgranskning i ny flik
                     </Link>
                   </div>
 
@@ -448,12 +435,12 @@ export default function ObWizard({
                     <div className="overflow-auto rounded-lg border border-gray-300 bg-white shadow">
                       <iframe
                         title="Utlåtande för granskning"
-                        src={iframeSrc}
+                        src={reportWebPreviewHref}
                         className="w-full"
                         style={{
-                          width: '210mm',
+                          width: '100%',
                           maxWidth: '100%',
-                          minHeight: '260mm',
+                          minHeight: '540px',
                           border: '0',
                         }}
                       />
@@ -461,7 +448,12 @@ export default function ObWizard({
                   </div>
                   <div className="mt-2 text-xs text-gray-600">
                     Om förhandsgranskningen inte visas kan du{' '}
-                    <Link href={reportHref} target="_blank" rel="noreferrer" className="underline">
+                    <Link
+                      href={reportWebPreviewHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline"
+                    >
                       öppna utlåtandet här
                     </Link>
                     .
