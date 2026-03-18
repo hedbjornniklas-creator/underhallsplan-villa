@@ -14,6 +14,15 @@ type BuildInspectionReportDeliveryEmailResult = {
   text: string
 }
 
+type CtaButtonOptions = {
+  href: string
+  label: string
+  width: number
+  backgroundColor: string
+  textColor: string
+  borderColor: string
+}
+
 function toDisplayValue(value: string | null | undefined, fallback = 'Ej satt') {
   const normalized = value?.trim() ?? ''
   return normalized === '' ? fallback : normalized
@@ -35,6 +44,30 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#39;')
 }
 
+function buildBulletproofButton(options: CtaButtonOptions) {
+  const href = escapeHtml(options.href)
+  const label = escapeHtml(options.label)
+
+  return `
+<!--[if mso]>
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+  href="${href}" style="height:44px;v-text-anchor:middle;width:${options.width}px;" arcsize="12%"
+  strokecolor="${options.borderColor}" fillcolor="${options.backgroundColor}">
+  <w:anchorlock/>
+  <center style="color:${options.textColor};font-family:Arial,sans-serif;font-size:15px;font-weight:700;">
+    ${label}
+  </center>
+</v:roundrect>
+<![endif]-->
+<!--[if !mso]><!-- -->
+<a href="${href}" target="_blank" rel="noreferrer"
+  style="display:inline-block;border:1px solid ${options.borderColor};background:${options.backgroundColor};border-radius:10px;color:${options.textColor};font-size:15px;font-weight:700;line-height:1;text-decoration:none;padding:14px 20px;">
+  ${label}
+</a>
+<!--<![endif]-->
+  `
+}
+
 export function buildInspectionReportDeliveryEmail(
   input: BuildInspectionReportDeliveryEmailInput
 ): BuildInspectionReportDeliveryEmailResult {
@@ -42,7 +75,15 @@ export function buildInspectionReportDeliveryEmail(
   const customerName = toDisplayValue(input.customerName, 'kund')
   const propertyAddress = toDisplayValue(input.propertyAddress)
   const inspectionDate = toSwedishDateString(input.inspectionDate)
-  const subject = `Besiktningsutlatande - ${orgName}`
+  const subject = `Besiktningsutlåtande - ${orgName}`
+  const ctaButton = buildBulletproofButton({
+    href: input.detailsUrl,
+    label: 'Öppna besiktningsutlåtande',
+    width: 290,
+    backgroundColor: '#3730a3',
+    textColor: '#ffffff',
+    borderColor: '#312e81',
+  })
 
   const html = `
 <!doctype html>
@@ -52,38 +93,40 @@ export function buildInspectionReportDeliveryEmail(
     <meta charset="utf-8" />
     <meta name="x-apple-disable-message-reformatting" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Besiktningsutlatande</title>
+    <title>Besiktningsutlåtande</title>
   </head>
   <body style="margin:0;padding:0;background:#eef3ff;font-family:Segoe UI,Arial,sans-serif;color:#1f2937;">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef3ff;padding:14px 12px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="width:100%;max-width:640px;background:#ffffff;border:1px solid #dbe4ff;border-radius:14px;overflow:hidden;">
+          <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="width:100%;max-width:640px;background:#ffffff;border:1px solid #dbe4ff;border-radius:16px;overflow:hidden;">
             <tr>
               <td style="padding:14px 20px;background:#1d4ed8;background-image:linear-gradient(135deg,#1e3a8a 0%,#1d4ed8 45%,#60a5fa 100%);color:#ffffff;">
-                <div style="font-size:20px;font-weight:700;letter-spacing:0.02em;">BESIKTNINGSUTLATANDE</div>
+                <div style="font-size:20px;font-weight:700;letter-spacing:0.02em;">BESIKTNINGSUTLÅTANDE</div>
               </td>
             </tr>
             <tr>
               <td style="padding:16px 24px 22px;">
                 <p style="margin:0 0 10px;font-size:15px;">Hej ${escapeHtml(customerName)},</p>
                 <p style="margin:0 0 14px;font-size:14px;line-height:1.55;">
-                  Besiktningsutlatandet ar nu tillgangligt.
+                  Besiktningsutlåtandet är nu tillgängligt.
                 </p>
                 <p style="margin:0 0 14px;font-size:13px;line-height:1.55;">
                   <strong>Adress:</strong> ${escapeHtml(propertyAddress)}<br/>
                   <strong>Besiktningsdag:</strong> ${escapeHtml(inspectionDate)}
                 </p>
                 <p style="margin:0 0 14px;font-size:14px;line-height:1.55;">
-                  Oppna utlatandet via lank:
+                  Öppna utlåtandet via länk:
                 </p>
-                <p style="margin:0 0 16px;">
-                  <a href="${escapeHtml(input.detailsUrl)}" target="_blank" rel="noreferrer" style="display:inline-block;border:1px solid #312e81;background:#3730a3;border-radius:10px;color:#ffffff;font-size:15px;font-weight:700;line-height:1;text-decoration:none;padding:14px 20px;">
-                    Oppna besiktningsutlatande
-                  </a>
-                </p>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 16px;">
+                  <tr>
+                    <td align="left">
+                      ${ctaButton}
+                    </td>
+                  </tr>
+                </table>
                 <p style="margin:0;font-size:12px;line-height:1.5;color:#4b5563;">
-                  Pa sidan kan du lasa, skriva ut och spara utlatandet.
+                  På sidan kan du läsa, skriva ut och spara utlåtandet.
                 </p>
               </td>
             </tr>
@@ -97,11 +140,12 @@ export function buildInspectionReportDeliveryEmail(
 
   const text =
     `Hej ${customerName},\n\n` +
-    `Besiktningsutlatandet ar nu tillgangligt.\n` +
+    `Besiktningsutlåtandet är nu tillgängligt.\n` +
     `Adress: ${propertyAddress}\n` +
     `Besiktningsdag: ${inspectionDate}\n\n` +
-    `Oppna besiktningsutlatande: ${input.detailsUrl}\n\n` +
-    `Pa sidan kan du lasa, skriva ut och spara utlatandet.`
+    `Öppna besiktningsutlåtande: ${input.detailsUrl}\n\n` +
+    `På sidan kan du läsa, skriva ut och spara utlåtandet.`
 
   return { subject, html, text }
 }
+

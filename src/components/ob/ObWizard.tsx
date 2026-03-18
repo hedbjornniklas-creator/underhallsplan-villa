@@ -319,18 +319,19 @@ export default function ObWizard({
     }
   }
 
+  const reportHref = hasValidIds
+    ? `/utlatande/${propertyId}/${inspectionId}`
+    : ''
+  const newTabHref = reportHref
+  const autoPrintHref = hasValidIds ? `${reportHref}?autoprint=1` : ''
+  const pdfV2Href = hasValidIds
+    ? `/utlatande-v2/${propertyId}/${inspectionId}`
+    : ''
+  const iframeSrc = hasValidIds ? `${reportHref}?embed=1` : ''
+
   switch (activeSection) {
     case 'overview':
       {
-        const reportHref = hasValidIds
-          ? `/utlatande/${propertyId}/${inspectionId}`
-          : ''
-        const newTabHref = reportHref
-        const autoPrintHref = hasValidIds ? `${reportHref}?autoprint=1` : ''
-        const pdfV2Href = hasValidIds
-          ? `/utlatande-v2/${propertyId}/${inspectionId}`
-          : ''
-        const iframeSrc = hasValidIds ? `${reportHref}?embed=1` : ''
         return (
           <div className="rounded-xl border bg-white p-4 text-sm text-gray-700 space-y-3">
             <h2 className="text-base font-semibold text-gray-900">Granska utlåtande</h2>
@@ -410,11 +411,63 @@ export default function ObWizard({
           <div className="rounded-xl border bg-white p-4 text-sm text-gray-700 space-y-3">
             <h2 className="text-base font-semibold text-gray-900">Skicka utlåtande</h2>
             <p>
-              Utlåtandet skickas som länk till en låst snapshotsida.
+              Granska utlåtandet och skicka sedan som länk till en låst snapshotsida.
             </p>
 
             {hasValidIds ? (
               <>
+                <div className="rounded-xl border bg-gray-100 p-3">
+                  <div className="mb-2 flex flex-wrap items-center gap-2 print:hidden">
+                    <Link
+                      href={newTabHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
+                    >
+                      Öppna i ny flik
+                    </Link>
+                    <Link
+                      href={autoPrintHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-black"
+                    >
+                      Skriv ut
+                    </Link>
+                    <Link
+                      href={pdfV2Href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-100"
+                    >
+                      PDF V.2
+                    </Link>
+                  </div>
+
+                  <div className="flex justify-center">
+                    <div className="overflow-auto rounded-lg border border-gray-300 bg-white shadow">
+                      <iframe
+                        title="Utlåtande för granskning"
+                        src={iframeSrc}
+                        className="w-full"
+                        style={{
+                          width: '210mm',
+                          maxWidth: '100%',
+                          minHeight: '260mm',
+                          border: '0',
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-gray-600">
+                    Om förhandsgranskningen inte visas kan du{' '}
+                    <Link href={reportHref} target="_blank" rel="noreferrer" className="underline">
+                      öppna utlåtandet här
+                    </Link>
+                    .
+                  </div>
+                </div>
+
                 <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-3">
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900">Skicka utlåtande</h3>
