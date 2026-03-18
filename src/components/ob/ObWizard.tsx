@@ -411,40 +411,42 @@ export default function ObWizard({
     case 'delivery':
       {
         return (
-          <div className="rounded-xl border bg-white p-4 text-sm text-gray-700 space-y-3">
-            <h2 className="text-base font-semibold text-gray-900">Skicka utlåtande</h2>
-            <p>
-              Granska utlåtandet och skicka sedan som länk till en låst snapshotsida.
-            </p>
+          <div className="space-y-3 text-sm text-gray-700">
+            <div className="rounded-xl border bg-white p-4">
+              <h2 className="text-base font-semibold text-gray-900">Skicka utlåtande</h2>
+              <p className="mt-1">
+                Granska utlåtandet och skicka sedan som länk till en låst snapshotsida.
+              </p>
+            </div>
 
             {hasValidIds ? (
-              <>
-                <div className="rounded-xl border bg-gray-100 p-3">
-                  <div className="mb-2 flex flex-wrap items-center gap-2 print:hidden">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,1fr)]">
+                <section className="rounded-xl border bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-gray-900">Förhandsgranska utlåtande</h3>
                     <Link
                       href={reportWebPreviewHref}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
                     >
-                      Öppna webbgranskning i ny flik
+                      Öppna i ny flik
                     </Link>
                   </div>
+                  <p className="mt-1 text-xs text-gray-600">
+                    Samma webbvy som mottagaren ser. PDF-förhandsgranskning används inte här.
+                  </p>
 
-                  <div className="flex justify-center">
-                    <div className="overflow-auto rounded-lg border border-gray-300 bg-white shadow">
-                      <iframe
-                        title="Utlåtande för granskning"
-                        src={reportWebPreviewHref}
-                        className="w-full"
-                        style={{
-                          width: '100%',
-                          maxWidth: '100%',
-                          minHeight: '540px',
-                          border: '0',
-                        }}
-                      />
-                    </div>
+                  <div className="mt-3 overflow-hidden rounded-lg border border-gray-300 bg-white">
+                    <iframe
+                      title="Utlåtande för granskning"
+                      src={reportWebPreviewHref}
+                      className="w-full"
+                      style={{
+                        minHeight: '880px',
+                        border: '0',
+                      }}
+                    />
                   </div>
                   <div className="mt-2 text-xs text-gray-600">
                     Om förhandsgranskningen inte visas kan du{' '}
@@ -458,13 +460,13 @@ export default function ObWizard({
                     </Link>
                     .
                   </div>
-                </div>
+                </section>
 
-                <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-3">
+                <aside className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-3 xl:sticky xl:top-4 xl:self-start">
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900">Skicka utlåtande</h3>
                     <p className="mt-1 text-xs text-gray-600">
-                      Skicksatt: <strong>Lank</strong>. Ange huvudmottagare.
+                      Skicksätt: <strong>Länk</strong>. Ange huvudmottagare.
                     </p>
                   </div>
 
@@ -480,9 +482,11 @@ export default function ObWizard({
                     </div>
                   ) : null}
 
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
                     <label className="space-y-1">
-                      <span className="text-xs font-medium text-gray-700">Huvudmottagare (obligatorisk)</span>
+                      <span className="text-xs font-medium text-gray-700">
+                        Huvudmottagare (obligatorisk)
+                      </span>
                       <input
                         type="email"
                         value={primaryRecipientInput}
@@ -574,8 +578,8 @@ export default function ObWizard({
                       </ul>
                     </div>
                   ) : null}
-                </div>
-              </>
+                </aside>
+              </div>
             ) : (
               <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                 Utskicket kan inte användas innan fastighet och besiktning är valda.
