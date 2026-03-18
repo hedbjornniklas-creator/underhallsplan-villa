@@ -5,6 +5,7 @@ import puppeteer from 'puppeteer'
 
 const DEFAULT_TIMEOUT_MS = 60000
 const BROWSER_ARGS = ['--no-sandbox', '--disable-setuid-sandbox']
+const ALLOW_AUTOINSTALL = process.env.PUPPETEER_ALLOW_AUTOINSTALL === '1'
 
 let installedExecutablePath: string | null = null
 let installPromise: Promise<string> | null = null
@@ -102,6 +103,12 @@ async function launchPdfBrowser() {
   } catch (error) {
     if (!isMissingChromeError(error)) {
       throw error
+    }
+
+    if (!ALLOW_AUTOINSTALL) {
+      throw new Error(
+        'Chrome saknas for PDF-rendering. Satt PUPPETEER_EXECUTABLE_PATH eller aktivera PUPPETEER_ALLOW_AUTOINSTALL=1.'
+      )
     }
 
     const installedPath = await ensureBundledChromeExecutablePath().catch((installError) => {

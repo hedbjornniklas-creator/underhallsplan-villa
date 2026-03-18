@@ -5,6 +5,7 @@ import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/
 import { requireOrgContext, getProfileContact } from '@/lib/assignments/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { renderPreviewPdf } from '@/lib/report/pdfV2/renderPreviewPdf'
+import { renderStructuredPdfV2 } from '@/lib/report/pdfV2/renderStructuredPdfV2'
 import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmailTemplates'
 
 export const runtime = 'nodejs'
@@ -320,10 +321,35 @@ export async function POST(
     const recipients = [primaryRecipient, ...extraRecipients]
 
     const reportUrl = `${buildOrigin(request)}/utlatande/${propertyId}/${id}?embed=1&pdf=1`
-    const pdfBuffer = await renderPreviewPdf({
-      url: reportUrl,
-      cookieHeader: request.headers.get('cookie'),
-    })
+
+    let pdfBuffer: Buffer
+    try {
+      const previewPdf = await renderPreviewPdf({
+        url: reportUrl,
+        cookieHeader: request.headers.get('cookie'),
+        timeoutMs: 45000,
+      })
+      pdfBuffer = Buffer.isBuffer(previewPdf) ? previewPdf : Buffer.from(previewPdf)
+    } catch (previewError) {
+      const previewMessage =
+        previewError instanceof Error ? previewError.message : 'OkÃ¤nt preview-fel.'
+      console.warn('[inspections.report-delivery] preview PDF failed, using structured fallback', {
+        inspectionId: id,
+        previewMessage,
+      })
+      try {
+        pdfBuffer = await renderStructuredPdfV2({
+          inspectionId: id,
+          propertyId,
+        })
+      } catch (fallbackError) {
+        const fallbackMessage =
+          fallbackError instanceof Error ? fallbackError.message : 'OkÃ¤nt fallback-fel.'
+        throw new Error(
+          `Kunde inte skapa PDF. Preview-fel: ${previewMessage}. Fallback-fel: ${fallbackMessage}.`
+        )
+      }
+    }
     const pdfBase64 = Buffer.from(pdfBuffer).toString('base64')
     const pdfSha256 = createHash('sha256').update(pdfBuffer).digest('hex')
 
