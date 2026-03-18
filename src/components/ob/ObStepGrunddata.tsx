@@ -6,9 +6,15 @@ import type { Tables } from '@/types/supabase'
 
 export type ObInspection = Tables<'inspections'>
 
-type Property = Tables<'properties'>
+type BaseProperty = Tables<'properties'>
+type Property = BaseProperty & {
+  brf_name: string | null
+  apartment_number: string | null
+  apartment_holder_name: string | null
+}
 type Inspection = ObInspection
 type InspectionSide = Inspection['inspection_side'] // typiskt: 'buyer' | 'seller' | null
+type EditableInspectionSide = 'buyer' | 'seller' | 'apartment'
 type InspectorProfile = {
   full_name: string | null
   sbr_group: string | null
@@ -59,22 +65,6 @@ const SCOPE_OPTIONS: { key: string; label: string }[] = [
 const ATTENDEE_OPTIONS: { key: 'owner' | 'buyer'; label: string }[] = [
   { key: 'owner', label: 'Fastighetsägare' },
   { key: 'buyer', label: 'Köpare' },
-]
-
-// Ägandeform-alternativ
-const TENURE_OPTIONS: { value: NonNullable<Property['tenure_type']>; label: string }[] =
-  [
-    { value: 'freehold', label: 'Äganderätt' },
-    { value: 'bostadsratt', label: 'Bostadsrätt' },
-  ]
-
-// Typ av objekt
-const DWELLING_OPTIONS: {
-  value: NonNullable<Property['dwelling_type']>
-  label: string
-}[] = [
-  { value: 'house', label: 'Hus (villa/radhus/parhus)' },
-  { value: 'apartment', label: 'Lägenhet' },
 ]
 
 // Visitkort / besiktningsinfo (statisk tills vi kopplar mot profil)
@@ -192,6 +182,24 @@ function normalizeInspectionStatus(value: string | null | undefined): string {
   return raw
 }
 
+function normalizeInspectionSide(value: InspectionSide | string | null | undefined): EditableInspectionSide {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+
+  if (normalized.includes('sell') || normalized.includes('salj')) return 'seller'
+  if (
+    normalized.includes('apt') ||
+    normalized.includes('apartment') ||
+    normalized.includes('lagenhet')
+  ) {
+    return 'apartment'
+  }
+  return 'buyer'
+}
+
 export default function ObStepGrunddata({
   property,
   inspection,
@@ -206,8 +214,9 @@ export default function ObStepGrunddata({
     city: property.city ?? '',
     municipality: property.municipality ?? '',
     owner_name: property.owner_name ?? '',
-    tenure_type: property.tenure_type ?? null,
-    dwelling_type: property.dwelling_type ?? null,
+    brf_name: property.brf_name ?? '',
+    apartment_number: property.apartment_number ?? '',
+    apartment_holder_name: property.apartment_holder_name ?? '',
   })
 
   const [inspForm, setInspForm] = useState({
@@ -222,7 +231,7 @@ export default function ObStepGrunddata({
     inspection_time: inspection.inspection_time ?? '',
     attendees: inspection.attendees ?? '',
     attendees_other: inspection.attendees_other ?? '',
-    inspection_side: (inspection.inspection_side ?? 'buyer') as NonNullable<InspectionSide>,
+    inspection_side: normalizeInspectionSide(inspection.inspection_side),
   })
 
   const [savingProp, setSavingProp] = useState(false)
@@ -243,8 +252,9 @@ export default function ObStepGrunddata({
       city: property.city ?? '',
       municipality: property.municipality ?? '',
       owner_name: property.owner_name ?? '',
-      tenure_type: property.tenure_type ?? null,
-      dwelling_type: property.dwelling_type ?? null,
+      brf_name: property.brf_name ?? '',
+      apartment_number: property.apartment_number ?? '',
+      apartment_holder_name: property.apartment_holder_name ?? '',
     })
   }, [property])
 
@@ -261,7 +271,7 @@ export default function ObStepGrunddata({
       inspection_time: inspection.inspection_time ?? '',
       attendees: inspection.attendees ?? '',
       attendees_other: inspection.attendees_other ?? '',
-      inspection_side: (inspection.inspection_side ?? 'buyer') as NonNullable<InspectionSide>,
+      inspection_side: normalizeInspectionSide(inspection.inspection_side),
     })
   }, [inspection])
 
@@ -449,10 +459,7 @@ export default function ObStepGrunddata({
   }, [inspection.id, inspection.assignment_number, inspection.date])
 
   // Handlers för formulärfält - spara vid blur
-  const handlePropChange = (
-    field: keyof typeof propForm,
-    value: string | Property['tenure_type'] | Property['dwelling_type']
-  ) => {
+  const handlePropChange = (field: keyof typeof propForm, value: string) => {
     setPropForm(prev => ({ ...prev, [field]: value }))
   }
 
@@ -467,8 +474,9 @@ export default function ObStepGrunddata({
     if (field === 'city') patch.city = val
     if (field === 'municipality') patch.municipality = val
     if (field === 'owner_name') patch.owner_name = val
-    if (field === 'tenure_type') patch.tenure_type = val
-    if (field === 'dwelling_type') patch.dwelling_type = val
+    if (field === 'brf_name') patch.brf_name = val
+    if (field === 'apartment_number') patch.apartment_number = val
+    if (field === 'apartment_holder_name') patch.apartment_holder_name = val
 
     if (Object.keys(patch).length > 0) void saveProperty(patch)
   }
@@ -481,7 +489,6 @@ export default function ObStepGrunddata({
     const val = inspForm[field] || null
     const patch: Partial<Inspection> = {}
 
-    if (field === 'status') patch.status = val as any
     if (field === 'client_name') patch.client_name = val as any
     if (field === 'assignment_number') patch.assignment_number = val as any
     if (field === 'assignment_confirmation_delivered_date') {
@@ -494,7 +501,7 @@ export default function ObStepGrunddata({
     if (field === 'attendees_other') patch.attendees_other = val as any
 
     if (field === 'inspection_side') {
-      patch.inspection_side = (val as any) as InspectionSide
+      patch.inspection_side = (val as EditableInspectionSide) as InspectionSide
     }
 
     if (Object.keys(patch).length > 0) void saveInspection(patch)
@@ -579,8 +586,8 @@ export default function ObStepGrunddata({
   }
 
   // Köpar-/säljarbesiktning - radioknappar
-  const handleInspectionSideChange = async (side: NonNullable<InspectionSide>) => {
-    const patch: Partial<Inspection> = { inspection_side: side }
+  const handleInspectionSideChange = async (side: EditableInspectionSide) => {
+    const patch: Partial<Inspection> = { inspection_side: side as InspectionSide }
 
     // Om vi växlar till säljarbesiktning ska "Köpare" inte vara markerad
     if (side === 'seller') {
@@ -746,49 +753,31 @@ export default function ObStepGrunddata({
             onBlur={() => handlePropBlur('owner_name')}
           />
 
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-gray-600">Ägandeform</div>
-            <select
-              className="w-full rounded-md border px-3 py-2 text-sm"
-              value={propForm.tenure_type ?? ''}
-              onChange={e =>
-                handlePropChange(
-                  'tenure_type',
-                  (e.target.value || null) as Property['tenure_type']
-                )
-              }
-              onBlur={() => handlePropBlur('tenure_type')}
-            >
-              <option value="">Välj ägandeform...</option>
-              {TENURE_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-gray-600">Typ av objekt</div>
-            <select
-              className="w-full rounded-md border px-3 py-2 text-sm"
-              value={propForm.dwelling_type ?? ''}
-              onChange={e =>
-                handlePropChange(
-                  'dwelling_type',
-                  (e.target.value || null) as Property['dwelling_type']
-                )
-              }
-              onBlur={() => handlePropBlur('dwelling_type')}
-            >
-              <option value="">Välj typ...</option>
-              {DWELLING_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          {inspForm.inspection_side === 'apartment' ? (
+            <div className="space-y-3 rounded-md border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                Lägenhetsuppgifter
+              </div>
+              <Field
+                label="Bostadsrättsförening"
+                value={propForm.brf_name ?? ''}
+                onChange={v => handlePropChange('brf_name', v)}
+                onBlur={() => handlePropBlur('brf_name')}
+              />
+              <Field
+                label="Lägenhetsnummer"
+                value={propForm.apartment_number ?? ''}
+                onChange={v => handlePropChange('apartment_number', v)}
+                onBlur={() => handlePropBlur('apartment_number')}
+              />
+              <Field
+                label="Bostadsrättsinnehavare"
+                value={propForm.apartment_holder_name ?? ''}
+                onChange={v => handlePropChange('apartment_holder_name', v)}
+                onBlur={() => handlePropBlur('apartment_holder_name')}
+              />
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <div className="text-xs font-medium text-gray-600">Omslagsbild</div>
@@ -862,26 +851,16 @@ export default function ObStepGrunddata({
                 />
                 <span>Säljarbesiktning</span>
               </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  className="h-3 w-3"
+                  checked={inspForm.inspection_side === 'apartment'}
+                  onChange={() => void handleInspectionSideChange('apartment')}
+                />
+                <span>Lägenhetsbesiktning</span>
+              </label>
             </div>
-          </div>
-
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-gray-600">Status</div>
-            <select
-              className="w-full rounded-md border px-3 py-2 text-sm"
-              value={inspForm.status}
-              onChange={e => handleInspChange('status', e.target.value)}
-              onBlur={() => handleInspBlur('status')}
-            >
-              {inspForm.status === 'draft' ? (
-                <option value="draft" disabled>
-                  Utkast (intern)
-                </option>
-              ) : null}
-              <option value="ongoing">P&aring;g&aring;ende</option>
-              <option value="completed">Klar</option>
-              <option value="archived">Arkiverad</option>
-            </select>
           </div>
 
           <Field

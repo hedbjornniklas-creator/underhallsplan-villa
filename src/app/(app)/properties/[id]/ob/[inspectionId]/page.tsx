@@ -26,6 +26,17 @@ type ObPropertySnapshot = {
   owner_name: string | null
   tenure_type: string | null
   dwelling_type: string | null
+  brf_name: string | null
+  apartment_number: string | null
+  apartment_holder_name: string | null
+}
+
+type AssignmentForInspection = {
+  id: string
+  orderer_role: string | null
+  brf_name: string | null
+  apartment_number: string | null
+  apartment_holder_name: string | null
 }
 
 type ObSnapshotSingleClient = {
@@ -43,6 +54,24 @@ type ExteriorSidebarItem = {
   key: string
   label: string
   sort_order: number
+}
+
+function normalizeAssignmentRoleToInspectionSide(
+  value: string | null | undefined
+): 'buyer' | 'seller' | 'apartment' | null {
+  const lowered = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+
+  if (!lowered) return null
+  if (lowered.includes('buy') || lowered.includes('kop')) return 'buyer'
+  if (lowered.includes('sell') || lowered.includes('salj')) return 'seller'
+  if (lowered.includes('apt') || lowered.includes('apartment') || lowered.includes('lagenhet')) {
+    return 'apartment'
+  }
+  return null
 }
 
 const SECTIONS: { key: ObSectionKey; label: string }[] = [
@@ -116,46 +145,57 @@ export default function InspectionDetailPage() {
       const inspectionRow = inspData as Inspection
       const resolvedPropertyId = inspectionRow.property_id ?? propertyId
 
-      const [{ data: snapshotData, error: snapshotError }, { data: sourceProperty, error: propertyError }] =
-        await Promise.all([
-          (supabase as unknown as ObSnapshotSingleClient)
-            .from('ob_property_snapshot')
-            .select(
-              `
-              inspection_id,
-              source_property_id,
-              name,
-              address,
-              postal_code,
-              city,
-              municipality,
-              cadastral_id,
-              owner_name,
-              tenure_type,
-              dwelling_type
+      const [
+        { data: snapshotData, error: snapshotError },
+        { data: sourceProperty, error: propertyError },
+        { data: assignmentData, error: assignmentError },
+      ] = await Promise.all([
+        (supabase as unknown as ObSnapshotSingleClient)
+          .from('ob_property_snapshot')
+          .select(
             `
-            )
-            .eq('inspection_id', inspectionId)
-            .maybeSingle(),
-          supabase
-            .from('properties')
-            .select(
-              `
-              id,
-              name,
-              address,
-              postal_code,
-              city,
-              municipality,
-              cadastral_id,
-              owner_name,
-              tenure_type,
-              dwelling_type
+            inspection_id,
+            source_property_id,
+            name,
+            address,
+            postal_code,
+            city,
+            municipality,
+            cadastral_id,
+            owner_name,
+            tenure_type,
+            dwelling_type,
+            brf_name,
+            apartment_number,
+            apartment_holder_name
+          `
+          )
+          .eq('inspection_id', inspectionId)
+          .maybeSingle(),
+        supabase
+          .from('properties')
+          .select(
             `
-            )
-            .eq('id', resolvedPropertyId)
-            .maybeSingle(),
-        ])
+            id,
+            name,
+            address,
+            postal_code,
+            city,
+            municipality,
+            cadastral_id,
+            owner_name,
+            tenure_type,
+            dwelling_type
+          `
+          )
+          .eq('id', resolvedPropertyId)
+          .maybeSingle(),
+        supabase
+          .from('assignments')
+          .select('id,orderer_role,brf_name,apartment_number,apartment_holder_name')
+          .eq('inspection_id', inspectionId)
+          .maybeSingle(),
+      ])
 
       if (snapshotError) {
         console.error('Kunde inte hämta OB-snapshot:', snapshotError)
@@ -165,8 +205,13 @@ export default function InspectionDetailPage() {
         console.error('Kunde inte hämta fastighet:', propertyError?.message)
       }
 
+      if (assignmentError) {
+        console.error('Kunde inte hämta kopplad uppdragsbekräftelse:', assignmentError?.message)
+      }
+
       const snapshot = (snapshotData as ObPropertySnapshot | null) ?? null
       const prop = (sourceProperty as Property | null) ?? null
+      const assignment = (assignmentData as AssignmentForInspection | null) ?? null
 
       if (!snapshot && !prop) {
         setError('Kunde inte hämta fastighetsdata för besiktningen.')
@@ -174,7 +219,15 @@ export default function InspectionDetailPage() {
         return
       }
 
-      setInspection(inspData as Inspection)
+      const normalizedInspectionSide =
+        normalizeAssignmentRoleToInspectionSide(inspectionRow.inspection_side) ??
+        normalizeAssignmentRoleToInspectionSide(assignment?.orderer_role) ??
+        'buyer'
+
+      setInspection({
+        ...inspectionRow,
+        inspection_side: normalizedInspectionSide,
+      } as Inspection)
       setProperty({
         id: resolvedPropertyId,
         name: snapshot?.name ?? prop?.name ?? 'Fastighet',
@@ -186,6 +239,10 @@ export default function InspectionDetailPage() {
         owner_name: snapshot?.owner_name ?? prop?.owner_name ?? null,
         tenure_type: (snapshot?.tenure_type ?? prop?.tenure_type ?? null) as Property['tenure_type'],
         dwelling_type: (snapshot?.dwelling_type ?? prop?.dwelling_type ?? null) as Property['dwelling_type'],
+        brf_name: snapshot?.brf_name ?? assignment?.brf_name ?? null,
+        apartment_number: snapshot?.apartment_number ?? assignment?.apartment_number ?? null,
+        apartment_holder_name:
+          snapshot?.apartment_holder_name ?? assignment?.apartment_holder_name ?? null,
       } as Property)
       setLoading(false)
     }

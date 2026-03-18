@@ -22,8 +22,16 @@ export type ObWizardInspection = DbInspection & {
   attendees_other: string | null
 }
 
-export type ObWizardPropertyInput = Partial<DbProperty> & Pick<DbProperty, 'id' | 'name'>
-export type ObWizardProperty = DbProperty
+export type ObWizardPropertyInput = (Partial<DbProperty> & Pick<DbProperty, 'id' | 'name'>) & {
+  brf_name?: string | null
+  apartment_number?: string | null
+  apartment_holder_name?: string | null
+}
+export type ObWizardProperty = DbProperty & {
+  brf_name: string | null
+  apartment_number: string | null
+  apartment_holder_name: string | null
+}
 
 export type TenureType = Tables<'properties'>['tenure_type']
 export type DwellingType = Tables<'properties'>['dwelling_type']
@@ -127,6 +135,9 @@ export default function ObWizard({
       municipality: property.municipality ?? null,
       owner: property.owner ?? '',
       owner_name: property.owner_name ?? null,
+      brf_name: property.brf_name ?? null,
+      apartment_number: property.apartment_number ?? null,
+      apartment_holder_name: property.apartment_holder_name ?? null,
       planning_status: property.planning_status ?? null,
       plot_area_m2: property.plot_area_m2 ?? null,
       postal_code: property.postal_code ?? null,

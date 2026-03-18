@@ -1480,6 +1480,26 @@ function toPropertyName(address: string | null, assignmentId: string) {
   return `Fastighet ${assignmentId.slice(0, 8)}`
 }
 
+function normalizeAssignmentRoleToInspectionSide(
+  value: string | null | undefined
+): 'buyer' | 'seller' | 'apartment' {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+
+  if (normalized.includes('sell') || normalized.includes('salj')) return 'seller'
+  if (
+    normalized.includes('apt') ||
+    normalized.includes('apartment') ||
+    normalized.includes('lagenhet')
+  ) {
+    return 'apartment'
+  }
+  return 'buyer'
+}
+
 function toAddonPrice(value: unknown): number {
   const parsed = typeof value === 'number' ? value : Number(String(value ?? '0'))
   if (!Number.isFinite(parsed) || parsed < 0) return 0
@@ -1591,6 +1611,7 @@ export async function convertAssignmentToInspection(input: {
       property_id: propertyData.id,
       type: assignment.assignment_type,
       status: 'draft',
+      inspection_side: normalizeAssignmentRoleToInspectionSide(assignment.orderer_role),
       date: assignment.preferred_date,
       inspection_time: assignment.preferred_time,
       client_name: assignment.customer_name,
@@ -1776,9 +1797,16 @@ export async function convertAssignmentToInspection(input: {
   }
 
   if (assignment.assignment_type === 'OB') {
+    const snapshotPayload = {
+      ...buildSnapshotPayload(inspection.id, property),
+      brf_name: assignment.brf_name ?? null,
+      apartment_number: assignment.apartment_number ?? null,
+      apartment_holder_name: assignment.apartment_holder_name ?? null,
+    }
+
     const { error: snapshotError } = await admin
       .from('ob_property_snapshot')
-      .upsert(buildSnapshotPayload(inspection.id, property), {
+      .upsert(snapshotPayload, {
         onConflict: 'inspection_id',
       })
 
