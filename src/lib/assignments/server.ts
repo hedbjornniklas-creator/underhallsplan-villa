@@ -63,6 +63,8 @@ export type AssignmentListItem = {
   customer_name: string | null
   customer_email: string
   customer_phone: string | null
+  customer_postal_code: string | null
+  customer_city: string | null
   preferred_date: string | null
   preferred_time: string | null
   preliminary_address: string | null
@@ -237,6 +239,8 @@ const ASSIGNMENT_SELECT_LIST = `
   customer_name,
   customer_email,
   customer_phone,
+  customer_postal_code,
+  customer_city,
   preliminary_address,
   preferred_date,
   preferred_time,
@@ -700,6 +704,8 @@ export async function createAssignment(input: {
   customerEmail: string
   customerName?: string | null
   customerPhone?: string | null
+  customerPostalCode?: string | null
+  customerCity?: string | null
   customerAddress?: string | null
   preliminaryAddress?: string | null
   propertyAddress?: string | null
@@ -729,6 +735,8 @@ export async function createAssignment(input: {
       customer_email: input.customerEmail,
       customer_name: input.customerName ?? null,
       customer_phone: input.customerPhone ?? null,
+      customer_postal_code: input.customerPostalCode ?? null,
+      customer_city: input.customerCity ?? null,
       customer_address: input.customerAddress ?? null,
       preliminary_address: input.preliminaryAddress ?? null,
       property_address: input.propertyAddress ?? input.preliminaryAddress ?? null,
@@ -783,6 +791,8 @@ export async function updateAssignmentById(input: {
     customer_name: string | null
     customer_email: string | null
     customer_phone: string | null
+    customer_postal_code: string | null
+    customer_city: string | null
     customer_address: string | null
     preliminary_address: string | null
     preferred_date: string | null
@@ -874,6 +884,8 @@ export async function createReissuedAssignmentDraft(input: {
     customerEmail: source.customer_email,
     customerName: source.customer_name,
     customerPhone: source.customer_phone,
+    customerPostalCode: source.customer_postal_code,
+    customerCity: source.customer_city,
     customerAddress: source.customer_address,
     preliminaryAddress: source.preliminary_address,
     propertyAddress: source.property_address,

@@ -23,11 +23,25 @@ export type ObWizardInspection = DbInspection & {
 }
 
 export type ObWizardPropertyInput = (Partial<DbProperty> & Pick<DbProperty, 'id' | 'name'>) & {
+  assignment_id?: string | null
+  customer_name?: string | null
+  customer_address?: string | null
+  customer_postal_code?: string | null
+  customer_city?: string | null
+  customer_phone?: string | null
+  customer_email?: string | null
   brf_name?: string | null
   apartment_number?: string | null
   apartment_holder_name?: string | null
 }
 export type ObWizardProperty = DbProperty & {
+  assignment_id: string | null
+  customer_name: string | null
+  customer_address: string | null
+  customer_postal_code: string | null
+  customer_city: string | null
+  customer_phone: string | null
+  customer_email: string | null
   brf_name: string | null
   apartment_number: string | null
   apartment_holder_name: string | null
@@ -135,6 +149,13 @@ export default function ObWizard({
       municipality: property.municipality ?? null,
       owner: property.owner ?? '',
       owner_name: property.owner_name ?? null,
+      assignment_id: property.assignment_id ?? null,
+      customer_name: property.customer_name ?? null,
+      customer_address: property.customer_address ?? null,
+      customer_postal_code: property.customer_postal_code ?? null,
+      customer_city: property.customer_city ?? null,
+      customer_phone: property.customer_phone ?? null,
+      customer_email: property.customer_email ?? null,
       brf_name: property.brf_name ?? null,
       apartment_number: property.apartment_number ?? null,
       apartment_holder_name: property.apartment_holder_name ?? null,

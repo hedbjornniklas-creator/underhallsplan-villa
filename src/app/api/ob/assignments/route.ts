@@ -47,6 +47,8 @@ export async function POST(request: Request) {
     const customerEmail = String(body.customerEmail ?? '').trim().toLowerCase()
     const customerName = String(body.customerName ?? '').trim()
     const customerPhone = String(body.customerPhone ?? '').trim()
+    const customerPostalCode = String(body.customerPostalCode ?? '').trim()
+    const customerCity = String(body.customerCity ?? '').trim()
     const customerAddress = String(body.customerAddress ?? '').trim()
     const preliminaryAddress = String(body.preliminaryAddress ?? '').trim()
     const propertyAddress = String(body.propertyAddress ?? '').trim()
@@ -83,6 +85,8 @@ export async function POST(request: Request) {
       customerEmail,
       customerName: customerName || null,
       customerPhone: customerPhone || null,
+      customerPostalCode: customerPostalCode || null,
+      customerCity: customerCity || null,
       customerAddress: customerAddress || null,
       preliminaryAddress: preliminaryAddress || null,
       propertyAddress: propertyAddress || preliminaryAddress || null,

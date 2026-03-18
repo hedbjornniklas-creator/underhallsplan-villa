@@ -8,6 +8,13 @@ export type ObInspection = Tables<'inspections'>
 
 type BaseProperty = Tables<'properties'>
 type Property = BaseProperty & {
+  assignment_id: string | null
+  customer_name: string | null
+  customer_address: string | null
+  customer_postal_code: string | null
+  customer_city: string | null
+  customer_phone: string | null
+  customer_email: string | null
   brf_name: string | null
   apartment_number: string | null
   apartment_holder_name: string | null
@@ -81,6 +88,12 @@ const INSPECTOR_CARD = {
 }
 
 const COVER_IMAGE_BUCKET = 'inspection-images' as const
+const CUSTOMER_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function normalizeTextOrNull(value: string): string | null {
+  const normalized = value.trim()
+  return normalized.length > 0 ? normalized : null
+}
 
 // Hjälpare: tolka/spara listor som semikolon-separerad text
 function parseList(raw: string | null): string[] {
@@ -222,7 +235,6 @@ export default function ObStepGrunddata({
   const [inspForm, setInspForm] = useState({
     status: normalizeInspectionStatus(inspection.status),
     cover_path: inspection.cover_path ?? '',
-    client_name: inspection.client_name ?? '',
     assignment_number: inspection.assignment_number ?? '',
     assignment_confirmation_delivered_date:
       inspection.assignment_confirmation_delivered_date ?? '',
@@ -233,9 +245,18 @@ export default function ObStepGrunddata({
     attendees_other: inspection.attendees_other ?? '',
     inspection_side: normalizeInspectionSide(inspection.inspection_side),
   })
+  const [ordererForm, setOrdererForm] = useState({
+    customer_name: property.customer_name ?? inspection.client_name ?? '',
+    customer_address: property.customer_address ?? '',
+    customer_postal_code: property.customer_postal_code ?? '',
+    customer_city: property.customer_city ?? '',
+    customer_phone: property.customer_phone ?? '',
+    customer_email: property.customer_email ?? '',
+  })
 
   const [savingProp, setSavingProp] = useState(false)
   const [savingInsp, setSavingInsp] = useState(false)
+  const [savingOrderer, setSavingOrderer] = useState(false)
   const [uploadingCover, setUploadingCover] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [inspectorProfile, setInspectorProfile] = useState<InspectorProfile | null>(null)
@@ -262,7 +283,6 @@ export default function ObStepGrunddata({
     setInspForm({
       status: normalizeInspectionStatus(inspection.status),
       cover_path: inspection.cover_path ?? '',
-      client_name: inspection.client_name ?? '',
       assignment_number: inspection.assignment_number ?? '',
       assignment_confirmation_delivered_date:
         inspection.assignment_confirmation_delivered_date ?? '',
@@ -274,6 +294,17 @@ export default function ObStepGrunddata({
       inspection_side: normalizeInspectionSide(inspection.inspection_side),
     })
   }, [inspection])
+
+  useEffect(() => {
+    setOrdererForm({
+      customer_name: property.customer_name ?? inspection.client_name ?? '',
+      customer_address: property.customer_address ?? '',
+      customer_postal_code: property.customer_postal_code ?? '',
+      customer_city: property.customer_city ?? '',
+      customer_phone: property.customer_phone ?? '',
+      customer_email: property.customer_email ?? '',
+    })
+  }, [property, inspection.client_name])
 
   useEffect(() => {
     let cancelled = false
@@ -407,6 +438,109 @@ export default function ObStepGrunddata({
     return (data as Inspection | null) ?? null
   }
 
+  const saveOrdererToAssignment = async (
+    patch: Partial<{
+      customer_name: string | null
+      customer_address: string | null
+      customer_postal_code: string | null
+      customer_city: string | null
+      customer_phone: string | null
+      customer_email: string | null
+    }>
+  ) => {
+    if (!property.assignment_id) return false
+
+    setError(null)
+    setSavingOrderer(true)
+
+    try {
+      const response = await fetch(`/api/ob/assignments/${property.assignment_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      const payload = (await response.json().catch(() => null)) as
+        | { assignment?: Record<string, unknown>; error?: string }
+        | null
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'Kunde inte spara uppdragsgivarens uppgifter.')
+      }
+
+      const pickAssignmentValue = (
+        field:
+          | 'customer_name'
+          | 'customer_address'
+          | 'customer_postal_code'
+          | 'customer_city'
+          | 'customer_phone'
+          | 'customer_email',
+        fallback: string | null
+      ) => {
+        const serverValue = payload?.assignment?.[field]
+        if (typeof serverValue === 'string') return serverValue
+        if (serverValue === null) return null
+        if (field in patch) return patch[field] ?? null
+        return fallback
+      }
+
+      const nextPropertyPatch: Partial<Property> = {
+        assignment_id: property.assignment_id,
+        customer_name: pickAssignmentValue('customer_name', property.customer_name),
+        customer_address: pickAssignmentValue('customer_address', property.customer_address),
+        customer_postal_code: pickAssignmentValue(
+          'customer_postal_code',
+          property.customer_postal_code
+        ),
+        customer_city: pickAssignmentValue('customer_city', property.customer_city),
+        customer_phone: pickAssignmentValue('customer_phone', property.customer_phone),
+        customer_email: pickAssignmentValue('customer_email', property.customer_email),
+      }
+
+      if (onPropertyUpdated) {
+        onPropertyUpdated({ ...property, ...nextPropertyPatch } as Property)
+      }
+
+      return true
+    } catch (assignmentError) {
+      console.error('Kunde inte spara uppdragsgivare till uppdragsbekräftelsen:', assignmentError)
+      setError(
+        assignmentError instanceof Error
+          ? assignmentError.message
+          : 'Kunde inte spara uppdragsgivarens uppgifter.'
+      )
+      return false
+    } finally {
+      setSavingOrderer(false)
+    }
+  }
+
+  const saveOrdererFallbackToInspection = async (nextOrderer: typeof ordererForm) => {
+    const customerName = normalizeTextOrNull(nextOrderer.customer_name)
+    const customerPhone = normalizeTextOrNull(nextOrderer.customer_phone)
+    const customerEmail = normalizeTextOrNull(nextOrderer.customer_email)
+
+    if (customerEmail && !CUSTOMER_EMAIL_REGEX.test(customerEmail)) {
+      setError('Ogiltig e-postadress för uppdragsgivare.')
+      return
+    }
+
+    const clientContact = [customerPhone, customerEmail].filter(Boolean).join(' | ') || null
+    const savedInspection = await saveInspection({
+      client_name: customerName,
+      client_contact: clientContact,
+    } as Partial<Inspection>)
+
+    if (!savedInspection || !onPropertyUpdated) return
+
+    onPropertyUpdated({
+      ...property,
+      customer_name: customerName,
+      customer_phone: customerPhone,
+      customer_email: customerEmail,
+    } as Property)
+  }
+
   // Autogenerera uppdragsnummer baserat på datum + löpnummer
   useEffect(() => {
     const maybeGenerateAssignmentNumber = async () => {
@@ -489,7 +623,6 @@ export default function ObStepGrunddata({
     const val = inspForm[field] || null
     const patch: Partial<Inspection> = {}
 
-    if (field === 'client_name') patch.client_name = val as any
     if (field === 'assignment_number') patch.assignment_number = val as any
     if (field === 'assignment_confirmation_delivered_date') {
       patch.assignment_confirmation_delivered_date = val as any
@@ -505,6 +638,58 @@ export default function ObStepGrunddata({
     }
 
     if (Object.keys(patch).length > 0) void saveInspection(patch)
+  }
+
+  const handleOrdererChange = (field: keyof typeof ordererForm, value: string) => {
+    setOrdererForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  const handleOrdererBlur = async (field: keyof typeof ordererForm) => {
+    const normalizedValue = normalizeTextOrNull(ordererForm[field])
+
+    if (field === 'customer_email' && normalizedValue && !CUSTOMER_EMAIL_REGEX.test(normalizedValue)) {
+      setError('Ogiltig e-postadress för uppdragsgivare.')
+      return
+    }
+
+    if (property.assignment_id) {
+      const assignmentPatch: Partial<{
+        customer_name: string | null
+        customer_address: string | null
+        customer_postal_code: string | null
+        customer_city: string | null
+        customer_phone: string | null
+        customer_email: string | null
+      }> = {
+        [field]: normalizedValue,
+      }
+      const saved = await saveOrdererToAssignment(assignmentPatch)
+      if (!saved) return
+
+      if (field === 'customer_name') {
+        await saveInspection({ client_name: normalizedValue } as Partial<Inspection>)
+      }
+      if (field === 'customer_phone' || field === 'customer_email') {
+        const customerPhone =
+          field === 'customer_phone'
+            ? normalizedValue
+            : normalizeTextOrNull(ordererForm.customer_phone)
+        const customerEmail =
+          field === 'customer_email'
+            ? normalizedValue
+            : normalizeTextOrNull(ordererForm.customer_email)
+        const clientContact = [customerPhone, customerEmail].filter(Boolean).join(' | ') || null
+        await saveInspection({ client_contact: clientContact } as Partial<Inspection>)
+      }
+      return
+    }
+
+    if (field === 'customer_name' || field === 'customer_phone' || field === 'customer_email') {
+      await saveOrdererFallbackToInspection({
+        ...ordererForm,
+        [field]: ordererForm[field],
+      })
+    }
   }
 
   // Checkboxar för omfattning
@@ -616,6 +801,7 @@ export default function ObStepGrunddata({
       ? ATTENDEE_OPTIONS.filter(opt => opt.key !== 'buyer')
       : ATTENDEE_OPTIONS
 
+  const hasLinkedAssignment = !!property.assignment_id
   const isInspectionLocked = normalizeInspectionStatus(inspForm.status) === 'completed'
 
   const handleInspectionCoverUpload = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -711,13 +897,6 @@ export default function ObStepGrunddata({
           <h2 className="text-sm font-semibold text-gray-900">Objekt</h2>
 
           <Field
-            label="Fastighetsbeteckning"
-            value={propForm.cadastral_id ?? ''}
-            onChange={v => handlePropChange('cadastral_id', v)}
-            onBlur={() => handlePropBlur('cadastral_id')}
-          />
-
-          <Field
             label="Adress"
             value={propForm.address ?? ''}
             onChange={v => handlePropChange('address', v)}
@@ -746,12 +925,23 @@ export default function ObStepGrunddata({
             onBlur={() => handlePropBlur('municipality')}
           />
 
-          <Field
-            label="Fastighetsägare"
-            value={propForm.owner_name ?? ''}
-            onChange={v => handlePropChange('owner_name', v)}
-            onBlur={() => handlePropBlur('owner_name')}
-          />
+          {inspForm.inspection_side !== 'apartment' ? (
+            <>
+              <Field
+                label="Fastighetsbeteckning"
+                value={propForm.cadastral_id ?? ''}
+                onChange={v => handlePropChange('cadastral_id', v)}
+                onBlur={() => handlePropBlur('cadastral_id')}
+              />
+
+              <Field
+                label="Fastighetsägare"
+                value={propForm.owner_name ?? ''}
+                onChange={v => handlePropChange('owner_name', v)}
+                onBlur={() => handlePropBlur('owner_name')}
+              />
+            </>
+          ) : null}
 
           {inspForm.inspection_side === 'apartment' ? (
             <div className="space-y-3 rounded-md border border-gray-200 bg-gray-50 p-3">
@@ -865,11 +1055,63 @@ export default function ObStepGrunddata({
 
           <Field
             label="Uppdragsgivare"
-            value={inspForm.client_name}
-            onChange={v => handleInspChange('client_name', v)}
-            onBlur={() => handleInspBlur('client_name')}
-            placeholder="T.ex. köpare, säljare eller juridisk person"
+            value={ordererForm.customer_name}
+            onChange={v => handleOrdererChange('customer_name', v)}
+            onBlur={() => void handleOrdererBlur('customer_name')}
+            placeholder="Namn"
           />
+
+          <Field
+            label="Adress"
+            value={ordererForm.customer_address}
+            onChange={v => handleOrdererChange('customer_address', v)}
+            onBlur={() => void handleOrdererBlur('customer_address')}
+            placeholder="Gatuadress"
+            readOnly={!hasLinkedAssignment}
+          />
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              label="Postnummer"
+              value={ordererForm.customer_postal_code}
+              onChange={v => handleOrdererChange('customer_postal_code', v)}
+              onBlur={() => void handleOrdererBlur('customer_postal_code')}
+              placeholder="123 45"
+              readOnly={!hasLinkedAssignment}
+            />
+            <Field
+              label="Ort"
+              value={ordererForm.customer_city}
+              onChange={v => handleOrdererChange('customer_city', v)}
+              onBlur={() => void handleOrdererBlur('customer_city')}
+              placeholder="Ort"
+              readOnly={!hasLinkedAssignment}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              label="Telefon"
+              value={ordererForm.customer_phone}
+              onChange={v => handleOrdererChange('customer_phone', v)}
+              onBlur={() => void handleOrdererBlur('customer_phone')}
+              placeholder="Telefonnummer"
+            />
+            <Field
+              label="E-post"
+              value={ordererForm.customer_email}
+              onChange={v => handleOrdererChange('customer_email', v)}
+              onBlur={() => void handleOrdererBlur('customer_email')}
+              placeholder="namn@epost.se"
+            />
+          </div>
+
+          {!hasLinkedAssignment ? (
+            <div className="text-[11px] text-gray-500">
+              Adress, postnummer och ort för uppdragsgivare kan redigeras när besiktningen är kopplad
+              till en uppdragsbekräftelse.
+            </div>
+          ) : null}
 
           <Field
             label="Uppdragsnummer"
@@ -981,7 +1223,9 @@ export default function ObStepGrunddata({
             </div>
           </div>
 
-          {savingInsp && <p className="mt-1 text-[11px] text-gray-400">Sparar uppdrag...</p>}
+          {(savingInsp || savingOrderer) && (
+            <p className="mt-1 text-[11px] text-gray-400">Sparar uppdrag...</p>
+          )}
         </section>
 
         {/* --- Kolumn 3: Besiktningsman (read-only) --- */}

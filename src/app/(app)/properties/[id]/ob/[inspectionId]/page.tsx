@@ -34,6 +34,12 @@ type ObPropertySnapshot = {
 type AssignmentForInspection = {
   id: string
   orderer_role: string | null
+  customer_name: string | null
+  customer_address: string | null
+  customer_postal_code: string | null
+  customer_city: string | null
+  customer_phone: string | null
+  customer_email: string | null
   brf_name: string | null
   apartment_number: string | null
   apartment_holder_name: string | null
@@ -192,7 +198,9 @@ export default function InspectionDetailPage() {
           .maybeSingle(),
         supabase
           .from('assignments')
-          .select('id,orderer_role,brf_name,apartment_number,apartment_holder_name')
+          .select(
+            'id,orderer_role,customer_name,customer_address,customer_postal_code,customer_city,customer_phone,customer_email,brf_name,apartment_number,apartment_holder_name'
+          )
           .eq('inspection_id', inspectionId)
           .maybeSingle(),
       ])
@@ -237,6 +245,13 @@ export default function InspectionDetailPage() {
         municipality: snapshot?.municipality ?? prop?.municipality ?? null,
         cadastral_id: snapshot?.cadastral_id ?? prop?.cadastral_id ?? null,
         owner_name: snapshot?.owner_name ?? prop?.owner_name ?? null,
+        assignment_id: assignment?.id ?? null,
+        customer_name: assignment?.customer_name ?? inspectionRow.client_name ?? null,
+        customer_address: assignment?.customer_address ?? null,
+        customer_postal_code: assignment?.customer_postal_code ?? null,
+        customer_city: assignment?.customer_city ?? null,
+        customer_phone: assignment?.customer_phone ?? null,
+        customer_email: assignment?.customer_email ?? null,
         tenure_type: (snapshot?.tenure_type ?? prop?.tenure_type ?? null) as Property['tenure_type'],
         dwelling_type: (snapshot?.dwelling_type ?? prop?.dwelling_type ?? null) as Property['dwelling_type'],
         brf_name: snapshot?.brf_name ?? assignment?.brf_name ?? null,

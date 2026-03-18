@@ -25,6 +25,8 @@ type AssignmentDetails = {
   customer_name: string | null
   customer_email: string
   customer_phone: string | null
+  customer_postal_code: string | null
+  customer_city: string | null
   customer_address: string | null
   preliminary_address: string | null
   preferred_date: string | null
@@ -82,6 +84,8 @@ type FormState = {
   apartmentHolderName: string
   customerName: string
   customerAddress: string
+  customerPostalCode: string
+  customerCity: string
   customerPhone: string
   customerEmail: string
   ordererRole: OrdererRole
@@ -163,6 +167,8 @@ function toFormState(assignment: AssignmentDetails): FormState {
     apartmentHolderName: assignment.apartment_holder_name ?? '',
     customerName: assignment.customer_name ?? '',
     customerAddress: assignment.customer_address ?? '',
+    customerPostalCode: assignment.customer_postal_code ?? '',
+    customerCity: assignment.customer_city ?? '',
     customerPhone: assignment.customer_phone ?? '',
     customerEmail: assignment.customer_email ?? '',
     ordererRole: normalizeRole(assignment.orderer_role),
@@ -314,6 +320,8 @@ export default function AssignmentDetailsPage() {
             customer_name: nextForm.customerName,
             customer_email: nextForm.customerEmail,
             customer_phone: nextForm.customerPhone,
+            customer_postal_code: nextForm.customerPostalCode,
+            customer_city: nextForm.customerCity,
             customer_address: nextForm.customerAddress,
             property_address: nextForm.propertyAddress,
             property_postal_code: nextForm.propertyPostalCode,
@@ -695,6 +703,18 @@ export default function AssignmentDetailsPage() {
                       value={form.customerAddress}
                       onChange={(value) => updateField('customerAddress', value)}
                     />
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <Field
+                        label="Postnummer"
+                        value={form.customerPostalCode}
+                        onChange={(value) => updateField('customerPostalCode', value)}
+                      />
+                      <Field
+                        label="Ort"
+                        value={form.customerCity}
+                        onChange={(value) => updateField('customerCity', value)}
+                      />
+                    </div>
                     <Field
                       label="Telefon"
                       value={form.customerPhone}

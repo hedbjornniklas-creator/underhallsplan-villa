@@ -44,6 +44,8 @@ type FormState = {
   propertyOwnerName: string
   customerName: string
   customerAddress: string
+  customerPostalCode: string
+  customerCity: string
   customerPhone: string
   customerEmail: string
   ordererRole: OrdererRole
@@ -68,6 +70,8 @@ const INITIAL_FORM: FormState = {
   propertyOwnerName: '',
   customerName: '',
   customerAddress: '',
+  customerPostalCode: '',
+  customerCity: '',
   customerPhone: '',
   customerEmail: '',
   ordererRole: '',
@@ -209,6 +213,8 @@ export default function NewAssignmentClient({
   const buildAssignmentPayload = () => ({
     assignmentType: form.assignmentType,
     customerName: form.customerName.trim(),
+    customerPostalCode: form.customerPostalCode.trim(),
+    customerCity: form.customerCity.trim(),
     customerEmail: trimmedEmail,
     customerPhone: form.customerPhone.trim(),
     customerAddress: form.customerAddress.trim(),
@@ -487,6 +493,18 @@ export default function NewAssignmentClient({
                   value={form.customerAddress}
                   onChange={(value) => updateField('customerAddress', value)}
                 />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field
+                    label="Postnummer"
+                    value={form.customerPostalCode}
+                    onChange={(value) => updateField('customerPostalCode', value)}
+                  />
+                  <Field
+                    label="Ort"
+                    value={form.customerCity}
+                    onChange={(value) => updateField('customerCity', value)}
+                  />
+                </div>
                 <Field
                   label="Telefon"
                   value={form.customerPhone}

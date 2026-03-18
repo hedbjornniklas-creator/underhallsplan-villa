@@ -103,6 +103,20 @@ export async function PATCH(
       patch.customer_phone = customerPhone
     }
 
+    const customerPostalCode = safeString(body.customer_postal_code ?? body.customerPostalCode)
+    if (
+      customerPostalCode !== null ||
+      body.customer_postal_code === '' ||
+      body.customerPostalCode === ''
+    ) {
+      patch.customer_postal_code = customerPostalCode
+    }
+
+    const customerCity = safeString(body.customer_city ?? body.customerCity)
+    if (customerCity !== null || body.customer_city === '' || body.customerCity === '') {
+      patch.customer_city = customerCity
+    }
+
     const customerAddress = safeString(body.customer_address ?? body.customerAddress)
     if (customerAddress !== null || body.customer_address === '' || body.customerAddress === '') {
       patch.customer_address = customerAddress

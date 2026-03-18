@@ -34,6 +34,8 @@ type PublicAssignmentSummary = {
   customer_name: string | null
   customer_email: string
   customer_phone: string | null
+  customer_postal_code: string | null
+  customer_city: string | null
   customer_address: string | null
   preliminary_address: string | null
   preferred_date: string | null
@@ -344,6 +346,9 @@ export async function POST(
       customer_name: typeof body.customerName === 'string' ? body.customerName.trim() : null,
       customer_email: customerEmail,
       customer_phone: typeof body.customerPhone === 'string' ? body.customerPhone.trim() : null,
+      customer_postal_code:
+        typeof body.customerPostalCode === 'string' ? body.customerPostalCode.trim() : null,
+      customer_city: typeof body.customerCity === 'string' ? body.customerCity.trim() : null,
       customer_address: typeof body.customerAddress === 'string' ? body.customerAddress.trim() : null,
       property_address: typeof body.propertyAddress === 'string' ? body.propertyAddress.trim() : null,
       property_postal_code:
@@ -374,6 +379,25 @@ export async function POST(
       ip: getClientIp(request),
       userAgent: request.headers.get('user-agent'),
     })
+
+    // Keep customer postal code/city in sync even if RPC function is older in DB.
+    const admin = createSupabaseAdminClient()
+    const { error: contactUpdateError } = await admin
+      .from('assignments')
+      .update({
+        customer_postal_code: payload.customer_postal_code,
+        customer_city: payload.customer_city,
+      })
+      .eq('org_id', link.org_id)
+      .eq('id', assignment.id)
+
+    if (contactUpdateError) {
+      console.error('[assignments.accept] failed to update customer postal/city after consume', {
+        assignmentId: assignment.id,
+        orgId: link.org_id,
+        error: contactUpdateError.message,
+      })
+    }
 
     let confirmationEmailSent = false
     try {

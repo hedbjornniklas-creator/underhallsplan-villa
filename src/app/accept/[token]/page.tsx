@@ -15,6 +15,8 @@ type AssignmentSummary = {
   customer_name: string | null
   customer_email: string
   customer_phone: string | null
+  customer_postal_code: string | null
+  customer_city: string | null
   customer_address: string | null
   preliminary_address: string | null
   preferred_date: string | null
@@ -95,6 +97,8 @@ type FormState = {
   apartmentHolderName: string
   customerName: string
   customerAddress: string
+  customerPostalCode: string
+  customerCity: string
   customerPhone: string
   customerEmail: string
   ordererRole: OrdererRole
@@ -167,6 +171,8 @@ function toFormState(
     apartmentHolderName: assignment.apartment_holder_name ?? '',
     customerName: assignment.customer_name ?? '',
     customerAddress: assignment.customer_address ?? '',
+    customerPostalCode: assignment.customer_postal_code ?? '',
+    customerCity: assignment.customer_city ?? '',
     customerPhone: assignment.customer_phone ?? '',
     customerEmail: assignment.customer_email ?? '',
     ordererRole: role,
@@ -341,6 +347,8 @@ export default function AssignmentAcceptPage() {
       missingObjectFields ||
       !form.customerName.trim() ||
       !form.customerAddress.trim() ||
+      !form.customerPostalCode.trim() ||
+      !form.customerCity.trim() ||
       !form.customerPhone.trim() ||
       !form.customerEmail.trim() ||
       !form.preferredDate.trim() ||
@@ -379,6 +387,8 @@ export default function AssignmentAcceptPage() {
           propertyOwnerName: form.propertyOwnerName,
           customerName: form.customerName,
           customerAddress: form.customerAddress,
+          customerPostalCode: form.customerPostalCode,
+          customerCity: form.customerCity,
           customerPhone: form.customerPhone,
           customerEmail: form.customerEmail,
           brfName: form.brfName,
@@ -557,6 +567,20 @@ export default function AssignmentAcceptPage() {
                     onChange={(value) => updateField('customerAddress', value)}
                     disabled={!canSubmit}
                   />
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <Field
+                      label="Postnummer *"
+                      value={form.customerPostalCode}
+                      onChange={(value) => updateField('customerPostalCode', value)}
+                      disabled={!canSubmit}
+                    />
+                    <Field
+                      label="Ort *"
+                      value={form.customerCity}
+                      onChange={(value) => updateField('customerCity', value)}
+                      disabled={!canSubmit}
+                    />
+                  </div>
                   <Field
                     label="Telefon *"
                     value={form.customerPhone}
