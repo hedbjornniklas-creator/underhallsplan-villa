@@ -3,12 +3,22 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import type * as ReactPdf from '@react-pdf/renderer'
 import ReportPdfDocumentV2 from '@/lib/report/pdfV2/ReportPdfDocumentV2'
 import { buildReportDataV2, type ReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
-import { buildReportSpec } from '@/lib/report/reportSpec'
+import { buildReportSpec, type ReportSection } from '@/lib/report/reportSpec'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 type RenderStructuredPdfV2Params = {
   inspectionId: string
   propertyId?: string | null
+}
+
+export type ReportSnapshotPayloadV1 = {
+  schemaVersion: 'v1'
+  createdAt: string
+  inspectionId: string
+  propertyId: string
+  inspectionSide: 'buyer' | 'seller' | null
+  reportData: ReportDataV2
+  reportSpec: ReportSection[]
 }
 
 function stripPhotoUrls(data: ReportDataV2): ReportDataV2 {
@@ -45,6 +55,63 @@ async function resolveInspectionSide(inspectionId: string): Promise<'buyer' | 's
   return null
 }
 
+function createDocument(
+  spec: ReportSection[],
+  data: ReportDataV2
+): React.ReactElement<ReactPdf.DocumentProps> {
+  return React.createElement(ReportPdfDocumentV2, {
+    spec,
+    data,
+    imageMap: {},
+  }) as unknown as React.ReactElement<ReactPdf.DocumentProps>
+}
+
+async function renderDocumentToBuffer(document: React.ReactElement<ReactPdf.DocumentProps>) {
+  const rendered = await renderToBuffer(document)
+  if (Buffer.isBuffer(rendered)) return rendered
+  return Buffer.from(rendered)
+}
+
+export function createReportSnapshotPayloadV1(input: {
+  inspectionId: string
+  propertyId: string
+  inspectionSide: 'buyer' | 'seller' | null
+  reportData: ReportDataV2
+  reportSpec: ReportSection[]
+}): ReportSnapshotPayloadV1 {
+  return {
+    schemaVersion: 'v1',
+    createdAt: new Date().toISOString(),
+    inspectionId: input.inspectionId,
+    propertyId: input.propertyId,
+    inspectionSide: input.inspectionSide,
+    reportData: input.reportData,
+    reportSpec: input.reportSpec,
+  }
+}
+
+export function isReportSnapshotPayloadV1(value: unknown): value is ReportSnapshotPayloadV1 {
+  if (!value || typeof value !== 'object') return false
+  const row = value as Record<string, unknown>
+  if (row.schemaVersion !== 'v1') return false
+  if (typeof row.inspectionId !== 'string' || row.inspectionId.trim() === '') return false
+  if (typeof row.propertyId !== 'string' || row.propertyId.trim() === '') return false
+  if (typeof row.reportData !== 'object' || row.reportData === null) return false
+  if (!Array.isArray(row.reportSpec)) return false
+  return true
+}
+
+export async function renderStructuredPdfFromSnapshot(
+  snapshot: ReportSnapshotPayloadV1
+): Promise<Buffer> {
+  const spec =
+    Array.isArray(snapshot.reportSpec) && snapshot.reportSpec.length > 0
+      ? snapshot.reportSpec
+      : buildReportSpec({ inspectionSide: snapshot.inspectionSide })
+  const document = createDocument(spec, snapshot.reportData)
+  return await renderDocumentToBuffer(document)
+}
+
 export async function renderStructuredPdfV2(
   params: RenderStructuredPdfV2Params
 ): Promise<Buffer> {
@@ -55,14 +122,6 @@ export async function renderStructuredPdfV2(
   const compactData = stripPhotoUrls(data)
   const inspectionSide = await resolveInspectionSide(params.inspectionId)
   const spec = buildReportSpec({ inspectionSide })
-
-  const document = React.createElement(ReportPdfDocumentV2, {
-    spec,
-    data: compactData,
-    imageMap: {},
-  }) as unknown as React.ReactElement<ReactPdf.DocumentProps>
-
-  const rendered = await renderToBuffer(document)
-  if (Buffer.isBuffer(rendered)) return rendered
-  return Buffer.from(rendered)
+  const document = createDocument(spec, compactData)
+  return await renderDocumentToBuffer(document)
 }

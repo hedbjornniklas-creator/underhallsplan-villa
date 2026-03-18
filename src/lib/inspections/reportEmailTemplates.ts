@@ -75,7 +75,7 @@ export function buildInspectionReportDeliveryEmail(
                   <strong>Besiktningsdag:</strong> ${escapeHtml(inspectionDate)}
                 </p>
                 <p style="margin:0 0 14px;font-size:14px;line-height:1.55;">
-                  Oppna utlåtandet via lank:
+                  Oppna utlatandet via lank:
                 </p>
                 <p style="margin:0 0 16px;">
                   <a href="${escapeHtml(input.detailsUrl)}" target="_blank" rel="noreferrer" style="display:inline-block;border:1px solid #312e81;background:#3730a3;border-radius:10px;color:#ffffff;font-size:15px;font-weight:700;line-height:1;text-decoration:none;padding:14px 20px;">
@@ -83,7 +83,7 @@ export function buildInspectionReportDeliveryEmail(
                   </a>
                 </p>
                 <p style="margin:0;font-size:12px;line-height:1.5;color:#4b5563;">
-                  PDF-versionen finns ocksa bifogad i detta mejl.
+                  Pa sidan kan du lasa, skriva ut och spara utlatandet.
                 </p>
               </td>
             </tr>
@@ -101,8 +101,7 @@ export function buildInspectionReportDeliveryEmail(
     `Adress: ${propertyAddress}\n` +
     `Besiktningsdag: ${inspectionDate}\n\n` +
     `Oppna besiktningsutlatande: ${input.detailsUrl}\n\n` +
-    `PDF-versionen finns ocksa bifogad i detta mejl.`
+    `Pa sidan kan du lasa, skriva ut och spara utlatandet.`
 
   return { subject, html, text }
 }
-

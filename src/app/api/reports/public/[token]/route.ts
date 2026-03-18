@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { hashAssignmentToken } from '@/lib/assignments/tokens'
+import {
+  isReportSnapshotPayloadV1,
+  renderStructuredPdfFromSnapshot,
+} from '@/lib/report/pdfV2/renderStructuredPdfV2'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -9,8 +13,27 @@ function notFoundResponse() {
   return new NextResponse('Not found', { status: 404 })
 }
 
+function decodeBase64(base64: string, linkId: string): Buffer {
+  let pdfBuffer: Buffer
+  try {
+    pdfBuffer = Buffer.from(base64, 'base64')
+  } catch (decodeError) {
+    console.error('[reports.public] base64 decode failed', {
+      linkId,
+      error: decodeError instanceof Error ? decodeError.message : String(decodeError),
+    })
+    throw new Error('Could not decode report.')
+  }
+
+  if (pdfBuffer.length === 0) {
+    throw new Error('Report snapshot is empty.')
+  }
+
+  return pdfBuffer
+}
+
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ token: string }> }
 ) {
   try {
@@ -26,7 +49,7 @@ export async function GET(
 
     const { data, error } = await admin
       .from('inspection_report_links')
-      .select('id,pdf_base64,revoked_at')
+      .select('id,pdf_base64,snapshot_payload,revoked_at')
       .eq('token_hash', tokenHash)
       .maybeSingle()
 
@@ -39,33 +62,40 @@ export async function GET(
       return notFoundResponse()
     }
 
+    let pdfBuffer: Buffer | null = null
     const pdfBase64 = String(data.pdf_base64 ?? '').trim()
-    if (pdfBase64 === '') {
-      console.error('[reports.public] empty pdf snapshot', { linkId: data.id })
+    if (pdfBase64 !== '') {
+      pdfBuffer = decodeBase64(pdfBase64, String(data.id))
+    } else if (isReportSnapshotPayloadV1(data.snapshot_payload)) {
+      try {
+        pdfBuffer = await renderStructuredPdfFromSnapshot(data.snapshot_payload)
+      } catch (renderError) {
+        console.error('[reports.public] snapshot render failed', {
+          linkId: data.id,
+          error: renderError instanceof Error ? renderError.message : String(renderError),
+        })
+        return new NextResponse('Could not render report.', { status: 500 })
+      }
+    } else {
+      console.error('[reports.public] missing report payload', { linkId: data.id })
       return new NextResponse('Report snapshot is empty.', { status: 500 })
     }
 
-    let pdfBuffer: Buffer
-    try {
-      pdfBuffer = Buffer.from(pdfBase64, 'base64')
-    } catch (decodeError) {
-      console.error('[reports.public] base64 decode failed', {
-        linkId: data.id,
-        error: decodeError instanceof Error ? decodeError.message : String(decodeError),
-      })
-      return new NextResponse('Could not decode report.', { status: 500 })
-    }
-
-    if (pdfBuffer.length === 0) {
-      console.error('[reports.public] decoded pdf is empty', { linkId: data.id })
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      console.error('[reports.public] rendered pdf is empty', { linkId: data.id })
       return new NextResponse('Report snapshot is empty.', { status: 500 })
     }
+
+    const asAttachment = new URL(request.url).searchParams.get('download') === '1'
+    const disposition = asAttachment
+      ? 'attachment; filename="besiktningsutlatande.pdf"'
+      : 'inline; filename="besiktningsutlatande.pdf"'
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': 'inline; filename="besiktningsutlatande.pdf"',
+        'Content-Disposition': disposition,
         'Cache-Control': 'private, no-store',
         'X-Robots-Tag': 'noindex, nofollow',
       },
@@ -76,3 +106,4 @@ export async function GET(
     return new NextResponse('Could not load report.', { status: 500 })
   }
 }
+

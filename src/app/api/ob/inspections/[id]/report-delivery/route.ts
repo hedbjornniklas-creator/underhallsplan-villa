@@ -1,11 +1,14 @@
-import { createHash } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { requireOrgContext, getProfileContact } from '@/lib/assignments/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
-import { renderPreviewPdf } from '@/lib/report/pdfV2/renderPreviewPdf'
-import { renderStructuredPdfV2 } from '@/lib/report/pdfV2/renderStructuredPdfV2'
+import {
+  createReportSnapshotPayloadV1,
+  type ReportSnapshotPayloadV1,
+} from '@/lib/report/pdfV2/renderStructuredPdfV2'
+import { buildReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
+import { buildReportSpec } from '@/lib/report/reportSpec'
 import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmailTemplates'
 
 export const runtime = 'nodejs'
@@ -33,6 +36,7 @@ type InspectionForDelivery = {
   id: string
   property_id: string | null
   status: string | null
+  inspection_side: 'buyer' | 'seller' | null
 }
 
 type OutboundMessageRow = {
@@ -112,7 +116,7 @@ function getMailFromAddress() {
 async function getInspectionById(admin: AdminClient, inspectionId: string) {
   const { data, error } = await admin
     .from('inspections')
-    .select('id,property_id,status')
+    .select('id,property_id,status,inspection_side')
     .eq('id', inspectionId)
     .maybeSingle()
 
@@ -320,38 +324,19 @@ export async function POST(
     const extraRecipients = parseExtraRecipients(body?.extra_recipients, primaryRecipient)
     const recipients = [primaryRecipient, ...extraRecipients]
 
-    const reportUrl = `${buildOrigin(request)}/utlatande/${propertyId}/${id}?embed=1&pdf=1`
-
-    let pdfBuffer: Buffer
-    try {
-      const previewPdf = await renderPreviewPdf({
-        url: reportUrl,
-        cookieHeader: request.headers.get('cookie'),
-        timeoutMs: 45000,
-      })
-      pdfBuffer = Buffer.isBuffer(previewPdf) ? previewPdf : Buffer.from(previewPdf)
-    } catch (previewError) {
-      const previewMessage =
-        previewError instanceof Error ? previewError.message : 'OkÃ¤nt preview-fel.'
-      console.warn('[inspections.report-delivery] preview PDF failed, using structured fallback', {
-        inspectionId: id,
-        previewMessage,
-      })
-      try {
-        pdfBuffer = await renderStructuredPdfV2({
-          inspectionId: id,
-          propertyId,
-        })
-      } catch (fallbackError) {
-        const fallbackMessage =
-          fallbackError instanceof Error ? fallbackError.message : 'OkÃ¤nt fallback-fel.'
-        throw new Error(
-          `Kunde inte skapa PDF. Preview-fel: ${previewMessage}. Fallback-fel: ${fallbackMessage}.`
-        )
-      }
-    }
-    const pdfBase64 = Buffer.from(pdfBuffer).toString('base64')
-    const pdfSha256 = createHash('sha256').update(pdfBuffer).digest('hex')
+    const inspectionSide = inspection.inspection_side === 'seller' ? 'seller' : 'buyer'
+    const reportData = await buildReportDataV2({
+      inspectionId: id,
+      propertyId,
+    })
+    const reportSpec = buildReportSpec({ inspectionSide })
+    const snapshotPayload: ReportSnapshotPayloadV1 = createReportSnapshotPayloadV1({
+      inspectionId: id,
+      propertyId,
+      inspectionSide,
+      reportData,
+      reportSpec,
+    })
 
     const token = generateAssignmentToken()
     const tokenHash = hashAssignmentToken(token)
@@ -363,8 +348,11 @@ export async function POST(
         inspection_id: id,
         assignment_id: assignment?.id ?? null,
         token_hash: tokenHash,
-        pdf_base64: pdfBase64,
-        pdf_sha256: pdfSha256,
+        delivery_mode: 'link_only',
+        snapshot_schema_version: 'v1',
+        snapshot_payload: snapshotPayload,
+        pdf_base64: null,
+        pdf_sha256: null,
         created_by: org.userId,
       })
       .select('id')
@@ -374,7 +362,7 @@ export async function POST(
       throw new Error(linkError?.message ?? 'Kunde inte skapa rapportlänk.')
     }
 
-    const linkUrl = `${resolvePublicBaseUrl(request)}/api/reports/public/${token}`
+    const linkUrl = `${resolvePublicBaseUrl(request)}/rapport/${token}`
     const fromAddress = getMailFromAddress()
     const responsibleProfile = await getProfileContact(
       assignment?.responsible_profile_id ?? org.userId
@@ -410,13 +398,6 @@ export async function POST(
           subject: emailContent.subject,
           html: emailContent.html,
           text: emailContent.text,
-          attachments: [
-            {
-              filename: `besiktningsutlatande-${id.slice(0, 8)}.pdf`,
-              contentBase64: pdfBase64,
-              contentType: 'application/pdf',
-            },
-          ],
         })
 
         await updateOutboundMessage(admin, messageId, {
@@ -462,7 +443,7 @@ export async function POST(
     return NextResponse.json({
       inspectionId: id,
       inspectionStatus: primarySent ? 'completed' : inspectionStatus,
-      deliveryMode: 'link_pdf',
+      deliveryMode: 'link_only',
       publicLink: linkUrl,
       primaryRecipientEmail: primaryRecipient,
       defaultRecipientEmail: fallbackOrdererEmail,

@@ -70,7 +70,7 @@ type ReportDeliveryMeta = {
 type ReportDeliverySendResponse = {
   inspectionId: string
   inspectionStatus: string
-  deliveryMode: 'link_pdf'
+  deliveryMode: 'link_only' | 'link_pdf'
   publicLink: string
   primaryRecipientEmail: string
   defaultRecipientEmail: string | null
@@ -395,7 +395,7 @@ export default function ObWizard({
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900">Skicka utlåtande</h3>
                     <p className="mt-1 text-xs text-gray-600">
-                      Skicksätt: <strong>Länk + PDF (PDF V.2)</strong>. Ange huvudmottagare.
+                      Skicksatt: <strong>Lank</strong>. Ange huvudmottagare.
                     </p>
                   </div>
 
