@@ -703,6 +703,8 @@ export async function createAssignment(input: {
   customerAddress?: string | null
   preliminaryAddress?: string | null
   propertyAddress?: string | null
+  propertyPostalCode?: string | null
+  propertyCity?: string | null
   propertyMunicipality?: string | null
   propertyOwnerName?: string | null
   cadastralId?: string | null
@@ -730,6 +732,8 @@ export async function createAssignment(input: {
       customer_address: input.customerAddress ?? null,
       preliminary_address: input.preliminaryAddress ?? null,
       property_address: input.propertyAddress ?? input.preliminaryAddress ?? null,
+      property_postal_code: input.propertyPostalCode ?? null,
+      property_city: input.propertyCity ?? null,
       property_municipality: input.propertyMunicipality ?? null,
       property_owner_name: input.propertyOwnerName ?? null,
       cadastral_id: input.cadastralId ?? null,
@@ -873,6 +877,8 @@ export async function createReissuedAssignmentDraft(input: {
     customerAddress: source.customer_address,
     preliminaryAddress: source.preliminary_address,
     propertyAddress: source.property_address,
+    propertyPostalCode: source.property_postal_code,
+    propertyCity: source.property_city,
     propertyMunicipality: source.property_municipality,
     propertyOwnerName: source.property_owner_name,
     cadastralId: source.cadastral_id,

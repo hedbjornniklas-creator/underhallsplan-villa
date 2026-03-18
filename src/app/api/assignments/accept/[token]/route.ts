@@ -346,6 +346,9 @@ export async function POST(
       customer_phone: typeof body.customerPhone === 'string' ? body.customerPhone.trim() : null,
       customer_address: typeof body.customerAddress === 'string' ? body.customerAddress.trim() : null,
       property_address: typeof body.propertyAddress === 'string' ? body.propertyAddress.trim() : null,
+      property_postal_code:
+        typeof body.propertyPostalCode === 'string' ? body.propertyPostalCode.trim() : null,
+      property_city: typeof body.propertyCity === 'string' ? body.propertyCity.trim() : null,
       property_municipality:
         typeof body.propertyMunicipality === 'string' ? body.propertyMunicipality.trim() : null,
       property_owner_name:

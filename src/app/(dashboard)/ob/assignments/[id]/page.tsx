@@ -73,6 +73,8 @@ type FormState = {
   status: AssignmentStatus
   cadastralId: string
   propertyAddress: string
+  propertyPostalCode: string
+  propertyCity: string
   propertyMunicipality: string
   propertyOwnerName: string
   brfName: string
@@ -152,7 +154,9 @@ function toFormState(assignment: AssignmentDetails): FormState {
     status: assignment.status,
     cadastralId: assignment.cadastral_id ?? '',
     propertyAddress: assignment.property_address ?? assignment.preliminary_address ?? '',
-    propertyMunicipality: assignment.property_municipality ?? assignment.property_city ?? '',
+    propertyPostalCode: assignment.property_postal_code ?? '',
+    propertyCity: assignment.property_city ?? '',
+    propertyMunicipality: assignment.property_municipality ?? '',
     propertyOwnerName: assignment.property_owner_name ?? '',
     brfName: assignment.brf_name ?? '',
     apartmentNumber: assignment.apartment_number ?? '',
@@ -312,6 +316,8 @@ export default function AssignmentDetailsPage() {
             customer_phone: nextForm.customerPhone,
             customer_address: nextForm.customerAddress,
             property_address: nextForm.propertyAddress,
+            property_postal_code: nextForm.propertyPostalCode,
+            property_city: nextForm.propertyCity,
             preliminary_address: nextForm.propertyAddress,
             property_municipality: nextForm.propertyMunicipality,
             property_owner_name: nextForm.propertyOwnerName,
@@ -607,6 +613,18 @@ export default function AssignmentDetailsPage() {
                       value={form.propertyAddress}
                       onChange={(value) => updateField('propertyAddress', value)}
                     />
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <Field
+                        label="Postnummer"
+                        value={form.propertyPostalCode}
+                        onChange={(value) => updateField('propertyPostalCode', value)}
+                      />
+                      <Field
+                        label="Ort"
+                        value={form.propertyCity}
+                        onChange={(value) => updateField('propertyCity', value)}
+                      />
+                    </div>
                     <Field
                       label="Kommun"
                       value={form.propertyMunicipality}

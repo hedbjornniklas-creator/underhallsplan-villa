@@ -33,6 +33,8 @@ export async function POST(request: Request) {
     const customerAddress = String(body.customerAddress ?? '').trim()
     const preliminaryAddress = String(body.preliminaryAddress ?? '').trim()
     const propertyAddress = String(body.propertyAddress ?? '').trim()
+    const propertyPostalCode = String(body.propertyPostalCode ?? '').trim()
+    const propertyCity = String(body.propertyCity ?? '').trim()
     const propertyMunicipality = String(body.propertyMunicipality ?? '').trim()
     const propertyOwnerName = String(body.propertyOwnerName ?? '').trim()
     const cadastralId = String(body.cadastralId ?? '').trim()
@@ -70,6 +72,8 @@ export async function POST(request: Request) {
       customerAddress: customerAddress || null,
       preliminaryAddress: preliminaryAddress || propertyAddress || null,
       propertyAddress: propertyAddress || preliminaryAddress || null,
+      propertyPostalCode: propertyPostalCode || null,
+      propertyCity: propertyCity || null,
       propertyMunicipality: propertyMunicipality || null,
       propertyOwnerName: propertyOwnerName || null,
       cadastralId: cadastralId || null,

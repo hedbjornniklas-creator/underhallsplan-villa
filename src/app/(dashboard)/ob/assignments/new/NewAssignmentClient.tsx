@@ -38,6 +38,8 @@ type FormState = {
   apartmentNumber: string
   apartmentHolderName: string
   propertyAddress: string
+  propertyPostalCode: string
+  propertyCity: string
   propertyMunicipality: string
   propertyOwnerName: string
   customerName: string
@@ -60,6 +62,8 @@ const INITIAL_FORM: FormState = {
   apartmentNumber: '',
   apartmentHolderName: '',
   propertyAddress: '',
+  propertyPostalCode: '',
+  propertyCity: '',
   propertyMunicipality: '',
   propertyOwnerName: '',
   customerName: '',
@@ -209,6 +213,8 @@ export default function NewAssignmentClient({
     customerPhone: form.customerPhone.trim(),
     customerAddress: form.customerAddress.trim(),
     propertyAddress: form.propertyAddress.trim(),
+    propertyPostalCode: form.propertyPostalCode.trim(),
+    propertyCity: form.propertyCity.trim(),
     propertyMunicipality: form.propertyMunicipality.trim(),
     propertyOwnerName: form.propertyOwnerName.trim(),
     cadastralId: form.cadastralId.trim(),
@@ -413,6 +419,18 @@ export default function NewAssignmentClient({
                       value={form.propertyAddress}
                       onChange={(value) => updateField('propertyAddress', value)}
                     />
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <Field
+                        label="Postnummer"
+                        value={form.propertyPostalCode}
+                        onChange={(value) => updateField('propertyPostalCode', value)}
+                      />
+                      <Field
+                        label="Ort"
+                        value={form.propertyCity}
+                        onChange={(value) => updateField('propertyCity', value)}
+                      />
+                    </div>
                     <Field
                       label="Kommun"
                       value={form.propertyMunicipality}
@@ -431,6 +449,18 @@ export default function NewAssignmentClient({
                       value={form.propertyAddress}
                       onChange={(value) => updateField('propertyAddress', value)}
                     />
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <Field
+                        label="Postnummer"
+                        value={form.propertyPostalCode}
+                        onChange={(value) => updateField('propertyPostalCode', value)}
+                      />
+                      <Field
+                        label="Ort"
+                        value={form.propertyCity}
+                        onChange={(value) => updateField('propertyCity', value)}
+                      />
+                    </div>
                     <Field
                       label="Kommun"
                       value={form.propertyMunicipality}

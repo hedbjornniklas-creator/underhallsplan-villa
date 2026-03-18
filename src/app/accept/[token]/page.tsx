@@ -86,6 +86,8 @@ type AcceptReadResponse = {
 type FormState = {
   cadastralId: string
   propertyAddress: string
+  propertyPostalCode: string
+  propertyCity: string
   propertyMunicipality: string
   propertyOwnerName: string
   brfName: string
@@ -156,7 +158,9 @@ function toFormState(
   return {
     cadastralId: assignment.cadastral_id ?? '',
     propertyAddress: assignment.property_address ?? assignment.preliminary_address ?? '',
-    propertyMunicipality: assignment.property_municipality ?? assignment.property_city ?? '',
+    propertyPostalCode: assignment.property_postal_code ?? '',
+    propertyCity: assignment.property_city ?? '',
+    propertyMunicipality: assignment.property_municipality ?? '',
     propertyOwnerName: assignment.property_owner_name ?? '',
     brfName: assignment.brf_name ?? '',
     apartmentNumber: assignment.apartment_number ?? '',
@@ -331,6 +335,8 @@ export default function AssignmentAcceptPage() {
 
     const requiredFieldMissing =
       !form.propertyAddress.trim() ||
+      !form.propertyPostalCode.trim() ||
+      !form.propertyCity.trim() ||
       !form.propertyMunicipality.trim() ||
       missingObjectFields ||
       !form.customerName.trim() ||
@@ -367,6 +373,8 @@ export default function AssignmentAcceptPage() {
           assignmentId: data.assignment.id,
           cadastralId: form.cadastralId,
           propertyAddress: form.propertyAddress,
+          propertyPostalCode: form.propertyPostalCode,
+          propertyCity: form.propertyCity,
           propertyMunicipality: form.propertyMunicipality,
           propertyOwnerName: form.propertyOwnerName,
           customerName: form.customerName,
@@ -476,6 +484,20 @@ export default function AssignmentAcceptPage() {
                     onChange={(value) => updateField('propertyAddress', value)}
                     disabled={!canSubmit}
                   />
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <Field
+                      label="Postnummer *"
+                      value={form.propertyPostalCode}
+                      onChange={(value) => updateField('propertyPostalCode', value)}
+                      disabled={!canSubmit}
+                    />
+                    <Field
+                      label="Ort *"
+                      value={form.propertyCity}
+                      onChange={(value) => updateField('propertyCity', value)}
+                      disabled={!canSubmit}
+                    />
+                  </div>
                   <Field
                     label="Kommun *"
                     value={form.propertyMunicipality}
