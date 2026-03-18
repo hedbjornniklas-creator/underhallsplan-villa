@@ -1,5 +1,4 @@
-import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { Browser, detectBrowserPlatform, install } from '@puppeteer/browsers'
 import puppeteer from 'puppeteer'
@@ -62,8 +61,15 @@ async function ensureBundledChromeExecutablePath() {
         throw new Error('Kunde inte lasa Puppeteer browserVersion.')
       }
 
-      const cacheDir =
-        process.env.PUPPETEER_CACHE_DIR?.trim() || join(homedir(), '.cache', 'puppeteer')
+      const configuredCacheDir = process.env.PUPPETEER_CACHE_DIR?.trim()
+      const defaultCacheDir =
+        process.platform === 'linux'
+          ? '/tmp/puppeteer'
+          : join(process.cwd(), '.cache', 'puppeteer')
+      const cacheDir = configuredCacheDir || defaultCacheDir
+
+      // In serverless Linux environments, /tmp is usually the only writable location.
+      mkdirSync(cacheDir, { recursive: true })
 
       const installed = await install({
         browser: Browser.CHROME,
