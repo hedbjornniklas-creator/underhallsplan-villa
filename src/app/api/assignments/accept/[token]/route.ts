@@ -46,6 +46,9 @@ type PublicAssignmentSummary = {
   property_municipality: string | null
   property_owner_name: string | null
   cadastral_id: string | null
+  brf_name: string | null
+  apartment_number: string | null
+  apartment_holder_name: string | null
   orderer_role: string | null
   accepted_at: string | null
 }
@@ -348,6 +351,10 @@ export async function POST(
       property_owner_name:
         typeof body.propertyOwnerName === 'string' ? body.propertyOwnerName.trim() : null,
       cadastral_id: typeof body.cadastralId === 'string' ? body.cadastralId.trim() : null,
+      brf_name: typeof body.brfName === 'string' ? body.brfName.trim() : null,
+      apartment_number: typeof body.apartmentNumber === 'string' ? body.apartmentNumber.trim() : null,
+      apartment_holder_name:
+        typeof body.apartmentHolderName === 'string' ? body.apartmentHolderName.trim() : null,
       preferred_date: preferredDate,
       preferred_time: preferredTime,
       price_amount: priceAmount,

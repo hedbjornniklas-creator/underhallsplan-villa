@@ -108,7 +108,7 @@ export default async function ReportPreviewPage({
       heading="Förhandsgranska utlåtande"
       subtitle="Live-visning före skick. Ingen låsning har gjorts ännu."
       showPdfActions={false}
+      showHeader={false}
     />
   )
 }
-

@@ -19,6 +19,9 @@ type AssignmentForEmail = {
   property_municipality: string | null
   property_owner_name: string | null
   cadastral_id: string | null
+  brf_name: string | null
+  apartment_number: string | null
+  apartment_holder_name: string | null
 }
 
 type AssignmentAddonOrderForEmail = {
@@ -147,6 +150,50 @@ function termsRoleToLabel(role: TermsRole, format: 'html' | 'text' = 'text') {
   return format === 'html' ? 'Säljare' : 'Säljare'
 }
 
+function buildObjectSection(
+  termsRole: TermsRole,
+  assignment: AssignmentForEmail,
+  propertyAddress: string,
+  municipality: string
+) {
+  if (termsRole === 'apartment') {
+    const brfName = toDisplayValue(assignment.brf_name)
+    const apartmentNumber = toDisplayValue(assignment.apartment_number)
+    const apartmentHolderName = toDisplayValue(assignment.apartment_holder_name)
+    return {
+      html: [
+        `<div style="font-size:13px;line-height:1.5;"><strong>Adress:</strong> ${escapeHtml(propertyAddress)}</div>`,
+        `<div style="font-size:13px;line-height:1.5;"><strong>Kommun:</strong> ${escapeHtml(municipality)}</div>`,
+        `<div style="font-size:13px;line-height:1.5;"><strong>Bostadsrättsförening:</strong> ${escapeHtml(brfName)}</div>`,
+        `<div style="font-size:13px;line-height:1.5;"><strong>Lägenhetsnummer:</strong> ${escapeHtml(apartmentNumber)}</div>`,
+        `<div style="font-size:13px;line-height:1.5;"><strong>Bostadsrättsinnehavare:</strong> ${escapeHtml(apartmentHolderName)}</div>`,
+      ].join('\n'),
+      text:
+        `- Adress: ${propertyAddress}\n` +
+        `- Kommun: ${municipality}\n` +
+        `- Bostadsrättsförening: ${brfName}\n` +
+        `- Lägenhetsnummer: ${apartmentNumber}\n` +
+        `- Bostadsrättsinnehavare: ${apartmentHolderName}\n`,
+    }
+  }
+
+  const cadastralId = toDisplayValue(assignment.cadastral_id)
+  const propertyOwner = toDisplayValue(assignment.property_owner_name)
+  return {
+    html: [
+      `<div style="font-size:13px;line-height:1.5;"><strong>Fastighetsbeteckning:</strong> ${escapeHtml(cadastralId)}</div>`,
+      `<div style="font-size:13px;line-height:1.5;"><strong>Adress:</strong> ${escapeHtml(propertyAddress)}</div>`,
+      `<div style="font-size:13px;line-height:1.5;"><strong>Kommun:</strong> ${escapeHtml(municipality)}</div>`,
+      `<div style="font-size:13px;line-height:1.5;"><strong>Fastighetsägare:</strong> ${escapeHtml(propertyOwner)}</div>`,
+    ].join('\n'),
+    text:
+      `- Fastighetsbeteckning: ${cadastralId}\n` +
+      `- Adress: ${propertyAddress}\n` +
+      `- Kommun: ${municipality}\n` +
+      `- Fastighetsägare: ${propertyOwner}\n`,
+  }
+}
+
 function buildBulletproofButton(options: CtaButtonOptions) {
   const href = escapeHtml(options.href)
   const label = escapeHtml(options.label)
@@ -175,14 +222,18 @@ export function buildAssignmentConfirmationEmail(
   input: BuildAssignmentConfirmationEmailInput
 ): BuildAssignmentConfirmationEmailResult {
   const customerName = toDisplayValue(input.assignment.customer_name, 'kund')
-  const cadastralId = toDisplayValue(input.assignment.cadastral_id)
   const propertyAddress = toDisplayValue(
     input.assignment.property_address ?? input.assignment.preliminary_address
   )
   const municipality = toDisplayValue(
     input.assignment.property_municipality ?? input.assignment.property_city
   )
-  const propertyOwner = toDisplayValue(input.assignment.property_owner_name)
+  const objectSection = buildObjectSection(
+    input.termsRole,
+    input.assignment,
+    propertyAddress,
+    municipality
+  )
   const customerAddress = toDisplayValue(input.assignment.customer_address)
   const customerPhone = toDisplayValue(input.assignment.customer_phone)
   const customerEmail = toDisplayValue(input.assignment.customer_email)
@@ -264,10 +315,7 @@ export function buildAssignmentConfirmationEmail(
                       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f8fbff;border:1px solid #d9e8ff;border-radius:10px;">
                         <tr><td style="padding:14px;">
                           <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:#1f2937;">Objekt</div>
-                          <div style="font-size:13px;line-height:1.5;"><strong>Fastighetsbeteckning:</strong> ${escapeHtml(cadastralId)}</div>
-                          <div style="font-size:13px;line-height:1.5;"><strong>Adress:</strong> ${escapeHtml(propertyAddress)}</div>
-                          <div style="font-size:13px;line-height:1.5;"><strong>Kommun:</strong> ${escapeHtml(municipality)}</div>
-                          <div style="font-size:13px;line-height:1.5;"><strong>Fastighetsägare:</strong> ${escapeHtml(propertyOwner)}</div>
+                          ${objectSection.html}
                         </td></tr>
                       </table>
                     </td>
@@ -319,10 +367,7 @@ export function buildAssignmentConfirmationEmail(
     `För att bekräfta uppdraget, klicka på knappen “Öppna uppdragsbekräftelsen”, fyll i eller kontrollera uppgifterna i formuläret och godkänn villkoren.\n\n` +
     `Öppna uppdragsbekräftelsen: ${input.acceptUrl}\n\n` +
     `Objekt\n` +
-    `- Fastighetsbeteckning: ${cadastralId}\n` +
-    `- Adress: ${propertyAddress}\n` +
-    `- Kommun: ${municipality}\n` +
-    `- Fastighetsägare: ${propertyOwner}\n\n` +
+    `${objectSection.text}\n` +
     `Uppdragsgivare\n` +
     `- Namn: ${customerName}\n` +
     `- Adress: ${customerAddress}\n` +
@@ -343,14 +388,18 @@ export function buildAssignmentOrderReceiptEmail(
   input: BuildAssignmentOrderReceiptEmailInput
 ): BuildAssignmentOrderReceiptEmailResult {
   const customerName = toDisplayValue(input.assignment.customer_name, 'kund')
-  const cadastralId = toDisplayValue(input.assignment.cadastral_id)
   const propertyAddress = toDisplayValue(
     input.assignment.property_address ?? input.assignment.preliminary_address
   )
   const municipality = toDisplayValue(
     input.assignment.property_municipality ?? input.assignment.property_city
   )
-  const propertyOwner = toDisplayValue(input.assignment.property_owner_name)
+  const objectSection = buildObjectSection(
+    input.termsRole,
+    input.assignment,
+    propertyAddress,
+    municipality
+  )
   const customerAddress = toDisplayValue(input.assignment.customer_address)
   const customerPhone = toDisplayValue(input.assignment.customer_phone)
   const customerEmail = toDisplayValue(input.assignment.customer_email)
@@ -445,10 +494,7 @@ export function buildAssignmentOrderReceiptEmail(
                       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f8fbff;border:1px solid #d9e8ff;border-radius:10px;">
                         <tr><td style="padding:14px;">
                           <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:#1f2937;">Objekt</div>
-                          <div style="font-size:13px;line-height:1.5;"><strong>Fastighetsbeteckning:</strong> ${escapeHtml(cadastralId)}</div>
-                          <div style="font-size:13px;line-height:1.5;"><strong>Adress:</strong> ${escapeHtml(propertyAddress)}</div>
-                          <div style="font-size:13px;line-height:1.5;"><strong>Kommun:</strong> ${escapeHtml(municipality)}</div>
-                          <div style="font-size:13px;line-height:1.5;"><strong>Fastighetsägare:</strong> ${escapeHtml(propertyOwner)}</div>
+                          ${objectSection.html}
                         </td></tr>
                       </table>
                     </td>
@@ -521,10 +567,7 @@ export function buildAssignmentOrderReceiptEmail(
     `Accepterad: ${acceptedAt}\n` +
     `Villkorsversion: ${input.termsVersion}\n\n` +
     `Objekt\n` +
-    `- Fastighetsbeteckning: ${cadastralId}\n` +
-    `- Adress: ${propertyAddress}\n` +
-    `- Kommun: ${municipality}\n` +
-    `- Fastighetsägare: ${propertyOwner}\n\n` +
+    `${objectSection.text}\n` +
     `Uppdragsgivare\n` +
     `- Namn: ${customerName}\n` +
     `- Adress: ${customerAddress}\n` +

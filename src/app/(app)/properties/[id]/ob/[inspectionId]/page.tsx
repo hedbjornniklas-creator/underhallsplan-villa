@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
@@ -309,6 +310,15 @@ export default function InspectionDetailPage() {
                     )}
                   </div>
                 ))}
+
+                <div className="pt-1">
+                  <Link
+                    href={`/properties/${propertyId}/ob/${inspectionId}/delivery-2`}
+                    className="block w-full rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-left text-sm font-medium text-indigo-700 hover:bg-indigo-100"
+                  >
+                    Skicka utlåtande 2
+                  </Link>
+                </div>
               </nav>
             </div>
 

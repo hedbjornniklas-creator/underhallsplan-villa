@@ -417,19 +417,15 @@ export default function ObWizard({
           <div className="space-y-3 text-sm text-gray-700">
             <div className="rounded-xl border bg-white p-4">
               <h2 className="text-base font-semibold text-gray-900">Skicka utlåtande</h2>
-              <p className="mt-1">
-                Granska utlåtandet och skicka sedan som länk till en låst snapshotsida.
-              </p>
             </div>
 
             {hasValidIds ? (
               <div className="space-y-4">
                 <aside className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-900">Skicka utlåtande</h3>
-                    <p className="mt-1 text-xs text-gray-600">
-                      Skicksätt: <strong>Länk</strong>. Ange huvudmottagare.
-                    </p>
+                    <h3 className="text-sm font-semibold text-gray-900">
+                      Granska utlåtandet och skicka sedan som länk till nedanstående kontakter.
+                    </h3>
                   </div>
 
                   {deliveryMetaLoading ? (
@@ -503,7 +499,7 @@ export default function ObWizard({
                       rel="noreferrer"
                       className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
                     >
-                      Skriv ut (PDF V.2)
+                      Skapa pdf
                     </Link>
                     <button
                       type="button"
@@ -553,28 +549,15 @@ export default function ObWizard({
                 <section className="rounded-xl border bg-white p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="text-sm font-semibold text-gray-900">Förhandsgranska utlåtande</h3>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Link
-                        href={reportWebPreviewHref}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
-                      >
-                        Öppna i ny flik
-                      </Link>
-                      <Link
-                        href={reportPdfV2ApiHref}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-black"
-                      >
-                        Skriv ut (PDF V.2)
-                      </Link>
-                    </div>
+                    <Link
+                      href={reportWebPreviewHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
+                    >
+                      Öppna i ny flik
+                    </Link>
                   </div>
-                  <p className="mt-1 text-xs text-gray-600">
-                    Samma webbvy som mottagaren ser. PDF-förhandsgranskning används inte här.
-                  </p>
 
                   <div className="mt-3 overflow-hidden rounded-lg border border-gray-300 bg-white">
                     <iframe

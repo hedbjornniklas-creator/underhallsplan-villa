@@ -83,6 +83,9 @@ export type AssignmentDetails = AssignmentListItem & {
   customer_address: string | null
   property_municipality: string | null
   property_owner_name: string | null
+  brf_name: string | null
+  apartment_number: string | null
+  apartment_holder_name: string | null
   terms_version: string | null
   terms_document_hash: string | null
   invoice_name: string | null
@@ -254,6 +257,9 @@ const ASSIGNMENT_DETAIL_SELECT = `
   customer_address,
   property_municipality,
   property_owner_name,
+  brf_name,
+  apartment_number,
+  apartment_holder_name,
   terms_version,
   terms_document_hash,
   invoice_name,
@@ -700,6 +706,9 @@ export async function createAssignment(input: {
   propertyMunicipality?: string | null
   propertyOwnerName?: string | null
   cadastralId?: string | null
+  brfName?: string | null
+  apartmentNumber?: string | null
+  apartmentHolderName?: string | null
   ordererRole?: string | null
   preferredDate?: string | null
   preferredTime?: string | null
@@ -724,6 +733,9 @@ export async function createAssignment(input: {
       property_municipality: input.propertyMunicipality ?? null,
       property_owner_name: input.propertyOwnerName ?? null,
       cadastral_id: input.cadastralId ?? null,
+      brf_name: input.brfName ?? null,
+      apartment_number: input.apartmentNumber ?? null,
+      apartment_holder_name: input.apartmentHolderName ?? null,
       orderer_role: input.ordererRole ?? null,
       preferred_date: input.preferredDate ?? null,
       preferred_time: input.preferredTime ?? null,
@@ -777,6 +789,9 @@ export async function updateAssignmentById(input: {
     property_municipality: string | null
     property_owner_name: string | null
     cadastral_id: string | null
+    brf_name: string | null
+    apartment_number: string | null
+    apartment_holder_name: string | null
     invoice_name: string | null
     invoice_address: string | null
     orderer_role: string | null
@@ -861,6 +876,9 @@ export async function createReissuedAssignmentDraft(input: {
     propertyMunicipality: source.property_municipality,
     propertyOwnerName: source.property_owner_name,
     cadastralId: source.cadastral_id,
+    brfName: source.brf_name,
+    apartmentNumber: source.apartment_number,
+    apartmentHolderName: source.apartment_holder_name,
     ordererRole: source.orderer_role,
     preferredDate: source.preferred_date,
     preferredTime: source.preferred_time,
@@ -1407,7 +1425,7 @@ export async function resolvePublicAssignmentByToken(token: string) {
   const { data, error } = await admin
     .from('assignment_links')
     .select(
-      'id,assignment_id,org_id,expires_at,used_at,revoked_at,terms_version,assignments(id,status,assignment_type,responsible_profile_id,customer_name,customer_email,customer_phone,customer_address,preliminary_address,preferred_date,preferred_time,price_amount,currency,property_address,property_postal_code,property_city,property_municipality,property_owner_name,cadastral_id,orderer_role,accepted_at)'
+      'id,assignment_id,org_id,expires_at,used_at,revoked_at,terms_version,assignments(id,status,assignment_type,responsible_profile_id,customer_name,customer_email,customer_phone,customer_address,preliminary_address,preferred_date,preferred_time,price_amount,currency,property_address,property_postal_code,property_city,property_municipality,property_owner_name,cadastral_id,brf_name,apartment_number,apartment_holder_name,orderer_role,accepted_at)'
     )
     .eq('token_hash', tokenHash)
     .maybeSingle()

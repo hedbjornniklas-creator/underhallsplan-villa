@@ -27,6 +27,9 @@ type AssignmentSummary = {
   property_municipality: string | null
   property_owner_name: string | null
   cadastral_id: string | null
+  brf_name: string | null
+  apartment_number: string | null
+  apartment_holder_name: string | null
   orderer_role: string | null
   accepted_at: string | null
 }
@@ -85,6 +88,9 @@ type FormState = {
   propertyAddress: string
   propertyMunicipality: string
   propertyOwnerName: string
+  brfName: string
+  apartmentNumber: string
+  apartmentHolderName: string
   customerName: string
   customerAddress: string
   customerPhone: string
@@ -152,6 +158,9 @@ function toFormState(
     propertyAddress: assignment.property_address ?? assignment.preliminary_address ?? '',
     propertyMunicipality: assignment.property_municipality ?? assignment.property_city ?? '',
     propertyOwnerName: assignment.property_owner_name ?? '',
+    brfName: assignment.brf_name ?? '',
+    apartmentNumber: assignment.apartment_number ?? '',
+    apartmentHolderName: assignment.apartment_holder_name ?? '',
     customerName: assignment.customer_name ?? '',
     customerAddress: assignment.customer_address ?? '',
     customerPhone: assignment.customer_phone ?? '',
@@ -315,11 +324,15 @@ export default function AssignmentAcceptPage() {
       return
     }
 
+    const requiresApartmentObjectFields = lockedOrdererRole === 'apartment'
+    const missingObjectFields = requiresApartmentObjectFields
+      ? !form.brfName.trim() || !form.apartmentNumber.trim() || !form.apartmentHolderName.trim()
+      : !form.cadastralId.trim() || !form.propertyOwnerName.trim()
+
     const requiredFieldMissing =
-      !form.cadastralId.trim() ||
       !form.propertyAddress.trim() ||
       !form.propertyMunicipality.trim() ||
-      !form.propertyOwnerName.trim() ||
+      missingObjectFields ||
       !form.customerName.trim() ||
       !form.customerAddress.trim() ||
       !form.customerPhone.trim() ||
@@ -360,6 +373,9 @@ export default function AssignmentAcceptPage() {
           customerAddress: form.customerAddress,
           customerPhone: form.customerPhone,
           customerEmail: form.customerEmail,
+          brfName: form.brfName,
+          apartmentNumber: form.apartmentNumber,
+          apartmentHolderName: form.apartmentHolderName,
           preferredDate: form.preferredDate,
           preferredTime: form.preferredTime,
           selectedAddonServiceIds: form.selectedAddonServiceIds,
@@ -455,12 +471,6 @@ export default function AssignmentAcceptPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <SectionCard title="Objekt">
                   <Field
-                    label="Fastighetsbeteckning *"
-                    value={form.cadastralId}
-                    onChange={(value) => updateField('cadastralId', value)}
-                    disabled={!canSubmit}
-                  />
-                  <Field
                     label="Adress *"
                     value={form.propertyAddress}
                     onChange={(value) => updateField('propertyAddress', value)}
@@ -472,12 +482,43 @@ export default function AssignmentAcceptPage() {
                     onChange={(value) => updateField('propertyMunicipality', value)}
                     disabled={!canSubmit}
                   />
-                  <Field
-                    label="Fastighetsägare *"
-                    value={form.propertyOwnerName}
-                    onChange={(value) => updateField('propertyOwnerName', value)}
-                    disabled={!canSubmit}
-                  />
+                  {lockedOrdererRole === 'apartment' ? (
+                    <>
+                      <Field
+                        label="Bostadsrättsförening *"
+                        value={form.brfName}
+                        onChange={(value) => updateField('brfName', value)}
+                        disabled={!canSubmit}
+                      />
+                      <Field
+                        label="Lägenhetsnummer *"
+                        value={form.apartmentNumber}
+                        onChange={(value) => updateField('apartmentNumber', value)}
+                        disabled={!canSubmit}
+                      />
+                      <Field
+                        label="Bostadsrättsinnehavare *"
+                        value={form.apartmentHolderName}
+                        onChange={(value) => updateField('apartmentHolderName', value)}
+                        disabled={!canSubmit}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <Field
+                        label="Fastighetsbeteckning *"
+                        value={form.cadastralId}
+                        onChange={(value) => updateField('cadastralId', value)}
+                        disabled={!canSubmit}
+                      />
+                      <Field
+                        label="Fastighetsägare *"
+                        value={form.propertyOwnerName}
+                        onChange={(value) => updateField('propertyOwnerName', value)}
+                        disabled={!canSubmit}
+                      />
+                    </>
+                  )}
                 </SectionCard>
 
                 <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">

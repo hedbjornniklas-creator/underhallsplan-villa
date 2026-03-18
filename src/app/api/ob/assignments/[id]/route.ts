@@ -157,6 +157,29 @@ export async function PATCH(
       patch.cadastral_id = cadastralId
     }
 
+    const brfName = safeString(body.brf_name ?? body.brfName)
+    if (brfName !== null || body.brf_name === '' || body.brfName === '') {
+      patch.brf_name = brfName
+    }
+
+    const apartmentNumber = safeString(body.apartment_number ?? body.apartmentNumber)
+    if (
+      apartmentNumber !== null ||
+      body.apartment_number === '' ||
+      body.apartmentNumber === ''
+    ) {
+      patch.apartment_number = apartmentNumber
+    }
+
+    const apartmentHolderName = safeString(body.apartment_holder_name ?? body.apartmentHolderName)
+    if (
+      apartmentHolderName !== null ||
+      body.apartment_holder_name === '' ||
+      body.apartmentHolderName === ''
+    ) {
+      patch.apartment_holder_name = apartmentHolderName
+    }
+
     const invoiceName = safeString(body.invoice_name ?? body.invoiceName)
     if (invoiceName !== null || body.invoice_name === '' || body.invoiceName === '') {
       patch.invoice_name = invoiceName

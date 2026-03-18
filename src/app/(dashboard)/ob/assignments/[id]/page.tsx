@@ -37,6 +37,9 @@ type AssignmentDetails = {
   property_municipality: string | null
   property_owner_name: string | null
   cadastral_id: string | null
+  brf_name: string | null
+  apartment_number: string | null
+  apartment_holder_name: string | null
   invoice_name: string | null
   invoice_address: string | null
   orderer_role: string | null
@@ -72,6 +75,9 @@ type FormState = {
   propertyAddress: string
   propertyMunicipality: string
   propertyOwnerName: string
+  brfName: string
+  apartmentNumber: string
+  apartmentHolderName: string
   customerName: string
   customerAddress: string
   customerPhone: string
@@ -148,6 +154,9 @@ function toFormState(assignment: AssignmentDetails): FormState {
     propertyAddress: assignment.property_address ?? assignment.preliminary_address ?? '',
     propertyMunicipality: assignment.property_municipality ?? assignment.property_city ?? '',
     propertyOwnerName: assignment.property_owner_name ?? '',
+    brfName: assignment.brf_name ?? '',
+    apartmentNumber: assignment.apartment_number ?? '',
+    apartmentHolderName: assignment.apartment_holder_name ?? '',
     customerName: assignment.customer_name ?? '',
     customerAddress: assignment.customer_address ?? '',
     customerPhone: assignment.customer_phone ?? '',
@@ -307,6 +316,9 @@ export default function AssignmentDetailsPage() {
             property_municipality: nextForm.propertyMunicipality,
             property_owner_name: nextForm.propertyOwnerName,
             cadastral_id: nextForm.cadastralId,
+            brf_name: nextForm.brfName,
+            apartment_number: nextForm.apartmentNumber,
+            apartment_holder_name: nextForm.apartmentHolderName,
             preferred_date: nextForm.preferredDate,
             preferred_time: nextForm.preferredTime,
             price_amount: parsedPrice,
@@ -591,11 +603,6 @@ export default function AssignmentDetailsPage() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <SectionCard title="Objekt">
                     <Field
-                      label="Fastighetsbeteckning"
-                      value={form.cadastralId}
-                      onChange={(value) => updateField('cadastralId', value)}
-                    />
-                    <Field
                       label="Adress"
                       value={form.propertyAddress}
                       onChange={(value) => updateField('propertyAddress', value)}
@@ -605,11 +612,38 @@ export default function AssignmentDetailsPage() {
                       value={form.propertyMunicipality}
                       onChange={(value) => updateField('propertyMunicipality', value)}
                     />
-                    <Field
-                      label="Fastighetsägare"
-                      value={form.propertyOwnerName}
-                      onChange={(value) => updateField('propertyOwnerName', value)}
-                    />
+                    {form.ordererRole === 'apartment' ? (
+                      <>
+                        <Field
+                          label="Bostadsrättsförening"
+                          value={form.brfName}
+                          onChange={(value) => updateField('brfName', value)}
+                        />
+                        <Field
+                          label="Lägenhetsnummer"
+                          value={form.apartmentNumber}
+                          onChange={(value) => updateField('apartmentNumber', value)}
+                        />
+                        <Field
+                          label="Bostadsrättsinnehavare"
+                          value={form.apartmentHolderName}
+                          onChange={(value) => updateField('apartmentHolderName', value)}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <Field
+                          label="Fastighetsbeteckning"
+                          value={form.cadastralId}
+                          onChange={(value) => updateField('cadastralId', value)}
+                        />
+                        <Field
+                          label="Fastighetsägare"
+                          value={form.propertyOwnerName}
+                          onChange={(value) => updateField('propertyOwnerName', value)}
+                        />
+                      </>
+                    )}
                   </SectionCard>
 
                   <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">

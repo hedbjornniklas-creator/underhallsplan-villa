@@ -36,6 +36,9 @@ export async function POST(request: Request) {
     const propertyMunicipality = String(body.propertyMunicipality ?? '').trim()
     const propertyOwnerName = String(body.propertyOwnerName ?? '').trim()
     const cadastralId = String(body.cadastralId ?? '').trim()
+    const brfName = String(body.brfName ?? '').trim()
+    const apartmentNumber = String(body.apartmentNumber ?? '').trim()
+    const apartmentHolderName = String(body.apartmentHolderName ?? '').trim()
     const ordererRole = String(body.ordererRole ?? '').trim()
     const preferredDate = String(body.preferredDate ?? '').trim()
     const preferredTime = String(body.preferredTime ?? '').trim()
@@ -70,6 +73,9 @@ export async function POST(request: Request) {
       propertyMunicipality: propertyMunicipality || null,
       propertyOwnerName: propertyOwnerName || null,
       cadastralId: cadastralId || null,
+      brfName: brfName || null,
+      apartmentNumber: apartmentNumber || null,
+      apartmentHolderName: apartmentHolderName || null,
       ordererRole: ordererRole || null,
       preferredDate: preferredDate || null,
       preferredTime: preferredTime || null,
