@@ -409,7 +409,13 @@ export default function InspectionDetailPage() {
               </nav>
             </div>
 
-            <div className="rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:p-4">
+            <div
+              className={
+                activeSection === 'insida'
+                  ? 'p-0 md:p-0'
+                  : 'rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:p-4'
+              }
+            >
               <ObWizard
                 property={property}
                 inspection={inspection}
