@@ -2662,12 +2662,12 @@ function RoomControlPointsSection({
                 <div className="space-y-2">
                   <div className="space-y-1">
                     <label className="text-[11px] text-gray-600">
-                      Förtydligande
+                      Notering
                     </label>
                     <textarea
                       rows={2}
                       className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
-                      placeholder="Specifik notering för just denna kontrollpunkt…"
+                      placeholder="Notering för just denna kontrollpunkt…"
                       value={baseItem.note ?? ''}
                       onChange={e =>
                         baseItem.id &&
@@ -2722,6 +2722,23 @@ function RoomControlPointsSection({
                           )}
                         </div>
 
+                        <div className="space-y-1">
+                          <label className="text-[11px] text-gray-600">
+                            Notering
+                          </label>
+                          <textarea
+                            rows={2}
+                            className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                            placeholder="Notering för just detta chip…"
+                            value={ci.note ?? ''}
+                            onChange={e =>
+                              ci.id &&
+                              onUpdateItem(ci.id, { note: e.target.value })
+                            }
+                            readOnly={isInspectionLocked}
+                          />
+                        </div>
+
                         {(riskText.length > 0 || ftuText.length > 0) && (
                           <div className="space-y-2">
                             {riskText.length > 0 && (
@@ -2762,23 +2779,6 @@ function RoomControlPointsSection({
                             )}
                           </div>
                         )}
-
-                        <div className="space-y-1">
-                          <label className="text-[11px] text-gray-600">
-                            Förtydligande
-                          </label>
-                          <textarea
-                            rows={2}
-                            className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
-                            placeholder="Specifik notering för just detta chip…"
-                            value={ci.note ?? ''}
-                            onChange={e =>
-                              ci.id &&
-                              onUpdateItem(ci.id, { note: e.target.value })
-                            }
-                            readOnly={isInspectionLocked}
-                          />
-                        </div>
 
                         {ci.id && (
                           <ControlItemImagesSection
