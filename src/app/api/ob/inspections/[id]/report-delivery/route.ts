@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { requireOrgContext, getProfileContact } from '@/lib/assignments/server'
@@ -138,7 +138,7 @@ async function getInspectionById(admin: AdminClient, inspectionId: string) {
     .maybeSingle()
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte läsa besiktning.')
+    throw new Error(error.message ?? 'Kunde inte lÃ¤sa besiktning.')
   }
 
   return (data ?? null) as InspectionForDelivery | null
@@ -155,7 +155,7 @@ async function getAssignmentByInspection(admin: AdminClient, orgId: string, insp
     .maybeSingle()
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte läsa kopplad uppdragsbekräftelse.')
+    throw new Error(error.message ?? 'Kunde inte lÃ¤sa kopplad uppdragsbekrÃ¤ftelse.')
   }
 
   return (data ?? null) as AssignmentForDelivery | null
@@ -192,7 +192,7 @@ async function getDeliveryHistory(admin: AdminClient, assignmentId: string) {
     .limit(10)
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte hämta leveranshistorik.')
+    throw new Error(error.message ?? 'Kunde inte hÃ¤mta leveranshistorik.')
   }
 
   return (data ?? []) as OutboundMessageRow[]
@@ -269,7 +269,7 @@ export async function GET(
     if (!assignment) {
       const ownedByUser = await isInspectionOwnedByUser(admin, inspection.property_id, org.userId)
       if (!ownedByUser) {
-        return jsonError('Besiktningen tillhör inte din organisation/användare.', 403)
+        return jsonError('Besiktningen tillhÃ¶r inte din organisation/anvÃ¤ndare.', 403)
       }
     }
 
@@ -289,10 +289,10 @@ export async function GET(
       history,
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okänt fel.'
+    const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
-    return jsonError(message || 'Kunde inte läsa utskicksstatus.', 500)
+    return jsonError(message || 'Kunde inte lÃ¤sa utskicksstatus.', 500)
   }
 }
 
@@ -323,7 +323,7 @@ export async function POST(
     if (!assignment) {
       const ownedByUser = await isInspectionOwnedByUser(admin, inspection.property_id, org.userId)
       if (!ownedByUser) {
-        return jsonError('Besiktningen tillhör inte din organisation/användare.', 403)
+        return jsonError('Besiktningen tillhÃ¶r inte din organisation/anvÃ¤ndare.', 403)
       }
     }
 
@@ -347,7 +347,7 @@ export async function POST(
         : inspection.inspection_side === 'apartment'
           ? 'apartment'
           : 'buyer'
-    const specInspectionSide = inspectionSide === 'seller' ? 'seller' : 'buyer'
+    const specInspectionSide = inspectionSide === 'seller' ? 'seller' : inspectionSide === 'apartment' ? 'apartment' : 'buyer'
     const reportData = await buildReportDataV2({
       inspectionId: id,
       propertyId,
@@ -382,7 +382,7 @@ export async function POST(
       .single()
 
     if (linkError || !linkData) {
-      throw new Error(linkError?.message ?? 'Kunde inte skapa rapportlänk.')
+      throw new Error(linkError?.message ?? 'Kunde inte skapa rapportlÃ¤nk.')
     }
 
     const linkUrl = `${resolvePublicBaseUrl(request)}/rapport/${token}`
@@ -446,7 +446,7 @@ export async function POST(
         sentRecipients.push(recipient)
         if (recipient === primaryRecipient) primarySent = true
       } catch (sendError) {
-        const message = sendError instanceof Error ? sendError.message : 'Okänt fel vid mejlutskick.'
+        const message = sendError instanceof Error ? sendError.message : 'OkÃ¤nt fel vid mejlutskick.'
         failedRecipients.push({ email: recipient, error: message })
 
         await updateOutboundMessage(admin, messageId, {
@@ -490,7 +490,7 @@ export async function POST(
       linkId: linkData.id,
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okänt fel.'
+    const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     if (message.includes('SUPABASE_SERVICE_ROLE_KEY')) {
@@ -503,6 +503,7 @@ export async function POST(
       return jsonError('Servern saknar ASSIGNMENTS_MAIL_FROM i env.', 500)
     }
     console.error('[inspections.report-delivery] unhandled error', { error: message })
-    return jsonError(message || 'Kunde inte skicka utlåtandet.', 500)
+    return jsonError(message || 'Kunde inte skicka utlÃ¥tandet.', 500)
   }
 }
+

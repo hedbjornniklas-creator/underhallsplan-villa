@@ -1,4 +1,4 @@
-import { notFound, redirect } from 'next/navigation'
+﻿import { notFound, redirect } from 'next/navigation'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { buildReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
@@ -94,7 +94,7 @@ export default async function ReportPreviewPage({
       : inspection.inspection_side === 'apartment'
         ? 'apartment'
         : 'buyer'
-  const specInspectionSide = inspectionSideRaw === 'seller' ? 'seller' : 'buyer'
+  const specInspectionSide = inspectionSideRaw
   const reportData = await buildReportDataV2({
     inspectionId,
     propertyId,
@@ -118,3 +118,4 @@ export default async function ReportPreviewPage({
     />
   )
 }
+

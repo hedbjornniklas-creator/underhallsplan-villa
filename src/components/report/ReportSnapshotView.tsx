@@ -1,5 +1,12 @@
-import Link from 'next/link'
+﻿import Link from 'next/link'
 import type { ReportSnapshotPayloadV1 } from '@/lib/report/pdfV2/renderStructuredPdfV2'
+import { loadStandardText } from '@/content/standardtexts/loadStandardText'
+import { loadAppendixText } from '@/lib/report/loadAppendixText'
+import {
+  defaultCoverIllustrationSrc,
+  footerImageSrc,
+  sbrLogoSrc,
+} from '@/lib/report/reportAssets'
 
 type SnapshotInspectionBlock = {
   title?: string | null
@@ -44,6 +51,22 @@ function getBlockArrayByPath(root: Record<string, unknown>, path: string) {
   const value = getByPath(root, path)
   if (!Array.isArray(value)) return [] as SnapshotInspectionBlock[]
   return value as SnapshotInspectionBlock[]
+}
+
+function getListByPath(root: Record<string, unknown>, path: string) {
+  const value = getByPath(root, path)
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => String(entry ?? '').trim())
+      .filter(Boolean)
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/\r?\n/)
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  }
+  return [] as string[]
 }
 
 function formatSnapshotTimestamp(value: string | null | undefined) {
@@ -111,15 +134,49 @@ function filterApartmentBuildingData(raw: string) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
-    .filter((line) =>
-      keepPrefixes.some((prefix) => line.toLowerCase().startsWith(prefix))
-    )
+    .filter((line) => keepPrefixes.some((prefix) => line.toLowerCase().startsWith(prefix)))
+
+  if (!keptLines.some((line) => line.toLowerCase().startsWith('ombyggnadsår:'))) {
+    keptLines.push('Ombyggnadsår: --')
+  }
 
   return keptLines.join('\n')
 }
 
+function normalizeInspectionSide(
+  value: ReportSnapshotPayloadV1['inspectionSide']
+): 'buyer' | 'seller' | 'apartment' {
+  if (value === 'seller') return 'seller'
+  if (value === 'apartment') return 'apartment'
+  return 'buyer'
+}
+
+function interpolateAssignmentNotice(text: string, assignmentDate: string) {
+  return text
+    .replace(/ÅÅÅÅ-MM-DD/g, assignmentDate)
+    .replace(/\{\{\s*assignment_confirmation_date\s*\}\}/g, assignmentDate)
+}
+
+function resolveAppendix1Id(inspectionSide: 'buyer' | 'seller' | 'apartment') {
+  if (inspectionSide === 'seller') return 'APPENDIX_1_VILLKOR_SELLER_SBR'
+  if (inspectionSide === 'apartment') return 'APPENDIX_1_VILLKOR_APARTMENT_SBR'
+  return 'APPENDIX_1_VILLKOR_BUYER_SBR'
+}
+
+function toImageUrl(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed || trimmed === '--') return null
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/')) {
+    return trimmed
+  }
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!base) return null
+  return `${base}/storage/v1/object/public/inspection-images/${trimmed}`
+}
+
 export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
-  const isApartment = props.snapshot.inspectionSide === 'apartment'
+  const inspectionSide = normalizeInspectionSide(props.snapshot.inspectionSide)
+  const isApartment = inspectionSide === 'apartment'
   const heading =
     props.heading ?? (isApartment ? 'Lägenhetsbesiktning' : 'Besiktningsutlåtande')
   const subtitle =
@@ -140,16 +197,72 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
   const riskText = getTextByPath(mock, 'risk.text', '')
   const ftuText = getTextByPath(mock, 'ftu.text', '')
 
+  const attendeesText = getTextByPath(mock, 'inspections.attendees_text', '--')
+  const assignmentConfirmationText = getTextByPath(
+    mock,
+    'inspections.assignment_confirmation_text',
+    '--'
+  )
+
+  const providedDocuments = getListByPath(mock, 'documents.provided')
+  const disclosureInfo = getTextByPath(mock, 'disclosures.acquisition_text', '--')
+  const renovations = getListByPath(mock, 'disclosures.renovations')
+  const faults = getListByPath(mock, 'disclosures.property_faults')
+
+  const assignmentDate = getTextByPath(mock, 'inspections.assignment_confirmation_date', '--')
+  const assignmentNoticeId =
+    inspectionSide === 'seller'
+      ? 'STD_ASSIGNMENT_SELLER_NOTICE'
+      : inspectionSide === 'apartment'
+        ? 'STD_ASSIGNMENT_APARTMENT_NOTICE'
+        : 'STD_ASSIGNMENT_BUYER_NOTICE'
+  const assignmentNoticeText = interpolateAssignmentNotice(
+    loadStandardText(assignmentNoticeId),
+    assignmentDate
+  )
+
+  const visualConditionsText = loadStandardText('STD_VISUAL_INSPECTION_CONDITIONS')
+  const visualOralText = loadStandardText('STD_VISUAL_INSPECTION_ORAL')
+  const ftuGeneralNotice = loadStandardText('STD_FTU_GENERAL_NOTICE')
+  const appendix1Text = loadAppendixText(resolveAppendix1Id(inspectionSide))
+  const appendix2Text = loadAppendixText('APPENDIX_2_LITEN_BYGGORDBOK_SBR')
+  const appendix3Text = loadAppendixText('APPENDIX_3_LIFESPAN_TABLE_SBR')
+  const companyLogoUrl = toImageUrl(getTextByPath(mock, 'system.logo_url', ''))
+  const coverImageUrl =
+    toImageUrl(getTextByPath(mock, 'properties.cover_path', '')) ?? defaultCoverIllustrationSrc
+
+  const companyAddress = [
+    getTextByPath(mock, 'profile.company_address', ''),
+    getTextByPath(mock, 'profile.company_postal_code', ''),
+    getTextByPath(mock, 'profile.company_city', ''),
+  ]
+    .filter((part) => part && part !== '--')
+    .join(' ')
+
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-6 md:py-8">
       <div className="mx-auto max-w-6xl space-y-4">
         {showHeader ? (
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h1 className="text-2xl font-semibold text-slate-900">{heading}</h1>
-                <p className="mt-1 text-sm text-slate-600">{subtitle}</p>
+              <div className="flex items-start gap-3">
+                {companyLogoUrl ? (
+                  <img
+                    src={companyLogoUrl}
+                    alt="Företagslogotyp"
+                    className="h-10 w-10 rounded-md border border-slate-200 bg-white object-contain"
+                  />
+                ) : null}
+                <div>
+                  <h1 className="text-2xl font-semibold text-slate-900">{heading}</h1>
+                  <p className="mt-1 text-sm text-slate-600">{subtitle}</p>
+                </div>
               </div>
+              <img
+                src={sbrLogoSrc}
+                alt="SBR-logotyp"
+                className="h-10 w-auto rounded-md border border-slate-200 bg-white p-1"
+              />
               {showActions ? (
                 <div className="flex flex-wrap gap-2">
                   <Link
@@ -173,6 +286,26 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
             </div>
           </section>
         ) : null}
+
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <img src={coverImageUrl} alt="Omslagsbild" className="h-56 w-full object-cover sm:h-64" />
+          {isApartment ? (
+            <div className="grid gap-2 border-t border-slate-200 px-4 py-3 text-sm text-slate-700 sm:grid-cols-2">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">
+                  Bostadsrättsförening
+                </div>
+                <div>{getTextByPath(mock, 'properties.brf_name')}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">
+                  Lägenhetsnummer
+                </div>
+                <div>{getTextByPath(mock, 'properties.apartment_number')}</div>
+              </div>
+            </div>
+          ) : null}
+        </section>
 
         <section className="grid gap-4 lg:grid-cols-3">
           <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -235,7 +368,15 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
               </div>
               <div>
                 <dt className="text-xs text-slate-500">Omfattning</dt>
-                <dd>{getTextByPath(mock, 'inspections.scope_text')}</dd>
+                <dd className="whitespace-pre-wrap">{getTextByPath(mock, 'inspections.scope_text')}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Närvarande</dt>
+                <dd className="whitespace-pre-wrap">{attendeesText}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Uppdragsbekräftelse</dt>
+                <dd className="whitespace-pre-wrap">{assignmentConfirmationText}</dd>
               </div>
             </dl>
           </article>
@@ -257,8 +398,125 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                 <dt className="text-xs text-slate-500">Telefon</dt>
                 <dd>{getTextByPath(mock, 'profile.phone')}</dd>
               </div>
+              <div>
+                <dt className="text-xs text-slate-500">SBR-grupp</dt>
+                <dd>{getTextByPath(mock, 'profile.sbr_group')}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">SBR-status</dt>
+                <dd>{getTextByPath(mock, 'profile.sbr_status')}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Certifieringsnummer</dt>
+                <dd>--</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Medlemsnummer</dt>
+                <dd>{getTextByPath(mock, 'profile.membership_number')}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Företag</dt>
+                <dd>{getTextByPath(mock, 'profile.company_name')}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Org.nr</dt>
+                <dd>{getTextByPath(mock, 'profile.company_orgno')}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Företagsadress</dt>
+                <dd>{companyAddress || '--'}</dd>
+              </div>
             </dl>
           </article>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+            Handlingar och upplysningar
+          </h2>
+
+          <div className="mt-3 grid gap-4 lg:grid-cols-3">
+            <article>
+              <h3 className="text-xs font-semibold uppercase text-slate-500">
+                Tillhandahållna handlingar
+              </h3>
+              {providedDocuments.length > 0 ? (
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                  {providedDocuments.map((line, idx) => (
+                    <li key={`provided-${idx}`}>{line}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-sm text-slate-600">--</p>
+              )}
+            </article>
+
+            <article className="lg:col-span-2">
+              <h3 className="text-xs font-semibold uppercase text-slate-500">
+                Information från uppdragsgivare, fastighetsägare eller ombud
+              </h3>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
+                Under denna rubrik är samtliga uppgifter lämnade av fastighetsägare eller dess ombud. Uppgifterna är inte kontrollerade av besiktningsmannen.
+              </p>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{disclosureInfo}</p>
+
+              {renovations.length > 0 ? (
+                <>
+                  <p className="mt-2 text-sm font-medium text-slate-800">
+                    Följande renoveringar och underhåll är utförda:
+                  </p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                    {renovations.map((line, idx) => (
+                      <li key={`renovation-${idx}`}>{line}</li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+            </article>
+          </div>
+
+          <div className="mt-4">
+            <h3 className="text-xs font-semibold uppercase text-slate-500">
+              Upplysningar om fel i fastigheten
+            </h3>
+            {faults.length > 0 ? (
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                {faults.map((line, idx) => (
+                  <li key={`fault-${idx}`}>{line}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-sm text-slate-600">--</p>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+            Okulär besiktning
+          </h2>
+          <div className="mt-2 space-y-3 text-sm text-slate-700">
+            <div>
+              <h3 className="text-xs font-semibold uppercase text-slate-500">
+                Särskilda förutsättningar vid besiktningen
+              </h3>
+              <p className="mt-1 whitespace-pre-wrap">{visualConditionsText}</p>
+            </div>
+            <div>
+              <h3 className="text-xs font-semibold uppercase text-slate-500">Muntliga uppgifter</h3>
+              <p className="mt-1 whitespace-pre-wrap">{visualOralText}</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+            Uppdragsvillkor
+          </h2>
+          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
+            Besiktningsmannen är medlem i Svenska Byggingenjörers Riksförbund (SBR) och är registrerad i SBR:s förteckning över besiktningsmän med därtill hörande förpliktelser.
+          </p>
+          <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{assignmentNoticeText}</p>
         </section>
 
         {buildingDataText ? (
@@ -299,10 +557,38 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
               Fortsatt teknisk utredning
             </h2>
             <p className="mt-2 whitespace-pre-wrap text-sm text-amber-900">{ftuText}</p>
+            <p className="mt-3 whitespace-pre-wrap text-xs text-amber-900">{ftuGeneralNotice}</p>
           </section>
         ) : null}
+
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Bilagor</h2>
+          <div className="mt-3 space-y-3">
+            <details className="rounded-md border border-slate-200 p-3">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-900">
+                Bilaga 1 - Villkor
+              </summary>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{appendix1Text}</p>
+            </details>
+            <details className="rounded-md border border-slate-200 p-3">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-900">
+                Bilaga 2 - Begreppsförklaringar
+              </summary>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{appendix2Text}</p>
+            </details>
+            <details className="rounded-md border border-slate-200 p-3">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-900">
+                Bilaga 3 - Tekniska medellivslängder
+              </summary>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{appendix3Text}</p>
+            </details>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <img src={footerImageSrc} alt="Sidfot" className="h-14 w-full object-cover" />
+        </section>
       </div>
     </main>
   )
 }
-

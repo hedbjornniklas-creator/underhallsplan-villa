@@ -1,4 +1,4 @@
-import React from 'react'
+﻿import React from 'react'
 import { renderToBuffer } from '@react-pdf/renderer'
 import type * as ReactPdf from '@react-pdf/renderer'
 import ReportPdfDocumentV2 from '@/lib/report/pdfV2/ReportPdfDocumentV2'
@@ -106,7 +106,7 @@ export function isReportSnapshotPayloadV1(value: unknown): value is ReportSnapsh
 export async function renderStructuredPdfFromSnapshot(
   snapshot: ReportSnapshotPayloadV1
 ): Promise<Buffer> {
-  const specInspectionSide = snapshot.inspectionSide === 'seller' ? 'seller' : 'buyer'
+  const specInspectionSide = snapshot.inspectionSide === 'seller' ? 'seller' : snapshot.inspectionSide === 'apartment' ? 'apartment' : 'buyer'
   const spec =
     Array.isArray(snapshot.reportSpec) && snapshot.reportSpec.length > 0
       ? snapshot.reportSpec
@@ -124,8 +124,9 @@ export async function renderStructuredPdfV2(
   })
   const compactData = stripPhotoUrls(data)
   const inspectionSide = await resolveInspectionSide(params.inspectionId)
-  const specInspectionSide = inspectionSide === 'seller' ? 'seller' : 'buyer'
+  const specInspectionSide = inspectionSide === 'seller' ? 'seller' : inspectionSide === 'apartment' ? 'apartment' : 'buyer'
   const spec = buildReportSpec({ inspectionSide: specInspectionSide })
   const document = createDocument(spec, compactData)
   return await renderDocumentToBuffer(document)
 }
+
