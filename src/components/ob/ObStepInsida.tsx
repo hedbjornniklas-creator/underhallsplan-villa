@@ -2177,6 +2177,9 @@ function RoomControlPointsSection({
   const [expandedOkGroupIds, setExpandedOkGroupIds] = useState<Set<string>>(
     () => new Set()
   )
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
+    () => new Set()
+  )
   const roomDisplayLabel = isOtherRoomKey(room.room_type_key)
     ? OTHER_ROOM_DISPLAY_LABEL
     : room.room_label
@@ -2211,6 +2214,22 @@ function RoomControlPointsSection({
 
   const collapseOkGroup = (groupId: string) => {
     setExpandedOkGroupIds(prev => {
+      if (!prev.has(groupId)) return prev
+      const next = new Set(prev)
+      next.delete(groupId)
+      return next
+    })
+  }
+  const collapseGroup = (groupId: string) => {
+    setCollapsedGroupIds(prev => {
+      const next = new Set(prev)
+      next.add(groupId)
+      return next
+    })
+  }
+
+  const expandGroup = (groupId: string) => {
+    setCollapsedGroupIds(prev => {
       if (!prev.has(groupId)) return prev
       const next = new Set(prev)
       next.delete(groupId)
@@ -2547,29 +2566,44 @@ function RoomControlPointsSection({
           const isYellow = selectedItems.length > 0
           const isRed = !isGreen && !isYellow
           const isCollapsedGreen = isGreen && !expandedOkGroupIds.has(groupId)
+          const isCollapsedManually = collapsedGroupIds.has(groupId)
+          const isCollapsed = isCollapsedGreen || isCollapsedManually
           const rowToneClass = isRed
             ? 'bg-red-50 border-red-200'
             : isGreen
             ? 'bg-emerald-50 border-emerald-200'
             : 'bg-amber-50 border-amber-200'
 
-          if (isCollapsedGreen) {
+          if (isCollapsed) {
+            const collapsedBadgeClass = isGreen
+              ? 'border-emerald-300 text-emerald-700'
+              : isYellow
+              ? 'border-amber-300 text-amber-700'
+              : 'border-red-300 text-red-700'
+            const collapsedBadgeText = isGreen
+              ? 'Inget att notera'
+              : isYellow
+              ? `${selectedItems.length} vald${selectedItems.length === 1 ? '' : 'a'} chip`
+              : 'Ej färdig'
             return (
               <div
                 key={group.controlPointId}
-                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2"
+                className={`rounded-lg border px-3 py-2 ${rowToneClass}`}
               >
                 <div className="flex items-center gap-2">
                   <div className="text-xs font-semibold text-gray-900 truncate">
                     {baseItem.title}
                   </div>
-                  <span className="rounded-full border border-emerald-300 bg-white px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                    Inget att notera
+                  <span className={`rounded-full border bg-white px-2 py-0.5 text-[10px] font-medium ${collapsedBadgeClass}`}>
+                    {collapsedBadgeText}
                   </span>
                   <div className="ml-auto flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => expandOkGroup(groupId)}
+                      onClick={() => {
+                        if (isGreen) expandOkGroup(groupId)
+                        expandGroup(groupId)
+                      }}
                       className="text-[11px] text-gray-700 hover:underline"
                     >
                       Visa
@@ -2600,15 +2634,20 @@ function RoomControlPointsSection({
                   {baseItem.title}
                 </div>
                 <div className="ml-auto flex items-center gap-2">
-                  {isGreen && (
-                    <button
-                      type="button"
-                      onClick={() => collapseOkGroup(groupId)}
-                      className="text-[11px] text-gray-700 hover:underline"
-                    >
-                      Dölj
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isGreen) {
+                        collapseOkGroup(groupId)
+                        expandGroup(groupId)
+                      } else {
+                        collapseGroup(groupId)
+                      }
+                    }}
+                    className="text-[11px] text-gray-700 hover:underline"
+                  >
+                    Dölj
+                  </button>
                   {baseItem.id && (
                     <button
                       type="button"
@@ -2657,6 +2696,7 @@ function RoomControlPointsSection({
                           ftu_text: null,
                         })
                         collapseOkGroup(groupId)
+                        expandGroup(groupId)
                       } else {
                         onUpdateItem(baseItem.id, {
                           status: RED_STATUS,
@@ -2665,6 +2705,7 @@ function RoomControlPointsSection({
                           ftu_text: null,
                         })
                         expandOkGroup(groupId)
+                        expandGroup(groupId)
                       }
                     }}
                     disabled={isInspectionLocked}
