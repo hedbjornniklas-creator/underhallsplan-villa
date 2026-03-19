@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from 'react'
 export const dynamic = 'force-dynamic'
 
 type SelectionMode = 'single' | 'multi_set' | 'per_floor'
+type InspectionSide = 'buyer' | 'seller' | 'apartment'
 
 type SettingsOverviewItem = {
   id: string
@@ -18,6 +19,7 @@ type SettingsOverviewItem = {
   is_active: boolean
   selection_mode: SelectionMode
   note_enabled: boolean
+  applies_to?: InspectionSide[] | null
   created_at?: string | null
   updated_at?: string | null
 }
@@ -48,6 +50,24 @@ type SettingsOverviewOption = {
 }
 
 const SELECTION_MODES: SelectionMode[] = ['single', 'multi_set', 'per_floor']
+const APPLIES_TO_ALL: InspectionSide[] = ['buyer', 'seller', 'apartment']
+
+const normalizeAppliesTo = (value: unknown): InspectionSide[] => {
+  if (!Array.isArray(value)) return [...APPLIES_TO_ALL]
+  const allowed = new Set<InspectionSide>(APPLIES_TO_ALL)
+  const parsed = value.filter((v): v is InspectionSide => typeof v === 'string' && allowed.has(v as InspectionSide))
+  return parsed.length > 0 ? Array.from(new Set(parsed)) : [...APPLIES_TO_ALL]
+}
+
+const appliesToLabel = (value?: InspectionSide[] | null) => {
+  const sides = normalizeAppliesTo(value)
+  const labels = sides.map(side => {
+    if (side === 'buyer') return 'Köpare'
+    if (side === 'seller') return 'Säljare'
+    return 'Lägenhet'
+  })
+  return labels.join(', ')
+}
 
 export default function ForutsattningarSettingsPage() {
   const { isAdmin, loading } = useProfile()
@@ -86,7 +106,10 @@ export default function ForutsattningarSettingsPage() {
       alert(error.message)
       return
     }
-    const arr = (data ?? []) as SettingsOverviewItem[]
+    const arr = ((data ?? []) as SettingsOverviewItem[]).map(item => ({
+      ...item,
+      applies_to: normalizeAppliesTo(item.applies_to),
+    }))
     setItems(arr)
 
     // prefetch historik för alla items (head+count är billigt)
@@ -180,6 +203,7 @@ export default function ForutsattningarSettingsPage() {
         is_active: true,
         selection_mode: 'single',
         note_enabled: true,
+        applies_to: APPLIES_TO_ALL,
       })
       .select('*')
       .single()
@@ -187,19 +211,43 @@ export default function ForutsattningarSettingsPage() {
     setSaving(false)
     if (error) return alert(error.message)
 
-    const newItem = data as SettingsOverviewItem
+    const newItem = {
+      ...(data as SettingsOverviewItem),
+      applies_to: normalizeAppliesTo((data as SettingsOverviewItem).applies_to),
+    }
     setItems(prev => [...prev, newItem].sort((a, b) => a.sort_order - b.sort_order))
     setItemHistoryCount(prev => ({ ...prev, [newItem.id]: 0 }))
     setSelectedItemId(newItem.id)
   }
 
   const saveItem = async (id: string, patch: Partial<SettingsOverviewItem>) => {
-    setItems(prev => prev.map(i => (i.id === id ? { ...i, ...patch } : i)))
+    setItems(prev =>
+      prev.map(i =>
+        i.id === id
+          ? {
+              ...i,
+              ...patch,
+              applies_to:
+                patch.applies_to === undefined
+                  ? i.applies_to
+                  : normalizeAppliesTo(patch.applies_to),
+            }
+          : i
+      )
+    )
     const { error } = await supabase
       .from('settings_overview_items')
       .update(patch)
       .eq('id', id)
     if (error) alert(error.message)
+  }
+
+  const toggleItemAppliesTo = (item: SettingsOverviewItem, side: InspectionSide, checked: boolean) => {
+    const current = normalizeAppliesTo(item.applies_to)
+    const next = checked
+      ? Array.from(new Set([...current, side]))
+      : current.filter(x => x !== side)
+    saveItem(item.id, { applies_to: normalizeAppliesTo(next) })
   }
 
   const delItem = async (id: string) => {
@@ -405,7 +453,7 @@ export default function ForutsattningarSettingsPage() {
   if (loading) {
     return (
       <Protected>
-        <div className="p-6">Laddar…</div>
+        <div className="p-6">Laddar...</div>
       </Protected>
     )
   }
@@ -466,7 +514,7 @@ export default function ForutsattningarSettingsPage() {
             <input
               value={qItems}
               onChange={e => setQItems(e.target.value)}
-              placeholder="Sök kategori…"
+              placeholder="Sök kategori..."
               className="w-full rounded-md border px-2 py-1 text-sm"
             />
 
@@ -491,6 +539,9 @@ export default function ForutsattningarSettingsPage() {
                     </div>
                     <div className={`text-xs ${selectedItemId === i.id ? 'text-gray-200' : 'text-gray-500'}`}>
                       key: {i.key}
+                    </div>
+                    <div className={`text-[11px] ${selectedItemId === i.id ? 'text-gray-300' : 'text-gray-500'}`}>
+                      gäller för: {appliesToLabel(i.applies_to)}
                     </div>
                   </button>
                 )
@@ -569,6 +620,36 @@ export default function ForutsattningarSettingsPage() {
                   </div>
                 </div>
 
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-600">Gäller för</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 border rounded-md px-2 py-2">
+                    <label className="text-xs flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={normalizeAppliesTo(selectedItem.applies_to).includes('buyer')}
+                        onChange={e => toggleItemAppliesTo(selectedItem, 'buyer', e.target.checked)}
+                      />
+                      Köpare
+                    </label>
+                    <label className="text-xs flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={normalizeAppliesTo(selectedItem.applies_to).includes('seller')}
+                        onChange={e => toggleItemAppliesTo(selectedItem, 'seller', e.target.checked)}
+                      />
+                      Säljare
+                    </label>
+                    <label className="text-xs flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={normalizeAppliesTo(selectedItem.applies_to).includes('apartment')}
+                        onChange={e => toggleItemAppliesTo(selectedItem, 'apartment', e.target.checked)}
+                      />
+                      Lägenhet
+                    </label>
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-3 pt-1">
                   <label className="text-xs flex items-center gap-2">
                     <input
@@ -627,7 +708,7 @@ export default function ForutsattningarSettingsPage() {
                 <input
                   value={qGroups}
                   onChange={e => setQGroups(e.target.value)}
-                  placeholder="Sök parameter…"
+                  placeholder="Sök parameter..."
                   className="w-full rounded-md border px-2 py-1 text-sm"
                 />
 
@@ -784,7 +865,7 @@ export default function ForutsattningarSettingsPage() {
                 <input
                   value={qOptions}
                   onChange={e => setQOptions(e.target.value)}
-                  placeholder="Sök val…"
+                  placeholder="Sök val..."
                   className="w-full rounded-md border px-2 py-1 text-sm"
                 />
 
@@ -889,8 +970,9 @@ export default function ForutsattningarSettingsPage() {
           </section>
         </div>
 
-        {saving && <div className="text-xs text-gray-500">Sparar…</div>}
+        {saving && <div className="text-xs text-gray-500">Sparar...</div>}
       </div>
     </Protected>
   )
 }
+

@@ -14,6 +14,7 @@ type InspectionDocument = Tables<'inspection_documents'>
 type InspectionDisclosure = Tables<'inspection_disclosures'>
 
 type InspectionDocumentStatus = 'present' | 'missing' | 'na'
+type InspectionSide = 'buyer' | 'seller' | 'apartment'
 
 // Om din DB-typ för inspection_documents.status redan är en enum union kan du ta bort denna
 // och använda InspectionDocument['status'] direkt.
@@ -24,6 +25,63 @@ const STATUS_LABELS: Record<InspectionDocumentStatus, string> = {
 }
 
 const STANDARD_DEFECT_TEXT = 'Inga kända fel enligt fastighetsägaren.'
+
+const normalizeSwedishToken = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replaceAll('å', 'a')
+    .replaceAll('ä', 'a')
+    .replaceAll('ö', 'o')
+
+const parseInspectionSideToken = (value: string): InspectionSide | null => {
+  const token = normalizeSwedishToken(value)
+  if (token.includes('seller') || token.includes('salj')) return 'seller'
+  if (token.includes('apartment') || token.includes('lagenhet') || token.includes('apt')) {
+    return 'apartment'
+  }
+  if (token.includes('buyer') || token.includes('kop')) return 'buyer'
+  return null
+}
+
+const normalizeInspectionSide = (value: unknown): InspectionSide => {
+  if (typeof value !== 'string') return 'buyer'
+  return parseInspectionSideToken(value) ?? 'buyer'
+}
+
+const parseAppliesToSides = (raw: unknown): InspectionSide[] | null => {
+  if (raw == null) return null
+
+  let tokens: string[] = []
+  if (Array.isArray(raw)) {
+    tokens = raw.filter((value): value is string => typeof value === 'string')
+  } else if (typeof raw === 'string') {
+    tokens = raw.split(/[,;|]/g)
+  } else {
+    return null
+  }
+
+  const normalizedTokens = tokens.map(normalizeSwedishToken).filter(Boolean)
+  if (normalizedTokens.includes('all')) return null
+
+  const parsed = Array.from(
+    new Set(
+      normalizedTokens
+        .map(token => parseInspectionSideToken(token))
+        .filter((token): token is InspectionSide => token !== null)
+    )
+  )
+
+  return parsed.length > 0 ? parsed : null
+}
+
+const documentTypeAppliesToInspectionSide = (
+  documentType: DocumentType,
+  inspectionSide: InspectionSide
+) => {
+  const appliesTo = parseAppliesToSides((documentType as { applies_to?: unknown }).applies_to)
+  return !appliesTo || appliesTo.includes(inspectionSide)
+}
 
 export default function ObStepHandlingar({
   property,
@@ -54,6 +112,7 @@ export default function ObStepHandlingar({
     const v = (inspection as any)?.defect_disclosures as string | null | undefined
     return v && v.trim() !== '' ? v : STANDARD_DEFECT_TEXT
   })
+  const inspectionSide = normalizeInspectionSide((inspection as { inspection_side?: unknown })?.inspection_side)
 
   // -------------------------------
   // Helpers
@@ -61,7 +120,7 @@ export default function ObStepHandlingar({
   const fetchDocumentTypes = async (): Promise<DocumentType[]> => {
     const { data, error: dtErr } = await supabase
       .from('document_types')
-      .select('id,label,description,scope,is_active')
+      .select('id,label,description,scope,is_active,applies_to')
       .in('scope', ['building', 'property'])
       .eq('is_active', true)
 
@@ -180,7 +239,10 @@ export default function ObStepHandlingar({
         setLoading(true)
         setError(null)
 
-        const types = await fetchDocumentTypes()
+        const allTypes = await fetchDocumentTypes()
+        const types = allTypes.filter(type =>
+          documentTypeAppliesToInspectionSide(type, inspectionSide)
+        )
         if (cancelled) return
         setDocumentTypes(types)
 
@@ -216,12 +278,13 @@ export default function ObStepHandlingar({
     return () => {
       cancelled = true
     }
-  }, [inspection?.id])
+  }, [inspection?.id, inspectionSide])
 
   // -------------------------------
   // DEDUPE + SORT (hide duplicates)
   // -------------------------------
   const documents = useMemo(() => {
+    const allowedTypeIds = new Set(documentTypes.map(type => type.id))
     const newestByType = new Map<string, InspectionDocument>()
     const customs: InspectionDocument[] = []
 
@@ -231,6 +294,7 @@ export default function ObStepHandlingar({
         customs.push(d)
         continue
       }
+      if (!allowedTypeIds.has(typeId)) continue
 
       const prev = newestByType.get(typeId)
       if (!prev) {
@@ -246,7 +310,7 @@ export default function ObStepHandlingar({
     const merged = [...newestByType.values(), ...customs]
     merged.sort((a, b) => ((a as any).title ?? '').localeCompare((b as any).title ?? '', 'sv'))
     return merged
-  }, [documentsRaw])
+  }, [documentsRaw, documentTypes])
 
   // -------------------------------
   // HANDLINGAR update

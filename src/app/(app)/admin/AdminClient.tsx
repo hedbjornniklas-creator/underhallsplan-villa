@@ -13,9 +13,10 @@ type DocType = {
   code: string
   label: string
   category: string | null
-  scope: 'property' | 'building' | null
+  applies_to: string | null
   description: string | null
   is_default: boolean | null
+  is_active: boolean | null
 }
 
 type DocDraft = {
@@ -23,9 +24,10 @@ type DocDraft = {
   code: string
   label: string
   category: string | null
-  scope: 'property' | 'building' | null
+  applies_to: string | null
   description: string | null
   is_default: boolean
+  is_active: boolean
 }
 
 type CompType = {
@@ -80,7 +82,9 @@ type ExteriorItem = {
   is_active: boolean
 }
 
-type ControlPointRow = Database['public']['Tables']['settings_control_points']['Row']
+type ControlPointRow = Database['public']['Tables']['settings_control_points']['Row'] & {
+  applies_to?: string[] | null
+}
 
 type ControlPointDraft = {
   id?: string
@@ -88,6 +92,7 @@ type ControlPointDraft = {
   title: string
   description: string | null
   scope: string
+  applies_to: string[]
   exterior_item_key: string | null
   sort_order: number | null
   is_active: boolean
@@ -172,6 +177,12 @@ export default function AdminClient() {
     key: keyof DocType
     dir: 'asc' | 'desc'
   }>({ key: 'label', dir: 'asc' })
+  const [docFilters, setDocFilters] = useState<{
+    applies_to: string
+    category: string
+    is_default: string
+    is_active: string
+  }>({ applies_to: '', category: '', is_default: '', is_active: '' })
   const [docModalOpen, setDocModalOpen] = useState(false)
   const [docDraft, setDocDraft] = useState<DocDraft | null>(null)
 
@@ -188,10 +199,11 @@ export default function AdminClient() {
   }>({ key: 'sort_order', dir: 'asc' })
   const [pointFilters, setPointFilters] = useState<{
     scope: string
+    applies_to: string
     exterior_item_key: string
     room_type_keys: string[]
     is_active: string
-  }>({ scope: '', exterior_item_key: '', room_type_keys: [], is_active: '' })
+  }>({ scope: '', applies_to: '', exterior_item_key: '', room_type_keys: [], is_active: '' })
   const [roomTypeFilterOpen, setRoomTypeFilterOpen] = useState(false)
   const roomTypeFilterRef = useRef<HTMLDivElement | null>(null)
   const [pointModalOpen, setPointModalOpen] = useState(false)
@@ -275,7 +287,7 @@ export default function AdminClient() {
   const loadDocs = async () => {
     const { data, error } = await supabase
       .from('document_types')
-      .select('id, code, label, category, scope, description, is_default')
+      .select('id, code, label, category, applies_to, description, is_default, is_active')
       .order('category', { ascending: true })
       .order('label', { ascending: true })
     if (error) {
@@ -302,7 +314,7 @@ export default function AdminClient() {
     const { data, error } = await supabase
       .from('settings_control_points')
       .select(
-        'id, key, title, description, scope, exterior_item_key, sort_order, is_active, default_risk_code, default_ftu_code, trigger_year_from, trigger_year_to, trigger_room_types, trigger_component_keys, trigger_foundation_types, trigger_tags, tags, risk_tags, created_at, updated_at'
+        'id, key, title, description, scope, applies_to, exterior_item_key, sort_order, is_active, default_risk_code, default_ftu_code, trigger_year_from, trigger_year_to, trigger_room_types, trigger_component_keys, trigger_foundation_types, trigger_tags, tags, risk_tags, created_at, updated_at'
       )
       .order('scope', { ascending: true })
       .order('sort_order', { ascending: true })
@@ -393,10 +405,25 @@ export default function AdminClient() {
             (d.label ?? '').toLowerCase().includes(s) ||
             (d.code ?? '').toLowerCase().includes(s) ||
             (d.category ?? '').toLowerCase().includes(s) ||
-            (d.scope ?? '').toLowerCase().includes(s)
+            (d.applies_to ?? '').toLowerCase().includes(s) ||
+            (d.is_active ? 'aktiv' : 'inaktiv').includes(s)
         )
 
-    const sorted = [...rows].sort((a, b) => {
+    const filtered = rows.filter(d => {
+      if (docFilters.applies_to && (d.applies_to ?? 'all') !== docFilters.applies_to) return false
+      if (docFilters.category && (d.category ?? '') !== docFilters.category) return false
+      if (docFilters.is_default) {
+        if (docFilters.is_default === 'default' && !d.is_default) return false
+        if (docFilters.is_default === 'non-default' && d.is_default) return false
+      }
+      if (docFilters.is_active) {
+        if (docFilters.is_active === 'active' && !d.is_active) return false
+        if (docFilters.is_active === 'inactive' && d.is_active) return false
+      }
+      return true
+    })
+
+    const sorted = [...filtered].sort((a, b) => {
       const dir = docSort.dir === 'asc' ? 1 : -1
       const aVal = (a[docSort.key] ?? '') as any
       const bVal = (b[docSort.key] ?? '') as any
@@ -411,7 +438,16 @@ export default function AdminClient() {
     })
 
     return sorted
-  }, [docs, qDocs, docSort])
+  }, [docs, qDocs, docSort, docFilters])
+
+  const docCategoryOptions = useMemo(() => {
+    const options = docs
+      .map(d => (d.category ?? '').trim())
+      .filter(v => v !== '')
+      .filter((v, i, arr) => arr.indexOf(v) === i)
+      .sort((a, b) => a.localeCompare(b, 'sv'))
+    return options
+  }, [docs])
 
   const filteredComps = useMemo(() => {
     const s = qComps.trim().toLowerCase()
@@ -488,6 +524,10 @@ export default function AdminClient() {
     title: row?.title ?? '',
     description: row?.description ?? null,
     scope: row?.scope ?? 'interior',
+    applies_to:
+      Array.isArray(row?.applies_to) && row!.applies_to!.length > 0
+        ? row!.applies_to!.filter(v => ['buyer', 'seller', 'apartment'].includes(v))
+        : ['buyer', 'seller', 'apartment'],
     exterior_item_key: row?.exterior_item_key ?? null,
     sort_order: row?.sort_order ?? 100,
     is_active: row?.is_active ?? true,
@@ -611,8 +651,14 @@ export default function AdminClient() {
     try {
       return JSON.parse(trimmed)
     } catch {
-      throw new Error(`FÃƒÂ¤ltet ${label} mÃƒÂ¥ste vara giltig JSON.`)
+      throw new Error(`Fältet ${label} måste vara giltig JSON.`)
     }
+  }
+
+  const normalizeAppliesTo = (values: string[]) => {
+    const allowed = ['buyer', 'seller', 'apartment']
+    const unique = Array.from(new Set(values.filter(v => allowed.includes(v))))
+    return unique.length > 0 ? unique : ['buyer', 'seller', 'apartment']
   }
 
   const saveControlPoint = async () => {
@@ -622,7 +668,7 @@ export default function AdminClient() {
     const scope = pointDraft.scope?.trim()
 
     if (!title || !scope) {
-      alert('Titel och scope mÃ¥ste fyllas i.')
+      alert('Titel och insida/utsida måste fyllas i.')
       return
     }
     let key = pointDraft.key.trim()
@@ -640,6 +686,7 @@ export default function AdminClient() {
 
         title,
         scope,
+        applies_to: normalizeAppliesTo(pointDraft.applies_to),
         description: pointDraft.description?.trim() || null,
         exterior_item_key: pointDraft.exterior_item_key?.trim() || null,
         sort_order: pointDraft.sort_order ?? 100,
@@ -656,7 +703,7 @@ export default function AdminClient() {
         risk_tags: parseJsonField(pointDraft.risk_tags_text, 'risk_tags'),
       }
     } catch (e: any) {
-      alert(e?.message || 'JSON-fÃƒÂ¤ltet ÃƒÂ¤r ogiltigt.')
+      alert(e?.message || 'JSON-fältet är ogiltigt.')
       return
     }
 
@@ -677,7 +724,7 @@ export default function AdminClient() {
       .from('settings_control_points')
       .insert(payload)
       .select(
-        'id, key, title, description, scope, exterior_item_key, room_type_key, sort_order, is_active, default_risk_code, default_ftu_code, trigger_year_from, trigger_year_to, trigger_room_types, trigger_component_keys, trigger_foundation_types, trigger_tags, tags, risk_tags, created_at, updated_at'
+        'id, key, title, description, scope, applies_to, exterior_item_key, room_type_key, sort_order, is_active, default_risk_code, default_ftu_code, trigger_year_from, trigger_year_to, trigger_room_types, trigger_component_keys, trigger_foundation_types, trigger_tags, tags, risk_tags, created_at, updated_at'
       )
       .single()
     if (error) return alert(error.message)
@@ -803,11 +850,18 @@ export default function AdminClient() {
           (p.title ?? '').toLowerCase().includes(s) ||
           (p.description ?? '').toLowerCase().includes(s) ||
           (p.exterior_item_key ?? '').toLowerCase().includes(s) ||
-          (p.scope ?? '').toLowerCase().includes(s)
+          (p.scope ?? '').toLowerCase().includes(s) ||
+          (Array.isArray(p.applies_to) ? p.applies_to.join(',') : '').toLowerCase().includes(s)
         )
 
     const filtered = rows.filter(p => {
       if (pointFilters.scope && p.scope !== pointFilters.scope) return false
+      if (pointFilters.applies_to) {
+        const appliesTo = Array.isArray(p.applies_to) && p.applies_to.length > 0
+          ? p.applies_to
+          : ['buyer', 'seller', 'apartment']
+        if (!appliesTo.includes(pointFilters.applies_to)) return false
+      }
       if (
         pointFilters.exterior_item_key &&
         (p.exterior_item_key ?? '') !== pointFilters.exterior_item_key
@@ -889,6 +943,19 @@ export default function AdminClient() {
     </span>
   )
 
+  const pointAppliesToLabel = (row: ControlPointRow) => {
+    const values = Array.isArray(row.applies_to) && row.applies_to.length > 0
+      ? row.applies_to
+      : ['buyer', 'seller', 'apartment']
+    const labels = values.map(value => {
+      if (value === 'buyer') return 'Köpare'
+      if (value === 'seller') return 'Säljare'
+      if (value === 'apartment') return 'Lägenhet'
+      return value
+    })
+    return labels.join(', ')
+  }
+
   const toggleDocSort = (key: keyof DocType) => {
     setDocSort(prev => {
       if (prev.key === key) {
@@ -898,6 +965,16 @@ export default function AdminClient() {
     })
   }
 
+  const docAppliesToLabel = (value: string | null | undefined) => {
+    const normalized = String(value ?? '').trim().toLowerCase()
+    if (!normalized || normalized === 'all') return 'Alla'
+    if (normalized === 'buyer') return 'Köpare'
+    if (normalized === 'seller') return 'Säljare'
+    if (normalized === 'apartment') return 'Lägenhet'
+    if (normalized === 'buyer,seller' || normalized === 'seller,buyer') return 'Köpare + säljare'
+    return value ?? ''
+  }
+
   const openDocModal = (doc?: DocType) => {
     if (doc) {
       setDocDraft({
@@ -905,18 +982,20 @@ export default function AdminClient() {
         code: doc.code ?? '',
         label: doc.label ?? '',
         category: doc.category ?? null,
-        scope: doc.scope ?? 'building',
+        applies_to: doc.applies_to ?? 'all',
         description: doc.description ?? null,
         is_default: !!doc.is_default,
+        is_active: doc.is_active ?? true,
       })
     } else {
       setDocDraft({
         code: '',
         label: '',
         category: null,
-        scope: 'building',
+        applies_to: 'all',
         description: null,
         is_default: false,
+        is_active: true,
       })
     }
     setDocModalOpen(true)
@@ -927,9 +1006,10 @@ export default function AdminClient() {
       code: '',
       label: doc.label ? `${doc.label} (kopia)` : 'Kopia',
       category: doc.category ?? null,
-      scope: doc.scope ?? 'building',
+      applies_to: doc.applies_to ?? 'all',
       description: doc.description ?? null,
       is_default: !!doc.is_default,
+      is_active: doc.is_active ?? true,
     })
     setDocModalOpen(true)
   }
@@ -1029,9 +1109,10 @@ export default function AdminClient() {
       code,
       label: docDraft.label.trim() || 'Nytt dokument',
       category: docDraft.category || null,
-      scope: docDraft.scope ?? 'building',
+      applies_to: docDraft.applies_to || 'all',
       description: docDraft.description || null,
       is_default: docDraft.is_default,
+      is_active: docDraft.is_active,
     }
 
     if (docDraft.id) {
@@ -1048,7 +1129,7 @@ export default function AdminClient() {
     const { data, error } = await (supabase as any)
       .from('document_types')
       .insert(payload)
-      .select('id, code, label, category, scope, description, is_default')
+      .select('id, code, label, category, applies_to, description, is_default, is_active')
       .single()
     if (error) return alert(error.message)
     setDocs(prev => [data as DocType, ...prev])
@@ -1206,13 +1287,13 @@ export default function AdminClient() {
   if (loading)
     return (
       <Protected>
-        <div className="p-6">LaddarÃ†Â’?ÃƒÂ</div>
+        <div className="p-6">Laddar...</div>
       </Protected>
     )
   if (!isAdmin)
     return (
       <Protected>
-        <div className="p-6 text-rose-700">ÃƒÂ‡.tkomst nekad (endast admin).</div>
+        <div className="p-6 text-rose-700">Åtkomst nekad (endast admin).</div>
       </Protected>
     )
 
@@ -1268,13 +1349,13 @@ export default function AdminClient() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h2 className="font-semibold">Dokumenttyper</h2>
-                <div className="text-xs text-gray-500">document_types</div>
+                <div className="text-xs text-gray-500">Dokumentmallar</div>
               </div>
               <div className="flex items-center gap-2">
                 <input
                   value={qDocs}
                   onChange={e => setQDocs(e.target.value)}
-                  placeholder="SÃ?Ã´kÆ??Ã"
+                  placeholder="Sök..."
                   className="border rounded px-2 py-1 text-sm"
                 />
                 <button onClick={addDoc} className="bg-emerald-600 text-white text-sm px-3 py-1.5 rounded">
@@ -1282,107 +1363,173 @@ export default function AdminClient() {
                 </button>
               </div>
             </div>
-            <div className="overflow-auto">
-              <table className="w-full text-xs border-separate border-spacing-y-2">
-                <thead>
-                  <tr className="text-left text-gray-600">
-                    <th className="py-2 pr-3">
-                      <button
-                        type="button"
-                        onClick={() => toggleDocSort('code')}
-                        className="inline-flex items-center gap-1 hover:text-gray-800"
-                      >
-                        Code
-                        {renderSortIcon(docSort.key === 'code', docSort.dir)}
-                      </button>
-                    </th>
-                    <th className="py-2 pr-3">
-                      <button
-                        type="button"
-                        onClick={() => toggleDocSort('label')}
-                        className="inline-flex items-center gap-1 hover:text-gray-800"
-                      >
-                        Label
-                        {renderSortIcon(docSort.key === 'label', docSort.dir)}
-                      </button>
-                    </th>
-                    <th className="py-2 pr-3">
-                      <button
-                        type="button"
-                        onClick={() => toggleDocSort('category')}
-                        className="inline-flex items-center gap-1 hover:text-gray-800"
-                      >
-                        Kategori
-                        {renderSortIcon(docSort.key === 'category', docSort.dir)}
-                      </button>
-                    </th>
-                    <th className="py-2 pr-3">
-                      <button
-                        type="button"
-                        onClick={() => toggleDocSort('scope')}
-                        className="inline-flex items-center gap-1 hover:text-gray-800"
-                      >
-                        Scope
-                        {renderSortIcon(docSort.key === 'scope', docSort.dir)}
-                      </button>
-                    </th>
-                    <th className="py-2 pr-3">
-                      <button
-                        type="button"
-                        onClick={() => toggleDocSort('is_default')}
-                        className="inline-flex items-center gap-1 hover:text-gray-800"
-                      >
-                        Standard
-                        {renderSortIcon(docSort.key === 'is_default', docSort.dir)}
-                      </button>
-                    </th>
-                    <th className="py-2 pr-3">
-                      <button
-                        type="button"
-                        onClick={() => toggleDocSort('description')}
-                        className="inline-flex items-center gap-1 hover:text-gray-800"
-                      >
-                        Beskrivning
-                        {renderSortIcon(docSort.key === 'description', docSort.dir)}
-                      </button>
-                    </th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {filteredDocs.map(d => (
-                    <tr key={d.id}>
-                      <td className="py-2 pr-3">{d.code}</td>
-                      <td className="py-2 pr-3">{d.label}</td>
-                      <td className="py-2 pr-3">{d.category ?? ''}</td>
-                      <td className="py-2 pr-3">{d.scope ?? ''}</td>
-                      <td className="py-2 pr-3">{d.is_default ? 'Ja' : 'Nej'}</td>
-                      <td className="py-2 pr-3">{d.description ?? ''}</td>
-                      <td className="py-2">
-                        <button
-                          onClick={() => openDocModal(d)}
-                          className="text-emerald-700 underline mr-3"
-                        >
-                          Editera
-                        </button>
-                        <button
-                          onClick={() => duplicateDoc(d)}
-                          className="text-blue-700 underline"
-                        >
-                          Duplicera
-                        </button>
-                      </td>
-                    </tr>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                <span className="text-gray-400">Sortera:</span>
+                <button
+                  type="button"
+                  onClick={() => toggleDocSort('code')}
+                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2.5 py-1 hover:bg-gray-50"
+                >
+                  Kod
+                  {renderSortIcon(docSort.key === 'code', docSort.dir)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleDocSort('label')}
+                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2.5 py-1 hover:bg-gray-50"
+                >
+                  Namn
+                  {renderSortIcon(docSort.key === 'label', docSort.dir)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleDocSort('category')}
+                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2.5 py-1 hover:bg-gray-50"
+                >
+                  Kategori
+                  {renderSortIcon(docSort.key === 'category', docSort.dir)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleDocSort('applies_to')}
+                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2.5 py-1 hover:bg-gray-50"
+                >
+                  Gäller för
+                  {renderSortIcon(docSort.key === 'applies_to', docSort.dir)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleDocSort('is_default')}
+                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2.5 py-1 hover:bg-gray-50"
+                >
+                  Standard
+                  {renderSortIcon(docSort.key === 'is_default', docSort.dir)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleDocSort('is_active')}
+                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2.5 py-1 hover:bg-gray-50"
+                >
+                  Aktiv
+                  {renderSortIcon(docSort.key === 'is_active', docSort.dir)}
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                <span className="text-gray-400">Filtrera:</span>
+                <select
+                  className="border rounded-full px-2.5 py-1 bg-white"
+                  value={docFilters.applies_to}
+                  onChange={e => setDocFilters(prev => ({ ...prev, applies_to: e.target.value }))}
+                >
+                  <option value="">Gäller för</option>
+                  <option value="all">Alla</option>
+                  <option value="buyer">Köpare</option>
+                  <option value="seller">Säljare</option>
+                  <option value="apartment">Lägenhet</option>
+                  <option value="buyer,seller">Köpare + säljare</option>
+                </select>
+                <select
+                  className="border rounded-full px-2.5 py-1 bg-white"
+                  value={docFilters.category}
+                  onChange={e => setDocFilters(prev => ({ ...prev, category: e.target.value }))}
+                >
+                  <option value="">Kategori</option>
+                  {docCategoryOptions.map(category => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
                   ))}
-                  {filteredDocs.length === 0 && (
-                    <tr>
-                      <td className="py-4 text-gray-500" colSpan={7}>
-                        Inga rader.
-                      </td>
+                </select>
+                <select
+                  className="border rounded-full px-2.5 py-1 bg-white"
+                  value={docFilters.is_default}
+                  onChange={e => setDocFilters(prev => ({ ...prev, is_default: e.target.value }))}
+                >
+                  <option value="">Standard</option>
+                  <option value="default">Endast standard</option>
+                  <option value="non-default">Ej standard</option>
+                </select>
+                <select
+                  className="border rounded-full px-2.5 py-1 bg-white"
+                  value={docFilters.is_active}
+                  onChange={e => setDocFilters(prev => ({ ...prev, is_active: e.target.value }))}
+                >
+                  <option value="">Aktiv</option>
+                  <option value="active">Endast aktiva</option>
+                  <option value="inactive">Endast inaktiva</option>
+                </select>
+              </div>
+
+              <div className="overflow-auto">
+                <table className="w-full table-fixed border-separate border-spacing-y-2 text-[11px]">
+                  <thead>
+                    <tr className="text-left text-[10px] uppercase text-gray-400 whitespace-nowrap">
+                      <th className="px-3 py-1 w-[12%]">Kod</th>
+                      <th className="px-3 py-1 w-[24%]">Namn</th>
+                      <th className="px-3 py-1 w-[14%]">Kategori</th>
+                      <th className="px-3 py-1 w-[14%]">Gäller för</th>
+                      <th className="px-3 py-1 w-[8%]">Standard</th>
+                      <th className="px-3 py-1 w-[8%]">Aktiv</th>
+                      <th className="px-3 py-1 w-[14%]">Beskrivning</th>
+                      <th className="px-3 py-1 w-[16%] text-center">Åtgärder</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {filteredDocs.map(d => (
+                      <tr key={d.id} className="group transition-colors hover:bg-blue-50">
+                        <td className="px-3 py-2 border border-gray-200 rounded-l-xl bg-white transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                          <div className="truncate">{d.code}</div>
+                        </td>
+                        <td className="px-3 py-2 border-y border-gray-200 bg-white transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                          <div className="truncate font-medium text-gray-900">{d.label}</div>
+                        </td>
+                        <td className="px-3 py-2 border-y border-gray-200 bg-white transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                          <div className="truncate">{d.category ?? ''}</div>
+                        </td>
+                        <td className="px-3 py-2 border-y border-gray-200 bg-white transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                          <div className="truncate">{docAppliesToLabel(d.applies_to)}</div>
+                        </td>
+                        <td className="px-3 py-2 border-y border-gray-200 bg-white transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                          <div className="truncate">{d.is_default ? 'Ja' : 'Nej'}</div>
+                        </td>
+                        <td className="px-3 py-2 border-y border-gray-200 bg-white transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                          <div className="truncate">{d.is_active ? 'Ja' : 'Nej'}</div>
+                        </td>
+                        <td className="px-3 py-2 border-y border-gray-200 bg-white transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                          <div className="truncate" title={d.description ?? ''}>
+                            {d.description ?? ''}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 border border-gray-200 rounded-r-xl bg-white transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                          <div className="grid grid-cols-2 gap-1 text-[11px] whitespace-nowrap">
+                            <button
+                              onClick={() => openDocModal(d)}
+                              className="w-full rounded-md border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                            >
+                              Editera
+                            </button>
+                            <button
+                              onClick={() => duplicateDoc(d)}
+                              className="w-full rounded-md border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                            >
+                              Duplicera
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredDocs.length === 0 && (
+                      <tr>
+                        <td className="py-4 text-gray-500 text-xs" colSpan={8}>
+                          Inga rader.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -1398,7 +1545,7 @@ export default function AdminClient() {
                 <input
                   value={qComps}
                   onChange={e => setQComps(e.target.value)}
-                  placeholder="SÃ?Ã´kÆ??Ã"
+                  placeholder="Sök..."
                   className="border rounded px-2 py-1 text-sm"
                 />
                 <button onClick={addComp} className="bg-emerald-600 text-white text-sm px-3 py-1.5 rounded">
@@ -1413,8 +1560,8 @@ export default function AdminClient() {
                     <th className="py-2 pr-3">Code</th>
                     <th className="py-2 pr-3">Namn</th>
                     <th className="py-2 pr-3">Kategori</th>
-                    <th className="py-2 pr-3">StandardlivslÃ?Ãngd (Ã?Â¾r)</th>
-                    <th className="py-2 pr-3">UnderhÃ?Â¾llsintervall (Ã?Â¾r)</th>
+                    <th className="py-2 pr-3">Standardlivslängd (år)</th>
+                    <th className="py-2 pr-3">Underhållsintervall (år)</th>
                     <th className="py-2 pr-3">Anteckning</th>
                     <th />
                   </tr>
@@ -1499,7 +1646,7 @@ export default function AdminClient() {
                 <input
                   value={qRoomTypes}
                   onChange={e => setQRoomTypes(e.target.value)}
-                  placeholder="Sok..."
+                  placeholder="Sök..."
                   className="border rounded px-2 py-1 text-sm"
                 />
                 <button
@@ -1587,7 +1734,7 @@ export default function AdminClient() {
                 <input
                   value={qAddonServices}
                   onChange={e => setQAddonServices(e.target.value)}
-                  placeholder="Sok..."
+                  placeholder="Sök..."
                   className="border rounded px-2 py-1 text-sm"
                 />
                 <button
@@ -1699,7 +1846,7 @@ export default function AdminClient() {
                 <input
                   value={qPoints}
                   onChange={e => setQPoints(e.target.value)}
-                  placeholder="Sok..."
+                  placeholder="Sök..."
                   className="border rounded px-2 py-1 text-sm"
                 />
                 <button
@@ -1728,6 +1875,14 @@ export default function AdminClient() {
                 >
                   Insida/Utsida
                   {renderSortIcon(pointSort.key === 'scope', pointSort.dir)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => togglePointSort('applies_to')}
+                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2.5 py-1 hover:bg-gray-50"
+                >
+                  Gäller för
+                  {renderSortIcon(pointSort.key === 'applies_to', pointSort.dir)}
                 </button>
                 <button
                   type="button"
@@ -1767,6 +1922,18 @@ export default function AdminClient() {
                   <option value="">Insida/Utsida</option>
                   <option value="interior">interior</option>
                   <option value="exterior">exterior</option>
+                </select>
+                <select
+                  className="border rounded-full px-2.5 py-1 bg-white"
+                  value={pointFilters.applies_to}
+                  onChange={e =>
+                    setPointFilters(prev => ({ ...prev, applies_to: e.target.value }))
+                  }
+                >
+                  <option value="">Gäller för</option>
+                  <option value="buyer">Köpare</option>
+                  <option value="seller">Säljare</option>
+                  <option value="apartment">Lägenhet</option>
                 </select>
                 <select
                   className="border rounded-full px-2.5 py-1 bg-white"
@@ -1872,12 +2039,13 @@ export default function AdminClient() {
                 <table className="w-full table-fixed border-separate border-spacing-y-2 text-[11px]">
                   <thead>
                     <tr className="text-left text-[10px] uppercase text-gray-400 whitespace-nowrap">
-                      <th className="px-3 py-1 w-[26%]">Titel</th>
+                      <th className="px-3 py-1 w-[22%]">Titel</th>
                       <th className="px-3 py-1 w-[10%]">Insida/Utsida</th>
-                      <th className="px-3 py-1 w-[12%]">Exterior key</th>
-                      <th className="px-3 py-1 w-[26%]">Rumstyper</th>
+                      <th className="px-3 py-1 w-[14%]">Gäller för</th>
+                      <th className="px-3 py-1 w-[10%]">Exterior key</th>
+                      <th className="px-3 py-1 w-[22%]">Rumstyper</th>
                       <th className="px-3 py-1 w-[6%]">Aktiv</th>
-                      <th className="px-3 py-1 w-[20%] text-center">Åtgärder</th>
+                      <th className="px-3 py-1 w-[16%] text-center">Åtgärder</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1897,6 +2065,9 @@ export default function AdminClient() {
                         </td>
                         <td className="px-3 py-2 border-y border-gray-200 bg-white transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
                           <div className="truncate">{p.scope}</div>
+                        </td>
+                        <td className="px-3 py-2 border-y border-gray-200 bg-white transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                          <div className="truncate">{pointAppliesToLabel(p)}</div>
                         </td>
                         <td className="px-3 py-2 border-y border-gray-200 bg-white transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
                           <div className="truncate">{p.exterior_item_key ?? ''}</div>
@@ -1939,7 +2110,7 @@ export default function AdminClient() {
                     ))}
                     {filteredPoints.length === 0 && (
                       <tr>
-                        <td className="py-4 text-gray-500 text-xs" colSpan={6}>
+                        <td className="py-4 text-gray-500 text-xs" colSpan={7}>
                           Inga rader.
                         </td>
                       </tr>
@@ -1999,7 +2170,7 @@ export default function AdminClient() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <label className="text-sm">
-                <div className="mb-1 text-gray-600">Code</div>
+                <div className="mb-1 text-gray-600">Kod</div>
                 <input
                   className="border rounded px-2 py-1 w-full"
                   value={docDraft.code}
@@ -2007,23 +2178,26 @@ export default function AdminClient() {
                 />
               </label>
               <label className="text-sm">
-                <div className="mb-1 text-gray-600">Scope</div>
+                <div className="mb-1 text-gray-600">Gäller för</div>
                 <select
                   className="border rounded px-2 py-1 w-full"
-                  value={docDraft.scope ?? 'building'}
+                  value={docDraft.applies_to ?? 'all'}
                   onChange={e =>
                     setDocDraft({
                       ...docDraft,
-                      scope: e.target.value as 'building' | 'property',
+                      applies_to: e.target.value,
                     })
                   }
                 >
-                  <option value="building">building</option>
-                  <option value="property">property</option>
+                  <option value="all">Alla</option>
+                  <option value="buyer">Köpare</option>
+                  <option value="seller">Säljare</option>
+                  <option value="apartment">Lägenhet</option>
+                  <option value="buyer,seller">Köpare + säljare</option>
                 </select>
               </label>
               <label className="text-sm md:col-span-2">
-                <div className="mb-1 text-gray-600">Label</div>
+                <div className="mb-1 text-gray-600">Namn</div>
                 <input
                   className="border rounded px-2 py-1 w-full"
                   value={docDraft.label}
@@ -2047,6 +2221,15 @@ export default function AdminClient() {
                   className="mt-2"
                   checked={!!docDraft.is_default}
                   onChange={e => setDocDraft({ ...docDraft, is_default: e.target.checked })}
+                />
+              </label>
+              <label className="text-sm">
+                <div className="mb-1 text-gray-600">Aktiv</div>
+                <input
+                  type="checkbox"
+                  className="mt-2"
+                  checked={!!docDraft.is_active}
+                  onChange={e => setDocDraft({ ...docDraft, is_active: e.target.checked })}
                 />
               </label>
               <label className="text-sm md:col-span-2">
@@ -2549,10 +2732,10 @@ export default function AdminClient() {
                 <button
                   onClick={closePointModal}
                   className="text-sm px-2 py-1.5 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50"
-                  aria-label="StÃ¤ng"
-                  title="StÃ¤ng"
+                  aria-label="Stäng"
+                  title="Stäng"
                 >
-                  StÃ¤ng
+                  Stäng
                 </button>
               </div>
             </div>
@@ -2569,6 +2752,33 @@ export default function AdminClient() {
                   <option value="exterior">exterior</option>
                 </select>
               </label>
+              <div className="text-sm">
+                <div className="mb-1 text-gray-600">Gäller för</div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 border rounded px-2 py-2">
+                  {[
+                    { value: 'buyer', label: 'Köpare' },
+                    { value: 'seller', label: 'Säljare' },
+                    { value: 'apartment', label: 'Lägenhet' },
+                  ].map(option => {
+                    const checked = pointDraft.applies_to.includes(option.value)
+                    return (
+                      <label key={option.value} className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={e => {
+                            const next = new Set(pointDraft.applies_to)
+                            if (e.target.checked) next.add(option.value)
+                            else next.delete(option.value)
+                            updatePointDraft({ applies_to: normalizeAppliesTo(Array.from(next)) })
+                          }}
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
               <label className="text-sm md:col-span-2">
                 <div className="mb-1 text-gray-600">Titel</div>
                 <input
@@ -2604,7 +2814,7 @@ export default function AdminClient() {
                   onChange={e => updatePointDraft({ exterior_item_key: e.target.value || null })}
                   disabled={pointDraft.scope !== 'exterior'}
                 >
-                  <option value="">Ã¢Â€Â”</option>
+                  <option value="">—</option>
                   {exteriorItems.map(item => (
                     <option key={item.id} value={item.key}>
                       {item.label} ({item.key})
@@ -2675,7 +2885,7 @@ export default function AdminClient() {
               {pointDraft.scope === 'interior' && (
                 <div className="text-sm md:col-span-2">
                   <div className="mb-1 flex items-center justify-between gap-2 text-gray-600">
-                    <span>Rumstyper (valj flera)</span>
+                    <span>Rumstyper (välj flera)</span>
                     <button
                       type="button"
                       onClick={() => openRoomTypeModal()}

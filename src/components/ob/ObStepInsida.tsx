@@ -9,7 +9,9 @@ type Inspection = {
   date: string | null
   assignment_number: string | null
   status?: string | null
+  inspection_side?: string | null
 }
+type InspectionSide = 'buyer' | 'seller' | 'apartment'
 
 type RoomType = {
   id: string
@@ -71,6 +73,7 @@ type ControlPointLite = {
   description: string | null
   tags: any | null
   trigger_room_types?: any | null
+  applies_to?: unknown
 }
 
 type ControlPointOutcome = {
@@ -91,6 +94,7 @@ type ControlPointMeta = {
   label: string | null
   description: string | null
   trigger_room_types?: any | null
+  applies_to?: unknown
 }
 
 type InspectionImage = {
@@ -181,6 +185,70 @@ const normalizeSwedish = (value: string) =>
     .replace(/Ã–/g, 'Ö')
     .replace(/Ã©/g, 'é')
 
+const parseInspectionSideToken = (value: string): InspectionSide | null => {
+  const token = normalizeSwedish(value)
+    .trim()
+    .toLowerCase()
+    .replaceAll('å', 'a')
+    .replaceAll('ä', 'a')
+    .replaceAll('ö', 'o')
+
+  if (token.includes('seller') || token.includes('salj')) return 'seller'
+  if (token.includes('apartment') || token.includes('lagenhet') || token.includes('apt')) {
+    return 'apartment'
+  }
+  if (token.includes('buyer') || token.includes('kop')) return 'buyer'
+  return null
+}
+
+const normalizeInspectionSide = (value: unknown): InspectionSide => {
+  if (typeof value !== 'string') return 'buyer'
+  return parseInspectionSideToken(value) ?? 'buyer'
+}
+
+const parseAppliesToSides = (raw: unknown): InspectionSide[] | null => {
+  if (raw == null) return null
+
+  let tokens: string[] = []
+  if (Array.isArray(raw)) {
+    tokens = raw.filter((value): value is string => typeof value === 'string')
+  } else if (typeof raw === 'string') {
+    tokens = raw.split(/[,;|]/g)
+  } else {
+    return null
+  }
+
+  const normalizedTokens = tokens
+    .map(token =>
+      normalizeSwedish(token)
+        .trim()
+        .toLowerCase()
+        .replaceAll('å', 'a')
+        .replaceAll('ä', 'a')
+        .replaceAll('ö', 'o')
+    )
+    .filter(Boolean)
+
+  if (normalizedTokens.includes('all')) return null
+
+  const parsed = Array.from(
+    new Set(
+      normalizedTokens
+        .map(token => parseInspectionSideToken(token))
+        .filter((token): token is InspectionSide => token !== null)
+    )
+  )
+  return parsed.length > 0 ? parsed : null
+}
+
+const controlPointAppliesToInspectionSide = (
+  controlPoint: Pick<ControlPointLite, 'applies_to'>,
+  inspectionSide: InspectionSide
+) => {
+  const appliesTo = parseAppliesToSides(controlPoint.applies_to)
+  return !appliesTo || appliesTo.includes(inspectionSide)
+}
+
 const normalizeRoomTypeKey = (value: string | null | undefined) => {
   const base = normalizeSwedish(String(value ?? '')).trim().toLowerCase()
   if (base === 'ovrigt') return 'övrigt'
@@ -245,6 +313,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const isInspectionLocked = normalizeInspectionStatus(inspection?.status) === 'completed'
+  const inspectionSide = normalizeInspectionSide(inspection?.inspection_side)
 
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([])
   const [groups, setGroups] = useState<InteriorGroup[]>([])
@@ -989,7 +1058,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     try {
       const { data: cpData, error: cpErr } = await supabase
         .from('settings_control_points')
-        .select('id, key, title, label, description, tags, trigger_room_types')
+        .select('id, key, title, label, description, tags, trigger_room_types, applies_to')
         .eq('scope', 'interior')
         .eq('is_active', true)
 
@@ -1002,8 +1071,10 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       }
 
       const allControlPoints = (cpData ?? []) as ControlPointLite[]
-      const roomControlPoints = allControlPoints.filter(cp =>
-        controlPointMatchesRoom(cp, room.room_type_key)
+      const roomControlPoints = allControlPoints.filter(
+        cp =>
+          controlPointAppliesToInspectionSide(cp, inspectionSide) &&
+          controlPointMatchesRoom(cp, room.room_type_key)
       )
       if (!roomControlPoints.length) return 0
 
@@ -1876,6 +1947,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
               {room.id && (
                 <RoomControlPointsSection
                   room={room}
+                  inspectionSide={inspectionSide}
                   items={roomControlItems}
                   onUpdateItem={updateControlItem}
                   onDeleteItem={deleteControlItem}
@@ -2001,6 +2073,7 @@ function ControlItemImagesSection({
 // =============================
 type RoomControlPointsSectionProps = {
   room: InteriorRoom
+  inspectionSide: InspectionSide
   items: InspectionControlItem[]
   isInspectionLocked: boolean
   onUpdateItem: (itemId: string, patch: Partial<InspectionControlItem>) => void
@@ -2016,6 +2089,7 @@ type RoomControlPointsSectionProps = {
 
 function RoomControlPointsSection({
   room,
+  inspectionSide,
   items,
   isInspectionLocked,
   onUpdateItem,
@@ -2052,7 +2126,7 @@ function RoomControlPointsSection({
 
       const { data, error } = await supabase
         .from('settings_control_points')
-        .select('id, key, title, label, description, tags, trigger_room_types')
+        .select('id, key, title, label, description, tags, trigger_room_types, applies_to')
         .eq('scope', 'interior')
         .eq('is_active', true)
         .or(
@@ -2064,7 +2138,10 @@ function RoomControlPointsSection({
         return
       }
 
-      setSearchResults((data ?? []) as ControlPointLite[])
+      const points = (data ?? []) as ControlPointLite[]
+      setSearchResults(
+        points.filter(cp => controlPointAppliesToInspectionSide(cp, inspectionSide))
+      )
     } finally {
       setSearching(false)
     }
