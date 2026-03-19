@@ -2599,16 +2599,27 @@ function RoomControlPointsSection({
                 <div className="text-xs font-semibold text-gray-900">
                   {baseItem.title}
                 </div>
-                {baseItem.id && (
-                  <button
-                    type="button"
-                    onClick={() => onDeleteItemGroup(baseItem)}
-                    className="ml-auto text-[11px] text-rose-600 hover:underline"
-                    disabled={isInspectionLocked}
-                  >
-                    Ta bort
-                  </button>
-                )}
+                <div className="ml-auto flex items-center gap-2">
+                  {isGreen && (
+                    <button
+                      type="button"
+                      onClick={() => collapseOkGroup(groupId)}
+                      className="text-[11px] text-gray-700 hover:underline"
+                    >
+                      Dölj
+                    </button>
+                  )}
+                  {baseItem.id && (
+                    <button
+                      type="button"
+                      onClick={() => onDeleteItemGroup(baseItem)}
+                      className="text-[11px] text-rose-600 hover:underline"
+                      disabled={isInspectionLocked}
+                    >
+                      Ta bort
+                    </button>
+                  )}
+                </div>
               </div>
 
               {description.length > 0 && (
