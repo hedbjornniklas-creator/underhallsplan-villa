@@ -138,9 +138,22 @@ const getListAtPath = (obj: any, path: string): string[] => {
   return []
 }
 
+const interpolateAssignmentDate = (text: string, data: ReportDataV2) => {
+  const assignmentDate = String(
+    getValueAtPath(data, 'mock.inspections.assignment_confirmation_date') ?? ''
+  ).trim()
+  if (!assignmentDate) return text
+  return text
+    .replace(/ÅÅÅÅ-MM-DD/g, assignmentDate)
+    .replace(/\{\{\s*assignment_confirmation_date\s*\}\}/g, assignmentDate)
+}
+
 const resolveTextSource = (source: TextSource, data: ReportDataV2) => {
   if (source.kind === 'static') return source.text
-  if (source.kind === 'standardText') return loadStandardText(source.id)
+  if (source.kind === 'standardText') {
+    const text = loadStandardText(source.id)
+    return interpolateAssignmentDate(text, data)
+  }
   if (source.kind === 'mock') {
     const value = getValueAtPath(data, source.path)
     if (Array.isArray(value)) return value.filter(Boolean).join('\n')

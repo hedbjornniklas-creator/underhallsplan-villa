@@ -65,25 +65,42 @@ export async function GET(
     let pdfBuffer: Buffer | null = null
     const pdfBase64 = String(data.pdf_base64 ?? '').trim()
     const hasSnapshot = isReportSnapshotPayloadV1(data.snapshot_payload)
+    const deliveryMode = String(data.delivery_mode ?? '').trim().toLowerCase()
+    const preferStoredPdf = deliveryMode === 'link_pdf'
 
-    // Prefer immutable snapshot rendering for consistent full PDF output.
-    if (hasSnapshot) {
+    const tryRenderSnapshot = async () => {
+      if (!hasSnapshot) return null
       try {
-        pdfBuffer = await renderStructuredPdfFromSnapshot(data.snapshot_payload)
+        return await renderStructuredPdfFromSnapshot(data.snapshot_payload)
       } catch (renderError) {
         console.error('[reports.public] snapshot render failed', {
           linkId: data.id,
           error: renderError instanceof Error ? renderError.message : String(renderError),
         })
-        if (pdfBase64 !== '') {
-          pdfBuffer = decodeBase64(pdfBase64, String(data.id))
-        } else {
-          return new NextResponse('Could not render report.', { status: 500 })
-        }
+        return null
       }
-    } else if (pdfBase64 !== '') {
-      pdfBuffer = decodeBase64(pdfBase64, String(data.id))
+    }
+
+    const tryDecodeStoredPdf = () => {
+      if (pdfBase64 === '') return null
+      try {
+        return decodeBase64(pdfBase64, String(data.id))
+      } catch (decodeError) {
+        console.error('[reports.public] stored pdf decode failed', {
+          linkId: data.id,
+          error: decodeError instanceof Error ? decodeError.message : String(decodeError),
+        })
+        return null
+      }
+    }
+
+    if (preferStoredPdf) {
+      pdfBuffer = tryDecodeStoredPdf() ?? (await tryRenderSnapshot())
     } else {
+      pdfBuffer = (await tryRenderSnapshot()) ?? tryDecodeStoredPdf()
+    }
+
+    if (!pdfBuffer) {
       console.error('[reports.public] missing report payload', {
         linkId: data.id,
         deliveryMode: data.delivery_mode ?? null,
