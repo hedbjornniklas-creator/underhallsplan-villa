@@ -12,6 +12,7 @@ type Inspection = {
   inspection_side?: string | null
 }
 type InspectionSide = 'buyer' | 'seller' | 'apartment'
+type SearchMode = 'control_points' | 'chips'
 
 type RoomType = {
   id: string
@@ -74,6 +75,7 @@ type ControlPointLite = {
   tags: any | null
   trigger_room_types?: any | null
   applies_to?: unknown
+  search_hint?: string | null
 }
 
 type ControlPointOutcome = {
@@ -981,13 +983,13 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     setControlItems(prev => prev.map(ci => (ci.id === itemId ? saved : ci)))
   }
 
-  const deleteControlItem = async (itemId: string) => {
+  const deleteControlItem = async (itemId: string, skipConfirm?: boolean) => {
     if (isInspectionLocked) return
     const item = controlItems.find(ci => ci.id === itemId)
     if (!item) return
 
     // Framför allt avsett för fria noteringar, men fungerar för alla
-    if (!confirm('Ta bort denna notering/kontrollpunkt?')) return
+    if (!skipConfirm && !confirm('Ta bort denna notering/kontrollpunkt?')) return
 
     try {
       const { data: imgRows, error: imgFetchErr } = await supabase
@@ -1242,6 +1244,60 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       return [saved, ...withoutSamePair]
     })
     await ensureControlPointData([cp.id])
+  }
+
+  const addOutcomeControlItem = async (
+    baseItem: InspectionControlItem,
+    outcome: ControlPointOutcome
+  ) => {
+    if (isInspectionLocked) return
+    if (!baseItem.control_point_id) return
+    const group = controlItems.filter(
+      ci =>
+        ci.interior_room_id === baseItem.interior_room_id &&
+        ci.control_point_id === baseItem.control_point_id
+    )
+    const maxSort = group.reduce((m, ci) => Math.max(m, ci.sort_order ?? 0), 0)
+
+    const newItem: InspectionControlItem = {
+      inspection_id: baseItem.inspection_id,
+      interior_room_id: baseItem.interior_room_id,
+      control_point_id: baseItem.control_point_id,
+      title: baseItem.title,
+      status: 'remark',
+      note: (outcome.note_template ?? '').trim() || null,
+      risk_text: (outcome.risk_template ?? '').trim() || null,
+      ftu_text: (outcome.ftu_template ?? '').trim() || null,
+      sort_order: maxSort + 10,
+      selected_outcome_id: outcome.id,
+    }
+
+    const saved = await upsertControlItem(newItem)
+    if (!saved.id) return
+    setControlItems(prev => {
+      const idx = prev.findIndex(ci => ci.id === saved.id)
+      if (idx >= 0) {
+        const next = [...prev]
+        next[idx] = saved
+        return next
+      }
+      return [...prev, saved]
+    })
+  }
+
+  const deleteControlItemGroup = async (baseItem: InspectionControlItem) => {
+    if (isInspectionLocked) return
+    if (!confirm('Ta bort denna kontrollpunkt?')) return
+    const group = controlItems.filter(
+      ci =>
+        ci.interior_room_id === baseItem.interior_room_id &&
+        ci.control_point_id === baseItem.control_point_id
+    )
+    for (const ci of group) {
+      if (ci.id) {
+        await deleteControlItem(ci.id, true)
+      }
+    }
   }
 
   // -----------------------------
@@ -1951,6 +2007,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                   items={roomControlItems}
                   onUpdateItem={updateControlItem}
                   onDeleteItem={deleteControlItem}
+                  onDeleteItemGroup={deleteControlItemGroup}
+                  onAddOutcomeItem={addOutcomeControlItem}
                   onAddFromCatalog={addControlItemFromCatalog}
                   onAddFreeNote={addFreeNoteControlItem}
                   isInspectionLocked={isInspectionLocked}
@@ -2077,7 +2135,12 @@ type RoomControlPointsSectionProps = {
   items: InspectionControlItem[]
   isInspectionLocked: boolean
   onUpdateItem: (itemId: string, patch: Partial<InspectionControlItem>) => void
-  onDeleteItem: (itemId: string) => void
+  onDeleteItem: (itemId: string, skipConfirm?: boolean) => void
+  onDeleteItemGroup: (baseItem: InspectionControlItem) => void
+  onAddOutcomeItem: (
+    baseItem: InspectionControlItem,
+    outcome: ControlPointOutcome
+  ) => void
   onAddFromCatalog: (room: InteriorRoom, cp: ControlPointLite) => void
   onAddFreeNote: (room: InteriorRoom) => void
   outcomesByControlPointId: Record<string, ControlPointOutcome[]>
@@ -2094,6 +2157,8 @@ function RoomControlPointsSection({
   isInspectionLocked,
   onUpdateItem,
   onDeleteItem,
+  onDeleteItemGroup,
+  onAddOutcomeItem,
   onAddFromCatalog,
   onAddFreeNote,
   outcomesByControlPointId,
@@ -2106,9 +2171,46 @@ function RoomControlPointsSection({
   const [searchResults, setSearchResults] = useState<ControlPointLite[]>([])
   const [searching, setSearching] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
+  const [searchMode, setSearchMode] = useState<SearchMode>('control_points')
   const roomDisplayLabel = isOtherRoomKey(room.room_type_key)
     ? OTHER_ROOM_DISPLAY_LABEL
     : room.room_label
+  const groupedItems = useMemo(() => {
+    const map = new Map<string, InspectionControlItem[]>()
+    for (const ci of items) {
+      const cpId = ci.control_point_id
+      if (!cpId) continue
+      const bucket = map.get(cpId) ?? []
+      bucket.push(ci)
+      map.set(cpId, bucket)
+    }
+    return Array.from(map.entries()).map(([controlPointId, list]) => ({
+      controlPointId,
+      items: list.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
+    }))
+  }, [items])
+  const freeNoteItems = useMemo(
+    () => items.filter(ci => ci.control_point_id === null),
+    [items]
+  )
+
+  const clearSearch = () => {
+    setSearchTerm('')
+    setSearchResults([])
+    setSearching(false)
+  }
+
+  const handleToggleSearch = () => {
+    const next = !showSearch
+    setShowSearch(next)
+    if (!next) clearSearch()
+  }
+
+  const handleSearchModeChange = (mode: SearchMode) => {
+    if (mode === searchMode) return
+    setSearchMode(mode)
+    clearSearch()
+  }
 
   const handleSearchChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const term = e.target.value
@@ -2123,24 +2225,102 @@ function RoomControlPointsSection({
     setSearching(true)
     try {
       const like = `%${trimmed}%`
+      if (searchMode === 'control_points') {
+        const { data, error } = await supabase
+          .from('settings_control_points')
+          .select('id, key, title, label, description, tags, trigger_room_types, applies_to')
+          .eq('scope', 'interior')
+          .eq('is_active', true)
+          .or(
+            `title.ilike.${like},label.ilike.${like},key.ilike.${like},description.ilike.${like}`
+          )
 
-      const { data, error } = await supabase
+        if (error) {
+          console.error('search control points failed:', error)
+          return
+        }
+
+        const points = (data ?? []) as ControlPointLite[]
+        setSearchResults(
+          points.filter(cp => controlPointAppliesToInspectionSide(cp, inspectionSide))
+        )
+        return
+      }
+
+      const { data: outcomeRows, error: outcomesError } = await supabase
+        .from('settings_control_point_outcomes')
+        .select('control_point_id, label, note_template, risk_template, ftu_template')
+        .eq('is_active', true)
+        .or(
+          `label.ilike.${like},note_template.ilike.${like},risk_template.ilike.${like},ftu_template.ilike.${like}`
+        )
+
+      if (outcomesError) {
+        console.error('search control point outcomes failed:', outcomesError)
+        return
+      }
+
+      const outcomes = (outcomeRows ?? []) as Array<{
+        control_point_id: string | null
+        label: string | null
+        note_template: string | null
+        risk_template: string | null
+        ftu_template: string | null
+      }>
+
+      const controlPointIds = Array.from(
+        new Set(
+          outcomes
+            .map(outcome => outcome.control_point_id)
+            .filter((id): id is string => typeof id === 'string' && id.length > 0)
+        )
+      )
+
+      if (controlPointIds.length === 0) {
+        setSearchResults([])
+        return
+      }
+
+      const { data: controlPointsData, error: controlPointsError } = await supabase
         .from('settings_control_points')
         .select('id, key, title, label, description, tags, trigger_room_types, applies_to')
         .eq('scope', 'interior')
         .eq('is_active', true)
-        .or(
-          `title.ilike.${like},label.ilike.${like},key.ilike.${like},description.ilike.${like}`
-        )
+        .in('id', controlPointIds)
 
-      if (error) {
-        console.error('search control points failed:', error)
+      if (controlPointsError) {
+        console.error('search control points by outcomes failed:', controlPointsError)
         return
       }
 
-      const points = (data ?? []) as ControlPointLite[]
+      const outcomeLabelsByControlPointId = outcomes.reduce<Record<string, string[]>>(
+        (acc, outcome) => {
+          const controlPointId = outcome.control_point_id
+          const outcomeLabel = (outcome.label ?? '').trim()
+          if (!controlPointId || !outcomeLabel) return acc
+          const current = acc[controlPointId] || []
+          if (!current.includes(outcomeLabel)) current.push(outcomeLabel)
+          acc[controlPointId] = current
+          return acc
+        },
+        {}
+      )
+
+      const points = (controlPointsData ?? []) as ControlPointLite[]
+      const filteredPoints = points.filter(cp =>
+        controlPointAppliesToInspectionSide(cp, inspectionSide)
+      )
       setSearchResults(
-        points.filter(cp => controlPointAppliesToInspectionSide(cp, inspectionSide))
+        filteredPoints.map(cp => {
+          const outcomeLabels = outcomeLabelsByControlPointId[cp.id] || []
+          return {
+            ...cp,
+            search_hint:
+              outcomeLabels.length > 0
+                ? `Chipträff: ${outcomeLabels.slice(0, 3).join(', ')}`
+                : 'Chipträff',
+          }
+        })
       )
     } finally {
       setSearching(false)
@@ -2154,9 +2334,39 @@ function RoomControlPointsSection({
           <label className="text-xs font-medium text-gray-700">
             Lägg till kontrollpunkt i {roomDisplayLabel}
           </label>
+          <div className="inline-flex rounded-md border border-gray-300 bg-white p-0.5">
+            <button
+              type="button"
+              onClick={() => handleSearchModeChange('control_points')}
+              className={
+                'rounded px-2.5 py-1 text-[11px] font-medium ' +
+                (searchMode === 'control_points'
+                  ? 'bg-gray-900 text-white'
+                  : 'text-gray-700 hover:bg-gray-100')
+              }
+            >
+              Kontrollpunkter
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSearchModeChange('chips')}
+              className={
+                'rounded px-2.5 py-1 text-[11px] font-medium ' +
+                (searchMode === 'chips'
+                  ? 'bg-gray-900 text-white'
+                  : 'text-gray-700 hover:bg-gray-100')
+              }
+            >
+              Chips
+            </button>
+          </div>
           <input
             className="w-full rounded-md border px-2 py-1.5 text-sm"
-            placeholder="Sök t.ex. golvbrunn, kyl, trinett…"
+            placeholder={
+              searchMode === 'chips'
+                ? 'Sök chip, t.ex. spricka, fukt, missfärgning…'
+                : 'Sök t.ex. golvbrunn, kyl, trinett…'
+            }
             value={searchTerm}
             onChange={handleSearchChange}
             readOnly={isInspectionLocked}
@@ -2170,7 +2380,8 @@ function RoomControlPointsSection({
             <div className="max-h-40 overflow-auto rounded-md border bg-white">
               {searchResults.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-gray-500">
-                  Inga kontrollpunkter hittades för “{searchTerm.trim()}”.
+                  {searchMode === 'chips' ? 'Inga chips' : 'Inga kontrollpunkter'} hittades för
+                  {' '}“{searchTerm.trim()}”.
                 </div>
               ) : (
                 searchResults.map(cp => (
@@ -2192,6 +2403,11 @@ function RoomControlPointsSection({
                     {cp.description && (
                       <span className="text-[11px] text-gray-500 line-clamp-2">
                         {cp.description}
+                      </span>
+                    )}
+                    {cp.search_hint && (
+                      <span className="text-[11px] text-gray-500">
+                        {cp.search_hint}
                       </span>
                     )}
                   </button>
@@ -2223,7 +2439,7 @@ function RoomControlPointsSection({
           </button>
           <button
             type="button"
-            onClick={() => setShowSearch(prev => !prev)}
+            onClick={handleToggleSearch}
             className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
             disabled={isInspectionLocked}
           >
@@ -2241,31 +2457,17 @@ function RoomControlPointsSection({
           </div>
         )}
 
-        {items.map(ci => {
-          const ciId = ci.id ?? ''
-          const ciImages = imagesByControlItemId[ciId] || []
-          const isFreeNote = ci.control_point_id === null
-          const outcomes = ci.control_point_id
-            ? outcomesByControlPointId[ci.control_point_id] || []
-            : []
-          const meta = ci.control_point_id
-            ? controlPointMetaById[ci.control_point_id]
-            : undefined
+        {groupedItems.map(group => {
+          const baseItem = group.items[0]
+          if (!baseItem) return null
+          const outcomes = outcomesByControlPointId[group.controlPointId] || []
+          const meta = controlPointMetaById[group.controlPointId]
           const description = (meta?.description ?? '').trim()
-          const selectedOutcome = ci.selected_outcome_id
-            ? outcomes.find(outcome => outcome.id === ci.selected_outcome_id) || null
-            : null
-          const riskTemplate = (selectedOutcome?.risk_template ?? '').trim()
-          const ftuTemplate = (selectedOutcome?.ftu_template ?? '').trim()
-          const riskText = (ci.risk_text ?? riskTemplate).trim()
-          const ftuText = (ci.ftu_text ?? ftuTemplate).trim()
-          const effectiveStatus = ci.status
-          const isGreen = !ci.selected_outcome_id && effectiveStatus === 'ok'
-          const isYellow = !!ci.selected_outcome_id
+          const selectedItems = group.items.filter(ci => ci.selected_outcome_id)
+          const isGreen = selectedItems.length === 0 && baseItem.status === 'ok'
+          const isYellow = selectedItems.length > 0
           const isRed = !isGreen && !isYellow
-          const rowToneClass = isFreeNote
-            ? 'bg-gray-50 border-gray-200'
-            : isRed
+          const rowToneClass = isRed
             ? 'bg-red-50 border-red-200'
             : isGreen
             ? 'bg-emerald-50 border-emerald-200'
@@ -2273,22 +2475,21 @@ function RoomControlPointsSection({
 
           return (
             <div
-              key={ci.id}
+              key={group.controlPointId}
               className={`rounded-lg border px-3 py-2 space-y-2 ${rowToneClass}`}
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-semibold text-gray-900">
-                  {ci.title}
+                  {baseItem.title}
                 </div>
-
-                {ci.id && (
+                {baseItem.id && (
                   <button
                     type="button"
-                    onClick={() => onDeleteItem(ci.id!)}
-                    className="text-[11px] text-rose-600 hover:underline"
+                    onClick={() => onDeleteItemGroup(baseItem)}
+                    className="ml-auto text-[11px] text-rose-600 hover:underline"
                     disabled={isInspectionLocked}
                   >
-                    {isFreeNote ? 'Ta bort notering' : 'Ta bort kontrollpunkt'}
+                    Ta bort
                   </button>
                 )}
               </div>
@@ -2299,132 +2500,277 @@ function RoomControlPointsSection({
                 </div>
               )}
 
-              {!isFreeNote && (
-                <div className="space-y-1">
-                  <label className="text-[11px] text-gray-600">
-                    Bedömning
-                  </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      type="button"
-                      className={
-                        'rounded-full border px-2.5 py-1 text-[11px] ' +
-                        (isGreen
-                          ? 'border-gray-900 bg-gray-900 text-white'
-                          : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
-                      }
-                      onClick={() => {
-                        if (!ci.id) return
-                        onUpdateItem(ci.id, {
-                          status: isGreen ? RED_STATUS : 'ok',
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-600">
+                  Bedömning
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    className={
+                      'rounded-full border px-2.5 py-1 text-[11px] ' +
+                      (isGreen
+                        ? 'border-gray-900 bg-gray-900 text-white'
+                        : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
+                    }
+                    onClick={() => {
+                      if (!baseItem.id) return
+                      if (selectedItems.length > 0 || !isGreen) {
+                        selectedItems.forEach(ci => {
+                          if (ci.id && ci.id !== baseItem.id) {
+                            onDeleteItem(ci.id, true)
+                          }
+                        })
+                        onUpdateItem(baseItem.id, {
+                          status: 'ok',
                           selected_outcome_id: null,
                           note: null,
                           risk_text: null,
                           ftu_text: null,
                         })
-                      }}
-                      disabled={isInspectionLocked}
-                    >
-                      Inget att notera
-                    </button>
-                    {outcomes.map(outcome => {
-                      const isActive = ci.selected_outcome_id === outcome.id
-                      const chipClass =
-                        'rounded-full border px-2.5 py-1 text-[11px] ' +
-                        (isActive
-                          ? 'border-gray-900 bg-gray-900 text-white'
-                          : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
-                      return (
-                        <button
-                          key={outcome.id}
-                          type="button"
-                          className={chipClass}
-                          onClick={() => {
-                            if (!ci.id) return
-                            const nextNote = isActive
-                              ? ci.note ?? null
-                              : (ci.note?.trim()
-                                  ? ci.note
-                                  : (outcome.note_template ?? null))
-                            onUpdateItem(ci.id, {
-                              status: isActive ? RED_STATUS : 'remark',
-                              selected_outcome_id: isActive ? null : outcome.id,
-                              note: nextNote,
-                              risk_text: isActive
-                                ? null
-                                : ((ci.risk_text ?? '').trim().length > 0
-                                    ? ci.risk_text
-                                    : (outcome.risk_template ?? '').trim() || null),
-                              ftu_text: isActive
-                                ? null
-                                : ((ci.ftu_text ?? '').trim().length > 0
-                                    ? ci.ftu_text
-                                    : (outcome.ftu_template ?? '').trim() || null),
-                            })
-                          }}
-                          disabled={isInspectionLocked}
-                        >
-                          {outcome.label}
-                        </button>
-                      )
-                    })}
+                      } else {
+                        onUpdateItem(baseItem.id, {
+                          status: RED_STATUS,
+                          selected_outcome_id: null,
+                          risk_text: null,
+                          ftu_text: null,
+                        })
+                      }
+                    }}
+                    disabled={isInspectionLocked}
+                  >
+                    Inget att notera
+                  </button>
+                  {outcomes.map(outcome => {
+                    const activeItem = selectedItems.find(
+                      ci => ci.selected_outcome_id === outcome.id
+                    )
+                    const isActive = !!activeItem
+                    const chipClass =
+                      'rounded-full border px-2.5 py-1 text-[11px] ' +
+                      (isActive
+                        ? 'border-gray-900 bg-gray-900 text-white'
+                        : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
+                    return (
+                      <button
+                        key={outcome.id}
+                        type="button"
+                        className={chipClass}
+                        onClick={() => {
+                          if (!baseItem.id) return
+                          if (isActive && activeItem?.id) {
+                            if (selectedItems.length === 1) {
+                              onUpdateItem(activeItem.id, {
+                                status: RED_STATUS,
+                                selected_outcome_id: null,
+                                note: null,
+                                risk_text: null,
+                                ftu_text: null,
+                              })
+                            } else {
+                              onDeleteItem(activeItem.id, true)
+                            }
+                          } else {
+                            if (selectedItems.length === 0) {
+                              onUpdateItem(baseItem.id, {
+                                status: 'remark',
+                                selected_outcome_id: outcome.id,
+                                note: (outcome.note_template ?? '').trim() || null,
+                                risk_text:
+                                  (baseItem.risk_text ?? '').trim().length > 0
+                                    ? baseItem.risk_text
+                                    : (outcome.risk_template ?? '').trim() || null,
+                                ftu_text:
+                                  (baseItem.ftu_text ?? '').trim().length > 0
+                                    ? baseItem.ftu_text
+                                    : (outcome.ftu_template ?? '').trim() || null,
+                              })
+                            } else {
+                              onAddOutcomeItem(baseItem, outcome)
+                            }
+                          }
+                        }}
+                        disabled={isInspectionLocked}
+                      >
+                        {outcome.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {selectedItems.length === 0 && (
+                <div className="space-y-2">
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-gray-600">
+                      Förtydligande
+                    </label>
+                    <textarea
+                      rows={2}
+                      className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                      placeholder="Specifik notering för just denna kontrollpunkt…"
+                      value={baseItem.note ?? ''}
+                      onChange={e =>
+                        baseItem.id &&
+                        onUpdateItem(baseItem.id, { note: e.target.value })
+                      }
+                      readOnly={isInspectionLocked}
+                    />
                   </div>
+                  {baseItem.id && (
+                    <ControlItemImagesSection
+                      controlItem={baseItem}
+                      images={imagesByControlItemId[baseItem.id] || []}
+                      onUpload={onUploadImage}
+                      onDelete={onDeleteImage}
+                    />
+                  )}
                 </div>
               )}
 
-              {!isFreeNote && selectedOutcome && (riskText.length > 0 || ftuText.length > 0) && (
-                <div className="space-y-2">
-                  {riskText.length > 0 && (
-                    <div className="rounded-lg border border-gray-200 bg-white p-3">
-                      <div className="text-xs font-semibold text-gray-700">
-                        Riskanalys
+              {selectedItems.length > 0 && (
+                <div className="space-y-3">
+                  {selectedItems.map(ci => {
+                    const selectedOutcome = ci.selected_outcome_id
+                      ? outcomes.find(outcome => outcome.id === ci.selected_outcome_id) || null
+                      : null
+                    if (!selectedOutcome) return null
+                    const riskTemplate = (selectedOutcome.risk_template ?? '').trim()
+                    const ftuTemplate = (selectedOutcome.ftu_template ?? '').trim()
+                    const riskText = (ci.risk_text ?? riskTemplate).trim()
+                    const ftuText = (ci.ftu_text ?? ftuTemplate).trim()
+                    const ciId = ci.id ?? ''
+                    const ciImages = ciId ? imagesByControlItemId[ciId] || [] : []
+
+                    return (
+                      <div
+                        key={ci.id}
+                        className="rounded-lg border border-amber-200 bg-white p-3 space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs font-semibold text-gray-900">
+                            {selectedOutcome.label}
+                          </div>
+                          {ci.id && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteItem(ci.id!, true)}
+                              className="text-[11px] text-rose-600 hover:underline"
+                              disabled={isInspectionLocked}
+                            >
+                              Ta bort
+                            </button>
+                          )}
+                        </div>
+
+                        {(riskText.length > 0 || ftuText.length > 0) && (
+                          <div className="space-y-2">
+                            {riskText.length > 0 && (
+                              <div className="rounded-lg border border-gray-200 bg-white p-3">
+                                <div className="text-xs font-semibold text-gray-700">
+                                  Riskanalys
+                                </div>
+                                <textarea
+                                  rows={3}
+                                  className="mt-1 w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                                  placeholder="Beskriv riskanalys..."
+                                  value={riskText}
+                                  onChange={e =>
+                                    ci.id &&
+                                    onUpdateItem(ci.id, { risk_text: e.target.value })
+                                  }
+                                  readOnly={isInspectionLocked}
+                                />
+                              </div>
+                            )}
+                            {ftuText.length > 0 && (
+                              <div className="rounded-lg border border-gray-200 bg-white p-3">
+                                <div className="text-xs font-semibold text-gray-700">
+                                  Fortsatt teknisk utredning (FTU)
+                                </div>
+                                <textarea
+                                  rows={3}
+                                  className="mt-1 w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                                  placeholder="Beskriv fortsatt teknisk utredning..."
+                                  value={ftuText}
+                                  onChange={e =>
+                                    ci.id &&
+                                    onUpdateItem(ci.id, { ftu_text: e.target.value })
+                                  }
+                                  readOnly={isInspectionLocked}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] text-gray-600">
+                            Förtydligande
+                          </label>
+                          <textarea
+                            rows={2}
+                            className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                            placeholder="Specifik notering för just detta chip…"
+                            value={ci.note ?? ''}
+                            onChange={e =>
+                              ci.id &&
+                              onUpdateItem(ci.id, { note: e.target.value })
+                            }
+                            readOnly={isInspectionLocked}
+                          />
+                        </div>
+
+                        {ci.id && (
+                          <ControlItemImagesSection
+                            controlItem={ci}
+                            images={ciImages}
+                            onUpload={onUploadImage}
+                            onDelete={onDeleteImage}
+                          />
+                        )}
                       </div>
-                      <textarea
-                        rows={3}
-                        className="mt-1 w-full rounded-md border px-2 py-1.5 text-xs bg-white"
-                        placeholder="Beskriv riskanalys..."
-                        value={riskText}
-                        onChange={e =>
-                          ci.id &&
-                          onUpdateItem(ci.id, { risk_text: e.target.value })
-                        }
-                        readOnly={isInspectionLocked}
-                      />
-                    </div>
-                  )}
-                  {ftuText.length > 0 && (
-                    <div className="rounded-lg border border-gray-200 bg-white p-3">
-                      <div className="text-xs font-semibold text-gray-700">
-                        Fortsatt teknisk utredning (FTU)
-                      </div>
-                      <textarea
-                        rows={3}
-                        className="mt-1 w-full rounded-md border px-2 py-1.5 text-xs bg-white"
-                        placeholder="Beskriv fortsatt teknisk utredning..."
-                        value={ftuText}
-                        onChange={e =>
-                          ci.id &&
-                          onUpdateItem(ci.id, { ftu_text: e.target.value })
-                        }
-                        readOnly={isInspectionLocked}
-                      />
-                    </div>
-                  )}
+                    )
+                  })}
                 </div>
               )}
+            </div>
+          )
+        })}
+
+        {freeNoteItems.map(ci => {
+          const ciId = ci.id ?? ''
+          const ciImages = imagesByControlItemId[ciId] || []
+          return (
+            <div
+              key={ci.id}
+              className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 space-y-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-semibold text-gray-900">
+                  {ci.title}
+                </div>
+
+                {ci.id && (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteItem(ci.id)}
+                    className="text-[11px] text-rose-600 hover:underline"
+                    disabled={isInspectionLocked}
+                  >
+                    Ta bort notering
+                  </button>
+                )}
+              </div>
 
               <div className="space-y-1">
                 <label className="text-[11px] text-gray-600">
-                  {isFreeNote ? 'Notering' : 'Förtydligande'}
+                  Notering
                 </label>
                 <textarea
                   rows={2}
                   className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
-                  placeholder={
-                    isFreeNote
-                      ? 'Fri notering för rummet…'
-                      : 'Specifik notering för just denna kontrollpunkt…'
-                  }
+                  placeholder="Fri notering för rummet…"
                   value={ci.note ?? ''}
                   onChange={e =>
                     ci.id &&
@@ -2434,7 +2780,6 @@ function RoomControlPointsSection({
                 />
               </div>
 
-              {/* Bilder för denna kontrollpunkt */}
               {ci.id && (
                 <ControlItemImagesSection
                   controlItem={ci}
@@ -2448,57 +2793,6 @@ function RoomControlPointsSection({
         })}
       </div>
 
-      {/* Lägg till kontrollpunkt via sök (togglar på knapp) */}
-      {showSearch && (
-        <div className="space-y-2">
-          <label className="text-xs font-medium text-gray-700">
-            Lägg till kontrollpunkt i {roomDisplayLabel}
-          </label>
-          <input
-            className="w-full rounded-md border px-2 py-1.5 text-sm"
-            placeholder="Sök t.ex. golvbrunn, kyl, trinett…"
-            value={searchTerm}
-            onChange={handleSearchChange}
-          />
-
-          {searching && (
-            <div className="text-[11px] text-gray-500">Söker…</div>
-          )}
-
-          {!searching && searchTerm.trim().length >= 2 && (
-            <div className="max-h-40 overflow-auto rounded-md border bg-white">
-              {searchResults.length === 0 ? (
-                <div className="px-3 py-2 text-xs text-gray-500">
-                  Inga kontrollpunkter hittades för “{searchTerm.trim()}”.
-                </div>
-              ) : (
-                searchResults.map(cp => (
-                  <button
-                    key={cp.id}
-                    type="button"
-                    onClick={() => {
-                      onAddFromCatalog(room, cp)
-                      setSearchTerm('')
-                      setSearchResults([])
-                      setShowSearch(false)
-                    }}
-                    className="flex w-full flex-col items-start px-3 py-2 text-left text-xs hover:bg-gray-50"
-                  >
-                    <span className="font-medium text-gray-900">
-                      {cp.title || cp.label || cp.key}
-                    </span>
-                    {cp.description && (
-                      <span className="text-[11px] text-gray-500 line-clamp-2">
-                        {cp.description}
-                      </span>
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-      )}
     </section>
   )
 }

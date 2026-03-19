@@ -11,6 +11,7 @@ type Inspection = {
   assignment_number: string | null
   status?: string | null
 }
+type SearchMode = 'control_points' | 'chips'
 
 type SettingsExteriorItem = {
   id: string
@@ -87,6 +88,7 @@ type ControlPointLite = {
   description: string | null
   tags: any | null
   exterior_item_key?: string | null
+  search_hint?: string | null
 }
 
 type ControlPointOutcome = {
@@ -1966,17 +1968,27 @@ function FreeNotesSection({
   onAddControlFromCatalog,
 }: FreeNotesSectionProps) {
   const [showSearch, setShowSearch] = useState(false)
+  const [searchMode, setSearchMode] = useState<SearchMode>('control_points')
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState<ControlPointLite[]>([])
   const [searching, setSearching] = useState(false)
 
+  const clearSearch = () => {
+    setSearchTerm('')
+    setSearchResults([])
+    setSearching(false)
+  }
+
   const handleToggleSearch = () => {
     const next = !showSearch
     setShowSearch(next)
-    if (!next) {
-      setSearchTerm('')
-      setSearchResults([])
-    }
+    if (!next) clearSearch()
+  }
+
+  const handleSearchModeChange = (mode: SearchMode) => {
+    if (mode === searchMode) return
+    setSearchMode(mode)
+    clearSearch()
   }
 
   const handleSearchChange = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -1992,25 +2004,103 @@ function FreeNotesSection({
     setSearching(true)
     try {
       const like = `%${trimmed}%`
+      if (searchMode === 'control_points') {
+        const { data, error } = await supabase
+          .from('settings_control_points')
+          .select('id, key, title, description, tags, exterior_item_key')
+          .eq('scope', 'exterior')
+          .eq('is_active', true)
+          .or(
+            `title.ilike.${like},key.ilike.${like},description.ilike.${like}`
+          )
 
-      const { data, error } = await supabase
-        .from('settings_control_points')
-        .select('id, key, title, description, tags, exterior_item_key')
-        .eq('scope', 'exterior')
+        if (error) {
+          console.error(
+            'search exterior control points (FreeNotesSection) failed:',
+            error
+          )
+          return
+        }
+
+        setSearchResults((data ?? []) as ControlPointLite[])
+        return
+      }
+
+      const { data: outcomeRows, error: outcomesError } = await supabase
+        .from('settings_control_point_outcomes')
+        .select('control_point_id, label, note_template, risk_template, ftu_template')
         .eq('is_active', true)
         .or(
-          `title.ilike.${like},key.ilike.${like},description.ilike.${like}`
+          `label.ilike.${like},note_template.ilike.${like},risk_template.ilike.${like},ftu_template.ilike.${like}`
         )
 
-      if (error) {
+      if (outcomesError) {
         console.error(
-          'search exterior control points (FreeNotesSection) failed:',
-          error
+          'search exterior control point outcomes (FreeNotesSection) failed:',
+          outcomesError
         )
         return
       }
 
-      setSearchResults((data ?? []) as ControlPointLite[])
+      const outcomes = (outcomeRows ?? []) as Array<{
+        control_point_id: string | null
+        label: string | null
+      }>
+
+      const controlPointIds = Array.from(
+        new Set(
+          outcomes
+            .map(outcome => outcome.control_point_id)
+            .filter((id): id is string => typeof id === 'string' && id.length > 0)
+        )
+      )
+
+      if (controlPointIds.length === 0) {
+        setSearchResults([])
+        return
+      }
+
+      const { data: controlPointsData, error: controlPointsError } = await supabase
+        .from('settings_control_points')
+        .select('id, key, title, description, tags, exterior_item_key')
+        .eq('scope', 'exterior')
+        .eq('is_active', true)
+        .in('id', controlPointIds)
+
+      if (controlPointsError) {
+        console.error(
+          'search exterior control points by outcomes (FreeNotesSection) failed:',
+          controlPointsError
+        )
+        return
+      }
+
+      const outcomeLabelsByControlPointId = outcomes.reduce<Record<string, string[]>>(
+        (acc, outcome) => {
+          const controlPointId = outcome.control_point_id
+          const label = (outcome.label ?? '').trim()
+          if (!controlPointId || !label) return acc
+          const current = acc[controlPointId] || []
+          if (!current.includes(label)) current.push(label)
+          acc[controlPointId] = current
+          return acc
+        },
+        {}
+      )
+
+      const points = (controlPointsData ?? []) as ControlPointLite[]
+      setSearchResults(
+        points.map(cp => {
+          const labels = outcomeLabelsByControlPointId[cp.id] || []
+          return {
+            ...cp,
+            search_hint:
+              labels.length > 0
+                ? `Chipträff: ${labels.slice(0, 3).join(', ')}`
+                : 'Chipträff',
+          }
+        })
+      )
     } finally {
       setSearching(false)
     }
@@ -2048,9 +2138,39 @@ function FreeNotesSection({
           <label className="text-xs font-medium text-gray-700">
             Sök kontrollpunkt (alla utsides-kontrollpunkter)
           </label>
+          <div className="inline-flex rounded-md border border-gray-300 bg-white p-0.5">
+            <button
+              type="button"
+              onClick={() => handleSearchModeChange('control_points')}
+              className={
+                'rounded px-2.5 py-1 text-[11px] font-medium ' +
+                (searchMode === 'control_points'
+                  ? 'bg-gray-900 text-white'
+                  : 'text-gray-700 hover:bg-gray-100')
+              }
+            >
+              Kontrollpunkter
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSearchModeChange('chips')}
+              className={
+                'rounded px-2.5 py-1 text-[11px] font-medium ' +
+                (searchMode === 'chips'
+                  ? 'bg-gray-900 text-white'
+                  : 'text-gray-700 hover:bg-gray-100')
+              }
+            >
+              Chips
+            </button>
+          </div>
           <input
             className="w-full rounded-md border px-2 py-1.5 text-sm bg-white"
-            placeholder="Sök t.ex. sprickor, rost, avrinning…"
+            placeholder={
+              searchMode === 'chips'
+                ? 'Sök chip, t.ex. spricka, fukt, missfärgning…'
+                : 'Sök t.ex. sprickor, rost, avrinning…'
+            }
             value={searchTerm}
             onChange={handleSearchChange}
             readOnly={isInspectionLocked}
@@ -2064,7 +2184,8 @@ function FreeNotesSection({
             <div className="max-h-40 overflow-auto rounded-md border bg-white">
               {searchResults.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-gray-500">
-                  Inga kontrollpunkter hittades för "{searchTerm.trim()}".
+                  {searchMode === 'chips' ? 'Inga chips' : 'Inga kontrollpunkter'} hittades för
+                  {' '}“{searchTerm.trim()}”.
                 </div>
               ) : (
                 searchResults.map(cp => (
@@ -2086,6 +2207,11 @@ function FreeNotesSection({
                     {cp.description && (
                       <span className="text-[11px] text-gray-500 line-clamp-2">
                         {cp.description}
+                      </span>
+                    )}
+                    {cp.search_hint && (
+                      <span className="text-[11px] text-gray-500">
+                        {cp.search_hint}
                       </span>
                     )}
                   </button>
