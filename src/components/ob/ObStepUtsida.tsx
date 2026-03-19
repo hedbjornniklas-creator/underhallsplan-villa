@@ -1383,9 +1383,16 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     const mainRow = rows.find(r => !isFreeNote(r)) ?? rows[0]
 
     // Fria noteringar (med free_note)
-    const freeNoteRows = rows.filter(
-      r => r.id !== mainRow.id && isFreeNote(r)
-    )
+    const freeNoteRows = rows
+      .filter(r => r.id !== mainRow.id && isFreeNote(r))
+      .sort((a, b) => {
+        const aTime = a.created_at ? Date.parse(a.created_at) : Number.NaN
+        const bTime = b.created_at ? Date.parse(b.created_at) : Number.NaN
+        if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0
+        if (Number.isNaN(aTime)) return 1
+        if (Number.isNaN(bTime)) return -1
+        return bTime - aTime
+      })
 
     const rowControlItems = mainRow.id
       ? controlItemsByObservationId[mainRow.id] || []
@@ -1474,15 +1481,17 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
 
   return (
     <div className="space-y-5">
-      <header className="space-y-1">
-        <h2 className="text-xl font-semibold text-gray-900">Byggnad – utsida</h2>
-        <p className="text-sm text-gray-700">
-          Här dokumenterar du utsidans komponenter per rubrik (Mark, Grundmur/sockel,
-          Fasad, Dörrar/fönster, Yttertak, Övrigt). Under varje komponent visas
-          kontrollpunkter med status, noteringar och bilder samt fria noteringar som
-          kan användas för kompletterande information.
-        </p>
-      </header>
+      <section className="rounded-2xl border border-gray-200 bg-white/95 p-4 md:p-5 space-y-4">
+        <header className="space-y-1">
+          <h2 className="text-xl font-semibold text-gray-900">Byggnad – utsida</h2>
+          <p className="text-sm text-gray-700">
+            Här dokumenterar du utsidans komponenter per rubrik (Mark, Grundmur/sockel,
+            Fasad, Dörrar/fönster, Yttertak, Övrigt). Under varje komponent visas
+            kontrollpunkter med status, noteringar och bilder samt fria noteringar som
+            kan användas för kompletterande information.
+          </p>
+        </header>
+      </section>
 
       <section className="space-y-4">
         {items.map(item => renderItemCard(item))}

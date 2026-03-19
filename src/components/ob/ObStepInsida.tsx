@@ -1717,75 +1717,77 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
   return (
     <div className="space-y-5">
-      <header className="space-y-1">
-        <h2 className="text-xl font-semibold text-gray-900">Byggnad – insida</h2>
-        <p className="text-sm text-gray-700">
-          Här dokumenterar du invändiga rum per plan och rumstyp. Gå vänstervarv per plan och lägg till
-          ett kort för varje rum (Sovrum 1, Sovrum 2, Vardagsrum, Badrum osv.). Kontrollpunkter
-          föreslås automatiskt men du kan även lägga till egna per rum.
-        </p>
-      </header>
+      <section className="rounded-2xl border border-gray-200 bg-white/95 p-4 md:p-5 space-y-4">
+        <header className="space-y-1">
+          <h2 className="text-xl font-semibold text-gray-900">Byggnad – insida</h2>
+          <p className="text-sm text-gray-700">
+            Här dokumenterar du invändiga rum per plan och rumstyp. Gå vänstervarv per plan och lägg till
+            ett kort för varje rum (Sovrum 1, Sovrum 2, Vardagsrum, Badrum osv.). Kontrollpunkter
+            föreslås automatiskt men du kan även lägga till egna per rum.
+          </p>
+        </header>
 
-      {/* Plan-flikar + Lägg till rum */}
-      <section className="flex flex-wrap items-center gap-2">
-        {floorLabels.map(fl => (
-          <button
-            key={fl}
-            type="button"
-            onClick={() => setActiveFloor(fl)}
-            className={`rounded-full border px-3 py-1 text-xs ${
-              activeFloor === fl
-                ? 'bg-gray-900 text-white border-gray-900'
-                : 'bg-white text-gray-800 border-gray-300 hover:bg-gray-50'
-            }`}
-          >
-            {getFloorLabel(fl)}
-          </button>
-        ))}
-
-        {floorLabels.length === 0 && (
-          <span className="text-xs text-gray-500">
-            Inga plan ännu. Fyll i Byggnadstyp under Förutsättningar, eller lägg till ett rum så skapas plan automatiskt.
-          </span>
-        )}
-
-        {!isOtherFloor && (
-          <button
-            type="button"
-            onClick={() => {
-              // Alltid förinställ Plan till aktuellt plan om det finns
-              if (activeFloor && activeFloor !== OTHER_ROOM_TYPE_KEY) {
-                setNewFloorLabel(activeFloor)
-              } else if (derivedFloors.length) {
-                setNewFloorLabel(derivedFloors[0])
-              } else if (floorLabels.length) {
-                setNewFloorLabel(floorLabels[0])
-              } else {
-                setNewFloorLabel('entréplan')
-              }
-              setShowNewRoomForm(true)
-            }}
-            className="ml-auto inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
-          >
-            + Lägg till rum
-          </button>
-        )}
-      </section>
-
-      {roomChips.length > 0 && (
+        {/* Plan-flikar + Lägg till rum */}
         <section className="flex flex-wrap items-center gap-2">
-          {roomChips.map(room => (
+          {floorLabels.map(fl => (
             <button
-              key={room.id ?? room.room_label}
+              key={fl}
               type="button"
-              onClick={() => scrollToRoom(room.id)}
-              className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-gray-800 hover:bg-gray-50"
+              onClick={() => setActiveFloor(fl)}
+              className={`rounded-full border px-3 py-1 text-xs ${
+                activeFloor === fl
+                  ? 'bg-gray-900 text-white border-gray-900'
+                  : 'bg-white text-gray-800 border-gray-300 hover:bg-gray-50'
+              }`}
             >
-              {getRoomDisplayLabel(room)}
+              {getFloorLabel(fl)}
             </button>
           ))}
+
+          {floorLabels.length === 0 && (
+            <span className="text-xs text-gray-500">
+              Inga plan ännu. Fyll i Byggnadstyp under Förutsättningar, eller lägg till ett rum så skapas plan automatiskt.
+            </span>
+          )}
+
+          {!isOtherFloor && (
+            <button
+              type="button"
+              onClick={() => {
+                // Alltid förinställ Plan till aktuellt plan om det finns
+                if (activeFloor && activeFloor !== OTHER_ROOM_TYPE_KEY) {
+                  setNewFloorLabel(activeFloor)
+                } else if (derivedFloors.length) {
+                  setNewFloorLabel(derivedFloors[0])
+                } else if (floorLabels.length) {
+                  setNewFloorLabel(floorLabels[0])
+                } else {
+                  setNewFloorLabel('entréplan')
+                }
+                setShowNewRoomForm(true)
+              }}
+              className="ml-auto inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
+            >
+              + Lägg till rum
+            </button>
+          )}
         </section>
-      )}
+
+        {roomChips.length > 0 && (
+          <section className="flex flex-wrap items-center gap-2">
+            {roomChips.map(room => (
+              <button
+                key={room.id ?? room.room_label}
+                type="button"
+                onClick={() => scrollToRoom(room.id)}
+                className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-gray-800 hover:bg-gray-50"
+              >
+                {getRoomDisplayLabel(room)}
+              </button>
+            ))}
+          </section>
+        )}
+      </section>
 
       {/* Ny-rumsformulär */}
       {showNewRoomForm && (
@@ -2190,7 +2192,10 @@ function RoomControlPointsSection({
     }))
   }, [items])
   const freeNoteItems = useMemo(
-    () => items.filter(ci => ci.control_point_id === null),
+    () =>
+      items
+        .filter(ci => ci.control_point_id === null)
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
     [items]
   )
 
@@ -2456,6 +2461,60 @@ function RoomControlPointsSection({
             eller via knappen “Lägg till ytterligare kontrollpunkt”.
           </div>
         )}
+
+        {freeNoteItems.map(ci => {
+          const ciId = ci.id ?? ''
+          const ciImages = imagesByControlItemId[ciId] || []
+          return (
+            <div
+              key={ci.id}
+              className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 space-y-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-semibold text-gray-900">
+                  {ci.title}
+                </div>
+
+                {ci.id && (
+                  <button
+                    type="button"
+                    onClick={() => ci.id && onDeleteItem(ci.id)}
+                    className="text-[11px] text-rose-600 hover:underline"
+                    disabled={isInspectionLocked}
+                  >
+                    Ta bort notering
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-600">
+                  Notering
+                </label>
+                <textarea
+                  rows={2}
+                  className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                  placeholder="Fri notering för rummet…"
+                  value={ci.note ?? ''}
+                  onChange={e =>
+                    ci.id &&
+                    onUpdateItem(ci.id, { note: e.target.value })
+                  }
+                  readOnly={isInspectionLocked}
+                />
+              </div>
+
+              {ci.id && (
+                <ControlItemImagesSection
+                  controlItem={ci}
+                  images={ciImages}
+                  onUpload={onUploadImage}
+                  onDelete={onDeleteImage}
+                />
+              )}
+            </div>
+          )
+        })}
 
         {groupedItems.map(group => {
           const baseItem = group.items[0]
@@ -2738,59 +2797,6 @@ function RoomControlPointsSection({
           )
         })}
 
-        {freeNoteItems.map(ci => {
-          const ciId = ci.id ?? ''
-          const ciImages = imagesByControlItemId[ciId] || []
-          return (
-            <div
-              key={ci.id}
-              className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 space-y-2"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs font-semibold text-gray-900">
-                  {ci.title}
-                </div>
-
-                {ci.id && (
-                  <button
-                    type="button"
-                    onClick={() => ci.id && onDeleteItem(ci.id)}
-                    className="text-[11px] text-rose-600 hover:underline"
-                    disabled={isInspectionLocked}
-                  >
-                    Ta bort notering
-                  </button>
-                )}
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-600">
-                  Notering
-                </label>
-                <textarea
-                  rows={2}
-                  className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
-                  placeholder="Fri notering för rummet…"
-                  value={ci.note ?? ''}
-                  onChange={e =>
-                    ci.id &&
-                    onUpdateItem(ci.id, { note: e.target.value })
-                  }
-                  readOnly={isInspectionLocked}
-                />
-              </div>
-
-              {ci.id && (
-                <ControlItemImagesSection
-                  controlItem={ci}
-                  images={ciImages}
-                  onUpload={onUploadImage}
-                  onDelete={onDeleteImage}
-                />
-              )}
-            </div>
-          )
-        })}
       </div>
 
     </section>
