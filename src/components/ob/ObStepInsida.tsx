@@ -2174,6 +2174,9 @@ function RoomControlPointsSection({
   const [searching, setSearching] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [searchMode, setSearchMode] = useState<SearchMode>('control_points')
+  const [expandedOkGroupIds, setExpandedOkGroupIds] = useState<Set<string>>(
+    () => new Set()
+  )
   const roomDisplayLabel = isOtherRoomKey(room.room_type_key)
     ? OTHER_ROOM_DISPLAY_LABEL
     : room.room_label
@@ -2198,6 +2201,22 @@ function RoomControlPointsSection({
         .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
     [items]
   )
+  const expandOkGroup = (groupId: string) => {
+    setExpandedOkGroupIds(prev => {
+      const next = new Set(prev)
+      next.add(groupId)
+      return next
+    })
+  }
+
+  const collapseOkGroup = (groupId: string) => {
+    setExpandedOkGroupIds(prev => {
+      if (!prev.has(groupId)) return prev
+      const next = new Set(prev)
+      next.delete(groupId)
+      return next
+    })
+  }
 
   const clearSearch = () => {
     setSearchTerm('')
@@ -2517,6 +2536,7 @@ function RoomControlPointsSection({
         })}
 
         {groupedItems.map(group => {
+          const groupId = group.controlPointId
           const baseItem = group.items[0]
           if (!baseItem) return null
           const outcomes = outcomesByControlPointId[group.controlPointId] || []
@@ -2526,11 +2546,49 @@ function RoomControlPointsSection({
           const isGreen = selectedItems.length === 0 && baseItem.status === 'ok'
           const isYellow = selectedItems.length > 0
           const isRed = !isGreen && !isYellow
+          const isCollapsedGreen = isGreen && !expandedOkGroupIds.has(groupId)
           const rowToneClass = isRed
             ? 'bg-red-50 border-red-200'
             : isGreen
             ? 'bg-emerald-50 border-emerald-200'
             : 'bg-amber-50 border-amber-200'
+
+          if (isCollapsedGreen) {
+            return (
+              <div
+                key={group.controlPointId}
+                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="text-xs font-semibold text-gray-900 truncate">
+                    {baseItem.title}
+                  </div>
+                  <span className="rounded-full border border-emerald-300 bg-white px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                    Inget att notera
+                  </span>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => expandOkGroup(groupId)}
+                      className="text-[11px] text-gray-700 hover:underline"
+                    >
+                      Visa
+                    </button>
+                    {baseItem.id && (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteItemGroup(baseItem)}
+                        className="text-[11px] text-rose-600 hover:underline"
+                        disabled={isInspectionLocked}
+                      >
+                        Ta bort
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          }
 
           return (
             <div
@@ -2587,6 +2645,7 @@ function RoomControlPointsSection({
                           risk_text: null,
                           ftu_text: null,
                         })
+                        collapseOkGroup(groupId)
                       } else {
                         onUpdateItem(baseItem.id, {
                           status: RED_STATUS,
@@ -2594,6 +2653,7 @@ function RoomControlPointsSection({
                           risk_text: null,
                           ftu_text: null,
                         })
+                        expandOkGroup(groupId)
                       }
                     }}
                     disabled={isInspectionLocked}
