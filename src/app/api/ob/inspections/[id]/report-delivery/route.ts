@@ -36,7 +36,7 @@ type InspectionForDelivery = {
   id: string
   property_id: string | null
   status: string | null
-  inspection_side: 'buyer' | 'seller' | null
+  inspection_side: 'buyer' | 'seller' | 'apartment' | null
 }
 
 type OutboundMessageRow = {
@@ -341,12 +341,18 @@ export async function POST(
     const extraRecipients = parseExtraRecipients(body?.extra_recipients, primaryRecipient)
     const recipients = [primaryRecipient, ...extraRecipients]
 
-    const inspectionSide = inspection.inspection_side === 'seller' ? 'seller' : 'buyer'
+    const inspectionSide =
+      inspection.inspection_side === 'seller'
+        ? 'seller'
+        : inspection.inspection_side === 'apartment'
+          ? 'apartment'
+          : 'buyer'
+    const specInspectionSide = inspectionSide === 'seller' ? 'seller' : 'buyer'
     const reportData = await buildReportDataV2({
       inspectionId: id,
       propertyId,
     })
-    const reportSpec = buildReportSpec({ inspectionSide })
+    const reportSpec = buildReportSpec({ inspectionSide: specInspectionSide })
     const snapshotPayload: ReportSnapshotPayloadV1 = createReportSnapshotPayloadV1({
       inspectionId: id,
       propertyId,
@@ -392,16 +398,16 @@ export async function POST(
         normalizedText((reportData.mock?.inspections as Record<string, unknown> | undefined)?.client_name) ??
         null,
       propertyAddress:
-        pickStreetAddress(assignment?.property_address) ??
-        pickStreetAddress(assignment?.preliminary_address) ??
         pickStreetAddress(
           normalizedText((reportData.mock?.properties as Record<string, unknown> | undefined)?.address) ?? null
         ) ??
+        pickStreetAddress(assignment?.property_address) ??
+        pickStreetAddress(assignment?.preliminary_address) ??
         null,
       inspectionDate:
-        normalizedText(assignment?.preferred_date) ??
         normalizedText((reportData.mock?.inspections as Record<string, unknown> | undefined)?.date) ??
         normalizedText((reportData.mock?.inspections as Record<string, unknown> | undefined)?.date_time) ??
+        normalizedText(assignment?.preferred_date) ??
         null,
       detailsUrl: linkUrl,
     })

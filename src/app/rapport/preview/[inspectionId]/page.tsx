@@ -22,7 +22,7 @@ export const metadata = {
 type InspectionForPreview = {
   id: string
   property_id: string | null
-  inspection_side: 'buyer' | 'seller' | null
+  inspection_side: 'buyer' | 'seller' | 'apartment' | null
 }
 
 export default async function ReportPreviewPage({
@@ -88,16 +88,22 @@ export default async function ReportPreviewPage({
     throw new Error('Besiktningen saknar kopplad fastighet.')
   }
 
-  const inspectionSide = inspection.inspection_side === 'seller' ? 'seller' : 'buyer'
+  const inspectionSideRaw =
+    inspection.inspection_side === 'seller'
+      ? 'seller'
+      : inspection.inspection_side === 'apartment'
+        ? 'apartment'
+        : 'buyer'
+  const specInspectionSide = inspectionSideRaw === 'seller' ? 'seller' : 'buyer'
   const reportData = await buildReportDataV2({
     inspectionId,
     propertyId,
   })
-  const reportSpec = buildReportSpec({ inspectionSide })
+  const reportSpec = buildReportSpec({ inspectionSide: specInspectionSide })
   const snapshot: ReportSnapshotPayloadV1 = createReportSnapshotPayloadV1({
     inspectionId,
     propertyId,
-    inspectionSide,
+    inspectionSide: inspectionSideRaw,
     reportData,
     reportSpec,
   })

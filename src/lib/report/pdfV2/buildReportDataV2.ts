@@ -152,7 +152,7 @@ const supabase: any = createSupabaseServerClient()
   const { data: inspectionData, error: inspectionError } = await supabase
     .from('inspections')
     .select(
-      'id, property_id, date, inspection_time, assignment_number, client_name, client_contact, defect_disclosures, scope, attendees, attendees_other, assignment_confirmation_delivered_date, cover_path'
+      'id, property_id, date, inspection_time, assignment_number, client_name, client_contact, defect_disclosures, scope, attendees, attendees_other, assignment_confirmation_delivered_date, inspection_side, cover_path'
     )
     .eq('id', resolvedParams.inspectionId)
     .maybeSingle()
@@ -196,6 +196,19 @@ const supabase: any = createSupabaseServerClient()
     ...(snapshotData ?? {}),
     id: (propertyData as any)?.id ?? resolvedPropertyId ?? null,
   }
+
+  const { data: assignmentData, error: assignmentError } = await supabase
+    .from('assignments')
+    .select('id, brf_name, apartment_number, apartment_holder_name')
+    .eq('inspection_id', resolvedParams.inspectionId)
+    .limit(1)
+    .maybeSingle()
+
+  if (assignmentError) {
+    console.error('Kunde inte hämta uppdragsbekräftelse för lägenhetsfält', assignmentError)
+  }
+
+  const assignment = (assignmentData as any) ?? null
 
   if (inspection && resolvedPropertyId && inspection.property_id !== resolvedPropertyId) {
     console.error('Besiktning tillhÃ¶r inte fastighet', {
@@ -864,6 +877,9 @@ const supabase: any = createSupabaseServerClient()
         city: valueOrFallback(property?.city ?? null),
         municipality: valueOrFallback(property?.municipality ?? null),
         owner_name: valueOrFallback(property?.owner_name ?? null),
+        brf_name: valueOrFallback(assignment?.brf_name ?? null, ''),
+        apartment_number: valueOrFallback(assignment?.apartment_number ?? null, ''),
+        apartment_holder_name: valueOrFallback(assignment?.apartment_holder_name ?? null, ''),
         cover_path: coverImageUrl,
       },
       documents: {
@@ -880,6 +896,7 @@ const supabase: any = createSupabaseServerClient()
       inspections: {
         date: inspectionDate,
         date_time: inspectionDateTime,
+        side: valueOrFallback(inspection?.inspection_side ?? null, ''),
         inspector_name: valueOrFallback(inspection?.client_contact ?? null),
         assignment_number: valueOrFallback(inspection?.assignment_number ?? null),
         client_name: valueOrFallback(inspection?.client_name ?? null),

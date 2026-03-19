@@ -16,7 +16,7 @@ export type ReportSnapshotPayloadV1 = {
   createdAt: string
   inspectionId: string
   propertyId: string
-  inspectionSide: 'buyer' | 'seller' | null
+  inspectionSide: 'buyer' | 'seller' | 'apartment' | null
   reportData: ReportDataV2
   reportSpec: ReportSection[]
 }
@@ -40,7 +40,9 @@ function stripPhotoUrls(data: ReportDataV2): ReportDataV2 {
   return cloned
 }
 
-async function resolveInspectionSide(inspectionId: string): Promise<'buyer' | 'seller' | null> {
+async function resolveInspectionSide(
+  inspectionId: string
+): Promise<'buyer' | 'seller' | 'apartment' | null> {
   const supabase = createSupabaseServerClient()
   const { data } = await supabase
     .from('inspections')
@@ -51,7 +53,7 @@ async function resolveInspectionSide(inspectionId: string): Promise<'buyer' | 's
   const value = String((data as { inspection_side?: string | null } | null)?.inspection_side ?? '')
     .trim()
     .toLowerCase()
-  if (value === 'buyer' || value === 'seller') return value
+  if (value === 'buyer' || value === 'seller' || value === 'apartment') return value
   return null
 }
 
@@ -75,7 +77,7 @@ async function renderDocumentToBuffer(document: React.ReactElement<ReactPdf.Docu
 export function createReportSnapshotPayloadV1(input: {
   inspectionId: string
   propertyId: string
-  inspectionSide: 'buyer' | 'seller' | null
+  inspectionSide: 'buyer' | 'seller' | 'apartment' | null
   reportData: ReportDataV2
   reportSpec: ReportSection[]
 }): ReportSnapshotPayloadV1 {
@@ -104,10 +106,11 @@ export function isReportSnapshotPayloadV1(value: unknown): value is ReportSnapsh
 export async function renderStructuredPdfFromSnapshot(
   snapshot: ReportSnapshotPayloadV1
 ): Promise<Buffer> {
+  const specInspectionSide = snapshot.inspectionSide === 'seller' ? 'seller' : 'buyer'
   const spec =
     Array.isArray(snapshot.reportSpec) && snapshot.reportSpec.length > 0
       ? snapshot.reportSpec
-      : buildReportSpec({ inspectionSide: snapshot.inspectionSide })
+      : buildReportSpec({ inspectionSide: specInspectionSide })
   const document = createDocument(spec, snapshot.reportData)
   return await renderDocumentToBuffer(document)
 }
@@ -121,7 +124,8 @@ export async function renderStructuredPdfV2(
   })
   const compactData = stripPhotoUrls(data)
   const inspectionSide = await resolveInspectionSide(params.inspectionId)
-  const spec = buildReportSpec({ inspectionSide })
+  const specInspectionSide = inspectionSide === 'seller' ? 'seller' : 'buyer'
+  const spec = buildReportSpec({ inspectionSide: specInspectionSide })
   const document = createDocument(spec, compactData)
   return await renderDocumentToBuffer(document)
 }

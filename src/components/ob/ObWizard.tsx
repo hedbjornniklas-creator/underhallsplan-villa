@@ -366,7 +366,7 @@ export default function ObWizard({
     ? `/api/report-v2/${inspectionId}/pdf?propertyId=${propertyId}`
     : ''
   const iframeSrc = hasValidIds ? `${reportHref}?embed=1` : ''
-  const reportDeliveryPreviewHref = iframeSrc
+  const reportDeliveryPreviewHref = reportWebPreviewHref
 
   switch (activeSection) {
     case 'overview':

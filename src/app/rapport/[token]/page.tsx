@@ -80,7 +80,7 @@ export default async function PublicReportPage({
   return (
     <ReportSnapshotView
       snapshot={snapshot}
-      heading="BesiktningsutlÃ¥tande"
+      heading={snapshot.inspectionSide === 'apartment' ? 'Lägenhetsbesiktning' : 'Besiktningsutlåtande'}
       pdfInlineUrl={pdfInlineUrl}
       pdfDownloadUrl={pdfDownloadUrl}
       showPdfActions
