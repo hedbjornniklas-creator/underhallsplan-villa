@@ -1877,9 +1877,9 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             <article
               key={room.id}
               id={room.id ? `room-card-${room.id}` : undefined}
-              className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-4"
+              className="space-y-4 border-t border-gray-200 pt-4 md:pt-5 first:border-t-0 first:pt-0"
             >
-              <header className="flex flex-wrap items-center justify-between gap-2">
+              <header className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50/80 px-3 py-2.5">
                 <div>
                   <div className="text-xs uppercase text-gray-500">
                     {getFloorLabel(room.floor_label)}
@@ -2754,7 +2754,7 @@ function RoomControlPointsSection({
                 {ci.id && (
                   <button
                     type="button"
-                    onClick={() => onDeleteItem(ci.id)}
+                    onClick={() => ci.id && onDeleteItem(ci.id)}
                     className="text-[11px] text-rose-600 hover:underline"
                     disabled={isInspectionLocked}
                   >
