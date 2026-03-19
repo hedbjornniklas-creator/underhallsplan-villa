@@ -6,6 +6,7 @@ import type { Tables } from '@/types/supabase'
 
 type FurnishingLevel = 'fullt_moblerad' | 'delvis_moblerad' | 'omoblerad'
 type SelectionMode = 'single' | 'multi_set' | 'per_floor'
+type InspectionSide = 'buyer' | 'seller' | 'apartment'
 
 // Hämta direkt från Supabase-typerna
 type Property = Tables<'properties'>
@@ -27,6 +28,7 @@ interface SettingsOverviewItem {
   is_active: boolean
   selection_mode: SelectionMode
   note_enabled: boolean
+  applies_to?: unknown
 }
 
 interface SettingsOverviewGroup {
@@ -77,6 +79,53 @@ const serializeLoadError = (error: any) => {
 const isUniqueViolation = (error: any) => {
   const text = `${error?.message ?? ''} ${error?.details ?? ''}`.toLowerCase()
   return error?.code === '23505' || text.includes('duplicate key')
+}
+
+const normalizeSwedishToken = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replaceAll('å', 'a')
+    .replaceAll('ä', 'a')
+    .replaceAll('ö', 'o')
+
+const parseInspectionSideToken = (value: string): InspectionSide | null => {
+  const token = normalizeSwedishToken(value)
+  if (token.includes('seller') || token.includes('salj')) return 'seller'
+  if (token.includes('apartment') || token.includes('lagenhet') || token.includes('apt')) {
+    return 'apartment'
+  }
+  if (token.includes('buyer') || token.includes('kop')) return 'buyer'
+  return null
+}
+
+const normalizeInspectionSide = (value: unknown): InspectionSide => {
+  if (typeof value !== 'string') return 'buyer'
+  return parseInspectionSideToken(value) ?? 'buyer'
+}
+
+const parseAppliesTo = (item: SettingsOverviewItem): InspectionSide[] | null => {
+  const raw = item.applies_to
+  if (raw == null) return null
+
+  let tokens: string[] = []
+  if (Array.isArray(raw)) {
+    tokens = raw.filter((value): value is string => typeof value === 'string')
+  } else if (typeof raw === 'string') {
+    tokens = raw.split(/[,;|]/g)
+  } else {
+    return null
+  }
+
+  const parsed = Array.from(
+    new Set(
+      tokens
+        .map(token => parseInspectionSideToken(token))
+        .filter((token): token is InspectionSide => token !== null)
+    )
+  )
+
+  return parsed.length > 0 ? parsed : null
 }
 
 export default function ObStepForutsattningar({
@@ -164,8 +213,13 @@ export default function ObStepForutsattningar({
           .order('sort_order', { ascending: true })
 
         if (itemsErr) throw itemsErr
+        const inspectionSide = normalizeInspectionSide(inspection.inspection_side)
         const itemsArr = (itemsData ?? []) as SettingsOverviewItem[]
-        const itemIds = itemsArr.map(i => i.id)
+        const filteredItems = itemsArr.filter(item => {
+          const appliesTo = parseAppliesTo(item)
+          return !appliesTo || appliesTo.includes(inspectionSide)
+        })
+        const itemIds = filteredItems.map(i => i.id)
 
         // C) groups
         let groupsArr: SettingsOverviewGroup[] = []
@@ -225,7 +279,7 @@ export default function ObStepForutsattningar({
           })
         }
 
-        const bundles: ItemBundle[] = itemsArr.map(it => ({
+        const bundles: ItemBundle[] = filteredItems.map(it => ({
           ...it,
           groups: groupsByItem[it.id] || [],
         }))
@@ -251,7 +305,7 @@ export default function ObStepForutsattningar({
     }
 
     if (inspection?.id) loadAll()
-  }, [inspection?.id])
+  }, [inspection?.id, inspection?.inspection_side])
 
   // -----------------------------
   // Save furnishing
@@ -767,7 +821,7 @@ export default function ObStepForutsattningar({
       {/* SÄRSKILDA FÖRUTSÄTTNINGAR */}
       <section className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3">
         <div className="text-sm text-gray-900">
-          Byggnaden var{' '}
+          Utrymmet var{' '}
           <select
             value={furnishing}
             onChange={e => {
@@ -778,9 +832,9 @@ export default function ObStepForutsattningar({
             className="mx-1 h-9 rounded-lg border border-gray-300 bg-gray-50 px-2 text-sm
                        focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
           >
-            <option value="fullt möblerad">fullt möblerad</option>
-            <option value="delvis möblerad">delvis möblerad</option>
-            <option value="omöblerad">omöblerad</option>
+            <option value="fullt_moblerad">fullt möblerad</option>
+            <option value="delvis_moblerad">delvis möblerad</option>
+            <option value="omoblerad">omöblerad</option>
           </select>{' '}
           vid besiktningstillfället.
         </div>
