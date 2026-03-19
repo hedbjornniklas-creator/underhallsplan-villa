@@ -49,7 +49,7 @@ export async function GET(
 
     const { data, error } = await admin
       .from('inspection_report_links')
-      .select('id,pdf_base64,snapshot_payload,revoked_at')
+      .select('id,pdf_base64,snapshot_payload,revoked_at,delivery_mode')
       .eq('token_hash', tokenHash)
       .maybeSingle()
 
@@ -64,9 +64,10 @@ export async function GET(
 
     let pdfBuffer: Buffer | null = null
     const pdfBase64 = String(data.pdf_base64 ?? '').trim()
-    if (pdfBase64 !== '') {
-      pdfBuffer = decodeBase64(pdfBase64, String(data.id))
-    } else if (isReportSnapshotPayloadV1(data.snapshot_payload)) {
+    const hasSnapshot = isReportSnapshotPayloadV1(data.snapshot_payload)
+
+    // Prefer immutable snapshot rendering for consistent full PDF output.
+    if (hasSnapshot) {
       try {
         pdfBuffer = await renderStructuredPdfFromSnapshot(data.snapshot_payload)
       } catch (renderError) {
@@ -74,10 +75,19 @@ export async function GET(
           linkId: data.id,
           error: renderError instanceof Error ? renderError.message : String(renderError),
         })
-        return new NextResponse('Could not render report.', { status: 500 })
+        if (pdfBase64 !== '') {
+          pdfBuffer = decodeBase64(pdfBase64, String(data.id))
+        } else {
+          return new NextResponse('Could not render report.', { status: 500 })
+        }
       }
+    } else if (pdfBase64 !== '') {
+      pdfBuffer = decodeBase64(pdfBase64, String(data.id))
     } else {
-      console.error('[reports.public] missing report payload', { linkId: data.id })
+      console.error('[reports.public] missing report payload', {
+        linkId: data.id,
+        deliveryMode: data.delivery_mode ?? null,
+      })
       return new NextResponse('Report snapshot is empty.', { status: 500 })
     }
 
@@ -87,15 +97,19 @@ export async function GET(
     }
 
     const asAttachment = new URL(request.url).searchParams.get('download') === '1'
+    const fileName = 'besiktningsutlatande.pdf'
+    const encodedFileName = encodeURIComponent(fileName)
     const disposition = asAttachment
-      ? 'attachment; filename="besiktningsutlatande.pdf"'
-      : 'inline; filename="besiktningsutlatande.pdf"'
+      ? `attachment; filename="${fileName}"; filename*=UTF-8''${encodedFileName}`
+      : `inline; filename="${fileName}"; filename*=UTF-8''${encodedFileName}`
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': disposition,
+        'Content-Length': String(pdfBuffer.length),
+        'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'private, no-store',
         'X-Robots-Tag': 'noindex, nofollow',
       },
@@ -106,4 +120,3 @@ export async function GET(
     return new NextResponse('Could not load report.', { status: 500 })
   }
 }
-
