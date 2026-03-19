@@ -1,0 +1,5 @@
+Uppdraget utförs i enlighet med villkoren för lägenhetsbesiktning enligt SBR modellen.
+En uppdragsbekräftelse med bifogad villkorsbilaga överlämnades till uppdragsgivaren den {{ assignment_confirmation_date }}.
+Innan besiktningen påbörjades gjordes en genomgång av uppdragsbekräftelsen.
+Besiktningsmannen ansvarar dock inte i något fall för fel/skada och är inte skyldig att betala för krav som reklamerats respektive framställts senare än två (2) år efter att uppdraget avslutats.
+Uppdraget är avslutat i och med att besiktningsmannen översänt besiktningsutlåtandet till uppdragsgivaren.

@@ -539,26 +539,96 @@ export const REPORT_SPEC: ReportSection[] = [
   },
 ]
 
-const ASSIGNMENT_LABEL_SELLER = 'ÖVERLÅTELSEBESIKTNING FÖR SÄLJARE'
-const ASSIGNMENT_LABEL_BUYER = 'ÖVERLÅTELSEBESIKTNING FÖR KÖPARE'
+const ASSIGNMENT_LABEL_SELLER = '\u00d6VERL\u00c5TELSEBESIKTNING F\u00d6R S\u00c4LJARE'
+const ASSIGNMENT_LABEL_BUYER = '\u00d6VERL\u00c5TELSEBESIKTNING F\u00d6R K\u00d6PARE'
+const ASSIGNMENT_LABEL_APARTMENT = 'L\u00c4GENHETSBESIKTNING'
 const APPENDIX_1_LABEL_SELLER =
-  'BILAGA 1: Villkor för överlåtelsebesiktning för säljare'
+  'BILAGA 1: Villkor f\u00f6r \u00f6verl\u00e5telsebesiktning f\u00f6r s\u00e4ljare'
 const APPENDIX_1_LABEL_BUYER =
-  'BILAGA 1: Villkor för överlåtelsebesiktning för köpare'
+  'BILAGA 1: Villkor f\u00f6r \u00f6verl\u00e5telsebesiktning f\u00f6r k\u00f6pare'
+const APPENDIX_1_LABEL_APARTMENT = 'BILAGA 1: Villkor f\u00f6r l\u00e4genhetsbesiktning'
+
+type ReportInspectionSide = 'buyer' | 'seller' | 'apartment'
+
+const resolveInspectionSide = (
+  inspectionSide: 'buyer' | 'seller' | 'apartment' | null | undefined
+): ReportInspectionSide => {
+  if (inspectionSide === 'seller') return 'seller'
+  if (inspectionSide === 'apartment') return 'apartment'
+  return 'buyer'
+}
+
+const buildObjectRows = (
+  inspectionSide: ReportInspectionSide
+): Array<{ label: string; value: TextSource }> => {
+  if (inspectionSide === 'apartment') {
+    return [
+      {
+        label: 'Bostadsr\u00e4ttsf\u00f6rening:',
+        value: { kind: 'mock', path: 'mock.properties.brf_name' },
+      },
+      {
+        label: 'L\u00e4genhetsnummer:',
+        value: { kind: 'mock', path: 'mock.properties.apartment_number' },
+      },
+      {
+        label: 'Adress:',
+        value: { kind: 'mock', path: 'mock.properties.address' },
+      },
+      {
+        label: 'Kommun:',
+        value: { kind: 'mock', path: 'mock.properties.municipality' },
+      },
+      {
+        label: 'Bostadsr\u00e4ttsinnehavare:',
+        value: { kind: 'mock', path: 'mock.properties.apartment_holder_name' },
+      },
+    ]
+  }
+
+  return [
+    {
+      label: 'Fastighetsbeteckning:',
+      value: { kind: 'mock', path: 'mock.properties.cadastral_id' },
+    },
+    {
+      label: 'Adress:',
+      value: { kind: 'mock', path: 'mock.properties.address' },
+    },
+    {
+      label: 'Kommun:',
+      value: { kind: 'mock', path: 'mock.properties.municipality' },
+    },
+    {
+      label: 'Fastighets\u00e4gare:',
+      value: { kind: 'mock', path: 'mock.properties.owner_name' },
+    },
+  ]
+}
 
 export function buildReportSpec(params?: {
-  inspectionSide?: 'buyer' | 'seller' | null
+  inspectionSide?: 'buyer' | 'seller' | 'apartment' | null
 }): ReportSection[] {
-  const inspectionSide = params?.inspectionSide === 'seller' ? 'seller' : 'buyer'
+  const inspectionSide = resolveInspectionSide(params?.inspectionSide)
   const assignmentLabel =
-    inspectionSide === 'seller' ? ASSIGNMENT_LABEL_SELLER : ASSIGNMENT_LABEL_BUYER
+    inspectionSide === 'seller'
+      ? ASSIGNMENT_LABEL_SELLER
+      : inspectionSide === 'apartment'
+        ? ASSIGNMENT_LABEL_APARTMENT
+        : ASSIGNMENT_LABEL_BUYER
   const appendixLabel =
-    inspectionSide === 'seller' ? APPENDIX_1_LABEL_SELLER : APPENDIX_1_LABEL_BUYER
+    inspectionSide === 'seller'
+      ? APPENDIX_1_LABEL_SELLER
+      : inspectionSide === 'apartment'
+        ? APPENDIX_1_LABEL_APARTMENT
+        : APPENDIX_1_LABEL_BUYER
   const appendixTitle = `${appendixLabel}.`
   const appendixId =
     inspectionSide === 'seller'
       ? 'APPENDIX_1_VILLKOR_SELLER_SBR'
-      : 'APPENDIX_1_VILLKOR_BUYER_SBR'
+      : inspectionSide === 'apartment'
+        ? 'APPENDIX_1_VILLKOR_APARTMENT_SBR'
+        : 'APPENDIX_1_VILLKOR_BUYER_SBR'
 
   const spec = JSON.parse(JSON.stringify(REPORT_SPEC)) as ReportSection[]
 
@@ -585,9 +655,24 @@ export function buildReportSpec(params?: {
         return { ...block, text: assignmentLabel }
       }
       if (
+        block.type === 'twoColumn' &&
+        block.rows.some((row) =>
+          ['Fastighetsbeteckning:', 'Bostadsr\u00e4ttsf\u00f6rening:'].includes(row.label)
+        )
+      ) {
+        return {
+          ...block,
+          rows: buildObjectRows(inspectionSide),
+        }
+      }
+      if (
         block.type === 'text' &&
         block.source.kind === 'standardText' &&
-        block.source.id === 'STD_ASSIGNMENT_SELLER_NOTICE'
+        [
+          'STD_ASSIGNMENT_SELLER_NOTICE',
+          'STD_ASSIGNMENT_BUYER_NOTICE',
+          'STD_ASSIGNMENT_APARTMENT_NOTICE',
+        ].includes(block.source.id)
       ) {
         return {
           ...block,
@@ -596,12 +681,35 @@ export function buildReportSpec(params?: {
             id:
               inspectionSide === 'seller'
                 ? 'STD_ASSIGNMENT_SELLER_NOTICE'
-                : 'STD_ASSIGNMENT_BUYER_NOTICE',
+                : inspectionSide === 'apartment'
+                  ? 'STD_ASSIGNMENT_APARTMENT_NOTICE'
+                  : 'STD_ASSIGNMENT_BUYER_NOTICE',
           },
         }
       }
       return block
     })
+  }
+
+  if (inspectionSide === 'apartment') {
+    const notesExteriorIndex = spec.findIndex((section) => section.id === 'notes')
+    if (notesExteriorIndex >= 0) {
+      spec.splice(notesExteriorIndex, 1)
+    }
+
+    const notesInteriorSection = spec.find((section) => section.id === 'notes-interior')
+    if (notesInteriorSection) {
+      notesInteriorSection.blocks = notesInteriorSection.blocks.map((block) => {
+        if (
+          block.type === 'heading' &&
+          block.level === 3 &&
+          block.text.toLowerCase().includes('insida')
+        ) {
+          return { ...block, text: 'L\u00e4genhet - insida' }
+        }
+        return block
+      })
+    }
   }
 
   const appendixSection = spec.find((section) => section.id === 'appendix-1')
@@ -612,6 +720,7 @@ export function buildReportSpec(params?: {
 
   return spec
 }
+
 
 
 

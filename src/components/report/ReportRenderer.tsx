@@ -7,7 +7,7 @@ type ReportRendererProps = {
   spec: ReportSection[]
   mockData: Record<string, unknown>
   rootClassName?: string
-  inspectionSide?: 'buyer' | 'seller' | null
+  inspectionSide?: 'buyer' | 'seller' | 'apartment' | null
 }
 
 type ResolvedReportSection = ReportSection & { appendixText?: string }
@@ -83,6 +83,7 @@ export default function ReportRenderer({
       spec={resolvedSpec}
       mockData={mockData}
       coverNotice={coverNotice}
+      inspectionSide={inspectionSide}
       rootClassName={rootClassName}
     />
   )

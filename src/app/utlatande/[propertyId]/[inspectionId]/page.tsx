@@ -94,6 +94,8 @@ type InspectionBlock = {
   hasDeviations: boolean
 }
 
+type InspectionSide = 'buyer' | 'seller' | 'apartment'
+
 export default async function Page({
   params,
   searchParams,
@@ -170,6 +172,42 @@ export default async function Page({
     return `${base}/storage/v1/object/public/inspection-images/${path}`
   }
 
+  const resolveInspectionSide = (value: string | null | undefined): InspectionSide => {
+    if (value === 'seller') return 'seller'
+    if (value === 'apartment') return 'apartment'
+    return 'buyer'
+  }
+
+  const appliesToMatches = (
+    appliesTo: string[] | null | undefined,
+    side: InspectionSide
+  ) => {
+    if (!Array.isArray(appliesTo) || appliesTo.length === 0) return true
+    const normalized = appliesTo.map((entry) => String(entry ?? '').trim().toLowerCase())
+    return normalized.includes(side)
+  }
+
+  const buildApartmentBuildingDataText = (raw: string) => {
+    const text = String(raw ?? '').trim()
+    const keepPrefixes = ['v\u00e4derlek:', 'byggnads\u00e5r:', 'ombyggnads\u00e5r:']
+    const keptLines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => {
+        const normalizedLine = normalizeSwedish(line).toLowerCase()
+        return keepPrefixes.some((prefix) => normalizedLine.startsWith(prefix))
+      })
+    if (
+      !keptLines.some((line) =>
+        normalizeSwedish(line).toLowerCase().startsWith('ombyggnads\u00e5r:')
+      )
+    ) {
+      keptLines.push('Ombyggnads\u00e5r: --')
+    }
+    return keptLines.join('\n')
+  }
+
   const { data: inspectionData, error: inspectionError } = await supabase
     .from('inspections')
     .select(
@@ -183,7 +221,7 @@ export default async function Page({
     console.error('Kunde inte hÃ¤mta besiktning', inspectionError)
   }
 
-  const inspectionSide = (inspection?.inspection_side ?? null) as 'buyer' | 'seller' | null
+  const inspectionSide = resolveInspectionSide(inspection?.inspection_side ?? null)
   const resolvedPropertyId = inspection?.property_id ?? resolvedParams.propertyId
 
   const { data: propertyData, error: propertyError } = await supabase
@@ -198,7 +236,9 @@ export default async function Page({
 
   const { data: snapshotData, error: snapshotError } = await (supabase as any)
     .from('ob_property_snapshot')
-    .select('inspection_id, source_property_id, name, address, postal_code, city, municipality, cadastral_id, owner_name, cover_path')
+    .select(
+      'inspection_id, source_property_id, name, address, postal_code, city, municipality, cadastral_id, owner_name, cover_path, brf_name, apartment_number, apartment_holder_name'
+    )
     .eq('inspection_id', resolvedParams.inspectionId)
     .maybeSingle()
 
@@ -206,9 +246,36 @@ export default async function Page({
     console.error('Kunde inte hÃ¤mta OB-snapshot', snapshotError)
   }
 
+  const { data: assignmentRows, error: assignmentError } = await (supabase as any)
+    .from('assignments')
+    .select('id, brf_name, apartment_number, apartment_holder_name')
+    .eq('inspection_id', resolvedParams.inspectionId)
+    .limit(1)
+
+  if (assignmentError) {
+    console.error('Kunde inte hÃ¤mta uppdragsfÃ¤lt fÃ¶r lÃ¤genhet', assignmentError)
+  }
+
+  const assignmentForInspection = Array.isArray(assignmentRows) ? assignmentRows[0] : null
+  const apartmentData = {
+    brf_name:
+      snapshotData?.brf_name ??
+      assignmentForInspection?.brf_name ??
+      null,
+    apartment_number:
+      snapshotData?.apartment_number ??
+      assignmentForInspection?.apartment_number ??
+      null,
+    apartment_holder_name:
+      snapshotData?.apartment_holder_name ??
+      assignmentForInspection?.apartment_holder_name ??
+      null,
+  }
+
   const property = {
     ...(propertyData ?? {}),
     ...(snapshotData ?? {}),
+    ...apartmentData,
     id: (propertyData as any)?.id ?? resolvedPropertyId ?? null,
   }
 
@@ -311,7 +378,7 @@ export default async function Page({
 
   const { data: overviewItems, error: overviewItemsError } = await supabase
     .from('settings_overview_items')
-    .select('id, key, label, sort_order')
+    .select('id, key, label, sort_order, applies_to')
     .in('key', overviewItemKeys)
     .eq('is_active', true)
 
@@ -319,12 +386,16 @@ export default async function Page({
     console.error('Kunde inte hamta byggnadsdata-installningar', overviewItemsError)
   }
 
-  const overviewItemsRows = (overviewItems ?? []) as Array<{
+  const overviewItemsRowsAll = (overviewItems ?? []) as Array<{
     id: string
     key: string
     label: string
     sort_order: number | null
+    applies_to: string[] | null
   }>
+  const overviewItemsRows = overviewItemsRowsAll.filter((item) =>
+    appliesToMatches(item.applies_to, inspectionSide)
+  )
   const overviewItemIds = overviewItemsRows.map((item) => item.id)
   const { data: overviewGroups, error: overviewGroupsError } = overviewItemIds.length
     ? await supabase
@@ -389,7 +460,11 @@ export default async function Page({
     ? `${inspectionDate} klockan ${inspectionTime}`
     : inspectionDate
   const scopeCodes = parseScopeCodes(inspection?.scope ?? '')
-  const scopeText = renderScopeText(scopeCodes)
+  const scopeTextRaw = renderScopeText(scopeCodes)
+  const scopeText =
+    inspectionSide === 'apartment' && (scopeTextRaw === '--' || !scopeTextRaw.trim())
+      ? 'Invändig besiktning av lägenhet/bostadsrätt'
+      : scopeTextRaw
   const assignmentDeliveredDate = valueOrFallback(
     inspection?.assignment_confirmation_delivered_date ?? null,
     '--'
@@ -428,11 +503,15 @@ export default async function Page({
     options: overviewOptionsRows,
     conditions: inspectionConditions ?? null,
   })
-  const buildingDataText = renderBuildingDataTextFromTemplate(
+  const buildingDataTextRaw = renderBuildingDataTextFromTemplate(
     buildingDataMap,
     undefined,
     buildingTypeParts
   )
+  const buildingDataText =
+    inspectionSide === 'apartment'
+      ? buildApartmentBuildingDataText(buildingDataTextRaw)
+      : buildingDataTextRaw
 
   const { data: exteriorItems, error: exteriorItemsError } = await supabase
     .from('settings_exterior_items')
@@ -874,6 +953,9 @@ export default async function Page({
       },
       properties: {
         cadastral_id: valueOrFallback(property?.cadastral_id ?? null),
+        brf_name: valueOrFallback(property?.brf_name ?? null),
+        apartment_number: valueOrFallback(property?.apartment_number ?? null),
+        apartment_holder_name: valueOrFallback(property?.apartment_holder_name ?? null),
         address: valueOrFallback(fullAddress, fallback),
         city: valueOrFallback(property?.city ?? null),
         municipality: valueOrFallback(property?.municipality ?? null),
@@ -912,8 +994,8 @@ export default async function Page({
         text: buildingDataText,
       },
       exterior: {
-        text: exteriorText || fallback,
-        blocks: exteriorBlocks,
+        text: inspectionSide === 'apartment' ? '' : exteriorText || fallback,
+        blocks: inspectionSide === 'apartment' ? [] : exteriorBlocks,
       },
       interior: {
         text: interiorText || fallback,

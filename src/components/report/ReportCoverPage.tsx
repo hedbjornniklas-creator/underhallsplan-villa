@@ -9,7 +9,10 @@ import {
 
 type ReportCoverPageProps = {
   companyLogoUrl?: string | null
+  inspectionSide?: 'buyer' | 'seller' | 'apartment' | null
   cadastralId?: string
+  brfName?: string
+  apartmentNumber?: string
   address?: string
   inspectionDate?: string
   assignmentNumber?: string
@@ -19,7 +22,10 @@ type ReportCoverPageProps = {
 
 export default function ReportCoverPage({
   companyLogoUrl,
+  inspectionSide,
   cadastralId,
+  brfName,
+  apartmentNumber,
   address,
   inspectionDate,
   assignmentNumber,
@@ -27,6 +33,8 @@ export default function ReportCoverPage({
   coverNotice = '',
 }: ReportCoverPageProps) {
   const coverSrc = coverIllustrationUrl || defaultCoverIllustrationSrc
+  const isApartment = inspectionSide === 'apartment'
+  const assignmentHeading = isApartment ? 'LÄGENHETSBESIKTNING' : 'ÖVERLÅTELSEBESIKTNING'
 
   return (
     <div>
@@ -119,7 +127,7 @@ export default function ReportCoverPage({
             marginTop: mmToPx(2),
           }}
         >
-          ÖVERLÅTELSEBESIKTNING
+          {assignmentHeading}
         </div>
         <div
           style={{
@@ -131,9 +139,20 @@ export default function ReportCoverPage({
       </div>
 
       <div style={{ marginTop: mmToPx(6), marginBottom: mmToPx(6), fontSize: '16pt' }}>
-        <div style={{ marginBottom: mmToPx(2) }}>
-          <strong>Fastighetsbeteckning:</strong> {cadastralId ?? 'saknas'}
-        </div>
+        {isApartment ? (
+          <>
+            <div style={{ marginBottom: mmToPx(2) }}>
+              <strong>Bostadsrättsförening:</strong> {brfName ?? 'saknas'}
+            </div>
+            <div style={{ marginBottom: mmToPx(2) }}>
+              <strong>Lägenhetsnummer:</strong> {apartmentNumber ?? 'saknas'}
+            </div>
+          </>
+        ) : (
+          <div style={{ marginBottom: mmToPx(2) }}>
+            <strong>Fastighetsbeteckning:</strong> {cadastralId ?? 'saknas'}
+          </div>
+        )}
         <div>
           <strong>Adress:</strong> {address ?? 'saknas'}
         </div>

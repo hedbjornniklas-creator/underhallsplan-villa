@@ -23,6 +23,7 @@ type ReportRendererClientProps = {
   spec: ResolvedReportSection[]
   mockData: Record<string, unknown>
   coverNotice: string
+  inspectionSide?: 'buyer' | 'seller' | 'apartment' | null
   rootClassName?: string
 }
 
@@ -458,6 +459,7 @@ export default function ReportRendererClient({
   spec,
   mockData,
   coverNotice,
+  inspectionSide,
   rootClassName,
 }: ReportRendererClientProps) {
   const [pagePlan, setPagePlan] = useState<{
@@ -675,7 +677,8 @@ export default function ReportRendererClient({
       const rawText = section.appendixText ?? ''
       const isAppendix1 =
         section.appendixId === 'APPENDIX_1_VILLKOR_SELLER_SBR' ||
-        section.appendixId === 'APPENDIX_1_VILLKOR_BUYER_SBR'
+        section.appendixId === 'APPENDIX_1_VILLKOR_BUYER_SBR' ||
+        section.appendixId === 'APPENDIX_1_VILLKOR_APARTMENT_SBR'
       const isGlossary = section.id === 'appendix-2'
       const isLifespan = section.id === 'appendix-3'
       if (section.appendixText && isAppendix1) {
@@ -749,6 +752,11 @@ export default function ReportRendererClient({
     return pages
   }, [appendixSections])
 
+  const isApartment = inspectionSide === 'apartment'
+  const headerLeft = isApartment
+    ? `BRF: ${getMockValue(mockData, 'mock.properties.brf_name') ?? 'saknas'} | LGH: ${getMockValue(mockData, 'mock.properties.apartment_number') ?? 'saknas'}`
+    : (getMockValue(mockData, 'mock.properties.cadastral_id') ?? 'saknas')
+
   const headerContent = (
     <div
       style={{
@@ -758,7 +766,7 @@ export default function ReportRendererClient({
         color: '#000000',
       }}
     >
-      <div>{getMockValue(mockData, 'mock.properties.cadastral_id') ?? 'saknas'}</div>
+      <div>{headerLeft}</div>
       <div>{getMockValue(mockData, 'mock.inspections.date') ?? 'saknas'}</div>
     </div>
   )
@@ -893,6 +901,8 @@ export default function ReportRendererClient({
   const companyLogoValue = getMockValue(mockData, 'mock.company.logo_url')
   const companyLogoUrl = companyLogoValue === 'saknas' ? null : companyLogoValue
   const cadastralId = getMockValue(mockData, 'mock.properties.cadastral_id')
+  const brfName = getMockValue(mockData, 'mock.properties.brf_name')
+  const apartmentNumber = getMockValue(mockData, 'mock.properties.apartment_number')
   const address = getMockValue(mockData, 'mock.properties.address')
   const coverPathValue = getMockValue(mockData, 'mock.properties.cover_path')
   const coverIllustrationUrl = coverPathValue === 'saknas' ? null : coverPathValue
@@ -1687,7 +1697,10 @@ export default function ReportRendererClient({
             >
               <ReportCoverPage
                 companyLogoUrl={companyLogoUrl}
+                inspectionSide={inspectionSide}
                 cadastralId={cadastralId}
+                brfName={brfName}
+                apartmentNumber={apartmentNumber}
                 address={address}
                 inspectionDate={inspectionDate}
                 assignmentNumber={assignmentNumber}
