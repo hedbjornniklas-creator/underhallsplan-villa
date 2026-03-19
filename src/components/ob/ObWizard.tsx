@@ -200,6 +200,8 @@ export default function ObWizard({
   const [sendingReport, setSendingReport] = useState(false)
   const [deliveryError, setDeliveryError] = useState<string | null>(null)
   const [deliveryResult, setDeliveryResult] = useState<string | null>(null)
+  const [latestPublicReportLink, setLatestPublicReportLink] = useState<string | null>(null)
+  const [previewLoadFailed, setPreviewLoadFailed] = useState(false)
 
   useEffect(() => {
     if (activeSection !== 'delivery' || !hasValidIds || !inspectionId) return
@@ -245,6 +247,11 @@ export default function ObWizard({
       cancelled = true
     }
   }, [activeSection, hasValidIds, inspectionId])
+
+  useEffect(() => {
+    setLatestPublicReportLink(null)
+    setPreviewLoadFailed(false)
+  }, [inspectionId])
 
   useEffect(() => {
     if (!deliveryMeta?.defaultRecipientEmail) return
@@ -333,6 +340,8 @@ export default function ObWizard({
         history: okPayload.history ?? [],
       }))
       setPrimaryRecipientInput(okPayload.primaryRecipientEmail ?? '')
+      setLatestPublicReportLink(okPayload.publicLink ?? null)
+      setPreviewLoadFailed(false)
 
       const failedText =
         okPayload.failedRecipients.length > 0
@@ -366,6 +375,9 @@ export default function ObWizard({
     ? `/api/report-v2/${inspectionId}/pdf?propertyId=${propertyId}`
     : ''
   const iframeSrc = hasValidIds ? `${reportHref}?embed=1` : ''
+  const reportDeliveryPreviewHref = previewLoadFailed
+    ? iframeSrc
+    : latestPublicReportLink ?? reportWebPreviewHref
 
   switch (activeSection) {
     case 'overview':
@@ -582,7 +594,7 @@ export default function ObWizard({
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="text-sm font-semibold text-gray-900">Förhandsgranska utlåtande</h3>
                     <Link
-                      href={reportWebPreviewHref}
+                      href={reportDeliveryPreviewHref}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
@@ -594,7 +606,8 @@ export default function ObWizard({
                   <div className="mt-3 overflow-hidden rounded-lg border border-gray-300 bg-white">
                     <iframe
                       title="Utlåtande för granskning"
-                      src={reportWebPreviewHref}
+                      src={reportDeliveryPreviewHref}
+                      onError={() => setPreviewLoadFailed(true)}
                       className="w-full"
                       style={{
                         minHeight: '880px',
@@ -605,7 +618,7 @@ export default function ObWizard({
                   <div className="mt-2 text-xs text-gray-600">
                     Om förhandsgranskningen inte visas kan du{' '}
                     <Link
-                      href={reportWebPreviewHref}
+                      href={reportDeliveryPreviewHref}
                       target="_blank"
                       rel="noreferrer"
                       className="underline"

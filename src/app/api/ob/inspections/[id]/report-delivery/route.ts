@@ -49,6 +49,23 @@ type OutboundMessageRow = {
   subject: string
 }
 
+function normalizedText(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const lower = trimmed.toLowerCase()
+  if (lower === '--' || lower === 'ej satt' || lower === 'saknas') return null
+  return trimmed
+}
+
+function pickStreetAddress(value: string | null | undefined): string | null {
+  const normalized = normalizedText(value ?? null)
+  if (!normalized) return null
+  const firstLine = normalized.split('\n')[0]?.trim() ?? normalized
+  const streetOnly = firstLine.split(',')[0]?.trim() ?? firstLine
+  return streetOnly || null
+}
+
 function jsonError(message: string, status: number, extra?: Record<string, unknown>) {
   return NextResponse.json({ error: message, ...(extra ?? {}) }, { status })
 }
@@ -370,9 +387,22 @@ export async function POST(
     const replyToEmail = responsibleProfile?.email?.trim() || null
     const emailContent = buildInspectionReportDeliveryEmail({
       orgName: org.orgName,
-      customerName: assignment?.customer_name ?? null,
-      propertyAddress: assignment?.property_address ?? assignment?.preliminary_address ?? null,
-      inspectionDate: assignment?.preferred_date ?? null,
+      customerName:
+        normalizedText(assignment?.customer_name) ??
+        normalizedText((reportData.mock?.inspections as Record<string, unknown> | undefined)?.client_name) ??
+        null,
+      propertyAddress:
+        pickStreetAddress(assignment?.property_address) ??
+        pickStreetAddress(assignment?.preliminary_address) ??
+        pickStreetAddress(
+          normalizedText((reportData.mock?.properties as Record<string, unknown> | undefined)?.address) ?? null
+        ) ??
+        null,
+      inspectionDate:
+        normalizedText(assignment?.preferred_date) ??
+        normalizedText((reportData.mock?.inspections as Record<string, unknown> | undefined)?.date) ??
+        normalizedText((reportData.mock?.inspections as Record<string, unknown> | undefined)?.date_time) ??
+        null,
       detailsUrl: linkUrl,
     })
 
