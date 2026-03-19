@@ -200,8 +200,6 @@ export default function ObWizard({
   const [sendingReport, setSendingReport] = useState(false)
   const [deliveryError, setDeliveryError] = useState<string | null>(null)
   const [deliveryResult, setDeliveryResult] = useState<string | null>(null)
-  const [latestPublicReportLink, setLatestPublicReportLink] = useState<string | null>(null)
-  const [previewLoadFailed, setPreviewLoadFailed] = useState(false)
 
   useEffect(() => {
     if (activeSection !== 'delivery' || !hasValidIds || !inspectionId) return
@@ -247,11 +245,6 @@ export default function ObWizard({
       cancelled = true
     }
   }, [activeSection, hasValidIds, inspectionId])
-
-  useEffect(() => {
-    setLatestPublicReportLink(null)
-    setPreviewLoadFailed(false)
-  }, [inspectionId])
 
   useEffect(() => {
     if (!deliveryMeta?.defaultRecipientEmail) return
@@ -340,8 +333,6 @@ export default function ObWizard({
         history: okPayload.history ?? [],
       }))
       setPrimaryRecipientInput(okPayload.primaryRecipientEmail ?? '')
-      setLatestPublicReportLink(okPayload.publicLink ?? null)
-      setPreviewLoadFailed(false)
 
       const failedText =
         okPayload.failedRecipients.length > 0
@@ -375,9 +366,7 @@ export default function ObWizard({
     ? `/api/report-v2/${inspectionId}/pdf?propertyId=${propertyId}`
     : ''
   const iframeSrc = hasValidIds ? `${reportHref}?embed=1` : ''
-  const reportDeliveryPreviewHref = previewLoadFailed
-    ? iframeSrc
-    : latestPublicReportLink ?? reportWebPreviewHref
+  const reportDeliveryPreviewHref = iframeSrc
 
   switch (activeSection) {
     case 'overview':
@@ -607,7 +596,6 @@ export default function ObWizard({
                     <iframe
                       title="Utlåtande för granskning"
                       src={reportDeliveryPreviewHref}
-                      onError={() => setPreviewLoadFailed(true)}
                       className="w-full"
                       style={{
                         minHeight: '880px',
