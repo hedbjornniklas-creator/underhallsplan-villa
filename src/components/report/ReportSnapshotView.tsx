@@ -227,7 +227,7 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
   const appendix1Text = loadAppendixText(resolveAppendix1Id(inspectionSide))
   const appendix2Text = loadAppendixText('APPENDIX_2_LITEN_BYGGORDBOK_SBR')
   const appendix3Text = loadAppendixText('APPENDIX_3_LIFESPAN_TABLE_SBR')
-  const companyLogoUrl = toImageUrl(getTextByPath(mock, 'system.logo_url', ''))
+  const companyLogoUrl = toImageUrl(getTextByPath(mock, 'company.logo_url', ''))
   const coverImageUrl =
     toImageUrl(getTextByPath(mock, 'properties.cover_path', '')) ?? defaultCoverIllustrationSrc
 
@@ -288,7 +288,11 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
         ) : null}
 
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <img src={coverImageUrl} alt="Omslagsbild" className="h-56 w-full object-cover sm:h-64" />
+          <img
+            src={coverImageUrl}
+            alt="Omslagsbild"
+            className="h-56 w-full bg-slate-100 object-contain sm:h-64"
+          />
           {isApartment ? (
             <div className="grid gap-2 border-t border-slate-200 px-4 py-3 text-sm text-slate-700 sm:grid-cols-2">
               <div>

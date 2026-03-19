@@ -98,6 +98,15 @@ const supabase: any = createSupabaseServerClient()
     return trimmed.length > 0 ? trimmed : alt
   }
   const trimText = (value: string | null | undefined) => (value ?? '').trim()
+  const formatDateOnly = (value: string | null | undefined) => {
+    const raw = (value ?? '').trim()
+    if (!raw) return ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+    if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0, 10)
+    const parsed = new Date(raw)
+    if (Number.isNaN(parsed.getTime())) return raw
+    return parsed.toISOString().slice(0, 10)
+  }
   const normalizeSwedish = (value: string) =>
     String(value ?? '')
       // Double-encoded mojibake (UTF-8 -> Latin-1 -> UTF-8)
@@ -199,7 +208,7 @@ const supabase: any = createSupabaseServerClient()
 
   const { data: assignmentData, error: assignmentError } = await supabase
     .from('assignments')
-    .select('id, brf_name, apartment_number, apartment_holder_name')
+    .select('id, brf_name, apartment_number, apartment_holder_name, accepted_at, booked_at')
     .eq('inspection_id', resolvedParams.inspectionId)
     .limit(1)
     .maybeSingle()
@@ -386,11 +395,16 @@ const supabase: any = createSupabaseServerClient()
     ? `${inspectionDate} klockan ${inspectionTime}`
     : inspectionDate
   const scopeCodes = parseScopeCodes(inspection?.scope ?? '')
-  const scopeText = renderScopeText(scopeCodes)
-  const assignmentDeliveredDate = valueOrFallback(
-    inspection?.assignment_confirmation_delivered_date ?? null,
-    '--'
-  )
+  const scopeTextRaw = renderScopeText(scopeCodes)
+  const scopeText =
+    inspection?.inspection_side === 'apartment' && (scopeTextRaw === '--' || !scopeTextRaw.trim())
+      ? 'Invändig besiktning av lägenhet/bostadsrätt'
+      : scopeTextRaw
+  const assignmentDeliveredDateRaw =
+    formatDateOnly(inspection?.assignment_confirmation_delivered_date ?? null) ||
+    formatDateOnly((assignment as any)?.accepted_at ?? null) ||
+    formatDateOnly((assignment as any)?.booked_at ?? null)
+  const assignmentDeliveredDate = valueOrFallback(assignmentDeliveredDateRaw, '--')
   const assignmentConfirmationText = `En uppdragsbekrÃ¤ftelse med bifogad villkorsbilaga Ã¶verlÃ¤mnades till uppdragsgivaren den ${assignmentDeliveredDate}.`
 
   const parseSemicolonList = (raw: string | null | undefined) => {
@@ -902,6 +916,7 @@ const supabase: any = createSupabaseServerClient()
         client_name: valueOrFallback(inspection?.client_name ?? null),
         scope_text: scopeText,
         attendees_text: attendeesText,
+        assignment_confirmation_date: assignmentDeliveredDate,
         assignment_confirmation_text: assignmentConfirmationText,
       },
       inspection_conditions: {
