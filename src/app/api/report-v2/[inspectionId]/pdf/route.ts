@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { renderPreviewPdf } from '@/lib/report/pdfV2/renderPreviewPdf'
-import { renderStructuredPdfV2 } from '@/lib/report/pdfV2/renderStructuredPdfV2'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -34,26 +33,12 @@ export async function GET(
   const reportUrl = `${origin}/utlatande/${propertyId}/${inspectionId}?embed=1&pdf=1`
 
   try {
-    let pdfBuffer: Buffer
-    try {
-      const previewPdf = await renderPreviewPdf({
-        url: reportUrl,
-        cookieHeader: request.headers.get('cookie'),
-        timeoutMs: 45000,
-      })
-      pdfBuffer = Buffer.isBuffer(previewPdf) ? previewPdf : Buffer.from(previewPdf)
-    } catch (previewError) {
-      const previewMessage =
-        previewError instanceof Error ? previewError.message : 'Unknown preview error.'
-      console.warn('[report-v2.pdf] preview failed, using structured fallback', {
-        inspectionId,
-        previewMessage,
-      })
-      pdfBuffer = await renderStructuredPdfV2({
-        inspectionId,
-        propertyId,
-      })
-    }
+    const previewPdf = await renderPreviewPdf({
+      url: reportUrl,
+      cookieHeader: request.headers.get('cookie'),
+      timeoutMs: 45000,
+    })
+    const pdfBuffer = Buffer.isBuffer(previewPdf) ? previewPdf : Buffer.from(previewPdf)
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,

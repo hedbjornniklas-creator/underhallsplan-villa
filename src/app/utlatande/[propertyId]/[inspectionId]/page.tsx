@@ -469,7 +469,7 @@ export default async function Page({
     inspection?.assignment_confirmation_delivered_date ?? null,
     '--'
   )
-  const assignmentConfirmationText = `En uppdragsbekrÃ¤ftelse med bifogad villkorsbilaga Ã¶verlÃ¤mnades till uppdragsgivaren den ${assignmentDeliveredDate}.`
+  const assignmentConfirmationText = `En uppdragsbekräftelse med bifogad villkorsbilaga överlämnades till uppdragsgivaren den ${assignmentDeliveredDate}.`
 
   const parseSemicolonList = (raw: string | null | undefined) => {
     if (!raw) return []
@@ -969,7 +969,7 @@ export default async function Page({
         acquisition_text:
           disclosureRow?.note && disclosureRow.note.trim().length > 0
             ? disclosureRow.note
-            : 'SÃ¤ljaren fÃ¶rvÃ¤rvade fastigheten --.',
+            : 'Säljaren förvärvade fastigheten --.',
         renovations: [],
         property_faults: propertyFaultsText ? propertyFaultsText : '',
       },

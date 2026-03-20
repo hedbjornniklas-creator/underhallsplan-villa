@@ -405,7 +405,7 @@ const supabase: any = createSupabaseServerClient()
     formatDateOnly((assignment as any)?.accepted_at ?? null) ||
     formatDateOnly((assignment as any)?.booked_at ?? null)
   const assignmentDeliveredDate = valueOrFallback(assignmentDeliveredDateRaw, '--')
-  const assignmentConfirmationText = `En uppdragsbekrÃ¤ftelse med bifogad villkorsbilaga Ã¶verlÃ¤mnades till uppdragsgivaren den ${assignmentDeliveredDate}.`
+  const assignmentConfirmationText = `En uppdragsbekräftelse med bifogad villkorsbilaga överlämnades till uppdragsgivaren den ${assignmentDeliveredDate}.`
 
   const parseSemicolonList = (raw: string | null | undefined) => {
     if (!raw) return []
@@ -903,7 +903,7 @@ const supabase: any = createSupabaseServerClient()
         acquisition_text:
           disclosureRow?.note && disclosureRow.note.trim().length > 0
             ? disclosureRow.note
-            : 'SÃ¤ljaren fÃ¶rvÃ¤rvade fastigheten --.',
+            : 'Säljaren förvärvade fastigheten --.',
         renovations: [],
         property_faults: propertyFaultsText ? propertyFaultsText : '',
       },

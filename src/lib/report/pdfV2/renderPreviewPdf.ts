@@ -5,7 +5,7 @@ import puppeteer from 'puppeteer'
 
 const DEFAULT_TIMEOUT_MS = 60000
 const BROWSER_ARGS = ['--no-sandbox', '--disable-setuid-sandbox']
-const ALLOW_AUTOINSTALL = process.env.PUPPETEER_ALLOW_AUTOINSTALL === '1'
+const ALLOW_AUTOINSTALL = process.env.PUPPETEER_ALLOW_AUTOINSTALL !== '0'
 
 let installedExecutablePath: string | null = null
 let installPromise: Promise<string> | null = null

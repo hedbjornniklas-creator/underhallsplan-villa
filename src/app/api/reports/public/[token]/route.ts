@@ -65,8 +65,6 @@ export async function GET(
     let pdfBuffer: Buffer | null = null
     const pdfBase64 = String(data.pdf_base64 ?? '').trim()
     const hasSnapshot = isReportSnapshotPayloadV1(data.snapshot_payload)
-    const deliveryMode = String(data.delivery_mode ?? '').trim().toLowerCase()
-    const preferStoredPdf = deliveryMode === 'link_pdf'
 
     const tryRenderSnapshot = async () => {
       if (!hasSnapshot) return null
@@ -94,11 +92,7 @@ export async function GET(
       }
     }
 
-    if (preferStoredPdf) {
-      pdfBuffer = tryDecodeStoredPdf() ?? (await tryRenderSnapshot())
-    } else {
-      pdfBuffer = (await tryRenderSnapshot()) ?? tryDecodeStoredPdf()
-    }
+    pdfBuffer = tryDecodeStoredPdf() ?? (await tryRenderSnapshot())
 
     if (!pdfBuffer) {
       console.error('[reports.public] missing report payload', {

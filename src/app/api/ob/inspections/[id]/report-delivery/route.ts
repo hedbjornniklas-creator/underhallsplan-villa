@@ -1,8 +1,10 @@
 ﻿import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import { createHash } from 'node:crypto'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { requireOrgContext, getProfileContact } from '@/lib/assignments/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
+import { renderPreviewPdf } from '@/lib/report/pdfV2/renderPreviewPdf'
 import {
   createReportSnapshotPayloadV1,
   type ReportSnapshotPayloadV1,
@@ -361,6 +363,27 @@ export async function POST(
       reportSpec,
     })
 
+    const previewReportUrl = `${resolvePublicBaseUrl(request)}/utlatande/${propertyId}/${id}?embed=1&pdf=1`
+    let previewPdfBuffer: Buffer
+    try {
+      const rendered = await renderPreviewPdf({
+        url: previewReportUrl,
+        cookieHeader: request.headers.get('cookie'),
+        timeoutMs: 45000,
+      })
+      previewPdfBuffer = Buffer.isBuffer(rendered) ? rendered : Buffer.from(rendered)
+    } catch (previewError) {
+      const previewMessage =
+        previewError instanceof Error ? previewError.message : String(previewError)
+      return jsonError(
+        `Kunde inte skapa fullständig PDF-layout för utlåtandet. ${previewMessage}`,
+        500
+      )
+    }
+
+    const previewPdfBase64 = previewPdfBuffer.toString('base64')
+    const previewPdfSha256 = createHash('sha256').update(previewPdfBuffer).digest('hex')
+
     const token = generateAssignmentToken()
     const tokenHash = hashAssignmentToken(token)
 
@@ -374,8 +397,8 @@ export async function POST(
         delivery_mode: 'link_only',
         snapshot_schema_version: 'v1',
         snapshot_payload: snapshotPayload,
-        pdf_base64: null,
-        pdf_sha256: null,
+        pdf_base64: previewPdfBase64,
+        pdf_sha256: previewPdfSha256,
         created_by: org.userId,
       })
       .select('id')
