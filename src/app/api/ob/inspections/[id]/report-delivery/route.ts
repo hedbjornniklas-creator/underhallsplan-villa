@@ -16,8 +16,7 @@ import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmai
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
-const PDF_RENDER_TIMEOUT_MS = Number(process.env.REPORT_PDF_RENDER_TIMEOUT_MS ?? 55000)
-const EMAIL_SEND_TIMEOUT_MS = Number(process.env.REPORT_EMAIL_SEND_TIMEOUT_MS ?? 15000)
+const PDF_RENDER_TIMEOUT_MS = Number(process.env.REPORT_PDF_RENDER_TIMEOUT_MS ?? 180000)
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 type DeliveryStatus = 'pending' | 'sent' | 'failed'
@@ -77,18 +76,6 @@ function pickStreetAddress(value: string | null | undefined): string | null {
 
 function jsonError(message: string, status: number, extra?: Record<string, unknown>) {
   return NextResponse.json({ error: message, ...(extra ?? {}) }, { status })
-}
-
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string) {
-  let timeoutHandle: NodeJS.Timeout | null = null
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs)
-  })
-  try {
-    return await Promise.race([promise, timeoutPromise])
-  } finally {
-    if (timeoutHandle) clearTimeout(timeoutHandle)
-  }
 }
 
 function buildOrigin(request: Request) {
@@ -410,15 +397,11 @@ export async function POST(
     const previewReportUrl = `${resolvePublicBaseUrl(request)}/utlatande/${propertyId}/${id}?embed=1&pdf=1`
     let previewPdfBuffer: Buffer
     try {
-      const rendered = await withTimeout(
-        renderPreviewPdf({
-          url: previewReportUrl,
-          cookieHeader: request.headers.get('cookie'),
-          timeoutMs: 45000,
-        }),
-        PDF_RENDER_TIMEOUT_MS,
-        'PDF_RENDER_TIMEOUT'
-      )
+      const rendered = await renderPreviewPdf({
+        url: previewReportUrl,
+        cookieHeader: request.headers.get('cookie'),
+        timeoutMs: PDF_RENDER_TIMEOUT_MS,
+      })
       previewPdfBuffer = Buffer.isBuffer(rendered) ? rendered : Buffer.from(rendered)
     } catch (previewError) {
       const previewMessage =
@@ -502,18 +485,14 @@ export async function POST(
       })
 
       try {
-        const sendResult = await withTimeout(
-          sendAssignmentEmail({
-            to: recipient,
-            from: fromAddress,
-            replyTo: replyToEmail,
-            subject: emailContent.subject,
-            html: emailContent.html,
-            text: emailContent.text,
-          }),
-          EMAIL_SEND_TIMEOUT_MS,
-          'EMAIL_SEND_TIMEOUT'
-        )
+        const sendResult = await sendAssignmentEmail({
+          to: recipient,
+          from: fromAddress,
+          replyTo: replyToEmail,
+          subject: emailContent.subject,
+          html: emailContent.html,
+          text: emailContent.text,
+        })
 
         await updateOutboundMessage(admin, messageId, {
           status: 'sent',
@@ -583,12 +562,6 @@ export async function POST(
     }
     if (message.includes('ASSIGNMENTS_MAIL_FROM')) {
       return jsonError('Servern saknar ASSIGNMENTS_MAIL_FROM i env.', 500)
-    }
-    if (message.includes('PDF_RENDER_TIMEOUT')) {
-      return jsonError(
-        'PDF-genereringen tog för lång tid. Försök igen om en stund. Om felet kvarstår behöver serverns PDF-miljö justeras.',
-        504
-      )
     }
     if (message.includes('EMAIL_SEND_TIMEOUT')) {
       return jsonError('Mejlutskicket tog för lång tid. Försök igen.', 504)
