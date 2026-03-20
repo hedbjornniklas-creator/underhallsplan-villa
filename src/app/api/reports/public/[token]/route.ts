@@ -28,6 +28,38 @@ function decodeBase64(base64: string, linkId: string): Buffer {
   return pdfBuffer
 }
 
+async function tryDownloadStoredPdfFromStorage(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  bucket: string,
+  path: string,
+  linkId: string
+) {
+  try {
+    const { data, error } = await admin.storage.from(bucket).download(path)
+    if (error || !data) {
+      console.error('[reports.public] storage download failed', {
+        linkId,
+        bucket,
+        path,
+        error: error?.message ?? error ?? null,
+      })
+      return null
+    }
+
+    const arrayBuffer = await data.arrayBuffer()
+    const pdfBuffer = Buffer.from(arrayBuffer)
+    return pdfBuffer.length > 0 ? pdfBuffer : null
+  } catch (downloadError) {
+    console.error('[reports.public] storage download exception', {
+      linkId,
+      bucket,
+      path,
+      error: downloadError instanceof Error ? downloadError.message : String(downloadError),
+    })
+    return null
+  }
+}
+
 export async function GET(
   request: Request,
   context: { params: Promise<{ token: string }> }
@@ -45,7 +77,7 @@ export async function GET(
 
     const { data, error } = await admin
       .from('inspection_report_links')
-      .select('id,pdf_base64,revoked_at,delivery_mode')
+      .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,revoked_at,delivery_mode')
       .eq('token_hash', tokenHash)
       .maybeSingle()
 
@@ -60,6 +92,8 @@ export async function GET(
 
     let pdfBuffer: Buffer | null = null
     const pdfBase64 = String(data.pdf_base64 ?? '').trim()
+    const pdfStorageBucket = String((data as Record<string, unknown>).pdf_storage_bucket ?? '').trim()
+    const pdfStoragePath = String((data as Record<string, unknown>).pdf_storage_path ?? '').trim()
 
     const tryDecodeStoredPdf = () => {
       if (pdfBase64 === '') return null
@@ -74,7 +108,18 @@ export async function GET(
       }
     }
 
-    pdfBuffer = tryDecodeStoredPdf()
+    if (pdfStorageBucket && pdfStoragePath) {
+      pdfBuffer = await tryDownloadStoredPdfFromStorage(
+        admin,
+        pdfStorageBucket,
+        pdfStoragePath,
+        String(data.id)
+      )
+    }
+
+    if (!pdfBuffer) {
+      pdfBuffer = tryDecodeStoredPdf()
+    }
 
     if (!pdfBuffer) {
       console.error('[reports.public] stored pdf missing', {

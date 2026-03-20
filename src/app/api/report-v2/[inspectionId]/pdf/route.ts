@@ -14,6 +14,22 @@ const decodeStoredPdf = (base64: string) => {
   }
 }
 
+const tryDownloadStoredPdfFromStorage = async (
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  bucket: string,
+  path: string
+) => {
+  try {
+    const { data, error } = await admin.storage.from(bucket).download(path)
+    if (error || !data) return null
+    const arrayBuffer = await data.arrayBuffer()
+    const pdfBuffer = Buffer.from(arrayBuffer)
+    return pdfBuffer.length > 0 ? pdfBuffer : null
+  } catch {
+    return null
+  }
+}
+
 const normalizeInspectionStatus = (value: string | null | undefined) => {
   const normalized = (value ?? '').trim().toLowerCase()
   if (normalized === 'completed' || normalized === 'klar' || normalized === 'done') return 'completed'
@@ -58,7 +74,7 @@ export async function GET(
 
     const { data: linkData, error: linkError } = await admin
       .from('inspection_report_links')
-      .select('id,pdf_base64,revoked_at')
+      .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,revoked_at')
       .eq('inspection_id', inspectionId)
       .is('revoked_at', null)
       .order('created_at', { ascending: false })
@@ -73,14 +89,21 @@ export async function GET(
       return new NextResponse('Could not load stored report PDF.', { status: 500 })
     }
 
-    const storedPdfBase64 = String(linkData?.pdf_base64 ?? '').trim()
-    if (!storedPdfBase64) {
-      return new NextResponse('Ingen lagrad PDF hittades för denna besiktning.', { status: 404 })
+    const storedPdfBucket = String((linkData as Record<string, unknown> | null)?.pdf_storage_bucket ?? '').trim()
+    const storedPdfPath = String((linkData as Record<string, unknown> | null)?.pdf_storage_path ?? '').trim()
+
+    let storedPdfBuffer: Buffer | null = null
+    if (storedPdfBucket && storedPdfPath) {
+      storedPdfBuffer = await tryDownloadStoredPdfFromStorage(admin, storedPdfBucket, storedPdfPath)
     }
 
-    const storedPdfBuffer = decodeStoredPdf(storedPdfBase64)
     if (!storedPdfBuffer) {
-      return new NextResponse('Lagrad PDF kunde inte tolkas.', { status: 500 })
+      const storedPdfBase64 = String(linkData?.pdf_base64 ?? '').trim()
+      if (storedPdfBase64) storedPdfBuffer = decodeStoredPdf(storedPdfBase64)
+    }
+
+    if (!storedPdfBuffer) {
+      return new NextResponse('Ingen lagrad PDF hittades för denna besiktning.', { status: 404 })
     }
 
     return new NextResponse(new Uint8Array(storedPdfBuffer), {

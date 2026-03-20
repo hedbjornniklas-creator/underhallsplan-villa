@@ -17,6 +17,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 const PDF_RENDER_TIMEOUT_MS = Number(process.env.REPORT_PDF_RENDER_TIMEOUT_MS ?? 180000)
+const REPORT_PDF_STORAGE_BUCKET = process.env.REPORT_PDF_STORAGE_BUCKET?.trim() || 'inspection-reports'
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 type DeliveryStatus = 'pending' | 'sent' | 'failed'
@@ -138,6 +139,71 @@ function getMailFromAddress() {
   return value
 }
 
+async function ensureReportPdfBucket(admin: AdminClient) {
+  const { error } = await admin.storage.getBucket(REPORT_PDF_STORAGE_BUCKET)
+  if (!error) return
+
+  const message = error.message?.toLowerCase() ?? ''
+  const isMissingBucket =
+    message.includes('not found') ||
+    message.includes('does not exist') ||
+    message.includes('404')
+
+  if (!isMissingBucket) {
+    throw new Error(
+      `Kunde inte verifiera storage bucket för PDF (${REPORT_PDF_STORAGE_BUCKET}): ${error.message ?? error}`
+    )
+  }
+
+  const { error: createError } = await admin.storage.createBucket(REPORT_PDF_STORAGE_BUCKET, {
+    public: false,
+    allowedMimeTypes: ['application/pdf'],
+    fileSizeLimit: '50MB',
+  })
+
+  if (createError) {
+    const createMessage = createError.message?.toLowerCase() ?? ''
+    const alreadyExists =
+      createMessage.includes('already exists') || createMessage.includes('duplicate')
+    if (!alreadyExists) {
+      throw new Error(
+        `Kunde inte skapa storage bucket för PDF (${REPORT_PDF_STORAGE_BUCKET}): ${createError.message ?? createError}`
+      )
+    }
+  }
+}
+
+async function uploadReportPdfToStorage(
+  admin: AdminClient,
+  input: {
+    orgId: string
+    inspectionId: string
+    tokenHash: string
+    pdfBuffer: Buffer
+  }
+) {
+  await ensureReportPdfBucket(admin)
+
+  const objectPath = `${input.orgId}/${input.inspectionId}/${Date.now()}-${input.tokenHash.slice(0, 16)}.pdf`
+  const { error } = await admin.storage
+    .from(REPORT_PDF_STORAGE_BUCKET)
+    .upload(objectPath, input.pdfBuffer, {
+      contentType: 'application/pdf',
+      cacheControl: '31536000',
+      upsert: false,
+    })
+
+  if (error) {
+    throw new Error(`Kunde inte spara PDF i Storage: ${error.message ?? error}`)
+  }
+
+  return {
+    bucket: REPORT_PDF_STORAGE_BUCKET,
+    path: objectPath,
+    sizeBytes: input.pdfBuffer.length,
+  }
+}
+
 async function getInspectionById(admin: AdminClient, inspectionId: string) {
   const { data, error } = await admin
     .from('inspections')
@@ -209,7 +275,7 @@ async function getDeliveryHistory(admin: AdminClient, assignmentId: string) {
 async function getReportPdfState(admin: AdminClient, inspectionId: string): Promise<ReportPdfState> {
   const { data, error } = await admin
     .from('inspection_report_links')
-    .select('id,pdf_base64,revoked_at,created_at')
+    .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,revoked_at,created_at')
     .eq('inspection_id', inspectionId)
     .is('revoked_at', null)
     .order('created_at', { ascending: false })
@@ -221,8 +287,10 @@ async function getReportPdfState(admin: AdminClient, inspectionId: string): Prom
   }
 
   const pdfBase64 = String(data?.pdf_base64 ?? '').trim()
+  const pdfStorageBucket = String((data as Record<string, unknown> | null)?.pdf_storage_bucket ?? '').trim()
+  const pdfStoragePath = String((data as Record<string, unknown> | null)?.pdf_storage_path ?? '').trim()
   return {
-    hasStoredPdf: pdfBase64.length > 0,
+    hasStoredPdf: pdfBase64.length > 0 || (pdfStorageBucket.length > 0 && pdfStoragePath.length > 0),
     latestLinkId: (data?.id as string | undefined) ?? null,
   }
 }
@@ -416,11 +484,16 @@ export async function POST(
       )
     }
 
-    const previewPdfBase64 = previewPdfBuffer.toString('base64')
     const previewPdfSha256 = createHash('sha256').update(previewPdfBuffer).digest('hex')
 
     const token = generateAssignmentToken()
     const tokenHash = hashAssignmentToken(token)
+    const storedPdf = await uploadReportPdfToStorage(admin, {
+      orgId: org.orgId,
+      inspectionId: id,
+      tokenHash,
+      pdfBuffer: previewPdfBuffer,
+    })
 
     const { data: linkData, error: linkError } = await admin
       .from('inspection_report_links')
@@ -432,7 +505,9 @@ export async function POST(
         delivery_mode: 'link_only',
         snapshot_schema_version: 'v1',
         snapshot_payload: snapshotPayload,
-        pdf_base64: previewPdfBase64,
+        pdf_storage_bucket: storedPdf.bucket,
+        pdf_storage_path: storedPdf.path,
+        pdf_size_bytes: storedPdf.sizeBytes,
         pdf_sha256: previewPdfSha256,
         created_by: org.userId,
       })
@@ -543,8 +618,8 @@ export async function POST(
       primaryRecipientEmail: primaryRecipient,
       defaultRecipientEmail: fallbackOrdererEmail,
       ordererEmail: fallbackOrdererEmail,
-      hasStoredPdf: previewPdfBase64.length > 0,
-      canDownloadPdf: finalInspectionStatus === 'completed' && previewPdfBase64.length > 0,
+      hasStoredPdf: true,
+      canDownloadPdf: finalInspectionStatus === 'completed',
       sentRecipients,
       failedRecipients,
       history,
