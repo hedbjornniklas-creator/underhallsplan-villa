@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "pdf2json": "^4.0.2"
+  },
+  "_npx": {
+    "packages": [
+      "pdf2json"
+    ]
+  }
+}

@@ -87,7 +87,6 @@ const SECTIONS: { key: ObSectionKey; label: string }[] = [
   { key: 'utsida', label: 'Byggnad - utsida' },
   { key: 'insida', label: 'Byggnad - insida' },
   { key: 'delivery', label: 'Skicka utlåtande' },
-  { key: 'overview', label: 'Granska utlåtande' },
 ]
 
 function getVisibleSections(isApartmentInspection: boolean) {

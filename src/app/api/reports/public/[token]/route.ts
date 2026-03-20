@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { hashAssignmentToken } from '@/lib/assignments/tokens'
-import {
-  isReportSnapshotPayloadV1,
-  renderStructuredPdfFromSnapshot,
-} from '@/lib/report/pdfV2/renderStructuredPdfV2'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -49,7 +45,7 @@ export async function GET(
 
     const { data, error } = await admin
       .from('inspection_report_links')
-      .select('id,pdf_base64,snapshot_payload,revoked_at,delivery_mode')
+      .select('id,pdf_base64,revoked_at,delivery_mode')
       .eq('token_hash', tokenHash)
       .maybeSingle()
 
@@ -64,20 +60,6 @@ export async function GET(
 
     let pdfBuffer: Buffer | null = null
     const pdfBase64 = String(data.pdf_base64 ?? '').trim()
-    const hasSnapshot = isReportSnapshotPayloadV1(data.snapshot_payload)
-
-    const tryRenderSnapshot = async () => {
-      if (!hasSnapshot) return null
-      try {
-        return await renderStructuredPdfFromSnapshot(data.snapshot_payload)
-      } catch (renderError) {
-        console.error('[reports.public] snapshot render failed', {
-          linkId: data.id,
-          error: renderError instanceof Error ? renderError.message : String(renderError),
-        })
-        return null
-      }
-    }
 
     const tryDecodeStoredPdf = () => {
       if (pdfBase64 === '') return null
@@ -92,14 +74,14 @@ export async function GET(
       }
     }
 
-    pdfBuffer = tryDecodeStoredPdf() ?? (await tryRenderSnapshot())
+    pdfBuffer = tryDecodeStoredPdf()
 
     if (!pdfBuffer) {
-      console.error('[reports.public] missing report payload', {
+      console.error('[reports.public] stored pdf missing', {
         linkId: data.id,
         deliveryMode: data.delivery_mode ?? null,
       })
-      return new NextResponse('Report snapshot is empty.', { status: 500 })
+      return new NextResponse('Stored report PDF is missing.', { status: 500 })
     }
 
     if (!pdfBuffer || pdfBuffer.length === 0) {
