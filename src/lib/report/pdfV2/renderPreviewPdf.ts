@@ -7,6 +7,8 @@ import puppeteer from 'puppeteer'
 const DEFAULT_TIMEOUT_MS = 60000
 const BROWSER_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
 const ALLOW_AUTOINSTALL = process.env.PUPPETEER_ALLOW_AUTOINSTALL !== '0'
+const REPORT_READY_TIMEOUT_MS = Number(process.env.REPORT_READY_TIMEOUT_MS ?? 20000)
+const NETWORK_IDLE_TIMEOUT_MS = Number(process.env.REPORT_NETWORK_IDLE_TIMEOUT_MS ?? 12000)
 const PROFILE_ROOT_DIR =
   process.env.PUPPETEER_PROFILE_ROOT_DIR?.trim() ||
   join(process.platform === 'linux' ? '/tmp' : tmpdir(), 'puppeteer-runtime-profiles')
@@ -208,10 +210,18 @@ export async function renderPreviewPdf(params: {
     await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 1 })
     await page.emulateMediaType('print')
 
-    await page.goto(params.url, { waitUntil: 'networkidle0' })
+    await page.goto(params.url, { waitUntil: 'domcontentloaded' })
+    try {
+      await page.waitForNetworkIdle({
+        idleTime: 500,
+        timeout: NETWORK_IDLE_TIMEOUT_MS,
+      })
+    } catch {
+      // Best-effort only. Some pages keep background requests open.
+    }
 
     await page.evaluateHandle('document.fonts.ready')
-    await page.waitForFunction(isReportReady, { timeout: 20000 })
+    await page.waitForFunction(isReportReady, { timeout: REPORT_READY_TIMEOUT_MS })
 
     const pdfBuffer = await page.pdf({
       format: 'A4',
