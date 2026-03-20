@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { renderPreviewPdf } from '@/lib/report/pdfV2/renderPreviewPdf'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,17 +14,16 @@ const decodeStoredPdf = (base64: string) => {
   }
 }
 
-const buildOrigin = (request: Request) => {
-  const url = new URL(request.url)
-  const forwardedProto = request.headers.get('x-forwarded-proto')
-  const forwardedHost = request.headers.get('x-forwarded-host')
-  const host = forwardedHost ?? request.headers.get('host') ?? url.host
-  const proto = forwardedProto ?? url.protocol.replace(':', '')
-  return `${proto}://${host}`
+const normalizeInspectionStatus = (value: string | null | undefined) => {
+  const normalized = (value ?? '').trim().toLowerCase()
+  if (normalized === 'completed' || normalized === 'klar' || normalized === 'done') return 'completed'
+  if (normalized === 'archived' || normalized === 'arkiverad') return 'archived'
+  if (normalized === 'draft' || normalized === 'utkast' || normalized === '') return 'draft'
+  return 'ongoing'
 }
 
 export async function GET(
-  request: Request,
+  _request: Request,
   context: { params: Promise<{ inspectionId: string }> }
 ) {
   const { inspectionId } = await context.params
@@ -36,7 +34,29 @@ export async function GET(
 
   try {
     const admin = createSupabaseAdminClient()
-    const { data, error } = await admin
+
+    const { data: inspection, error: inspectionError } = await admin
+      .from('inspections')
+      .select('id,status')
+      .eq('id', inspectionId)
+      .maybeSingle()
+
+    if (inspectionError) {
+      return new NextResponse(inspectionError.message ?? 'Could not read inspection.', { status: 500 })
+    }
+
+    if (!inspection) {
+      return new NextResponse('Inspection not found.', { status: 404 })
+    }
+
+    const inspectionStatus = normalizeInspectionStatus(inspection.status)
+    if (inspectionStatus !== 'completed') {
+      return new NextResponse('PDF kan laddas ner först efter att utlåtandet har skickats.', {
+        status: 409,
+      })
+    }
+
+    const { data: linkData, error: linkError } = await admin
       .from('inspection_report_links')
       .select('id,pdf_base64,revoked_at')
       .eq('inspection_id', inspectionId)
@@ -45,59 +65,33 @@ export async function GET(
       .limit(1)
       .maybeSingle()
 
-    if (error) {
+    if (linkError) {
       console.error('[report-v2.pdf] failed to read stored report pdf', {
         inspectionId,
-        error: error.message ?? error,
+        error: linkError.message ?? linkError,
       })
+      return new NextResponse('Could not load stored report PDF.', { status: 500 })
     }
 
-    const storedPdfBase64 = String(data?.pdf_base64 ?? '').trim()
-    if (storedPdfBase64) {
-      const storedPdfBuffer = decodeStoredPdf(storedPdfBase64)
-      if (storedPdfBuffer) {
-        return new NextResponse(new Uint8Array(storedPdfBuffer), {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/pdf',
-            'Cache-Control': 'private, no-store',
-          },
-        })
-      }
+    const storedPdfBase64 = String(linkData?.pdf_base64 ?? '').trim()
+    if (!storedPdfBase64) {
+      return new NextResponse('Ingen lagrad PDF hittades för denna besiktning.', { status: 404 })
     }
-  } catch (storedPdfError) {
-    console.error('[report-v2.pdf] unexpected stored-pdf lookup error', {
-      inspectionId,
-      error:
-        storedPdfError instanceof Error ? storedPdfError.message : String(storedPdfError),
-    })
-  }
 
-  const search = new URL(request.url).searchParams
-  const propertyId = search.get('propertyId')
-  if (!propertyId) {
-    return new NextResponse('Missing propertyId', { status: 400 })
-  }
-  const origin = buildOrigin(request)
-  const reportUrl = `${origin}/utlatande/${propertyId}/${inspectionId}?embed=1&pdf=1`
+    const storedPdfBuffer = decodeStoredPdf(storedPdfBase64)
+    if (!storedPdfBuffer) {
+      return new NextResponse('Lagrad PDF kunde inte tolkas.', { status: 500 })
+    }
 
-  try {
-    const previewPdf = await renderPreviewPdf({
-      url: reportUrl,
-      cookieHeader: request.headers.get('cookie'),
-      timeoutMs: 45000,
-    })
-    const pdfBuffer = Buffer.isBuffer(previewPdf) ? previewPdf : Buffer.from(previewPdf)
-
-    return new NextResponse(new Uint8Array(pdfBuffer), {
+    return new NextResponse(new Uint8Array(storedPdfBuffer), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        'Cache-Control': 'private, max-age=60',
+        'Cache-Control': 'private, no-store',
       },
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'PDF V.2 failed.'
+    const message = error instanceof Error ? error.message : 'Unknown error'
     return new NextResponse(message, { status: 500 })
   }
 }

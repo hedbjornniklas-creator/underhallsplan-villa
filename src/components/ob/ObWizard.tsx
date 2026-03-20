@@ -84,6 +84,8 @@ type ReportDeliveryMeta = {
   inspectionId: string
   inspectionStatus: string
   canSend: boolean
+  hasStoredPdf: boolean
+  canDownloadPdf: boolean
   reason: string | null
   defaultRecipientEmail: string | null
   ordererEmail: string | null
@@ -98,6 +100,8 @@ type ReportDeliverySendResponse = {
   primaryRecipientEmail: string
   defaultRecipientEmail: string | null
   ordererEmail: string | null
+  hasStoredPdf: boolean
+  canDownloadPdf: boolean
   sentRecipients: string[]
   failedRecipients: Array<{ email: string; error: string }>
   history: ReportDeliveryHistoryRow[]
@@ -327,6 +331,8 @@ export default function ObWizard({
         inspectionId: okPayload.inspectionId,
         inspectionStatus: okPayload.inspectionStatus,
         canSend: prev?.canSend ?? true,
+        hasStoredPdf: okPayload.hasStoredPdf,
+        canDownloadPdf: okPayload.canDownloadPdf,
         reason: prev?.reason ?? null,
         defaultRecipientEmail: okPayload.defaultRecipientEmail ?? null,
         ordererEmail: okPayload.ordererEmail,
@@ -365,6 +371,8 @@ export default function ObWizard({
   const reportPdfV2ApiHref = hasValidIds
     ? `/api/report-v2/${inspectionId}/pdf?propertyId=${propertyId}`
     : ''
+  const canDownloadStampedPdf =
+    hasValidIds && Boolean(deliveryMeta?.canDownloadPdf && reportPdfV2ApiHref)
   const iframeSrc = hasValidIds ? `${reportHref}?embed=1` : ''
   const reportDeliveryPreviewHref = iframeSrc
 
@@ -526,14 +534,17 @@ export default function ObWizard({
                   ) : null}
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <Link
-                      href={reportPdfV2ApiHref}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!canDownloadStampedPdf) return
+                        window.open(reportPdfV2ApiHref, '_blank', 'noopener,noreferrer')
+                      }}
+                      disabled={!canDownloadStampedPdf}
+                      className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Skapa pdf
-                    </Link>
+                    </button>
                     <button
                       type="button"
                       onClick={() => void handleSendInspectionReport()}
@@ -548,6 +559,12 @@ export default function ObWizard({
                       {sendingReport ? 'Skickar utlåtande...' : 'Skicka utlåtande'}
                     </button>
                   </div>
+
+                  {!canDownloadStampedPdf ? (
+                    <div className="text-xs text-gray-600">
+                      PDF blir nedladdningsbar först efter att utlåtandet har skickats och låsts.
+                    </div>
+                  ) : null}
 
                   {deliveryMeta?.history?.length ? (
                     <div className="rounded-md border border-gray-200 bg-white p-2">

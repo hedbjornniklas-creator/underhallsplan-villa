@@ -51,6 +51,11 @@ type OutboundMessageRow = {
   subject: string
 }
 
+type ReportPdfState = {
+  hasStoredPdf: boolean
+  latestLinkId: string | null
+}
+
 function normalizedText(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
@@ -200,6 +205,27 @@ async function getDeliveryHistory(admin: AdminClient, assignmentId: string) {
   return (data ?? []) as OutboundMessageRow[]
 }
 
+async function getReportPdfState(admin: AdminClient, inspectionId: string): Promise<ReportPdfState> {
+  const { data, error } = await admin
+    .from('inspection_report_links')
+    .select('id,pdf_base64,revoked_at,created_at')
+    .eq('inspection_id', inspectionId)
+    .is('revoked_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa PDF-status för utlåtandet.')
+  }
+
+  const pdfBase64 = String(data?.pdf_base64 ?? '').trim()
+  return {
+    hasStoredPdf: pdfBase64.length > 0,
+    latestLinkId: (data?.id as string | undefined) ?? null,
+  }
+}
+
 async function createOutboundMessage(
   admin: AdminClient,
   input: {
@@ -277,17 +303,21 @@ export async function GET(
 
     const ordererEmail = assignment?.customer_email?.trim().toLowerCase() ?? null
     const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
+    const inspectionStatus = normalizeInspectionStatus(inspection.status)
+    const pdfState = await getReportPdfState(admin, id)
 
     return NextResponse.json({
       inspectionId: id,
-      inspectionStatus: normalizeInspectionStatus(inspection.status),
-      canSend: normalizeInspectionStatus(inspection.status) !== 'archived',
+      inspectionStatus,
+      canSend: inspectionStatus !== 'archived',
       reason:
-        normalizeInspectionStatus(inspection.status) === 'archived'
+        inspectionStatus === 'archived'
           ? 'Arkiverad besiktning kan inte skickas.'
           : null,
       defaultRecipientEmail: ordererEmail,
       ordererEmail,
+      hasStoredPdf: pdfState.hasStoredPdf,
+      canDownloadPdf: inspectionStatus === 'completed' && pdfState.hasStoredPdf,
       history,
     })
   } catch (error) {
@@ -502,15 +532,18 @@ export async function POST(
     }
 
     const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
+    const finalInspectionStatus = primarySent ? 'completed' : inspectionStatus
 
     return NextResponse.json({
       inspectionId: id,
-      inspectionStatus: primarySent ? 'completed' : inspectionStatus,
+      inspectionStatus: finalInspectionStatus,
       deliveryMode: 'link_only',
       publicLink: linkUrl,
       primaryRecipientEmail: primaryRecipient,
       defaultRecipientEmail: fallbackOrdererEmail,
       ordererEmail: fallbackOrdererEmail,
+      hasStoredPdf: previewPdfBase64.length > 0,
+      canDownloadPdf: finalInspectionStatus === 'completed' && previewPdfBase64.length > 0,
       sentRecipients,
       failedRecipients,
       history,
