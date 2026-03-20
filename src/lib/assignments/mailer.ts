@@ -29,29 +29,44 @@ export async function sendAssignmentEmail(
     throw new Error('RESEND_API_KEY saknas. Konfigurera mejlprovider innan utskick.')
   }
 
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${resendApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: input.from,
-      to: [input.to],
-      reply_to: input.replyTo ?? undefined,
-      subject: input.subject,
-      html: input.html,
-      text: input.text,
-      attachments:
-        input.attachments && input.attachments.length > 0
-          ? input.attachments.map((attachment) => ({
-              filename: attachment.filename,
-              content: attachment.contentBase64,
-              content_type: attachment.contentType ?? undefined,
-            }))
-          : undefined,
-    }),
-  })
+  const timeoutMs = Number(process.env.RESEND_REQUEST_TIMEOUT_MS ?? 15000)
+  const controller = new AbortController()
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs)
+
+  let response: Response
+  try {
+    response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: input.from,
+        to: [input.to],
+        reply_to: input.replyTo ?? undefined,
+        subject: input.subject,
+        html: input.html,
+        text: input.text,
+        attachments:
+          input.attachments && input.attachments.length > 0
+            ? input.attachments.map((attachment) => ({
+                filename: attachment.filename,
+                content: attachment.contentBase64,
+                content_type: attachment.contentType ?? undefined,
+              }))
+            : undefined,
+      }),
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('EMAIL_SEND_TIMEOUT')
+    }
+    throw error
+  } finally {
+    clearTimeout(timeoutHandle)
+  }
 
   const data = (await response.json().catch(() => ({}))) as { id?: string; message?: string }
 
