@@ -7,6 +7,7 @@ import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { renderPreviewPdf } from '@/lib/report/pdfV2/renderPreviewPdf'
 import {
   createReportSnapshotPayloadV1,
+  renderStructuredPdfFromSnapshot,
   type ReportSnapshotPayloadV1,
 } from '@/lib/report/pdfV2/renderStructuredPdfV2'
 import { buildReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
@@ -375,10 +376,20 @@ export async function POST(
     } catch (previewError) {
       const previewMessage =
         previewError instanceof Error ? previewError.message : String(previewError)
-      return jsonError(
-        `Kunde inte skapa fullständig PDF-layout för utlåtandet. ${previewMessage}`,
-        500
-      )
+      console.warn('[inspections.report-delivery] preview-pdf failed, fallback to structured', {
+        inspectionId: id,
+        error: previewMessage,
+      })
+      try {
+        previewPdfBuffer = await renderStructuredPdfFromSnapshot(snapshotPayload)
+      } catch (fallbackError) {
+        const fallbackMessage =
+          fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+        return jsonError(
+          `Kunde inte skapa PDF för utlåtandet. Preview-fel: ${previewMessage}. Fallback-fel: ${fallbackMessage}`,
+          500
+        )
+      }
     }
 
     const previewPdfBase64 = previewPdfBuffer.toString('base64')
