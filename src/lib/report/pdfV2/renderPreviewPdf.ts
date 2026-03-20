@@ -1,11 +1,15 @@
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Browser, detectBrowserPlatform, install } from '@puppeteer/browsers'
+import { Browser as BrowserKind, detectBrowserPlatform, install } from '@puppeteer/browsers'
 import puppeteer from 'puppeteer'
 
 const DEFAULT_TIMEOUT_MS = 60000
-const BROWSER_ARGS = ['--no-sandbox', '--disable-setuid-sandbox']
+const BROWSER_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
 const ALLOW_AUTOINSTALL = process.env.PUPPETEER_ALLOW_AUTOINSTALL !== '0'
+const PROFILE_ROOT_DIR =
+  process.env.PUPPETEER_PROFILE_ROOT_DIR?.trim() ||
+  join(process.platform === 'linux' ? '/tmp' : tmpdir(), 'puppeteer-runtime-profiles')
 
 let installedExecutablePath: string | null = null
 let installPromise: Promise<string> | null = null
@@ -27,6 +31,48 @@ function isMissingChromeError(error: unknown) {
     normalized.includes('could not find chromium') ||
     normalized.includes('failed to launch the browser process')
   )
+}
+
+function isNoSpaceError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes('ENOSPC') || message.toLowerCase().includes('no space left on device')
+}
+
+function safeRemoveDir(path: string) {
+  try {
+    rmSync(path, { recursive: true, force: true })
+  } catch {
+    // noop
+  }
+}
+
+function pruneOldProfileDirs(maxAgeMs = 1000 * 60 * 60) {
+  if (!existsSync(PROFILE_ROOT_DIR)) return
+  const now = Date.now()
+  for (const entry of readdirSync(PROFILE_ROOT_DIR)) {
+    if (!entry.startsWith('profile-')) continue
+    const fullPath = join(PROFILE_ROOT_DIR, entry)
+    try {
+      const stats = statSync(fullPath)
+      if (!stats.isDirectory()) continue
+      if (now - stats.mtimeMs > maxAgeMs) {
+        safeRemoveDir(fullPath)
+      }
+    } catch {
+      // ignore unreadable entries
+    }
+  }
+}
+
+function allocateUserDataDir() {
+  mkdirSync(PROFILE_ROOT_DIR, { recursive: true })
+  pruneOldProfileDirs()
+  const dir = join(
+    PROFILE_ROOT_DIR,
+    `profile-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  )
+  mkdirSync(dir, { recursive: true })
+  return dir
 }
 
 function resolveConfiguredExecutablePath() {
@@ -73,7 +119,7 @@ async function ensureBundledChromeExecutablePath() {
       mkdirSync(cacheDir, { recursive: true })
 
       const installed = await install({
-        browser: Browser.CHROME,
+        browser: BrowserKind.CHROME,
         buildId,
         platform,
         cacheDir,
@@ -91,15 +137,33 @@ async function ensureBundledChromeExecutablePath() {
   }
 }
 
-async function launchPdfBrowser() {
+async function launchPdfBrowser(): Promise<{
+  browser: Awaited<ReturnType<typeof puppeteer.launch>>
+  userDataDir: string
+}> {
   const configuredExecutablePath = resolveConfiguredExecutablePath()
 
+  const launchWith = async (executablePath?: string | null) => {
+    const userDataDir = allocateUserDataDir()
+    try {
+      const browser = await puppeteer.launch({
+        headless: true,
+        args: BROWSER_ARGS,
+        executablePath: executablePath ?? undefined,
+        userDataDir,
+      })
+      return { browser, userDataDir }
+    } catch (error) {
+      safeRemoveDir(userDataDir)
+      if (isNoSpaceError(error)) {
+        pruneOldProfileDirs(0)
+      }
+      throw error
+    }
+  }
+
   try {
-    return await puppeteer.launch({
-      headless: true,
-      args: BROWSER_ARGS,
-      executablePath: configuredExecutablePath ?? undefined,
-    })
+    return await launchWith(configuredExecutablePath)
   } catch (error) {
     if (!isMissingChromeError(error)) {
       throw error
@@ -120,11 +184,7 @@ async function launchPdfBrowser() {
       )
     })
 
-    return await puppeteer.launch({
-      headless: true,
-      args: BROWSER_ARGS,
-      executablePath: installedPath,
-    })
+    return await launchWith(installedPath)
   }
 }
 
@@ -133,7 +193,7 @@ export async function renderPreviewPdf(params: {
   cookieHeader?: string | null
   timeoutMs?: number
 }) {
-  const browser = await launchPdfBrowser()
+  const { browser, userDataDir } = await launchPdfBrowser()
 
   try {
     const page = await browser.newPage()
@@ -162,5 +222,6 @@ export async function renderPreviewPdf(params: {
     return pdfBuffer
   } finally {
     await browser.close()
+    safeRemoveDir(userDataDir)
   }
 }
