@@ -1,6 +1,6 @@
 ﻿import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { requireOrgContext, getProfileContact } from '@/lib/assignments/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
@@ -18,6 +18,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 const PDF_RENDER_TIMEOUT_MS = Number(process.env.REPORT_PDF_RENDER_TIMEOUT_MS ?? 180000)
 const REPORT_PDF_STORAGE_BUCKET = process.env.REPORT_PDF_STORAGE_BUCKET?.trim() || 'inspection-reports'
+const REPORT_TIMING_LOGS = process.env.REPORT_TIMING_LOGS !== '0'
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 type DeliveryStatus = 'pending' | 'sent' | 'failed'
@@ -58,6 +59,11 @@ type ReportPdfState = {
   latestLinkId: string | null
 }
 
+type TimingLogger = {
+  mark: (step: string, extra?: Record<string, unknown>) => void
+  totalMs: () => number
+}
+
 function normalizedText(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
@@ -77,6 +83,28 @@ function pickStreetAddress(value: string | null | undefined): string | null {
 
 function jsonError(message: string, status: number, extra?: Record<string, unknown>) {
   return NextResponse.json({ error: message, ...(extra ?? {}) }, { status })
+}
+
+function createTimingLogger(scope: string, traceId: string): TimingLogger {
+  const startedAt = Date.now()
+  let lastAt = startedAt
+  return {
+    mark(step: string, extra?: Record<string, unknown>) {
+      if (!REPORT_TIMING_LOGS) return
+      const now = Date.now()
+      console.info(`[${scope}][timing]`, {
+        traceId,
+        step,
+        stepMs: now - lastAt,
+        totalMs: now - startedAt,
+        ...(extra ?? {}),
+      })
+      lastAt = now
+    },
+    totalMs() {
+      return Date.now() - startedAt
+    },
+  }
 }
 
 function buildOrigin(request: Request) {
@@ -401,16 +429,22 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const traceId = randomUUID()
+  const timing = createTimingLogger('inspections.report-delivery', traceId)
   try {
     const { id } = await context.params
+    timing.mark('start', { inspectionId: id })
     const org = await requireOrgContext()
+    timing.mark('org_context_ready', { orgId: org.orgId })
     const admin = createSupabaseAdminClient()
+    timing.mark('admin_client_ready')
     const body = (await request.json().catch(() => null)) as
       | {
           primary_recipient?: unknown
           extra_recipients?: unknown
         }
       | null
+    timing.mark('request_body_parsed')
 
     const inspection = await getInspectionById(admin, id)
     if (!inspection) return jsonError('Besiktningen hittades inte.', 404)
@@ -441,6 +475,7 @@ export async function POST(
 
     const extraRecipients = parseExtraRecipients(body?.extra_recipients, primaryRecipient)
     const recipients = [primaryRecipient, ...extraRecipients]
+    timing.mark('recipients_ready', { recipientCount: recipients.length })
 
     const inspectionSide =
       inspection.inspection_side === 'seller'
@@ -453,7 +488,9 @@ export async function POST(
       inspectionId: id,
       propertyId,
     })
+    timing.mark('report_data_built')
     const reportSpec = buildReportSpec({ inspectionSide: specInspectionSide })
+    timing.mark('report_spec_built')
     const snapshotPayload: ReportSnapshotPayloadV1 = createReportSnapshotPayloadV1({
       inspectionId: id,
       propertyId,
@@ -461,6 +498,7 @@ export async function POST(
       reportData,
       reportSpec,
     })
+    timing.mark('snapshot_payload_built')
 
     const previewReportUrl = `${resolvePublicBaseUrl(request)}/utlatande/${propertyId}/${id}?embed=1&pdf=1`
     let previewPdfBuffer: Buffer
@@ -469,8 +507,10 @@ export async function POST(
         url: previewReportUrl,
         cookieHeader: request.headers.get('cookie'),
         timeoutMs: PDF_RENDER_TIMEOUT_MS,
+        traceId,
       })
       previewPdfBuffer = Buffer.isBuffer(rendered) ? rendered : Buffer.from(rendered)
+      timing.mark('pdf_rendered', { pdfBytes: previewPdfBuffer.length })
     } catch (previewError) {
       const previewMessage =
         previewError instanceof Error ? previewError.message : String(previewError)
@@ -493,6 +533,11 @@ export async function POST(
       inspectionId: id,
       tokenHash,
       pdfBuffer: previewPdfBuffer,
+    })
+    timing.mark('pdf_uploaded_to_storage', {
+      bucket: storedPdf.bucket,
+      path: storedPdf.path,
+      sizeBytes: storedPdf.sizeBytes,
     })
 
     const { data: linkData, error: linkError } = await admin
@@ -517,6 +562,7 @@ export async function POST(
     if (linkError || !linkData) {
       throw new Error(linkError?.message ?? 'Kunde inte skapa rapportlÃ¤nk.')
     }
+    timing.mark('report_link_created', { linkId: linkData.id })
 
     const linkUrl = `${resolvePublicBaseUrl(request)}/rapport/${token}`
     const fromAddress = getMailFromAddress()
@@ -558,6 +604,7 @@ export async function POST(
         subject: emailContent.subject,
         replyToEmail,
       })
+      timing.mark('outbound_message_created', { recipient, messageId })
 
       try {
         const sendResult = await sendAssignmentEmail({
@@ -575,6 +622,7 @@ export async function POST(
           provider_message_id: sendResult.providerMessageId,
           sent_at: new Date().toISOString(),
         })
+        timing.mark('email_sent', { recipient, provider: sendResult.provider })
 
         sentRecipients.push(recipient)
         if (recipient === primaryRecipient) primarySent = true
@@ -586,6 +634,7 @@ export async function POST(
           status: 'failed',
           error_message: message,
         })
+        timing.mark('email_failed', { recipient, error: message })
 
         if (recipient === primaryRecipient) {
           return jsonError('Kunde inte skicka till huvudmottagaren.', 502, {
@@ -605,10 +654,13 @@ export async function POST(
       if (updateInspectionError) {
         throw new Error(updateInspectionError.message ?? 'Kunde inte uppdatera besiktningsstatus till klar.')
       }
+      timing.mark('inspection_status_updated_to_completed')
     }
 
     const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
     const finalInspectionStatus = primarySent ? 'completed' : inspectionStatus
+    timing.mark('history_loaded', { historyCount: history.length })
+    timing.mark('success', { finalInspectionStatus, totalMs: timing.totalMs() })
 
     return NextResponse.json({
       inspectionId: id,
@@ -627,6 +679,7 @@ export async function POST(
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
+    timing.mark('failed', { error: message, totalMs: timing.totalMs() })
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     if (message.includes('SUPABASE_SERVICE_ROLE_KEY')) {
@@ -637,6 +690,12 @@ export async function POST(
     }
     if (message.includes('ASSIGNMENTS_MAIL_FROM')) {
       return jsonError('Servern saknar ASSIGNMENTS_MAIL_FROM i env.', 500)
+    }
+    if (message.includes('PDF_RENDER_TIMEOUT')) {
+      return jsonError(
+        'PDF-genereringen tog för lång tid. Försök igen. Om det fortsätter behöver PDF-jobbet köras asynkront.',
+        504
+      )
     }
     if (message.includes('EMAIL_SEND_TIMEOUT')) {
       return jsonError('Mejlutskicket tog för lång tid. Försök igen.', 504)

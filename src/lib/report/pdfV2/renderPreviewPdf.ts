@@ -7,6 +7,7 @@ import puppeteer from 'puppeteer'
 const DEFAULT_TIMEOUT_MS = 60000
 const BROWSER_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
 const ALLOW_AUTOINSTALL = process.env.PUPPETEER_ALLOW_AUTOINSTALL !== '0'
+const REPORT_TIMING_LOGS = process.env.REPORT_TIMING_LOGS !== '0'
 const REPORT_READY_TIMEOUT_MS = Number(process.env.REPORT_READY_TIMEOUT_MS ?? 20000)
 const NETWORK_IDLE_TIMEOUT_MS = Number(process.env.REPORT_NETWORK_IDLE_TIMEOUT_MS ?? 12000)
 const PROFILE_ROOT_DIR =
@@ -15,6 +16,23 @@ const PROFILE_ROOT_DIR =
 
 let installedExecutablePath: string | null = null
 let installPromise: Promise<string> | null = null
+
+function createRenderTimingLogger(traceId: string) {
+  const startedAt = Date.now()
+  let lastAt = startedAt
+  return (step: string, extra?: Record<string, unknown>) => {
+    if (!REPORT_TIMING_LOGS) return
+    const now = Date.now()
+    console.info('[report.pdf.render][timing]', {
+      traceId,
+      step,
+      stepMs: now - lastAt,
+      totalMs: now - startedAt,
+      ...(extra ?? {}),
+    })
+    lastAt = now
+  }
+}
 
 const isReportReady = () => {
   const images = Array.from(document.querySelectorAll('img[data-report-track="1"]'))
@@ -194,44 +212,89 @@ export async function renderPreviewPdf(params: {
   url: string
   cookieHeader?: string | null
   timeoutMs?: number
+  traceId?: string
 }) {
+  const timeoutMs = params.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const traceId = params.traceId ?? `pdf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const mark = createRenderTimingLogger(traceId)
   const { browser, userDataDir } = await launchPdfBrowser()
+  mark('browser_launch_done')
+  let timeoutHandle: NodeJS.Timeout | null = null
+
+  const renderPromise = (async () => {
+    try {
+      const page = await browser.newPage()
+      mark('page_created')
+      page.setDefaultTimeout(timeoutMs)
+
+      if (params.cookieHeader) {
+        await page.setExtraHTTPHeaders({
+          cookie: params.cookieHeader,
+        })
+        mark('cookie_header_set')
+      }
+
+      await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 1 })
+      await page.emulateMediaType('print')
+      mark('viewport_and_media_ready')
+
+      await page.goto(params.url, { waitUntil: 'domcontentloaded' })
+      mark('page_goto_domcontentloaded')
+      try {
+        await page.waitForNetworkIdle({
+          idleTime: 500,
+          timeout: NETWORK_IDLE_TIMEOUT_MS,
+        })
+        mark('network_idle_ready')
+      } catch {
+        // Best-effort only. Some pages keep background requests open.
+        mark('network_idle_skipped')
+      }
+
+      await page.evaluateHandle('document.fonts.ready')
+      mark('fonts_ready')
+      await page.waitForFunction(isReportReady, { timeout: REPORT_READY_TIMEOUT_MS })
+      mark('report_ready')
+
+      const pdf = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        preferCSSPageSize: true,
+      })
+      mark('page_pdf_done', { pdfBytes: pdf.length })
+      return pdf
+    } finally {
+      try {
+        await browser.close()
+      } catch {
+        // Browser may already be killed on timeout.
+      }
+      safeRemoveDir(userDataDir)
+      mark('browser_closed_and_profile_removed')
+    }
+  })()
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      try {
+        const proc = browser.process()
+        if (proc && !proc.killed) proc.kill('SIGKILL')
+      } catch {
+        // noop
+      }
+      safeRemoveDir(userDataDir)
+      mark('render_timeout_kill', { timeoutMs })
+      reject(new Error('PDF_RENDER_TIMEOUT'))
+    }, timeoutMs)
+  })
+
+  renderPromise.catch(() => {
+    // Prevent unhandled rejection if timeout wins the race first.
+  })
 
   try {
-    const page = await browser.newPage()
-    page.setDefaultTimeout(params.timeoutMs ?? DEFAULT_TIMEOUT_MS)
-
-    if (params.cookieHeader) {
-      await page.setExtraHTTPHeaders({
-        cookie: params.cookieHeader,
-      })
-    }
-
-    await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 1 })
-    await page.emulateMediaType('print')
-
-    await page.goto(params.url, { waitUntil: 'domcontentloaded' })
-    try {
-      await page.waitForNetworkIdle({
-        idleTime: 500,
-        timeout: NETWORK_IDLE_TIMEOUT_MS,
-      })
-    } catch {
-      // Best-effort only. Some pages keep background requests open.
-    }
-
-    await page.evaluateHandle('document.fonts.ready')
-    await page.waitForFunction(isReportReady, { timeout: REPORT_READY_TIMEOUT_MS })
-
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      preferCSSPageSize: true,
-    })
-
-    return pdfBuffer
+    return await Promise.race([renderPromise, timeoutPromise])
   } finally {
-    await browser.close()
-    safeRemoveDir(userDataDir)
+    if (timeoutHandle) clearTimeout(timeoutHandle)
   }
 }
