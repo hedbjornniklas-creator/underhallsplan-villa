@@ -992,6 +992,7 @@ export default function ObStepGrunddata({
               <input
                 type="file"
                 accept="image/*"
+                capture="environment"
                 className="sr-only"
                 disabled={isInspectionLocked || uploadingCover || savingInsp}
                 onChange={e => void handleInspectionCoverUpload(e)}
