@@ -457,6 +457,10 @@ export default function ObAssignmentsPage() {
   }
 
   const isArchived = (item: AssignmentItem) => Boolean(item.archived_at)
+  const canArchiveAssignment = (item: AssignmentItem) => {
+    if (isArchived(item)) return true
+    return !['sent', 'ordered', 'booked'].includes(item.status)
+  }
 
   const canStartInspection = (item: AssignmentItem) =>
     item.status === 'booked' && !item.inspection_id && !item.archived_at
@@ -785,7 +789,7 @@ export default function ObAssignmentsPage() {
                   </thead>
                   <tbody>
                     {pagedRows.map((item) => {
-                      const archiveEnabled = true
+                      const archiveEnabled = canArchiveAssignment(item)
                       const archived = isArchived(item)
                       const convertEnabled = canStartInspection(item)
                       const archiveBusy =
@@ -808,8 +812,10 @@ export default function ObAssignmentsPage() {
                               openAssignment(item.id)
                             }
                           }}
-                          className={`cursor-pointer border-b last:border-b-0 focus-visible:outline-none ${getStatusRowClass(item.status)} ${
-                            archived ? 'opacity-70' : ''
+                          className={`cursor-pointer border-b last:border-b-0 focus-visible:outline-none ${
+                            archived
+                              ? 'bg-slate-200 text-slate-900 hover:bg-slate-300 focus-visible:bg-slate-300'
+                              : getStatusRowClass(item.status)
                           }`}
                         >
                           <td className="px-3 py-2 align-middle whitespace-nowrap">{formatDate(item.preferred_date)}</td>
@@ -819,7 +825,14 @@ export default function ObAssignmentsPage() {
                           </td>
                           <td className="px-3 py-2 align-middle">{getAddress(item)}</td>
                           <td className="px-3 py-2 align-middle whitespace-nowrap font-medium">
-                            {getStatusLabel(item.status)}
+                            <div className="flex items-center gap-2">
+                              <span>{getStatusLabel(item.status)}</span>
+                              {archived ? (
+                                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                                  Arkiverad
+                                </span>
+                              ) : null}
+                            </div>
                           </td>
                           <td className="px-3 py-2 align-middle whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1">
@@ -854,7 +867,7 @@ export default function ObAssignmentsPage() {
                                     ? archived
                                       ? 'Återför från arkiv'
                                       : 'Arkivera uppdragsbekräftelse'
-                                    : 'Kan inte arkiveras i nuvarande status'
+                                    : 'Skickad, Godkänd och Bokad kan inte arkiveras'
                                 }
                                 aria-label={
                                   archived

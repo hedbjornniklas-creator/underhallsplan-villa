@@ -70,8 +70,14 @@ export async function PATCH(
     const requestedStatusRaw = safeString(body.status)
     const requestedStatus = requestedStatusRaw ? requestedStatusRaw.toLowerCase() : null
     const bodyKeys = Object.keys(body)
+    const hasArchivedAtInBody = Object.prototype.hasOwnProperty.call(body, 'archived_at')
+    const archiveValue = hasArchivedAtInBody ? body.archived_at : undefined
+    const isArchiveSetValue =
+      archiveValue !== undefined && archiveValue !== null && archiveValue !== ''
+    const isArchiveClearValue = archiveValue === null || archiveValue === ''
     const isStatusOnlyPatch = bodyKeys.length === 1 && bodyKeys[0] === 'status'
     const isArchiveTogglePatch = bodyKeys.length === 1 && bodyKeys[0] === 'archived_at'
+    const isArchiveClearOnlyPatch = isArchiveTogglePatch && isArchiveClearValue
     const isCancelAndArchivePatch =
       requestedStatus === 'cancelled' &&
       bodyKeys.length >= 1 &&
@@ -88,7 +94,7 @@ export async function PATCH(
         existing.status === 'ordered' ||
         existing.status === 'booked') &&
       !allowOrderedToBookedTransition &&
-      !isArchiveTogglePatch &&
+      !isArchiveClearOnlyPatch &&
       !isCancelAndArchivePatch
     ) {
       return jsonError('Skickad, beställd eller bokad uppdragsbekräftelse är låst för redigering.', 409)
@@ -270,12 +276,18 @@ export async function PATCH(
       patch.currency = currency ?? 'SEK'
     }
 
-    if (Object.prototype.hasOwnProperty.call(body, 'archived_at')) {
-      const archiveValue = body.archived_at
+    if (hasArchivedAtInBody) {
       if (archiveValue === null || archiveValue === '') {
         patch.archived_at = null
         patch.archived_by = null
       } else if (typeof archiveValue === 'string') {
+        const effectiveStatus = patch.status ?? existing.status
+        if (
+          isArchiveSetValue &&
+          (effectiveStatus === 'sent' || effectiveStatus === 'ordered' || effectiveStatus === 'booked')
+        ) {
+          return jsonError('Skickad, godkand och bokad uppdragsbekraftelse kan inte arkiveras.', 409)
+        }
         const parsed = new Date(archiveValue)
         if (Number.isNaN(parsed.getTime())) {
           return jsonError('Ogiltigt arkivdatum.', 400)
