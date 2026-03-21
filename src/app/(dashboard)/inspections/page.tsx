@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ChevronsLeft, Loader2, Plus, Printer } from 'lucide-react'
+import { ArrowLeft, ChevronsLeft, Download, Loader2, Plus } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -63,6 +63,7 @@ type PropertySeedRow = {
 type InspectionWithProperty = Inspection & {
   property?: Property | null
   snapshot?: ObPropertySnapshotLite | null
+  hasReadyPdf?: boolean
 }
 
 type ObPropertySnapshotLite = {
@@ -86,6 +87,15 @@ type ObSnapshotClient = {
       ) => Promise<{ data: ObPropertySnapshotLite[] | null; error: unknown | null }>
     }
   }
+}
+
+type ReportLinkPdfLite = {
+  inspection_id: string
+  pdf_base64: string | null
+  pdf_storage_bucket: string | null
+  pdf_storage_path: string | null
+  pdf_status: string | null
+  created_at: string
 }
 
 type StatusFilter = 'all' | 'draft' | 'ongoing' | 'completed' | 'archived'
@@ -112,7 +122,7 @@ const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'draft', label: 'Utkast' },
   { key: 'ongoing', label: 'Pågående' },
   { key: 'completed', label: 'Klar' },
-  { key: 'archived', label: 'Makulerad' },
+  { key: 'archived', label: 'Arkiverad' },
 ]
 
 const PROPERTY_SNAPSHOT_COLUMNS =
@@ -254,6 +264,27 @@ function getStatusSortRank(status: string | null) {
   }
 }
 
+function normalizePdfStatus(value: string | null | undefined): 'pending' | 'processing' | 'ready' | 'failed' {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+  if (normalized === 'processing') return 'processing'
+  if (normalized === 'ready') return 'ready'
+  if (normalized === 'failed') return 'failed'
+  return 'pending'
+}
+
+function hasReadyPdfInLinks(rows: ReportLinkPdfLite[]) {
+  const hasStorageReady = rows.some((row) => {
+    const bucket = String(row.pdf_storage_bucket ?? '').trim()
+    const path = String(row.pdf_storage_path ?? '').trim()
+    return bucket.length > 0 && path.length > 0 && normalizePdfStatus(row.pdf_status) === 'ready'
+  })
+  if (hasStorageReady) return true
+
+  return rows.some((row) => String(row.pdf_base64 ?? '').trim().length > 0)
+}
+
 function buildSnapshotPayload(inspectionId: string, propertyData: PropertySeedRow) {
   return {
     inspection_id: inspectionId,
@@ -291,19 +322,35 @@ function buildSnapshotPayload(inspectionId: string, propertyData: PropertySeedRo
   }
 }
 
-function PrintActionButton({ href }: { href: string }) {
+function PdfDownloadActionButton({
+  href,
+  enabled,
+}: {
+  href: string
+  enabled: boolean
+}) {
+  if (!enabled) {
+    return (
+      <span
+        aria-label="PDF inte tillgänglig ännu"
+        title="PDF inte tillgänglig ännu"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white/70 text-slate-300 shadow-sm ring-1 ring-white/80"
+      >
+        <Download size={13} strokeWidth={1.9} />
+      </span>
+    )
+  }
+
   return (
     <Link
       href={href}
-      target="_blank"
-      rel="noreferrer"
       onClick={(event) => event.stopPropagation()}
-      aria-label="Skriv ut PDF"
-      title="Skriv ut PDF"
+      aria-label="Hämta PDF"
+      title="Hämta PDF"
       className="group inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white/95 text-slate-700 shadow-sm ring-1 ring-white/80 transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
     >
-      <Printer size={13} strokeWidth={1.9} />
-      <span className="sr-only">Skriv ut PDF</span>
+      <Download size={13} strokeWidth={1.9} />
+      <span className="sr-only">Hämta PDF</span>
     </Link>
   )
 }
@@ -432,18 +479,42 @@ export default function InspectionsPage() {
           console.error('Could not load OB snapshots for inspections list:', snapshotError)
         }
 
+        const { data: reportLinkData, error: reportLinkError } =
+          inspectionIds.length > 0
+            ? await supabase
+                .from('inspection_report_links')
+                .select(
+                  'inspection_id,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,created_at'
+                )
+                .in('inspection_id', inspectionIds)
+                .is('revoked_at', null)
+                .order('created_at', { ascending: false })
+            : { data: [], error: null }
+
+        if (reportLinkError) {
+          console.error('Could not load report link PDF status for inspections list:', reportLinkError)
+        }
+
         const snapshotMap = new Map(
           ((snapshotData ?? []) as ObPropertySnapshotLite[]).map((snapshot) => [
             snapshot.inspection_id,
             snapshot,
           ])
         )
+        const reportRows = (Array.isArray(reportLinkData) ? reportLinkData : []) as ReportLinkPdfLite[]
+        const reportLinkMap = new Map<string, ReportLinkPdfLite[]>()
+        for (const linkRow of reportRows) {
+          const existingRows = reportLinkMap.get(linkRow.inspection_id) ?? []
+          existingRows.push(linkRow)
+          reportLinkMap.set(linkRow.inspection_id, existingRows)
+        }
 
         setInspections(
           rows.map((row) => ({
             ...row,
             property: propertyMap.get(row.property_id) ?? null,
             snapshot: snapshotMap.get(row.id) ?? null,
+            hasReadyPdf: hasReadyPdfInLinks(reportLinkMap.get(row.id) ?? []),
           }))
         )
       } catch (loadError: unknown) {
@@ -814,7 +885,7 @@ export default function InspectionsPage() {
                       : 'rounded-md border border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50'
                   }
                 >
-                  {showArchived ? 'Dölj makulerade' : 'Visa makulerade'}
+                  {showArchived ? 'Dölj arkiverade' : 'Visa arkiverade'}
                 </button>
                 <label className="text-[10px] text-gray-600" htmlFor="pageSize">
                   Rader/sida
@@ -912,7 +983,9 @@ export default function InspectionsPage() {
                     {pagedRows.map((row) => {
                       const dateText = row.date ?? new Date(row.created_at).toLocaleDateString('sv-SE')
                       const customer = getCustomerText(row)
-                      const printHref = `/utlatande-v2/${row.property_id}/${row.id}`
+                      const downloadHref = `/api/report-v2/${row.id}/pdf`
+                      const canDownloadPdf =
+                        getStatusBucket(row.status) === 'completed' && Boolean(row.hasReadyPdf)
 
                       return (
                         <tr
@@ -943,7 +1016,7 @@ export default function InspectionsPage() {
 
                           <td className="px-3 py-1.5 align-middle text-right">
                             <div className="flex items-center justify-end">
-                              <PrintActionButton href={printHref} />
+                              <PdfDownloadActionButton href={downloadHref} enabled={canDownloadPdf} />
                             </div>
                           </td>
                         </tr>
@@ -956,7 +1029,9 @@ export default function InspectionsPage() {
               <div className="space-y-3 md:hidden">
                 {pagedRows.map((row) => {
                   const dateText = row.date ?? new Date(row.created_at).toLocaleDateString('sv-SE')
-                  const printHref = `/utlatande-v2/${row.property_id}/${row.id}`
+                  const downloadHref = `/api/report-v2/${row.id}/pdf`
+                  const canDownloadPdf =
+                    getStatusBucket(row.status) === 'completed' && Boolean(row.hasReadyPdf)
 
                   return (
                     <article
@@ -990,7 +1065,7 @@ export default function InspectionsPage() {
                       </div>
 
                       <div className="mt-3 flex justify-end">
-                        <PrintActionButton href={printHref} />
+                        <PdfDownloadActionButton href={downloadHref} enabled={canDownloadPdf} />
                       </div>
                     </article>
                   )

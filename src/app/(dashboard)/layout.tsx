@@ -37,7 +37,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     pathname && pathname !== '/' && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
   const isObRoot = normalizedPathname === '/ob'
   const isObModuleSubpage = Boolean(normalizedPathname?.startsWith('/ob/'))
-  const useObBranding = isObModuleSubpage && !isObRoot
+  const isInspectionsModule = Boolean(
+    normalizedPathname === '/inspections' || normalizedPathname?.startsWith('/inspections/')
+  )
+  const useObBranding = (isObModuleSubpage || isInspectionsModule) && !isObRoot
   const logoHref = useObBranding ? '/ob' : '/dashboard-v1'
 
   const handleLogout = async () => {
