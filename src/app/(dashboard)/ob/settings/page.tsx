@@ -1,7 +1,7 @@
 'use client'
 
 import type { ChangeEvent } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
@@ -71,6 +71,25 @@ type AddonOfferFormRow = {
   currency: string
 }
 
+function serializeProfileForm(form: ProfileForm) {
+  return JSON.stringify({
+    full_name: form.full_name ?? '',
+    sbr_group: form.sbr_group ?? '',
+    sbr_status: form.sbr_status ?? '',
+    membership_number: form.membership_number ?? '',
+    certification_number: form.certification_number ?? '',
+    phone: form.phone ?? '',
+    email: form.email ?? '',
+    company_name: form.company_name ?? '',
+    company_orgno: form.company_orgno ?? '',
+    company_address: form.company_address ?? '',
+    company_postal_code: form.company_postal_code ?? '',
+    company_city: form.company_city ?? '',
+    avatar_path: form.avatar_path ?? null,
+    logo_path: form.logo_path ?? null,
+  })
+}
+
 function resolvePublicMediaUrl(path: string | null | undefined) {
   if (!path) return null
   if (path.startsWith('http://') || path.startsWith('https://')) return path
@@ -100,6 +119,8 @@ export default function ObSettingsPage() {
   const [addonError, setAddonError] = useState<string | null>(null)
   const [addonSuccess, setAddonSuccess] = useState<string | null>(null)
   const [addonRows, setAddonRows] = useState<AddonOfferFormRow[]>([])
+  const profileHydratedRef = useRef(false)
+  const lastSavedProfileSnapshotRef = useRef<string>('')
 
   const [form, setForm] = useState<ProfileForm>({
     full_name: '',
@@ -160,7 +181,7 @@ export default function ObSettingsPage() {
       }
 
       const profile = data as ProfileRow | null
-      setForm({
+      const loadedForm: ProfileForm = {
         full_name: profile?.full_name ?? '',
         sbr_group: profile?.sbr_group ?? '',
         sbr_status: profile?.sbr_status ?? '',
@@ -175,7 +196,10 @@ export default function ObSettingsPage() {
         company_city: profile?.company_city ?? '',
         avatar_path: profile?.avatar_path ?? null,
         logo_path: profile?.logo_path ?? null,
-      })
+      }
+      setForm(loadedForm)
+      lastSavedProfileSnapshotRef.current = serializeProfileForm(loadedForm)
+      profileHydratedRef.current = true
 
       await loadAddonSettingsForProfile(user.id)
 
@@ -275,42 +299,50 @@ export default function ObSettingsPage() {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  const handleSave = async () => {
-    if (!userId) return
+  useEffect(() => {
+    if (!userId || loading || !profileHydratedRef.current) return
 
-    setSaving(true)
-    setError(null)
-    setSuccess(null)
+    const nextSnapshot = serializeProfileForm(form)
+    if (nextSnapshot === lastSavedProfileSnapshotRef.current) return
 
-    const payload = {
-      id: userId,
-      full_name: form.full_name || null,
-      sbr_group: form.sbr_group || null,
-      sbr_status: form.sbr_status || null,
-      membership_number: form.membership_number || null,
-      certification_number: form.certification_number || null,
-      phone: form.phone || null,
-      email: form.email || null,
-      company_name: form.company_name || null,
-      company_orgno: form.company_orgno || null,
-      company_address: form.company_address || null,
-      company_postal_code: form.company_postal_code || null,
-      company_city: form.company_city || null,
-      avatar_path: form.avatar_path,
-      logo_path: form.logo_path,
-    }
+    const timeoutId = window.setTimeout(async () => {
+      setSaving(true)
+      setError(null)
+      setSuccess(null)
 
-    const { error: saveError } = await supabase.from('profiles').upsert(payload)
+      const payload = {
+        id: userId,
+        full_name: form.full_name || null,
+        sbr_group: form.sbr_group || null,
+        sbr_status: form.sbr_status || null,
+        membership_number: form.membership_number || null,
+        certification_number: form.certification_number || null,
+        phone: form.phone || null,
+        email: form.email || null,
+        company_name: form.company_name || null,
+        company_orgno: form.company_orgno || null,
+        company_address: form.company_address || null,
+        company_postal_code: form.company_postal_code || null,
+        company_city: form.company_city || null,
+        avatar_path: form.avatar_path,
+        logo_path: form.logo_path,
+      }
 
-    if (saveError) {
-      setError('Kunde inte spara profil.')
+      const { error: saveError } = await supabase.from('profiles').upsert(payload)
+
+      if (saveError) {
+        setError('Kunde inte autospara profil.')
+        setSaving(false)
+        return
+      }
+
+      lastSavedProfileSnapshotRef.current = nextSnapshot
+      setSuccess('Profilen sparades automatiskt.')
       setSaving(false)
-      return
-    }
+    }, 700)
 
-    setSuccess('Profilen sparades.')
-    setSaving(false)
-  }
+    return () => window.clearTimeout(timeoutId)
+  }, [form, loading, userId])
 
   const handleAddonToggle = (addonServiceId: string, checked: boolean) => {
     setAddonRows((prev) =>
@@ -453,20 +485,15 @@ export default function ObSettingsPage() {
                   <ArrowLeft size={16} strokeWidth={2} />
                 </button>
                 <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-rose-300 bg-rose-600 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-hover:opacity-100 group-focus-within:opacity-100 group-active:opacity-100">
-                  {'Kom ih\u00e5g att spara f\u00f6rst'}
+                  {'Autospar \u00e4r aktivt'}
                 </span>
               </div>
               <div>
                 <h1 className="text-xl font-semibold text-gray-900">Besiktningsman - profil</h1>
               </div>
-              <button
-                type="button"
-                onClick={() => void handleSave()}
-                disabled={saving || loading}
-                className="ml-auto rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
-              >
-                {saving ? 'Sparar...' : 'Spara profil'}
-              </button>
+              <div className="ml-auto text-xs font-medium text-gray-600">
+                {saving ? 'Sparar...' : 'Autospar aktivt'}
+              </div>
             </div>
           </header>
 

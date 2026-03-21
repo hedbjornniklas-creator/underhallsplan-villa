@@ -3,13 +3,14 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Power } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useProfile } from '@/hooks/useProfile'
 
 export default function Topbar() {
   const router = useRouter()
+  const pathname = usePathname()
   const { profile } = useProfile()
   const [email, setEmail] = useState<string | null>(null)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -35,6 +36,9 @@ export default function Topbar() {
 
   const displayName = profile?.full_name?.trim() || null
   const hasUser = isLoggedIn
+  const normalizedPath = (pathname || '').toLowerCase()
+  const isObContext = normalizedPath.includes('/ob')
+  const logoHref = isObContext ? '/ob' : '/dashboard-v1'
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -46,7 +50,7 @@ export default function Topbar() {
       <div className="mx-auto grid h-14 w-full max-w-6xl grid-cols-3 items-center px-4 md:px-6">
         <div className="min-w-0">
           <Link
-            href="/dashboard-v1"
+            href={logoHref}
             className="inline-flex max-w-full items-center gap-2 text-sm font-medium text-gray-800 transition hover:text-gray-900"
           >
             <Image
