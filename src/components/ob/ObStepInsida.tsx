@@ -1698,7 +1698,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     return (
       <div className="p-4 text-sm text-red-600">
         {error}
-        <div className="mt-1 text-xs text-gray-500">
+        <div className="mt-1 text-xs text-gray-600">
           Kontrollera att tabellerna settings_interior_*,
           inspection_interior_rooms, inspection_control_items och inspection_images finns
           och att RLS/policies tillåter läsning/skrivning.
@@ -1717,7 +1717,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-2xl border border-gray-200 bg-white/95 p-4 md:p-5 space-y-4">
+      <section className="rounded-2xl border border-gray-200 bg-white p-4 md:p-5 space-y-4">
         <header className="space-y-1">
           <h2 className="text-xl font-semibold text-gray-900">Byggnad – insida</h2>
           <p className="text-sm text-gray-700">
@@ -1745,7 +1745,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           ))}
 
           {floorLabels.length === 0 && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-gray-600">
               Inga plan ännu. Fyll i Byggnadstyp under Förutsättningar, eller lägg till ett rum så skapas plan automatiskt.
             </span>
           )}
@@ -1883,12 +1883,12 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             >
               <header className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <div className="text-xs uppercase text-gray-500">
+                  <div className="text-xs uppercase text-gray-600">
                     {getFloorLabel(room.floor_label)}
                   </div>
                   <h3 className="text-base font-semibold text-gray-900">
                     {getRoomDisplayLabel(room)}{' '}
-                    <span className="text-gray-500 text-xs">({rtLabel})</span>
+                    <span className="text-gray-600 text-xs">({rtLabel})</span>
                   </h3>
                 </div>
 
@@ -1896,7 +1896,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                   <button
                     type="button"
                     onClick={() => startEditRoom(room)}
-                    className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
+                    className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
                   >
                     Redigera rum
                   </button>
@@ -1933,7 +1933,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                             value={getFloorLabel(editRoomFloorLabel || room.floor_label)}
                             readOnly
                           />
-                          <div className="mt-1 text-[11px] text-gray-500">
+                          <div className="mt-1 text-xs md:text-[11px] text-gray-600">
                             Systemrummet kan inte flyttas mellan plan.
                           </div>
                         </>
@@ -2026,7 +2026,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
         })}
 
         {filteredRooms.length === 0 && (
-          <div className="p-3 text-sm text-gray-500 border border-dashed rounded-lg">
+          <div className="p-3 text-sm text-gray-600 border border-dashed rounded-lg">
             Inga rum registrerade på detta plan ännu.
             <br />
             Lägg till ett rum med knappen “Lägg till rum” ovanför.
@@ -2035,7 +2035,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       </section>
 
       {saving && (
-        <div className="text-xs text-gray-500">
+        <div className="text-xs text-gray-600">
           Sparar…
         </div>
       )}
@@ -2072,7 +2072,7 @@ function ControlItemImagesSection({
   return (
     <section className="space-y-2 border-t pt-2 mt-2">
       <div className="flex items-center justify-between">
-        <h5 className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-900">
+        <h5 className="flex items-center gap-1.5 text-xs md:text-[11px] font-semibold text-gray-900">
           <span aria-hidden="true">{'\u{1F4F7}'}</span>
           <span>Bilder (denna kontrollpunkt)</span>
         </h5>
@@ -2080,14 +2080,14 @@ function ControlItemImagesSection({
           <button
             type="button"
             onClick={() => cameraInputRef.current?.click()}
-            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
+            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
           >
             Kamera
           </button>
           <button
             type="button"
             onClick={() => libraryInputRef.current?.click()}
-            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
+            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
           >
             Fil
           </button>
@@ -2111,7 +2111,7 @@ function ControlItemImagesSection({
       />
 
       {images.length === 0 && (
-        <p className="text-[11px] text-gray-500">
+        <p className="text-xs md:text-[11px] text-gray-600">
           Inga bilder ännu. Lägg till en bild från kamera eller galleri.
         </p>
       )}
@@ -2400,7 +2400,7 @@ function RoomControlPointsSection({
               type="button"
               onClick={() => handleSearchModeChange('control_points')}
               className={
-                'rounded px-2.5 py-1 text-[11px] font-medium ' +
+                'rounded px-2.5 py-1 text-xs md:text-[11px] font-medium ' +
                 (searchMode === 'control_points'
                   ? 'bg-gray-900 text-white'
                   : 'text-gray-700 hover:bg-gray-100')
@@ -2412,7 +2412,7 @@ function RoomControlPointsSection({
               type="button"
               onClick={() => handleSearchModeChange('chips')}
               className={
-                'rounded px-2.5 py-1 text-[11px] font-medium ' +
+                'rounded px-2.5 py-1 text-xs md:text-[11px] font-medium ' +
                 (searchMode === 'chips'
                   ? 'bg-gray-900 text-white'
                   : 'text-gray-700 hover:bg-gray-100')
@@ -2434,13 +2434,13 @@ function RoomControlPointsSection({
           />
 
           {searching && (
-            <div className="text-[11px] text-gray-500">Söker…</div>
+            <div className="text-xs md:text-[11px] text-gray-600">Söker…</div>
           )}
 
           {!searching && searchTerm.trim().length >= 2 && (
             <div className="max-h-40 overflow-auto rounded-md border bg-white">
               {searchResults.length === 0 ? (
-                <div className="px-3 py-2 text-xs text-gray-500">
+                <div className="px-3 py-2 text-xs text-gray-600">
                   {searchMode === 'chips' ? 'Inga chips' : 'Inga kontrollpunkter'} hittades för
                   {' '}“{searchTerm.trim()}”.
                 </div>
@@ -2462,12 +2462,12 @@ function RoomControlPointsSection({
                       {cp.title || cp.label || cp.key}
                     </span>
                     {cp.description && (
-                      <span className="text-[11px] text-gray-500 line-clamp-2">
+                      <span className="text-xs md:text-[11px] text-gray-600 line-clamp-2">
                         {cp.description}
                       </span>
                     )}
                     {cp.search_hint && (
-                      <span className="text-[11px] text-gray-500">
+                      <span className="text-xs md:text-[11px] text-gray-600">
                         {cp.search_hint}
                       </span>
                     )}
@@ -2484,7 +2484,7 @@ function RoomControlPointsSection({
           <h4 className="text-sm font-semibold text-gray-900">
             Kontrollpunkter i detta rum
           </h4>
-          <span className="text-[11px] text-gray-500">
+          <span className="text-xs md:text-[11px] text-gray-600">
             Noteringarna här gäller respektive kontrollpunkt.
           </span>
         </div>
@@ -2493,7 +2493,7 @@ function RoomControlPointsSection({
           <button
             type="button"
             onClick={() => onAddFreeNote(room)}
-            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
+            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
             disabled={isInspectionLocked}
           >
             + Lägg till fri notering
@@ -2501,7 +2501,7 @@ function RoomControlPointsSection({
           <button
             type="button"
             onClick={handleToggleSearch}
-            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
+            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
             disabled={isInspectionLocked}
           >
             + Lägg till ytterligare kontrollpunkt
@@ -2512,7 +2512,7 @@ function RoomControlPointsSection({
       {/* Lista med befintliga kontrollpunkter */}
       <div className="space-y-2">
         {items.length === 0 && (
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-gray-600">
             Inga kontrollpunkter ännu. De kan läggas till automatiskt för rumstypen
             eller via knappen “Lägg till ytterligare kontrollpunkt”.
           </div>
@@ -2535,7 +2535,7 @@ function RoomControlPointsSection({
                   <button
                     type="button"
                     onClick={() => ci.id && onDeleteItem(ci.id)}
-                    className="text-[11px] text-rose-600 hover:underline"
+                    className="text-xs md:text-[11px] text-rose-600 hover:underline"
                     disabled={isInspectionLocked}
                   >
                     Ta bort notering
@@ -2544,7 +2544,7 @@ function RoomControlPointsSection({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] text-gray-600">
+                <label className="text-xs md:text-[11px] text-gray-600">
                   🧱 Notering
                 </label>
                 <textarea
@@ -2561,7 +2561,7 @@ function RoomControlPointsSection({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] text-gray-600">
+                <label className="text-xs md:text-[11px] text-gray-600">
                   ⚠️ Riskanalys
                 </label>
                 <textarea
@@ -2578,7 +2578,7 @@ function RoomControlPointsSection({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] text-gray-600">
+                <label className="text-xs md:text-[11px] text-gray-600">
                   🔍 Fortsatt teknisk utredning (FTU)
                 </label>
                 <textarea
@@ -2646,7 +2646,7 @@ function RoomControlPointsSection({
                   <div className="text-xs font-semibold text-gray-900 truncate">
                     {baseItem.title}
                   </div>
-                  <span className={`rounded-full border bg-white px-2 py-0.5 text-[10px] font-medium ${collapsedBadgeClass}`}>
+                  <span className={`rounded-full border bg-white px-2 py-0.5 text-[11px] md:text-[10px] font-medium ${collapsedBadgeClass}`}>
                     {collapsedBadgeText}
                   </span>
                   <div className="ml-auto flex items-center gap-2">
@@ -2656,7 +2656,7 @@ function RoomControlPointsSection({
                         if (isGreen) expandOkGroup(groupId)
                         expandGroup(groupId)
                       }}
-                      className="text-[11px] text-gray-700 hover:underline"
+                      className="text-xs md:text-[11px] text-gray-700 hover:underline"
                     >
                       Visa
                     </button>
@@ -2664,7 +2664,7 @@ function RoomControlPointsSection({
                       <button
                         type="button"
                         onClick={() => onDeleteItemGroup(baseItem)}
-                        className="text-[11px] text-rose-600 hover:underline"
+                        className="text-xs md:text-[11px] text-rose-600 hover:underline"
                         disabled={isInspectionLocked}
                       >
                         Ta bort
@@ -2696,7 +2696,7 @@ function RoomControlPointsSection({
                         collapseGroup(groupId)
                       }
                     }}
-                    className="text-[11px] text-gray-700 hover:underline"
+                    className="text-xs md:text-[11px] text-gray-700 hover:underline"
                   >
                     Dölj
                   </button>
@@ -2704,7 +2704,7 @@ function RoomControlPointsSection({
                     <button
                       type="button"
                       onClick={() => onDeleteItemGroup(baseItem)}
-                      className="text-[11px] text-rose-600 hover:underline"
+                      className="text-xs md:text-[11px] text-rose-600 hover:underline"
                       disabled={isInspectionLocked}
                     >
                       Ta bort
@@ -2714,20 +2714,20 @@ function RoomControlPointsSection({
               </div>
 
               {description.length > 0 && (
-                <div className="text-[11px] text-gray-600">
+                <div className="text-xs md:text-[11px] text-gray-600">
                   {description}
                 </div>
               )}
 
               <div className="space-y-1">
-                <label className="text-[11px] text-gray-600">
+                <label className="text-xs md:text-[11px] text-gray-600">
                   Bedömning
                 </label>
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
                     className={
-                      'rounded-full border px-2.5 py-1 text-[11px] ' +
+                      'rounded-full border px-2.5 py-1 text-xs md:text-[11px] ' +
                       (isGreen
                         ? 'border-gray-900 bg-gray-900 text-white'
                         : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
@@ -2770,7 +2770,7 @@ function RoomControlPointsSection({
                     )
                     const isActive = !!activeItem
                     const chipClass =
-                      'rounded-full border px-2.5 py-1 text-[11px] ' +
+                      'rounded-full border px-2.5 py-1 text-xs md:text-[11px] ' +
                       (isActive
                         ? 'border-gray-900 bg-gray-900 text-white'
                         : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
@@ -2825,7 +2825,7 @@ function RoomControlPointsSection({
               {selectedItems.length === 0 && (
                 <div className="space-y-2">
                   <div className="space-y-1">
-                    <label className="text-[11px] text-gray-600">
+                    <label className="text-xs md:text-[11px] text-gray-600">
                       🧱 Notering
                     </label>
                     <textarea
@@ -2878,7 +2878,7 @@ function RoomControlPointsSection({
                             <button
                               type="button"
                               onClick={() => onDeleteItem(ci.id!, true)}
-                              className="text-[11px] text-rose-600 hover:underline"
+                              className="text-xs md:text-[11px] text-rose-600 hover:underline"
                               disabled={isInspectionLocked}
                             >
                               Ta bort
@@ -2887,7 +2887,7 @@ function RoomControlPointsSection({
                         </div>
 
                         <div className="space-y-1">
-                          <label className="text-[11px] text-gray-600">
+                          <label className="text-xs md:text-[11px] text-gray-600">
                             🧱 Notering
                           </label>
                           <textarea

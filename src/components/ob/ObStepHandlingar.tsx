@@ -453,26 +453,26 @@ export default function ObStepHandlingar({
       {/* =======================
           HANDLINGAR
       ======================== */}
-      <section>
+      <section className="space-y-3">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <h2 className="text-lg font-semibold">Handlingar</h2>
-            <div className="text-xs text-gray-500">
+            <h2 className="text-lg font-semibold text-gray-900">Handlingar</h2>
+            <div className="text-sm text-gray-600">
               {(property as any)?.name || 'Fastighet'}
               {(property as any)?.address ? ` – ${(property as any).address}` : ''}
             </div>
           </div>
-          {savingDocs && <span className="text-xs text-gray-500">Sparar handling…</span>}
+          {savingDocs && <span className="text-sm text-gray-600">Sparar handling…</span>}
         </div>
 
-        <div className="border rounded-lg overflow-hidden">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50">
+        <div className="overflow-x-auto rounded-lg border border-gray-300 bg-white">
+          <table className="min-w-[720px] w-full text-sm text-gray-900">
+            <thead className="bg-gray-100">
               <tr>
-                <th className="px-3 py-2 text-left">Handling</th>
-                <th className="px-3 py-2 text-left">Status</th>
-                <th className="px-3 py-2 text-left">Datum</th>
-                <th className="px-3 py-2 text-left">Notering</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-700">Handling</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-700">Status</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-700">Datum</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-700">Notering</th>
               </tr>
             </thead>
 
@@ -484,11 +484,11 @@ export default function ObStepHandlingar({
                 const docStatus = ((doc as any).status ?? 'missing') as InspectionDocumentStatus
 
                 return (
-                  <tr key={doc.id} className="border-t">
+                  <tr key={doc.id} className="border-t border-gray-200">
                     <td className="px-3 py-2 align-top">
-                      <div className="font-medium">{(doc as any).title}</div>
+                      <div className="font-medium text-gray-900">{(doc as any).title}</div>
                       {(dt as any)?.description && (
-                        <div className="text-xs text-gray-500 mt-0.5">{(dt as any).description}</div>
+                        <div className="mt-0.5 text-sm text-gray-600">{(dt as any).description}</div>
                       )}
                     </td>
 
@@ -499,10 +499,10 @@ export default function ObStepHandlingar({
                             key={key}
                             onClick={() => void updateDoc(doc.id, { status: key } as any)}
                             className={
-                              'px-2 py-1 rounded-full text-xs border ' +
+                              'px-2 py-1 rounded-full text-sm border ' +
                               (docStatus === key
                                 ? 'bg-blue-50 border-blue-500 text-blue-700'
-                                : 'bg-white border-gray-300 hover:bg-gray-50')
+                                : 'bg-white border-gray-400 text-gray-800 hover:bg-gray-50')
                             }
                           >
                             {STATUS_LABELS[key]}
@@ -514,7 +514,7 @@ export default function ObStepHandlingar({
                     <td className="px-3 py-2 align-top">
                       <input
                         type="date"
-                        className="border rounded px-2 py-1 text-xs"
+                        className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900"
                         value={((doc as any).document_date ?? '') as string}
                         onChange={e =>
                           void updateDoc(doc.id, { document_date: e.target.value || null } as any)
@@ -524,7 +524,7 @@ export default function ObStepHandlingar({
 
                     <td className="px-3 py-2 align-top">
                       <textarea
-                        className="border rounded px-2 py-1 w-full text-xs min-h-[2.25rem]"
+                        className="min-h-[2.5rem] w-full rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900"
                         value={(((doc as any).note ?? '') as string) ?? ''}
                         onChange={e => void updateDoc(doc.id, { note: e.target.value } as any)}
                       />
@@ -535,7 +535,7 @@ export default function ObStepHandlingar({
 
               {documents.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-3 py-4 text-center text-sm text-gray-500">
+                  <td colSpan={4} className="px-3 py-4 text-center text-sm text-gray-600">
                     Inga handlingar ännu.
                   </td>
                 </tr>
@@ -560,15 +560,15 @@ export default function ObStepHandlingar({
       ======================== */}
       <section>
         <div className="flex items-center gap-2 mb-2">
-          <h2 className="text-lg font-semibold">Upplysningar</h2>
-          {savingDisclosure && <span className="text-xs text-gray-500">Sparar…</span>}
+          <h2 className="text-lg font-semibold text-gray-900">Upplysningar</h2>
+          {savingDisclosure && <span className="text-sm text-gray-600">Sparar…</span>}
           {!savingDisclosure && savedDisclosure && (
             <span className="text-xs text-emerald-600">Sparad ✓</span>
           )}
         </div>
 
         <textarea
-          className="w-full border rounded-lg px-3 py-2 min-h-[200px] text-sm"
+          className="min-h-[200px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500"
           placeholder="Skriv alla upplysningar här …"
           value={disclosureText}
           onChange={e => setDisclosureText(e.target.value)}
@@ -580,15 +580,15 @@ export default function ObStepHandlingar({
       ======================== */}
       <section>
         <div className="flex items-center gap-2 mb-2">
-          <h2 className="text-lg font-semibold">Upplysningar om fel i fastigheten</h2>
-          {savingDefect && <span className="text-xs text-gray-500">Sparar…</span>}
+          <h2 className="text-lg font-semibold text-gray-900">Upplysningar om fel i fastigheten</h2>
+          {savingDefect && <span className="text-sm text-gray-600">Sparar…</span>}
           {!savingDefect && savedDefect && (
             <span className="text-xs text-emerald-600">Sparad ✓</span>
           )}
         </div>
 
         <textarea
-          className="w-full border rounded-lg px-3 py-2 min-h-[160px] text-sm"
+          className="min-h-[160px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500"
           value={defectText}
           onChange={e => setDefectText(e.target.value)}
         />
