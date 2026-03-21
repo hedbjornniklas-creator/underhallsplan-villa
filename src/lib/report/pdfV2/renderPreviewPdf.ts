@@ -1,23 +1,25 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Browser as BrowserKind, detectBrowserPlatform, install } from '@puppeteer/browsers'
-import puppeteer from 'puppeteer'
+import chromium from '@sparticuz/chromium'
+import puppeteer from 'puppeteer-core'
 
 const DEFAULT_TIMEOUT_MS = 60000
 const BROWSER_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-const ALLOW_AUTOINSTALL = process.env.PUPPETEER_ALLOW_AUTOINSTALL === '1'
 const REPORT_TIMING_LOGS = process.env.REPORT_TIMING_LOGS !== '0'
 const REPORT_READY_TIMEOUT_MS = Number(process.env.REPORT_READY_TIMEOUT_MS ?? 20000)
 const NETWORK_IDLE_TIMEOUT_MS = Number(process.env.REPORT_NETWORK_IDLE_TIMEOUT_MS ?? 12000)
 const BROWSER_LAUNCH_TIMEOUT_MS = Number(process.env.PUPPETEER_LAUNCH_TIMEOUT_MS ?? 25000)
-const BROWSER_INSTALL_TIMEOUT_MS = Number(process.env.PUPPETEER_INSTALL_TIMEOUT_MS ?? 25000)
+const BROWSER_RESOLVE_TIMEOUT_MS = Number(process.env.PUPPETEER_CHROME_RESOLVE_TIMEOUT_MS ?? 30000)
 const PROFILE_ROOT_DIR =
   process.env.PUPPETEER_PROFILE_ROOT_DIR?.trim() ||
   join(process.platform === 'linux' ? '/tmp' : tmpdir(), 'puppeteer-runtime-profiles')
 
-let installedExecutablePath: string | null = null
-let installPromise: Promise<string> | null = null
+type LaunchConfig = {
+  executablePath: string
+  args: string[]
+  source: 'env' | 'sparticuz'
+}
 
 function createRenderTimingLogger(traceId: string) {
   const startedAt = Date.now()
@@ -43,16 +45,6 @@ const isReportReady = () => {
     const ready = img.getAttribute('data-report-ready') === '1'
     return ready && (img instanceof HTMLImageElement ? img.complete : true)
   })
-}
-
-function isMissingChromeError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error)
-  const normalized = message.toLowerCase()
-  return (
-    normalized.includes('could not find chrome') ||
-    normalized.includes('could not find chromium') ||
-    normalized.includes('failed to launch the browser process')
-  )
 }
 
 function isNoSpaceError(error: unknown) {
@@ -115,6 +107,13 @@ function allocateUserDataDir() {
 }
 
 function resolveConfiguredExecutablePath() {
+  const configuredKey = process.env.PUPPETEER_EXECUTABLE_PATH?.trim()
+    ? 'PUPPETEER_EXECUTABLE_PATH'
+    : process.env.CHROME_PATH?.trim()
+      ? 'CHROME_PATH'
+      : process.env.CHROME_BIN?.trim()
+        ? 'CHROME_BIN'
+        : null
   const envPath =
     process.env.PUPPETEER_EXECUTABLE_PATH?.trim() ||
     process.env.CHROME_PATH?.trim() ||
@@ -123,112 +122,91 @@ function resolveConfiguredExecutablePath() {
 
   if (!envPath) return null
   if (!existsSync(envPath)) {
-    throw new Error(
-      `PUPPETEER_EXECUTABLE_PATH/CHROME_PATH pekar pa en fil som inte finns: ${envPath}`
-    )
+    console.warn('[report.pdf.render] configured chrome path does not exist, falling back', {
+      envKey: configuredKey,
+      path: envPath,
+    })
+    return null
   }
   return envPath
 }
 
-async function ensureBundledChromeExecutablePath() {
-  if (installedExecutablePath && existsSync(installedExecutablePath)) {
-    return installedExecutablePath
-  }
-
-  if (!installPromise) {
-    installPromise = (async () => {
-      const platform = detectBrowserPlatform()
-      if (!platform) {
-        throw new Error('Kunde inte identifiera plattform for Puppeteer Chrome-installation.')
-      }
-
-      const buildId = (puppeteer as unknown as { browserVersion?: string }).browserVersion
-      if (!buildId) {
-        throw new Error('Kunde inte lasa Puppeteer browserVersion.')
-      }
-
-      const configuredCacheDir = process.env.PUPPETEER_CACHE_DIR?.trim()
-      const defaultCacheDir =
-        process.platform === 'linux'
-          ? '/tmp/puppeteer'
-          : join(process.cwd(), '.cache', 'puppeteer')
-      const cacheDir = configuredCacheDir || defaultCacheDir
-
-      // In serverless Linux environments, /tmp is usually the only writable location.
-      mkdirSync(cacheDir, { recursive: true })
-
-      const installed = await install({
-        browser: BrowserKind.CHROME,
-        buildId,
-        platform,
-        cacheDir,
-      })
-
-      installedExecutablePath = installed.executablePath
-      return installed.executablePath
-    })()
+async function resolveLaunchConfig(
+  mark: (step: string, extra?: Record<string, unknown>) => void
+): Promise<LaunchConfig> {
+  const configuredExecutablePath = resolveConfiguredExecutablePath()
+  if (configuredExecutablePath) {
+    mark('browser_executable_resolved', {
+      source: 'env',
+      executablePath: configuredExecutablePath,
+    })
+    return {
+      executablePath: configuredExecutablePath,
+      args: BROWSER_ARGS,
+      source: 'env',
+    }
   }
 
   try {
-    return await installPromise
-  } finally {
-    installPromise = null
+    const sparticuzPath = await withTimeout(
+      chromium.executablePath(),
+      BROWSER_RESOLVE_TIMEOUT_MS,
+      `Kunde inte hitta Chromium-binär i tid (timeout ${BROWSER_RESOLVE_TIMEOUT_MS} ms).`
+    )
+
+    if (!sparticuzPath || !existsSync(sparticuzPath)) {
+      throw new Error('Sparticuz Chromium gav ingen giltig executable path.')
+    }
+
+    const args = Array.from(new Set([...(chromium.args ?? []), ...BROWSER_ARGS]))
+    mark('browser_executable_resolved', {
+      source: 'sparticuz',
+      executablePath: sparticuzPath,
+      argCount: args.length,
+    })
+
+    return {
+      executablePath: sparticuzPath,
+      args,
+      source: 'sparticuz',
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `Chrome saknas för PDF-rendering i servermiljön. ${message}. ` +
+        'Sätt PUPPETEER_EXECUTABLE_PATH till en giltig Chrome/Chromium-binär eller säkerställ att @sparticuz/chromium kan köras i deployment.'
+    )
   }
 }
 
-async function launchPdfBrowser(): Promise<{
+async function launchPdfBrowser(
+  mark: (step: string, extra?: Record<string, unknown>) => void
+): Promise<{
   browser: Awaited<ReturnType<typeof puppeteer.launch>>
   userDataDir: string
 }> {
-  const configuredExecutablePath = resolveConfiguredExecutablePath()
+  const launchConfig = await resolveLaunchConfig(mark)
 
-  const launchWith = async (executablePath?: string | null) => {
-    const userDataDir = allocateUserDataDir()
-    try {
-      const browser = await puppeteer.launch({
-        headless: true,
-        args: BROWSER_ARGS,
-        executablePath: executablePath ?? undefined,
-        userDataDir,
-        timeout: BROWSER_LAUNCH_TIMEOUT_MS,
-      })
-      return { browser, userDataDir }
-    } catch (error) {
-      safeRemoveDir(userDataDir)
-      if (isNoSpaceError(error)) {
-        pruneOldProfileDirs(0)
-      }
-      throw error
-    }
-  }
-
+  const userDataDir = allocateUserDataDir()
   try {
-    return await launchWith(configuredExecutablePath)
-  } catch (error) {
-    if (!isMissingChromeError(error)) {
-      throw error
-    }
-
-    if (!ALLOW_AUTOINSTALL) {
-      throw new Error(
-        'Chrome saknas for PDF-rendering. Satt PUPPETEER_EXECUTABLE_PATH eller aktivera PUPPETEER_ALLOW_AUTOINSTALL=1.'
-      )
-    }
-
-    const installedPath = await withTimeout(
-      ensureBundledChromeExecutablePath(),
-      BROWSER_INSTALL_TIMEOUT_MS,
-      `Chrome saknas för PDF-rendering och automatisk installation timeoutade efter ${BROWSER_INSTALL_TIMEOUT_MS} ms.`
-    ).catch((installError) => {
-      const installMessage =
-        installError instanceof Error ? installError.message : String(installError)
-      throw new Error(
-        `Chrome saknas för PDF-rendering och automatisk installation misslyckades. ${installMessage}. ` +
-          'Installera manuellt med `npx puppeteer browsers install chrome` eller sätt PUPPETEER_EXECUTABLE_PATH.'
-      )
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: launchConfig.args,
+      executablePath: launchConfig.executablePath,
+      userDataDir,
+      timeout: BROWSER_LAUNCH_TIMEOUT_MS,
     })
-
-    return await launchWith(installedPath)
+    mark('browser_launch_done', {
+      source: launchConfig.source,
+      launchTimeoutMs: BROWSER_LAUNCH_TIMEOUT_MS,
+    })
+    return { browser, userDataDir }
+  } catch (error) {
+    safeRemoveDir(userDataDir)
+    if (isNoSpaceError(error)) {
+      pruneOldProfileDirs(0)
+    }
+    throw error
   }
 }
 
@@ -241,13 +219,12 @@ export async function renderPreviewPdf(params: {
   const timeoutMs = params.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const traceId = params.traceId ?? `pdf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const mark = createRenderTimingLogger(traceId)
+
   mark('browser_launch_start', {
     launchTimeoutMs: BROWSER_LAUNCH_TIMEOUT_MS,
-    installTimeoutMs: BROWSER_INSTALL_TIMEOUT_MS,
-    autoinstall: ALLOW_AUTOINSTALL,
+    resolveTimeoutMs: BROWSER_RESOLVE_TIMEOUT_MS,
   })
-  const { browser, userDataDir } = await launchPdfBrowser()
-  mark('browser_launch_done')
+  const { browser, userDataDir } = await launchPdfBrowser(mark)
   let timeoutHandle: NodeJS.Timeout | null = null
 
   const renderPromise = (async () => {
@@ -276,7 +253,6 @@ export async function renderPreviewPdf(params: {
         })
         mark('network_idle_ready')
       } catch {
-        // Best-effort only. Some pages keep background requests open.
         mark('network_idle_skipped')
       }
 
