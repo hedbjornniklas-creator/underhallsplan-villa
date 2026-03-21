@@ -2542,6 +2542,40 @@ function RoomControlPointsSection({
                 />
               </div>
 
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-600">
+                  ⚠️ Riskanalys
+                </label>
+                <textarea
+                  rows={3}
+                  className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                  placeholder="Beskriv riskanalys..."
+                  value={ci.risk_text ?? ''}
+                  onChange={e =>
+                    ci.id &&
+                    onUpdateItem(ci.id, { risk_text: e.target.value })
+                  }
+                  readOnly={isInspectionLocked}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] text-gray-600">
+                  🔍 Fortsatt teknisk utredning (FTU)
+                </label>
+                <textarea
+                  rows={3}
+                  className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                  placeholder="Beskriv fortsatt teknisk utredning..."
+                  value={ci.ftu_text ?? ''}
+                  onChange={e =>
+                    ci.id &&
+                    onUpdateItem(ci.id, { ftu_text: e.target.value })
+                  }
+                  readOnly={isInspectionLocked}
+                />
+              </div>
+
               {ci.id && (
                 <ControlItemImagesSection
                   controlItem={ci}
