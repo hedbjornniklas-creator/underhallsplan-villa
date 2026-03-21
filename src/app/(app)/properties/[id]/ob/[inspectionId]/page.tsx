@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
@@ -55,13 +54,6 @@ type ObSnapshotSingleClient = {
     }
   }
 }
-type ExteriorSidebarItem = {
-  id: string
-  key: string
-  label: string
-  sort_order: number
-}
-
 function normalizeAssignmentRoleToInspectionSide(
   value: string | null | undefined
 ): 'buyer' | 'seller' | 'apartment' | null {
@@ -105,8 +97,6 @@ export default function InspectionDetailPage() {
   const [inspection, setInspection] = useState<Inspection | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [exteriorItems, setExteriorItems] = useState<ExteriorSidebarItem[]>([])
-  const [exteriorItemsLoaded, setExteriorItemsLoaded] = useState(false)
 
   // Starta på Grunddata
   const [activeSection, setActiveSection] = useState<ObSectionKey>('grunddata')
@@ -269,34 +259,6 @@ export default function InspectionDetailPage() {
     void load()
   }, [propertyId, inspectionId])
 
-  useEffect(() => {
-    if (activeSection !== 'utsida' || exteriorItemsLoaded) return
-
-    let cancelled = false
-
-    const loadExteriorItems = async () => {
-      const { data, error: itemsErr } = await supabase
-        .from('settings_exterior_items')
-        .select('id, key, label, sort_order')
-        .eq('is_active', true)
-        .order('sort_order', { ascending: true })
-
-      if (itemsErr) {
-        console.error('settings_exterior_items (sidebar) error:', itemsErr)
-      } else if (!cancelled) {
-        setExteriorItems((data ?? []) as ExteriorSidebarItem[])
-      }
-
-      if (!cancelled) setExteriorItemsLoaded(true)
-    }
-
-    void loadExteriorItems()
-
-    return () => {
-      cancelled = true
-    }
-  }, [activeSection, exteriorItemsLoaded])
-
   const isApartmentInspection =
     normalizeAssignmentRoleToInspectionSide(inspection?.inspection_side) === 'apartment'
   const visibleSections = getVisibleSections(isApartmentInspection)
@@ -381,36 +343,15 @@ export default function InspectionDetailPage() {
                       {section.label}
                     </button>
 
-                    {section.key === 'utsida' && activeSection === 'utsida' && exteriorItems.length > 0 && (
-                      <div className="mt-2 space-y-1 rounded-lg bg-white/65 px-3 py-2 ring-1 ring-gray-200/80">
-                        {exteriorItems.map((item) => (
-                          <a
-                            key={item.id}
-                            href={`#utsida-${item.key}`}
-                            className="block text-xs text-gray-600 hover:text-gray-900"
-                          >
-                            {item.label}
-                          </a>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 ))}
 
-                <div className="pt-1">
-                  <Link
-                    href={`/properties/${propertyId}/ob/${inspectionId}/delivery-2`}
-                    className="block w-full rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-left text-sm font-medium text-indigo-700 hover:bg-indigo-100"
-                  >
-                    Skicka utlåtande 2
-                  </Link>
-                </div>
               </nav>
             </div>
 
             <div
               className={
-                activeSection === 'insida'
+                activeSection === 'insida' || activeSection === 'utsida'
                   ? 'p-0 md:p-0'
                   : 'rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:p-4'
               }

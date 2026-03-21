@@ -1344,6 +1344,12 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     yttertak: '\u{1F3E1}',
     ovrigt: '\u2795',
   }
+  const scrollToItemAnchor = (itemKey: string) => {
+    if (!itemKey) return
+    const element = document.getElementById(`utsida-${itemKey}`)
+    if (!element) return
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   const controlItemsByObservationId: Record<string, InspectionControlItem[]> =
     controlItems.reduce((map, ci) => {
@@ -1491,6 +1497,20 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             kan användas för kompletterande information.
           </p>
         </header>
+
+        <section className="flex flex-wrap items-center gap-2">
+          {items.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => scrollToItemAnchor(item.key)}
+              className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-gray-800 hover:bg-gray-50"
+            >
+              <span className="mr-1">{itemEmoji[item.key] || '•'}</span>
+              {item.label}
+            </button>
+          ))}
+        </section>
       </section>
 
       <section className="space-y-4">
@@ -1642,6 +1662,45 @@ function ExteriorControlPointsSection({
       items: list.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
     }))
   }, [items])
+  const [expandedOkGroupIds, setExpandedOkGroupIds] = useState<Set<string>>(
+    () => new Set()
+  )
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
+    () => new Set()
+  )
+  const expandOkGroup = (groupId: string) => {
+    setExpandedOkGroupIds(prev => {
+      const next = new Set(prev)
+      next.add(groupId)
+      return next
+    })
+  }
+
+  const collapseOkGroup = (groupId: string) => {
+    setExpandedOkGroupIds(prev => {
+      if (!prev.has(groupId)) return prev
+      const next = new Set(prev)
+      next.delete(groupId)
+      return next
+    })
+  }
+
+  const collapseGroup = (groupId: string) => {
+    setCollapsedGroupIds(prev => {
+      const next = new Set(prev)
+      next.add(groupId)
+      return next
+    })
+  }
+
+  const expandGroup = (groupId: string) => {
+    setCollapsedGroupIds(prev => {
+      if (!prev.has(groupId)) return prev
+      const next = new Set(prev)
+      next.delete(groupId)
+      return next
+    })
+  }
 
   return (
     <section className="space-y-3">
@@ -1657,11 +1716,12 @@ function ExteriorControlPointsSection({
       <div className="space-y-2">
         {items.length === 0 && (
           <div className="text-xs text-gray-500">
-            Inga kontrollpunkter ännu. Lägg till via knappen "Lägg till ytterligare kontrollpunkt".
+            Inga kontrollpunkter ännu. Lägg till via knappen Lägg till ytterligare kontrollpunkt.
           </div>
         )}
 
         {groupedItems.map(group => {
+          const groupId = group.controlPointId
           const baseItem = group.items[0]
           if (!baseItem) return null
           const outcomes = outcomesByControlPointId[group.controlPointId] || []
@@ -1671,30 +1731,102 @@ function ExteriorControlPointsSection({
           const isGreen = selectedItems.length === 0 && baseItem.status === 'ok'
           const isYellow = selectedItems.length > 0
           const isRed = !isGreen && !isYellow
+          const isCollapsedGreen = isGreen && !expandedOkGroupIds.has(groupId)
+          const isCollapsedManually = collapsedGroupIds.has(groupId)
+          const isCollapsed = isCollapsedGreen || isCollapsedManually
           const rowToneClass = isRed
             ? 'bg-red-50 border-red-200'
             : isGreen
             ? 'bg-emerald-50 border-emerald-200'
             : 'bg-amber-50 border-amber-200'
 
+          if (isCollapsed) {
+            const collapsedBadgeClass = isGreen
+              ? 'border-emerald-300 text-emerald-700'
+              : isYellow
+              ? 'border-amber-300 text-amber-700'
+              : 'border-red-300 text-red-700'
+            const collapsedBadgeText = isGreen
+              ? 'Inget att notera'
+              : isYellow
+              ? `${selectedItems.length} vald${selectedItems.length === 1 ? '' : 'a'} chip`
+              : 'Ej färdig'
+            return (
+              <div
+                key={group.controlPointId}
+                className={`rounded-lg border px-3 py-2 ${rowToneClass}`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="text-xs font-semibold text-gray-900 truncate">
+                    {baseItem.title}
+                  </div>
+                  <span
+                    className={`rounded-full border bg-white px-2 py-0.5 text-[10px] font-medium ${collapsedBadgeClass}`}
+                  >
+                    {collapsedBadgeText}
+                  </span>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isGreen) expandOkGroup(groupId)
+                        expandGroup(groupId)
+                      }}
+                      className="text-[11px] text-gray-700 hover:underline"
+                    >
+                      Visa
+                    </button>
+                    {baseItem.id && (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteItemGroup(baseItem)}
+                        className="text-[11px] text-rose-600 hover:underline"
+                        disabled={isInspectionLocked}
+                      >
+                        Ta bort
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          }
+
           return (
             <div
               key={group.controlPointId}
               className={`rounded-lg border px-3 py-2 space-y-2 ${rowToneClass}`}
             >
-              <div className="flex items-center justify_between gap-2">
+              <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-semibold text-gray-900">
                   {baseItem.title}
                 </div>
-                {baseItem.id && (
+                <div className="ml-auto flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => onDeleteItemGroup(baseItem)}
-                    className="ml-auto text-[11px] text-rose-600 hover:underline"
+                    onClick={() => {
+                      if (isGreen) {
+                        collapseOkGroup(groupId)
+                        expandGroup(groupId)
+                      } else {
+                        collapseGroup(groupId)
+                      }
+                    }}
+                    className="text-[11px] text-gray-700 hover:underline"
                   >
-                    Ta bort
+                    Dölj
                   </button>
-                )}
+                  {baseItem.id && (
+                    <button
+                      type="button"
+                      onClick={() => onDeleteItemGroup(baseItem)}
+                      className="text-[11px] text-rose-600 hover:underline"
+                      disabled={isInspectionLocked}
+                    >
+                      Ta bort
+                    </button>
+                  )}
+                </div>
               </div>
 
               {description.length > 0 && (
@@ -2117,15 +2249,20 @@ function FreeNotesSection({
 
   return (
     <section className="space-y-3">
-      <header className="flex flex_wrap items-center justify_between gap-2">
-        <h4 className="text-sm font-semibold text-gray-900">
-          Fria noteringar – {item.label}
-        </h4>
+      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h4 className="text-sm font-semibold text-gray-900">
+            Fria noteringar – {item.label}
+          </h4>
+          <span className="text-[11px] text-gray-500">
+            Noteringarna här gäller den valda komponenten.
+          </span>
+        </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={onAddFreeNote}
-            className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
+            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
             disabled={isInspectionLocked}
           >
             + Lägg till fri notering
@@ -2133,7 +2270,7 @@ function FreeNotesSection({
           <button
             type="button"
             onClick={handleToggleSearch}
-            className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
+            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
             disabled={isInspectionLocked}
           >
             + Lägg till ytterligare kontrollpunkt
