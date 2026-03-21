@@ -56,14 +56,6 @@ export default async function PublicReportPage({
           <p className="text-sm text-slate-700">Rapporten är tillgänglig som PDF.</p>
           <div className="flex flex-wrap gap-2">
             <Link
-              href={pdfInlineUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-            >
-              Öppna PDF
-            </Link>
-            <Link
               href={pdfDownloadUrl}
               target="_blank"
               rel="noreferrer"

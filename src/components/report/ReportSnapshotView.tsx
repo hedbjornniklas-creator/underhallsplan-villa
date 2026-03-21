@@ -5,6 +5,7 @@ import { loadAppendixText } from '@/lib/report/loadAppendixText'
 import {
   defaultCoverIllustrationSrc,
   footerImageSrc,
+  hushubLogoSrc,
   sbrLogoSrc,
 } from '@/lib/report/reportAssets'
 
@@ -204,7 +205,6 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
   const showHeader = props.showHeader !== false
   const showActions =
     props.showPdfActions !== false &&
-    Boolean(props.pdfInlineUrl) &&
     Boolean(props.pdfDownloadUrl)
 
   const mock = (props.snapshot.reportData?.mock ?? {}) as Record<string, unknown>
@@ -264,35 +264,32 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
       <div className="mx-auto max-w-6xl space-y-4">
         {showHeader ? (
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex items-start gap-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-[auto_1fr_auto] md:items-center">
+              <img
+                src={hushubLogoSrc}
+                alt="Hushub-logotyp"
+                className="h-10 w-auto justify-self-start object-contain"
+              />
+              <div className="flex flex-wrap items-center justify-center gap-3">
                 {companyLogoUrl ? (
                   <img
                     src={companyLogoUrl}
-                    alt="Företagslogotyp"
+                    alt="Besiktningsmannens logotyp"
                     className="h-10 w-10 rounded-md border border-slate-200 bg-white object-contain"
                   />
                 ) : null}
-                <div>
+                <div className="text-center">
                   <h1 className="text-2xl font-semibold text-slate-900">{heading}</h1>
                   <p className="mt-1 text-sm text-slate-600">{subtitle}</p>
                 </div>
+                <img
+                  src={sbrLogoSrc}
+                  alt="SBR-logotyp"
+                  className="h-10 w-auto rounded-md border border-slate-200 bg-white p-1"
+                />
               </div>
-              <img
-                src={sbrLogoSrc}
-                alt="SBR-logotyp"
-                className="h-10 w-auto rounded-md border border-slate-200 bg-white p-1"
-              />
               {showActions ? (
-                <div className="flex flex-wrap gap-2">
-                  <Link
-                    href={props.pdfInlineUrl as string}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                  >
-                    Öppna PDF
-                  </Link>
+                <div className="flex flex-wrap gap-2 md:justify-self-end">
                   <Link
                     href={props.pdfDownloadUrl as string}
                     target="_blank"
