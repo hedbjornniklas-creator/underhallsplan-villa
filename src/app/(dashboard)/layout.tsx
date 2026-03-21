@@ -4,13 +4,14 @@ import type { ReactNode } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Power } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useProfile } from '@/hooks/useProfile'
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter()
+  const pathname = usePathname()
   const { profile } = useProfile()
   const [email, setEmail] = useState<string | null>(null)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -32,6 +33,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   const displayName = profile?.full_name?.trim() || null
   const hasUser = isLoggedIn
+  const normalizedPathname =
+    pathname && pathname !== '/' && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
+  const isObRoot = normalizedPathname === '/ob'
+  const isObModuleSubpage = Boolean(normalizedPathname?.startsWith('/ob/'))
+  const useObBranding = isObModuleSubpage && !isObRoot
+  const logoHref = useObBranding ? '/ob' : '/dashboard-v1'
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -44,17 +51,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <div className="mx-auto grid h-14 w-full max-w-6xl grid-cols-3 items-center px-4 md:px-6">
           <div className="min-w-0">
             <Link
-              href="/dashboard-v1"
+              href={logoHref}
               className="inline-flex max-w-full items-center gap-1 text-sm font-medium text-gray-800 transition hover:text-gray-900"
             >
               <Image
-                src="/landing/Hushub-check.png"
-                alt="HusHub"
-                width={52}
-                height={32}
-                className="h-8 w-auto object-contain"
+                src={useObBranding ? '/report-assets/BesiktApp.png' : '/landing/Hushub-check.png'}
+                alt={useObBranding ? 'BesiktApp' : 'HusHub'}
+                width={useObBranding ? 156 : 52}
+                height={useObBranding ? 36 : 32}
+                className={`h-8 w-auto object-contain ${useObBranding ? 'pr-1' : ''}`}
               />
-              <span className="text-xl font-semibold tracking-tight text-gray-900">HusHub</span>
+              {!useObBranding ? (
+                <span className="text-xl font-semibold tracking-tight text-gray-900">HusHub</span>
+              ) : null}
             </Link>
           </div>
 

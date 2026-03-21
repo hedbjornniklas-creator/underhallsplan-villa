@@ -66,6 +66,7 @@ type InspectionRow = {
 
 type BookedAssignmentRow = {
   id: string
+  status: string | null
   customer_name: string | null
   customer_email: string | null
   property_address: string | null
@@ -148,7 +149,7 @@ function resolvePublicMediaUrl(path: string | null | undefined) {
 }
 
 function getStatusLabel(status: string | null) {
-  switch (status) {
+  switch (getStatusBucket(status)) {
     case 'draft':
       return 'Utkast'
     case 'completed':
@@ -156,8 +157,16 @@ function getStatusLabel(status: string | null) {
     case 'archived':
       return 'Arkiverad'
     default:
-      return status ?? 'Ok\u00e4nd'
+      return 'Pågående'
   }
+}
+
+function getStatusBucket(status: string | null): 'draft' | 'ongoing' | 'completed' | 'archived' {
+  const value = status?.trim().toLowerCase() ?? ''
+  if (value === 'draft' || value === 'utkast') return 'draft'
+  if (value === 'completed' || value === 'klar' || value === 'done') return 'completed'
+  if (value === 'archived' || value === 'arkiverad') return 'archived'
+  return 'ongoing'
 }
 
 function formatDate(raw: string | null) {
@@ -850,7 +859,7 @@ export default function OverlatelsebesiktningPage() {
             supabase
               .from('assignments')
               .select(
-                'id,customer_name,customer_email,property_address,preliminary_address,preferred_date,booked_at'
+                'id,status,customer_name,customer_email,property_address,preliminary_address,preferred_date,booked_at'
               )
               .eq('responsible_profile_id', user.id)
               .eq('status', 'booked')
@@ -869,15 +878,15 @@ export default function OverlatelsebesiktningPage() {
           console.error('Could not load booked assignments for create card:', bookedAssignmentsLoadError)
           if (!cancelled) setBookedAssignmentsError('Kunde inte hämta bokade uppdragsbekräftelser.')
         } else if (!cancelled) {
-          const mappedBookedAssignments = ((bookedAssignmentsData ?? []) as BookedAssignmentRow[]).map(
-            (assignment) => ({
+          const mappedBookedAssignments = ((bookedAssignmentsData ?? []) as BookedAssignmentRow[])
+            .filter((assignment) => (assignment.status ?? '').trim().toLowerCase() === 'booked')
+            .map((assignment) => ({
               id: assignment.id,
               customer: assignment.customer_name ?? assignment.customer_email ?? null,
               address: assignment.property_address ?? assignment.preliminary_address ?? null,
               preferredDate: assignment.preferred_date ?? null,
               bookedAt: assignment.booked_at ?? null,
-            })
-          )
+            }))
           setBookedAssignments(mappedBookedAssignments)
         }
 
@@ -895,7 +904,7 @@ export default function OverlatelsebesiktningPage() {
             .in('property_id', propertyIds)
             .order('date', { ascending: false, nullsFirst: false })
             .order('created_at', { ascending: false })
-            .limit(8)
+            .limit(24)
 
           if (inspectionError) throw inspectionError
 
@@ -918,7 +927,7 @@ export default function OverlatelsebesiktningPage() {
             ((snapshotData ?? []) as SnapshotRow[]).map((snapshot) => [snapshot.inspection_id, snapshot])
           )
 
-          mapped = rows.map((inspection) => {
+          const rawMapped = rows.map((inspection) => {
             const property = propertyMap.get(inspection.property_id)
             const snapshot = snapshotMap.get(inspection.id)
             return {
@@ -929,6 +938,15 @@ export default function OverlatelsebesiktningPage() {
               href: `/properties/${inspection.property_id}/ob/${inspection.id}`,
             }
           })
+
+          const ongoingInspections = rawMapped.filter(
+            (inspection) => getStatusBucket(inspection.status) === 'ongoing'
+          )
+          const completedInspections = rawMapped.filter(
+            (inspection) => getStatusBucket(inspection.status) === 'completed'
+          )
+
+          mapped = [...ongoingInspections, ...completedInspections]
         }
 
         if (!cancelled) setInspections(mapped)

@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ChevronsLeft, Plus } from 'lucide-react'
+import { Archive, ArrowLeft, ChevronsLeft, Play, Plus } from 'lucide-react'
 import Protected from '@/components/Protected'
 
 type AssignmentItem = {
@@ -66,7 +66,7 @@ const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'ordered', label: 'Godkänd' },
   { key: 'booked', label: 'Bokad' },
   { key: 'completed', label: 'Klar' },
-  { key: 'cancelled', label: 'Makulerad' },
+  { key: 'cancelled', label: 'Arkiverad' },
   { key: 'expired', label: 'Utgången länk' },
 ]
 
@@ -83,7 +83,7 @@ function getStatusLabel(status: AssignmentItem['status']) {
     case 'expired':
       return 'Utgången länk'
     case 'cancelled':
-      return 'Makulerad'
+      return 'Arkiverad'
     default:
       return 'Utkast'
   }
@@ -237,6 +237,9 @@ export default function ObAssignmentsPage() {
   const [showExpired, setShowExpired] = useState(false)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [currentPage, setCurrentPage] = useState(1)
+  const [actionState, setActionState] = useState<{ id: string; type: 'archive' | 'convert' } | null>(
+    null
+  )
 
   const loadAssignments = async () => {
     try {
@@ -456,6 +459,77 @@ export default function ObAssignmentsPage() {
     router.push(`/ob/assignments/${assignmentId}`)
   }
 
+  const canArchive = (item: AssignmentItem) =>
+    item.status !== 'cancelled' &&
+    item.status !== 'sent' &&
+    item.status !== 'ordered' &&
+    item.status !== 'booked'
+
+  const canStartInspection = (item: AssignmentItem) =>
+    item.status === 'booked' && !item.inspection_id
+
+  const handleArchive = async (item: AssignmentItem) => {
+    if (!canArchive(item)) return
+    const confirmed = window.confirm('Är du säker på att du vill arkivera uppdragsbekräftelsen?')
+    if (!confirmed) return
+
+    try {
+      setError(null)
+      setActionState({ id: item.id, type: 'archive' })
+      const response = await fetch(`/api/ob/assignments/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'cancelled' }),
+      })
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; assignment?: AssignmentItem }
+        | null
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'Kunde inte arkivera uppdragsbekräftelsen.')
+      }
+
+      const updated = payload?.assignment
+      if (updated) {
+        setItems((prev) => prev.map((row) => (row.id === updated.id ? updated : row)))
+      } else {
+        await loadAssignments()
+      }
+    } catch (archiveError) {
+      setError(
+        archiveError instanceof Error
+          ? archiveError.message
+          : 'Kunde inte arkivera uppdragsbekräftelsen.'
+      )
+    } finally {
+      setActionState(null)
+    }
+  }
+
+  const handleConvertToInspection = async (item: AssignmentItem) => {
+    if (!canStartInspection(item)) return
+    try {
+      setError(null)
+      setActionState({ id: item.id, type: 'convert' })
+      const response = await fetch(`/api/ob/assignments/${item.id}/convert`, {
+        method: 'POST',
+      })
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; propertyId?: string; inspectionId?: string }
+        | null
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'Kunde inte starta besiktning.')
+      }
+      if (!payload?.propertyId || !payload?.inspectionId) {
+        throw new Error('Konvertering saknar property/inspection-id.')
+      }
+      router.push(`/properties/${payload.propertyId}/ob/${payload.inspectionId}`)
+    } catch (convertError) {
+      setError(convertError instanceof Error ? convertError.message : 'Kunde inte starta besiktning.')
+    } finally {
+      setActionState(null)
+    }
+  }
+
   return (
     <Protected>
       <main className="relative min-h-full overflow-hidden">
@@ -558,7 +632,7 @@ export default function ObAssignmentsPage() {
                       : 'rounded-md border border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50'
                   }
                 >
-                  {showCancelled ? 'Dölj makulerade' : 'Visa makulerade'}
+                  {showCancelled ? 'Dölj arkiverade' : 'Visa arkiverade'}
                 </button>
                 <button
                   type="button"
@@ -620,19 +694,20 @@ export default function ObAssignmentsPage() {
                       <th className="px-3 py-2">
                         <button
                           type="button"
-                          onClick={() => handleSort('created')}
+                          onClick={() => handleSort('preferred_date')}
                           className="inline-flex items-center gap-1 font-semibold hover:text-gray-900"
                         >
-                          Skapad <span>{getSortIndicator(sortField === 'created', sortDirection)}</span>
+                          Besiktningsdag{' '}
+                          <span>{getSortIndicator(sortField === 'preferred_date', sortDirection)}</span>
                         </button>
                       </th>
                       <th className="px-3 py-2">
                         <button
                           type="button"
-                          onClick={() => handleSort('status')}
+                          onClick={() => handleSort('created')}
                           className="inline-flex items-center gap-1 font-semibold hover:text-gray-900"
                         >
-                          Status <span>{getSortIndicator(sortField === 'status', sortDirection)}</span>
+                          Skapad <span>{getSortIndicator(sortField === 'created', sortDirection)}</span>
                         </button>
                       </th>
                       <th className="px-3 py-2">
@@ -656,17 +731,23 @@ export default function ObAssignmentsPage() {
                       <th className="px-3 py-2">
                         <button
                           type="button"
-                          onClick={() => handleSort('preferred_date')}
+                          onClick={() => handleSort('status')}
                           className="inline-flex items-center gap-1 font-semibold hover:text-gray-900"
                         >
-                          Besiktningsdag{' '}
-                          <span>{getSortIndicator(sortField === 'preferred_date', sortDirection)}</span>
+                          Status <span>{getSortIndicator(sortField === 'status', sortDirection)}</span>
                         </button>
                       </th>
+                      <th className="px-3 py-2 text-right font-semibold">Åtgärder</th>
                     </tr>
                   </thead>
                   <tbody>
                     {pagedRows.map((item) => {
+                      const archiveEnabled = canArchive(item)
+                      const convertEnabled = canStartInspection(item)
+                      const archiveBusy =
+                        actionState?.id === item.id && actionState?.type === 'archive'
+                      const convertBusy =
+                        actionState?.id === item.id && actionState?.type === 'convert'
                       return (
                         <tr
                           key={item.id}
@@ -682,15 +763,55 @@ export default function ObAssignmentsPage() {
                           }}
                           className={`cursor-pointer border-b last:border-b-0 focus-visible:outline-none ${getStatusRowClass(item.status)}`}
                         >
+                          <td className="px-3 py-2 align-middle whitespace-nowrap">{formatDate(item.preferred_date)}</td>
                           <td className="px-3 py-2 align-middle whitespace-nowrap">{formatDate(item.created_at)}</td>
-                          <td className="px-3 py-2 align-middle whitespace-nowrap font-medium">
-                            {getStatusLabel(item.status)}
-                          </td>
                           <td className="px-3 py-2 align-middle">
                             <div>{item.customer_name || '-'}</div>
                           </td>
                           <td className="px-3 py-2 align-middle">{getAddress(item)}</td>
-                          <td className="px-3 py-2 align-middle whitespace-nowrap">{formatDate(item.preferred_date)}</td>
+                          <td className="px-3 py-2 align-middle whitespace-nowrap font-medium">
+                            {getStatusLabel(item.status)}
+                          </td>
+                          <td className="px-3 py-2 align-middle whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.preventDefault()
+                                  event.stopPropagation()
+                                  void handleArchive(item)
+                                }}
+                                disabled={!archiveEnabled || archiveBusy || Boolean(actionState)}
+                                title={
+                                  archiveEnabled
+                                    ? 'Arkivera uppdragsbekräftelse'
+                                    : 'Kan inte arkiveras i nuvarande status'
+                                }
+                                aria-label="Arkivera uppdragsbekräftelse"
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-300 bg-white/95 text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-45"
+                              >
+                                <Archive size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.preventDefault()
+                                  event.stopPropagation()
+                                  void handleConvertToInspection(item)
+                                }}
+                                disabled={!convertEnabled || convertBusy || Boolean(actionState)}
+                                title={
+                                  convertEnabled
+                                    ? 'Starta besiktning från bokad uppdragsbekräftelse'
+                                    : 'Tillgänglig när status är Bokad'
+                                }
+                                aria-label="Starta besiktning"
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-300 bg-white/95 text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-45"
+                              >
+                                <Play size={13} />
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       )
                     })}
