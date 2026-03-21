@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState, type ChangeEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
 
@@ -259,6 +259,8 @@ export default function ObStepGrunddata({
   const [savingOrderer, setSavingOrderer] = useState(false)
   const [uploadingCover, setUploadingCover] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const coverCameraInputRef = useRef<HTMLInputElement | null>(null)
+  const coverLibraryInputRef = useRef<HTMLInputElement | null>(null)
   const [inspectorProfile, setInspectorProfile] = useState<InspectorProfile | null>(null)
   const [inspectorAvatarLoadError, setInspectorAvatarLoadError] = useState(false)
   const [inspectionAddonOrders, setInspectionAddonOrders] = useState<InspectionAddonOrder[]>([])
@@ -968,8 +970,8 @@ export default function ObStepGrunddata({
 
           <div className="space-y-2">
             <div className="text-xs font-medium text-gray-600">Omslagsbild</div>
-            <label
-              className={`group relative block h-40 w-full overflow-hidden rounded-md border border-gray-300 bg-gray-50 ${isInspectionLocked ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
+            <div
+              className={`relative block h-40 w-full overflow-hidden rounded-md border border-gray-300 bg-gray-50 ${isInspectionLocked ? 'opacity-70' : ''}`}
             >
               {inspectionCoverSrc ? (
                 <img
@@ -982,22 +984,45 @@ export default function ObStepGrunddata({
                   Ingen omslagsbild vald
                 </div>
               )}
+            </div>
 
-              {!isInspectionLocked ? (
-                <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/45 text-xs font-medium text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-                  {inspectionCoverSrc ? 'Byt omslagsbild' : 'Ladda upp omslagsbild'}
-                </span>
-              ) : null}
-
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="sr-only"
-                disabled={isInspectionLocked || uploadingCover || savingInsp}
-                onChange={e => void handleInspectionCoverUpload(e)}
-              />
-            </label>
+            <input
+              ref={coverCameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="sr-only"
+              disabled={isInspectionLocked || uploadingCover || savingInsp}
+              onChange={e => void handleInspectionCoverUpload(e)}
+            />
+            <input
+              ref={coverLibraryInputRef}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              disabled={isInspectionLocked || uploadingCover || savingInsp}
+              onChange={e => void handleInspectionCoverUpload(e)}
+            />
+            {!isInspectionLocked ? (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => coverCameraInputRef.current?.click()}
+                  className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
+                  disabled={uploadingCover || savingInsp}
+                >
+                  Kamera
+                </button>
+                <button
+                  type="button"
+                  onClick={() => coverLibraryInputRef.current?.click()}
+                  className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
+                  disabled={uploadingCover || savingInsp}
+                >
+                  Fil
+                </button>
+              </div>
+            ) : null}
             {uploadingCover ? (
               <p className="text-[11px] text-gray-400">Laddar upp omslagsbild...</p>
             ) : null}

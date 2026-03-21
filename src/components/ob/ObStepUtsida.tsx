@@ -1538,7 +1538,8 @@ function ControlPointImagesSection({
   title,
   disabled = false,
 }: ControlPointImagesSectionProps) {
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const cameraInputRef = useRef<HTMLInputElement | null>(null)
+  const libraryInputRef = useRef<HTMLInputElement | null>(null)
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (disabled) return
@@ -1555,21 +1556,38 @@ function ControlPointImagesSection({
           <span aria-hidden="true">{'\u{1F4F7}'}</span>
           <span>{title ?? 'Bilder (denna kontrollpunkt)'}</span>
         </h5>
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-800 hover:bg-gray-50"
-          disabled={disabled}
-        >
-          + Lägg till bild
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-800 hover:bg-gray-50"
+            disabled={disabled}
+          >
+            Kamera
+          </button>
+          <button
+            type="button"
+            onClick={() => libraryInputRef.current?.click()}
+            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-800 hover:bg-gray-50"
+            disabled={disabled}
+          >
+            Fil
+          </button>
+        </div>
       </header>
 
       <input
-        ref={fileInputRef}
+        ref={cameraInputRef}
         type="file"
         accept="image/*"
         capture="environment"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+      <input
+        ref={libraryInputRef}
+        type="file"
+        accept="image/*"
         className="hidden"
         onChange={handleFileChange}
       />
