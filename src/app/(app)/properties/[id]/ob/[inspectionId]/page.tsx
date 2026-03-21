@@ -350,7 +350,11 @@ export default function InspectionDetailPage() {
             </div>
 
             <div
-              className="rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5
+              className={`${
+                activeSection === 'insida' || activeSection === 'utsida'
+                  ? 'p-0 md:p-0'
+                  : 'rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:p-4'
+              }
                 [&_input]:text-gray-900
                 [&_input]:placeholder:text-gray-500
                 [&_input]:border-gray-300
@@ -360,8 +364,7 @@ export default function InspectionDetailPage() {
                 [&_textarea]:text-sm
                 [&_textarea]:leading-5
                 [&_select]:text-gray-900
-                [&_select]:border-gray-300
-                md:p-4"
+                [&_select]:border-gray-300`}
             >
               <ObWizard
                 property={property}
