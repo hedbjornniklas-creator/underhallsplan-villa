@@ -1961,7 +1961,7 @@ function ExteriorControlPointsSection({
                     </label>
                     <textarea
                       rows={2}
-                      className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                       placeholder="Notering för just denna kontrollpunkt…"
                       value={baseItem.note ?? ''}
                       onChange={e =>
@@ -2022,7 +2022,7 @@ function ExteriorControlPointsSection({
                           </label>
                           <textarea
                             rows={2}
-                            className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                            className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                             placeholder="Notering för just detta chip…"
                             value={ci.note ?? ''}
                             onChange={e =>
@@ -2042,7 +2042,7 @@ function ExteriorControlPointsSection({
                                 </div>
                                 <textarea
                                   rows={3}
-                                  className="mt-1 w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                                   placeholder="Beskriv riskanalys..."
                                   value={riskText}
                                   onChange={e =>
@@ -2060,7 +2060,7 @@ function ExteriorControlPointsSection({
                                 </div>
                                 <textarea
                                   rows={3}
-                                  className="mt-1 w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                                   placeholder="Beskriv fortsatt teknisk utredning..."
                                   value={ftuText}
                                   onChange={e =>
@@ -2408,7 +2408,7 @@ function FreeNotesSection({
                     Del / rubrik (fri)
                   </label>
                   <input
-                    className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                     placeholder="t.ex. Uterum, altanräcke, stödmur…"
                     value={row.part_label ?? ''}
                     onChange={e =>
@@ -2434,7 +2434,7 @@ function FreeNotesSection({
                 </label>
                 <textarea
                   rows={2}
-                  className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                   placeholder="Beskrivning av observationen eller kompletterande upplysning…"
                   value={row.note ?? ''}
                   onChange={e =>
@@ -2451,7 +2451,7 @@ function FreeNotesSection({
                 </label>
                 <textarea
                   rows={3}
-                  className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                   placeholder="Beskriv riskanalys..."
                   value={row.risk_text ?? ''}
                   onChange={e =>
@@ -2468,7 +2468,7 @@ function FreeNotesSection({
                 </label>
                 <textarea
                   rows={3}
-                  className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                   placeholder="Beskriv fortsatt teknisk utredning..."
                   value={row.ftu_text ?? ''}
                   onChange={e =>

@@ -2549,7 +2549,7 @@ function RoomControlPointsSection({
                 </label>
                 <textarea
                   rows={2}
-                  className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                   placeholder="Fri notering för rummet…"
                   value={ci.note ?? ''}
                   onChange={e =>
@@ -2566,7 +2566,7 @@ function RoomControlPointsSection({
                 </label>
                 <textarea
                   rows={3}
-                  className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                   placeholder="Beskriv riskanalys..."
                   value={ci.risk_text ?? ''}
                   onChange={e =>
@@ -2583,7 +2583,7 @@ function RoomControlPointsSection({
                 </label>
                 <textarea
                   rows={3}
-                  className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                   placeholder="Beskriv fortsatt teknisk utredning..."
                   value={ci.ftu_text ?? ''}
                   onChange={e =>
@@ -2830,7 +2830,7 @@ function RoomControlPointsSection({
                     </label>
                     <textarea
                       rows={2}
-                      className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                       placeholder="Notering för just denna kontrollpunkt…"
                       value={baseItem.note ?? ''}
                       onChange={e =>
@@ -2892,7 +2892,7 @@ function RoomControlPointsSection({
                           </label>
                           <textarea
                             rows={2}
-                            className="w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                            className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                             placeholder="Notering för just detta chip…"
                             value={ci.note ?? ''}
                             onChange={e =>
@@ -2912,7 +2912,7 @@ function RoomControlPointsSection({
                                 </div>
                                 <textarea
                                   rows={3}
-                                  className="mt-1 w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                                   placeholder="Beskriv riskanalys..."
                                   value={riskText}
                                   onChange={e =>
@@ -2930,7 +2930,7 @@ function RoomControlPointsSection({
                                 </div>
                                 <textarea
                                   rows={3}
-                                  className="mt-1 w-full rounded-md border px-2 py-1.5 text-xs bg-white"
+                                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                                   placeholder="Beskriv fortsatt teknisk utredning..."
                                   value={ftuText}
                                   onChange={e =>
