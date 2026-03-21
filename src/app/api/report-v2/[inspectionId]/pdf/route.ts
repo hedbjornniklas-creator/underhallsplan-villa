@@ -1,29 +1,17 @@
-﻿import { NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
+const REPORT_PDF_SIGNED_URL_TTL_SECONDS = Math.max(
+  30,
+  Number(process.env.REPORT_PDF_SIGNED_URL_TTL_SECONDS ?? 120)
+)
 
 const decodeStoredPdf = (base64: string) => {
   try {
     const pdfBuffer = Buffer.from(base64, 'base64')
-    return pdfBuffer.length > 0 ? pdfBuffer : null
-  } catch {
-    return null
-  }
-}
-
-const tryDownloadStoredPdfFromStorage = async (
-  admin: ReturnType<typeof createSupabaseAdminClient>,
-  bucket: string,
-  path: string
-) => {
-  try {
-    const { data, error } = await admin.storage.from(bucket).download(path)
-    if (error || !data) return null
-    const arrayBuffer = await data.arrayBuffer()
-    const pdfBuffer = Buffer.from(arrayBuffer)
     return pdfBuffer.length > 0 ? pdfBuffer : null
   } catch {
     return null
@@ -48,8 +36,32 @@ const normalizePdfStatus = (value: unknown): 'pending' | 'processing' | 'ready' 
   return 'pending'
 }
 
+type LinkPdfRow = {
+  id: string
+  pdf_base64: string | null
+  pdf_storage_bucket: string | null
+  pdf_storage_path: string | null
+  pdf_status: string | null
+  pdf_error: string | null
+  created_at: string
+}
+
+async function createSignedPdfUrl(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  bucket: string,
+  path: string
+) {
+  const { data, error } = await admin.storage
+    .from(bucket)
+    .createSignedUrl(path, REPORT_PDF_SIGNED_URL_TTL_SECONDS, {
+      download: 'besiktningsutlatande.pdf',
+    })
+  if (error || !data?.signedUrl) return null
+  return data.signedUrl
+}
+
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ inspectionId: string }> }
 ) {
   const { inspectionId } = await context.params
@@ -82,14 +94,13 @@ export async function GET(
       })
     }
 
-    const { data: linkData, error: linkError } = await admin
+    const { data: linkRows, error: linkError } = await admin
       .from('inspection_report_links')
-      .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,pdf_error,revoked_at')
+      .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,pdf_error,created_at')
       .eq('inspection_id', inspectionId)
       .is('revoked_at', null)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+      .limit(25)
 
     if (linkError) {
       console.error('[report-v2.pdf] failed to read stored report pdf', {
@@ -99,41 +110,52 @@ export async function GET(
       return new NextResponse('Could not load stored report PDF.', { status: 500 })
     }
 
-    const storedPdfBucket = String((linkData as Record<string, unknown> | null)?.pdf_storage_bucket ?? '').trim()
-    const storedPdfPath = String((linkData as Record<string, unknown> | null)?.pdf_storage_path ?? '').trim()
+    const rows = (Array.isArray(linkRows) ? linkRows : []) as LinkPdfRow[]
+    const storageReadyRow = rows.find((row) => {
+      const bucket = String(row.pdf_storage_bucket ?? '').trim()
+      const path = String(row.pdf_storage_path ?? '').trim()
+      return bucket.length > 0 && path.length > 0 && normalizePdfStatus(row.pdf_status) === 'ready'
+    })
 
-    let storedPdfBuffer: Buffer | null = null
-    if (storedPdfBucket && storedPdfPath) {
-      storedPdfBuffer = await tryDownloadStoredPdfFromStorage(admin, storedPdfBucket, storedPdfPath)
+    if (storageReadyRow) {
+      const bucket = String(storageReadyRow.pdf_storage_bucket ?? '').trim()
+      const path = String(storageReadyRow.pdf_storage_path ?? '').trim()
+      const signedUrl = await createSignedPdfUrl(admin, bucket, path)
+      if (signedUrl) {
+        return NextResponse.redirect(signedUrl, 302)
+      }
+      return new NextResponse('Kunde inte skapa säker nedladdningslänk för PDF.', { status: 500 })
     }
 
-    if (!storedPdfBuffer) {
-      const storedPdfBase64 = String(linkData?.pdf_base64 ?? '').trim()
-      if (storedPdfBase64) storedPdfBuffer = decodeStoredPdf(storedPdfBase64)
-    }
-
-    if (!storedPdfBuffer) {
-      const pdfStatus = normalizePdfStatus((linkData as Record<string, unknown> | null)?.pdf_status)
-      const pdfError = String((linkData as Record<string, unknown> | null)?.pdf_error ?? '').trim()
-      if (pdfStatus === 'pending' || pdfStatus === 'processing') {
-        return new NextResponse('PDF genereras fortfarande i bakgrunden. Försök igen om en stund.', {
-          status: 409,
+    const legacyReadyRow = rows.find((row) => String(row.pdf_base64 ?? '').trim().length > 0)
+    if (legacyReadyRow) {
+      const storedPdfBase64 = String(legacyReadyRow.pdf_base64 ?? '').trim()
+      const storedPdfBuffer = decodeStoredPdf(storedPdfBase64)
+      if (storedPdfBuffer) {
+        return new NextResponse(new Uint8Array(storedPdfBuffer), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename="besiktningsutlatande.pdf"',
+            'Cache-Control': 'private, no-store',
+          },
         })
       }
-      if (pdfStatus === 'failed') {
-        const suffix = pdfError ? ` (${pdfError})` : ''
-        return new NextResponse(`PDF-generering misslyckades${suffix}.`, { status: 500 })
-      }
-      return new NextResponse('Ingen lagrad PDF hittades för denna besiktning.', { status: 404 })
     }
 
-    return new NextResponse(new Uint8Array(storedPdfBuffer), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Cache-Control': 'private, no-store',
-      },
-    })
+    const latestRow = rows[0] ?? null
+    const pdfStatus = normalizePdfStatus(latestRow?.pdf_status)
+    const pdfError = String(latestRow?.pdf_error ?? '').trim()
+    if (pdfStatus === 'pending' || pdfStatus === 'processing') {
+      return new NextResponse('PDF genereras fortfarande i bakgrunden. Försök igen om en stund.', {
+        status: 409,
+      })
+    }
+    if (pdfStatus === 'failed') {
+      const suffix = pdfError ? ` (${pdfError})` : ''
+      return new NextResponse(`PDF-generering misslyckades${suffix}.`, { status: 500 })
+    }
+    return new NextResponse('Ingen lagrad PDF hittades för denna besiktning.', { status: 404 })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     return new NextResponse(message, { status: 500 })

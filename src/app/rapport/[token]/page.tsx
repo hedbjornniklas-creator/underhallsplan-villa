@@ -18,6 +18,16 @@ export const metadata = {
   },
 }
 
+function normalizePdfStatus(value: unknown): 'pending' | 'processing' | 'ready' | 'failed' {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+  if (normalized === 'processing') return 'processing'
+  if (normalized === 'ready') return 'ready'
+  if (normalized === 'failed') return 'failed'
+  return 'pending'
+}
+
 export default async function PublicReportPage({
   params,
 }: {
@@ -32,7 +42,9 @@ export default async function PublicReportPage({
 
   const { data, error } = await admin
     .from('inspection_report_links')
-    .select('id,created_at,revoked_at,snapshot_payload')
+    .select(
+      'id,created_at,revoked_at,snapshot_payload,pdf_status,pdf_error,pdf_base64,pdf_storage_bucket,pdf_storage_path'
+    )
     .eq('token_hash', tokenHash)
     .maybeSingle()
 
@@ -45,25 +57,43 @@ export default async function PublicReportPage({
     ? data.snapshot_payload
     : null
 
+  const pdfBase64 = String((data as Record<string, unknown>).pdf_base64 ?? '').trim()
+  const pdfStorageBucket = String((data as Record<string, unknown>).pdf_storage_bucket ?? '').trim()
+  const pdfStoragePath = String((data as Record<string, unknown>).pdf_storage_path ?? '').trim()
+  const hasStoredPdf =
+    pdfBase64.length > 0 || (pdfStorageBucket.length > 0 && pdfStoragePath.length > 0)
+  const statusFromDb = normalizePdfStatus((data as Record<string, unknown>).pdf_status)
+  const pdfStatus = hasStoredPdf ? 'ready' : statusFromDb
+  const pdfError = String((data as Record<string, unknown>).pdf_error ?? '').trim() || null
+
   const pdfInlineUrl = `/api/reports/public/${encodeURIComponent(normalizedToken)}`
-  const pdfDownloadUrl = `${pdfInlineUrl}?download=1`
+  const pdfDownloadUrl = pdfStatus === 'ready' && hasStoredPdf ? `${pdfInlineUrl}?download=1` : null
 
   if (!snapshot) {
     return (
       <main className="min-h-screen bg-slate-100 px-4 py-8">
         <div className="mx-auto max-w-3xl space-y-4 rounded-xl border border-slate-200 bg-white p-5">
           <h1 className="text-xl font-semibold text-slate-900">Besiktningsutlåtande</h1>
-          <p className="text-sm text-slate-700">Rapporten är tillgänglig som PDF.</p>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href={pdfDownloadUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
-            >
-              Ladda ner PDF
-            </Link>
-          </div>
+          {pdfStatus === 'ready' && pdfDownloadUrl ? (
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={pdfDownloadUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+              >
+                Ladda ner PDF
+              </Link>
+            </div>
+          ) : pdfStatus === 'pending' || pdfStatus === 'processing' ? (
+            <p className="text-sm text-amber-700">PDF genereras fortfarande i bakgrunden. Försök igen om en stund.</p>
+          ) : pdfStatus === 'failed' ? (
+            <p className="text-sm text-rose-700">
+              PDF-generering misslyckades{pdfError ? `: ${pdfError}` : '.'}
+            </p>
+          ) : (
+            <p className="text-sm text-slate-700">Rapporten är ännu inte tillgänglig som PDF.</p>
+          )}
         </div>
       </main>
     )
@@ -75,6 +105,8 @@ export default async function PublicReportPage({
       heading={snapshot.inspectionSide === 'apartment' ? 'Lägenhetsbesiktning' : 'Besiktningsutlåtande'}
       pdfInlineUrl={pdfInlineUrl}
       pdfDownloadUrl={pdfDownloadUrl}
+      pdfStatus={pdfStatus}
+      pdfError={pdfError}
       showPdfActions
     />
   )

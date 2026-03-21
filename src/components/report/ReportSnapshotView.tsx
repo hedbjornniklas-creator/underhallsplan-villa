@@ -24,6 +24,8 @@ type ReportSnapshotViewProps = {
   subtitle?: string
   pdfInlineUrl?: string | null
   pdfDownloadUrl?: string | null
+  pdfStatus?: 'pending' | 'processing' | 'ready' | 'failed' | null
+  pdfError?: string | null
   showPdfActions?: boolean
   showHeader?: boolean
 }
@@ -116,15 +118,24 @@ function renderBlocks(items: SnapshotInspectionBlock[]) {
             className="rounded-lg border border-gray-200 bg-white p-3"
           >
             <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-            <p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">{note}</p>
+            <p className="mt-1 flex items-start gap-2 whitespace-pre-wrap text-sm text-gray-700">
+              <span aria-hidden="true">🧱</span>
+              <span>{note}</span>
+            </p>
             {risk ? (
-              <p className="mt-2 whitespace-pre-wrap text-xs text-rose-800">
-                <span className="font-semibold">Risk:</span> {risk}
+              <p className="mt-2 flex items-start gap-2 whitespace-pre-wrap text-xs text-rose-800">
+                <span aria-hidden="true">⚠️</span>
+                <span>
+                  <span className="font-semibold">Risk:</span> {risk}
+                </span>
               </p>
             ) : null}
             {ftu ? (
-              <p className="mt-1 whitespace-pre-wrap text-xs text-amber-800">
-                <span className="font-semibold">FTU:</span> {ftu}
+              <p className="mt-1 flex items-start gap-2 whitespace-pre-wrap text-xs text-amber-800">
+                <span aria-hidden="true">🔍</span>
+                <span>
+                  <span className="font-semibold">FTU:</span> {ftu}
+                </span>
               </p>
             ) : null}
             {photos.length > 0 ? (
@@ -206,6 +217,14 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
   const showActions =
     props.showPdfActions !== false &&
     Boolean(props.pdfDownloadUrl)
+  const showPendingPdfNotice =
+    props.showPdfActions !== false &&
+    !showActions &&
+    (props.pdfStatus === 'pending' || props.pdfStatus === 'processing')
+  const showFailedPdfNotice =
+    props.showPdfActions !== false &&
+    !showActions &&
+    props.pdfStatus === 'failed'
 
   const mock = (props.snapshot.reportData?.mock ?? {}) as Record<string, unknown>
   const exteriorBlocks = getBlockArrayByPath(mock, 'exterior.blocks')
@@ -288,8 +307,8 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                   className="h-10 w-auto rounded-md border border-slate-200 bg-white p-1"
                 />
               </div>
-              {showActions ? (
-                <div className="flex flex-wrap gap-2 md:justify-self-end">
+              <div className="flex flex-wrap gap-2 md:justify-self-end">
+                {showActions ? (
                   <Link
                     href={props.pdfDownloadUrl as string}
                     target="_blank"
@@ -298,8 +317,19 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                   >
                     Ladda ner PDF
                   </Link>
-                </div>
-              ) : null}
+                ) : null}
+                {showPendingPdfNotice ? (
+                  <p className="max-w-xs text-right text-xs text-amber-700">
+                    PDF genereras fortfarande i bakgrunden.
+                  </p>
+                ) : null}
+                {showFailedPdfNotice ? (
+                  <p className="max-w-xs text-right text-xs text-rose-700">
+                    PDF-generering misslyckades
+                    {props.pdfError ? `: ${props.pdfError}` : '.'}
+                  </p>
+                ) : null}
+              </div>
             </div>
           </section>
         ) : null}

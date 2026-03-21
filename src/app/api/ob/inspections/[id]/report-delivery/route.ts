@@ -449,23 +449,37 @@ async function getReportPdfState(admin: AdminClient, inspectionId: string): Prom
     .eq('inspection_id', inspectionId)
     .is('revoked_at', null)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+    .limit(25)
 
   if (error) {
     throw new Error(error.message ?? 'Kunde inte läsa PDF-status för utlåtandet.')
   }
 
-  const pdfBase64 = String(data?.pdf_base64 ?? '').trim()
-  const pdfStorageBucket = String((data as Record<string, unknown> | null)?.pdf_storage_bucket ?? '').trim()
-  const pdfStoragePath = String((data as Record<string, unknown> | null)?.pdf_storage_path ?? '').trim()
-  const hasStoredPdf = pdfBase64.length > 0 || (pdfStorageBucket.length > 0 && pdfStoragePath.length > 0)
-  const statusFromDb = normalizePdfStatus((data as Record<string, unknown> | null)?.pdf_status)
+  const rows = Array.isArray(data) ? data : []
+  const latestRow = (rows[0] as Record<string, unknown> | undefined) ?? null
+  const readyRow =
+    (rows.find((row) => {
+      const record = row as Record<string, unknown>
+      const pdfBase64 = String(record.pdf_base64 ?? '').trim()
+      const pdfStorageBucket = String(record.pdf_storage_bucket ?? '').trim()
+      const pdfStoragePath = String(record.pdf_storage_path ?? '').trim()
+      return (
+        pdfBase64.length > 0 ||
+        (pdfStorageBucket.length > 0 &&
+          pdfStoragePath.length > 0 &&
+          normalizePdfStatus(record.pdf_status) === 'ready')
+      )
+    }) as Record<string, unknown> | undefined) ?? null
+
+  const hasStoredPdf = Boolean(readyRow)
+  const statusFromDb = normalizePdfStatus(latestRow?.pdf_status)
   const pdfStatus: PdfStatus = hasStoredPdf ? 'ready' : statusFromDb
-  const pdfError = String((data as Record<string, unknown> | null)?.pdf_error ?? '').trim() || null
+  const pdfError = hasStoredPdf
+    ? null
+    : String(latestRow?.pdf_error ?? '').trim() || null
   return {
     hasStoredPdf,
-    latestLinkId: (data?.id as string | undefined) ?? null,
+    latestLinkId: (readyRow?.id as string | undefined) ?? (latestRow?.id as string | undefined) ?? null,
     pdfStatus,
     pdfError,
   }

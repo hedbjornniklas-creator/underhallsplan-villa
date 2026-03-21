@@ -4,6 +4,10 @@ import { hashAssignmentToken } from '@/lib/assignments/tokens'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+const REPORT_PDF_SIGNED_URL_TTL_SECONDS = Math.max(
+  30,
+  Number(process.env.REPORT_PDF_SIGNED_URL_TTL_SECONDS ?? 120)
+)
 
 function notFoundResponse() {
   return new NextResponse('Not found', { status: 404 })
@@ -38,16 +42,23 @@ function decodeBase64(base64: string, linkId: string): Buffer {
   return pdfBuffer
 }
 
-async function tryDownloadStoredPdfFromStorage(
+async function createSignedPdfUrl(
   admin: ReturnType<typeof createSupabaseAdminClient>,
   bucket: string,
   path: string,
+  asAttachment: boolean,
+  fileName: string,
   linkId: string
 ) {
   try {
-    const { data, error } = await admin.storage.from(bucket).download(path)
-    if (error || !data) {
-      console.error('[reports.public] storage download failed', {
+    const { data, error } = await admin.storage
+      .from(bucket)
+      .createSignedUrl(path, REPORT_PDF_SIGNED_URL_TTL_SECONDS, {
+        download: asAttachment ? fileName : false,
+      })
+
+    if (error || !data?.signedUrl) {
+      console.error('[reports.public] signed url failed', {
         linkId,
         bucket,
         path,
@@ -56,15 +67,13 @@ async function tryDownloadStoredPdfFromStorage(
       return null
     }
 
-    const arrayBuffer = await data.arrayBuffer()
-    const pdfBuffer = Buffer.from(arrayBuffer)
-    return pdfBuffer.length > 0 ? pdfBuffer : null
-  } catch (downloadError) {
-    console.error('[reports.public] storage download exception', {
+    return data.signedUrl
+  } catch (signedUrlError) {
+    console.error('[reports.public] signed url exception', {
       linkId,
       bucket,
       path,
-      error: downloadError instanceof Error ? downloadError.message : String(downloadError),
+      error: signedUrlError instanceof Error ? signedUrlError.message : String(signedUrlError),
     })
     return null
   }
@@ -100,40 +109,43 @@ export async function GET(
       return notFoundResponse()
     }
 
-    let pdfBuffer: Buffer | null = null
+    const asAttachment = new URL(request.url).searchParams.get('download') === '1'
+    const fileName = 'besiktningsutlatande.pdf'
     const pdfBase64 = String(data.pdf_base64 ?? '').trim()
     const pdfStorageBucket = String((data as Record<string, unknown>).pdf_storage_bucket ?? '').trim()
     const pdfStoragePath = String((data as Record<string, unknown>).pdf_storage_path ?? '').trim()
+    const hasStorageRef = pdfStorageBucket.length > 0 && pdfStoragePath.length > 0
+    const hasLegacyPdf = pdfBase64.length > 0
+    const pdfStatus = normalizePdfStatus((data as Record<string, unknown>).pdf_status)
+    const pdfError = String((data as Record<string, unknown>).pdf_error ?? '').trim()
 
-    const tryDecodeStoredPdf = () => {
-      if (pdfBase64 === '') return null
+    if (hasStorageRef && pdfStatus === 'ready') {
+      const signedUrl = await createSignedPdfUrl(
+        admin,
+        pdfStorageBucket,
+        pdfStoragePath,
+        asAttachment,
+        fileName,
+        String(data.id)
+      )
+      if (signedUrl) {
+        return NextResponse.redirect(signedUrl, 302)
+      }
+    }
+
+    let pdfBuffer: Buffer | null = null
+    if (!hasStorageRef && hasLegacyPdf) {
       try {
-        return decodeBase64(pdfBase64, String(data.id))
+        pdfBuffer = decodeBase64(pdfBase64, String(data.id))
       } catch (decodeError) {
         console.error('[reports.public] stored pdf decode failed', {
           linkId: data.id,
           error: decodeError instanceof Error ? decodeError.message : String(decodeError),
         })
-        return null
       }
     }
 
-    if (pdfStorageBucket && pdfStoragePath) {
-      pdfBuffer = await tryDownloadStoredPdfFromStorage(
-        admin,
-        pdfStorageBucket,
-        pdfStoragePath,
-        String(data.id)
-      )
-    }
-
     if (!pdfBuffer) {
-      pdfBuffer = tryDecodeStoredPdf()
-    }
-
-    if (!pdfBuffer) {
-      const pdfStatus = normalizePdfStatus((data as Record<string, unknown>).pdf_status)
-      const pdfError = String((data as Record<string, unknown>).pdf_error ?? '').trim()
       console.error('[reports.public] stored pdf missing', {
         linkId: data.id,
         deliveryMode: data.delivery_mode ?? null,
@@ -148,16 +160,12 @@ export async function GET(
         const suffix = pdfError ? ` (${pdfError})` : ''
         return new NextResponse(`PDF-generering misslyckades${suffix}.`, { status: 500 })
       }
+      if (hasStorageRef && !hasLegacyPdf) {
+        return new NextResponse('Kunde inte skapa säker nedladdningslänk för PDF.', { status: 500 })
+      }
       return new NextResponse('Stored report PDF is missing.', { status: 500 })
     }
 
-    if (!pdfBuffer || pdfBuffer.length === 0) {
-      console.error('[reports.public] rendered pdf is empty', { linkId: data.id })
-      return new NextResponse('Report snapshot is empty.', { status: 500 })
-    }
-
-    const asAttachment = new URL(request.url).searchParams.get('download') === '1'
-    const fileName = 'besiktningsutlatande.pdf'
     const encodedFileName = encodeURIComponent(fileName)
     const disposition = asAttachment
       ? `attachment; filename="${fileName}"; filename*=UTF-8''${encodedFileName}`
