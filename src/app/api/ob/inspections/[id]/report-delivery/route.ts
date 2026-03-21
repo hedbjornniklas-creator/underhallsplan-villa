@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server'
+﻿import { NextResponse, after } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createHash, randomUUID } from 'node:crypto'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
@@ -16,7 +16,7 @@ import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmai
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
-const PDF_RENDER_TIMEOUT_MS = Number(process.env.REPORT_PDF_RENDER_TIMEOUT_MS ?? 180000)
+const PDF_RENDER_TIMEOUT_MS = Number(process.env.REPORT_PDF_RENDER_TIMEOUT_MS ?? 60000)
 const REPORT_PDF_STORAGE_BUCKET = process.env.REPORT_PDF_STORAGE_BUCKET?.trim() || 'inspection-reports'
 const REPORT_TIMING_LOGS = process.env.REPORT_TIMING_LOGS !== '0'
 
@@ -57,12 +57,16 @@ type OutboundMessageRow = {
 type ReportPdfState = {
   hasStoredPdf: boolean
   latestLinkId: string | null
+  pdfStatus: 'pending' | 'processing' | 'ready' | 'failed'
+  pdfError: string | null
 }
 
 type TimingLogger = {
   mark: (step: string, extra?: Record<string, unknown>) => void
   totalMs: () => number
 }
+
+type PdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
 
 function normalizedText(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -105,6 +109,21 @@ function createTimingLogger(scope: string, traceId: string): TimingLogger {
       return Date.now() - startedAt
     },
   }
+}
+
+function normalizePdfStatus(value: unknown): PdfStatus {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+  if (normalized === 'processing') return 'processing'
+  if (normalized === 'ready') return 'ready'
+  if (normalized === 'failed') return 'failed'
+  return 'pending'
+}
+
+function truncateErrorMessage(input: string, maxLength = 1200) {
+  if (input.length <= maxLength) return input
+  return `${input.slice(0, maxLength - 3)}...`
 }
 
 function buildOrigin(request: Request) {
@@ -232,6 +251,129 @@ async function uploadReportPdfToStorage(
   }
 }
 
+async function setPdfJobStatus(
+  admin: AdminClient,
+  linkId: string,
+  patch: {
+    pdf_status?: PdfStatus
+    pdf_error?: string | null
+    pdf_attempts?: number
+    pdf_started_at?: string | null
+    pdf_generated_at?: string | null
+    pdf_storage_bucket?: string | null
+    pdf_storage_path?: string | null
+    pdf_size_bytes?: number | null
+    pdf_sha256?: string | null
+    pdf_base64?: string | null
+  }
+) {
+  const { error } = await admin
+    .from('inspection_report_links')
+    .update(patch)
+    .eq('id', linkId)
+    .is('revoked_at', null)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte uppdatera PDF-status för rapportlänk.')
+  }
+}
+
+async function runReportPdfJobInBackground(input: {
+  traceId: string
+  linkId: string
+  orgId: string
+  inspectionId: string
+  propertyId: string
+  tokenHash: string
+  previewReportUrl: string
+  cookieHeader: string | null
+}) {
+  const admin = createSupabaseAdminClient()
+  const timing = createTimingLogger('inspections.report-delivery.pdf-job', input.traceId)
+  timing.mark('job_start', {
+    linkId: input.linkId,
+    inspectionId: input.inspectionId,
+  })
+
+  try {
+    const { data: link, error: linkError } = await admin
+      .from('inspection_report_links')
+      .select('id,pdf_attempts,revoked_at')
+      .eq('id', input.linkId)
+      .maybeSingle()
+
+    if (linkError) {
+      throw new Error(linkError.message ?? 'Kunde inte läsa rapportlänk för PDF-jobb.')
+    }
+    if (!link || link.revoked_at) {
+      timing.mark('job_aborted_link_missing_or_revoked')
+      return
+    }
+
+    const nextAttempts = Number((link as Record<string, unknown>).pdf_attempts ?? 0) + 1
+    await setPdfJobStatus(admin, input.linkId, {
+      pdf_status: 'processing',
+      pdf_error: null,
+      pdf_attempts: nextAttempts,
+      pdf_started_at: new Date().toISOString(),
+    })
+    timing.mark('job_marked_processing', { attempts: nextAttempts })
+
+    const rendered = await renderPreviewPdf({
+      url: input.previewReportUrl,
+      cookieHeader: input.cookieHeader,
+      timeoutMs: PDF_RENDER_TIMEOUT_MS,
+      traceId: `${input.traceId}:render`,
+    })
+    const pdfBuffer = Buffer.isBuffer(rendered) ? rendered : Buffer.from(rendered)
+    timing.mark('pdf_rendered', { pdfBytes: pdfBuffer.length })
+
+    const pdfSha256 = createHash('sha256').update(pdfBuffer).digest('hex')
+    const storedPdf = await uploadReportPdfToStorage(admin, {
+      orgId: input.orgId,
+      inspectionId: input.inspectionId,
+      tokenHash: input.tokenHash,
+      pdfBuffer,
+    })
+    timing.mark('pdf_uploaded_to_storage', {
+      bucket: storedPdf.bucket,
+      path: storedPdf.path,
+      sizeBytes: storedPdf.sizeBytes,
+    })
+
+    await setPdfJobStatus(admin, input.linkId, {
+      pdf_status: 'ready',
+      pdf_error: null,
+      pdf_generated_at: new Date().toISOString(),
+      pdf_storage_bucket: storedPdf.bucket,
+      pdf_storage_path: storedPdf.path,
+      pdf_size_bytes: storedPdf.sizeBytes,
+      pdf_sha256: pdfSha256,
+      pdf_base64: null,
+    })
+    timing.mark('job_completed')
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Okänt fel vid PDF-jobb.'
+    console.error('[inspections.report-delivery.pdf-job] failed', {
+      linkId: input.linkId,
+      inspectionId: input.inspectionId,
+      error: message,
+    })
+    try {
+      await setPdfJobStatus(admin, input.linkId, {
+        pdf_status: 'failed',
+        pdf_error: truncateErrorMessage(message),
+      })
+    } catch (updateError) {
+      console.error('[inspections.report-delivery.pdf-job] failed to mark failed status', {
+        linkId: input.linkId,
+        error: updateError instanceof Error ? updateError.message : String(updateError),
+      })
+    }
+    timing.mark('job_failed', { error: message })
+  }
+}
+
 async function getInspectionById(admin: AdminClient, inspectionId: string) {
   const { data, error } = await admin
     .from('inspections')
@@ -303,7 +445,7 @@ async function getDeliveryHistory(admin: AdminClient, assignmentId: string) {
 async function getReportPdfState(admin: AdminClient, inspectionId: string): Promise<ReportPdfState> {
   const { data, error } = await admin
     .from('inspection_report_links')
-    .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,revoked_at,created_at')
+    .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,pdf_error,revoked_at,created_at')
     .eq('inspection_id', inspectionId)
     .is('revoked_at', null)
     .order('created_at', { ascending: false })
@@ -317,9 +459,15 @@ async function getReportPdfState(admin: AdminClient, inspectionId: string): Prom
   const pdfBase64 = String(data?.pdf_base64 ?? '').trim()
   const pdfStorageBucket = String((data as Record<string, unknown> | null)?.pdf_storage_bucket ?? '').trim()
   const pdfStoragePath = String((data as Record<string, unknown> | null)?.pdf_storage_path ?? '').trim()
+  const hasStoredPdf = pdfBase64.length > 0 || (pdfStorageBucket.length > 0 && pdfStoragePath.length > 0)
+  const statusFromDb = normalizePdfStatus((data as Record<string, unknown> | null)?.pdf_status)
+  const pdfStatus: PdfStatus = hasStoredPdf ? 'ready' : statusFromDb
+  const pdfError = String((data as Record<string, unknown> | null)?.pdf_error ?? '').trim() || null
   return {
-    hasStoredPdf: pdfBase64.length > 0 || (pdfStorageBucket.length > 0 && pdfStoragePath.length > 0),
+    hasStoredPdf,
     latestLinkId: (data?.id as string | undefined) ?? null,
+    pdfStatus,
+    pdfError,
   }
 }
 
@@ -414,7 +562,12 @@ export async function GET(
       defaultRecipientEmail: ordererEmail,
       ordererEmail,
       hasStoredPdf: pdfState.hasStoredPdf,
-      canDownloadPdf: inspectionStatus === 'completed' && pdfState.hasStoredPdf,
+      pdfStatus: pdfState.pdfStatus,
+      pdfError: pdfState.pdfError,
+      canDownloadPdf:
+        inspectionStatus === 'completed' &&
+        pdfState.hasStoredPdf &&
+        pdfState.pdfStatus === 'ready',
       history,
     })
   } catch (error) {
@@ -500,45 +653,8 @@ export async function POST(
     })
     timing.mark('snapshot_payload_built')
 
-    const previewReportUrl = `${resolvePublicBaseUrl(request)}/utlatande/${propertyId}/${id}?embed=1&pdf=1`
-    let previewPdfBuffer: Buffer
-    try {
-      const rendered = await renderPreviewPdf({
-        url: previewReportUrl,
-        cookieHeader: request.headers.get('cookie'),
-        timeoutMs: PDF_RENDER_TIMEOUT_MS,
-        traceId,
-      })
-      previewPdfBuffer = Buffer.isBuffer(rendered) ? rendered : Buffer.from(rendered)
-      timing.mark('pdf_rendered', { pdfBytes: previewPdfBuffer.length })
-    } catch (previewError) {
-      const previewMessage =
-        previewError instanceof Error ? previewError.message : String(previewError)
-      console.error('[inspections.report-delivery] preview-pdf failed', {
-        inspectionId: id,
-        error: previewMessage,
-      })
-      return jsonError(
-        `Kunde inte skapa fullständig PDF-layout för utlåtandet. ${previewMessage}`,
-        500
-      )
-    }
-
-    const previewPdfSha256 = createHash('sha256').update(previewPdfBuffer).digest('hex')
-
     const token = generateAssignmentToken()
     const tokenHash = hashAssignmentToken(token)
-    const storedPdf = await uploadReportPdfToStorage(admin, {
-      orgId: org.orgId,
-      inspectionId: id,
-      tokenHash,
-      pdfBuffer: previewPdfBuffer,
-    })
-    timing.mark('pdf_uploaded_to_storage', {
-      bucket: storedPdf.bucket,
-      path: storedPdf.path,
-      sizeBytes: storedPdf.sizeBytes,
-    })
 
     const { data: linkData, error: linkError } = await admin
       .from('inspection_report_links')
@@ -550,10 +666,11 @@ export async function POST(
         delivery_mode: 'link_only',
         snapshot_schema_version: 'v1',
         snapshot_payload: snapshotPayload,
-        pdf_storage_bucket: storedPdf.bucket,
-        pdf_storage_path: storedPdf.path,
-        pdf_size_bytes: storedPdf.sizeBytes,
-        pdf_sha256: previewPdfSha256,
+        pdf_status: 'pending',
+        pdf_error: null,
+        pdf_attempts: 0,
+        pdf_started_at: null,
+        pdf_generated_at: null,
         created_by: org.userId,
       })
       .select('id')
@@ -564,6 +681,8 @@ export async function POST(
     }
     timing.mark('report_link_created', { linkId: linkData.id })
 
+    const previewReportUrl = `${resolvePublicBaseUrl(request)}/utlatande/${propertyId}/${id}?embed=1&pdf=1`
+    const requestCookieHeader = request.headers.get('cookie')
     const linkUrl = `${resolvePublicBaseUrl(request)}/rapport/${token}`
     const fromAddress = getMailFromAddress()
     const responsibleProfile = await getProfileContact(
@@ -657,6 +776,20 @@ export async function POST(
       timing.mark('inspection_status_updated_to_completed')
     }
 
+    after(async () => {
+      await runReportPdfJobInBackground({
+        traceId: `${traceId}:link:${linkData.id}`,
+        linkId: linkData.id,
+        orgId: org.orgId,
+        inspectionId: id,
+        propertyId,
+        tokenHash,
+        previewReportUrl,
+        cookieHeader: requestCookieHeader,
+      })
+    })
+    timing.mark('pdf_job_scheduled', { linkId: linkData.id })
+
     const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
     const finalInspectionStatus = primarySent ? 'completed' : inspectionStatus
     timing.mark('history_loaded', { historyCount: history.length })
@@ -670,8 +803,10 @@ export async function POST(
       primaryRecipientEmail: primaryRecipient,
       defaultRecipientEmail: fallbackOrdererEmail,
       ordererEmail: fallbackOrdererEmail,
-      hasStoredPdf: true,
-      canDownloadPdf: finalInspectionStatus === 'completed',
+      hasStoredPdf: false,
+      pdfStatus: 'pending' as PdfStatus,
+      pdfError: null,
+      canDownloadPdf: false,
       sentRecipients,
       failedRecipients,
       history,
@@ -704,4 +839,5 @@ export async function POST(
     return jsonError(message || 'Kunde inte skicka utlÃ¥tandet.', 500)
   }
 }
+
 

@@ -6,10 +6,12 @@ import puppeteer from 'puppeteer'
 
 const DEFAULT_TIMEOUT_MS = 60000
 const BROWSER_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-const ALLOW_AUTOINSTALL = process.env.PUPPETEER_ALLOW_AUTOINSTALL !== '0'
+const ALLOW_AUTOINSTALL = process.env.PUPPETEER_ALLOW_AUTOINSTALL === '1'
 const REPORT_TIMING_LOGS = process.env.REPORT_TIMING_LOGS !== '0'
 const REPORT_READY_TIMEOUT_MS = Number(process.env.REPORT_READY_TIMEOUT_MS ?? 20000)
 const NETWORK_IDLE_TIMEOUT_MS = Number(process.env.REPORT_NETWORK_IDLE_TIMEOUT_MS ?? 12000)
+const BROWSER_LAUNCH_TIMEOUT_MS = Number(process.env.PUPPETEER_LAUNCH_TIMEOUT_MS ?? 25000)
+const BROWSER_INSTALL_TIMEOUT_MS = Number(process.env.PUPPETEER_INSTALL_TIMEOUT_MS ?? 25000)
 const PROFILE_ROOT_DIR =
   process.env.PUPPETEER_PROFILE_ROOT_DIR?.trim() ||
   join(process.platform === 'linux' ? '/tmp' : tmpdir(), 'puppeteer-runtime-profiles')
@@ -64,6 +66,23 @@ function safeRemoveDir(path: string) {
   } catch {
     // noop
   }
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutHandle = setTimeout(() => {
+      reject(new Error(timeoutMessage))
+    }, timeoutMs)
+    promise
+      .then((value) => {
+        clearTimeout(timeoutHandle)
+        resolve(value)
+      })
+      .catch((error) => {
+        clearTimeout(timeoutHandle)
+        reject(error)
+      })
+  })
 }
 
 function pruneOldProfileDirs(maxAgeMs = 1000 * 60 * 60) {
@@ -171,6 +190,7 @@ async function launchPdfBrowser(): Promise<{
         args: BROWSER_ARGS,
         executablePath: executablePath ?? undefined,
         userDataDir,
+        timeout: BROWSER_LAUNCH_TIMEOUT_MS,
       })
       return { browser, userDataDir }
     } catch (error) {
@@ -195,12 +215,16 @@ async function launchPdfBrowser(): Promise<{
       )
     }
 
-    const installedPath = await ensureBundledChromeExecutablePath().catch((installError) => {
+    const installedPath = await withTimeout(
+      ensureBundledChromeExecutablePath(),
+      BROWSER_INSTALL_TIMEOUT_MS,
+      `Chrome saknas för PDF-rendering och automatisk installation timeoutade efter ${BROWSER_INSTALL_TIMEOUT_MS} ms.`
+    ).catch((installError) => {
       const installMessage =
         installError instanceof Error ? installError.message : String(installError)
       throw new Error(
-        `Chrome saknas for PDF-rendering och automatisk installation misslyckades. ${installMessage}. ` +
-          'Installera manuellt med `npx puppeteer browsers install chrome` eller satt PUPPETEER_EXECUTABLE_PATH.'
+        `Chrome saknas för PDF-rendering och automatisk installation misslyckades. ${installMessage}. ` +
+          'Installera manuellt med `npx puppeteer browsers install chrome` eller sätt PUPPETEER_EXECUTABLE_PATH.'
       )
     })
 
@@ -217,6 +241,11 @@ export async function renderPreviewPdf(params: {
   const timeoutMs = params.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const traceId = params.traceId ?? `pdf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const mark = createRenderTimingLogger(traceId)
+  mark('browser_launch_start', {
+    launchTimeoutMs: BROWSER_LAUNCH_TIMEOUT_MS,
+    installTimeoutMs: BROWSER_INSTALL_TIMEOUT_MS,
+    autoinstall: ALLOW_AUTOINSTALL,
+  })
   const { browser, userDataDir } = await launchPdfBrowser()
   mark('browser_launch_done')
   let timeoutHandle: NodeJS.Timeout | null = null

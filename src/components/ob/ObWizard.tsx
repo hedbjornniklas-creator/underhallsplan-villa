@@ -85,6 +85,8 @@ type ReportDeliveryMeta = {
   inspectionStatus: string
   canSend: boolean
   hasStoredPdf: boolean
+  pdfStatus: 'pending' | 'processing' | 'ready' | 'failed'
+  pdfError: string | null
   canDownloadPdf: boolean
   reason: string | null
   defaultRecipientEmail: string | null
@@ -101,6 +103,8 @@ type ReportDeliverySendResponse = {
   defaultRecipientEmail: string | null
   ordererEmail: string | null
   hasStoredPdf: boolean
+  pdfStatus: 'pending' | 'processing' | 'ready' | 'failed'
+  pdfError: string | null
   canDownloadPdf: boolean
   sentRecipients: string[]
   failedRecipients: Array<{ email: string; error: string }>
@@ -257,6 +261,31 @@ export default function ObWizard({
     )
   }, [deliveryMeta?.defaultRecipientEmail])
 
+  useEffect(() => {
+    if (activeSection !== 'delivery' || !hasValidIds || !inspectionId) return
+    if (!deliveryMeta) return
+    if (deliveryMeta.pdfStatus !== 'pending' && deliveryMeta.pdfStatus !== 'processing') return
+
+    let cancelled = false
+    const intervalId = window.setInterval(async () => {
+      try {
+        const response = await fetch(`/api/ob/inspections/${inspectionId}/report-delivery`, {
+          cache: 'no-store',
+        })
+        const payload = (await response.json().catch(() => null)) as ReportDeliveryMeta | null
+        if (!response.ok || !payload || cancelled) return
+        setDeliveryMeta(payload)
+      } catch {
+        // Best effort polling only.
+      }
+    }, 10000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [activeSection, hasValidIds, inspectionId, deliveryMeta])
+
   const handleSendInspectionReport = async () => {
     if (!hasValidIds || !inspectionId) return
 
@@ -327,16 +356,18 @@ export default function ObWizard({
         } as ObWizardInspection)
       }
 
-      setDeliveryMeta((prev) => ({
-        inspectionId: okPayload.inspectionId,
-        inspectionStatus: okPayload.inspectionStatus,
-        canSend: prev?.canSend ?? true,
-        hasStoredPdf: okPayload.hasStoredPdf,
-        canDownloadPdf: okPayload.canDownloadPdf,
-        reason: prev?.reason ?? null,
-        defaultRecipientEmail: okPayload.defaultRecipientEmail ?? null,
-        ordererEmail: okPayload.ordererEmail,
-        history: okPayload.history ?? [],
+        setDeliveryMeta((prev) => ({
+          inspectionId: okPayload.inspectionId,
+          inspectionStatus: okPayload.inspectionStatus,
+          canSend: prev?.canSend ?? true,
+          hasStoredPdf: okPayload.hasStoredPdf,
+          pdfStatus: okPayload.pdfStatus,
+          pdfError: okPayload.pdfError,
+          canDownloadPdf: okPayload.canDownloadPdf,
+          reason: prev?.reason ?? null,
+          defaultRecipientEmail: okPayload.defaultRecipientEmail ?? null,
+          ordererEmail: okPayload.ordererEmail,
+          history: okPayload.history ?? [],
       }))
       setPrimaryRecipientInput(okPayload.primaryRecipientEmail ?? '')
 
@@ -347,7 +378,7 @@ export default function ObWizard({
               .join(', ')}.`
           : ''
       setDeliveryResult(
-        `Utlåtandet skickades till ${okPayload.sentRecipients.length} mottagare.${failedText} Länk: ${okPayload.publicLink}`
+        `Utlåtandet skickades till ${okPayload.sentRecipients.length} mottagare.${failedText} PDF genereras i bakgrunden. Länk: ${okPayload.publicLink}`
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Kunde inte skicka utlåtandet.'
@@ -563,6 +594,22 @@ export default function ObWizard({
                   {!canDownloadStampedPdf ? (
                     <div className="text-xs text-gray-600">
                       PDF blir nedladdningsbar först efter att utlåtandet har skickats och låsts.
+                    </div>
+                  ) : null}
+
+                  {deliveryMeta ? (
+                    <div className="rounded-md border border-gray-200 bg-white p-2 text-xs text-gray-700">
+                      <span className="font-semibold">PDF-status:</span>{' '}
+                      {deliveryMeta.pdfStatus === 'ready'
+                        ? 'Klar'
+                        : deliveryMeta.pdfStatus === 'processing'
+                          ? 'Genereras'
+                          : deliveryMeta.pdfStatus === 'failed'
+                            ? 'Misslyckades'
+                            : 'Väntar på generering'}
+                      {deliveryMeta.pdfError ? (
+                        <div className="mt-1 text-red-700">Fel: {deliveryMeta.pdfError}</div>
+                      ) : null}
                     </div>
                   ) : null}
 

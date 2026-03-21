@@ -9,6 +9,16 @@ function notFoundResponse() {
   return new NextResponse('Not found', { status: 404 })
 }
 
+function normalizePdfStatus(value: unknown): 'pending' | 'processing' | 'ready' | 'failed' {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+  if (normalized === 'processing') return 'processing'
+  if (normalized === 'ready') return 'ready'
+  if (normalized === 'failed') return 'failed'
+  return 'pending'
+}
+
 function decodeBase64(base64: string, linkId: string): Buffer {
   let pdfBuffer: Buffer
   try {
@@ -77,7 +87,7 @@ export async function GET(
 
     const { data, error } = await admin
       .from('inspection_report_links')
-      .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,revoked_at,delivery_mode')
+      .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,pdf_error,revoked_at,delivery_mode')
       .eq('token_hash', tokenHash)
       .maybeSingle()
 
@@ -122,10 +132,22 @@ export async function GET(
     }
 
     if (!pdfBuffer) {
+      const pdfStatus = normalizePdfStatus((data as Record<string, unknown>).pdf_status)
+      const pdfError = String((data as Record<string, unknown>).pdf_error ?? '').trim()
       console.error('[reports.public] stored pdf missing', {
         linkId: data.id,
         deliveryMode: data.delivery_mode ?? null,
+        pdfStatus,
       })
+      if (pdfStatus === 'pending' || pdfStatus === 'processing') {
+        return new NextResponse('PDF genereras fortfarande i bakgrunden. Försök igen om en stund.', {
+          status: 409,
+        })
+      }
+      if (pdfStatus === 'failed') {
+        const suffix = pdfError ? ` (${pdfError})` : ''
+        return new NextResponse(`PDF-generering misslyckades${suffix}.`, { status: 500 })
+      }
       return new NextResponse('Stored report PDF is missing.', { status: 500 })
     }
 

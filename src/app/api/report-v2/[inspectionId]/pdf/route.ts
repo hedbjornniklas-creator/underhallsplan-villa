@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
@@ -38,6 +38,16 @@ const normalizeInspectionStatus = (value: string | null | undefined) => {
   return 'ongoing'
 }
 
+const normalizePdfStatus = (value: unknown): 'pending' | 'processing' | 'ready' | 'failed' => {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+  if (normalized === 'processing') return 'processing'
+  if (normalized === 'ready') return 'ready'
+  if (normalized === 'failed') return 'failed'
+  return 'pending'
+}
+
 export async function GET(
   _request: Request,
   context: { params: Promise<{ inspectionId: string }> }
@@ -74,7 +84,7 @@ export async function GET(
 
     const { data: linkData, error: linkError } = await admin
       .from('inspection_report_links')
-      .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,revoked_at')
+      .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,pdf_error,revoked_at')
       .eq('inspection_id', inspectionId)
       .is('revoked_at', null)
       .order('created_at', { ascending: false })
@@ -103,6 +113,17 @@ export async function GET(
     }
 
     if (!storedPdfBuffer) {
+      const pdfStatus = normalizePdfStatus((linkData as Record<string, unknown> | null)?.pdf_status)
+      const pdfError = String((linkData as Record<string, unknown> | null)?.pdf_error ?? '').trim()
+      if (pdfStatus === 'pending' || pdfStatus === 'processing') {
+        return new NextResponse('PDF genereras fortfarande i bakgrunden. Försök igen om en stund.', {
+          status: 409,
+        })
+      }
+      if (pdfStatus === 'failed') {
+        const suffix = pdfError ? ` (${pdfError})` : ''
+        return new NextResponse(`PDF-generering misslyckades${suffix}.`, { status: 500 })
+      }
       return new NextResponse('Ingen lagrad PDF hittades för denna besiktning.', { status: 404 })
     }
 
