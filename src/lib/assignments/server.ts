@@ -79,6 +79,8 @@ export type AssignmentListItem = {
   created_at: string
   updated_at: string
   last_sent_at: string | null
+  archived_at: string | null
+  archived_by: string | null
 }
 
 export type AssignmentDetails = AssignmentListItem & {
@@ -253,7 +255,9 @@ const ASSIGNMENT_SELECT_LIST = `
   inspection_id,
   created_at,
   updated_at,
-  last_sent_at
+  last_sent_at,
+  archived_at,
+  archived_by
 `
 
 const ASSIGNMENT_DETAIL_SELECT = `
@@ -816,6 +820,8 @@ export async function updateAssignmentById(input: {
     assignment_type: AssignmentType
     responsible_profile_id: string
     status: AssignmentStatus
+    archived_at: string | null
+    archived_by: string | null
   }>
 }) {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient

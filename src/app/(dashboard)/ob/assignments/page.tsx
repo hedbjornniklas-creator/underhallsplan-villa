@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { Archive, ArrowLeft, ChevronsLeft, Play, Plus } from 'lucide-react'
+import { Archive, ArrowLeft, Ban, ChevronsLeft, Play, Plus } from 'lucide-react'
 import Protected from '@/components/Protected'
 
 type AssignmentItem = {
@@ -26,6 +26,8 @@ type AssignmentItem = {
   created_at: string
   updated_at: string
   last_sent_at: string | null
+  archived_at: string | null
+  archived_by: string | null
 }
 
 type ListResponse = {
@@ -50,7 +52,7 @@ type SavedListView = {
   sortField: SortField
   sortDirection: SortDirection
   pageSize: number
-  showCancelled: boolean
+  showArchived: boolean
   showExpired: boolean
 }
 
@@ -66,7 +68,7 @@ const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'ordered', label: 'Godkänd' },
   { key: 'booked', label: 'Bokad' },
   { key: 'completed', label: 'Klar' },
-  { key: 'cancelled', label: 'Arkiverad' },
+  { key: 'cancelled', label: 'Avbokad' },
   { key: 'expired', label: 'Utgången länk' },
 ]
 
@@ -83,7 +85,7 @@ function getStatusLabel(status: AssignmentItem['status']) {
     case 'expired':
       return 'Utgången länk'
     case 'cancelled':
-      return 'Arkiverad'
+      return 'Avbokad'
     default:
       return 'Utkast'
   }
@@ -233,11 +235,11 @@ export default function ObAssignmentsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [sortField, setSortField] = useState<SortField>('status')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
-  const [showCancelled, setShowCancelled] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
   const [showExpired, setShowExpired] = useState(false)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [currentPage, setCurrentPage] = useState(1)
-  const [actionState, setActionState] = useState<{ id: string; type: 'archive' | 'convert' } | null>(
+  const [actionState, setActionState] = useState<{ id: string; type: 'archive' | 'cancel' | 'convert' } | null>(
     null
   )
 
@@ -279,8 +281,10 @@ export default function ObAssignmentsPage() {
       if (typeof saved.pageSize === 'number' && PAGE_SIZE_OPTIONS.includes(saved.pageSize)) {
         setPageSize(saved.pageSize)
       }
-      if (typeof saved.showCancelled === 'boolean') {
-        setShowCancelled(saved.showCancelled)
+      if (typeof saved.showArchived === 'boolean') {
+        setShowArchived(saved.showArchived)
+      } else if (typeof (saved as { showCancelled?: boolean }).showCancelled === 'boolean') {
+        setShowArchived(Boolean((saved as { showCancelled?: boolean }).showCancelled))
       }
       if (typeof saved.showExpired === 'boolean') {
         setShowExpired(saved.showExpired)
@@ -297,43 +301,36 @@ export default function ObAssignmentsPage() {
       sortField,
       sortDirection,
       pageSize,
-      showCancelled,
+      showArchived,
       showExpired,
     }
 
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  }, [search, statusFilter, sortField, sortDirection, pageSize, showCancelled, showExpired])
+  }, [search, statusFilter, sortField, sortDirection, pageSize, showArchived, showExpired])
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [search, statusFilter, sortField, sortDirection, pageSize, showCancelled, showExpired])
+  }, [search, statusFilter, sortField, sortDirection, pageSize, showArchived, showExpired])
 
   const visibleItems = useMemo(
     () =>
       items.filter(
         (item) =>
-          (showCancelled || item.status !== 'cancelled') && (showExpired || item.status !== 'expired')
+          (showArchived || !item.archived_at) &&
+          (showExpired || item.status !== 'expired')
       ),
-    [items, showCancelled, showExpired]
+    [items, showArchived, showExpired]
   )
 
   useEffect(() => {
-    if (
-      (!showCancelled && statusFilter === 'cancelled') ||
-      (!showExpired && statusFilter === 'expired')
-    ) {
+    if (!showExpired && statusFilter === 'expired') {
       setStatusFilter('all')
     }
-  }, [showCancelled, showExpired, statusFilter])
+  }, [showExpired, statusFilter])
 
   const statusTabs = useMemo(
-    () =>
-      STATUS_TABS.filter((tab) => {
-        if (tab.key === 'cancelled' && !showCancelled) return false
-        if (tab.key === 'expired' && !showExpired) return false
-        return true
-      }),
-    [showCancelled, showExpired]
+    () => STATUS_TABS.filter((tab) => !(tab.key === 'expired' && !showExpired)),
+    [showExpired]
   )
 
   const statusCounts = useMemo(() => {
@@ -423,7 +420,7 @@ export default function ObAssignmentsPage() {
     sortField !== 'status' ||
     sortDirection !== 'asc' ||
     pageSize !== DEFAULT_PAGE_SIZE ||
-    showCancelled ||
+    showArchived ||
     showExpired
 
   const resetView = () => {
@@ -432,7 +429,7 @@ export default function ObAssignmentsPage() {
     setSortField('status')
     setSortDirection('asc')
     setPageSize(DEFAULT_PAGE_SIZE)
-    setShowCancelled(false)
+    setShowArchived(false)
     setShowExpired(false)
     setCurrentPage(1)
   }
@@ -459,18 +456,20 @@ export default function ObAssignmentsPage() {
     router.push(`/ob/assignments/${assignmentId}`)
   }
 
-  const canArchive = (item: AssignmentItem) =>
-    item.status !== 'cancelled' &&
-    item.status !== 'sent' &&
-    item.status !== 'ordered' &&
-    item.status !== 'booked'
+  const isArchived = (item: AssignmentItem) => Boolean(item.archived_at)
 
   const canStartInspection = (item: AssignmentItem) =>
-    item.status === 'booked' && !item.inspection_id
+    item.status === 'booked' && !item.inspection_id && !item.archived_at
+
+  const canCancelAssignment = (item: AssignmentItem) => item.status !== 'cancelled'
 
   const handleArchive = async (item: AssignmentItem) => {
-    if (!canArchive(item)) return
-    const confirmed = window.confirm('Är du säker på att du vill arkivera uppdragsbekräftelsen?')
+    const nextArchived = !isArchived(item)
+    const confirmed = window.confirm(
+      nextArchived
+        ? 'Är du säker på att du vill arkivera uppdragsbekräftelsen?'
+        : 'Vill du återföra uppdragsbekräftelsen från arkivet?'
+    )
     if (!confirmed) return
 
     try {
@@ -479,13 +478,15 @@ export default function ObAssignmentsPage() {
       const response = await fetch(`/api/ob/assignments/${item.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'cancelled' }),
+        body: JSON.stringify({
+          archived_at: nextArchived ? new Date().toISOString() : null,
+        }),
       })
       const payload = (await response.json().catch(() => null)) as
         | { error?: string; assignment?: AssignmentItem }
         | null
       if (!response.ok) {
-        throw new Error(payload?.error ?? 'Kunde inte arkivera uppdragsbekräftelsen.')
+        throw new Error(payload?.error ?? 'Kunde inte uppdatera arkivering.')
       }
 
       const updated = payload?.assignment
@@ -498,7 +499,7 @@ export default function ObAssignmentsPage() {
       setError(
         archiveError instanceof Error
           ? archiveError.message
-          : 'Kunde inte arkivera uppdragsbekräftelsen.'
+          : 'Kunde inte uppdatera arkivering.'
       )
     } finally {
       setActionState(null)
@@ -525,6 +526,48 @@ export default function ObAssignmentsPage() {
       router.push(`/properties/${payload.propertyId}/ob/${payload.inspectionId}`)
     } catch (convertError) {
       setError(convertError instanceof Error ? convertError.message : 'Kunde inte starta besiktning.')
+    } finally {
+      setActionState(null)
+    }
+  }
+
+  const handleCancel = async (item: AssignmentItem) => {
+    if (!canCancelAssignment(item)) return
+    const confirmed = window.confirm(
+      'Är du säker på att du vill avboka uppdragsbekräftelsen och flytta den till arkivet?'
+    )
+    if (!confirmed) return
+
+    try {
+      setError(null)
+      setActionState({ id: item.id, type: 'cancel' })
+      const response = await fetch(`/api/ob/assignments/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'cancelled',
+          archived_at: new Date().toISOString(),
+        }),
+      })
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; assignment?: AssignmentItem }
+        | null
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'Kunde inte avboka uppdragsbekräftelse.')
+      }
+
+      const updated = payload?.assignment
+      if (updated) {
+        setItems((prev) => prev.map((row) => (row.id === updated.id ? updated : row)))
+      } else {
+        await loadAssignments()
+      }
+    } catch (cancelError) {
+      setError(
+        cancelError instanceof Error
+          ? cancelError.message
+          : 'Kunde inte avboka uppdragsbekräftelse.'
+      )
     } finally {
       setActionState(null)
     }
@@ -625,14 +668,14 @@ export default function ObAssignmentsPage() {
               <div className="ml-auto flex shrink-0 items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => setShowCancelled((prev) => !prev)}
+                  onClick={() => setShowArchived((prev) => !prev)}
                   className={
-                    showCancelled
+                    showArchived
                       ? 'rounded-md border border-rose-400 bg-rose-100 px-2 py-0.5 text-[11px] text-rose-900'
                       : 'rounded-md border border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50'
                   }
                 >
-                  {showCancelled ? 'Dölj arkiverade' : 'Visa arkiverade'}
+                  {showArchived ? 'Dölj arkiverade' : 'Visa arkiverade'}
                 </button>
                 <button
                   type="button"
@@ -742,10 +785,14 @@ export default function ObAssignmentsPage() {
                   </thead>
                   <tbody>
                     {pagedRows.map((item) => {
-                      const archiveEnabled = canArchive(item)
+                      const archiveEnabled = true
+                      const archived = isArchived(item)
                       const convertEnabled = canStartInspection(item)
                       const archiveBusy =
                         actionState?.id === item.id && actionState?.type === 'archive'
+                      const cancelEnabled = canCancelAssignment(item)
+                      const cancelBusy =
+                        actionState?.id === item.id && actionState?.type === 'cancel'
                       const convertBusy =
                         actionState?.id === item.id && actionState?.type === 'convert'
                       return (
@@ -761,7 +808,9 @@ export default function ObAssignmentsPage() {
                               openAssignment(item.id)
                             }
                           }}
-                          className={`cursor-pointer border-b last:border-b-0 focus-visible:outline-none ${getStatusRowClass(item.status)}`}
+                          className={`cursor-pointer border-b last:border-b-0 focus-visible:outline-none ${getStatusRowClass(item.status)} ${
+                            archived ? 'opacity-70' : ''
+                          }`}
                         >
                           <td className="px-3 py-2 align-middle whitespace-nowrap">{formatDate(item.preferred_date)}</td>
                           <td className="px-3 py-2 align-middle whitespace-nowrap">{formatDate(item.created_at)}</td>
@@ -779,15 +828,39 @@ export default function ObAssignmentsPage() {
                                 onClick={(event) => {
                                   event.preventDefault()
                                   event.stopPropagation()
+                                  void handleCancel(item)
+                                }}
+                                disabled={!cancelEnabled || cancelBusy || Boolean(actionState)}
+                                title={
+                                  cancelEnabled
+                                    ? 'Avboka och flytta till arkiverade'
+                                    : 'Uppdragsbekräftelsen är redan avbokad'
+                                }
+                                aria-label="Avboka uppdragsbekräftelse"
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-300 bg-white/95 text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-45"
+                              >
+                                <Ban size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.preventDefault()
+                                  event.stopPropagation()
                                   void handleArchive(item)
                                 }}
                                 disabled={!archiveEnabled || archiveBusy || Boolean(actionState)}
                                 title={
                                   archiveEnabled
-                                    ? 'Arkivera uppdragsbekräftelse'
+                                    ? archived
+                                      ? 'Återför från arkiv'
+                                      : 'Arkivera uppdragsbekräftelse'
                                     : 'Kan inte arkiveras i nuvarande status'
                                 }
-                                aria-label="Arkivera uppdragsbekräftelse"
+                                aria-label={
+                                  archived
+                                    ? 'Återför uppdragsbekräftelse från arkiv'
+                                    : 'Arkivera uppdragsbekräftelse'
+                                }
                                 className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-300 bg-white/95 text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-45"
                               >
                                 <Archive size={13} />
@@ -803,7 +876,9 @@ export default function ObAssignmentsPage() {
                                 title={
                                   convertEnabled
                                     ? 'Starta besiktning från bokad uppdragsbekräftelse'
-                                    : 'Tillgänglig när status är Bokad'
+                                    : archived
+                                      ? 'Återför först från arkiv'
+                                      : 'Tillgänglig när status är Bokad'
                                 }
                                 aria-label="Starta besiktning"
                                 className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-300 bg-white/95 text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-45"

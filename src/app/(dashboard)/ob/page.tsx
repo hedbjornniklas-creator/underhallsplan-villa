@@ -864,6 +864,7 @@ export default function OverlatelsebesiktningPage() {
               .eq('responsible_profile_id', user.id)
               .eq('status', 'booked')
               .is('inspection_id', null)
+              .is('archived_at', null)
               .order('booked_at', { ascending: false, nullsFirst: false })
               .order('accepted_at', { ascending: false, nullsFirst: false })
               .order('updated_at', { ascending: false })

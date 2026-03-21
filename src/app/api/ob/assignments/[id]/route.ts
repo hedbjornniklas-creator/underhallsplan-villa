@@ -71,6 +71,13 @@ export async function PATCH(
     const requestedStatus = requestedStatusRaw ? requestedStatusRaw.toLowerCase() : null
     const bodyKeys = Object.keys(body)
     const isStatusOnlyPatch = bodyKeys.length === 1 && bodyKeys[0] === 'status'
+    const isArchiveTogglePatch = bodyKeys.length === 1 && bodyKeys[0] === 'archived_at'
+    const isCancelAndArchivePatch =
+      requestedStatus === 'cancelled' &&
+      bodyKeys.length >= 1 &&
+      bodyKeys.length <= 2 &&
+      bodyKeys.includes('archived_at') &&
+      bodyKeys.every((key) => key === 'status' || key === 'archived_at')
     const allowOrderedToBookedTransition =
       existing.status === 'ordered' &&
       requestedStatus === 'booked' &&
@@ -80,7 +87,9 @@ export async function PATCH(
       (existing.status === 'sent' ||
         existing.status === 'ordered' ||
         existing.status === 'booked') &&
-      !allowOrderedToBookedTransition
+      !allowOrderedToBookedTransition &&
+      !isArchiveTogglePatch &&
+      !isCancelAndArchivePatch
     ) {
       return jsonError('Skickad, beställd eller bokad uppdragsbekräftelse är låst för redigering.', 409)
     }
@@ -259,6 +268,23 @@ export async function PATCH(
     const currency = safeString(body.currency)
     if (currency !== null || body.currency === '') {
       patch.currency = currency ?? 'SEK'
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'archived_at')) {
+      const archiveValue = body.archived_at
+      if (archiveValue === null || archiveValue === '') {
+        patch.archived_at = null
+        patch.archived_by = null
+      } else if (typeof archiveValue === 'string') {
+        const parsed = new Date(archiveValue)
+        if (Number.isNaN(parsed.getTime())) {
+          return jsonError('Ogiltigt arkivdatum.', 400)
+        }
+        patch.archived_at = parsed.toISOString()
+        patch.archived_by = org.userId
+      } else {
+        return jsonError('Ogiltigt värde för arkivering.', 400)
+      }
     }
 
     if (Object.keys(patch).length === 0) {
