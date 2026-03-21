@@ -1806,7 +1806,7 @@ function ExteriorControlPointsSection({
                 <div className="space-y-2">
                   <div className="space-y-1">
                     <label className="text-[11px] text-gray-600">
-                      Notering
+                      🧱 Notering
                     </label>
                     <textarea
                       rows={2}
@@ -1867,7 +1867,7 @@ function ExteriorControlPointsSection({
 
                         <div className="space-y-1">
                           <label className="text-[11px] text-gray-600">
-                            Notering
+                            🧱 Notering
                           </label>
                           <textarea
                             rows={2}
@@ -1887,7 +1887,7 @@ function ExteriorControlPointsSection({
                             {riskText.length > 0 && (
                               <div className="rounded-lg border border-gray-200 bg-white p-3">
                                 <div className="text-xs font-semibold text-gray-700">
-                                  Riskanalys
+                                  ⚠️ Riskanalys
                                 </div>
                                 <textarea
                                   rows={3}
@@ -1905,7 +1905,7 @@ function ExteriorControlPointsSection({
                             {ftuText.length > 0 && (
                               <div className="rounded-lg border border-gray-200 bg-white p-3">
                                 <div className="text-xs font-semibold text-gray-700">
-                                  Fortsatt teknisk utredning (FTU)
+                                  🔍 Fortsatt teknisk utredning (FTU)
                                 </div>
                                 <textarea
                                   rows={3}
@@ -2274,7 +2274,7 @@ function FreeNotesSection({
 
               <div className="space-y-1">
                 <label className="text-[11px] text-gray-600">
-                  Notering (fri text)
+                  🧱 Notering (fri text)
                 </label>
                 <textarea
                   rows={2}
@@ -2291,7 +2291,7 @@ function FreeNotesSection({
 
               <div className="space-y-1">
                 <label className="text-[11px] text-gray-600">
-                  Riskanalys
+                  ⚠️ Riskanalys
                 </label>
                 <textarea
                   rows={3}
@@ -2308,7 +2308,7 @@ function FreeNotesSection({
 
               <div className="space-y-1">
                 <label className="text-[11px] text-gray-600">
-                  Fortsatt teknisk utredning (FTU)
+                  🔍 Fortsatt teknisk utredning (FTU)
                 </label>
                 <textarea
                   rows={3}

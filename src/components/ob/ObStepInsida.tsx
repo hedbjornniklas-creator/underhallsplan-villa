@@ -2527,7 +2527,7 @@ function RoomControlPointsSection({
 
               <div className="space-y-1">
                 <label className="text-[11px] text-gray-600">
-                  Notering
+                  🧱 Notering
                 </label>
                 <textarea
                   rows={2}
@@ -2774,7 +2774,7 @@ function RoomControlPointsSection({
                 <div className="space-y-2">
                   <div className="space-y-1">
                     <label className="text-[11px] text-gray-600">
-                      Notering
+                      🧱 Notering
                     </label>
                     <textarea
                       rows={2}
@@ -2836,7 +2836,7 @@ function RoomControlPointsSection({
 
                         <div className="space-y-1">
                           <label className="text-[11px] text-gray-600">
-                            Notering
+                            🧱 Notering
                           </label>
                           <textarea
                             rows={2}
@@ -2856,7 +2856,7 @@ function RoomControlPointsSection({
                             {riskText.length > 0 && (
                               <div className="rounded-lg border border-gray-200 bg-white p-3">
                                 <div className="text-xs font-semibold text-gray-700">
-                                  Riskanalys
+                                  ⚠️ Riskanalys
                                 </div>
                                 <textarea
                                   rows={3}
@@ -2874,7 +2874,7 @@ function RoomControlPointsSection({
                             {ftuText.length > 0 && (
                               <div className="rounded-lg border border-gray-200 bg-white p-3">
                                 <div className="text-xs font-semibold text-gray-700">
-                                  Fortsatt teknisk utredning (FTU)
+                                  🔍 Fortsatt teknisk utredning (FTU)
                                 </div>
                                 <textarea
                                   rows={3}
