@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
@@ -77,6 +77,21 @@ function hasAreaMeasurementSelection(selectedAddonKeys: string[], scope: string 
     normalizedScopeCodes.includes('areamatning')
   )
 }
+
+function normalizeAddonKeysForCompare(keys: string[]) {
+  return keys
+    .map((key) => normalizeAddonKey(key))
+    .filter(Boolean)
+    .sort()
+}
+
+function areAddonKeyListsEqual(a: string[], b: string[]) {
+  const left = normalizeAddonKeysForCompare(a)
+  const right = normalizeAddonKeysForCompare(b)
+  if (left.length !== right.length) return false
+  return left.every((value, index) => value === right[index])
+}
+
 function normalizeAssignmentRoleToInspectionSide(
   value: string | null | undefined
 ): 'buyer' | 'seller' | 'apartment' | null {
@@ -126,6 +141,9 @@ export default function InspectionDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedAddonKeys, setSelectedAddonKeys] = useState<string[]>([])
+  const handleInspectionAddonSelectionChanged = useCallback((keys: string[]) => {
+    setSelectedAddonKeys((prev) => (areAddonKeyListsEqual(prev, keys) ? prev : keys))
+  }, [])
 
   // Starta på Grunddata
   const [activeSection, setActiveSection] = useState<ObSectionKey>('grunddata')
@@ -318,10 +336,14 @@ export default function InspectionDetailPage() {
           .filter((row) => row?.is_selected === true)
           .map((row) => String(row?.addon_key ?? '').trim())
           .filter((value) => value.length > 0)
-        setSelectedAddonKeys(selected)
+        setSelectedAddonKeys((prev) =>
+          areAddonKeyListsEqual(prev, selected) ? prev : selected
+        )
       } catch (loadAddonError) {
         console.error('Kunde inte läsa tilläggsuppdrag för sidomeny:', loadAddonError)
-        if (!cancelled) setSelectedAddonKeys([])
+        if (!cancelled) {
+          setSelectedAddonKeys((prev) => (prev.length === 0 ? prev : []))
+        }
       }
     }
 
@@ -455,7 +477,7 @@ export default function InspectionDetailPage() {
                 activeSection={activeSection}
                 onPropertyUpdated={(updated) => setProperty(updated as Property)}
                 onInspectionUpdated={(updated) => setInspection(updated as Inspection)}
-                onInspectionAddonSelectionChanged={(keys) => setSelectedAddonKeys(keys)}
+                onInspectionAddonSelectionChanged={handleInspectionAddonSelectionChanged}
               />
             </div>
           </div>
