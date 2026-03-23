@@ -74,6 +74,24 @@ type AddonServiceDraft = {
   is_active: boolean
 }
 
+type CertificationType = {
+  id: string
+  key: string
+  name: string
+  description: string | null
+  sort_order: number
+  is_active: boolean
+}
+
+type CertificationDraft = {
+  id?: string
+  key: string
+  name: string
+  description: string | null
+  sort_order: number
+  is_active: boolean
+}
+
 type ExteriorItem = {
   id: string
   key: string
@@ -145,10 +163,12 @@ export default function AdminClient() {
     ? 'comps'
     : search.get('tab') === 'control-points'
       ? 'control-points'
-      : search.get('tab') === 'forutsattningar'
-        ? 'forutsattningar'
-      : search.get('tab') === 'room-types'
-        ? 'room-types'
+    : search.get('tab') === 'forutsattningar'
+      ? 'forutsattningar'
+    : search.get('tab') === 'room-types'
+      ? 'room-types'
+    : search.get('tab') === 'certifications'
+      ? 'certifications'
       : search.get('tab') === 'addon-services'
         ? 'addon-services'
         : 'docs') as
@@ -156,16 +176,17 @@ export default function AdminClient() {
     | 'comps'
     | 'control-points'
     | 'room-types'
+    | 'certifications'
     | 'forutsattningar'
     | 'addon-services'
-  const [tab, setTab] = useState<'docs' | 'comps' | 'control-points' | 'room-types' | 'forutsattningar' | 'addon-services'>(initialTab)
+  const [tab, setTab] = useState<'docs' | 'comps' | 'control-points' | 'room-types' | 'certifications' | 'forutsattningar' | 'addon-services'>(initialTab)
 
   // Synka tab <-> URL
   useEffect(() => {
     const t = search.get('tab')
-    if (t === 'docs' || t === 'comps' || t === 'control-points' || t === 'room-types' || t === 'forutsattningar' || t === 'addon-services') setTab(t)
+    if (t === 'docs' || t === 'comps' || t === 'control-points' || t === 'room-types' || t === 'certifications' || t === 'forutsattningar' || t === 'addon-services') setTab(t)
   }, [search])
-  const setTabAndPush = (t: 'docs' | 'comps' | 'control-points' | 'room-types' | 'forutsattningar' | 'addon-services') => {
+  const setTabAndPush = (t: 'docs' | 'comps' | 'control-points' | 'room-types' | 'certifications' | 'forutsattningar' | 'addon-services') => {
     setTab(t)
     router.replace(`/admin?tab=${t}`)
   }
@@ -234,6 +255,14 @@ export default function AdminClient() {
   }>({ key: 'sort_order', dir: 'asc' })
   const [addonServiceModalOpen, setAddonServiceModalOpen] = useState(false)
   const [addonServiceDraft, setAddonServiceDraft] = useState<AddonServiceDraft | null>(null)
+  const [certificationsAll, setCertificationsAll] = useState<CertificationType[]>([])
+  const [qCertifications, setQCertifications] = useState('')
+  const [certificationSort, setCertificationSort] = useState<{
+    key: keyof CertificationType
+    dir: 'asc' | 'desc'
+  }>({ key: 'sort_order', dir: 'asc' })
+  const [certificationModalOpen, setCertificationModalOpen] = useState(false)
+  const [certificationDraft, setCertificationDraft] = useState<CertificationDraft | null>(null)
 
   useEffect(() => {
     if (loading || !isAdmin) return
@@ -244,6 +273,7 @@ export default function AdminClient() {
     loadRoomTypesAll()
     loadExteriorItems()
     loadAddonServices()
+    loadCertifications()
   }, [loading, isAdmin])
 
   useEffect(() => {
@@ -396,6 +426,19 @@ export default function AdminClient() {
     setAddonServicesAll((data ?? []) as AddonServiceType[])
   }
 
+  const loadCertifications = async () => {
+    const { data, error } = await (supabase as any)
+      .from('settings_certifications')
+      .select('id, key, name, description, sort_order, is_active')
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true })
+    if (error) {
+      console.error(error.message)
+      return
+    }
+    setCertificationsAll((data ?? []) as CertificationType[])
+  }
+
   const filteredDocs = useMemo(() => {
     const s = qDocs.trim().toLowerCase()
     const rows = !s
@@ -514,6 +557,34 @@ export default function AdminClient() {
 
     return sorted
   }, [addonServicesAll, qAddonServices, addonServiceSort])
+
+  const filteredCertifications = useMemo(() => {
+    const s = qCertifications.trim().toLowerCase()
+    const rows = !s
+      ? certificationsAll
+      : certificationsAll.filter(
+          r =>
+            (r.key ?? '').toLowerCase().includes(s) ||
+            (r.name ?? '').toLowerCase().includes(s) ||
+            (r.description ?? '').toLowerCase().includes(s)
+        )
+
+    const sorted = [...rows].sort((a, b) => {
+      const dir = certificationSort.dir === 'asc' ? 1 : -1
+      const aVal = (a[certificationSort.key] ?? '') as any
+      const bVal = (b[certificationSort.key] ?? '') as any
+      const aNum = typeof aVal === 'number' ? aVal : NaN
+      const bNum = typeof bVal === 'number' ? bVal : NaN
+      if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+        return (aNum - bNum) * dir
+      }
+      const aStr = typeof aVal === 'boolean' ? (aVal ? '1' : '0') : String(aVal).toLowerCase()
+      const bStr = typeof bVal === 'boolean' ? (bVal ? '1' : '0') : String(bVal).toLowerCase()
+      return aStr.localeCompare(bStr) * dir
+    })
+
+    return sorted
+  }, [certificationsAll, qCertifications, certificationSort])
 
   const buildPointDraft = (
     row?: ControlPointRow,
@@ -1100,6 +1171,42 @@ export default function AdminClient() {
     setAddonServiceDraft(null)
   }
 
+  const toggleCertificationSort = (key: keyof CertificationType) => {
+    setCertificationSort(prev => {
+      if (prev.key === key) {
+        return { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+      }
+      return { key, dir: 'asc' }
+    })
+  }
+
+  const openCertificationModal = (row?: CertificationType) => {
+    if (row) {
+      setCertificationDraft({
+        id: row.id,
+        key: row.key ?? '',
+        name: row.name ?? '',
+        description: row.description ?? null,
+        sort_order: row.sort_order ?? 100,
+        is_active: !!row.is_active,
+      })
+    } else {
+      setCertificationDraft({
+        key: '',
+        name: '',
+        description: null,
+        sort_order: 100,
+        is_active: true,
+      })
+    }
+    setCertificationModalOpen(true)
+  }
+
+  const closeCertificationModal = () => {
+    setCertificationModalOpen(false)
+    setCertificationDraft(null)
+  }
+
   // --- INLINE SAVE HELPERS ---
   const saveDoc = async () => {
     if (!docDraft) return
@@ -1284,6 +1391,61 @@ export default function AdminClient() {
     if (addonServiceDraft?.id === id) closeAddonServiceModal()
   }
 
+  const saveCertification = async () => {
+    if (!certificationDraft) return
+    const name = certificationDraft.name.trim()
+    const autoKey = normalizeAddonKey(name)
+    const key = (
+      certificationDraft.id
+        ? certificationDraft.key
+        : autoKey || `cert_${Math.random().toString(36).slice(2, 8)}`
+    ).trim()
+    const payload = {
+      key,
+      name,
+      description: certificationDraft.description || null,
+      sort_order: certificationDraft.sort_order ?? 100,
+      is_active: certificationDraft.is_active,
+    }
+
+    if (!payload.name) {
+      return alert('Namn måste fyllas i.')
+    }
+
+    if (certificationDraft.id) {
+      const { error } = await (supabase as any)
+        .from('settings_certifications')
+        .update(payload)
+        .eq('id', certificationDraft.id)
+      if (error) return alert(error.message)
+      setCertificationsAll(prev =>
+        prev.map(r => (r.id === certificationDraft.id ? ({ ...r, ...payload } as CertificationType) : r))
+      )
+      closeCertificationModal()
+      return
+    }
+
+    const { data, error } = await (supabase as any)
+      .from('settings_certifications')
+      .insert(payload)
+      .select('id, key, name, description, sort_order, is_active')
+      .single()
+    if (error) return alert(error.message)
+    setCertificationsAll(prev => [data as CertificationType, ...prev])
+    closeCertificationModal()
+  }
+
+  const delCertification = async (id: string) => {
+    if (!confirm('Ta bort certifieringen?')) return
+    const { error } = await (supabase as any)
+      .from('settings_certifications')
+      .delete()
+      .eq('id', id)
+    if (error) return alert(error.message)
+    setCertificationsAll(prev => prev.filter(r => r.id !== id))
+    if (certificationDraft?.id === id) closeCertificationModal()
+  }
+
   if (loading)
     return (
       <Protected>
@@ -1326,6 +1488,12 @@ export default function AdminClient() {
               className={`px-3 py-1.5 text-sm ${tab === 'addon-services' ? 'bg-gray-100' : ''}`}
             >
               Tilläggsuppdrag
+            </button>
+            <button
+              onClick={() => setTabAndPush('certifications')}
+              className={`px-3 py-1.5 text-sm ${tab === 'certifications' ? 'bg-gray-100' : ''}`}
+            >
+              Certifieringar
             </button>
             <button
               onClick={() => setTabAndPush('forutsattningar')}
@@ -1823,6 +1991,127 @@ export default function AdminClient() {
                     </tr>
                   ))}
                   {filteredAddonServices.length === 0 && (
+                    <tr>
+                      <td className="py-4 text-gray-500" colSpan={6}>
+                        Inga rader.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {tab === 'certifications' && (
+          <div className="bg-white rounded-xl shadow p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="font-semibold">Certifieringar</h2>
+                <div className="text-xs text-gray-500">settings_certifications</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  value={qCertifications}
+                  onChange={e => setQCertifications(e.target.value)}
+                  placeholder="Sök..."
+                  className="border rounded px-2 py-1 text-sm"
+                />
+                <button
+                  onClick={() => openCertificationModal()}
+                  className="bg-emerald-600 text-white text-sm px-3 py-1.5 rounded"
+                >
+                  + Ny
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-600">
+                    <th className="py-2 pr-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleCertificationSort('key')}
+                        className="inline-flex items-center gap-1 hover:text-gray-800"
+                      >
+                        Key
+                        {renderSortIcon(certificationSort.key === 'key', certificationSort.dir)}
+                      </button>
+                    </th>
+                    <th className="py-2 pr-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleCertificationSort('name')}
+                        className="inline-flex items-center gap-1 hover:text-gray-800"
+                      >
+                        Namn
+                        {renderSortIcon(certificationSort.key === 'name', certificationSort.dir)}
+                      </button>
+                    </th>
+                    <th className="py-2 pr-3 max-w-[30rem]">
+                      <button
+                        type="button"
+                        onClick={() => toggleCertificationSort('description')}
+                        className="inline-flex items-center gap-1 hover:text-gray-800"
+                      >
+                        Beskrivning
+                        {renderSortIcon(
+                          certificationSort.key === 'description',
+                          certificationSort.dir
+                        )}
+                      </button>
+                    </th>
+                    <th className="py-2 pr-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleCertificationSort('sort_order')}
+                        className="inline-flex items-center gap-1 hover:text-gray-800"
+                      >
+                        Sortering
+                        {renderSortIcon(
+                          certificationSort.key === 'sort_order',
+                          certificationSort.dir
+                        )}
+                      </button>
+                    </th>
+                    <th className="py-2 pr-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleCertificationSort('is_active')}
+                        className="inline-flex items-center gap-1 hover:text-gray-800"
+                      >
+                        Aktiv
+                        {renderSortIcon(
+                          certificationSort.key === 'is_active',
+                          certificationSort.dir
+                        )}
+                      </button>
+                    </th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredCertifications.map(r => (
+                    <tr key={r.id}>
+                      <td className="py-2 pr-3">{r.key}</td>
+                      <td className="py-2 pr-3">{r.name}</td>
+                      <td className="py-2 pr-3 truncate max-w-[28rem]" title={r.description ?? ''}>
+                        {r.description ?? ''}
+                      </td>
+                      <td className="py-2 pr-3">{r.sort_order}</td>
+                      <td className="py-2 pr-3">{r.is_active ? 'Ja' : 'Nej'}</td>
+                      <td className="py-2 text-right">
+                        <button
+                          onClick={() => openCertificationModal(r)}
+                          className="text-emerald-700 underline"
+                        >
+                          Editera
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredCertifications.length === 0 && (
                     <tr>
                       <td className="py-4 text-gray-500" colSpan={6}>
                         Inga rader.
@@ -2433,6 +2722,118 @@ export default function AdminClient() {
                   className="mt-2"
                   checked={!!addonServiceDraft.is_active}
                   onChange={e => setAddonServiceDraft({ ...addonServiceDraft, is_active: e.target.checked })}
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {certificationModalOpen && certificationDraft && (
+        <div className="fixed inset-0 z-[60] bg-black/40 flex items-start justify-center p-4 overflow-auto">
+          <div className="bg-white w-full max-w-3xl rounded-xl shadow-lg p-4 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold">
+                  {certificationDraft.id ? 'Redigera certifiering' : 'Ny certifiering'}
+                </h3>
+                {certificationDraft.id && (
+                  <div className="text-xs text-gray-500 mt-1">ID: {certificationDraft.id}</div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {certificationDraft.id && (
+                  <button
+                    onClick={() => delCertification(certificationDraft.id!)}
+                    className="text-rose-700 border border-rose-200 bg-rose-50 text-sm px-3 py-1.5 rounded-md hover:bg-rose-100"
+                  >
+                    Ta bort
+                  </button>
+                )}
+                <button
+                  onClick={closeCertificationModal}
+                  className="text-sm px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+                >
+                  Avbryt
+                </button>
+                <button
+                  onClick={saveCertification}
+                  className="bg-emerald-600 text-white text-sm px-3 py-1.5 rounded-md hover:bg-emerald-700"
+                >
+                  Spara
+                </button>
+                <button
+                  onClick={closeCertificationModal}
+                  className="text-sm px-2 py-1.5 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50"
+                  aria-label="Stäng"
+                  title="Stäng"
+                >
+                  Stäng
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className="text-sm">
+                <div className="mb-1 text-gray-600">Key (automatisk)</div>
+                <input
+                  className="border rounded px-2 py-1 w-full"
+                  value={
+                    certificationDraft.id
+                      ? certificationDraft.key
+                      : normalizeAddonKey(certificationDraft.name)
+                  }
+                  readOnly
+                />
+                <div className="mt-1 text-xs text-gray-500">
+                  Skapas automatiskt från namn vid första sparning.
+                </div>
+              </label>
+              <label className="text-sm">
+                <div className="mb-1 text-gray-600">Sortering</div>
+                <input
+                  type="number"
+                  className="border rounded px-2 py-1 w-full"
+                  value={certificationDraft.sort_order}
+                  onChange={e =>
+                    setCertificationDraft({
+                      ...certificationDraft,
+                      sort_order: e.target.value === '' ? 100 : Number(e.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label className="text-sm md:col-span-2">
+                <div className="mb-1 text-gray-600">Namn</div>
+                <input
+                  className="border rounded px-2 py-1 w-full"
+                  value={certificationDraft.name}
+                  onChange={e => setCertificationDraft({ ...certificationDraft, name: e.target.value })}
+                />
+              </label>
+              <label className="text-sm md:col-span-2">
+                <div className="mb-1 text-gray-600">Beskrivning</div>
+                <textarea
+                  className="border rounded px-2 py-1 w-full"
+                  rows={3}
+                  value={certificationDraft.description ?? ''}
+                  onChange={e =>
+                    setCertificationDraft({
+                      ...certificationDraft,
+                      description: e.target.value || null,
+                    })
+                  }
+                />
+              </label>
+              <label className="text-sm">
+                <div className="mb-1 text-gray-600">Aktiv</div>
+                <input
+                  type="checkbox"
+                  className="mt-2"
+                  checked={!!certificationDraft.is_active}
+                  onChange={e =>
+                    setCertificationDraft({ ...certificationDraft, is_active: e.target.checked })
+                  }
                 />
               </label>
             </div>
