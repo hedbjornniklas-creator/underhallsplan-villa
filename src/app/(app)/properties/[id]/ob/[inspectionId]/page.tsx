@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
+import { parseScopeCodes } from '@/lib/report/scopeText'
 import ObWizard, {
   ObSectionKey,
   ObWizardInspectionInput,
@@ -54,6 +55,28 @@ type ObSnapshotSingleClient = {
     }
   }
 }
+
+const AREA_MEASUREMENT_ADDON_KEY = 'area'
+
+function normalizeAddonKey(value: string | null | undefined) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
+
+function hasAreaMeasurementSelection(selectedAddonKeys: string[], scope: string | null | undefined) {
+  const selectedLookup = new Set(selectedAddonKeys.map(normalizeAddonKey).filter(Boolean))
+  const hasSelectedAddon = selectedLookup.has(AREA_MEASUREMENT_ADDON_KEY)
+  if (hasSelectedAddon) return true
+
+  const normalizedScopeCodes = parseScopeCodes(scope).map(normalizeAddonKey)
+  return (
+    normalizedScopeCodes.includes(AREA_MEASUREMENT_ADDON_KEY) ||
+    normalizedScopeCodes.includes('areamatning')
+  )
+}
 function normalizeAssignmentRoleToInspectionSide(
   value: string | null | undefined
 ): 'buyer' | 'seller' | 'apartment' | null {
@@ -78,12 +101,17 @@ const SECTIONS: { key: ObSectionKey; label: string }[] = [
   { key: 'forutsattningar', label: 'Förutsättningar' },
   { key: 'utsida', label: 'Byggnad - utsida' },
   { key: 'insida', label: 'Byggnad - insida' },
-  { key: 'delivery', label: 'Skicka utlåtande' },
 ]
 
-function getVisibleSections(isApartmentInspection: boolean) {
-  if (!isApartmentInspection) return SECTIONS
-  return SECTIONS.filter(section => section.key !== 'utsida')
+function getVisibleSections(isApartmentInspection: boolean, showAreaMeasurement: boolean) {
+  const sections: { key: ObSectionKey; label: string }[] = [...SECTIONS]
+  if (showAreaMeasurement) {
+    sections.push({ key: 'areamatning', label: 'Areamätning' })
+  }
+  sections.push({ key: 'delivery', label: 'Skicka utlåtande' })
+
+  if (!isApartmentInspection) return sections
+  return sections.filter(section => section.key !== 'utsida')
 }
 
 export default function InspectionDetailPage() {
@@ -97,6 +125,7 @@ export default function InspectionDetailPage() {
   const [inspection, setInspection] = useState<Inspection | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selectedAddonKeys, setSelectedAddonKeys] = useState<string[]>([])
 
   // Starta på Grunddata
   const [activeSection, setActiveSection] = useState<ObSectionKey>('grunddata')
@@ -259,15 +288,69 @@ export default function InspectionDetailPage() {
     void load()
   }, [propertyId, inspectionId])
 
+  useEffect(() => {
+    if (!inspectionId) {
+      setSelectedAddonKeys([])
+      return
+    }
+
+    let cancelled = false
+
+    const loadInspectionAddonSelections = async () => {
+      try {
+        const response = await fetch(`/api/ob/inspections/${inspectionId}/addon-orders`, {
+          cache: 'no-store',
+        })
+        const payload = (await response.json().catch(() => null)) as
+          | {
+              addonOrders?: Array<{ addon_key?: string | null; is_selected?: boolean }>
+              error?: string
+            }
+          | null
+
+        if (!response.ok) {
+          throw new Error(payload?.error ?? 'Kunde inte hämta tilläggsuppdrag.')
+        }
+
+        if (cancelled) return
+        const rows = Array.isArray(payload?.addonOrders) ? payload.addonOrders : []
+        const selected = rows
+          .filter((row) => row?.is_selected === true)
+          .map((row) => String(row?.addon_key ?? '').trim())
+          .filter((value) => value.length > 0)
+        setSelectedAddonKeys(selected)
+      } catch (loadAddonError) {
+        console.error('Kunde inte läsa tilläggsuppdrag för sidomeny:', loadAddonError)
+        if (!cancelled) setSelectedAddonKeys([])
+      }
+    }
+
+    void loadInspectionAddonSelections()
+
+    return () => {
+      cancelled = true
+    }
+  }, [inspectionId])
+
   const isApartmentInspection =
     normalizeAssignmentRoleToInspectionSide(inspection?.inspection_side) === 'apartment'
-  const visibleSections = getVisibleSections(isApartmentInspection)
+  const showAreaMeasurement = hasAreaMeasurementSelection(
+    selectedAddonKeys,
+    inspection?.scope ?? null
+  )
+  const visibleSections = getVisibleSections(isApartmentInspection, showAreaMeasurement)
 
   useEffect(() => {
     if (isApartmentInspection && activeSection === 'utsida') {
       setActiveSection('insida')
     }
   }, [isApartmentInspection, activeSection])
+
+  useEffect(() => {
+    if (!showAreaMeasurement && activeSection === 'areamatning') {
+      setActiveSection('insida')
+    }
+  }, [showAreaMeasurement, activeSection])
 
   if (loading) {
     return (
@@ -372,6 +455,7 @@ export default function InspectionDetailPage() {
                 activeSection={activeSection}
                 onPropertyUpdated={(updated) => setProperty(updated as Property)}
                 onInspectionUpdated={(updated) => setInspection(updated as Inspection)}
+                onInspectionAddonSelectionChanged={(keys) => setSelectedAddonKeys(keys)}
               />
             </div>
           </div>

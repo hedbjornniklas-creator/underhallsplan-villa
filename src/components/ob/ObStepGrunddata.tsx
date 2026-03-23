@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
 
@@ -43,6 +43,7 @@ interface ObStepGrunddataProps {
   inspection: ObInspection
   onPropertyUpdated?: (p: Property) => void
   onInspectionUpdated?: (i: ObInspection) => void
+  onInspectionAddonSelectionChanged?: (selectedAddonKeys: string[]) => void
 }
 
 type InspectionAddonOrder = {
@@ -218,6 +219,7 @@ export default function ObStepGrunddata({
   inspection,
   onPropertyUpdated,
   onInspectionUpdated,
+  onInspectionAddonSelectionChanged,
 }: ObStepGrunddataProps) {
   // Lokalt formulär-state - vi utgår från inkommande props
   const [propForm, setPropForm] = useState({
@@ -265,6 +267,19 @@ export default function ObStepGrunddata({
   const [inspectorAvatarLoadError, setInspectorAvatarLoadError] = useState(false)
   const [inspectionAddonOrders, setInspectionAddonOrders] = useState<InspectionAddonOrder[]>([])
   const [inspectionAddonLoading, setInspectionAddonLoading] = useState(false)
+
+  const notifyAddonSelection = useCallback(
+    (rows: InspectionAddonOrder[]) => {
+      if (!onInspectionAddonSelectionChanged) return
+      onInspectionAddonSelectionChanged(
+        rows
+          .filter(row => row.is_selected)
+          .map(row => row.addon_key)
+          .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      )
+    },
+    [onInspectionAddonSelectionChanged]
+  )
 
   // Om vi får nya props (t.ex. efter save utifrån) uppdaterar vi lokalt state
   useEffect(() => {
@@ -359,6 +374,7 @@ export default function ObStepGrunddata({
         if (cancelled) return
         const rows = Array.isArray(payload?.addonOrders) ? payload.addonOrders : []
         setInspectionAddonOrders(rows)
+        notifyAddonSelection(rows)
 
         if ((inspection.scope ?? '').trim() === '' && rows.length > 0) {
           const selectedFromSnapshot = formatScopeLabels(
@@ -373,7 +389,10 @@ export default function ObStepGrunddata({
         }
       } catch (addonError) {
         console.error('Kunde inte hämta tilläggsuppdrag för Grunddata:', addonError)
-        if (!cancelled) setInspectionAddonOrders([])
+        if (!cancelled) {
+          setInspectionAddonOrders([])
+          notifyAddonSelection([])
+        }
       } finally {
         if (!cancelled) setInspectionAddonLoading(false)
       }
@@ -384,7 +403,7 @@ export default function ObStepGrunddata({
     return () => {
       cancelled = true
     }
-  }, [inspection.id, inspection.scope])
+  }, [inspection.id, inspection.scope, notifyAddonSelection])
 
   // Hjälpare: spara property-fält
   const saveProperty = async (patch: Partial<Property>) => {
@@ -712,6 +731,7 @@ export default function ObStepGrunddata({
       current.id === row.id ? { ...current, is_selected: nextSelected } : current
     )
     setInspectionAddonOrders(optimisticRows)
+    notifyAddonSelection(optimisticRows)
 
     try {
       const response = await fetch(`/api/ob/inspections/${inspection.id}/addon-orders`, {
@@ -734,16 +754,20 @@ export default function ObStepGrunddata({
         ? payload.addonOrders
         : optimisticRows
       setInspectionAddonOrders(persistedRows)
+      notifyAddonSelection(persistedRows)
 
       const newScope = scopeFromInspectionAddons(persistedRows)
       setInspForm(prev => ({ ...prev, scope: newScope }))
       await saveInspection({ scope: newScope } as Partial<Inspection>)
     } catch (addonUpdateError) {
       console.error('Kunde inte uppdatera tilläggsuppdrag:', addonUpdateError)
-      setInspectionAddonOrders(prev =>
-        prev.map(current =>
+      setInspectionAddonOrders(prev => {
+        const reverted = prev.map(current =>
           current.id === row.id ? { ...current, is_selected: row.is_selected } : current
         )
+        notifyAddonSelection(reverted)
+        return reverted
+      }
       )
       setError(
         addonUpdateError instanceof Error

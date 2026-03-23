@@ -836,6 +836,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
 
   const deleteFreeNoteRow = async (itemId: string, rowId: string) => {
     if (isInspectionLocked) return
+    if (!confirm('Ta bort denna fria notering?')) return
     try {
       setSaving(true)
       setError(null)
