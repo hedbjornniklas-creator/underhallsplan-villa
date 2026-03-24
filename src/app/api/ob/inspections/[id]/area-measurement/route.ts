@@ -26,6 +26,15 @@ function isMissingTableError(message: string) {
   )
 }
 
+function isMissingLockColumnError(message: string) {
+  const normalized = message.toLowerCase()
+  return (
+    normalized.includes('locked_at') ||
+    normalized.includes('42703') ||
+    normalized.includes('column')
+  )
+}
+
 async function loadProfileSnapshot(
   admin: ReturnType<typeof createSupabaseAdminClient>,
   userId: string
@@ -211,6 +220,23 @@ export async function PATCH(
     const admin = createSupabaseAdminClient()
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     if (!body) return jsonError('Ogiltig payload.', 400)
+
+    const { data: inspectionRow, error: inspectionError } = await admin
+      .from('inspections')
+      .select('id,locked_at')
+      .eq('id', id)
+      .maybeSingle()
+
+    if (inspectionError) {
+      const message = inspectionError.message ?? ''
+      if (!isMissingLockColumnError(message)) {
+        throw new Error(message || 'Kunde inte läsa besiktning.')
+      }
+    } else if (!inspectionRow) {
+      return jsonError('Besiktningen hittades inte.', 404)
+    } else if (inspectionRow.locked_at) {
+      return jsonError('Besiktningen är låst och kan inte uppdateras.', 409)
+    }
 
     const payload = {
       inspection_id: id,

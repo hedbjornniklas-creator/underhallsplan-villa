@@ -15,7 +15,9 @@ type Inspection = Tables<'inspections'>
 
 type ObStepAreamatningProps = {
   property: Pick<Property, 'address' | 'city' | 'year_built'>
-  inspection: Pick<Inspection, 'id' | 'assignment_number' | 'date'>
+  inspection: Pick<Inspection, 'id' | 'assignment_number' | 'date'> & {
+    locked_at?: string | null
+  }
 }
 
 type AreaMeasurementRow = {
@@ -126,6 +128,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
   const [error, setError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [profile, setProfile] = useState<ProfileSnapshot | null>(null)
+  const isInspectionLocked = Boolean(inspection.locked_at)
   const [form, setForm] = useState<AreaMeasurementForm>({
     building_type: '',
     building_year: '',
@@ -198,7 +201,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
   }, [inspection.id, inspection.date, property.city, property.year_built])
 
   const persistForm = useCallback(async (nextForm: AreaMeasurementForm) => {
-    if (unsupported) return
+    if (unsupported || isInspectionLocked) return
     setSaving(true)
     setSaveState('saving')
     setError(null)
@@ -238,7 +241,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
     } finally {
       setSaving(false)
     }
-  }, [inspection.id, unsupported])
+  }, [inspection.id, unsupported, isInspectionLocked])
 
   useEffect(() => {
     if (loading || !hydratedRef.current) return
@@ -270,10 +273,12 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
   }, [form.rows])
 
   const updateField = (field: Exclude<keyof AreaMeasurementForm, 'rows'>, value: string) => {
+    if (isInspectionLocked) return
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
   const updateRow = (rowId: string, patch: Partial<AreaMeasurementRow>) => {
+    if (isInspectionLocked) return
     setForm((prev) => ({
       ...prev,
       rows: prev.rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
@@ -281,6 +286,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
   }
 
   const addRow = () => {
+    if (isInspectionLocked) return
     setForm((prev) => ({
       ...prev,
       rows: [...prev.rows, createEmptyRow(prev.rows.length)],
@@ -288,6 +294,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
   }
 
   const removeRow = (rowId: string) => {
+    if (isInspectionLocked) return
     setForm((prev) => {
       const nextRows = prev.rows.filter((row) => row.id !== rowId)
       return {
@@ -328,6 +335,12 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
         </section>
       ) : null}
 
+      {isInspectionLocked ? (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          Besiktningen är låst. Areamätning är skrivskyddad.
+        </section>
+      ) : null}
+
       {!loading ? (
         <>
           <section className="rounded-2xl border bg-white p-4 shadow-sm md:p-5">
@@ -344,24 +357,28 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
                 label="Byggnadstyp"
                 value={form.building_type}
                 onChange={(value) => updateField('building_type', value)}
+                disabled={isInspectionLocked}
               />
               <TextInput
                 label="Byggår"
                 value={form.building_year}
                 onChange={(value) => updateField('building_year', value)}
                 inputMode="numeric"
+                disabled={isInspectionLocked}
               />
               <TextInput
                 label="Tillbyggd"
                 value={form.extension_note}
                 onChange={(value) => updateField('extension_note', value)}
                 placeholder="Ja/Nej eller fritext"
+                disabled={isInspectionLocked}
               />
               <TextArea
                 label="Övrigt"
                 value={form.object_other}
                 onChange={(value) => updateField('object_other', value)}
                 rows={2}
+                disabled={isInspectionLocked}
               />
             </div>
           </section>
@@ -373,6 +390,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
                 label="Instrument (märke och modell)"
                 value={form.measurement_instrument}
                 onChange={(value) => updateField('measurement_instrument', value)}
+                disabled={isInspectionLocked}
               />
               <ReadOnlyField label="Standard" value={AREA_STANDARD_LABEL} />
             </div>
@@ -385,7 +403,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
                 type="button"
                 onClick={addRow}
                 className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                disabled={unsupported || saving}
+                disabled={unsupported || saving || isInspectionLocked}
               >
                 Lägg till rad
               </button>
@@ -399,6 +417,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
                       label="Våning/byggdel"
                       value={row.floor_or_part}
                       onChange={(value) => updateRow(row.id, { floor_or_part: value })}
+                      disabled={isInspectionLocked}
                     />
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <TextInput
@@ -406,12 +425,14 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
                         value={row.boarea_m2}
                         onChange={(value) => updateRow(row.id, { boarea_m2: value })}
                         inputMode="decimal"
+                        disabled={isInspectionLocked}
                       />
                       <TextInput
                         label={`Biarea (m²) ${FIXED_TOLERANCE_LABEL}`}
                         value={row.biarea_m2}
                         onChange={(value) => updateRow(row.id, { biarea_m2: value })}
                         inputMode="decimal"
+                        disabled={isInspectionLocked}
                       />
                     </div>
                     <div className="flex justify-end">
@@ -419,7 +440,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
                         type="button"
                         onClick={() => removeRow(row.id)}
                         className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
-                        disabled={form.rows.length === 1 || unsupported || saving}
+                        disabled={form.rows.length === 1 || unsupported || saving || isInspectionLocked}
                       >
                         Ta bort rad
                       </button>
@@ -452,12 +473,14 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
                 value={form.comment}
                 onChange={(value) => updateField('comment', value)}
                 rows={3}
+                disabled={isInspectionLocked}
               />
               <TextArea
                 label="Övrigt"
                 value={form.other_notes}
                 onChange={(value) => updateField('other_notes', value)}
                 rows={4}
+                disabled={isInspectionLocked}
               />
             </div>
           </section>
@@ -470,12 +493,14 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
                   label="Ort"
                   value={form.place_name}
                   onChange={(value) => updateField('place_name', value)}
+                  disabled={isInspectionLocked}
                 />
                 <TextInput
                   label="Datum"
                   value={form.signed_date}
                   onChange={(value) => updateField('signed_date', value)}
                   type="date"
+                  disabled={isInspectionLocked}
                 />
               </div>
               <ReadOnlyField label="Besiktningsbolag" value={profile?.company_name ?? '-'} />
@@ -518,6 +543,7 @@ function TextInput({
   placeholder,
   inputMode,
   type = 'text',
+  disabled,
 }: {
   label: string
   value: string
@@ -525,6 +551,7 @@ function TextInput({
   placeholder?: string
   inputMode?: InputHTMLAttributes<HTMLInputElement>['inputMode']
   type?: 'text' | 'date'
+  disabled?: boolean
 }) {
   return (
     <label className="space-y-1">
@@ -535,7 +562,8 @@ function TextInput({
         inputMode={inputMode}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        disabled={disabled}
+        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-70"
       />
     </label>
   )
@@ -546,11 +574,13 @@ function TextArea({
   value,
   onChange,
   rows,
+  disabled,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   rows: number
+  disabled?: boolean
 }) {
   return (
     <label className="space-y-1">
@@ -559,7 +589,8 @@ function TextArea({
         value={value}
         rows={rows}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        disabled={disabled}
+        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-70"
       />
     </label>
   )

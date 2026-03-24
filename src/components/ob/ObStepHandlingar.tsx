@@ -92,6 +92,9 @@ export default function ObStepHandlingar({
 }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const isInspectionLocked = Boolean(
+    (inspection as Inspection & { locked_at?: string | null }).locked_at
+  )
 
   // saving-states
   const [savingDocs, setSavingDocs] = useState(false)
@@ -177,7 +180,7 @@ export default function ObStepHandlingar({
     if (insErr) throw insErr
   }
 
-  const loadOrCreateDisclosureRow = async (): Promise<InspectionDisclosure> => {
+  const loadOrCreateDisclosureRow = async (): Promise<InspectionDisclosure | null> => {
     const { data, error: discErr } = await supabase
       .from('inspection_disclosures')
       .select('*')
@@ -188,6 +191,7 @@ export default function ObStepHandlingar({
     let row = (data && data[0]) as InspectionDisclosure | undefined
 
     if (!row) {
+      if (isInspectionLocked) return null
       const { data: inserted, error: insErr } = await supabase
         .from('inspection_disclosures')
         .insert({
@@ -202,7 +206,7 @@ export default function ObStepHandlingar({
       row = inserted as InspectionDisclosure
     }
 
-    return row
+    return row ?? null
   }
 
   const ensureDefectTextSaved = async () => {
@@ -217,6 +221,10 @@ export default function ObStepHandlingar({
     const current = ((inspRow as any)?.defect_disclosures ?? '').trim()
     if (current !== '') {
       setDefectText((inspRow as any)?.defect_disclosures ?? STANDARD_DEFECT_TEXT)
+      return
+    }
+    if (isInspectionLocked) {
+      setDefectText(STANDARD_DEFECT_TEXT)
       return
     }
 
@@ -250,7 +258,9 @@ export default function ObStepHandlingar({
         if (cancelled) return
 
         // Seeda handlingar: skapa rader för saknade document_types
-        await ensureTemplateDocuments(types, existingDocs)
+        if (!isInspectionLocked) {
+          await ensureTemplateDocuments(types, existingDocs)
+        }
 
         // Läs om efter ev insert
         const docsAfter = await fetchInspectionDocuments()
@@ -261,7 +271,7 @@ export default function ObStepHandlingar({
         const disclosureRow = await loadOrCreateDisclosureRow()
         if (cancelled) return
         setDisclosure(disclosureRow)
-        setDisclosureText((disclosureRow as any).note ?? '')
+        setDisclosureText((disclosureRow as any)?.note ?? '')
 
         // defect_disclosures – säkerställ att standard sparas även utan input
         await ensureDefectTextSaved()
@@ -278,7 +288,7 @@ export default function ObStepHandlingar({
     return () => {
       cancelled = true
     }
-  }, [inspection?.id, inspectionSide])
+  }, [inspection?.id, inspectionSide, isInspectionLocked])
 
   // -------------------------------
   // DEDUPE + SORT (hide duplicates)
@@ -316,6 +326,7 @@ export default function ObStepHandlingar({
   // HANDLINGAR update
   // -------------------------------
   const updateDoc = async (id: string, patch: Partial<InspectionDocument>) => {
+    if (isInspectionLocked) return
     setDocumentsRaw(prev => prev.map(d => (d.id === id ? ({ ...d, ...patch } as any) : d)))
     setSavingDocs(true)
 
@@ -334,6 +345,7 @@ export default function ObStepHandlingar({
   // -------------------------------
   const handleAddCustomDocument = async () => {
     if (!inspection?.id) return
+    if (isInspectionLocked) return
 
     const title = window.prompt('Ange titel för den egna handlingen:')
     if (!title) return
@@ -379,6 +391,7 @@ export default function ObStepHandlingar({
   // SAVE disclosureText (debounce)
   // -------------------------------
   useEffect(() => {
+    if (isInspectionLocked) return
     if (!disclosure) return
 
     setSavedDisclosure(false)
@@ -403,12 +416,13 @@ export default function ObStepHandlingar({
     }, 500)
 
     return () => clearTimeout(timeout)
-  }, [disclosureText, disclosure])
+  }, [disclosureText, disclosure, isInspectionLocked])
 
   // -------------------------------
   // SAVE defectText (debounce) – tomt => standard
   // -------------------------------
   useEffect(() => {
+    if (isInspectionLocked) return
     if (!inspection?.id) return
 
     setSavedDefect(false)
@@ -440,7 +454,7 @@ export default function ObStepHandlingar({
     }, 500)
 
     return () => clearTimeout(timeout)
-  }, [defectText, inspection?.id])
+  }, [defectText, inspection?.id, isInspectionLocked])
 
   // -------------------------------
   // RENDER
@@ -450,6 +464,12 @@ export default function ObStepHandlingar({
 
   return (
     <div className="space-y-8">
+      {isInspectionLocked ? (
+        <section className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          Besiktningen är låst. Handlingar och upplysningar är skrivskyddade.
+        </section>
+      ) : null}
+
       {/* =======================
           HANDLINGAR
       ======================== */}
@@ -498,6 +518,7 @@ export default function ObStepHandlingar({
                           <button
                             key={key}
                             onClick={() => void updateDoc(doc.id, { status: key } as any)}
+                            disabled={isInspectionLocked}
                             className={
                               'px-2 py-1 rounded-full text-sm border ' +
                               (docStatus === key
@@ -516,6 +537,7 @@ export default function ObStepHandlingar({
                         type="date"
                         className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900"
                         value={((doc as any).document_date ?? '') as string}
+                        disabled={isInspectionLocked}
                         onChange={e =>
                           void updateDoc(doc.id, { document_date: e.target.value || null } as any)
                         }
@@ -526,6 +548,7 @@ export default function ObStepHandlingar({
                       <textarea
                         className="min-h-[2.5rem] w-full rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900"
                         value={(((doc as any).note ?? '') as string) ?? ''}
+                        disabled={isInspectionLocked}
                         onChange={e => void updateDoc(doc.id, { note: e.target.value } as any)}
                       />
                     </td>
@@ -548,7 +571,8 @@ export default function ObStepHandlingar({
           <button
             type="button"
             onClick={() => void handleAddCustomDocument()}
-            className="text-sm px-3 py-1.5 border rounded-md bg-white hover:bg-gray-50"
+            disabled={isInspectionLocked}
+            className="text-sm px-3 py-1.5 border rounded-md bg-white hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
           >
             + Lägg till egen handling
           </button>
@@ -571,6 +595,7 @@ export default function ObStepHandlingar({
           className="min-h-[200px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500"
           placeholder="Skriv alla upplysningar här …"
           value={disclosureText}
+          disabled={isInspectionLocked}
           onChange={e => setDisclosureText(e.target.value)}
         />
       </section>
@@ -590,6 +615,7 @@ export default function ObStepHandlingar({
         <textarea
           className="min-h-[160px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500"
           value={defectText}
+          disabled={isInspectionLocked}
           onChange={e => setDefectText(e.target.value)}
         />
       </section>

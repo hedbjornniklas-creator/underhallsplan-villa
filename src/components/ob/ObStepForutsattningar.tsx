@@ -138,6 +138,9 @@ export default function ObStepForutsattningar({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const isInspectionLocked = Boolean(
+    (inspection as Inspection & { locked_at?: string | null }).locked_at
+  )
 
   // inspection_conditions (bara för furnishing)
   const [condRow, setCondRow] = useState<InspectionConditionsRow | null>(null)
@@ -173,6 +176,10 @@ export default function ObStepForutsattningar({
           setCondRow(r)
           setFurnishing((r.furnishing_level ?? 'fullt_moblerad') as FurnishingLevel)
         } else {
+          if (isInspectionLocked) {
+            setCondRow(null)
+            setFurnishing('fullt_moblerad')
+          } else {
           const { data: inserted, error: insErr } = await supabase
             .from('inspection_conditions')
             .insert({
@@ -202,6 +209,7 @@ export default function ObStepForutsattningar({
             const r = inserted as InspectionConditionsRow
             setCondRow(r)
             setFurnishing((r.furnishing_level ?? 'fullt_moblerad') as FurnishingLevel)
+          }
           }
         }
 
@@ -305,12 +313,13 @@ export default function ObStepForutsattningar({
     }
 
     if (inspection?.id) loadAll()
-  }, [inspection?.id, inspection?.inspection_side])
+  }, [inspection?.id, inspection?.inspection_side, isInspectionLocked])
 
   // -----------------------------
   // Save furnishing
   // -----------------------------
   const saveFurnishing = async (lvl: FurnishingLevel) => {
+    if (isInspectionLocked) return
     if (!condRow) return
     setSaving(true)
     setError(null)
@@ -335,6 +344,7 @@ export default function ObStepForutsattningar({
   // Upsert selection row
   // -----------------------------
   const upsertSelection = async (sel: InspectionOverviewSelection) => {
+    if (isInspectionLocked) return sel
     setSaving(true)
     setError(null)
 
@@ -404,6 +414,7 @@ export default function ObStepForutsattningar({
   }
 
   const addMultiSet = (itemId: string) => {
+    if (isInspectionLocked) return
     const arr = getItemSelections(itemId)
     const nextIndex = arr.length ? Math.max(...arr.map(a => a.set_index)) + 1 : 0
     const empty: InspectionOverviewSelection = {
@@ -419,6 +430,7 @@ export default function ObStepForutsattningar({
   }
 
   const removeSet = async (itemId: string, setIndex: number) => {
+    if (isInspectionLocked) return
     const arr = getItemSelections(itemId)
     const target = arr.find(a => a.set_index === setIndex)
     const next = arr.filter(a => a.set_index !== setIndex)
@@ -434,6 +446,7 @@ export default function ObStepForutsattningar({
     groupKey: string,
     value: any
   ) => {
+    if (isInspectionLocked) return
     const arr = ensureSingleSelection(itemId)
     const next = [...arr]
     const sel = { ...next[selIndex] }
@@ -446,6 +459,7 @@ export default function ObStepForutsattningar({
   }
 
   const updateSelectionNote = (itemId: string, selIndex: number, note: string) => {
+    if (isInspectionLocked) return
     const arr = ensureSingleSelection(itemId)
     const next = [...arr]
     const sel = { ...next[selIndex], note }
@@ -545,12 +559,14 @@ export default function ObStepForutsattningar({
     onChange,
     options,
     disabledEmpty,
+    disabled,
   }: {
     label: string
     value: any
     onChange: (v: string) => void
     options: SettingsOverviewOption[]
     disabledEmpty?: boolean
+    disabled?: boolean
   }) => (
     <div className="grid grid-cols-1 gap-1 md:grid-cols-[140px_1fr] md:items-center md:gap-2">
       <label className="text-xs font-medium text-gray-700 md:text-sm md:text-gray-800 md:whitespace-nowrap">
@@ -560,8 +576,9 @@ export default function ObStepForutsattningar({
       <select
         value={value ?? ''}
         onChange={e => onChange(e.target.value)}
+        disabled={disabled}
         className="h-10 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 text-sm text-gray-900
-                   focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+                   focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-70"
       >
         <option value="">Välj…</option>
         {options.length === 0 && (
@@ -614,6 +631,7 @@ export default function ObStepForutsattningar({
                 value={values[g.key] ?? ''}
                 options={g.options}
                 disabledEmpty
+                disabled={isInspectionLocked}
                 onChange={v => updateGroupValue(item.id, selIndex, g.key, v)}
               />
             ))}
@@ -637,6 +655,7 @@ export default function ObStepForutsattningar({
                   value={values[g.key] ?? ''}
                   options={g.options}
                   disabledEmpty
+                  disabled={isInspectionLocked}
                   onChange={v => updateGroupValue(item.id, selIndex, g.key, v)}
                 />
               ))
@@ -651,10 +670,11 @@ export default function ObStepForutsattningar({
             <textarea
               value={sel.note ?? ''}
               onChange={e => updateSelectionNote(item.id, selIndex, e.target.value)}
+              disabled={isInspectionLocked}
               placeholder="Kort notering…"
               rows={2}
               className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm
-                         placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+                         placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-70"
             />
           </div>
         )}
@@ -696,6 +716,7 @@ export default function ObStepForutsattningar({
                   <button
                     type="button"
                     onClick={() => removeSet(item.id, sel.set_index)}
+                    disabled={isInspectionLocked}
                     className="text-xs text-red-600 hover:underline"
                   >
                     Ta bort
@@ -710,8 +731,9 @@ export default function ObStepForutsattningar({
           <button
             type="button"
             onClick={() => addMultiSet(item.id)}
+            disabled={isInspectionLocked}
             className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium
-                       text-gray-800 hover:bg-gray-50"
+                       text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
           >
             + Lägg till fler
           </button>
@@ -818,6 +840,12 @@ export default function ObStepForutsattningar({
         )}
       </header>
 
+      {isInspectionLocked ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Besiktningen är låst. Förutsättningar är skrivskyddade.
+        </div>
+      ) : null}
+
       {/* SÄRSKILDA FÖRUTSÄTTNINGAR */}
       <section className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3">
         <div className="text-sm text-gray-900">
@@ -829,8 +857,9 @@ export default function ObStepForutsattningar({
               setFurnishing(lvl)
               saveFurnishing(lvl)
             }}
+            disabled={isInspectionLocked}
             className="mx-1 h-9 rounded-lg border border-gray-300 bg-gray-50 px-2 text-sm
-                       focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+                       focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-70"
           >
             <option value="fullt_moblerad">fullt möblerad</option>
             <option value="delvis_moblerad">delvis möblerad</option>
