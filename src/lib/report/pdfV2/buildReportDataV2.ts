@@ -1,6 +1,7 @@
 ﻿import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { buildBuildingDataMap, buildBuildingTypeParts, renderBuildingDataTextFromTemplate } from '@/lib/report/buildingData'
 import { parseScopeCodes, renderScopeText } from '@/lib/report/scopeText'
+import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 
 type ExteriorItemRow = {
   id: string
@@ -242,6 +243,19 @@ const supabase: any = createSupabaseServerClient()
   if (profileError) {
     console.error('Kunde inte hÃ¤mta profil', profileError)
   }
+
+  const { summary: profileCertificationSummary } = await resolveInspectorCertificationSummary(
+    supabase,
+    {
+      profileId: userId,
+      legacy: {
+        sbr_group: profile?.sbr_group ?? null,
+        sbr_status: profile?.sbr_status ?? null,
+        membership_number: profile?.membership_number ?? null,
+        certification_number: profile?.certification_number ?? null,
+      },
+    }
+  )
 
   let frozenProfileFromSnapshot: Record<string, unknown> | null = null
   let frozenCompanyFromSnapshot: Record<string, unknown> | null = null
@@ -924,19 +938,23 @@ const supabase: any = createSupabaseServerClient()
           (frozenProfileFromSnapshot?.full_name as string | null | undefined) ?? profile?.full_name ?? null
         ),
         sbr_group: valueOrFallback(
-          (frozenProfileFromSnapshot?.sbr_group as string | null | undefined) ?? profile?.sbr_group ?? null
+          (frozenProfileFromSnapshot?.sbr_group as string | null | undefined) ??
+            profileCertificationSummary.sbr_group ??
+            null
         ),
         sbr_status: valueOrFallback(
-          (frozenProfileFromSnapshot?.sbr_status as string | null | undefined) ?? profile?.sbr_status ?? null
+          (frozenProfileFromSnapshot?.sbr_status as string | null | undefined) ??
+            profileCertificationSummary.sbr_status ??
+            null
         ),
         membership_number: valueOrFallback(
           (frozenProfileFromSnapshot?.membership_number as string | null | undefined) ??
-            profile?.membership_number ??
+            profileCertificationSummary.membership_number ??
             null
         ),
         certification_number: valueOrFallback(
           (frozenProfileFromSnapshot?.certification_number as string | null | undefined) ??
-            profile?.certification_number ??
+            profileCertificationSummary.certification_number ??
             null,
           ''
         ),

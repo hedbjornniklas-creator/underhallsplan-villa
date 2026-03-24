@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, ArrowRight, Mail, Send } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
+import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 
 type DashboardCard = {
   id: 'list' | 'create' | 'profile' | 'assignments'
@@ -872,7 +873,26 @@ export default function OverlatelsebesiktningPage() {
           ])
 
         if (!profileError && profileData && !cancelled) {
-          setProfileInfo(profileData as ProfileCardInfo)
+          const rawProfile = profileData as ProfileCardInfo
+          const { summary } = await resolveInspectorCertificationSummary(supabase, {
+            profileId: user.id,
+            legacy: {
+              sbr_group: rawProfile.sbr_group,
+              sbr_status: rawProfile.sbr_status,
+              membership_number: rawProfile.membership_number,
+              certification_number: rawProfile.certification_number,
+            },
+          })
+
+          if (!cancelled) {
+            setProfileInfo({
+              ...rawProfile,
+              sbr_group: summary.sbr_group,
+              sbr_status: summary.sbr_status,
+              membership_number: summary.membership_number,
+              certification_number: summary.certification_number,
+            })
+          }
         }
 
         if (bookedAssignmentsLoadError) {

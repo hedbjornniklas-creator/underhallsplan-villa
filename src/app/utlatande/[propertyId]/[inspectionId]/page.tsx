@@ -13,6 +13,7 @@ import {
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { parseScopeCodes, renderScopeText } from '@/lib/report/scopeText'
+import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 
 export const dynamic = 'force-dynamic'
 
@@ -303,6 +304,19 @@ export default async function Page({
   if (profileError) {
     console.error('Kunde inte hÃ¤mta profil', profileError)
   }
+
+  const { summary: profileCertificationSummary } = await resolveInspectorCertificationSummary(
+    supabase,
+    {
+      profileId: userId,
+      legacy: {
+        sbr_group: profile?.sbr_group ?? null,
+        sbr_status: profile?.sbr_status ?? null,
+        membership_number: profile?.membership_number ?? null,
+        certification_number: profile?.certification_number ?? null,
+      },
+    }
+  )
 
   let frozenProfileFromSnapshot = null
   let frozenCompanyFromSnapshot = null
@@ -979,13 +993,21 @@ export default async function Page({
       },
       profile: {
         full_name: valueOrFallback(frozenProfileFromSnapshot?.full_name ?? profile?.full_name ?? null),
-        sbr_group: valueOrFallback(frozenProfileFromSnapshot?.sbr_group ?? profile?.sbr_group ?? null),
-        sbr_status: valueOrFallback(frozenProfileFromSnapshot?.sbr_status ?? profile?.sbr_status ?? null),
+        sbr_group: valueOrFallback(
+          frozenProfileFromSnapshot?.sbr_group ?? profileCertificationSummary.sbr_group ?? null
+        ),
+        sbr_status: valueOrFallback(
+          frozenProfileFromSnapshot?.sbr_status ?? profileCertificationSummary.sbr_status ?? null
+        ),
         membership_number: valueOrFallback(
-          frozenProfileFromSnapshot?.membership_number ?? profile?.membership_number ?? null
+          frozenProfileFromSnapshot?.membership_number ??
+            profileCertificationSummary.membership_number ??
+            null
         ),
         certification_number: valueOrFallback(
-          frozenProfileFromSnapshot?.certification_number ?? profile?.certification_number ?? null,
+          frozenProfileFromSnapshot?.certification_number ??
+            profileCertificationSummary.certification_number ??
+            null,
           ''
         ),
         phone: valueOrFallback(frozenProfileFromSnapshot?.phone ?? profile?.phone ?? null),

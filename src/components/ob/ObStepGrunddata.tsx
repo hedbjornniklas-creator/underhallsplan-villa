@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
+import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 
 export type ObInspection = Tables<'inspections'>
 
@@ -352,7 +353,24 @@ export default function ObStepGrunddata({
 
       if (profileError || !data || cancelled) return
 
-      setInspectorProfile(data as InspectorProfile)
+      const { summary } = await resolveInspectorCertificationSummary(supabase, {
+        profileId: user.id,
+        legacy: {
+          sbr_group: data.sbr_group,
+          sbr_status: data.sbr_status,
+          membership_number: data.membership_number,
+          certification_number: data.certification_number,
+        },
+      })
+
+      if (cancelled) return
+      setInspectorProfile({
+        ...(data as InspectorProfile),
+        sbr_group: summary.sbr_group,
+        sbr_status: summary.sbr_status,
+        membership_number: summary.membership_number,
+        certification_number: summary.certification_number,
+      })
     }
 
     void loadInspectorProfile()

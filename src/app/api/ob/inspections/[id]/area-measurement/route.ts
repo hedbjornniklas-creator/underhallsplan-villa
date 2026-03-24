@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -37,50 +38,41 @@ function isMissingLockColumnError(message: string) {
 
 async function loadProfileSnapshot(
   admin: ReturnType<typeof createSupabaseAdminClient>,
+  orgId: string,
   userId: string
 ) {
-  const baseSelect = 'full_name,company_name,membership_number'
-  const selectWithAreaFlag = `${baseSelect},is_sbr_diplomerad_areamatning`
-
-  const withFlag = await admin
+  const profileResult = await admin
     .from('profiles')
-    .select(selectWithAreaFlag)
+    .select(
+      'full_name,company_name,membership_number,certification_number,sbr_group,sbr_status,is_sbr_diplomerad_areamatning'
+    )
     .eq('id', userId)
     .maybeSingle()
 
-  if (!withFlag.error) {
-    return {
-      full_name: (withFlag.data?.full_name as string | null) ?? null,
-      company_name: (withFlag.data?.company_name as string | null) ?? null,
-      membership_number: (withFlag.data?.membership_number as string | null) ?? null,
+  if (profileResult.error) {
+    throw new Error(profileResult.error.message ?? 'Kunde inte lasa profil.')
+  }
+
+  const { summary } = await resolveInspectorCertificationSummary(admin, {
+    profileId: userId,
+    orgId,
+    legacy: {
+      sbr_group: (profileResult.data?.sbr_group as string | null) ?? null,
+      sbr_status: (profileResult.data?.sbr_status as string | null) ?? null,
+      membership_number: (profileResult.data?.membership_number as string | null) ?? null,
+      certification_number: (profileResult.data?.certification_number as string | null) ?? null,
       is_sbr_diplomerad_areamatning:
-        (withFlag.data?.is_sbr_diplomerad_areamatning as boolean | null) ?? false,
-    }
-  }
-
-  const missingColumn = String(withFlag.error.message ?? '')
-    .toLowerCase()
-    .includes('is_sbr_diplomerad_areamatning')
-
-  if (!missingColumn) {
-    throw new Error(withFlag.error.message ?? 'Kunde inte läsa profil.')
-  }
-
-  const fallback = await admin
-    .from('profiles')
-    .select(baseSelect)
-    .eq('id', userId)
-    .maybeSingle()
-
-  if (fallback.error) {
-    throw new Error(fallback.error.message ?? 'Kunde inte läsa profil.')
-  }
+        (profileResult.data?.is_sbr_diplomerad_areamatning as boolean | null) ?? false,
+    },
+  })
 
   return {
-    full_name: (fallback.data?.full_name as string | null) ?? null,
-    company_name: (fallback.data?.company_name as string | null) ?? null,
-    membership_number: (fallback.data?.membership_number as string | null) ?? null,
-    is_sbr_diplomerad_areamatning: false,
+    full_name: (profileResult.data?.full_name as string | null) ?? null,
+    company_name: (profileResult.data?.company_name as string | null) ?? null,
+    membership_number: summary.membership_number,
+    sbr_status: summary.sbr_status,
+    certification_number: summary.certification_number,
+    is_sbr_diplomerad_areamatning: summary.is_sbr_diplomerad_areamatning,
   }
 }
 
@@ -143,7 +135,7 @@ export async function GET(
     const org = await requireOrgContext()
     const admin = createSupabaseAdminClient()
 
-    const profile = await loadProfileSnapshot(admin, org.userId)
+    const profile = await loadProfileSnapshot(admin, org.orgId, org.userId)
 
     const { data: measurement, error: measurementError } = await admin
       .from('inspection_area_measurements')
@@ -164,7 +156,7 @@ export async function GET(
           profile,
         })
       }
-      throw new Error(message || 'Kunde inte läsa areamätning.')
+      throw new Error(message || 'Kunde inte lasa areamatning.')
     }
 
     if (!measurement) {
@@ -193,7 +185,7 @@ export async function GET(
           profile,
         })
       }
-      throw new Error(message || 'Kunde inte läsa areamätningsrader.')
+      throw new Error(message || 'Kunde inte lasa areamatningsrader.')
     }
 
     return NextResponse.json({
@@ -203,10 +195,10 @@ export async function GET(
       profile,
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okänt fel.'
+    const message = error instanceof Error ? error.message : 'Okant fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
-    return jsonError(message || 'Kunde inte läsa areamätning.', 500)
+    return jsonError(message || 'Kunde inte lasa areamatning.', 500)
   }
 }
 
@@ -230,12 +222,12 @@ export async function PATCH(
     if (inspectionError) {
       const message = inspectionError.message ?? ''
       if (!isMissingLockColumnError(message)) {
-        throw new Error(message || 'Kunde inte läsa besiktning.')
+        throw new Error(message || 'Kunde inte lasa besiktning.')
       }
     } else if (!inspectionRow) {
       return jsonError('Besiktningen hittades inte.', 404)
     } else if (inspectionRow.locked_at) {
-      return jsonError('Besiktningen är låst och kan inte uppdateras.', 409)
+      return jsonError('Besiktningen ar last och kan inte uppdateras.', 409)
     }
 
     const payload = {
@@ -260,9 +252,9 @@ export async function PATCH(
       .single()
 
     if (upsertError || !upserted?.id) {
-      const message = upsertError?.message ?? 'Kunde inte spara areamätning.'
+      const message = upsertError?.message ?? 'Kunde inte spara areamatning.'
       if (isMissingTableError(message)) {
-        return jsonError('Areamätning är inte aktiverad i databasen ännu.', 409)
+        return jsonError('Areamatning ar inte aktiverad i databasen an.', 409)
       }
       throw new Error(message)
     }
@@ -279,7 +271,7 @@ export async function PATCH(
     if (deleteError) {
       const message = deleteError.message ?? 'Kunde inte uppdatera rader.'
       if (isMissingTableError(message)) {
-        return jsonError('Areamätning är inte aktiverad i databasen ännu.', 409)
+        return jsonError('Areamatning ar inte aktiverad i databasen an.', 409)
       }
       throw new Error(message)
     }
@@ -300,9 +292,9 @@ export async function PATCH(
         .insert(insertRows)
 
       if (insertError) {
-        const message = insertError.message ?? 'Kunde inte spara areamätningsrader.'
+        const message = insertError.message ?? 'Kunde inte spara areamatningsrader.'
         if (isMissingTableError(message)) {
-          return jsonError('Areamätning är inte aktiverad i databasen ännu.', 409)
+          return jsonError('Areamatning ar inte aktiverad i databasen an.', 409)
         }
         throw new Error(message)
       }
@@ -310,9 +302,9 @@ export async function PATCH(
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okänt fel.'
+    const message = error instanceof Error ? error.message : 'Okant fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
-    return jsonError(message || 'Kunde inte spara areamätning.', 500)
+    return jsonError(message || 'Kunde inte spara areamatning.', 500)
   }
 }

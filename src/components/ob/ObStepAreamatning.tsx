@@ -44,6 +44,8 @@ type ProfileSnapshot = {
   full_name: string | null
   company_name: string | null
   membership_number: string | null
+  sbr_status: string | null
+  certification_number: string | null
   is_sbr_diplomerad_areamatning: boolean
 }
 
@@ -507,7 +509,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
               <ReadOnlyField label="Namn och efternamn" value={profile?.full_name ?? '-'} />
               {profile?.is_sbr_diplomerad_areamatning ? (
                 <ReadOnlyField
-                  label="Certifiering"
+                  label="Areamatning"
                   value="Av SBR Diplomerad Areamätare"
                 />
               ) : (
@@ -515,7 +517,11 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
                   Markera certifiering i Besiktningsman - profil om den ska visas här.
                 </div>
               )}
-              <ReadOnlyField label="Kiwa" value="Av Kiwa Certifierad besiktningsman SBR" />
+              <ReadOnlyField label="Certifiering" value={profile?.sbr_status ?? '-'} />
+              <ReadOnlyField
+                label="Certifieringsnummer"
+                value={profile?.certification_number ?? '-'}
+              />
               <ReadOnlyField label="Medlemsnummer" value={profile?.membership_number ?? '-'} />
             </div>
           </section>

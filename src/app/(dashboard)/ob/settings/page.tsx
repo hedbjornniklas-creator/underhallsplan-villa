@@ -10,10 +10,6 @@ import { supabase } from '@/lib/supabaseClient'
 type ProfileRow = {
   id: string
   full_name: string | null
-  sbr_group: string | null
-  sbr_status: string | null
-  membership_number: string | null
-  certification_number: string | null
   phone: string | null
   email: string | null
   company_name: string | null
@@ -23,15 +19,10 @@ type ProfileRow = {
   company_city: string | null
   avatar_path: string | null
   logo_path: string | null
-  is_sbr_diplomerad_areamatning: boolean | null
 }
 
 type ProfileForm = {
   full_name: string
-  sbr_group: string
-  sbr_status: string
-  membership_number: string
-  certification_number: string
   phone: string
   email: string
   company_name: string
@@ -41,7 +32,6 @@ type ProfileForm = {
   company_city: string
   avatar_path: string | null
   logo_path: string | null
-  is_sbr_diplomerad_areamatning: boolean
 }
 
 type AddonServiceRow = {
@@ -115,10 +105,6 @@ type CertificationFormRow = {
 function serializeProfileForm(form: ProfileForm) {
   return JSON.stringify({
     full_name: form.full_name ?? '',
-    sbr_group: form.sbr_group ?? '',
-    sbr_status: form.sbr_status ?? '',
-    membership_number: form.membership_number ?? '',
-    certification_number: form.certification_number ?? '',
     phone: form.phone ?? '',
     email: form.email ?? '',
     company_name: form.company_name ?? '',
@@ -128,7 +114,6 @@ function serializeProfileForm(form: ProfileForm) {
     company_city: form.company_city ?? '',
     avatar_path: form.avatar_path ?? null,
     logo_path: form.logo_path ?? null,
-    is_sbr_diplomerad_areamatning: !!form.is_sbr_diplomerad_areamatning,
   })
 }
 
@@ -175,16 +160,11 @@ export default function ObSettingsPage() {
   const [certError, setCertError] = useState<string | null>(null)
   const [certSuccess, setCertSuccess] = useState<string | null>(null)
   const [certRows, setCertRows] = useState<CertificationFormRow[]>([])
-  const [supportsAreaDiplomaFlag, setSupportsAreaDiplomaFlag] = useState(true)
   const profileHydratedRef = useRef(false)
   const lastSavedProfileSnapshotRef = useRef<string>('')
 
   const [form, setForm] = useState<ProfileForm>({
     full_name: '',
-    sbr_group: '',
-    sbr_status: '',
-    membership_number: '',
-    certification_number: '',
     phone: '',
     email: '',
     company_name: '',
@@ -194,7 +174,6 @@ export default function ObSettingsPage() {
     company_city: '',
     avatar_path: null,
     logo_path: null,
-    is_sbr_diplomerad_areamatning: false,
   })
 
   useEffect(() => {
@@ -224,42 +203,13 @@ export default function ObSettingsPage() {
 
       setUserId(user.id)
 
-      const baseProfileSelect =
-        'id, full_name, sbr_group, sbr_status, membership_number, certification_number, phone, email, company_name, company_orgno, company_address, company_postal_code, company_city, avatar_path, logo_path'
-      const selectWithAreaFlag = `${baseProfileSelect}, is_sbr_diplomerad_areamatning`
-
-      let data: unknown = null
-      let profileError: { message?: string } | null = null
-      let hasAreaFlagColumn = true
-
-      const withAreaFlagResult = await supabase
+      const { data, error: profileError } = await supabase
         .from('profiles')
-        .select(selectWithAreaFlag)
+        .select(
+          'id, full_name, phone, email, company_name, company_orgno, company_address, company_postal_code, company_city, avatar_path, logo_path'
+        )
         .eq('id', user.id)
         .maybeSingle()
-
-      if (withAreaFlagResult.error) {
-        const missingAreaFlagColumn = String(withAreaFlagResult.error.message ?? '')
-          .toLowerCase()
-          .includes('is_sbr_diplomerad_areamatning')
-
-        if (!missingAreaFlagColumn) {
-          profileError = withAreaFlagResult.error
-        } else {
-          hasAreaFlagColumn = false
-          const fallbackResult = await supabase
-            .from('profiles')
-            .select(baseProfileSelect)
-            .eq('id', user.id)
-            .maybeSingle()
-          data = fallbackResult.data
-          profileError = fallbackResult.error
-        }
-      } else {
-        data = withAreaFlagResult.data
-      }
-
-      setSupportsAreaDiplomaFlag(hasAreaFlagColumn)
 
       if (profileError) {
         setError('Kunde inte hamta profil.')
@@ -270,10 +220,6 @@ export default function ObSettingsPage() {
       const profile = data as ProfileRow | null
       const loadedForm: ProfileForm = {
         full_name: profile?.full_name ?? '',
-        sbr_group: profile?.sbr_group ?? '',
-        sbr_status: profile?.sbr_status ?? '',
-        membership_number: profile?.membership_number ?? '',
-        certification_number: profile?.certification_number ?? '',
         phone: profile?.phone ?? '',
         email: profile?.email ?? user.email ?? '',
         company_name: profile?.company_name ?? '',
@@ -283,7 +229,6 @@ export default function ObSettingsPage() {
         company_city: profile?.company_city ?? '',
         avatar_path: profile?.avatar_path ?? null,
         logo_path: profile?.logo_path ?? null,
-        is_sbr_diplomerad_areamatning: profile?.is_sbr_diplomerad_areamatning === true,
       }
       setForm(loadedForm)
       lastSavedProfileSnapshotRef.current = serializeProfileForm(loadedForm)
@@ -502,10 +447,6 @@ export default function ObSettingsPage() {
       const payload = {
         id: userId,
         full_name: form.full_name || null,
-        sbr_group: form.sbr_group || null,
-        sbr_status: form.sbr_status || null,
-        membership_number: form.membership_number || null,
-        certification_number: form.certification_number || null,
         phone: form.phone || null,
         email: form.email || null,
         company_name: form.company_name || null,
@@ -515,11 +456,6 @@ export default function ObSettingsPage() {
         company_city: form.company_city || null,
         avatar_path: form.avatar_path,
         logo_path: form.logo_path,
-        ...(supportsAreaDiplomaFlag
-          ? {
-              is_sbr_diplomerad_areamatning: form.is_sbr_diplomerad_areamatning,
-            }
-          : {}),
       }
 
       const { error: saveError } = await supabase.from('profiles').upsert(payload)
@@ -536,7 +472,7 @@ export default function ObSettingsPage() {
     }, 700)
 
     return () => window.clearTimeout(timeoutId)
-  }, [form, loading, userId, supportsAreaDiplomaFlag])
+  }, [form, loading, userId])
 
   const handleAddonToggle = (addonServiceId: string, checked: boolean) => {
     setAddonRows((prev) =>
@@ -887,69 +823,15 @@ export default function ObSettingsPage() {
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Field
-                      label="SBR-status"
-                      value={form.sbr_status}
-                      onChange={(value) => handleChange('sbr_status', value)}
-                    />
-                    <Field
                       label="Ort"
                       value={form.company_city}
                       onChange={(value) => handleChange('company_city', value)}
-                    />
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field
-                      label="SBR-grupp"
-                      value={form.sbr_group}
-                      onChange={(value) => handleChange('sbr_group', value)}
                     />
                     <Field
                       label="Org.nr"
                       value={form.company_orgno}
                       onChange={(value) => handleChange('company_orgno', value)}
                     />
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field
-                      label="SBR-Medlemsnummer"
-                      value={form.membership_number}
-                      onChange={(value) => handleChange('membership_number', value)}
-                    />
-                    <div className="hidden sm:block" aria-hidden="true" />
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field
-                      label="Certifieringsnummer"
-                      value={form.certification_number}
-                      onChange={(value) => handleChange('certification_number', value)}
-                    />
-                    <div className="hidden sm:block" aria-hidden="true" />
-                  </div>
-
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                    <label className="flex items-center gap-2 text-sm text-gray-800">
-                      <input
-                        type="checkbox"
-                        checked={form.is_sbr_diplomerad_areamatning}
-                        onChange={(event) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            is_sbr_diplomerad_areamatning: event.target.checked,
-                          }))
-                        }
-                        disabled={!supportsAreaDiplomaFlag}
-                        className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-                      />
-                      <span>Av SBR Diplomerad Areamätare</span>
-                    </label>
-                    {!supportsAreaDiplomaFlag ? (
-                      <div className="mt-1 text-xs text-amber-700">
-                        Databaskolumn saknas ännu. Kör migration för att aktivera fältet.
-                      </div>
-                    ) : null}
                   </div>
                 </div>
               </div>

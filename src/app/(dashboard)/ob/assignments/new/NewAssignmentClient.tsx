@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, ChevronsLeft, Loader2, Save, Send } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
+import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 
 type AssignmentType = 'OB' | 'STATUS' | 'UHP'
 type OrdererRole = 'buyer' | 'seller' | 'apartment' | ''
@@ -160,7 +161,24 @@ export default function NewAssignmentClient({
 
       if (profileError || !data || cancelled) return
 
-      setInspectorProfile(data as InspectorProfile)
+      const { summary } = await resolveInspectorCertificationSummary(supabase, {
+        profileId: user.id,
+        legacy: {
+          sbr_group: data.sbr_group,
+          sbr_status: data.sbr_status,
+          membership_number: data.membership_number,
+          certification_number: data.certification_number,
+        },
+      })
+
+      if (cancelled) return
+      setInspectorProfile({
+        ...(data as InspectorProfile),
+        sbr_group: summary.sbr_group,
+        sbr_status: summary.sbr_status,
+        membership_number: summary.membership_number,
+        certification_number: summary.certification_number,
+      })
       setInspectorAvatarLoadError(false)
     }
 
