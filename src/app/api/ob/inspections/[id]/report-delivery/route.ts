@@ -54,6 +54,33 @@ type OutboundMessageRow = {
   subject: string
 }
 
+type ReportLinkLogRow = {
+  id: string
+  created_at: string
+  pdf_status: string | null
+  pdf_error: string | null
+  pdf_storage_bucket: string | null
+  pdf_storage_path: string | null
+  pdf_base64: string | null
+}
+
+type InspectionUnlockLogRow = {
+  id: string
+  reason: string
+  performed_by: string
+  performed_at: string | null
+  created_at: string
+}
+
+type DeliveryActivityLogEntry = {
+  id: string
+  type: 'report_created' | 'report_sent' | 'report_unlocked'
+  title: string
+  subtitle: string | null
+  occurred_at: string
+  download_url: string | null
+}
+
 type ReportPdfState = {
   hasStoredPdf: boolean
   latestLinkId: string | null
@@ -495,6 +522,130 @@ async function getReportPdfState(admin: AdminClient, inspectionId: string): Prom
   }
 }
 
+function pdfStatusLabel(value: unknown) {
+  const status = normalizePdfStatus(value)
+  if (status === 'ready') return 'Klar'
+  if (status === 'processing') return 'Genereras'
+  if (status === 'failed') return 'Misslyckades'
+  return 'Väntar'
+}
+
+function toTimestampValue(value: string | null | undefined) {
+  if (!value) return 0
+  const ts = Date.parse(value)
+  return Number.isFinite(ts) ? ts : 0
+}
+
+async function getReportCreatedLog(admin: AdminClient, inspectionId: string) {
+  const { data, error } = await admin
+    .from('inspection_report_links')
+    .select(
+      'id,created_at,pdf_status,pdf_error,pdf_storage_bucket,pdf_storage_path,pdf_base64'
+    )
+    .eq('inspection_id', inspectionId)
+    .is('revoked_at', null)
+    .order('created_at', { ascending: false })
+    .limit(25)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa rapportlänkar.')
+  }
+
+  return (Array.isArray(data) ? data : []) as ReportLinkLogRow[]
+}
+
+async function getUnlockHistory(admin: AdminClient, orgId: string, inspectionId: string) {
+  const { data, error } = await admin
+    .from('inspection_lock_events')
+    .select('id,reason,performed_by,performed_at,created_at')
+    .eq('org_id', orgId)
+    .eq('inspection_id', inspectionId)
+    .eq('action', 'unlock')
+    .order('performed_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+    .limit(25)
+
+  if (error) {
+    const message = String(error.message ?? '')
+    const normalized = message.toLowerCase()
+    if (
+      normalized.includes('inspection_lock_events') ||
+      normalized.includes('42p01') ||
+      normalized.includes('does not exist')
+    ) {
+      return [] as InspectionUnlockLogRow[]
+    }
+    throw new Error(message || 'Kunde inte läsa upplåsningslogg.')
+  }
+
+  return (Array.isArray(data) ? data : []) as InspectionUnlockLogRow[]
+}
+
+async function buildDeliveryActivityLog(input: {
+  admin: AdminClient
+  orgId: string
+  inspectionId: string
+  history: OutboundMessageRow[]
+}) {
+  const [reportRows, unlockRows] = await Promise.all([
+    getReportCreatedLog(input.admin, input.inspectionId),
+    getUnlockHistory(input.admin, input.orgId, input.inspectionId),
+  ])
+
+  const reportEntries: DeliveryActivityLogEntry[] = reportRows.map((row) => {
+    const hasReadyPdf =
+      normalizePdfStatus(row.pdf_status) === 'ready' &&
+      ((String(row.pdf_storage_bucket ?? '').trim().length > 0 &&
+        String(row.pdf_storage_path ?? '').trim().length > 0) ||
+        String(row.pdf_base64 ?? '').trim().length > 0)
+    const pdfError = String(row.pdf_error ?? '').trim()
+    const subtitle =
+      pdfError.length > 0
+        ? `PDF-status: ${pdfStatusLabel(row.pdf_status)} (${pdfError})`
+        : `PDF-status: ${pdfStatusLabel(row.pdf_status)}`
+
+    return {
+      id: `report_created:${row.id}`,
+      type: 'report_created',
+      title: 'Skapade utlåtande',
+      subtitle,
+      occurred_at: row.created_at,
+      download_url: hasReadyPdf ? `/api/report-v2/${input.inspectionId}/pdf` : null,
+    }
+  })
+
+  const sendEntries: DeliveryActivityLogEntry[] = input.history.map((row) => {
+    const statusText =
+      row.status === 'sent' ? 'Skickade utlåtande' : row.status === 'failed' ? 'Misslyckat utskick' : 'Skickning pågår'
+    const errorText = String(row.error_message ?? '').trim()
+    const subtitle = errorText
+      ? `${row.recipient_email} (${errorText})`
+      : row.recipient_email
+
+    return {
+      id: `report_sent:${row.id}`,
+      type: 'report_sent',
+      title: statusText,
+      subtitle,
+      occurred_at: row.sent_at ?? row.created_at,
+      download_url: row.status === 'sent' ? `/api/report-v2/${input.inspectionId}/pdf` : null,
+    }
+  })
+
+  const unlockEntries: DeliveryActivityLogEntry[] = unlockRows.map((row) => ({
+    id: `report_unlocked:${row.id}`,
+    type: 'report_unlocked',
+    title: 'Låste upp utlåtande',
+    subtitle: row.reason,
+    occurred_at: row.performed_at ?? row.created_at,
+    download_url: null,
+  }))
+
+  return [...reportEntries, ...sendEntries, ...unlockEntries].sort(
+    (a, b) => toTimestampValue(b.occurred_at) - toTimestampValue(a.occurred_at)
+  )
+}
+
 async function createOutboundMessage(
   admin: AdminClient,
   input: {
@@ -574,6 +725,12 @@ export async function GET(
     const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
     const inspectionStatus = normalizeInspectionStatus(inspection.status)
     const pdfState = await getReportPdfState(admin, id)
+    const activityLog = await buildDeliveryActivityLog({
+      admin,
+      orgId: org.orgId,
+      inspectionId: id,
+      history,
+    })
 
     return NextResponse.json({
       inspectionId: id,
@@ -593,6 +750,7 @@ export async function GET(
         pdfState.hasStoredPdf &&
         pdfState.pdfStatus === 'ready',
       history,
+      activityLog,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
@@ -843,6 +1001,12 @@ export async function POST(
     timing.mark('pdf_job_scheduled', { linkId: linkData.id })
 
     const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
+    const activityLog = await buildDeliveryActivityLog({
+      admin,
+      orgId: org.orgId,
+      inspectionId: id,
+      history,
+    })
     const finalInspectionStatus = primarySent ? 'completed' : inspectionStatus
     timing.mark('history_loaded', { historyCount: history.length })
     timing.mark('success', { finalInspectionStatus, totalMs: timing.totalMs() })
@@ -862,6 +1026,7 @@ export async function POST(
       sentRecipients,
       failedRecipients,
       history,
+      activityLog,
       linkId: linkData.id,
     })
   } catch (error) {

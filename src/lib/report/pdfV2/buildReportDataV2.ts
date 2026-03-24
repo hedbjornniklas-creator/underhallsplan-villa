@@ -161,7 +161,7 @@ const supabase: any = createSupabaseServerClient()
   const { data: inspectionData, error: inspectionError } = await supabase
     .from('inspections')
     .select(
-      'id, property_id, date, inspection_time, assignment_number, client_name, client_contact, defect_disclosures, scope, attendees, attendees_other, assignment_confirmation_delivered_date, inspection_side, cover_path'
+      'id, property_id, date, inspection_time, assignment_number, client_name, client_contact, defect_disclosures, scope, attendees, attendees_other, assignment_confirmation_delivered_date, inspection_side, cover_path, locked_at'
     )
     .eq('id', resolvedParams.inspectionId)
     .maybeSingle()
@@ -241,6 +241,50 @@ const supabase: any = createSupabaseServerClient()
 
   if (profileError) {
     console.error('Kunde inte hÃ¤mta profil', profileError)
+  }
+
+  let frozenProfileFromSnapshot: Record<string, unknown> | null = null
+  let frozenCompanyFromSnapshot: Record<string, unknown> | null = null
+  if (inspection?.locked_at) {
+    const { data: reportLinks, error: reportLinksError } = await (supabase as any)
+      .from('inspection_report_links')
+      .select('snapshot_payload,created_at')
+      .eq('inspection_id', resolvedParams.inspectionId)
+      .is('revoked_at', null)
+      .order('created_at', { ascending: false })
+      .limit(5)
+
+    if (reportLinksError) {
+      const message = String(reportLinksError.message ?? '')
+      const normalized = message.toLowerCase()
+      const schemaMissing =
+        normalized.includes('snapshot_payload') ||
+        normalized.includes('inspection_report_links') ||
+        normalized.includes('42703') ||
+        normalized.includes('42p01') ||
+        normalized.includes('does not exist')
+      if (!schemaMissing) {
+        console.error('Kunde inte hämta låst rapportsnapshot för profil', reportLinksError)
+      }
+    } else if (Array.isArray(reportLinks)) {
+      for (const row of reportLinks) {
+        const payload = (row as Record<string, unknown>).snapshot_payload as
+          | Record<string, unknown>
+          | null
+          | undefined
+        const reportData = payload?.reportData as Record<string, unknown> | undefined
+        const mock = reportData?.mock as Record<string, unknown> | undefined
+        const profileFromSnapshot = mock?.profile as Record<string, unknown> | undefined
+        const companyFromSnapshot = mock?.company as Record<string, unknown> | undefined
+        if (profileFromSnapshot && typeof profileFromSnapshot === 'object') {
+          frozenProfileFromSnapshot = profileFromSnapshot
+        }
+        if (companyFromSnapshot && typeof companyFromSnapshot === 'object') {
+          frozenCompanyFromSnapshot = companyFromSnapshot
+        }
+        if (frozenProfileFromSnapshot || frozenCompanyFromSnapshot) break
+      }
+    }
   }
 
   const { data: documentRows, error: documentError } = await supabase
@@ -870,20 +914,51 @@ const supabase: any = createSupabaseServerClient()
   const mockData = {
     mock: {
       company: {
-        logo_url: profile?.logo_path ?? null,
+        logo_url:
+          (frozenCompanyFromSnapshot?.logo_url as string | null | undefined) ??
+          profile?.logo_path ??
+          null,
       },
       profile: {
-        full_name: valueOrFallback(profile?.full_name ?? null),
-        sbr_group: valueOrFallback(profile?.sbr_group ?? null),
-        sbr_status: valueOrFallback(profile?.sbr_status ?? null),
-        membership_number: valueOrFallback(profile?.membership_number ?? null),
-        phone: valueOrFallback(profile?.phone ?? null),
-        email: valueOrFallback(profile?.email ?? null),
-        company_name: valueOrFallback(profile?.company_name ?? null),
-        company_orgno: valueOrFallback(profile?.company_orgno ?? null),
-        company_address: valueOrFallback(profile?.company_address ?? null),
-        company_postal_code: valueOrFallback(profile?.company_postal_code ?? null),
-        company_city: valueOrFallback(profile?.company_city ?? null),
+        full_name: valueOrFallback(
+          (frozenProfileFromSnapshot?.full_name as string | null | undefined) ?? profile?.full_name ?? null
+        ),
+        sbr_group: valueOrFallback(
+          (frozenProfileFromSnapshot?.sbr_group as string | null | undefined) ?? profile?.sbr_group ?? null
+        ),
+        sbr_status: valueOrFallback(
+          (frozenProfileFromSnapshot?.sbr_status as string | null | undefined) ?? profile?.sbr_status ?? null
+        ),
+        membership_number: valueOrFallback(
+          (frozenProfileFromSnapshot?.membership_number as string | null | undefined) ??
+            profile?.membership_number ??
+            null
+        ),
+        phone: valueOrFallback(
+          (frozenProfileFromSnapshot?.phone as string | null | undefined) ?? profile?.phone ?? null
+        ),
+        email: valueOrFallback(
+          (frozenProfileFromSnapshot?.email as string | null | undefined) ?? profile?.email ?? null
+        ),
+        company_name: valueOrFallback(
+          (frozenProfileFromSnapshot?.company_name as string | null | undefined) ?? profile?.company_name ?? null
+        ),
+        company_orgno: valueOrFallback(
+          (frozenProfileFromSnapshot?.company_orgno as string | null | undefined) ?? profile?.company_orgno ?? null
+        ),
+        company_address: valueOrFallback(
+          (frozenProfileFromSnapshot?.company_address as string | null | undefined) ??
+            profile?.company_address ??
+            null
+        ),
+        company_postal_code: valueOrFallback(
+          (frozenProfileFromSnapshot?.company_postal_code as string | null | undefined) ??
+            profile?.company_postal_code ??
+            null
+        ),
+        company_city: valueOrFallback(
+          (frozenProfileFromSnapshot?.company_city as string | null | undefined) ?? profile?.company_city ?? null
+        ),
       },
       properties: {
         cadastral_id: valueOrFallback(property?.cadastral_id ?? null),

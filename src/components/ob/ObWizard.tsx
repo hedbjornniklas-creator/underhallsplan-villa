@@ -83,6 +83,15 @@ type ReportDeliveryHistoryRow = {
   subject: string
 }
 
+type ReportDeliveryLogEntry = {
+  id: string
+  type: 'report_created' | 'report_sent' | 'report_unlocked'
+  title: string
+  subtitle: string | null
+  occurred_at: string
+  download_url: string | null
+}
+
 type ReportDeliveryMeta = {
   inspectionId: string
   inspectionStatus: string
@@ -95,6 +104,7 @@ type ReportDeliveryMeta = {
   defaultRecipientEmail: string | null
   ordererEmail: string | null
   history: ReportDeliveryHistoryRow[]
+  activityLog: ReportDeliveryLogEntry[]
 }
 
 type ReportDeliverySendResponse = {
@@ -112,6 +122,7 @@ type ReportDeliverySendResponse = {
   sentRecipients: string[]
   failedRecipients: Array<{ email: string; error: string }>
   history: ReportDeliveryHistoryRow[]
+  activityLog: ReportDeliveryLogEntry[]
   linkId: string
 }
 
@@ -131,6 +142,14 @@ function parseExtraRecipientsInput(value: string) {
 function isValidEmail(value: string) {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
   return emailRegex.test(value.trim())
+}
+
+function normalizeDeliveryMeta(meta: ReportDeliveryMeta): ReportDeliveryMeta {
+  return {
+    ...meta,
+    history: Array.isArray(meta.history) ? meta.history : [],
+    activityLog: Array.isArray(meta.activityLog) ? meta.activityLog : [],
+  }
 }
 
 export default function ObWizard({
@@ -239,7 +258,7 @@ export default function ObWizard({
         }
 
         if (cancelled) return
-        setDeliveryMeta(payload as ReportDeliveryMeta)
+        setDeliveryMeta(normalizeDeliveryMeta(payload as ReportDeliveryMeta))
       } catch (error) {
         if (cancelled) return
         const message =
@@ -278,7 +297,7 @@ export default function ObWizard({
         })
         const payload = (await response.json().catch(() => null)) as ReportDeliveryMeta | null
         if (!response.ok || !payload || cancelled) return
-        setDeliveryMeta(payload)
+        setDeliveryMeta(normalizeDeliveryMeta(payload))
       } catch {
         // Best effort polling only.
       }
@@ -360,7 +379,7 @@ export default function ObWizard({
         } as ObWizardInspection)
       }
 
-        setDeliveryMeta((prev) => ({
+      setDeliveryMeta((prev) => ({
           inspectionId: okPayload.inspectionId,
           inspectionStatus: okPayload.inspectionStatus,
           canSend: prev?.canSend ?? true,
@@ -372,6 +391,7 @@ export default function ObWizard({
           defaultRecipientEmail: okPayload.defaultRecipientEmail ?? null,
           ordererEmail: okPayload.ordererEmail,
           history: okPayload.history ?? [],
+          activityLog: okPayload.activityLog ?? prev?.activityLog ?? [],
       }))
       setPrimaryRecipientInput(okPayload.primaryRecipientEmail ?? '')
 
@@ -394,9 +414,6 @@ export default function ObWizard({
 
   const reportHref = hasValidIds
     ? `/utlatande/${propertyId}/${inspectionId}`
-    : ''
-  const reportWebPreviewHref = hasValidIds
-    ? `/rapport/preview/${inspectionId}`
     : ''
   const newTabHref = reportHref
   const autoPrintHref = hasValidIds ? `${reportHref}?autoprint=1` : ''
@@ -617,29 +634,29 @@ export default function ObWizard({
                     </div>
                   ) : null}
 
-                  {deliveryMeta?.history?.length ? (
+                  {deliveryMeta?.activityLog?.length ? (
                     <div className="rounded-md border border-gray-200 bg-white p-2">
-                      <div className="mb-1 text-xs font-semibold text-gray-800">Senaste utskick</div>
+                      <div className="mb-1 text-xs font-semibold text-gray-800">Logg</div>
                       <ul className="space-y-1 text-xs text-gray-700">
-                        {deliveryMeta.history.slice(0, 5).map((row) => (
-                          <li key={row.id} className="flex flex-wrap items-center gap-2">
-                            <span className="font-medium">{row.recipient_email}</span>
-                            <span
-                              className={
-                                row.status === 'sent'
-                                  ? 'rounded bg-green-100 px-1.5 py-0.5 text-green-800'
-                                  : row.status === 'failed'
-                                    ? 'rounded bg-red-100 px-1.5 py-0.5 text-red-800'
-                                    : 'rounded bg-gray-100 px-1.5 py-0.5 text-gray-700'
-                              }
-                            >
-                              {row.status}
-                            </span>
+                        {deliveryMeta.activityLog.slice(0, 20).map((entry) => (
+                          <li key={entry.id} className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium">{entry.title}</span>
+                            {entry.subtitle ? (
+                              <span className="text-gray-600">{entry.subtitle}</span>
+                            ) : null}
                             <span className="text-gray-500">
-                              {row.sent_at
-                                ? new Date(row.sent_at).toLocaleString('sv-SE')
-                                : new Date(row.created_at).toLocaleString('sv-SE')}
+                              {new Date(entry.occurred_at).toLocaleString('sv-SE')}
                             </span>
+                            {entry.download_url ? (
+                              <a
+                                href={entry.download_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded bg-indigo-50 px-1.5 py-0.5 text-indigo-700 hover:bg-indigo-100"
+                              >
+                                Ladda ner PDF
+                              </a>
+                            ) : null}
                           </li>
                         ))}
                       </ul>
