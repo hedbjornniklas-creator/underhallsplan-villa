@@ -126,6 +126,16 @@ function truncateErrorMessage(input: string, maxLength = 1200) {
   return `${input.slice(0, maxLength - 3)}...`
 }
 
+function isMissingInspectionLockColumnsError(message: string) {
+  const normalized = message.toLowerCase()
+  return (
+    normalized.includes('locked_at') ||
+    normalized.includes('locked_by') ||
+    normalized.includes('42703') ||
+    normalized.includes('column')
+  )
+}
+
 function buildOrigin(request: Request) {
   const url = new URL(request.url)
   const forwardedProto = request.headers.get('x-forwarded-proto')
@@ -778,16 +788,44 @@ export async function POST(
       }
     }
 
-    if (primarySent && inspectionStatus !== 'completed') {
+    if (primarySent) {
+      const inspectionPatch =
+        inspectionStatus !== 'completed'
+          ? {
+              status: 'completed',
+              locked_at: new Date().toISOString(),
+              locked_by: org.userId,
+            }
+          : {
+              locked_at: new Date().toISOString(),
+              locked_by: org.userId,
+            }
+
       const { error: updateInspectionError } = await admin
         .from('inspections')
-        .update({ status: 'completed' })
+        .update(inspectionPatch)
         .eq('id', id)
 
       if (updateInspectionError) {
-        throw new Error(updateInspectionError.message ?? 'Kunde inte uppdatera besiktningsstatus till klar.')
+        const message = updateInspectionError.message ?? ''
+        if (isMissingInspectionLockColumnsError(message)) {
+          if (inspectionStatus !== 'completed') {
+            const { error: fallbackStatusError } = await admin
+              .from('inspections')
+              .update({ status: 'completed' })
+              .eq('id', id)
+            if (fallbackStatusError) {
+              throw new Error(
+                fallbackStatusError.message ??
+                  'Kunde inte uppdatera besiktningsstatus till klar.'
+              )
+            }
+          }
+        } else {
+          throw new Error(message || 'Kunde inte uppdatera låsstatus för besiktningen.')
+        }
       }
-      timing.mark('inspection_status_updated_to_completed')
+      timing.mark('inspection_locked_after_send')
     }
 
     after(async () => {

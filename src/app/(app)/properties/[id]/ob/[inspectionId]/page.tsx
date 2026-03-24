@@ -176,7 +176,9 @@ export default function InspectionDetailPage() {
           attendees,
           attendees_other,
           inspection_side,
-          defect_disclosures
+          defect_disclosures,
+          locked_at,
+          locked_by
         `
         )
         .eq('id', inspectionId)

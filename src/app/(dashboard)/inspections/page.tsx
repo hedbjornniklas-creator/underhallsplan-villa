@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ChevronsLeft, Download, Loader2, Plus } from 'lucide-react'
+import { ArrowLeft, ChevronsLeft, Download, Loader2, LockOpen, Plus } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -18,6 +18,8 @@ type Inspection = {
   client_name: string | null
   client_contact: string | null
   assignment_number: string | null
+  locked_at: string | null
+  locked_by: string | null
 }
 
 type Property = {
@@ -355,6 +357,31 @@ function PdfDownloadActionButton({
   )
 }
 
+function UnlockInspectionActionButton({
+  onClick,
+  disabled,
+}: {
+  onClick: () => void
+  disabled: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation()
+        onClick()
+      }}
+      disabled={disabled}
+      aria-label="Lås upp besiktning"
+      title="Lås upp besiktning"
+      className="inline-flex h-7 items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 text-[11px] font-medium text-amber-800 transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      <LockOpen size={12} strokeWidth={2.1} />
+      Lås upp
+    </button>
+  )
+}
+
 export default function InspectionsPage() {
   const router = useRouter()
 
@@ -372,6 +399,9 @@ export default function InspectionsPage() {
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [currentPage, setCurrentPage] = useState(1)
   const [creatingMode, setCreatingMode] = useState<'scratch' | null>(null)
+  const [unlockTarget, setUnlockTarget] = useState<InspectionWithProperty | null>(null)
+  const [unlockReason, setUnlockReason] = useState('')
+  const [unlockSubmitting, setUnlockSubmitting] = useState(false)
 
   useEffect(() => {
     try {
@@ -456,7 +486,7 @@ export default function InspectionsPage() {
         const { data: inspectionData, error: inspectionError } = await supabase
           .from('inspections')
           .select(
-            'id,property_id,date,type,status,inspector_name,created_at,client_name,client_contact,assignment_number'
+            'id,property_id,date,type,status,inspector_name,created_at,client_name,client_contact,assignment_number,locked_at,locked_by'
           )
           .in('property_id', propertyIds)
           .order('date', { ascending: false, nullsFirst: false })
@@ -767,6 +797,69 @@ export default function InspectionsPage() {
     }
   }
 
+  const openUnlockDialog = (row: InspectionWithProperty) => {
+    setMutationError(null)
+    setUnlockTarget(row)
+    setUnlockReason('')
+  }
+
+  const closeUnlockDialog = () => {
+    if (unlockSubmitting) return
+    setUnlockTarget(null)
+    setUnlockReason('')
+  }
+
+  const submitUnlock = async () => {
+    if (!unlockTarget || unlockSubmitting) return
+
+    const reason = unlockReason.trim()
+    if (reason.length < 10) {
+      setMutationError('Anledning för upplåsning måste vara minst 10 tecken.')
+      return
+    }
+
+    try {
+      setMutationError(null)
+      setUnlockSubmitting(true)
+
+      const response = await fetch(`/api/ob/inspections/${unlockTarget.id}/unlock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      })
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'Kunde inte låsa upp besiktningen.')
+      }
+
+      setInspections((prev) =>
+        prev.map((row) =>
+          row.id === unlockTarget.id
+            ? {
+                ...row,
+                locked_at: null,
+                locked_by: null,
+              }
+            : row
+        )
+      )
+
+      setUnlockTarget(null)
+      setUnlockReason('')
+    } catch (unlockError: unknown) {
+      setMutationError(
+        unlockError instanceof Error
+          ? unlockError.message
+          : 'Kunde inte låsa upp besiktningen.'
+      )
+    } finally {
+      setUnlockSubmitting(false)
+    }
+  }
+
   return (
     <Protected>
       <main className="relative min-h-full overflow-hidden">
@@ -986,6 +1079,8 @@ export default function InspectionsPage() {
                       const downloadHref = `/api/report-v2/${row.id}/pdf`
                       const canDownloadPdf =
                         getStatusBucket(row.status) === 'completed' && Boolean(row.hasReadyPdf)
+                      const isLocked = Boolean(row.locked_at)
+                      const isUnlockingThis = unlockSubmitting && unlockTarget?.id === row.id
 
                       return (
                         <tr
@@ -1015,7 +1110,13 @@ export default function InspectionsPage() {
                           </td>
 
                           <td className="px-3 py-1.5 align-middle text-right">
-                            <div className="flex items-center justify-end">
+                            <div className="flex items-center justify-end gap-2">
+                              {isLocked ? (
+                                <UnlockInspectionActionButton
+                                  onClick={() => openUnlockDialog(row)}
+                                  disabled={isUnlockingThis}
+                                />
+                              ) : null}
                               <PdfDownloadActionButton href={downloadHref} enabled={canDownloadPdf} />
                             </div>
                           </td>
@@ -1032,6 +1133,8 @@ export default function InspectionsPage() {
                   const downloadHref = `/api/report-v2/${row.id}/pdf`
                   const canDownloadPdf =
                     getStatusBucket(row.status) === 'completed' && Boolean(row.hasReadyPdf)
+                  const isLocked = Boolean(row.locked_at)
+                  const isUnlockingThis = unlockSubmitting && unlockTarget?.id === row.id
 
                   return (
                     <article
@@ -1064,7 +1167,13 @@ export default function InspectionsPage() {
                         </div>
                       </div>
 
-                      <div className="mt-3 flex justify-end">
+                      <div className="mt-3 flex items-center justify-end gap-2">
+                        {isLocked ? (
+                          <UnlockInspectionActionButton
+                            onClick={() => openUnlockDialog(row)}
+                            disabled={isUnlockingThis}
+                          />
+                        ) : null}
                         <PdfDownloadActionButton href={downloadHref} enabled={canDownloadPdf} />
                       </div>
                     </article>
@@ -1096,6 +1205,68 @@ export default function InspectionsPage() {
                 </div>
               </footer>
             </>
+          ) : null}
+
+          {unlockTarget ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+              <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-4 shadow-xl">
+                <h2 className="text-base font-semibold text-gray-900">Lås upp besiktning</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Ange anledning till upplåsning (minst 10 tecken).
+                </p>
+
+                <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                  <div>
+                    <span className="font-medium">Adress:</span> {getAddressText(unlockTarget)}
+                  </div>
+                  <div className="mt-1">
+                    <span className="font-medium">Kund:</span> {getCustomerText(unlockTarget)}
+                  </div>
+                </div>
+
+                <label className="mt-3 block text-xs font-medium text-gray-700" htmlFor="unlockReason">
+                  Anledning
+                </label>
+                <textarea
+                  id="unlockReason"
+                  value={unlockReason}
+                  onChange={(event) => setUnlockReason(event.target.value)}
+                  rows={4}
+                  autoFocus
+                  disabled={unlockSubmitting}
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:bg-gray-100"
+                  placeholder="Exempel: Kund har inkommit med ändringar efter första utskick."
+                />
+
+                <div className="mt-1 text-right text-xs text-gray-500">
+                  {unlockReason.trim().length}/10 tecken
+                </div>
+
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeUnlockDialog}
+                    disabled={unlockSubmitting}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Avbryt
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void submitUnlock()}
+                    disabled={unlockSubmitting}
+                    className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {unlockSubmitting ? (
+                      <Loader2 size={14} strokeWidth={2.2} className="animate-spin" />
+                    ) : (
+                      <LockOpen size={14} strokeWidth={2.2} />
+                    )}
+                    Lås upp
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : null}
         </div>
       </main>

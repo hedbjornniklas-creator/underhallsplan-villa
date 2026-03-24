@@ -828,7 +828,7 @@ export default function ObStepGrunddata({
       : ATTENDEE_OPTIONS
 
   const hasLinkedAssignment = !!property.assignment_id
-  const isInspectionLocked = normalizeInspectionStatus(inspForm.status) === 'completed'
+  const isInspectionLocked = Boolean((inspection as ObInspection & { locked_at?: string | null }).locked_at)
 
   const handleInspectionCoverUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]

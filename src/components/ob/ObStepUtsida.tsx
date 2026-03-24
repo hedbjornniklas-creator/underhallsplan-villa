@@ -10,6 +10,7 @@ type Inspection = {
   date: string | null
   assignment_number: string | null
   status?: string | null
+  locked_at?: string | null
 }
 type SearchMode = 'control_points' | 'chips'
 
@@ -164,7 +165,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const isInspectionLocked = normalizeInspectionStatus(inspection?.status) === 'completed'
+  const isInspectionLocked = Boolean(inspection?.locked_at)
 
   const [items, setItems] = useState<ItemBundle[]>([])
   const [observations, setObservations] = useState<

@@ -9,6 +9,7 @@ type Inspection = {
   date: string | null
   assignment_number: string | null
   status?: string | null
+  locked_at?: string | null
   inspection_side?: string | null
 }
 type InspectionSide = 'buyer' | 'seller' | 'apartment'
@@ -314,7 +315,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const isInspectionLocked = normalizeInspectionStatus(inspection?.status) === 'completed'
+  const isInspectionLocked = Boolean(inspection?.locked_at)
   const inspectionSide = normalizeInspectionSide(inspection?.inspection_side)
 
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([])
