@@ -215,6 +215,18 @@ function parseExtraRecipients(input: unknown, primaryEmail: string) {
   return Array.from(unique)
 }
 
+function parseMarkAsCompleted(input: unknown) {
+  if (typeof input === 'boolean') return input
+  if (typeof input === 'string') {
+    const normalized = input.trim().toLowerCase()
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'ja')
+      return true
+    if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'nej')
+      return false
+  }
+  return true
+}
+
 function getMailFromAddress() {
   const value = process.env.ASSIGNMENTS_MAIL_FROM?.trim()
   if (!value) {
@@ -777,6 +789,7 @@ export async function POST(
       | {
           primary_recipient?: unknown
           extra_recipients?: unknown
+          mark_as_completed?: unknown
         }
       | null
     timing.mark('request_body_parsed')
@@ -809,6 +822,7 @@ export async function POST(
     }
 
     const extraRecipients = parseExtraRecipients(body?.extra_recipients, primaryRecipient)
+    const markAsCompleted = parseMarkAsCompleted(body?.mark_as_completed)
     const recipients = [primaryRecipient, ...extraRecipients]
     timing.mark('recipients_ready', { recipientCount: recipients.length })
 
@@ -946,7 +960,7 @@ export async function POST(
       }
     }
 
-    if (primarySent) {
+    if (primarySent && markAsCompleted) {
       const inspectionPatch =
         inspectionStatus !== 'completed'
           ? {
@@ -1007,7 +1021,7 @@ export async function POST(
       inspectionId: id,
       history,
     })
-    const finalInspectionStatus = primarySent ? 'completed' : inspectionStatus
+    const finalInspectionStatus = primarySent && markAsCompleted ? 'completed' : inspectionStatus
     timing.mark('history_loaded', { historyCount: history.length })
     timing.mark('success', { finalInspectionStatus, totalMs: timing.totalMs() })
 

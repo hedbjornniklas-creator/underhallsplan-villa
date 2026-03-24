@@ -233,7 +233,7 @@ const supabase: any = createSupabaseServerClient()
     ? await supabase
         .from('profiles')
         .select(
-          'full_name, sbr_group, sbr_status, membership_number, phone, email, company_name, company_orgno, company_address, company_postal_code, company_city, logo_path'
+          'full_name, sbr_group, sbr_status, membership_number, certification_number, phone, email, company_name, company_orgno, company_address, company_postal_code, company_city, logo_path'
         )
         .eq('id', userId)
         .maybeSingle()
@@ -933,6 +933,12 @@ const supabase: any = createSupabaseServerClient()
           (frozenProfileFromSnapshot?.membership_number as string | null | undefined) ??
             profile?.membership_number ??
             null
+        ),
+        certification_number: valueOrFallback(
+          (frozenProfileFromSnapshot?.certification_number as string | null | undefined) ??
+            profile?.certification_number ??
+            null,
+          ''
         ),
         phone: valueOrFallback(
           (frozenProfileFromSnapshot?.phone as string | null | undefined) ?? profile?.phone ?? null

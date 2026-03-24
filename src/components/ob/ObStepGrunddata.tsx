@@ -38,6 +38,12 @@ type InspectorProfile = {
   avatar_path: string | null
 }
 
+type FrozenInspectorApiResponse = {
+  locked: boolean
+  hasSnapshot: boolean
+  profile: Partial<InspectorProfile> | null
+}
+
 interface ObStepGrunddataProps {
   property: Property
   inspection: ObInspection
@@ -264,9 +270,11 @@ export default function ObStepGrunddata({
   const coverCameraInputRef = useRef<HTMLInputElement | null>(null)
   const coverLibraryInputRef = useRef<HTMLInputElement | null>(null)
   const [inspectorProfile, setInspectorProfile] = useState<InspectorProfile | null>(null)
+  const [frozenInspectorProfile, setFrozenInspectorProfile] = useState<Partial<InspectorProfile> | null>(null)
   const [inspectorAvatarLoadError, setInspectorAvatarLoadError] = useState(false)
   const [inspectionAddonOrders, setInspectionAddonOrders] = useState<InspectionAddonOrder[]>([])
   const [inspectionAddonLoading, setInspectionAddonLoading] = useState(false)
+  const isInspectionLocked = Boolean((inspection as ObInspection & { locked_at?: string | null }).locked_at)
 
   const notifyAddonSelection = useCallback(
     (rows: InspectionAddonOrder[]) => {
@@ -357,6 +365,34 @@ export default function ObStepGrunddata({
   useEffect(() => {
     let cancelled = false
 
+    const loadFrozenInspectorProfile = async () => {
+      if (!isInspectionLocked) {
+        setFrozenInspectorProfile(null)
+        return
+      }
+
+      try {
+        const response = await fetch(`/api/ob/inspections/${inspection.id}/frozen-inspector`, {
+          cache: 'no-store',
+        })
+        const payload = (await response.json().catch(() => null)) as FrozenInspectorApiResponse | null
+        if (!response.ok || cancelled) return
+        setFrozenInspectorProfile(payload?.profile ?? null)
+      } catch {
+        if (!cancelled) setFrozenInspectorProfile(null)
+      }
+    }
+
+    void loadFrozenInspectorProfile()
+
+    return () => {
+      cancelled = true
+    }
+  }, [inspection.id, isInspectionLocked])
+
+  useEffect(() => {
+    let cancelled = false
+
     const loadInspectionAddons = async () => {
       setInspectionAddonLoading(true)
       try {
@@ -407,6 +443,7 @@ export default function ObStepGrunddata({
 
   // Hjälpare: spara property-fält
   const saveProperty = async (patch: Partial<Property>) => {
+    if (isInspectionLocked) return
     setError(null)
     setSavingProp(true)
 
@@ -434,6 +471,7 @@ export default function ObStepGrunddata({
 
   // Hjälpare: spara inspection-fält
   const saveInspection = async (patch: Partial<Inspection>): Promise<Inspection | null> => {
+    if (isInspectionLocked) return null
     setError(null)
     setSavingInsp(true)
 
@@ -469,6 +507,7 @@ export default function ObStepGrunddata({
       customer_email: string | null
     }>
   ) => {
+    if (isInspectionLocked) return false
     if (!property.assignment_id) return false
 
     setError(null)
@@ -537,6 +576,7 @@ export default function ObStepGrunddata({
   }
 
   const saveOrdererFallbackToInspection = async (nextOrderer: typeof ordererForm) => {
+    if (isInspectionLocked) return
     const customerName = normalizeTextOrNull(nextOrderer.customer_name)
     const customerPhone = normalizeTextOrNull(nextOrderer.customer_phone)
     const customerEmail = normalizeTextOrNull(nextOrderer.customer_email)
@@ -565,6 +605,7 @@ export default function ObStepGrunddata({
   // Autogenerera uppdragsnummer baserat på datum + löpnummer
   useEffect(() => {
     const maybeGenerateAssignmentNumber = async () => {
+      if (isInspectionLocked) return
       if (inspection.assignment_number && inspection.assignment_number !== '') return
       if (!inspection.date) return
 
@@ -611,14 +652,16 @@ export default function ObStepGrunddata({
     }
 
     void maybeGenerateAssignmentNumber()
-  }, [inspection.id, inspection.assignment_number, inspection.date])
+  }, [inspection.id, inspection.assignment_number, inspection.date, isInspectionLocked])
 
   // Handlers för formulärfält - spara vid blur
   const handlePropChange = (field: keyof typeof propForm, value: string) => {
+    if (isInspectionLocked) return
     setPropForm(prev => ({ ...prev, [field]: value }))
   }
 
   const handlePropBlur = (field: keyof typeof propForm) => {
+    if (isInspectionLocked) return
     const rawVal = propForm[field]
     const val = rawVal === '' ? null : (rawVal as any)
 
@@ -637,10 +680,12 @@ export default function ObStepGrunddata({
   }
 
   const handleInspChange = (field: keyof typeof inspForm, value: string) => {
+    if (isInspectionLocked) return
     setInspForm(prev => ({ ...prev, [field]: value }))
   }
 
   const handleInspBlur = (field: keyof typeof inspForm) => {
+    if (isInspectionLocked) return
     const val = inspForm[field] || null
     const patch: Partial<Inspection> = {}
 
@@ -662,10 +707,12 @@ export default function ObStepGrunddata({
   }
 
   const handleOrdererChange = (field: keyof typeof ordererForm, value: string) => {
+    if (isInspectionLocked) return
     setOrdererForm(prev => ({ ...prev, [field]: value }))
   }
 
   const handleOrdererBlur = async (field: keyof typeof ordererForm) => {
+    if (isInspectionLocked) return
     const normalizedValue = normalizeTextOrNull(ordererForm[field])
 
     if (field === 'customer_email' && normalizedValue && !CUSTOMER_EMAIL_REGEX.test(normalizedValue)) {
@@ -726,6 +773,7 @@ export default function ObStepGrunddata({
     )
 
   const handleInspectionAddonToggle = async (row: InspectionAddonOrder) => {
+    if (isInspectionLocked) return
     const nextSelected = !row.is_selected
     const optimisticRows = inspectionAddonOrders.map(current =>
       current.id === row.id ? { ...current, is_selected: nextSelected } : current
@@ -778,6 +826,7 @@ export default function ObStepGrunddata({
   }
 
   const handleScopeToggle = async (label: string) => {
+    if (isInspectionLocked) return
     const current = parseScopeLabels(inspForm.scope)
     const next = current.includes(label) ? current.filter(l => l !== label) : [...current, label]
     const newScope = formatScopeLabels(next)
@@ -789,6 +838,7 @@ export default function ObStepGrunddata({
   const selectedAttendees = parseAttendeeLabels(inspForm.attendees)
 
   const handleAttendeeToggle = async (label: string) => {
+    if (isInspectionLocked) return
     const current = parseAttendeeLabels(inspForm.attendees)
     const next = current.includes(label) ? current.filter(l => l !== label) : [...current, label]
     const newAttendees = formatAttendeeLabels(next)
@@ -798,6 +848,7 @@ export default function ObStepGrunddata({
 
   // Köpar-/säljarbesiktning - radioknappar
   const handleInspectionSideChange = async (side: EditableInspectionSide) => {
+    if (isInspectionLocked) return
     const patch: Partial<Inspection> = { inspection_side: side as InspectionSide }
 
     // Om vi växlar till säljarbesiktning ska "Köpare" inte vara markerad
@@ -828,7 +879,6 @@ export default function ObStepGrunddata({
       : ATTENDEE_OPTIONS
 
   const hasLinkedAssignment = !!property.assignment_id
-  const isInspectionLocked = Boolean((inspection as ObInspection & { locked_at?: string | null }).locked_at)
 
   const handleInspectionCoverUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -883,21 +933,24 @@ export default function ObStepGrunddata({
     }
   }
 
-  const inspectorName = inspectorProfile?.full_name || inspection.inspector_name || INSPECTOR_CARD.name
-  const inspectorSbrLine1 = inspectorProfile?.sbr_group || INSPECTOR_CARD.sbrLine1
-  const inspectorSbrLine2 = inspectorProfile?.sbr_status || INSPECTOR_CARD.sbrLine2
-  const inspectorMemberNumber =
-    inspectorProfile?.membership_number || INSPECTOR_CARD.memberNumber
-  const inspectorCertificationNumber = inspectorProfile?.certification_number ?? null
-  const inspectorPhone = inspectorProfile?.phone || INSPECTOR_CARD.phone
-  const inspectorEmail = inspectorProfile?.email || INSPECTOR_CARD.email
-  const inspectorCompany = inspectorProfile?.company_name || INSPECTOR_CARD.company
-  const inspectorOrgNumber = inspectorProfile?.company_orgno || INSPECTOR_CARD.orgNumber
+  const hasFrozenInspectorSnapshot = isInspectionLocked && !!frozenInspectorProfile
+  const inspectorCardProfile = hasFrozenInspectorSnapshot ? frozenInspectorProfile : inspectorProfile
+
+  const inspectorName =
+    inspectorCardProfile?.full_name || inspection.inspector_name || INSPECTOR_CARD.name
+  const inspectorSbrLine1 = inspectorCardProfile?.sbr_group || INSPECTOR_CARD.sbrLine1
+  const inspectorSbrLine2 = inspectorCardProfile?.sbr_status || INSPECTOR_CARD.sbrLine2
+  const inspectorMemberNumber = inspectorCardProfile?.membership_number || INSPECTOR_CARD.memberNumber
+  const inspectorCertificationNumber = inspectorCardProfile?.certification_number ?? null
+  const inspectorPhone = inspectorCardProfile?.phone || INSPECTOR_CARD.phone
+  const inspectorEmail = inspectorCardProfile?.email || INSPECTOR_CARD.email
+  const inspectorCompany = inspectorCardProfile?.company_name || INSPECTOR_CARD.company
+  const inspectorOrgNumber = inspectorCardProfile?.company_orgno || INSPECTOR_CARD.orgNumber
   const inspectorAddressLine =
-    inspectorProfile?.company_address
+    inspectorCardProfile?.company_address
       ? [
-          inspectorProfile.company_address,
-          [inspectorProfile.company_postal_code, inspectorProfile.company_city]
+          inspectorCardProfile.company_address,
+          [inspectorCardProfile.company_postal_code, inspectorCardProfile.company_city]
             .filter(Boolean)
             .join(' '),
         ]
@@ -914,6 +967,11 @@ export default function ObStepGrunddata({
         automatiskt när du lämnar ett fält. Uppdragsnummer skapas automatiskt när
         besiktningsdatum är satt.
       </div>
+      {isInspectionLocked ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Besiktningen är låst. Grunddata visas i läsläge.
+        </div>
+      ) : null}
 
       {error && <p className="text-xs text-red-600">{error}</p>}
 
@@ -927,6 +985,7 @@ export default function ObStepGrunddata({
             value={propForm.address ?? ''}
             onChange={v => handlePropChange('address', v)}
             onBlur={() => handlePropBlur('address')}
+            readOnly={isInspectionLocked}
           />
 
           <div className="grid grid-cols-2 gap-3">
@@ -935,12 +994,14 @@ export default function ObStepGrunddata({
               value={propForm.postal_code ?? ''}
               onChange={v => handlePropChange('postal_code', v)}
               onBlur={() => handlePropBlur('postal_code')}
+              readOnly={isInspectionLocked}
             />
             <Field
               label="Ort"
               value={propForm.city ?? ''}
               onChange={v => handlePropChange('city', v)}
               onBlur={() => handlePropBlur('city')}
+              readOnly={isInspectionLocked}
             />
           </div>
 
@@ -949,6 +1010,7 @@ export default function ObStepGrunddata({
             value={propForm.municipality ?? ''}
             onChange={v => handlePropChange('municipality', v)}
             onBlur={() => handlePropBlur('municipality')}
+            readOnly={isInspectionLocked}
           />
 
           {inspForm.inspection_side !== 'apartment' ? (
@@ -958,6 +1020,7 @@ export default function ObStepGrunddata({
                 value={propForm.cadastral_id ?? ''}
                 onChange={v => handlePropChange('cadastral_id', v)}
                 onBlur={() => handlePropBlur('cadastral_id')}
+                readOnly={isInspectionLocked}
               />
 
               <Field
@@ -965,6 +1028,7 @@ export default function ObStepGrunddata({
                 value={propForm.owner_name ?? ''}
                 onChange={v => handlePropChange('owner_name', v)}
                 onBlur={() => handlePropBlur('owner_name')}
+                readOnly={isInspectionLocked}
               />
             </>
           ) : null}
@@ -976,18 +1040,21 @@ export default function ObStepGrunddata({
                 value={propForm.brf_name ?? ''}
                 onChange={v => handlePropChange('brf_name', v)}
                 onBlur={() => handlePropBlur('brf_name')}
+                readOnly={isInspectionLocked}
               />
               <Field
                 label="Lägenhetsnummer"
                 value={propForm.apartment_number ?? ''}
                 onChange={v => handlePropChange('apartment_number', v)}
                 onBlur={() => handlePropBlur('apartment_number')}
+                readOnly={isInspectionLocked}
               />
               <Field
                 label="Bostadsrättsinnehavare"
                 value={propForm.apartment_holder_name ?? ''}
                 onChange={v => handlePropChange('apartment_holder_name', v)}
                 onBlur={() => handlePropBlur('apartment_holder_name')}
+                readOnly={isInspectionLocked}
               />
             </>
           ) : null}
@@ -1075,6 +1142,7 @@ export default function ObStepGrunddata({
                   type="radio"
                   className="h-3 w-3"
                   checked={inspForm.inspection_side === 'buyer'}
+                  disabled={isInspectionLocked}
                   onChange={() => void handleInspectionSideChange('buyer')}
                 />
                 <span>Köparbesiktning</span>
@@ -1084,6 +1152,7 @@ export default function ObStepGrunddata({
                   type="radio"
                   className="h-3 w-3"
                   checked={inspForm.inspection_side === 'seller'}
+                  disabled={isInspectionLocked}
                   onChange={() => void handleInspectionSideChange('seller')}
                 />
                 <span>Säljarbesiktning</span>
@@ -1093,6 +1162,7 @@ export default function ObStepGrunddata({
                   type="radio"
                   className="h-3 w-3"
                   checked={inspForm.inspection_side === 'apartment'}
+                  disabled={isInspectionLocked}
                   onChange={() => void handleInspectionSideChange('apartment')}
                 />
                 <span>Lägenhetsbesiktning</span>
@@ -1106,6 +1176,7 @@ export default function ObStepGrunddata({
             onChange={v => handleOrdererChange('customer_name', v)}
             onBlur={() => void handleOrdererBlur('customer_name')}
             placeholder="Namn"
+            readOnly={isInspectionLocked}
           />
 
           <Field
@@ -1114,7 +1185,7 @@ export default function ObStepGrunddata({
             onChange={v => handleOrdererChange('customer_address', v)}
             onBlur={() => void handleOrdererBlur('customer_address')}
             placeholder="Gatuadress"
-            readOnly={!hasLinkedAssignment}
+            readOnly={isInspectionLocked || !hasLinkedAssignment}
           />
 
           <div className="grid grid-cols-2 gap-3">
@@ -1124,7 +1195,7 @@ export default function ObStepGrunddata({
               onChange={v => handleOrdererChange('customer_postal_code', v)}
               onBlur={() => void handleOrdererBlur('customer_postal_code')}
               placeholder="123 45"
-              readOnly={!hasLinkedAssignment}
+              readOnly={isInspectionLocked || !hasLinkedAssignment}
             />
             <Field
               label="Ort"
@@ -1132,7 +1203,7 @@ export default function ObStepGrunddata({
               onChange={v => handleOrdererChange('customer_city', v)}
               onBlur={() => void handleOrdererBlur('customer_city')}
               placeholder="Ort"
-              readOnly={!hasLinkedAssignment}
+              readOnly={isInspectionLocked || !hasLinkedAssignment}
             />
           </div>
 
@@ -1143,6 +1214,7 @@ export default function ObStepGrunddata({
               onChange={v => handleOrdererChange('customer_phone', v)}
               onBlur={() => void handleOrdererBlur('customer_phone')}
               placeholder="Telefonnummer"
+              readOnly={isInspectionLocked}
             />
             <Field
               label="E-post"
@@ -1150,6 +1222,7 @@ export default function ObStepGrunddata({
               onChange={v => handleOrdererChange('customer_email', v)}
               onBlur={() => void handleOrdererBlur('customer_email')}
               placeholder="namn@epost.se"
+              readOnly={isInspectionLocked}
             />
           </div>
 
@@ -1181,6 +1254,7 @@ export default function ObStepGrunddata({
                       type="checkbox"
                       className="mt-0.5 h-3 w-3"
                       checked={row.is_selected}
+                      disabled={isInspectionLocked}
                       onChange={() => void handleInspectionAddonToggle(row)}
                     />
                     <span>{row.addon_name_snapshot}</span>
@@ -1193,6 +1267,7 @@ export default function ObStepGrunddata({
                       type="checkbox"
                       className="mt-0.5 h-3 w-3"
                       checked={selectedScopeLabels.includes(opt.label)}
+                      disabled={isInspectionLocked}
                       onChange={() => void handleScopeToggle(opt.label)}
                     />
                     <span>{opt.label}</span>
@@ -1209,12 +1284,14 @@ export default function ObStepGrunddata({
               value={inspForm.date ?? ''}
               onChange={v => handleInspChange('date', v)}
               onBlur={() => handleInspBlur('date')}
+              readOnly={isInspectionLocked}
             />
             <Field
               label="Tid (t.ex. 09:00)"
               value={inspForm.inspection_time}
               onChange={v => handleInspChange('inspection_time', v)}
               onBlur={() => handleInspBlur('inspection_time')}
+              readOnly={isInspectionLocked}
             />
           </div>
 
@@ -1228,6 +1305,7 @@ export default function ObStepGrunddata({
                     type="checkbox"
                     className="mt-0.5 h-3 w-3"
                     checked={selectedAttendees.includes(opt.label)}
+                    disabled={isInspectionLocked}
                     onChange={() => void handleAttendeeToggle(opt.label)}
                   />
                   <span>{opt.label}</span>
@@ -1240,10 +1318,13 @@ export default function ObStepGrunddata({
                   Övriga närvarande (namn och roll)
                 </div>
                 <textarea
-                  className="w-full rounded-md border px-3 py-2 text-xs"
+                  className={`w-full rounded-md border px-3 py-2 text-xs ${
+                    isInspectionLocked ? 'bg-gray-100 text-gray-600' : ''
+                  }`}
                   rows={2}
                   placeholder="T.ex. Anna Andersson (mäklare), Kalle Karlsson (besiktningsman säljare)"
                   value={inspForm.attendees_other}
+                  disabled={isInspectionLocked}
                   onChange={e => handleInspChange('attendees_other', e.target.value)}
                   onBlur={() => handleInspBlur('attendees_other')}
                 />
@@ -1259,6 +1340,7 @@ export default function ObStepGrunddata({
                 onBlur={() =>
                   handleInspBlur('assignment_confirmation_delivered_date')
                 }
+                readOnly={isInspectionLocked}
               />
 
               <div className="mt-1 text-[11px] text-gray-500">
@@ -1311,7 +1393,13 @@ export default function ObStepGrunddata({
             <div className="text-xs text-gray-600">{inspectorAddressLine}</div>
           </div>
 
-          <p className="mt-2 text-xs text-gray-600">{'Uppgifterna h\u00e4mtas fr\u00e5n den inloggade besiktningsmannens profil.'}</p>
+          <p className="mt-2 text-xs text-gray-600">
+            {isInspectionLocked
+              ? hasFrozenInspectorSnapshot
+                ? 'Uppgifterna är låsta och hämtas från senaste sparade utlåtandeversion.'
+                : 'Besiktningen är låst. Fryst besiktningsmannasnapshot saknas för denna äldre version.'
+              : 'Uppgifterna hämtas från den inloggade besiktningsmannens profil.'}
+          </p>
         </section>
       </div>
     </div>
@@ -1350,6 +1438,7 @@ function Field({
           placeholder={placeholder}
           rows={3}
           readOnly={readOnly}
+          disabled={readOnly}
         />
       ) : (
         <input
@@ -1360,6 +1449,7 @@ function Field({
           onBlur={onBlur}
           placeholder={placeholder}
           readOnly={readOnly}
+          disabled={readOnly}
         />
       )}
     </div>

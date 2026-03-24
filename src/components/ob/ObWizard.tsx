@@ -312,6 +312,10 @@ export default function ObWizard({
   const handleSendInspectionReport = async () => {
     if (!hasValidIds || !inspectionId) return
 
+    const markAsCompleted = window.confirm(
+      'Ska besiktningen klarmarkeras och låsas efter utskicket?\n\nOK = Ja, klarmarkera och lås\nAvbryt = Nej, skicka utan att låsa'
+    )
+
     setSendingReport(true)
     setDeliveryError(null)
     setDeliveryResult(null)
@@ -327,6 +331,7 @@ export default function ObWizard({
         body: JSON.stringify({
           primary_recipient: primaryRecipientInput,
           extra_recipients: extraRecipients,
+          mark_as_completed: markAsCompleted,
         }),
       })
 
@@ -401,8 +406,12 @@ export default function ObWizard({
               .map((row) => row.email)
               .join(', ')}.`
           : ''
+      const completionText =
+        okPayload.inspectionStatus === 'completed'
+          ? ' Besiktningen är nu klarmarkerad och låst.'
+          : ' Besiktningen är fortsatt öppen för ändringar.'
       setDeliveryResult(
-        `Utlåtandet skickades till ${okPayload.sentRecipients.length} mottagare.${failedText} PDF genereras i bakgrunden. Länk: ${okPayload.publicLink}`
+        `Utlåtandet skickades till ${okPayload.sentRecipients.length} mottagare.${failedText}${completionText} PDF genereras i bakgrunden. Länk: ${okPayload.publicLink}`
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Kunde inte skicka utlåtandet.'
