@@ -79,6 +79,11 @@ type CertificationType = {
   key: string
   name: string
   description: string | null
+  category: 'certification' | 'membership'
+  requires_number: boolean
+  requires_valid_to: boolean
+  number_label: string | null
+  valid_to_label: string | null
   sort_order: number
   is_active: boolean
 }
@@ -88,6 +93,11 @@ type CertificationDraft = {
   key: string
   name: string
   description: string | null
+  category: 'certification' | 'membership'
+  requires_number: boolean
+  requires_valid_to: boolean
+  number_label: string | null
+  valid_to_label: string | null
   sort_order: number
   is_active: boolean
 }
@@ -429,7 +439,9 @@ export default function AdminClient() {
   const loadCertifications = async () => {
     const { data, error } = await (supabase as any)
       .from('settings_certifications')
-      .select('id, key, name, description, sort_order, is_active')
+      .select(
+        'id, key, name, description, category, requires_number, requires_valid_to, number_label, valid_to_label, sort_order, is_active'
+      )
       .order('sort_order', { ascending: true })
       .order('name', { ascending: true })
     if (error) {
@@ -566,7 +578,8 @@ export default function AdminClient() {
           r =>
             (r.key ?? '').toLowerCase().includes(s) ||
             (r.name ?? '').toLowerCase().includes(s) ||
-            (r.description ?? '').toLowerCase().includes(s)
+            (r.description ?? '').toLowerCase().includes(s) ||
+            (r.category ?? '').toLowerCase().includes(s)
         )
 
     const sorted = [...rows].sort((a, b) => {
@@ -1187,6 +1200,11 @@ export default function AdminClient() {
         key: row.key ?? '',
         name: row.name ?? '',
         description: row.description ?? null,
+        category: row.category ?? 'certification',
+        requires_number: !!row.requires_number,
+        requires_valid_to: !!row.requires_valid_to,
+        number_label: row.number_label ?? null,
+        valid_to_label: row.valid_to_label ?? null,
         sort_order: row.sort_order ?? 100,
         is_active: !!row.is_active,
       })
@@ -1195,6 +1213,11 @@ export default function AdminClient() {
         key: '',
         name: '',
         description: null,
+        category: 'certification',
+        requires_number: false,
+        requires_valid_to: false,
+        number_label: null,
+        valid_to_label: null,
         sort_order: 100,
         is_active: true,
       })
@@ -1404,6 +1427,11 @@ export default function AdminClient() {
       key,
       name,
       description: certificationDraft.description || null,
+      category: certificationDraft.category,
+      requires_number: certificationDraft.requires_number,
+      requires_valid_to: certificationDraft.requires_valid_to,
+      number_label: certificationDraft.number_label || null,
+      valid_to_label: certificationDraft.valid_to_label || null,
       sort_order: certificationDraft.sort_order ?? 100,
       is_active: certificationDraft.is_active,
     }
@@ -1428,7 +1456,9 @@ export default function AdminClient() {
     const { data, error } = await (supabase as any)
       .from('settings_certifications')
       .insert(payload)
-      .select('id, key, name, description, sort_order, is_active')
+      .select(
+        'id, key, name, description, category, requires_number, requires_valid_to, number_label, valid_to_label, sort_order, is_active'
+      )
       .single()
     if (error) return alert(error.message)
     setCertificationsAll(prev => [data as CertificationType, ...prev])
@@ -2049,6 +2079,16 @@ export default function AdminClient() {
                         {renderSortIcon(certificationSort.key === 'name', certificationSort.dir)}
                       </button>
                     </th>
+                    <th className="py-2 pr-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleCertificationSort('category')}
+                        className="inline-flex items-center gap-1 hover:text-gray-800"
+                      >
+                        Typ
+                        {renderSortIcon(certificationSort.key === 'category', certificationSort.dir)}
+                      </button>
+                    </th>
                     <th className="py-2 pr-3 max-w-[30rem]">
                       <button
                         type="button"
@@ -2062,6 +2102,7 @@ export default function AdminClient() {
                         )}
                       </button>
                     </th>
+                    <th className="py-2 pr-3">Krav</th>
                     <th className="py-2 pr-3">
                       <button
                         type="button"
@@ -2096,8 +2137,13 @@ export default function AdminClient() {
                     <tr key={r.id}>
                       <td className="py-2 pr-3">{r.key}</td>
                       <td className="py-2 pr-3">{r.name}</td>
+                      <td className="py-2 pr-3">{r.category === 'membership' ? 'Medlemskap' : 'Certifiering'}</td>
                       <td className="py-2 pr-3 truncate max-w-[28rem]" title={r.description ?? ''}>
                         {r.description ?? ''}
+                      </td>
+                      <td className="py-2 pr-3 text-xs text-gray-700">
+                        <div>{r.requires_number ? `Nummer: Ja (${r.number_label ?? 'Nummer'})` : 'Nummer: Nej'}</div>
+                        <div>{r.requires_valid_to ? `Slutdatum: Ja (${r.valid_to_label ?? 'Giltig till'})` : 'Slutdatum: Nej'}</div>
                       </td>
                       <td className="py-2 pr-3">{r.sort_order}</td>
                       <td className="py-2 pr-3">{r.is_active ? 'Ja' : 'Nej'}</td>
@@ -2113,7 +2159,7 @@ export default function AdminClient() {
                   ))}
                   {filteredCertifications.length === 0 && (
                     <tr>
-                      <td className="py-4 text-gray-500" colSpan={6}>
+                      <td className="py-4 text-gray-500" colSpan={8}>
                         Inga rader.
                       </td>
                     </tr>
@@ -2803,6 +2849,22 @@ export default function AdminClient() {
                   }
                 />
               </label>
+              <label className="text-sm">
+                <div className="mb-1 text-gray-600">Typ</div>
+                <select
+                  className="border rounded px-2 py-1 w-full"
+                  value={certificationDraft.category}
+                  onChange={e =>
+                    setCertificationDraft({
+                      ...certificationDraft,
+                      category: e.target.value === 'membership' ? 'membership' : 'certification',
+                    })
+                  }
+                >
+                  <option value="certification">Certifiering</option>
+                  <option value="membership">Medlemskap</option>
+                </select>
+              </label>
               <label className="text-sm md:col-span-2">
                 <div className="mb-1 text-gray-600">Namn</div>
                 <input
@@ -2823,6 +2885,62 @@ export default function AdminClient() {
                       description: e.target.value || null,
                     })
                   }
+                />
+              </label>
+              <label className="text-sm">
+                <div className="mb-1 text-gray-600">Nummer obligatoriskt</div>
+                <input
+                  type="checkbox"
+                  className="mt-2"
+                  checked={!!certificationDraft.requires_number}
+                  onChange={e =>
+                    setCertificationDraft({
+                      ...certificationDraft,
+                      requires_number: e.target.checked,
+                    })
+                  }
+                />
+              </label>
+              <label className="text-sm">
+                <div className="mb-1 text-gray-600">Slutdatum obligatoriskt</div>
+                <input
+                  type="checkbox"
+                  className="mt-2"
+                  checked={!!certificationDraft.requires_valid_to}
+                  onChange={e =>
+                    setCertificationDraft({
+                      ...certificationDraft,
+                      requires_valid_to: e.target.checked,
+                    })
+                  }
+                />
+              </label>
+              <label className="text-sm">
+                <div className="mb-1 text-gray-600">Etikett för nummer</div>
+                <input
+                  className="border rounded px-2 py-1 w-full"
+                  value={certificationDraft.number_label ?? ''}
+                  onChange={e =>
+                    setCertificationDraft({
+                      ...certificationDraft,
+                      number_label: e.target.value || null,
+                    })
+                  }
+                  placeholder="t.ex. Medlemsnummer"
+                />
+              </label>
+              <label className="text-sm">
+                <div className="mb-1 text-gray-600">Etikett för slutdatum</div>
+                <input
+                  className="border rounded px-2 py-1 w-full"
+                  value={certificationDraft.valid_to_label ?? ''}
+                  onChange={e =>
+                    setCertificationDraft({
+                      ...certificationDraft,
+                      valid_to_label: e.target.value || null,
+                    })
+                  }
+                  placeholder="t.ex. Giltig till"
                 />
               </label>
               <label className="text-sm">

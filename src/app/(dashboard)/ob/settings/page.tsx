@@ -73,6 +73,45 @@ type AddonOfferFormRow = {
   currency: string
 }
 
+type CertificationCatalogRow = {
+  id: string
+  key: string
+  name: string
+  description: string | null
+  category: 'certification' | 'membership'
+  requires_number: boolean
+  requires_valid_to: boolean
+  number_label: string | null
+  valid_to_label: string | null
+  sort_order: number
+  is_active: boolean
+}
+
+type ProfileCertificationRow = {
+  id: string
+  org_id: string
+  profile_id: string
+  certification_id: string
+  is_enabled: boolean
+  number_value: string | null
+  valid_to: string | null
+}
+
+type CertificationFormRow = {
+  certification_id: string
+  key: string
+  name: string
+  description: string | null
+  category: 'certification' | 'membership'
+  requires_number: boolean
+  requires_valid_to: boolean
+  number_label: string | null
+  valid_to_label: string | null
+  is_enabled: boolean
+  number_value: string
+  valid_to: string
+}
+
 function serializeProfileForm(form: ProfileForm) {
   return JSON.stringify({
     full_name: form.full_name ?? '',
@@ -107,6 +146,15 @@ function resolvePublicMediaUrl(path: string | null | undefined) {
   return `${base}/storage/v1/object/public/property-media/${path}`
 }
 
+function normalizeCertificationCategory(value: unknown): 'certification' | 'membership' {
+  return value === 'membership' ? 'membership' : 'certification'
+}
+
+function normalizeTextInput(value: string) {
+  const normalized = value.trim()
+  return normalized.length > 0 ? normalized : null
+}
+
 export default function ObSettingsPage() {
   const router = useRouter()
   const [userId, setUserId] = useState<string | null>(null)
@@ -122,6 +170,11 @@ export default function ObSettingsPage() {
   const [addonError, setAddonError] = useState<string | null>(null)
   const [addonSuccess, setAddonSuccess] = useState<string | null>(null)
   const [addonRows, setAddonRows] = useState<AddonOfferFormRow[]>([])
+  const [certLoading, setCertLoading] = useState(false)
+  const [certSaving, setCertSaving] = useState(false)
+  const [certError, setCertError] = useState<string | null>(null)
+  const [certSuccess, setCertSuccess] = useState<string | null>(null)
+  const [certRows, setCertRows] = useState<CertificationFormRow[]>([])
   const [supportsAreaDiplomaFlag, setSupportsAreaDiplomaFlag] = useState(true)
   const profileHydratedRef = useRef(false)
   const lastSavedProfileSnapshotRef = useRef<string>('')
@@ -236,7 +289,8 @@ export default function ObSettingsPage() {
       lastSavedProfileSnapshotRef.current = serializeProfileForm(loadedForm)
       profileHydratedRef.current = true
 
-      await loadAddonSettingsForProfile(user.id)
+      const activeOrgId = await loadAddonSettingsForProfile(user.id)
+      await loadCertificationSettingsForProfile(user.id, activeOrgId)
 
       setLoading(false)
     }
@@ -244,7 +298,7 @@ export default function ObSettingsPage() {
     void loadProfile()
   }, [])
 
-  const loadAddonSettingsForProfile = async (profileId: string) => {
+  const loadAddonSettingsForProfile = async (profileId: string): Promise<string | null> => {
     setAddonLoading(true)
     setAddonError(null)
     setAddonSuccess(null)
@@ -262,7 +316,7 @@ export default function ObSettingsPage() {
       setAddonError('Kunde inte hamta organisationskoppling.')
       setAddonRows([])
       setAddonLoading(false)
-      return
+      return null
     }
 
     const activeOrgId = (memberData?.org_id as string | undefined) ?? null
@@ -272,7 +326,7 @@ export default function ObSettingsPage() {
       setAddonError('Ingen organisationskoppling hittades.')
       setAddonRows([])
       setAddonLoading(false)
-      return
+      return null
     }
 
     const { data: catalogData, error: catalogError } = await (supabase as any)
@@ -286,14 +340,14 @@ export default function ObSettingsPage() {
       setAddonError('Kunde inte hämta tilläggsuppdrag.')
       setAddonRows([])
       setAddonLoading(false)
-      return
+      return activeOrgId
     }
 
     const catalogRows = (catalogData ?? []) as AddonServiceRow[]
     if (catalogRows.length === 0) {
       setAddonRows([])
       setAddonLoading(false)
-      return
+      return activeOrgId
     }
 
     const { data: profileAddonsData, error: profileAddonsError } = await (supabase as any)
@@ -306,7 +360,7 @@ export default function ObSettingsPage() {
       setAddonError('Kunde inte hämta dina tilläggsuppdrag.')
       setAddonRows([])
       setAddonLoading(false)
-      return
+      return activeOrgId
     }
 
     const profileRows = (profileAddonsData ?? []) as ProfileAddonServiceRow[]
@@ -328,6 +382,106 @@ export default function ObSettingsPage() {
     )
 
     setAddonLoading(false)
+    return activeOrgId
+  }
+
+  const loadCertificationSettingsForProfile = async (
+    profileId: string,
+    activeOrgIdHint?: string | null
+  ) => {
+    setCertLoading(true)
+    setCertError(null)
+    setCertSuccess(null)
+
+    let activeOrgId = activeOrgIdHint ?? null
+    if (!activeOrgId) {
+      const { data: memberData, error: memberError } = await (supabase as any)
+        .from('org_members')
+        .select('org_id')
+        .eq('profile_id', profileId)
+        .eq('is_active', true)
+        .order('is_default', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (memberError) {
+        setCertError('Kunde inte hamta organisationskoppling for certifieringar.')
+        setCertRows([])
+        setCertLoading(false)
+        return
+      }
+
+      activeOrgId = (memberData?.org_id as string | undefined) ?? null
+      if (activeOrgId) setOrgId(activeOrgId)
+    }
+
+    if (!activeOrgId) {
+      setCertError('Ingen organisationskoppling hittades for certifieringar.')
+      setCertRows([])
+      setCertLoading(false)
+      return
+    }
+
+    const { data: catalogData, error: catalogError } = await (supabase as any)
+      .from('settings_certifications')
+      .select(
+        'id,key,name,description,category,requires_number,requires_valid_to,number_label,valid_to_label,sort_order,is_active'
+      )
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true })
+
+    if (catalogError) {
+      setCertError('Kunde inte hamta certifieringskatalogen.')
+      setCertRows([])
+      setCertLoading(false)
+      return
+    }
+
+    const catalogRows = (catalogData ?? []) as CertificationCatalogRow[]
+    if (catalogRows.length === 0) {
+      setCertRows([])
+      setCertLoading(false)
+      return
+    }
+
+    const { data: profileCertData, error: profileCertError } = await (supabase as any)
+      .from('profile_certifications')
+      .select('id,org_id,profile_id,certification_id,is_enabled,number_value,valid_to')
+      .eq('org_id', activeOrgId)
+      .eq('profile_id', profileId)
+
+    if (profileCertError) {
+      setCertError('Kunde inte hamta dina certifieringar.')
+      setCertRows([])
+      setCertLoading(false)
+      return
+    }
+
+    const profileRows = (profileCertData ?? []) as ProfileCertificationRow[]
+    const byCertificationId = new Map(profileRows.map((row) => [row.certification_id, row]))
+
+    setCertRows(
+      catalogRows.map((catalogRow) => {
+        const existing = byCertificationId.get(catalogRow.id)
+        return {
+          certification_id: catalogRow.id,
+          key: catalogRow.key,
+          name: catalogRow.name,
+          description: catalogRow.description,
+          category: normalizeCertificationCategory(catalogRow.category),
+          requires_number: catalogRow.requires_number === true,
+          requires_valid_to: catalogRow.requires_valid_to === true,
+          number_label: catalogRow.number_label,
+          valid_to_label: catalogRow.valid_to_label,
+          is_enabled: existing?.is_enabled === true,
+          number_value: String(existing?.number_value ?? ''),
+          valid_to: String(existing?.valid_to ?? ''),
+        }
+      })
+    )
+
+    setCertLoading(false)
   }
 
   const handleChange = (key: keyof ProfileForm, value: string) => {
@@ -400,6 +554,30 @@ export default function ObSettingsPage() {
     )
   }
 
+  const handleCertificationToggle = (certificationId: string, checked: boolean) => {
+    setCertRows((prev) =>
+      prev.map((row) =>
+        row.certification_id === certificationId ? { ...row, is_enabled: checked } : row
+      )
+    )
+  }
+
+  const handleCertificationNumberChange = (certificationId: string, value: string) => {
+    setCertRows((prev) =>
+      prev.map((row) =>
+        row.certification_id === certificationId ? { ...row, number_value: value } : row
+      )
+    )
+  }
+
+  const handleCertificationValidToChange = (certificationId: string, value: string) => {
+    setCertRows((prev) =>
+      prev.map((row) =>
+        row.certification_id === certificationId ? { ...row, valid_to: value } : row
+      )
+    )
+  }
+
   const handleSaveAddons = async () => {
     if (!userId || !orgId) {
       setAddonError('Ingen organisationskoppling hittades.')
@@ -455,6 +633,71 @@ export default function ObSettingsPage() {
 
     setAddonSuccess('Tilläggsuppdrag sparades.')
     setAddonSaving(false)
+  }
+
+  const handleSaveCertifications = async () => {
+    if (!userId || !orgId) {
+      setCertError('Ingen organisationskoppling hittades.')
+      return
+    }
+
+    setCertSaving(true)
+    setCertError(null)
+    setCertSuccess(null)
+
+    const rows: Array<{
+      org_id: string
+      profile_id: string
+      certification_id: string
+      is_enabled: boolean
+      number_value: string | null
+      valid_to: string | null
+    }> = []
+
+    for (const row of certRows) {
+      const normalizedNumber = normalizeTextInput(row.number_value)
+      const normalizedValidTo = normalizeTextInput(row.valid_to)
+
+      if (row.is_enabled && row.requires_number && !normalizedNumber) {
+        setCertError(`Fyll i ${row.number_label ?? 'nummer'} för: ${row.name}`)
+        setCertSaving(false)
+        return
+      }
+
+      if (row.is_enabled && row.requires_valid_to && !normalizedValidTo) {
+        setCertError(`Fyll i ${row.valid_to_label ?? 'giltig till'} för: ${row.name}`)
+        setCertSaving(false)
+        return
+      }
+
+      if (normalizedValidTo && !/^\d{4}-\d{2}-\d{2}$/.test(normalizedValidTo)) {
+        setCertError(`Ogiltigt datum för: ${row.name}`)
+        setCertSaving(false)
+        return
+      }
+
+      rows.push({
+        org_id: orgId,
+        profile_id: userId,
+        certification_id: row.certification_id,
+        is_enabled: row.is_enabled,
+        number_value: normalizedNumber,
+        valid_to: normalizedValidTo,
+      })
+    }
+
+    const { error: saveError } = await (supabase as any)
+      .from('profile_certifications')
+      .upsert(rows, { onConflict: 'org_id,profile_id,certification_id' })
+
+    if (saveError) {
+      setCertError('Kunde inte spara certifieringar.')
+      setCertSaving(false)
+      return
+    }
+
+    setCertSuccess('Certifieringar sparades.')
+    setCertSaving(false)
   }
 
   const handleImageUpload = async (
@@ -712,6 +955,99 @@ export default function ObSettingsPage() {
               </div>
             ) : null}
 
+          </section>
+
+          <section className="rounded-2xl border border-white/30 bg-white/90 p-5 shadow-sm backdrop-blur-sm">
+            <div className="mb-3 flex items-center gap-3">
+              <h2 className="text-lg font-semibold text-gray-900">Certifieringar och medlemskap</h2>
+              <button
+                type="button"
+                onClick={() => void handleSaveCertifications()}
+                disabled={certSaving || certLoading || loading}
+                className="ml-auto rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+              >
+                {certSaving ? 'Sparar...' : 'Spara certifieringar'}
+              </button>
+            </div>
+
+            {certLoading ? <p className="text-sm text-gray-600">Laddar certifieringar...</p> : null}
+            {certError ? <p className="mb-3 text-sm text-rose-700">{certError}</p> : null}
+            {certSuccess ? <p className="mb-3 text-sm text-emerald-700">{certSuccess}</p> : null}
+
+            {!certLoading && certRows.length === 0 ? (
+              <p className="text-sm text-gray-600">Inga aktiva certifieringar finns i admin just nu.</p>
+            ) : null}
+
+            {!certLoading && certRows.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-600">
+                      <th className="py-2 pr-3">Namn</th>
+                      <th className="py-2 pr-3">Typ</th>
+                      <th className="py-2 pr-3">Vald</th>
+                      <th className="py-2 pr-3">Nummer</th>
+                      <th className="py-2 pr-3">Giltig till</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {certRows.map((row) => (
+                      <tr key={row.certification_id}>
+                        <td className="py-2 pr-3 align-top">
+                          <div className="font-medium text-gray-900">{row.name}</div>
+                          {row.description ? (
+                            <div className="mt-1 text-xs text-gray-600">{row.description}</div>
+                          ) : null}
+                        </td>
+                        <td className="py-2 pr-3 align-middle">
+                          {row.category === 'membership' ? 'Medlemskap' : 'Certifiering'}
+                        </td>
+                        <td className="py-2 pr-3 align-middle">
+                          <input
+                            type="checkbox"
+                            checked={row.is_enabled}
+                            onChange={(event) =>
+                              handleCertificationToggle(row.certification_id, event.target.checked)
+                            }
+                            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                        </td>
+                        <td className="py-2 pr-3 align-middle">
+                          {row.requires_number ? (
+                            <input
+                              type="text"
+                              value={row.number_value}
+                              onChange={(event) =>
+                                handleCertificationNumberChange(row.certification_id, event.target.value)
+                              }
+                              placeholder={row.number_label ?? 'Nummer'}
+                              className="w-40 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          ) : (
+                            <span className="text-xs text-gray-500">Ej relevant</span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-3 align-middle">
+                          {row.requires_valid_to ? (
+                            <input
+                              type="date"
+                              value={row.valid_to}
+                              onChange={(event) =>
+                                handleCertificationValidToChange(row.certification_id, event.target.value)
+                              }
+                              aria-label={row.valid_to_label ?? 'Giltig till'}
+                              className="w-44 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          ) : (
+                            <span className="text-xs text-gray-500">Ej relevant</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
           </section>
 
           <section className="rounded-2xl border border-white/30 bg-white/90 p-5 shadow-sm backdrop-blur-sm">
