@@ -234,7 +234,8 @@ export default function InspectionDetailPage() {
             cadastral_id,
             owner_name,
             tenure_type,
-            dwelling_type
+            dwelling_type,
+            year_built
           `
           )
           .eq('id', resolvedPropertyId)
@@ -297,6 +298,7 @@ export default function InspectionDetailPage() {
         customer_email: assignment?.customer_email ?? null,
         tenure_type: (snapshot?.tenure_type ?? prop?.tenure_type ?? null) as Property['tenure_type'],
         dwelling_type: (snapshot?.dwelling_type ?? prop?.dwelling_type ?? null) as Property['dwelling_type'],
+        year_built: prop?.year_built ?? null,
         brf_name: snapshot?.brf_name ?? assignment?.brf_name ?? null,
         apartment_number: snapshot?.apartment_number ?? assignment?.apartment_number ?? null,
         apartment_holder_name:

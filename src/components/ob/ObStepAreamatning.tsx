@@ -1,8 +1,9 @@
-'use client'
+﻿'use client'
 
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -30,23 +31,40 @@ type AreaMeasurementRow = {
 type AreaMeasurementForm = {
   building_type: string
   building_year: string
-  extension_note: string
   object_other: string
   measurement_instrument: string
   comment: string
-  other_notes: string
-  place_name: string
-  signed_date: string
   rows: AreaMeasurementRow[]
 }
 
 type ProfileSnapshot = {
   full_name: string | null
   company_name: string | null
+  company_orgno: string | null
+  company_address: string | null
+  company_postal_code: string | null
+  company_city: string | null
+  phone: string | null
+  email: string | null
+  avatar_path: string | null
+  sbr_group: string | null
   membership_number: string | null
   sbr_status: string | null
   certification_number: string | null
   is_sbr_diplomerad_areamatning: boolean
+}
+
+type AreaMeasurementDefaults = {
+  building_type: string | null
+}
+
+type AreaMeasurementApiResponse = {
+  unsupported?: boolean
+  measurement?: Record<string, unknown> | null
+  rows?: Array<Record<string, unknown>>
+  profile?: ProfileSnapshot | null
+  defaults?: AreaMeasurementDefaults | null
+  error?: string
 }
 
 const FIXED_TOLERANCE_LABEL = '+/-2 %'
@@ -82,12 +100,35 @@ function displayM2(value: number) {
   })
 }
 
+function resolvePublicMediaUrl(path: string | null | undefined) {
+  if (!path) return null
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path
+  }
+
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!base) return null
+
+  if (path.startsWith('/storage/')) {
+    return `${base}${path}`
+  }
+
+  if (path.startsWith('storage/')) {
+    return `${base}/${path}`
+  }
+
+  if (path.startsWith('/')) {
+    return path
+  }
+
+  return `${base}/storage/v1/object/public/property-media/${path}`
+}
+
 function toInitialForm(input: {
   measurement: Record<string, unknown> | null
   rows: Array<Record<string, unknown>>
+  fallbackBuildingType: string | null | undefined
   fallbackYearBuilt: number | null | undefined
-  fallbackCity: string | null | undefined
-  fallbackSignedDate: string | null | undefined
 }): AreaMeasurementForm {
   const measurement = input.measurement
   const rows =
@@ -102,19 +143,15 @@ function toInitialForm(input: {
         }))
       : [createEmptyRow(0)]
 
-  const propertyYear = typeof input.fallbackYearBuilt === 'number' ? String(input.fallbackYearBuilt) : ''
-  const signedDate = input.fallbackSignedDate ?? ''
+  const propertyYear =
+    typeof input.fallbackYearBuilt === 'number' ? String(input.fallbackYearBuilt) : ''
 
   return {
-    building_type: String(measurement?.building_type ?? ''),
-    building_year: String(measurement?.building_year ?? propertyYear),
-    extension_note: String(measurement?.extension_note ?? ''),
+    building_type: String(input.fallbackBuildingType ?? ''),
+    building_year: propertyYear,
     object_other: String(measurement?.object_other ?? ''),
     measurement_instrument: String(measurement?.measurement_instrument ?? ''),
     comment: String(measurement?.comment ?? ''),
-    other_notes: String(measurement?.other_notes ?? ''),
-    place_name: String(measurement?.place_name ?? input.fallbackCity ?? ''),
-    signed_date: String(measurement?.signed_date ?? signedDate),
     rows,
   }
 }
@@ -133,19 +170,16 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
   const isInspectionLocked = Boolean(inspection.locked_at)
   const [form, setForm] = useState<AreaMeasurementForm>({
     building_type: '',
-    building_year: '',
-    extension_note: '',
+    building_year: typeof property.year_built === 'number' ? String(property.year_built) : '',
     object_other: '',
     measurement_instrument: '',
     comment: '',
-    other_notes: '',
-    place_name: property.city ?? '',
-    signed_date: inspection.date ?? '',
     rows: [createEmptyRow(0)],
   })
 
   const hydratedRef = useRef(false)
   const lastSavedFingerprintRef = useRef('')
+  const nameFallbackId = useId()
 
   useEffect(() => {
     let cancelled = false
@@ -158,15 +192,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
         const response = await fetch(`/api/ob/inspections/${inspection.id}/area-measurement`, {
           cache: 'no-store',
         })
-        const payload = (await response.json().catch(() => null)) as
-          | {
-              unsupported?: boolean
-              measurement?: Record<string, unknown> | null
-              rows?: Array<Record<string, unknown>>
-              profile?: ProfileSnapshot | null
-              error?: string
-            }
-          | null
+        const payload = (await response.json().catch(() => null)) as AreaMeasurementApiResponse | null
 
         if (!response.ok) {
           throw new Error(payload?.error ?? 'Kunde inte läsa areamätning.')
@@ -176,9 +202,8 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
         const nextForm = toInitialForm({
           measurement: payload?.measurement ?? null,
           rows: Array.isArray(payload?.rows) ? payload.rows : [],
+          fallbackBuildingType: payload?.defaults?.building_type ?? null,
           fallbackYearBuilt: property.year_built,
-          fallbackCity: property.city,
-          fallbackSignedDate: inspection.date,
         })
 
         setUnsupported(payload?.unsupported === true)
@@ -200,50 +225,53 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
     return () => {
       cancelled = true
     }
-  }, [inspection.id, inspection.date, property.city, property.year_built])
+  }, [inspection.id, property.year_built, property.city, inspection.date])
 
-  const persistForm = useCallback(async (nextForm: AreaMeasurementForm) => {
-    if (unsupported || isInspectionLocked) return
-    setSaving(true)
-    setSaveState('saving')
-    setError(null)
+  const persistForm = useCallback(
+    async (nextForm: AreaMeasurementForm) => {
+      if (unsupported || isInspectionLocked) return
+      setSaving(true)
+      setSaveState('saving')
+      setError(null)
 
-    try {
-      const response = await fetch(`/api/ob/inspections/${inspection.id}/area-measurement`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          building_type: nextForm.building_type,
-          building_year: nextForm.building_year,
-          extension_note: nextForm.extension_note,
-          object_other: nextForm.object_other,
-          measurement_instrument: nextForm.measurement_instrument,
-          comment: nextForm.comment,
-          other_notes: nextForm.other_notes,
-          place_name: nextForm.place_name,
-          signed_date: nextForm.signed_date,
-          rows: nextForm.rows.map((row) => ({
-            floor_or_part: row.floor_or_part,
-            boarea_m2: toPayloadNumber(row.boarea_m2),
-            biarea_m2: toPayloadNumber(row.biarea_m2),
-          })),
-        }),
-      })
+      try {
+        const response = await fetch(`/api/ob/inspections/${inspection.id}/area-measurement`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            building_type: nextForm.building_type,
+            building_year: nextForm.building_year,
+            extension_note: null,
+            object_other: nextForm.object_other,
+            measurement_instrument: nextForm.measurement_instrument,
+            comment: nextForm.comment,
+            other_notes: null,
+            place_name: property.city ?? null,
+            signed_date: inspection.date ?? null,
+            rows: nextForm.rows.map((row) => ({
+              floor_or_part: row.floor_or_part,
+              boarea_m2: toPayloadNumber(row.boarea_m2),
+              biarea_m2: toPayloadNumber(row.biarea_m2),
+            })),
+          }),
+        })
 
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null
-      if (!response.ok) {
-        throw new Error(payload?.error ?? 'Kunde inte spara areamätning.')
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null
+        if (!response.ok) {
+          throw new Error(payload?.error ?? 'Kunde inte spara areamätning.')
+        }
+
+        lastSavedFingerprintRef.current = formFingerprint(nextForm)
+        setSaveState('saved')
+      } catch (saveError) {
+        setSaveState('idle')
+        setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara areamätning.')
+      } finally {
+        setSaving(false)
       }
-
-      lastSavedFingerprintRef.current = formFingerprint(nextForm)
-      setSaveState('saved')
-    } catch (saveError) {
-      setSaveState('idle')
-      setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara areamätning.')
-    } finally {
-      setSaving(false)
-    }
-  }, [inspection.id, unsupported, isInspectionLocked])
+    },
+    [inspection.date, inspection.id, isInspectionLocked, property.city, unsupported]
+  )
 
   useEffect(() => {
     if (loading || !hydratedRef.current) return
@@ -273,6 +301,30 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
       biarea: Number(sum.biarea.toFixed(2)),
     }
   }, [form.rows])
+
+  const lockedPlaceName = property.city ?? '-'
+  const lockedSignedDate = inspection.date ?? '-'
+  const inspectorAvatarSrc = resolvePublicMediaUrl(profile?.avatar_path)
+  const inspectorAddressLine = profile?.company_address
+    ? [
+        profile.company_address,
+        [profile.company_postal_code, profile.company_city].filter(Boolean).join(' '),
+      ]
+        .filter(Boolean)
+        .join(', ')
+    : null
+
+  const inspectorCardLines = useMemo(() => {
+    const rows: string[] = []
+    if (profile?.is_sbr_diplomerad_areamatning) {
+      rows.push('Av SBR Diplomerad Areamatare')
+    }
+    if (profile?.sbr_group) rows.push(profile.sbr_group)
+    if (profile?.sbr_status) rows.push(profile.sbr_status)
+    if (profile?.membership_number) rows.push(`Medlemsnummer: ${profile.membership_number}`)
+    if (profile?.certification_number) rows.push(`Certifieringsnummer: ${profile.certification_number}`)
+    return rows
+  }, [profile])
 
   const updateField = (field: Exclude<keyof AreaMeasurementForm, 'rows'>, value: string) => {
     if (isInspectionLocked) return
@@ -310,14 +362,8 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
     <div className="mx-auto max-w-4xl space-y-4 pb-20">
       <section className="rounded-3xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-emerald-50 p-4 shadow-sm md:p-6">
         <div className="space-y-1">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
-            Bilaga
-          </div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Bilaga</div>
           <h2 className="text-2xl font-semibold text-slate-900">Areamätning av boarea</h2>
-          <p className="text-sm text-slate-700">
-            Tilläggsuppdrag i samband med överlåtelsebesiktning. Data sparas löpande men skrivs
-            inte ut i utlåtande/PDF.
-          </p>
         </div>
       </section>
 
@@ -327,19 +373,17 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
 
       {unsupported ? (
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          Areamätning är inte aktiverad i databasen ännu. Kör migrationen innan registrering.
+          Areamatning ar inte aktiverad i databasen annu. Kor migrationen innan registrering.
         </section>
       ) : null}
 
       {error ? (
-        <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-          {error}
-        </section>
+        <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</section>
       ) : null}
 
       {isInspectionLocked ? (
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Besiktningen är låst. Areamätning är skrivskyddad.
+          Besiktningen ar last. Areamatning ar skrivskyddad.
         </section>
       ) : null}
 
@@ -355,28 +399,10 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
             <div className="space-y-3">
               <ReadOnlyField label="Uppdragsnummer" value={inspection.assignment_number ?? '-'} />
               <ReadOnlyField label="Adress" value={property.address ?? '-'} />
-              <TextInput
-                label="Byggnadstyp"
-                value={form.building_type}
-                onChange={(value) => updateField('building_type', value)}
-                disabled={isInspectionLocked}
-              />
-              <TextInput
-                label="Byggår"
-                value={form.building_year}
-                onChange={(value) => updateField('building_year', value)}
-                inputMode="numeric"
-                disabled={isInspectionLocked}
-              />
-              <TextInput
-                label="Tillbyggd"
-                value={form.extension_note}
-                onChange={(value) => updateField('extension_note', value)}
-                placeholder="Ja/Nej eller fritext"
-                disabled={isInspectionLocked}
-              />
+              <ReadOnlyField label="Byggnadstyp" value={form.building_type || '-'} />
+              <ReadOnlyField label="Byggår" value={form.building_year || '-'} />
               <TextArea
-                label="Övrigt"
+                label="Ovrigt"
                 value={form.object_other}
                 onChange={(value) => updateField('object_other', value)}
                 rows={2}
@@ -386,10 +412,10 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
           </section>
 
           <section className="rounded-2xl border bg-white p-4 shadow-sm md:p-5">
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">Mätning</h3>
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">Matning</h3>
             <div className="space-y-3">
               <TextInput
-                label="Instrument (märke och modell)"
+                label="Instrument (marke och modell)"
                 value={form.measurement_instrument}
                 onChange={(value) => updateField('measurement_instrument', value)}
                 disabled={isInspectionLocked}
@@ -407,7 +433,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
                 className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                 disabled={unsupported || saving || isInspectionLocked}
               >
-                Lägg till rad
+                Lagg till rad
               </button>
             </div>
             <div className="space-y-3">
@@ -416,7 +442,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
                   <div className="mb-2 text-xs font-semibold text-slate-600">Rad {index + 1}</div>
                   <div className="space-y-2">
                     <TextInput
-                      label="Våning/byggdel"
+                      label="Vaning/byggdel"
                       value={row.floor_or_part}
                       onChange={(value) => updateRow(row.id, { floor_or_part: value })}
                       disabled={isInspectionLocked}
@@ -456,14 +482,8 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
           <section className="rounded-2xl border bg-white p-4 shadow-sm md:p-5">
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">Sammanfattning</h3>
             <div className="grid gap-3 sm:grid-cols-2">
-              <ReadOnlyField
-                label="Total BOA"
-                value={`${displayM2(totals.boarea)} m² ${FIXED_TOLERANCE_LABEL}`}
-              />
-              <ReadOnlyField
-                label="Total BIA"
-                value={`${displayM2(totals.biarea)} m² ${FIXED_TOLERANCE_LABEL}`}
-              />
+              <ReadOnlyField label="Total BOA" value={`${displayM2(totals.boarea)} m² ${FIXED_TOLERANCE_LABEL}`} />
+              <ReadOnlyField label="Total BIA" value={`${displayM2(totals.biarea)} m² ${FIXED_TOLERANCE_LABEL}`} />
             </div>
           </section>
 
@@ -471,16 +491,9 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">Kommentar</h3>
             <div className="space-y-3">
               <TextArea
-                label="Övriga kommentarer"
+                label="Kommentar"
                 value={form.comment}
                 onChange={(value) => updateField('comment', value)}
-                rows={3}
-                disabled={isInspectionLocked}
-              />
-              <TextArea
-                label="Övrigt"
-                value={form.other_notes}
-                onChange={(value) => updateField('other_notes', value)}
                 rows={4}
                 disabled={isInspectionLocked}
               />
@@ -491,38 +504,48 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">Signering</h3>
             <div className="space-y-3">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <TextInput
-                  label="Ort"
-                  value={form.place_name}
-                  onChange={(value) => updateField('place_name', value)}
-                  disabled={isInspectionLocked}
-                />
-                <TextInput
-                  label="Datum"
-                  value={form.signed_date}
-                  onChange={(value) => updateField('signed_date', value)}
-                  type="date"
-                  disabled={isInspectionLocked}
-                />
+                <ReadOnlyField label="Ort" value={lockedPlaceName} />
+                <ReadOnlyField label="Datum" value={lockedSignedDate} />
               </div>
-              <ReadOnlyField label="Besiktningsbolag" value={profile?.company_name ?? '-'} />
-              <ReadOnlyField label="Namn och efternamn" value={profile?.full_name ?? '-'} />
-              {profile?.is_sbr_diplomerad_areamatning ? (
-                <ReadOnlyField
-                  label="Areamatning"
-                  value="Av SBR Diplomerad Areamätare"
-                />
-              ) : (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  Markera certifiering i Besiktningsman - profil om den ska visas här.
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-start gap-3">
+                  {inspectorAvatarSrc ? (
+                    <img
+                      src={inspectorAvatarSrc}
+                      alt="Bild pa besiktningsman"
+                      className="h-14 w-14 rounded-full border border-slate-300 object-cover"
+                    />
+                  ) : (
+                    <div
+                      aria-labelledby={nameFallbackId}
+                      className="flex h-14 w-14 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-[10px] text-slate-500"
+                    >
+                      Ingen bild
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div id={nameFallbackId} className="text-sm font-semibold text-slate-900">
+                      {profile?.full_name ?? '-'}
+                    </div>
+                    {inspectorCardLines.map((line) => (
+                      <div key={line} className="text-xs text-slate-600">
+                        {line}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              )}
-              <ReadOnlyField label="Certifiering" value={profile?.sbr_status ?? '-'} />
-              <ReadOnlyField
-                label="Certifieringsnummer"
-                value={profile?.certification_number ?? '-'}
-              />
-              <ReadOnlyField label="Medlemsnummer" value={profile?.membership_number ?? '-'} />
+
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <ReadOnlyField label="Besiktningsbolag" value={profile?.company_name ?? '-'} />
+                  <ReadOnlyField label="Org.nr" value={profile?.company_orgno ?? '-'} />
+                  <ReadOnlyField label="Telefon" value={profile?.phone ?? '-'} />
+                  <ReadOnlyField label="E-post" value={profile?.email ?? '-'} />
+                </div>
+                {inspectorAddressLine ? (
+                  <div className="mt-2 text-xs text-slate-600">{inspectorAddressLine}</div>
+                ) : null}
+              </div>
             </div>
           </section>
         </>

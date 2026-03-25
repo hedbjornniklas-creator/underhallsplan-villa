@@ -43,7 +43,9 @@ async function loadProfileSnapshot(
 ) {
   const profileResult = await admin
     .from('profiles')
-    .select('full_name,company_name')
+    .select(
+      'full_name,company_name,company_orgno,company_address,company_postal_code,company_city,phone,email,avatar_path'
+    )
     .eq('id', userId)
     .maybeSingle()
 
@@ -59,11 +61,126 @@ async function loadProfileSnapshot(
   return {
     full_name: (profileResult.data?.full_name as string | null) ?? null,
     company_name: (profileResult.data?.company_name as string | null) ?? null,
+    company_orgno: (profileResult.data?.company_orgno as string | null) ?? null,
+    company_address: (profileResult.data?.company_address as string | null) ?? null,
+    company_postal_code: (profileResult.data?.company_postal_code as string | null) ?? null,
+    company_city: (profileResult.data?.company_city as string | null) ?? null,
+    phone: (profileResult.data?.phone as string | null) ?? null,
+    email: (profileResult.data?.email as string | null) ?? null,
+    avatar_path: (profileResult.data?.avatar_path as string | null) ?? null,
+    sbr_group: summary.sbr_group,
     membership_number: summary.membership_number,
     sbr_status: summary.sbr_status,
     certification_number: summary.certification_number,
     is_sbr_diplomerad_areamatning: summary.is_sbr_diplomerad_areamatning,
   }
+}
+
+function normalizeLookupKey(value: string) {
+  return value.trim().toLowerCase()
+}
+
+function normalizeToTokenArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item ?? '').trim())
+      .filter((item) => item.length > 0)
+  }
+  if (value === null || value === undefined) return []
+  const token = String(value).trim()
+  return token.length > 0 ? [token] : []
+}
+
+async function loadBuildingTypeFromForutsattningar(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  inspectionId: string
+) {
+  const itemResult = await admin
+    .from('settings_overview_items')
+    .select('id')
+    .eq('key', 'building_type')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (itemResult.error || !itemResult.data?.id) return null
+  const overviewItemId = String(itemResult.data.id)
+
+  const [selectionResult, groupsResult] = await Promise.all([
+    admin
+      .from('inspection_overview_selections')
+      .select('values')
+      .eq('inspection_id', inspectionId)
+      .eq('overview_item_id', overviewItemId)
+      .order('set_index', { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    admin
+      .from('settings_overview_groups')
+      .select('id,key,sort_order')
+      .eq('overview_item_id', overviewItemId)
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true }),
+  ])
+
+  if (selectionResult.error || groupsResult.error || !selectionResult.data?.values) {
+    return null
+  }
+
+  const values = selectionResult.data.values
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return null
+  const valuesRecord = values as Record<string, unknown>
+  const groups = Array.isArray(groupsResult.data)
+    ? (groupsResult.data as Array<{ id: string; key: string; sort_order: number | null }>)
+    : []
+  if (groups.length === 0) return null
+
+  const groupIds = groups.map((group) => group.id)
+  const optionsResult =
+    groupIds.length > 0
+      ? await admin
+          .from('settings_overview_options')
+          .select('group_id,value,label,sort_order')
+          .in('group_id', groupIds)
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true })
+      : { data: [], error: null as unknown }
+
+  if (optionsResult.error) return null
+
+  const labelsByGroup = new Map<string, Map<string, string>>()
+  const options = Array.isArray(optionsResult.data)
+    ? (optionsResult.data as Array<{ group_id: string; value: string; label: string }>)
+    : []
+  options.forEach((option) => {
+    const lookup = normalizeLookupKey(option.value)
+    if (!labelsByGroup.has(option.group_id)) {
+      labelsByGroup.set(option.group_id, new Map())
+    }
+    labelsByGroup.get(option.group_id)!.set(lookup, option.label)
+  })
+
+  const parts: string[] = []
+  groups.forEach((group) => {
+    const rawValue = valuesRecord[group.key]
+    const tokens = normalizeToTokenArray(rawValue)
+    if (tokens.length === 0) return
+
+    const labelLookup = labelsByGroup.get(group.id)
+    const labels = tokens
+      .map((token) => {
+        const label = labelLookup?.get(normalizeLookupKey(token))
+        return label ?? token
+      })
+      .filter((token) => token.length > 0)
+
+    if (labels.length > 0) {
+      parts.push(labels.join(', '))
+    }
+  })
+
+  return parts.length > 0 ? parts.join(', ') : null
 }
 
 function normalizeNumber(value: unknown) {
@@ -126,6 +243,7 @@ export async function GET(
     const admin = createSupabaseAdminClient()
 
     const profile = await loadProfileSnapshot(admin, org.orgId, org.userId)
+    const buildingTypeDefault = await loadBuildingTypeFromForutsattningar(admin, id)
 
     const { data: measurement, error: measurementError } = await admin
       .from('inspection_area_measurements')
@@ -144,6 +262,9 @@ export async function GET(
           measurement: null,
           rows: [],
           profile,
+          defaults: {
+            building_type: buildingTypeDefault,
+          },
         })
       }
       throw new Error(message || 'Kunde inte lasa areamatning.')
@@ -155,6 +276,9 @@ export async function GET(
         measurement: null,
         rows: [],
         profile,
+        defaults: {
+          building_type: buildingTypeDefault,
+        },
       })
     }
 
@@ -173,6 +297,9 @@ export async function GET(
           measurement: null,
           rows: [],
           profile,
+          defaults: {
+            building_type: buildingTypeDefault,
+          },
         })
       }
       throw new Error(message || 'Kunde inte lasa areamatningsrader.')
@@ -183,6 +310,9 @@ export async function GET(
       measurement,
       rows: Array.isArray(rows) ? rows : [],
       profile,
+      defaults: {
+        building_type: buildingTypeDefault,
+      },
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okant fel.'
