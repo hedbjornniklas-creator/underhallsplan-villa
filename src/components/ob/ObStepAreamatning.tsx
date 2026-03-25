@@ -582,7 +582,7 @@ function PlainInfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <div className="text-xs font-medium text-slate-600">{label}</div>
-      <div>{value || '-'}</div>
+      <div className="text-sm text-slate-900">{value || '-'}</div>
     </div>
   )
 }

@@ -80,6 +80,14 @@ function normalizeLookupKey(value: string) {
   return value.trim().toLowerCase()
 }
 
+function normalizeSearchKey(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
+
 function normalizeToTokenArray(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value
@@ -96,17 +104,78 @@ async function loadOverviewItemFirstLabel(
   inspectionId: string,
   itemKey: string
 ) {
+  const resolveOverviewItemId = async (
+    preferredKeys: string[],
+    fuzzyTokens: string[]
+  ): Promise<string | null> => {
+    const { data, error } = await admin
+      .from('settings_overview_items')
+      .select('id,key,label,sort_order')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+
+    if (error || !Array.isArray(data)) return null
+    const rows = data as Array<{ id: string; key: string; label: string | null; sort_order: number | null }>
+    if (rows.length === 0) return null
+
+    const preferredLookup = new Set(preferredKeys.map((key) => normalizeSearchKey(key)))
+    const fuzzyLookup = fuzzyTokens.map((token) => normalizeSearchKey(token)).filter(Boolean)
+
+    const exact = rows.find((row) => preferredLookup.has(normalizeSearchKey(String(row.key ?? ''))))
+    if (exact) return exact.id
+
+    const keyContainsPreferred = rows.find((row) => {
+      const key = normalizeSearchKey(String(row.key ?? ''))
+      return Array.from(preferredLookup).some((needle) => key.includes(needle))
+    })
+    if (keyContainsPreferred) return keyContainsPreferred.id
+
+    const keyOrLabelContainsFuzzy = rows.find((row) => {
+      const key = normalizeSearchKey(String(row.key ?? ''))
+      const label = normalizeSearchKey(String(row.label ?? ''))
+      return fuzzyLookup.some((needle) => key.includes(needle) || label.includes(needle))
+    })
+    if (keyOrLabelContainsFuzzy) return keyOrLabelContainsFuzzy.id
+
+    return null
+  }
+
+  const pickByKnownKey = (key: string) => {
+    const normalized = normalizeSearchKey(key)
+    if (normalized === 'building_type') {
+      return resolveOverviewItemId(
+        ['building_type', 'building_form'],
+        ['byggnadstyp', 'byggnad', 'typ', 'building type']
+      )
+    }
+    if (normalized === 'building_year') {
+      return resolveOverviewItemId(
+        ['building_year', 'year_built', 'byggar', 'byggnadsar'],
+        ['byggar', 'byggnadsar', 'byggar', 'year']
+      )
+    }
+    if (normalized === 'heating') {
+      return resolveOverviewItemId(['heating'], ['uppvarmning', 'varme', 'heating'])
+    }
+    if (normalized === 'ventilation') {
+      return resolveOverviewItemId(['ventilation'], ['ventilation', 'vent'])
+    }
+    return resolveOverviewItemId([key], [key])
+  }
+
+  const overviewItemId = await pickByKnownKey(itemKey)
+  if (!overviewItemId) return null
+
   const itemResult = await admin
     .from('settings_overview_items')
     .select('id')
-    .eq('key', itemKey)
+    .eq('id', overviewItemId)
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
     .limit(1)
     .maybeSingle()
 
   if (itemResult.error || !itemResult.data?.id) return null
-  const overviewItemId = String(itemResult.data.id)
 
   const [selectionResult, groupsResult] = await Promise.all([
     admin
@@ -179,14 +248,36 @@ async function loadBuildingYearSummaryFromForutsattningar(
   admin: ReturnType<typeof createSupabaseAdminClient>,
   inspectionId: string
 ) {
-  const itemResult = await admin
+  const candidateKeys = ['building_year', 'year_built', 'byggar', 'byggnadsar']
+  const { data: allItems, error: allItemsError } = await admin
     .from('settings_overview_items')
-    .select('id')
-    .eq('key', 'building_year')
+    .select('id,key,label,sort_order')
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
-    .limit(1)
-    .maybeSingle()
+
+  if (allItemsError || !Array.isArray(allItems)) return null
+
+  const candidates = (allItems as Array<{ id: string; key: string; label: string | null }>)
+    .map((row) => ({
+      id: row.id,
+      key: normalizeSearchKey(String(row.key ?? '')),
+      label: normalizeSearchKey(String(row.label ?? '')),
+    }))
+
+  const exact = candidates.find((row) =>
+    candidateKeys.some((key) => row.key === normalizeSearchKey(key))
+  )
+  const fuzzy =
+    exact ??
+    candidates.find(
+      (row) =>
+        row.key.includes('bygg') ||
+        row.key.includes('year') ||
+        row.label.includes('bygg') ||
+        row.label.includes('year')
+    )
+
+  const itemResult = fuzzy ? { data: { id: fuzzy.id }, error: null } : { data: null, error: null }
 
   if (itemResult.error || !itemResult.data?.id) return null
   const overviewItemId = String(itemResult.data.id)
