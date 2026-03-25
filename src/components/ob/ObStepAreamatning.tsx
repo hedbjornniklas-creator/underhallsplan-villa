@@ -321,7 +321,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
   const inspectorCardLines = useMemo(() => {
     const rows: string[] = []
     if (profile?.is_sbr_diplomerad_areamatning) {
-      rows.push('Av SBR Diplomerad Areamatare')
+      rows.push('Av SBR Diplomerad Areamätare')
     }
     if (profile?.sbr_group) rows.push(profile.sbr_group)
     if (profile?.sbr_status) rows.push(profile.sbr_status)
@@ -377,7 +377,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
 
       {unsupported ? (
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          Areamatning ar inte aktiverad i databasen annu. Kor migrationen innan registrering.
+          Areamätning är inte aktiverad i databasen ännu. Kör migrationen innan registrering.
         </section>
       ) : null}
 
@@ -387,7 +387,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
 
       {isInspectionLocked ? (
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Besiktningen ar last. Areamatning ar skrivskyddad.
+          Besiktningen är låst. Areamätning är skrivskyddad.
         </section>
       ) : null}
 
@@ -401,12 +401,12 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
               </div>
             </div>
             <div className="space-y-3">
-              <ReadOnlyField label="Uppdragsnummer" value={inspection.assignment_number ?? '-'} />
-              <ReadOnlyField label="Adress" value={property.address ?? '-'} />
-              <ReadOnlyField label="Byggnadstyp" value={form.building_type || '-'} />
-              <ReadOnlyField label="Byggår" value={form.building_year || '-'} />
+              <PlainInfoRow label="Uppdragsnummer" value={inspection.assignment_number ?? '-'} />
+              <PlainInfoRow label="Adress" value={property.address ?? '-'} />
+              <PlainInfoRow label="Byggnadstyp" value={form.building_type || '-'} />
+              <PlainInfoRow label="Byggår" value={form.building_year || '-'} />
               <TextArea
-                label="Ovrigt"
+                label="Övrigt"
                 value={form.object_other}
                 onChange={(value) => updateField('object_other', value)}
                 rows={2}
@@ -416,10 +416,10 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
           </section>
 
           <section className="rounded-2xl border bg-white p-4 shadow-sm md:p-5">
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">Matning</h3>
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">Mätning</h3>
             <div className="space-y-3">
               <TextInput
-                label="Instrument (marke och modell)"
+                label="Instrument (märke och modell)"
                 value={form.measurement_instrument}
                 onChange={(value) => updateField('measurement_instrument', value)}
                 disabled={isInspectionLocked}
@@ -437,7 +437,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
                 className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                 disabled={unsupported || saving || isInspectionLocked}
               >
-                Lagg till rad
+                Lägg till rad
               </button>
             </div>
             <div className="space-y-3">
@@ -446,7 +446,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
                   <div className="mb-2 text-xs font-semibold text-slate-600">Rad {index + 1}</div>
                   <div className="space-y-2">
                     <TextInput
-                      label="Vaning/byggdel"
+                      label="Våning/byggdel"
                       value={row.floor_or_part}
                       onChange={(value) => updateRow(row.id, { floor_or_part: value })}
                       disabled={isInspectionLocked}
@@ -517,7 +517,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
                   {inspectorAvatarSrc ? (
                     <img
                       src={inspectorAvatarSrc}
-                      alt="Bild pa besiktningsman"
+                      alt="Bild på besiktningsman"
                       className="h-14 w-14 rounded-full border border-slate-300 object-cover"
                     />
                   ) : (
