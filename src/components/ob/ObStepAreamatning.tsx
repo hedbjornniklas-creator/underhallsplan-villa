@@ -10,6 +10,8 @@ import {
   type InputHTMLAttributes,
 } from 'react'
 import type { Tables } from '@/types/supabase'
+import { formatCertificationDisplayLines } from '@/lib/certifications/display'
+import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
 
 type Property = Tables<'properties'>
 type Inspection = Tables<'inspections'>
@@ -52,6 +54,7 @@ type ProfileSnapshot = {
   sbr_status: string | null
   certification_number: string | null
   is_sbr_diplomerad_areamatning: boolean
+  certification_items?: InspectorCertificationListItem[]
 }
 
 type AreaMeasurementDefaults = {
@@ -319,15 +322,19 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
     : null
 
   const inspectorCardLines = useMemo(() => {
-    const rows: string[] = []
+    const rows = formatCertificationDisplayLines(profile?.certification_items)
+    if (rows.length > 0) return rows
+
+    const fallbackRows: string[] = []
     if (profile?.is_sbr_diplomerad_areamatning) {
-      rows.push('Av SBR Diplomerad Areamätare')
+      fallbackRows.push('Av SBR Diplomerad Areamätare')
     }
-    if (profile?.sbr_group) rows.push(profile.sbr_group)
-    if (profile?.sbr_status) rows.push(profile.sbr_status)
-    if (profile?.membership_number) rows.push(`Medlemsnummer: ${profile.membership_number}`)
-    if (profile?.certification_number) rows.push(`Certifieringsnummer: ${profile.certification_number}`)
-    return rows
+    if (profile?.sbr_group) fallbackRows.push(profile.sbr_group)
+    if (profile?.sbr_status) fallbackRows.push(profile.sbr_status)
+    if (profile?.membership_number) fallbackRows.push(`Medlemsnummer: ${profile.membership_number}`)
+    if (profile?.certification_number)
+      fallbackRows.push(`Certifieringsnummer: ${profile.certification_number}`)
+    return fallbackRows
   }, [profile])
 
   const updateField = (field: Exclude<keyof AreaMeasurementForm, 'rows'>, value: string) => {

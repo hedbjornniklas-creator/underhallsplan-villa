@@ -11,6 +11,14 @@ type FrozenInspectorPayload = {
   sbr_status: string | null
   membership_number: string | null
   certification_number: string | null
+  certification_items: Array<{
+    key: string
+    name: string
+    category: 'certification' | 'membership'
+    sort_order: number | null
+    number_value: string | null
+    valid_to: string | null
+  }>
   phone: string | null
   email: string | null
   company_name: string | null
@@ -33,12 +41,47 @@ function normalizeText(value: unknown): string | null {
 function normalizeFrozenProfile(value: unknown): FrozenInspectorPayload | null {
   if (!value || typeof value !== 'object') return null
   const source = value as Record<string, unknown>
+  const rawItems = Array.isArray(source.certification_items) ? source.certification_items : []
+  const certificationItems = rawItems
+    .map((row) => {
+      if (!row || typeof row !== 'object') return null
+      const item = row as Record<string, unknown>
+      const key = normalizeText(item.key)
+      const name = normalizeText(item.name)
+      const category = item.category === 'membership' ? 'membership' : 'certification'
+      if (!key || !name) return null
+      return {
+        key,
+        name,
+        category,
+        sort_order:
+          typeof item.sort_order === 'number' && Number.isFinite(item.sort_order)
+            ? item.sort_order
+            : null,
+        number_value: normalizeText(item.number_value),
+        valid_to: normalizeText(item.valid_to),
+      }
+    })
+    .filter(
+      (
+        row
+      ): row is {
+        key: string
+        name: string
+        category: 'certification' | 'membership'
+        sort_order: number | null
+        number_value: string | null
+        valid_to: string | null
+      } => row !== null
+    )
+
   return {
     full_name: normalizeText(source.full_name),
     sbr_group: normalizeText(source.sbr_group),
     sbr_status: normalizeText(source.sbr_status),
     membership_number: normalizeText(source.membership_number),
     certification_number: normalizeText(source.certification_number),
+    certification_items: certificationItems,
     phone: normalizeText(source.phone),
     email: normalizeText(source.email),
     company_name: normalizeText(source.company_name),

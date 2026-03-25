@@ -952,6 +952,9 @@ const supabase: any = createSupabaseServerClient()
             null,
           ''
         ),
+        certification_items: Array.isArray(frozenProfileFromSnapshot?.certification_items)
+          ? frozenProfileFromSnapshot.certification_items
+          : profileCertificationSummary.all_selected_items,
         phone: valueOrFallback(
           (frozenProfileFromSnapshot?.phone as string | null | undefined) ?? profile?.phone ?? null
         ),

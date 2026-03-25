@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'reac
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import { formatCertificationDisplayLines } from '@/lib/certifications/display'
+import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
 
 export type ObInspection = Tables<'inspections'>
 
@@ -29,6 +31,7 @@ type InspectorProfile = {
   sbr_status: string | null
   membership_number: string | null
   certification_number: string | null
+  certification_items: InspectorCertificationListItem[]
   phone: string | null
   email: string | null
   company_name: string | null
@@ -364,6 +367,7 @@ export default function ObStepGrunddata({
         sbr_status: summary.sbr_status,
         membership_number: summary.membership_number,
         certification_number: summary.certification_number,
+        certification_items: summary.all_selected_items,
         phone: data.phone ?? null,
         email: data.email ?? null,
         company_name: data.company_name ?? null,
@@ -962,6 +966,9 @@ export default function ObStepGrunddata({
   const inspectorSbrLine2 = inspectorCardProfile?.sbr_status || INSPECTOR_CARD.sbrLine2
   const inspectorMemberNumber = inspectorCardProfile?.membership_number || INSPECTOR_CARD.memberNumber
   const inspectorCertificationNumber = inspectorCardProfile?.certification_number ?? null
+  const inspectorCertificationLines = formatCertificationDisplayLines(
+    inspectorCardProfile?.certification_items
+  )
   const inspectorPhone = inspectorCardProfile?.phone || INSPECTOR_CARD.phone
   const inspectorEmail = inspectorCardProfile?.email || INSPECTOR_CARD.email
   const inspectorCompany = inspectorCardProfile?.company_name || INSPECTOR_CARD.company
@@ -1396,15 +1403,25 @@ export default function ObStepGrunddata({
 
           <div className="space-y-1 text-sm text-gray-800">
             <div className="font-semibold">{inspectorName}</div>
-            <div className="text-xs text-gray-600">{inspectorSbrLine1}</div>
-            <div className="text-xs text-gray-600">{inspectorSbrLine2}</div>
+            {inspectorCertificationLines.length > 0 ? (
+              inspectorCertificationLines.map((line) => (
+                <div key={line} className="text-xs text-gray-600">
+                  {line}
+                </div>
+              ))
+            ) : (
+              <>
+                <div className="text-xs text-gray-600">{inspectorSbrLine1}</div>
+                <div className="text-xs text-gray-600">{inspectorSbrLine2}</div>
 
-            <div className="mt-2 text-xs text-gray-600">Medlemsnummer: {inspectorMemberNumber}</div>
-            {inspectorCertificationNumber ? (
-              <div className="text-xs text-gray-600">
-                Certifieringsnummer: {inspectorCertificationNumber}
-              </div>
-            ) : null}
+                <div className="mt-2 text-xs text-gray-600">Medlemsnummer: {inspectorMemberNumber}</div>
+                {inspectorCertificationNumber ? (
+                  <div className="text-xs text-gray-600">
+                    Certifieringsnummer: {inspectorCertificationNumber}
+                  </div>
+                ) : null}
+              </>
+            )}
             <div className="text-xs text-gray-600">Telefon: {inspectorPhone}</div>
             <div className="text-xs text-gray-600">E-post: {inspectorEmail}</div>
 

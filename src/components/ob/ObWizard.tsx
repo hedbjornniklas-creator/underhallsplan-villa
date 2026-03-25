@@ -8,6 +8,7 @@ import ObStepForutsattningar from './ObStepForutsattningar'
 import ObStepUtsida from './ObStepUtsida'
 import ObStepInsida from './ObStepInsida'
 import ObStepAreamatning from './ObStepAreamatning'
+import ObStepFuktkontroll from './ObStepFuktkontroll'
 import type { Tables } from '@/types/supabase'
 
 type DbInspection = Tables<'inspections'>
@@ -61,6 +62,7 @@ export type ObSectionKey =
   | 'utsida'
   | 'insida'
   | 'areamatning'
+  | 'fuktkontroll'
   | 'risk'
   | 'ftu'
 
@@ -833,6 +835,14 @@ export default function ObWizard({
     case 'areamatning':
       return (
         <ObStepAreamatning
+          property={normalizedProperty}
+          inspection={normalizedInspection}
+        />
+      )
+
+    case 'fuktkontroll':
+      return (
+        <ObStepFuktkontroll
           property={normalizedProperty}
           inspection={normalizedInspection}
         />

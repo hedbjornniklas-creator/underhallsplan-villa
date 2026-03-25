@@ -36,6 +36,16 @@ type EnabledCertificationRecord = {
   category: 'certification' | 'membership'
   sort_order: number | null
   number_value: string | null
+  valid_to: string | null
+}
+
+export type InspectorCertificationListItem = {
+  key: string
+  name: string
+  category: 'certification' | 'membership'
+  sort_order: number | null
+  number_value: string | null
+  valid_to: string | null
 }
 
 export type InspectorCertificationSummary = {
@@ -48,6 +58,7 @@ export type InspectorCertificationSummary = {
   status_name: string | null
   membership_key: string | null
   membership_name: string | null
+  all_selected_items: InspectorCertificationListItem[]
 }
 
 function normalizeText(value: unknown): string | null {
@@ -102,6 +113,7 @@ export function buildInspectorCertificationSummary(input: {
         category: catalogRow.category,
         sort_order: catalogRow.sort_order,
         number_value: normalizeText(row.number_value),
+        valid_to: normalizeText(row.valid_to),
       } satisfies EnabledCertificationRecord
     })
     .filter((row): row is EnabledCertificationRecord => row !== null)
@@ -125,6 +137,16 @@ export function buildInspectorCertificationSummary(input: {
     normalizeText(input.legacy?.certification_number)
 
   const hasAreaDiploma = enabledRecords.some((row) => row.key === CERT_KEY_SBR_AREA_DIPLOMA)
+  const allSelectedItems: InspectorCertificationListItem[] = [...enabledRecords]
+    .sort(sortByOrderAndName)
+    .map((row) => ({
+      key: row.key,
+      name: row.name,
+      category: row.category,
+      sort_order: row.sort_order,
+      number_value: row.number_value,
+      valid_to: row.valid_to,
+    }))
 
   return {
     sbr_group: primaryMembership?.name ?? normalizeText(input.legacy?.sbr_group),
@@ -137,5 +159,6 @@ export function buildInspectorCertificationSummary(input: {
     status_name: primaryStatus?.name ?? null,
     membership_key: primaryMembership?.key ?? null,
     membership_name: primaryMembership?.name ?? null,
+    all_selected_items: allSelectedItems,
   }
 }

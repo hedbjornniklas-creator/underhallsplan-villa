@@ -6,10 +6,14 @@ import { resolveInspectorCertificationSummary } from '@/lib/certifications/profi
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-type AreaMeasurementRowInput = {
-  floor_or_part: string
-  boarea_m2: number | null
-  biarea_m2: number | null
+type MoistureControlRowInput = {
+  location_label: string
+  building_part: string | null
+  measurement_type: 'rf' | 'fk' | 'other'
+  measurement_value: number | null
+  temperature_c: number | null
+  note: string | null
+  critical_level: 'under' | 'over'
   sort_order: number
 }
 
@@ -20,8 +24,8 @@ function jsonError(message: string, status: number) {
 function isMissingTableError(message: string) {
   const normalized = message.toLowerCase()
   return (
-    normalized.includes('inspection_area_measurements') ||
-    normalized.includes('inspection_area_measurement_rows') ||
+    normalized.includes('inspection_moisture_controls') ||
+    normalized.includes('inspection_moisture_control_rows') ||
     normalized.includes('42p01') ||
     normalized.includes('does not exist')
   )
@@ -29,11 +33,7 @@ function isMissingTableError(message: string) {
 
 function isMissingLockColumnError(message: string) {
   const normalized = message.toLowerCase()
-  return (
-    normalized.includes('locked_at') ||
-    normalized.includes('42703') ||
-    normalized.includes('column')
-  )
+  return normalized.includes('locked_at') || normalized.includes('42703') || normalized.includes('column')
 }
 
 async function loadProfileSnapshot(
@@ -72,7 +72,6 @@ async function loadProfileSnapshot(
     membership_number: summary.membership_number,
     sbr_status: summary.sbr_status,
     certification_number: summary.certification_number,
-    is_sbr_diplomerad_areamatning: summary.is_sbr_diplomerad_areamatning,
     certification_items: summary.all_selected_items,
   }
 }
@@ -126,9 +125,7 @@ async function loadOverviewItemFirstLabel(
       .order('sort_order', { ascending: true }),
   ])
 
-  if (selectionResult.error || groupsResult.error || !selectionResult.data?.values) {
-    return null
-  }
+  if (selectionResult.error || groupsResult.error || !selectionResult.data?.values) return null
 
   const values = selectionResult.data.values
   if (!values || typeof values !== 'object' || Array.isArray(values)) return null
@@ -251,7 +248,10 @@ async function loadBuildingYearSummaryFromForutsattningar(
     groups.find((group) => normalizeLookupKey(group.key).includes('ar')) ??
     null
 
-  const resolveFirstForGroup = (valuesRecord: Record<string, unknown>, group: { id: string; key: string } | null) => {
+  const resolveFirstForGroup = (
+    valuesRecord: Record<string, unknown>,
+    group: { id: string; key: string } | null
+  ) => {
     if (!group) return null
     const tokens = normalizeToTokenArray(valuesRecord[group.key])
     if (tokens.length === 0) return null
@@ -292,17 +292,16 @@ async function loadBuildingYearSummaryFromForutsattningar(
 
 function normalizeNumber(value: unknown) {
   if (value === null || value === undefined || value === '') return null
-  const parsed =
-    typeof value === 'number' ? value : Number(String(value).replace(',', '.').trim())
+  const parsed = typeof value === 'number' ? value : Number(String(value).replace(',', '.').trim())
   if (!Number.isFinite(parsed) || parsed < 0) return null
   return Number(parsed.toFixed(2))
 }
 
-function normalizeInteger(value: unknown) {
+function normalizeSignedNumber(value: unknown) {
   if (value === null || value === undefined || value === '') return null
-  const parsed = typeof value === 'number' ? value : Number(String(value).trim())
+  const parsed = typeof value === 'number' ? value : Number(String(value).replace(',', '.').trim())
   if (!Number.isFinite(parsed)) return null
-  return Math.round(parsed)
+  return Number(parsed.toFixed(2))
 }
 
 function normalizeDate(value: unknown) {
@@ -319,20 +318,41 @@ function normalizeText(value: unknown) {
   return normalized.length > 0 ? normalized : null
 }
 
-function normalizeRows(input: unknown): AreaMeasurementRowInput[] {
+function normalizeMeasurementType(value: unknown): 'rf' | 'fk' | 'other' {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+  if (normalized === 'rf') return 'rf'
+  if (normalized === 'fk') return 'fk'
+  return 'other'
+}
+
+function normalizeCriticalLevel(value: unknown): 'under' | 'over' {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+  if (normalized === 'over') return 'over'
+  return 'under'
+}
+
+function normalizeRows(input: unknown): MoistureControlRowInput[] {
   if (!Array.isArray(input)) return []
-  const rows: AreaMeasurementRowInput[] = []
+  const rows: MoistureControlRowInput[] = []
 
   input.forEach((rawRow, index) => {
     if (!rawRow || typeof rawRow !== 'object') return
     const row = rawRow as Record<string, unknown>
-    const floorOrPart = normalizeText(row.floor_or_part)
-    if (!floorOrPart) return
+    const locationLabel = normalizeText(row.location_label)
+    if (!locationLabel) return
 
     rows.push({
-      floor_or_part: floorOrPart,
-      boarea_m2: normalizeNumber(row.boarea_m2),
-      biarea_m2: normalizeNumber(row.biarea_m2),
+      location_label: locationLabel,
+      building_part: normalizeText(row.building_part),
+      measurement_type: normalizeMeasurementType(row.measurement_type),
+      measurement_value: normalizeNumber(row.measurement_value),
+      temperature_c: normalizeSignedNumber(row.temperature_c),
+      note: normalizeText(row.note),
+      critical_level: normalizeCriticalLevel(row.critical_level),
       sort_order: index + 1,
     })
   })
@@ -340,63 +360,93 @@ function normalizeRows(input: unknown): AreaMeasurementRowInput[] {
   return rows
 }
 
-export async function GET(
-  _request: Request,
-  context: { params: Promise<{ id: string }> }
+async function loadInspectionStructureDefaults(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  inspectionId: string
 ) {
+  const [{ data: inspection }, buildingType, buildingYear] = await Promise.all([
+    admin.from('inspections').select('property_id').eq('id', inspectionId).maybeSingle(),
+    loadOverviewItemFirstLabel(admin, inspectionId, 'building_type'),
+    loadBuildingYearSummaryFromForutsattningar(admin, inspectionId),
+  ])
+
+  const propertyId = String(inspection?.property_id ?? '').trim()
+  let snapshotHeating: string | null = null
+  let snapshotVentilation: string | null = null
+
+  if (propertyId) {
+    const [{ data: snapshot }, { data: property }] = await Promise.all([
+      admin
+        .from('ob_property_snapshot')
+        .select('heating,ventilation')
+        .eq('inspection_id', inspectionId)
+        .maybeSingle(),
+      admin.from('properties').select('heating,ventilation').eq('id', propertyId).maybeSingle(),
+    ])
+
+    snapshotHeating = (snapshot?.heating as string | null) ?? (property?.heating as string | null) ?? null
+    snapshotVentilation =
+      (snapshot?.ventilation as string | null) ?? (property?.ventilation as string | null) ?? null
+  }
+
+  return {
+    building_type: buildingType,
+    building_year: buildingYear,
+    extension_note: null as string | null,
+    heating: snapshotHeating,
+    ventilation: snapshotVentilation,
+  }
+}
+
+export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params
     const org = await requireOrgContext()
     const admin = createSupabaseAdminClient()
 
-    const [profile, buildingTypeDefault, buildingYearDefault] = await Promise.all([
+    const [profile, defaults] = await Promise.all([
       loadProfileSnapshot(admin, org.orgId, org.userId),
-      loadOverviewItemFirstLabel(admin, id, 'building_type'),
-      loadBuildingYearSummaryFromForutsattningar(admin, id),
+      loadInspectionStructureDefaults(admin, id),
     ])
 
-    const { data: measurement, error: measurementError } = await admin
-      .from('inspection_area_measurements')
+    const { data: control, error: controlError } = await admin
+      .from('inspection_moisture_controls')
       .select(
-        'id,inspection_id,org_id,building_type,building_year,extension_note,object_other,measurement_instrument,comment,other_notes,place_name,signed_date,created_at,updated_at'
+        'id,inspection_id,org_id,building_type,building_year,extension_note,heating,ventilation,object_other,measurement_instrument,comment,place_name,signed_date,created_at,updated_at'
       )
       .eq('org_id', org.orgId)
       .eq('inspection_id', id)
       .maybeSingle()
 
-    if (measurementError) {
-      const message = measurementError.message ?? ''
+    if (controlError) {
+      const message = controlError.message ?? ''
       if (isMissingTableError(message)) {
         return NextResponse.json({
           unsupported: true,
-          measurement: null,
+          control: null,
           rows: [],
           profile,
-          defaults: {
-            building_type: buildingTypeDefault,
-            building_year: buildingYearDefault,
-          },
+          defaults,
         })
       }
-      throw new Error(message || 'Kunde inte läsa areamätning.')
+      throw new Error(message || 'Kunde inte läsa fuktkontroll.')
     }
 
-    if (!measurement) {
+    if (!control) {
       return NextResponse.json({
         unsupported: false,
-        measurement: null,
+        control: null,
         rows: [],
         profile,
-        defaults: {
-          building_type: buildingTypeDefault,
-          building_year: buildingYearDefault,
-        },
+        defaults,
       })
     }
 
     const { data: rows, error: rowsError } = await admin
-      .from('inspection_area_measurement_rows')
-      .select('id,area_measurement_id,inspection_id,org_id,floor_or_part,boarea_m2,biarea_m2,sort_order')
+      .from('inspection_moisture_control_rows')
+      .select(
+        'id,moisture_control_id,inspection_id,org_id,location_label,building_part,measurement_type,measurement_value,temperature_c,note,critical_level,sort_order'
+      )
       .eq('org_id', org.orgId)
       .eq('inspection_id', id)
       .order('sort_order', { ascending: true })
@@ -406,41 +456,31 @@ export async function GET(
       if (isMissingTableError(message)) {
         return NextResponse.json({
           unsupported: true,
-          measurement: null,
+          control: null,
           rows: [],
           profile,
-          defaults: {
-            building_type: buildingTypeDefault,
-            building_year: buildingYearDefault,
-          },
+          defaults,
         })
       }
-      throw new Error(message || 'Kunde inte läsa areamätningsrader.')
+      throw new Error(message || 'Kunde inte läsa fuktkontrollrader.')
     }
 
     return NextResponse.json({
       unsupported: false,
-      measurement,
+      control,
       rows: Array.isArray(rows) ? rows : [],
       profile,
-      defaults: {
-        building_type: buildingTypeDefault,
-        building_year: buildingYearDefault,
-      },
+      defaults,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
-    if (message === 'ORG_MEMBERSHIP_REQUIRED')
-      return jsonError('Ingen organisationskoppling hittades.', 403)
-    return jsonError(message || 'Kunde inte läsa areamätning.', 500)
+    if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
+    return jsonError(message || 'Kunde inte läsa fuktkontroll.', 500)
   }
 }
 
-export async function PATCH(
-  request: Request,
-  context: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params
     const org = await requireOrgContext()
@@ -469,36 +509,37 @@ export async function PATCH(
       inspection_id: id,
       org_id: org.orgId,
       building_type: normalizeText(body.building_type),
-      building_year: normalizeInteger(body.building_year),
+      building_year: normalizeText(body.building_year),
       extension_note: normalizeText(body.extension_note),
+      heating: normalizeText(body.heating),
+      ventilation: normalizeText(body.ventilation),
       object_other: normalizeText(body.object_other),
       measurement_instrument: normalizeText(body.measurement_instrument),
       comment: normalizeText(body.comment),
-      other_notes: normalizeText(body.other_notes),
       place_name: normalizeText(body.place_name),
       signed_date: normalizeDate(body.signed_date),
       updated_at: new Date().toISOString(),
     }
 
     const { data: upserted, error: upsertError } = await admin
-      .from('inspection_area_measurements')
+      .from('inspection_moisture_controls')
       .upsert(payload, { onConflict: 'inspection_id' })
       .select('id')
       .single()
 
     if (upsertError || !upserted?.id) {
-      const message = upsertError?.message ?? 'Kunde inte spara areamatning.'
+      const message = upsertError?.message ?? 'Kunde inte spara fuktkontroll.'
       if (isMissingTableError(message)) {
-        return jsonError('Areamätning är inte aktiverad i databasen ännu.', 409)
+        return jsonError('Fuktkontroll är inte aktiverad i databasen ännu.', 409)
       }
       throw new Error(message)
     }
 
     const rows = normalizeRows(body.rows)
-    const areaMeasurementId = String(upserted.id)
+    const moistureControlId = String(upserted.id)
 
     const { error: deleteError } = await admin
-      .from('inspection_area_measurement_rows')
+      .from('inspection_moisture_control_rows')
       .delete()
       .eq('org_id', org.orgId)
       .eq('inspection_id', id)
@@ -506,30 +547,32 @@ export async function PATCH(
     if (deleteError) {
       const message = deleteError.message ?? 'Kunde inte uppdatera rader.'
       if (isMissingTableError(message)) {
-        return jsonError('Areamätning är inte aktiverad i databasen ännu.', 409)
+        return jsonError('Fuktkontroll är inte aktiverad i databasen ännu.', 409)
       }
       throw new Error(message)
     }
 
     if (rows.length > 0) {
       const insertRows = rows.map((row) => ({
-        area_measurement_id: areaMeasurementId,
+        moisture_control_id: moistureControlId,
         inspection_id: id,
         org_id: org.orgId,
-        floor_or_part: row.floor_or_part,
-        boarea_m2: row.boarea_m2,
-        biarea_m2: row.biarea_m2,
+        location_label: row.location_label,
+        building_part: row.building_part,
+        measurement_type: row.measurement_type,
+        measurement_value: row.measurement_value,
+        temperature_c: row.temperature_c,
+        note: row.note,
+        critical_level: row.critical_level,
         sort_order: row.sort_order,
       }))
 
-      const { error: insertError } = await admin
-        .from('inspection_area_measurement_rows')
-        .insert(insertRows)
+      const { error: insertError } = await admin.from('inspection_moisture_control_rows').insert(insertRows)
 
       if (insertError) {
-        const message = insertError.message ?? 'Kunde inte spara areamätningsrader.'
+        const message = insertError.message ?? 'Kunde inte spara fuktkontrollrader.'
         if (isMissingTableError(message)) {
-          return jsonError('Areamätning är inte aktiverad i databasen ännu.', 409)
+          return jsonError('Fuktkontroll är inte aktiverad i databasen ännu.', 409)
         }
         throw new Error(message)
       }
@@ -539,8 +582,7 @@ export async function PATCH(
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
-    if (message === 'ORG_MEMBERSHIP_REQUIRED')
-      return jsonError('Ingen organisationskoppling hittades.', 403)
-    return jsonError(message || 'Kunde inte spara areamätning.', 500)
+    if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
+    return jsonError(message || 'Kunde inte spara fuktkontroll.', 500)
   }
 }

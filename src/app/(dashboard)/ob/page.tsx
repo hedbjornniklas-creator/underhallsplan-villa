@@ -7,6 +7,8 @@ import { ArrowLeft, ArrowRight, Mail, Send } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import { formatCertificationDisplayLines } from '@/lib/certifications/display'
+import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
 
 type DashboardCard = {
   id: 'list' | 'create' | 'profile' | 'assignments'
@@ -111,6 +113,7 @@ type ProfileCardInfo = {
   sbr_status: string | null
   membership_number: string | null
   certification_number: string | null
+  certification_items: InspectorCertificationListItem[]
   phone: string | null
   email: string | null
   company_name: string | null
@@ -532,6 +535,7 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
   const sbrStatus = profile?.sbr_status ?? 'Av SBR godk\u00e4nd besiktningsman'
   const membership = profile?.membership_number ?? '22015326'
   const certification = profile?.certification_number ?? null
+  const certificationLines = formatCertificationDisplayLines(profile?.certification_items)
   const phone = profile?.phone ?? '0735678716'
   const email = profile?.email ?? 'niklas.h@bbsab.nu'
   const company = profile?.company_name ?? 'Besiktningsbolaget Stockholm'
@@ -566,10 +570,20 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
 
         <div className="min-w-0 flex-1 text-[10px] leading-snug text-gray-700">
           <p className="truncate font-semibold text-gray-900">{name}</p>
-          <p className="truncate">{sbrGroup}</p>
-          <p className="truncate">{sbrStatus}</p>
-          <p className="mt-0.5 truncate">Medlem: {membership}</p>
-          <p className="truncate">Cert: {certification ?? '\u2013'}</p>
+          {certificationLines.length > 0 ? (
+            certificationLines.map((line) => (
+              <p key={line} className="truncate">
+                {line}
+              </p>
+            ))
+          ) : (
+            <>
+              <p className="truncate">{sbrGroup}</p>
+              <p className="truncate">{sbrStatus}</p>
+              <p className="mt-0.5 truncate">Medlem: {membership}</p>
+              <p className="truncate">Cert: {certification ?? '\u2013'}</p>
+            </>
+          )}
           <p className="truncate">Tel: {phone}</p>
           <p className="truncate">E-post: {email}</p>
           <p className="mt-0.5 truncate">{company}</p>
@@ -875,7 +889,11 @@ export default function OverlatelsebesiktningPage() {
         if (!profileError && profileData && !cancelled) {
           const rawProfile = profileData as Omit<
             ProfileCardInfo,
-            'sbr_group' | 'sbr_status' | 'membership_number' | 'certification_number'
+            | 'sbr_group'
+            | 'sbr_status'
+            | 'membership_number'
+            | 'certification_number'
+            | 'certification_items'
           >
           const { summary } = await resolveInspectorCertificationSummary(supabase, {
             profileId: user.id,
@@ -888,6 +906,7 @@ export default function OverlatelsebesiktningPage() {
               sbr_status: summary.sbr_status,
               membership_number: summary.membership_number,
               certification_number: summary.certification_number,
+              certification_items: summary.all_selected_items,
             })
           }
         }

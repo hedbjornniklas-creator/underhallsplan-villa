@@ -29,6 +29,9 @@ type ObPropertySnapshot = {
   brf_name: string | null
   apartment_number: string | null
   apartment_holder_name: string | null
+  heating: string | null
+  ventilation: string | null
+  year_built: number | null
 }
 
 type AssignmentForInspection = {
@@ -57,6 +60,7 @@ type ObSnapshotSingleClient = {
 }
 
 const AREA_MEASUREMENT_ADDON_KEY = 'area'
+const MOISTURE_CONTROL_ADDON_KEY = 'moisture_risk'
 
 function normalizeAddonKey(value: string | null | undefined) {
   return String(value ?? '')
@@ -75,6 +79,19 @@ function hasAreaMeasurementSelection(selectedAddonKeys: string[], scope: string 
   return (
     normalizedScopeCodes.includes(AREA_MEASUREMENT_ADDON_KEY) ||
     normalizedScopeCodes.includes('areamatning')
+  )
+}
+
+function hasMoistureControlSelection(selectedAddonKeys: string[], scope: string | null | undefined) {
+  const selectedLookup = new Set(selectedAddonKeys.map(normalizeAddonKey).filter(Boolean))
+  const hasSelectedAddon = selectedLookup.has(MOISTURE_CONTROL_ADDON_KEY)
+  if (hasSelectedAddon) return true
+
+  const normalizedScopeCodes = parseScopeCodes(scope).map(normalizeAddonKey)
+  return (
+    normalizedScopeCodes.includes(MOISTURE_CONTROL_ADDON_KEY) ||
+    normalizedScopeCodes.includes('fuktkontroll') ||
+    normalizedScopeCodes.includes('fuktmatning')
   )
 }
 
@@ -118,10 +135,17 @@ const SECTIONS: { key: ObSectionKey; label: string }[] = [
   { key: 'insida', label: 'Byggnad - insida' },
 ]
 
-function getVisibleSections(isApartmentInspection: boolean, showAreaMeasurement: boolean) {
+function getVisibleSections(
+  isApartmentInspection: boolean,
+  showAreaMeasurement: boolean,
+  showMoistureControl: boolean
+) {
   const sections: { key: ObSectionKey; label: string }[] = [...SECTIONS]
   if (showAreaMeasurement) {
     sections.push({ key: 'areamatning', label: 'Areamätning' })
+  }
+  if (showMoistureControl) {
+    sections.push({ key: 'fuktkontroll', label: 'Fuktkontroll' })
   }
   sections.push({ key: 'delivery', label: 'Skicka utlåtande' })
 
@@ -216,7 +240,10 @@ export default function InspectionDetailPage() {
             dwelling_type,
             brf_name,
             apartment_number,
-            apartment_holder_name
+            apartment_holder_name,
+            heating,
+            ventilation,
+            year_built
           `
           )
           .eq('inspection_id', inspectionId)
@@ -235,6 +262,8 @@ export default function InspectionDetailPage() {
             owner_name,
             tenure_type,
             dwelling_type,
+            heating,
+            ventilation,
             year_built
           `
           )
@@ -298,7 +327,9 @@ export default function InspectionDetailPage() {
         customer_email: assignment?.customer_email ?? null,
         tenure_type: (snapshot?.tenure_type ?? prop?.tenure_type ?? null) as Property['tenure_type'],
         dwelling_type: (snapshot?.dwelling_type ?? prop?.dwelling_type ?? null) as Property['dwelling_type'],
-        year_built: prop?.year_built ?? null,
+        year_built: snapshot?.year_built ?? prop?.year_built ?? null,
+        heating: snapshot?.heating ?? prop?.heating ?? null,
+        ventilation: snapshot?.ventilation ?? prop?.ventilation ?? null,
         brf_name: snapshot?.brf_name ?? assignment?.brf_name ?? null,
         apartment_number: snapshot?.apartment_number ?? assignment?.apartment_number ?? null,
         apartment_holder_name:
@@ -364,8 +395,13 @@ export default function InspectionDetailPage() {
     selectedAddonKeys,
     inspection?.scope ?? null
   )
-  const visibleSections = getVisibleSections(isApartmentInspection, showAreaMeasurement)
-  const isAreaMeasurementSection = activeSection === 'areamatning'
+  const showMoistureControl = hasMoistureControlSelection(selectedAddonKeys, inspection?.scope ?? null)
+  const visibleSections = getVisibleSections(
+    isApartmentInspection,
+    showAreaMeasurement,
+    showMoistureControl
+  )
+  const isAppendixSection = activeSection === 'areamatning' || activeSection === 'fuktkontroll'
   const activeSectionIndex = visibleSections.findIndex((section) => section.key === activeSection)
   const activeSectionLabel = visibleSections.find((section) => section.key === activeSection)?.label ?? ''
 
@@ -380,6 +416,12 @@ export default function InspectionDetailPage() {
       setActiveSection('insida')
     }
   }, [showAreaMeasurement, activeSection])
+
+  useEffect(() => {
+    if (!showMoistureControl && activeSection === 'fuktkontroll') {
+      setActiveSection(showAreaMeasurement ? 'areamatning' : 'insida')
+    }
+  }, [activeSection, showAreaMeasurement, showMoistureControl])
 
   if (loading) {
     return (
@@ -420,7 +462,7 @@ export default function InspectionDetailPage() {
         <div className="pointer-events-none absolute inset-0 bg-white/8" />
 
         <div className="relative mx-auto w-full max-w-7xl space-y-4">
-          {isAreaMeasurementSection ? (
+          {isAppendixSection ? (
             <div className="rounded-xl border border-white/50 bg-white/95 p-3 shadow-lg ring-1 ring-black/5 md:hidden">
               <div className="mb-2 flex items-center justify-between">
                 <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">Steg</div>
@@ -450,7 +492,7 @@ export default function InspectionDetailPage() {
           ) : null}
 
           <div className="grid items-start gap-6 md:grid-cols-[240px_minmax(0,1fr)]">
-            <div className={`md:w-[240px] ${isAreaMeasurementSection ? 'hidden md:block' : ''}`}>
+            <div className={`md:w-[240px] ${isAppendixSection ? 'hidden md:block' : ''}`}>
               <nav className="space-y-2 rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:sticky md:top-24 md:max-h-[calc(100vh-7rem)] md:w-[240px] md:overflow-auto">
                 <div className="mb-2 flex items-center gap-2">
                   <button
@@ -494,7 +536,8 @@ export default function InspectionDetailPage() {
               className={`${
                 activeSection === 'insida' ||
                 activeSection === 'utsida' ||
-                activeSection === 'areamatning'
+                activeSection === 'areamatning' ||
+                activeSection === 'fuktkontroll'
                   ? 'p-0 md:p-0'
                   : 'rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:p-4'
               }

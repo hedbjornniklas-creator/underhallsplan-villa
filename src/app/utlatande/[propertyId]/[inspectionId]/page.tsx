@@ -1004,6 +1004,9 @@ export default async function Page({
             null,
           ''
         ),
+        certification_items: Array.isArray(frozenProfileFromSnapshot?.certification_items)
+          ? frozenProfileFromSnapshot.certification_items
+          : profileCertificationSummary.all_selected_items,
         phone: valueOrFallback(frozenProfileFromSnapshot?.phone ?? profile?.phone ?? null),
         email: valueOrFallback(frozenProfileFromSnapshot?.email ?? profile?.email ?? null),
         company_name: valueOrFallback(
