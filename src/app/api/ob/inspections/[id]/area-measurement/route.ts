@@ -177,6 +177,118 @@ async function loadOverviewItemFirstLabel(
   return null
 }
 
+async function loadBuildingYearSummaryFromForutsattningar(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  inspectionId: string
+) {
+  const itemResult = await admin
+    .from('settings_overview_items')
+    .select('id')
+    .eq('key', 'building_year')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (itemResult.error || !itemResult.data?.id) return null
+  const overviewItemId = String(itemResult.data.id)
+
+  const [selectionResult, groupsResult] = await Promise.all([
+    admin
+      .from('inspection_overview_selections')
+      .select('values,set_index')
+      .eq('inspection_id', inspectionId)
+      .eq('overview_item_id', overviewItemId)
+      .order('set_index', { ascending: true }),
+    admin
+      .from('settings_overview_groups')
+      .select('id,key,sort_order')
+      .eq('overview_item_id', overviewItemId)
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true }),
+  ])
+
+  if (selectionResult.error || groupsResult.error) return null
+  const selections = Array.isArray(selectionResult.data)
+    ? (selectionResult.data as Array<{ values: unknown; set_index: number }>)
+    : []
+  if (selections.length === 0) return null
+
+  const groups = Array.isArray(groupsResult.data)
+    ? (groupsResult.data as Array<{ id: string; key: string; sort_order: number | null }>)
+    : []
+  if (groups.length === 0) return null
+
+  const groupIds = groups.map((group) => group.id)
+  const optionsResult =
+    groupIds.length > 0
+      ? await admin
+          .from('settings_overview_options')
+          .select('group_id,value,label,sort_order')
+          .in('group_id', groupIds)
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true })
+      : { data: [], error: null as unknown }
+
+  if (optionsResult.error) return null
+
+  const labelsByGroup = new Map<string, Map<string, string>>()
+  const options = Array.isArray(optionsResult.data)
+    ? (optionsResult.data as Array<{ group_id: string; value: string; label: string }>)
+    : []
+  options.forEach((option) => {
+    const lookup = normalizeLookupKey(option.value)
+    if (!labelsByGroup.has(option.group_id)) {
+      labelsByGroup.set(option.group_id, new Map())
+    }
+    labelsByGroup.get(option.group_id)!.set(lookup, option.label)
+  })
+
+  const partGroup = groups.find((group) => normalizeLookupKey(group.key) === 'part') ?? null
+  const yearGroup =
+    groups.find((group) => normalizeLookupKey(group.key).includes('year')) ??
+    groups.find((group) => normalizeLookupKey(group.key).includes('ar')) ??
+    null
+
+  const resolveFirstForGroup = (valuesRecord: Record<string, unknown>, group: { id: string; key: string } | null) => {
+    if (!group) return null
+    const tokens = normalizeToTokenArray(valuesRecord[group.key])
+    if (tokens.length === 0) return null
+    const lookup = labelsByGroup.get(group.id)
+    const first = tokens[0]
+    const label = lookup?.get(normalizeLookupKey(first)) ?? first
+    const normalized = String(label ?? '').trim()
+    return normalized.length > 0 ? normalized : null
+  }
+
+  const lines: string[] = []
+  for (const selection of selections) {
+    const values = selection.values
+    if (!values || typeof values !== 'object' || Array.isArray(values)) continue
+    const valuesRecord = values as Record<string, unknown>
+
+    const partLabel = resolveFirstForGroup(valuesRecord, partGroup)
+    let yearLabel = resolveFirstForGroup(valuesRecord, yearGroup)
+    if (!yearLabel) {
+      for (const group of groups) {
+        if (partGroup && group.id === partGroup.id) continue
+        yearLabel = resolveFirstForGroup(valuesRecord, group)
+        if (yearLabel) break
+      }
+    }
+
+    if (!partLabel && !yearLabel) continue
+    if (partLabel && yearLabel) {
+      lines.push(`${partLabel}: ${yearLabel}`)
+    } else {
+      lines.push(partLabel ?? yearLabel ?? '')
+    }
+  }
+
+  const cleaned = lines.map((line) => line.trim()).filter((line) => line.length > 0)
+  return cleaned.length > 0 ? cleaned.join(', ') : null
+}
+
 function normalizeNumber(value: unknown) {
   if (value === null || value === undefined || value === '') return null
   const parsed =
@@ -239,7 +351,7 @@ export async function GET(
     const [profile, buildingTypeDefault, buildingYearDefault] = await Promise.all([
       loadProfileSnapshot(admin, org.orgId, org.userId),
       loadOverviewItemFirstLabel(admin, id, 'building_type'),
-      loadOverviewItemFirstLabel(admin, id, 'building_year'),
+      loadBuildingYearSummaryFromForutsattningar(admin, id),
     ])
 
     const { data: measurement, error: measurementError } = await admin

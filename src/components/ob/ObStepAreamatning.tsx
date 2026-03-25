@@ -507,9 +507,9 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
           <section className="rounded-2xl border bg-white p-4 shadow-sm md:p-5">
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">Signering</h3>
             <div className="space-y-3">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <ReadOnlyField label="Ort" value={lockedPlaceName} />
-                <ReadOnlyField label="Datum" value={lockedSignedDate} />
+              <div className="grid grid-cols-1 gap-3 text-sm text-slate-800 sm:grid-cols-2">
+                <PlainInfoRow label="Ort" value={lockedPlaceName} />
+                <PlainInfoRow label="Datum" value={lockedSignedDate} />
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
