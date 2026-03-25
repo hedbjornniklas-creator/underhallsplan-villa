@@ -364,10 +364,12 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 pb-20">
-      <section className="rounded-3xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-emerald-50 p-4 shadow-sm md:p-6">
+      <section className="p-1 md:rounded-3xl md:border md:border-sky-200 md:bg-gradient-to-br md:from-sky-50 md:via-white md:to-emerald-50 md:p-6 md:shadow-sm">
         <div className="space-y-1">
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Bilaga</div>
-          <h2 className="text-2xl font-semibold text-slate-900">Areamätning av boarea</h2>
+          <h2 className="text-[32px] leading-[1.1] font-semibold text-slate-900 md:text-2xl">
+            Areamätning av boarea
+          </h2>
         </div>
       </section>
 

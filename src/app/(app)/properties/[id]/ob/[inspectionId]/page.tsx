@@ -365,6 +365,9 @@ export default function InspectionDetailPage() {
     inspection?.scope ?? null
   )
   const visibleSections = getVisibleSections(isApartmentInspection, showAreaMeasurement)
+  const isAreaMeasurementSection = activeSection === 'areamatning'
+  const activeSectionIndex = visibleSections.findIndex((section) => section.key === activeSection)
+  const activeSectionLabel = visibleSections.find((section) => section.key === activeSection)?.label ?? ''
 
   useEffect(() => {
     if (isApartmentInspection && activeSection === 'utsida') {
@@ -417,8 +420,37 @@ export default function InspectionDetailPage() {
         <div className="pointer-events-none absolute inset-0 bg-white/8" />
 
         <div className="relative mx-auto w-full max-w-7xl space-y-4">
+          {isAreaMeasurementSection ? (
+            <div className="rounded-xl border border-white/50 bg-white/95 p-3 shadow-lg ring-1 ring-black/5 md:hidden">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">Steg</div>
+                <div className="text-xs text-gray-500">
+                  {activeSectionIndex >= 0 ? `${activeSectionIndex + 1}/${visibleSections.length}` : null}
+                </div>
+              </div>
+              <label className="sr-only" htmlFor="ob-mobile-section-select">
+                Välj steg
+              </label>
+              <select
+                id="ob-mobile-section-select"
+                value={activeSection}
+                onChange={(event) => setActiveSection(event.target.value as ObSectionKey)}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                {visibleSections.map((section) => (
+                  <option key={section.key} value={section.key}>
+                    {section.label}
+                  </option>
+                ))}
+              </select>
+              {activeSectionLabel ? (
+                <div className="mt-2 text-xs text-gray-500">Aktivt: {activeSectionLabel}</div>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="grid items-start gap-6 md:grid-cols-[240px_minmax(0,1fr)]">
-            <div className="md:w-[240px]">
+            <div className={`md:w-[240px] ${isAreaMeasurementSection ? 'hidden md:block' : ''}`}>
               <nav className="space-y-2 rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:sticky md:top-24 md:max-h-[calc(100vh-7rem)] md:w-[240px] md:overflow-auto">
                 <div className="mb-2 flex items-center gap-2">
                   <button
