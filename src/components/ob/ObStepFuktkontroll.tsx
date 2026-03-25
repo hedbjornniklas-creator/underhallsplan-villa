@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import {
   type ChangeEvent,
@@ -234,7 +234,7 @@ function measurementTypeLabel(value: MoistureMeasurementType) {
 }
 
 function criticalLevelLabel(value: MoistureCriticalLevel) {
-  return value === 'over' ? 'Över kritisk nivå' : 'Under kritisk nivå'
+  return value === 'over' ? 'Ã–ver kritisk nivÃ¥' : 'Under kritisk nivÃ¥'
 }
 
 export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktkontrollProps) {
@@ -246,6 +246,7 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
   const [profile, setProfile] = useState<ProfileSnapshot | null>(null)
   const [rowImages, setRowImages] = useState<Record<string, MoistureControlRowImage[]>>({})
   const [imageBusyByRowId, setImageBusyByRowId] = useState<Record<string, boolean>>({})
+  const [persistedRowIds, setPersistedRowIds] = useState<Set<string>>(new Set())
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [dialogState, setDialogState] = useState<RowDialogState>({
     mode: 'create',
@@ -284,7 +285,7 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
         const payload = (await response.json().catch(() => null)) as MoistureControlApiResponse | null
 
         if (!response.ok) {
-          throw new Error(payload?.error ?? 'Kunde inte läsa fuktkontroll.')
+          throw new Error(payload?.error ?? 'Kunde inte lÃ¤sa fuktkontroll.')
         }
 
         if (cancelled) return
@@ -294,10 +295,16 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
           defaults: payload?.defaults ?? null,
           property,
         })
+        const nextPersistedRowIds = new Set(
+          (Array.isArray(payload?.rows) ? payload.rows : [])
+            .map((row) => String((row as Record<string, unknown>).id ?? '').trim())
+            .filter((value) => value.length > 0)
+        )
 
         setUnsupported(payload?.unsupported === true)
         setProfile((payload?.profile as ProfileSnapshot | null) ?? null)
         setForm(nextForm)
+        setPersistedRowIds(nextPersistedRowIds)
         const nextRowImages: Record<string, MoistureControlRowImage[]> = {}
         const rowImagesInput = Array.isArray(payload?.row_images) ? payload.row_images : []
         rowImagesInput.forEach((rawImage) => {
@@ -331,7 +338,7 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
         setSaveState('idle')
       } catch (loadError) {
         if (cancelled) return
-        setError(loadError instanceof Error ? loadError.message : 'Kunde inte läsa fuktkontroll.')
+        setError(loadError instanceof Error ? loadError.message : 'Kunde inte lÃ¤sa fuktkontroll.')
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -387,6 +394,13 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
         }
 
         if (Array.isArray(payload?.rows)) {
+          setPersistedRowIds(
+            new Set(
+              payload.rows
+                .map((row) => String((row as Record<string, unknown>).id ?? '').trim())
+                .filter((value) => value.length > 0)
+            )
+          )
           const rowIdMap = new Map<string, string>()
           payload.rows.forEach((rawRow, index) => {
             const row = rawRow as Record<string, unknown>
@@ -470,6 +484,13 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
       fallbackRows.push(`Certifieringsnummer: ${profile.certification_number}`)
     return fallbackRows
   }, [profile])
+
+  const dialogRowId = dialogState.data.id
+  const isDialogRowPersisted = persistedRowIds.has(dialogRowId)
+  const dialogRowImages = dialogRowId ? rowImages[dialogRowId] ?? [] : []
+  const isDialogImageBusy = dialogRowId ? Boolean(imageBusyByRowId[dialogRowId]) : false
+  const isDialogImageDisabled =
+    isInspectionLocked || unsupported || !isDialogRowPersisted || isDialogImageBusy
 
   const updateField = (field: Exclude<keyof MoistureControlForm, 'rows'>, value: string) => {
     if (isInspectionLocked) return
@@ -557,6 +578,12 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
       if (!prev[rowId]) return prev
       const next = { ...prev }
       delete next[rowId]
+      return next
+    })
+    setPersistedRowIds((prev) => {
+      if (!prev.has(rowId)) return prev
+      const next = new Set(prev)
+      next.delete(rowId)
       return next
     })
   }
@@ -678,7 +705,7 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
 
       {unsupported ? (
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          Fuktkontroll är inte aktiverad i databasen ännu. Kör migrationen innan registrering.
+          Fuktkontroll Ã¤r inte aktiverad i databasen Ã¤nnu. KÃ¶r migrationen innan registrering.
         </section>
       ) : null}
 
@@ -690,7 +717,7 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
 
       {isInspectionLocked ? (
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Besiktningen är låst. Fuktkontroll är skrivskyddad.
+          Besiktningen Ã¤r lÃ¥st. Fuktkontroll Ã¤r skrivskyddad.
         </section>
       ) : null}
 
@@ -707,12 +734,12 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
               <PlainInfoRow label="Uppdragsnummer" value={inspection.assignment_number ?? '-'} />
               <PlainInfoRow label="Adress" value={property.address ?? '-'} />
               <PlainInfoRow label="Byggnadstyp" value={form.building_type || '-'} />
-              <PlainInfoRow label="Byggår" value={form.building_year || '-'} />
+              <PlainInfoRow label="ByggÃ¥r" value={form.building_year || '-'} />
               <PlainInfoRow label="Tillbyggd" value={form.extension_note || '-'} />
-              <PlainInfoRow label="Uppvärmning" value={form.heating || '-'} />
+              <PlainInfoRow label="UppvÃ¤rmning" value={form.heating || '-'} />
               <PlainInfoRow label="Ventilation" value={form.ventilation || '-'} />
               <TextArea
-                label="Övrigt"
+                label="Ã–vrigt"
                 value={form.object_other}
                 onChange={(value) => updateField('object_other', value)}
                 rows={2}
@@ -722,9 +749,9 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
           </section>
 
           <section className="rounded-2xl border bg-white p-4 shadow-sm md:p-5">
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">Mätning</h3>
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">MÃ¤tning</h3>
             <TextInput
-              label="Instrument (märke och modell)"
+              label="Instrument (mÃ¤rke och modell)"
               value={form.measurement_instrument}
               onChange={(value) => updateField('measurement_instrument', value)}
               disabled={isInspectionLocked}
@@ -751,24 +778,12 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
                     <div className="text-xs font-semibold text-slate-700">Kontrollplats {index + 1}</div>
                     <div className="text-sm text-slate-900">{row.location_label}</div>
                     <div className="text-xs text-slate-600">
-                      {row.building_part || '-'} · {measurementTypeLabel(row.measurement_type)}
-                      {row.measurement_value ? ` · ${row.measurement_value}` : ''}
-                      {row.temperature_c ? ` · ${row.temperature_c} °C` : ''}
+                      {row.building_part || '-'} Â· {measurementTypeLabel(row.measurement_type)}
+                      {row.measurement_value ? ` Â· ${row.measurement_value}` : ''}
+                      {row.temperature_c ? ` Â· ${row.temperature_c} Â°C` : ''}
                     </div>
                     <div className="text-xs text-slate-600">{criticalLevelLabel(row.critical_level)}</div>
                   </button>
-                  <RowImagesSection
-                    rowId={row.id}
-                    images={rowImages[row.id] ?? []}
-                    busy={Boolean(imageBusyByRowId[row.id])}
-                    disabled={isInspectionLocked || unsupported || Boolean(imageBusyByRowId[row.id])}
-                    onUpload={(file) => {
-                      void handleUploadImageForRow(row.id, file)
-                    }}
-                    onDelete={(imageId) => {
-                      void handleDeleteImageForRow(row.id, imageId)
-                    }}
-                  />
                   {!isInspectionLocked ? (
                     <div className="mt-2 flex justify-end">
                       <button
@@ -789,18 +804,18 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
                 className="flex w-full items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 disabled={unsupported || saving || isInspectionLocked}
               >
-                Lägg till kontrollplats
+                LÃ¤gg till kontrollplats
               </button>
             </div>
           </section>
 
           <section className="rounded-2xl border bg-white p-4 shadow-sm md:p-5">
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
-              Kritiska nivåer
+              Kritiska nivÃ¥er
             </h3>
             <div className="space-y-1 text-sm text-slate-700">
-              <div>Kritiskt värde relativ fuktighet (RF): 75 %</div>
-              <div>Kritiskt värde fuktkvot (FK): 17 %</div>
+              <div>Kritiskt vÃ¤rde relativ fuktighet (RF): 75 %</div>
+              <div>Kritiskt vÃ¤rde fuktkvot (FK): 17 %</div>
             </div>
           </section>
 
@@ -828,7 +843,7 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
                   {inspectorAvatarSrc ? (
                     <img
                       src={inspectorAvatarSrc}
-                      alt="Bild på besiktningsman"
+                      alt="Bild pÃ¥ besiktningsman"
                       className="h-14 w-14 rounded-full border border-slate-300 object-cover"
                     />
                   ) : (
@@ -870,12 +885,12 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-slate-950/50 p-3 md:items-center">
           <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
             <h3 className="text-base font-semibold text-slate-900">
-              {dialogState.mode === 'create' ? 'Lägg till kontrollplats' : 'Redigera kontrollplats'}
+              {dialogState.mode === 'create' ? 'LÃ¤gg till kontrollplats' : 'Redigera kontrollplats'}
             </h3>
 
             <div className="mt-3 space-y-3">
               <TextInput
-                label="Kontrollplats (våningsplan/rum)"
+                label="Kontrollplats (vÃ¥ningsplan/rum)"
                 value={dialogState.data.location_label}
                 onChange={(value) => updateDialogField('location_label', value)}
               />
@@ -885,7 +900,7 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
                 onChange={(value) => updateDialogField('building_part', value)}
               />
               <label className="space-y-1">
-                <span className="text-xs font-medium text-slate-600">Mätmetod</span>
+                <span className="text-xs font-medium text-slate-600">MÃ¤tmetod</span>
                 <select
                   value={dialogState.data.measurement_type}
                   onChange={(event) =>
@@ -900,13 +915,13 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
               </label>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <TextInput
-                  label="Värde"
+                  label="VÃ¤rde"
                   value={dialogState.data.measurement_value}
                   onChange={(value) => updateDialogField('measurement_value', value)}
                   inputMode="decimal"
                 />
                 <TextInput
-                  label="Temperatur (°C)"
+                  label="Temperatur (Â°C)"
                   value={dialogState.data.temperature_c}
                   onChange={(value) => updateDialogField('temperature_c', value)}
                   inputMode="decimal"
@@ -919,7 +934,7 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
                 rows={2}
               />
               <label className="space-y-1">
-                <span className="text-xs font-medium text-slate-600">Kritisk nivå</span>
+                <span className="text-xs font-medium text-slate-600">Kritisk nivÃ¥</span>
                 <select
                   value={dialogState.data.critical_level}
                   onChange={(event) =>
@@ -927,10 +942,30 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
                   }
                   className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 >
-                  <option value="under">Under kritisk nivå</option>
-                  <option value="over">Över kritisk nivå</option>
+                  <option value="under">Under kritisk nivÃ¥</option>
+                  <option value="over">Ã–ver kritisk nivÃ¥</option>
                 </select>
               </label>
+              {!isDialogRowPersisted ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Spara kontrollplatsen forst. Oppna dialogen igen for att lagga till bilder.
+                </div>
+              ) : null}
+
+              <RowImagesSection
+                rowId={dialogRowId}
+                images={dialogRowImages}
+                busy={isDialogImageBusy}
+                disabled={isDialogImageDisabled}
+                onUpload={(file) => {
+                  if (!dialogRowId) return
+                  void handleUploadImageForRow(dialogRowId, file)
+                }}
+                onDelete={(imageId) => {
+                  if (!dialogRowId) return
+                  void handleDeleteImageForRow(dialogRowId, imageId)
+                }}
+              />
             </div>
 
             {dialogError ? <p className="mt-3 text-xs text-rose-700">{dialogError}</p> : null}
@@ -951,7 +986,7 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
                 onClick={saveDialogAndClose}
                 className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
               >
-                Spara och stäng
+                Spara och stÃ¤ng
               </button>
             </div>
           </div>
@@ -1051,7 +1086,7 @@ function RowImagesSection({
                     onClick={() => onDelete(image.id)}
                     className="absolute right-0.5 top-0.5 rounded-full bg-slate-900/75 px-1 text-[9px] text-white"
                   >
-                    ×
+                    Ã—
                   </button>
                 ) : null}
               </div>
