@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  type ChangeEvent,
   useCallback,
   useEffect,
   useId,
@@ -35,6 +36,15 @@ type MoistureControlRow = {
   temperature_c: string
   note: string
   critical_level: MoistureCriticalLevel
+}
+
+type MoistureControlRowImage = {
+  id: string
+  moisture_control_row_id: string
+  inspection_id: string
+  org_id: string
+  file_path: string
+  sort_order: number
 }
 
 type MoistureControlForm = {
@@ -78,6 +88,7 @@ type MoistureControlApiResponse = {
   unsupported?: boolean
   control?: Record<string, unknown> | null
   rows?: Array<Record<string, unknown>>
+  row_images?: Array<Record<string, unknown>>
   profile?: ProfileSnapshot | null
   defaults?: MoistureControlDefaults | null
   error?: string
@@ -90,8 +101,12 @@ type RowDialogState = {
 }
 
 function createEmptyRow(index: number): MoistureControlRow {
+  const generatedId =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `row-${Date.now()}-${index}`
   return {
-    id: `row-${Date.now()}-${index}`,
+    id: generatedId,
     location_label: '',
     building_part: '',
     measurement_type: 'rf',
@@ -139,6 +154,30 @@ function resolvePublicMediaUrl(path: string | null | undefined) {
   }
 
   return `${base}/storage/v1/object/public/property-media/${path}`
+}
+
+function resolveInspectionImageUrl(path: string | null | undefined) {
+  if (!path) return null
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path
+  }
+
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!base) return null
+
+  if (path.startsWith('/storage/')) {
+    return `${base}${path}`
+  }
+
+  if (path.startsWith('storage/')) {
+    return `${base}/${path}`
+  }
+
+  if (path.startsWith('/')) {
+    return path
+  }
+
+  return `${base}/storage/v1/object/public/inspection-images/${path}`
 }
 
 function toInitialForm(input: {
@@ -205,6 +244,8 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
   const [error, setError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [profile, setProfile] = useState<ProfileSnapshot | null>(null)
+  const [rowImages, setRowImages] = useState<Record<string, MoistureControlRowImage[]>>({})
+  const [imageBusyByRowId, setImageBusyByRowId] = useState<Record<string, boolean>>({})
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [dialogState, setDialogState] = useState<RowDialogState>({
     mode: 'create',
@@ -257,6 +298,34 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
         setUnsupported(payload?.unsupported === true)
         setProfile((payload?.profile as ProfileSnapshot | null) ?? null)
         setForm(nextForm)
+        const nextRowImages: Record<string, MoistureControlRowImage[]> = {}
+        const rowImagesInput = Array.isArray(payload?.row_images) ? payload.row_images : []
+        rowImagesInput.forEach((rawImage) => {
+          const image = rawImage as Record<string, unknown>
+          const rowId = String(image.moisture_control_row_id ?? '').trim()
+          const imageId = String(image.id ?? '').trim()
+          const filePath = String(image.file_path ?? '').trim()
+          if (!rowId || !imageId || !filePath) return
+          const sortOrder = Number(image.sort_order ?? 0)
+          const nextImage: MoistureControlRowImage = {
+            id: imageId,
+            moisture_control_row_id: rowId,
+            inspection_id: String(image.inspection_id ?? inspection.id),
+            org_id: String(image.org_id ?? ''),
+            file_path: filePath,
+            sort_order: Number.isFinite(sortOrder) ? sortOrder : 0,
+          }
+          const bucket = nextRowImages[rowId] ?? []
+          bucket.push(nextImage)
+          nextRowImages[rowId] = bucket
+        })
+        Object.keys(nextRowImages).forEach((rowId) => {
+          nextRowImages[rowId] = nextRowImages[rowId].sort(
+            (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+          )
+        })
+        setRowImages(nextRowImages)
+        setImageBusyByRowId({})
         lastSavedFingerprintRef.current = formFingerprint(nextForm)
         hydratedRef.current = true
         setSaveState('idle')
@@ -298,6 +367,7 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
             place_name: property.city ?? null,
             signed_date: inspection.date ?? null,
             rows: nextForm.rows.map((row) => ({
+              id: row.id,
               location_label: row.location_label,
               building_part: row.building_part,
               measurement_type: row.measurement_type,
@@ -309,9 +379,44 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
           }),
         })
 
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string; rows?: Array<Record<string, unknown>> }
+          | null
         if (!response.ok) {
           throw new Error(payload?.error ?? 'Kunde inte spara fuktkontroll.')
+        }
+
+        if (Array.isArray(payload?.rows)) {
+          const rowIdMap = new Map<string, string>()
+          payload.rows.forEach((rawRow, index) => {
+            const row = rawRow as Record<string, unknown>
+            const incomingId = String(nextForm.rows[index]?.id ?? '').trim()
+            const savedId = String(row.id ?? '').trim()
+            if (incomingId && savedId && incomingId !== savedId) {
+              rowIdMap.set(incomingId, savedId)
+            }
+          })
+          if (rowIdMap.size > 0) {
+            setRowImages((prev) => {
+              const next = { ...prev }
+              rowIdMap.forEach((savedId, incomingId) => {
+                if (incomingId === savedId) return
+                const existing = next[incomingId] ?? []
+                delete next[incomingId]
+                next[savedId] = (next[savedId] ?? []).concat(
+                  existing.map((image) => ({ ...image, moisture_control_row_id: savedId }))
+                )
+              })
+              return next
+            })
+            setForm((prev) => ({
+              ...prev,
+              rows: prev.rows.map((row) => ({
+                ...row,
+                id: rowIdMap.get(row.id) ?? row.id,
+              })),
+            }))
+          }
         }
 
         lastSavedFingerprintRef.current = formFingerprint(nextForm)
@@ -442,6 +547,116 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
       ...prev,
       rows: prev.rows.filter((row) => row.id !== rowId),
     }))
+    setRowImages((prev) => {
+      if (!prev[rowId]) return prev
+      const next = { ...prev }
+      delete next[rowId]
+      return next
+    })
+    setImageBusyByRowId((prev) => {
+      if (!prev[rowId]) return prev
+      const next = { ...prev }
+      delete next[rowId]
+      return next
+    })
+  }
+
+  const setRowImageBusy = (rowId: string, isBusy: boolean) => {
+    setImageBusyByRowId((prev) => {
+      if (isBusy) return { ...prev, [rowId]: true }
+      if (!prev[rowId]) return prev
+      const next = { ...prev }
+      delete next[rowId]
+      return next
+    })
+  }
+
+  const handleUploadImageForRow = async (rowId: string, file: File) => {
+    if (isInspectionLocked || unsupported) return
+    if (!rowId) return
+
+    try {
+      setRowImageBusy(rowId, true)
+      setError(null)
+
+      const formData = new FormData()
+      formData.set('row_id', rowId)
+      formData.set('file', file)
+
+      const response = await fetch(`/api/ob/inspections/${inspection.id}/moisture-control/images`, {
+        method: 'POST',
+        body: formData,
+      })
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; image?: Record<string, unknown> | null }
+        | null
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'Kunde inte ladda upp bild.')
+      }
+
+      const rawImage = payload?.image
+      const imageId = String(rawImage?.id ?? '').trim()
+      const filePath = String(rawImage?.file_path ?? '').trim()
+      if (!imageId || !filePath) return
+
+      const sortOrder = Number(rawImage?.sort_order ?? 0)
+      const nextImage: MoistureControlRowImage = {
+        id: imageId,
+        moisture_control_row_id: rowId,
+        inspection_id: String(rawImage?.inspection_id ?? inspection.id),
+        org_id: String(rawImage?.org_id ?? ''),
+        file_path: filePath,
+        sort_order: Number.isFinite(sortOrder) ? sortOrder : 0,
+      }
+
+      setRowImages((prev) => {
+        const current = prev[rowId] ?? []
+        const withoutSameId = current.filter((image) => image.id !== nextImage.id)
+        return {
+          ...prev,
+          [rowId]: [...withoutSameId, nextImage].sort(
+            (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+          ),
+        }
+      })
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp bild.')
+    } finally {
+      setRowImageBusy(rowId, false)
+    }
+  }
+
+  const handleDeleteImageForRow = async (rowId: string, imageId: string) => {
+    if (isInspectionLocked || unsupported) return
+    if (!rowId || !imageId) return
+
+    try {
+      setRowImageBusy(rowId, true)
+      setError(null)
+
+      const response = await fetch(`/api/ob/inspections/${inspection.id}/moisture-control/images`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_id: imageId }),
+      })
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'Kunde inte ta bort bild.')
+      }
+
+      setRowImages((prev) => {
+        const current = prev[rowId] ?? []
+        const nextRowImages = current.filter((image) => image.id !== imageId)
+        return {
+          ...prev,
+          [rowId]: nextRowImages,
+        }
+      })
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte ta bort bild.')
+    } finally {
+      setRowImageBusy(rowId, false)
+    }
   }
 
   return (
@@ -542,6 +757,18 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
                     </div>
                     <div className="text-xs text-slate-600">{criticalLevelLabel(row.critical_level)}</div>
                   </button>
+                  <RowImagesSection
+                    rowId={row.id}
+                    images={rowImages[row.id] ?? []}
+                    busy={Boolean(imageBusyByRowId[row.id])}
+                    disabled={isInspectionLocked || unsupported || Boolean(imageBusyByRowId[row.id])}
+                    onUpload={(file) => {
+                      void handleUploadImageForRow(row.id, file)
+                    }}
+                    onDelete={(imageId) => {
+                      void handleDeleteImageForRow(row.id, imageId)
+                    }}
+                  />
                   {!isInspectionLocked ? (
                     <div className="mt-2 flex justify-end">
                       <button
@@ -731,6 +958,108 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
         </div>
       ) : null}
     </div>
+  )
+}
+
+type RowImagesSectionProps = {
+  rowId: string
+  images: MoistureControlRowImage[]
+  busy: boolean
+  disabled: boolean
+  onUpload: (file: File) => void
+  onDelete: (imageId: string) => void
+}
+
+function RowImagesSection({
+  rowId,
+  images,
+  busy,
+  disabled,
+  onUpload,
+  onDelete,
+}: RowImagesSectionProps) {
+  const cameraInputRef = useRef<HTMLInputElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (disabled) return
+    const file = event.target.files?.[0]
+    if (!file) return
+    onUpload(file)
+    event.target.value = ''
+  }
+
+  return (
+    <section className="mt-3 space-y-2 border-t border-slate-200 pt-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] font-semibold text-slate-700">Bilder (kontrollplats)</div>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            disabled={disabled}
+            className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Kamera
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled}
+            className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Fil
+          </button>
+        </div>
+      </div>
+
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleFileChange}
+        disabled={disabled}
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
+        disabled={disabled}
+      />
+
+      {busy ? <div className="text-[11px] text-slate-500">Arbetar med bild...</div> : null}
+      {images.length === 0 ? (
+        <div className="text-[11px] text-slate-500">Inga bilder for denna kontrollplats.</div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {images.map((image) => {
+            const imageUrl = resolveInspectionImageUrl(image.file_path)
+            if (!imageUrl) return null
+            return (
+              <div
+                key={`${rowId}-${image.id}`}
+                className="relative h-16 w-16 overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
+              >
+                <img src={imageUrl} alt="Kontrollplatsbild" className="h-full w-full object-cover" />
+                {!disabled ? (
+                  <button
+                    type="button"
+                    onClick={() => onDelete(image.id)}
+                    className="absolute right-0.5 top-0.5 rounded-full bg-slate-900/75 px-1 text-[9px] text-white"
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
   )
 }
 

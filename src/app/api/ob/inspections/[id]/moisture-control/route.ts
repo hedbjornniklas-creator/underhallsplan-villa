@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
+import { randomUUID } from 'node:crypto'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
@@ -7,6 +8,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 type MoistureControlRowInput = {
+  id: string | null
   location_label: string
   building_part: string | null
   measurement_type: 'rf' | 'fk' | 'other'
@@ -31,9 +33,27 @@ function isMissingTableError(message: string) {
   )
 }
 
+function isMissingImagesTableError(message: string) {
+  const normalized = message.toLowerCase()
+  return (
+    normalized.includes('inspection_moisture_control_images') ||
+    normalized.includes('42p01') ||
+    normalized.includes('does not exist')
+  )
+}
+
 function isMissingLockColumnError(message: string) {
   const normalized = message.toLowerCase()
   return normalized.includes('locked_at') || normalized.includes('42703') || normalized.includes('column')
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function normalizeUuid(value: unknown) {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().toLowerCase()
+  if (!UUID_PATTERN.test(normalized)) return null
+  return normalized
 }
 
 async function loadProfileSnapshot(
@@ -50,7 +70,7 @@ async function loadProfileSnapshot(
     .maybeSingle()
 
   if (profileResult.error) {
-    throw new Error(profileResult.error.message ?? 'Kunde inte läsa profil.')
+    throw new Error(profileResult.error.message ?? 'Kunde inte lÃ¤sa profil.')
   }
 
   const { summary } = await resolveInspectorCertificationSummary(admin, {
@@ -437,6 +457,7 @@ function normalizeRows(input: unknown): MoistureControlRowInput[] {
     if (!locationLabel) return
 
     rows.push({
+      id: normalizeUuid(row.id),
       location_label: locationLabel,
       building_part: normalizeText(row.building_part),
       measurement_type: normalizeMeasurementType(row.measurement_type),
@@ -583,11 +604,12 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
           unsupported: true,
           control: null,
           rows: [],
+          row_images: [],
           profile,
           defaults,
         })
       }
-      throw new Error(message || 'Kunde inte läsa fuktkontroll.')
+      throw new Error(message || 'Kunde inte lÃ¤sa fuktkontroll.')
     }
 
     if (!control) {
@@ -595,6 +617,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         unsupported: false,
         control: null,
         rows: [],
+        row_images: [],
         profile,
         defaults,
       })
@@ -609,6 +632,13 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       .eq('inspection_id', id)
       .order('sort_order', { ascending: true })
 
+    const { data: rowImages, error: rowImagesError } = await admin
+      .from('inspection_moisture_control_images')
+      .select('id,moisture_control_row_id,inspection_id,org_id,file_path,sort_order,created_at,updated_at')
+      .eq('org_id', org.orgId)
+      .eq('inspection_id', id)
+      .order('sort_order', { ascending: true })
+
     if (rowsError) {
       const message = rowsError.message ?? ''
       if (isMissingTableError(message)) {
@@ -616,25 +646,34 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
           unsupported: true,
           control: null,
           rows: [],
+          row_images: [],
           profile,
           defaults,
         })
       }
-      throw new Error(message || 'Kunde inte läsa fuktkontrollrader.')
+      throw new Error(message || 'Kunde inte lÃ¤sa fuktkontrollrader.')
+    }
+
+    if (rowImagesError) {
+      const message = rowImagesError.message ?? ''
+      if (!isMissingImagesTableError(message)) {
+        throw new Error(message || 'Kunde inte lasa bilder for fuktkontroll.')
+      }
     }
 
     return NextResponse.json({
       unsupported: false,
       control,
       rows: Array.isArray(rows) ? rows : [],
+      row_images: Array.isArray(rowImages) ? rowImages : [],
       profile,
       defaults,
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okänt fel.'
+    const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
-    return jsonError(message || 'Kunde inte läsa fuktkontroll.', 500)
+    return jsonError(message || 'Kunde inte lÃ¤sa fuktkontroll.', 500)
   }
 }
 
@@ -655,12 +694,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (inspectionError) {
       const message = inspectionError.message ?? ''
       if (!isMissingLockColumnError(message)) {
-        throw new Error(message || 'Kunde inte läsa besiktning.')
+        throw new Error(message || 'Kunde inte lÃ¤sa besiktning.')
       }
     } else if (!inspectionRow) {
       return jsonError('Besiktningen hittades inte.', 404)
     } else if (inspectionRow.locked_at) {
-      return jsonError('Besiktningen är låst och kan inte uppdateras.', 409)
+      return jsonError('Besiktningen Ã¤r lÃ¥st och kan inte uppdateras.', 409)
     }
 
     const payload = {
@@ -688,7 +727,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (upsertError || !upserted?.id) {
       const message = upsertError?.message ?? 'Kunde inte spara fuktkontroll.'
       if (isMissingTableError(message)) {
-        return jsonError('Fuktkontroll är inte aktiverad i databasen ännu.', 409)
+        return jsonError('Fuktkontroll Ã¤r inte aktiverad i databasen Ã¤nnu.', 409)
       }
       throw new Error(message)
     }
@@ -696,22 +735,59 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const rows = normalizeRows(body.rows)
     const moistureControlId = String(upserted.id)
 
-    const { error: deleteError } = await admin
+    const { data: existingRows, error: existingRowsError } = await admin
       .from('inspection_moisture_control_rows')
-      .delete()
+      .select('id')
       .eq('org_id', org.orgId)
       .eq('inspection_id', id)
 
-    if (deleteError) {
-      const message = deleteError.message ?? 'Kunde inte uppdatera rader.'
+    if (existingRowsError) {
+      const message = existingRowsError.message ?? 'Kunde inte lasa befintliga fuktkontrollrader.'
       if (isMissingTableError(message)) {
-        return jsonError('Fuktkontroll är inte aktiverad i databasen ännu.', 409)
+        return jsonError('Fuktkontroll ar inte aktiverad i databasen annu.', 409)
       }
       throw new Error(message)
     }
 
-    if (rows.length > 0) {
-      const insertRows = rows.map((row) => ({
+    const existingRowIds = Array.isArray(existingRows)
+      ? existingRows
+          .map((row) => normalizeUuid((row as { id?: unknown }).id))
+          .filter((value): value is string => Boolean(value))
+      : []
+    const existingRowIdSet = new Set(existingRowIds)
+
+    const candidateRowIds = Array.from(
+      new Set(rows.map((row) => row.id).filter((value): value is string => Boolean(value)))
+    )
+    if (candidateRowIds.length > 0) {
+      const { data: candidateRows, error: candidateRowsError } = await admin
+        .from('inspection_moisture_control_rows')
+        .select('id,inspection_id,org_id')
+        .in('id', candidateRowIds)
+
+      if (candidateRowsError) {
+        throw new Error(candidateRowsError.message ?? 'Kunde inte validera fuktkontrollrader.')
+      }
+
+      const invalidTarget = (candidateRows ?? []).find((row) => {
+        const rowInspectionId = String((row as { inspection_id?: unknown }).inspection_id ?? '')
+        const rowOrgId = String((row as { org_id?: unknown }).org_id ?? '')
+        return rowInspectionId !== id || rowOrgId !== org.orgId
+      })
+      if (invalidTarget) {
+        return jsonError('Ogiltigt rad-id i fuktkontroll payload.', 409)
+      }
+    }
+
+    const rowsToInsert: Array<Record<string, unknown>> = []
+    const rowsToUpdate: Array<Record<string, unknown>> = []
+    const keepRowIds = new Set<string>()
+
+    rows.forEach((row) => {
+      const rowId = row.id ?? randomUUID()
+      keepRowIds.add(rowId)
+      const rowPayload = {
+        id: rowId,
         moisture_control_id: moistureControlId,
         inspection_id: id,
         org_id: org.orgId,
@@ -723,24 +799,112 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         note: row.note,
         critical_level: row.critical_level,
         sort_order: row.sort_order,
-      }))
+      }
+      if (existingRowIdSet.has(rowId)) {
+        rowsToUpdate.push(rowPayload)
+      } else {
+        rowsToInsert.push(rowPayload)
+      }
+    })
 
-      const { error: insertError } = await admin.from('inspection_moisture_control_rows').insert(insertRows)
+    for (const row of rowsToUpdate) {
+      const rowId = String(row.id)
+      const { error: updateRowError } = await admin
+        .from('inspection_moisture_control_rows')
+        .update({
+          moisture_control_id: moistureControlId,
+          location_label: row.location_label,
+          building_part: row.building_part,
+          measurement_type: row.measurement_type,
+          measurement_value: row.measurement_value,
+          temperature_c: row.temperature_c,
+          note: row.note,
+          critical_level: row.critical_level,
+          sort_order: row.sort_order,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', rowId)
+        .eq('org_id', org.orgId)
+        .eq('inspection_id', id)
 
-      if (insertError) {
-        const message = insertError.message ?? 'Kunde inte spara fuktkontrollrader.'
+      if (updateRowError) {
+        throw new Error(updateRowError.message ?? 'Kunde inte uppdatera fuktkontrollrad.')
+      }
+    }
+
+    if (rowsToInsert.length > 0) {
+      const { error: insertRowsError } = await admin.from('inspection_moisture_control_rows').insert(rowsToInsert)
+
+      if (insertRowsError) {
+        const message = insertRowsError.message ?? 'Kunde inte spara fuktkontrollrader.'
         if (isMissingTableError(message)) {
-          return jsonError('Fuktkontroll är inte aktiverad i databasen ännu.', 409)
+          return jsonError('Fuktkontroll ar inte aktiverad i databasen annu.', 409)
         }
         throw new Error(message)
       }
     }
 
-    return NextResponse.json({ ok: true })
+    const rowIdsToDelete = existingRowIds.filter((rowId) => !keepRowIds.has(rowId))
+    if (rowIdsToDelete.length > 0) {
+      const { data: deleteCandidateImages, error: deleteCandidateImagesError } = await admin
+        .from('inspection_moisture_control_images')
+        .select('id,file_path')
+        .eq('org_id', org.orgId)
+        .eq('inspection_id', id)
+        .in('moisture_control_row_id', rowIdsToDelete)
+
+      if (deleteCandidateImagesError) {
+        const message = deleteCandidateImagesError.message ?? ''
+        if (!isMissingImagesTableError(message)) {
+          throw new Error(message || 'Kunde inte lasa bilder for borttagna fuktrader.')
+        }
+      } else if (Array.isArray(deleteCandidateImages) && deleteCandidateImages.length > 0) {
+        const filePaths = deleteCandidateImages
+          .map((image) => String((image as { file_path?: unknown }).file_path ?? '').trim())
+          .filter((path) => path.length > 0)
+        if (filePaths.length > 0) {
+          const { error: storageDeleteError } = await admin.storage.from('inspection-images').remove(filePaths)
+          if (storageDeleteError) {
+            throw new Error(storageDeleteError.message ?? 'Kunde inte ta bort bildfiler.')
+          }
+        }
+      }
+
+      const { error: deleteRowsError } = await admin
+        .from('inspection_moisture_control_rows')
+        .delete()
+        .eq('org_id', org.orgId)
+        .eq('inspection_id', id)
+        .in('id', rowIdsToDelete)
+
+      if (deleteRowsError) {
+        const message = deleteRowsError.message ?? 'Kunde inte ta bort gamla fuktkontrollrader.'
+        if (isMissingTableError(message)) {
+          return jsonError('Fuktkontroll ar inte aktiverad i databasen annu.', 409)
+        }
+        throw new Error(message)
+      }
+    }
+
+    const { data: savedRows, error: savedRowsError } = await admin
+      .from('inspection_moisture_control_rows')
+      .select(
+        'id,moisture_control_id,inspection_id,org_id,location_label,building_part,measurement_type,measurement_value,temperature_c,note,critical_level,sort_order'
+      )
+      .eq('org_id', org.orgId)
+      .eq('inspection_id', id)
+      .order('sort_order', { ascending: true })
+
+    if (savedRowsError) {
+      throw new Error(savedRowsError.message ?? 'Kunde inte lasa sparade fuktkontrollrader.')
+    }
+
+    return NextResponse.json({ ok: true, rows: Array.isArray(savedRows) ? savedRows : [] })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okänt fel.'
+    const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     return jsonError(message || 'Kunde inte spara fuktkontroll.', 500)
   }
 }
+
