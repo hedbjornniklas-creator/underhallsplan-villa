@@ -295,7 +295,7 @@ export default async function Page({
     ? await supabase
         .from('profiles')
         .select(
-          'full_name, sbr_group, sbr_status, membership_number, certification_number, phone, email, company_name, company_orgno, company_address, company_postal_code, company_city, logo_path'
+          'full_name, phone, email, company_name, company_orgno, company_address, company_postal_code, company_city, logo_path'
         )
         .eq('id', userId)
         .maybeSingle()
@@ -309,12 +309,6 @@ export default async function Page({
     supabase,
     {
       profileId: userId,
-      legacy: {
-        sbr_group: profile?.sbr_group ?? null,
-        sbr_status: profile?.sbr_status ?? null,
-        membership_number: profile?.membership_number ?? null,
-        certification_number: profile?.certification_number ?? null,
-      },
     }
   )
 

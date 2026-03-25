@@ -43,9 +43,7 @@ async function loadProfileSnapshot(
 ) {
   const profileResult = await admin
     .from('profiles')
-    .select(
-      'full_name,company_name,membership_number,certification_number,sbr_group,sbr_status,is_sbr_diplomerad_areamatning'
-    )
+    .select('full_name,company_name')
     .eq('id', userId)
     .maybeSingle()
 
@@ -56,14 +54,6 @@ async function loadProfileSnapshot(
   const { summary } = await resolveInspectorCertificationSummary(admin, {
     profileId: userId,
     orgId,
-    legacy: {
-      sbr_group: (profileResult.data?.sbr_group as string | null) ?? null,
-      sbr_status: (profileResult.data?.sbr_status as string | null) ?? null,
-      membership_number: (profileResult.data?.membership_number as string | null) ?? null,
-      certification_number: (profileResult.data?.certification_number as string | null) ?? null,
-      is_sbr_diplomerad_areamatning:
-        (profileResult.data?.is_sbr_diplomerad_areamatning as boolean | null) ?? false,
-    },
   })
 
   return {

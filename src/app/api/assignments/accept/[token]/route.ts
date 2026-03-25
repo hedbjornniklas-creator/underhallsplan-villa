@@ -186,7 +186,7 @@ export async function GET(
       const { data: inspectorData } = await admin
         .from('profiles')
         .select(
-          'full_name,sbr_group,sbr_status,membership_number,certification_number,phone,email,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path,is_sbr_diplomerad_areamatning'
+          'full_name,phone,email,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path'
         )
         .eq('id', assignment.responsible_profile_id)
         .maybeSingle()
@@ -194,14 +194,6 @@ export async function GET(
       const { summary } = await resolveInspectorCertificationSummary(admin, {
         profileId: assignment.responsible_profile_id,
         orgId: link.org_id,
-        legacy: {
-          sbr_group: inspectorData?.sbr_group ?? null,
-          sbr_status: inspectorData?.sbr_status ?? null,
-          membership_number: inspectorData?.membership_number ?? null,
-          certification_number: inspectorData?.certification_number ?? null,
-          is_sbr_diplomerad_areamatning:
-            inspectorData?.is_sbr_diplomerad_areamatning === true,
-        },
       })
 
       inspector = inspectorData

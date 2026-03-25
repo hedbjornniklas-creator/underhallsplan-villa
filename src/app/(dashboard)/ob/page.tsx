@@ -853,7 +853,7 @@ export default function OverlatelsebesiktningPage() {
             supabase
               .from('profiles')
               .select(
-                'full_name,sbr_group,sbr_status,membership_number,certification_number,phone,email,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path,logo_path,logo_url'
+                'full_name,phone,email,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path,logo_path,logo_url'
               )
               .eq('id', user.id)
               .maybeSingle(),
@@ -873,15 +873,12 @@ export default function OverlatelsebesiktningPage() {
           ])
 
         if (!profileError && profileData && !cancelled) {
-          const rawProfile = profileData as ProfileCardInfo
+          const rawProfile = profileData as Omit<
+            ProfileCardInfo,
+            'sbr_group' | 'sbr_status' | 'membership_number' | 'certification_number'
+          >
           const { summary } = await resolveInspectorCertificationSummary(supabase, {
             profileId: user.id,
-            legacy: {
-              sbr_group: rawProfile.sbr_group,
-              sbr_status: rawProfile.sbr_status,
-              membership_number: rawProfile.membership_number,
-              certification_number: rawProfile.certification_number,
-            },
           })
 
           if (!cancelled) {

@@ -346,7 +346,7 @@ export default function ObStepGrunddata({
       const { data, error: profileError } = await supabase
         .from('profiles')
         .select(
-          'full_name,sbr_group,sbr_status,membership_number,certification_number,phone,email,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path'
+          'full_name,phone,email,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path'
         )
         .eq('id', user.id)
         .maybeSingle()
@@ -355,21 +355,23 @@ export default function ObStepGrunddata({
 
       const { summary } = await resolveInspectorCertificationSummary(supabase, {
         profileId: user.id,
-        legacy: {
-          sbr_group: data.sbr_group,
-          sbr_status: data.sbr_status,
-          membership_number: data.membership_number,
-          certification_number: data.certification_number,
-        },
       })
 
       if (cancelled) return
       setInspectorProfile({
-        ...(data as InspectorProfile),
+        full_name: data.full_name ?? null,
         sbr_group: summary.sbr_group,
         sbr_status: summary.sbr_status,
         membership_number: summary.membership_number,
         certification_number: summary.certification_number,
+        phone: data.phone ?? null,
+        email: data.email ?? null,
+        company_name: data.company_name ?? null,
+        company_orgno: data.company_orgno ?? null,
+        company_address: data.company_address ?? null,
+        company_postal_code: data.company_postal_code ?? null,
+        company_city: data.company_city ?? null,
+        avatar_path: data.avatar_path ?? null,
       })
     }
 
