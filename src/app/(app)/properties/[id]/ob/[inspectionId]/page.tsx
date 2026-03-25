@@ -62,6 +62,30 @@ type ObSnapshotSingleClient = {
 const AREA_MEASUREMENT_ADDON_KEY = 'area'
 const MOISTURE_CONTROL_ADDON_KEY = 'moisture_risk'
 
+function isMoistureAddonToken(value: string) {
+  const normalized = normalizeAddonKey(value)
+  if (!normalized) return false
+  if (
+    normalized === MOISTURE_CONTROL_ADDON_KEY ||
+    normalized === 'moisture' ||
+    normalized === 'fuktkontroll' ||
+    normalized === 'fuktmatning' ||
+    normalized === 'fuktmatning_eller_fuktindikering_av_riskkonstruktion' ||
+    normalized === 'fuktindikering_av_riskkonstruktion'
+  ) {
+    return true
+  }
+  if (normalized.includes('moisture')) return true
+  if (normalized.includes('fukt')) {
+    return (
+      normalized.includes('risk') ||
+      normalized.includes('kontroll') ||
+      normalized.includes('matning')
+    )
+  }
+  return false
+}
+
 function normalizeAddonKey(value: string | null | undefined) {
   return String(value ?? '')
     .trim()
@@ -83,16 +107,11 @@ function hasAreaMeasurementSelection(selectedAddonKeys: string[], scope: string 
 }
 
 function hasMoistureControlSelection(selectedAddonKeys: string[], scope: string | null | undefined) {
-  const selectedLookup = new Set(selectedAddonKeys.map(normalizeAddonKey).filter(Boolean))
-  const hasSelectedAddon = selectedLookup.has(MOISTURE_CONTROL_ADDON_KEY)
+  const hasSelectedAddon = selectedAddonKeys.some((key) => isMoistureAddonToken(key))
   if (hasSelectedAddon) return true
 
   const normalizedScopeCodes = parseScopeCodes(scope).map(normalizeAddonKey)
-  return (
-    normalizedScopeCodes.includes(MOISTURE_CONTROL_ADDON_KEY) ||
-    normalizedScopeCodes.includes('fuktkontroll') ||
-    normalizedScopeCodes.includes('fuktmatning')
-  )
+  return normalizedScopeCodes.some((token) => isMoistureAddonToken(token))
 }
 
 function normalizeAddonKeysForCompare(keys: string[]) {
