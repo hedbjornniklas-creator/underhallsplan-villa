@@ -56,6 +56,7 @@ type ProfileSnapshot = {
 
 type AreaMeasurementDefaults = {
   building_type: string | null
+  building_year: string | null
 }
 
 type AreaMeasurementApiResponse = {
@@ -128,6 +129,7 @@ function toInitialForm(input: {
   measurement: Record<string, unknown> | null
   rows: Array<Record<string, unknown>>
   fallbackBuildingType: string | null | undefined
+  fallbackBuildingYear: string | null | undefined
   fallbackYearBuilt: number | null | undefined
 }): AreaMeasurementForm {
   const measurement = input.measurement
@@ -145,10 +147,11 @@ function toInitialForm(input: {
 
   const propertyYear =
     typeof input.fallbackYearBuilt === 'number' ? String(input.fallbackYearBuilt) : ''
+  const buildingYear = String(input.fallbackBuildingYear ?? propertyYear ?? '')
 
   return {
     building_type: String(input.fallbackBuildingType ?? ''),
-    building_year: propertyYear,
+    building_year: buildingYear,
     object_other: String(measurement?.object_other ?? ''),
     measurement_instrument: String(measurement?.measurement_instrument ?? ''),
     comment: String(measurement?.comment ?? ''),
@@ -203,6 +206,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
           measurement: payload?.measurement ?? null,
           rows: Array.isArray(payload?.rows) ? payload.rows : [],
           fallbackBuildingType: payload?.defaults?.building_type ?? null,
+          fallbackBuildingYear: payload?.defaults?.building_year ?? null,
           fallbackYearBuilt: property.year_built,
         })
 
@@ -536,11 +540,11 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
                   </div>
                 </div>
 
-                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <ReadOnlyField label="Besiktningsbolag" value={profile?.company_name ?? '-'} />
-                  <ReadOnlyField label="Org.nr" value={profile?.company_orgno ?? '-'} />
-                  <ReadOnlyField label="Telefon" value={profile?.phone ?? '-'} />
-                  <ReadOnlyField label="E-post" value={profile?.email ?? '-'} />
+                <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-slate-800 sm:grid-cols-2">
+                  <PlainInfoRow label="Besiktningsbolag" value={profile?.company_name ?? '-'} />
+                  <PlainInfoRow label="Org.nr" value={profile?.company_orgno ?? '-'} />
+                  <PlainInfoRow label="Telefon" value={profile?.phone ?? '-'} />
+                  <PlainInfoRow label="E-post" value={profile?.email ?? '-'} />
                 </div>
                 {inspectorAddressLine ? (
                   <div className="mt-2 text-xs text-slate-600">{inspectorAddressLine}</div>
@@ -561,6 +565,15 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900">
         {value || '-'}
       </div>
+    </div>
+  )
+}
+
+function PlainInfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs font-medium text-slate-600">{label}</div>
+      <div>{value || '-'}</div>
     </div>
   )
 }

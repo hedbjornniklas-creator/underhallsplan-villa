@@ -91,14 +91,15 @@ function normalizeToTokenArray(value: unknown): string[] {
   return token.length > 0 ? [token] : []
 }
 
-async function loadBuildingTypeFromForutsattningar(
+async function loadOverviewItemFirstLabel(
   admin: ReturnType<typeof createSupabaseAdminClient>,
-  inspectionId: string
+  inspectionId: string,
+  itemKey: string
 ) {
   const itemResult = await admin
     .from('settings_overview_items')
     .select('id')
-    .eq('key', 'building_type')
+    .eq('key', itemKey)
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
     .limit(1)
@@ -161,26 +162,19 @@ async function loadBuildingTypeFromForutsattningar(
     labelsByGroup.get(option.group_id)!.set(lookup, option.label)
   })
 
-  const parts: string[] = []
-  groups.forEach((group) => {
+  for (const group of groups) {
     const rawValue = valuesRecord[group.key]
     const tokens = normalizeToTokenArray(rawValue)
-    if (tokens.length === 0) return
+    if (tokens.length === 0) continue
 
     const labelLookup = labelsByGroup.get(group.id)
-    const labels = tokens
-      .map((token) => {
-        const label = labelLookup?.get(normalizeLookupKey(token))
-        return label ?? token
-      })
-      .filter((token) => token.length > 0)
+    const firstToken = tokens[0]
+    const firstLabel = labelLookup?.get(normalizeLookupKey(firstToken)) ?? firstToken
+    const normalized = String(firstLabel ?? '').trim()
+    if (normalized.length > 0) return normalized
+  }
 
-    if (labels.length > 0) {
-      parts.push(labels.join(', '))
-    }
-  })
-
-  return parts.length > 0 ? parts.join(', ') : null
+  return null
 }
 
 function normalizeNumber(value: unknown) {
@@ -242,8 +236,11 @@ export async function GET(
     const org = await requireOrgContext()
     const admin = createSupabaseAdminClient()
 
-    const profile = await loadProfileSnapshot(admin, org.orgId, org.userId)
-    const buildingTypeDefault = await loadBuildingTypeFromForutsattningar(admin, id)
+    const [profile, buildingTypeDefault, buildingYearDefault] = await Promise.all([
+      loadProfileSnapshot(admin, org.orgId, org.userId),
+      loadOverviewItemFirstLabel(admin, id, 'building_type'),
+      loadOverviewItemFirstLabel(admin, id, 'building_year'),
+    ])
 
     const { data: measurement, error: measurementError } = await admin
       .from('inspection_area_measurements')
@@ -264,6 +261,7 @@ export async function GET(
           profile,
           defaults: {
             building_type: buildingTypeDefault,
+            building_year: buildingYearDefault,
           },
         })
       }
@@ -278,6 +276,7 @@ export async function GET(
         profile,
         defaults: {
           building_type: buildingTypeDefault,
+          building_year: buildingYearDefault,
         },
       })
     }
@@ -299,6 +298,7 @@ export async function GET(
           profile,
           defaults: {
             building_type: buildingTypeDefault,
+            building_year: buildingYearDefault,
           },
         })
       }
@@ -312,6 +312,7 @@ export async function GET(
       profile,
       defaults: {
         building_type: buildingTypeDefault,
+        building_year: buildingYearDefault,
       },
     })
   } catch (error) {
