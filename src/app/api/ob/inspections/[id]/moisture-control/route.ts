@@ -364,15 +364,43 @@ async function loadInspectionStructureDefaults(
   admin: ReturnType<typeof createSupabaseAdminClient>,
   inspectionId: string
 ) {
-  const [{ data: inspection }, buildingType, buildingYear] = await Promise.all([
+  const [
+    { data: inspection },
+    buildingType,
+    buildingYearSummary,
+    heatingFromOverview,
+    ventilationFromOverview,
+    { data: conditions },
+  ] = await Promise.all([
     admin.from('inspections').select('property_id').eq('id', inspectionId).maybeSingle(),
     loadOverviewItemFirstLabel(admin, inspectionId, 'building_type'),
     loadBuildingYearSummaryFromForutsattningar(admin, inspectionId),
+    loadOverviewItemFirstLabel(admin, inspectionId, 'heating'),
+    loadOverviewItemFirstLabel(admin, inspectionId, 'ventilation'),
+    admin
+      .from('inspection_conditions')
+      .select('building_type,building_form,building_year,heating,ventilation')
+      .eq('inspection_id', inspectionId)
+      .maybeSingle(),
   ])
 
   const propertyId = String(inspection?.property_id ?? '').trim()
   let snapshotHeating: string | null = null
   let snapshotVentilation: string | null = null
+  let propertyYearBuilt: string | null = null
+
+  const normalizeTextValue = (value: unknown) => {
+    if (typeof value !== 'string') return null
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+
+  const normalizeYearValue = (value: unknown) => {
+    if (value === null || value === undefined) return null
+    if (typeof value === 'number' && Number.isFinite(value)) return String(Math.round(value))
+    const text = String(value).trim()
+    return text.length > 0 ? text : null
+  }
 
   if (propertyId) {
     const [{ data: snapshot }, { data: property }] = await Promise.all([
@@ -381,20 +409,59 @@ async function loadInspectionStructureDefaults(
         .select('heating,ventilation')
         .eq('inspection_id', inspectionId)
         .maybeSingle(),
-      admin.from('properties').select('heating,ventilation').eq('id', propertyId).maybeSingle(),
+      admin
+        .from('properties')
+        .select('heating,ventilation,year_built')
+        .eq('id', propertyId)
+        .maybeSingle(),
     ])
 
     snapshotHeating = (snapshot?.heating as string | null) ?? (property?.heating as string | null) ?? null
     snapshotVentilation =
       (snapshot?.ventilation as string | null) ?? (property?.ventilation as string | null) ?? null
+    propertyYearBuilt = normalizeYearValue((property as { year_built?: unknown } | null)?.year_built)
   }
 
+  const conditionBuildingType =
+    normalizeTextValue(conditions?.building_type) ??
+    normalizeTextValue(conditions?.building_form) ??
+    null
+  const conditionBuildingYear = normalizeYearValue(conditions?.building_year)
+  const conditionHeating = normalizeTextValue(conditions?.heating)
+  const conditionVentilation = normalizeTextValue(conditions?.ventilation)
+
+  const parseBuildingYearDefaults = (summary: string | null) => {
+    const raw = String(summary ?? '').trim()
+    if (!raw) return { buildingYear: null as string | null, extensionNote: null as string | null }
+    const parts = raw
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean)
+
+    if (parts.length === 0) {
+      return { buildingYear: null as string | null, extensionNote: null as string | null }
+    }
+
+    const huvudbyggnadPart = parts.find((part) =>
+      part.toLowerCase().startsWith('huvudbyggnad')
+    )
+    const mainPart = huvudbyggnadPart ?? parts[0]
+    const buildingYear =
+      mainPart.includes(':') ? mainPart.split(':').slice(1).join(':').trim() || mainPart : mainPart
+    const extensionParts = parts.filter((part) => part !== mainPart)
+    const extensionNote = extensionParts.length > 0 ? extensionParts.join(', ') : null
+
+    return { buildingYear, extensionNote }
+  }
+
+  const parsedBuildingYear = parseBuildingYearDefaults(buildingYearSummary)
+
   return {
-    building_type: buildingType,
-    building_year: buildingYear,
-    extension_note: null as string | null,
-    heating: snapshotHeating,
-    ventilation: snapshotVentilation,
+    building_type: buildingType ?? conditionBuildingType,
+    building_year: parsedBuildingYear.buildingYear ?? conditionBuildingYear ?? propertyYearBuilt,
+    extension_note: parsedBuildingYear.extensionNote,
+    heating: heatingFromOverview ?? conditionHeating ?? snapshotHeating,
+    ventilation: ventilationFromOverview ?? conditionVentilation ?? snapshotVentilation,
   }
 }
 
