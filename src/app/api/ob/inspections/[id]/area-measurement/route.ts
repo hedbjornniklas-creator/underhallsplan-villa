@@ -50,7 +50,7 @@ async function loadProfileSnapshot(
     .maybeSingle()
 
   if (profileResult.error) {
-    throw new Error(profileResult.error.message ?? 'Kunde inte lasa profil.')
+    throw new Error(profileResult.error.message ?? 'Kunde inte läsa profil.')
   }
 
   const { summary } = await resolveInspectorCertificationSummary(admin, {
@@ -377,7 +377,7 @@ export async function GET(
           },
         })
       }
-      throw new Error(message || 'Kunde inte lasa areamatning.')
+      throw new Error(message || 'Kunde inte läsa areamätning.')
     }
 
     if (!measurement) {
@@ -414,7 +414,7 @@ export async function GET(
           },
         })
       }
-      throw new Error(message || 'Kunde inte lasa areamatningsrader.')
+      throw new Error(message || 'Kunde inte läsa areamätningsrader.')
     }
 
     return NextResponse.json({
@@ -428,10 +428,11 @@ export async function GET(
       },
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okant fel.'
+    const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
-    if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
-    return jsonError(message || 'Kunde inte lasa areamatning.', 500)
+    if (message === 'ORG_MEMBERSHIP_REQUIRED')
+      return jsonError('Ingen organisationskoppling hittades.', 403)
+    return jsonError(message || 'Kunde inte läsa areamätning.', 500)
   }
 }
 
@@ -455,12 +456,12 @@ export async function PATCH(
     if (inspectionError) {
       const message = inspectionError.message ?? ''
       if (!isMissingLockColumnError(message)) {
-        throw new Error(message || 'Kunde inte lasa besiktning.')
+        throw new Error(message || 'Kunde inte läsa besiktning.')
       }
     } else if (!inspectionRow) {
       return jsonError('Besiktningen hittades inte.', 404)
     } else if (inspectionRow.locked_at) {
-      return jsonError('Besiktningen ar last och kan inte uppdateras.', 409)
+      return jsonError('Besiktningen är låst och kan inte uppdateras.', 409)
     }
 
     const payload = {
@@ -487,7 +488,7 @@ export async function PATCH(
     if (upsertError || !upserted?.id) {
       const message = upsertError?.message ?? 'Kunde inte spara areamatning.'
       if (isMissingTableError(message)) {
-        return jsonError('Areamatning ar inte aktiverad i databasen an.', 409)
+        return jsonError('Areamätning är inte aktiverad i databasen ännu.', 409)
       }
       throw new Error(message)
     }
@@ -504,7 +505,7 @@ export async function PATCH(
     if (deleteError) {
       const message = deleteError.message ?? 'Kunde inte uppdatera rader.'
       if (isMissingTableError(message)) {
-        return jsonError('Areamatning ar inte aktiverad i databasen an.', 409)
+        return jsonError('Areamätning är inte aktiverad i databasen ännu.', 409)
       }
       throw new Error(message)
     }
@@ -525,9 +526,9 @@ export async function PATCH(
         .insert(insertRows)
 
       if (insertError) {
-        const message = insertError.message ?? 'Kunde inte spara areamatningsrader.'
+        const message = insertError.message ?? 'Kunde inte spara areamätningsrader.'
         if (isMissingTableError(message)) {
-          return jsonError('Areamatning ar inte aktiverad i databasen an.', 409)
+          return jsonError('Areamätning är inte aktiverad i databasen ännu.', 409)
         }
         throw new Error(message)
       }
@@ -535,9 +536,10 @@ export async function PATCH(
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okant fel.'
+    const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
-    if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
-    return jsonError(message || 'Kunde inte spara areamatning.', 500)
+    if (message === 'ORG_MEMBERSHIP_REQUIRED')
+      return jsonError('Ingen organisationskoppling hittades.', 403)
+    return jsonError(message || 'Kunde inte spara areamätning.', 500)
   }
 }
