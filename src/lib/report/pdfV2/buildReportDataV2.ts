@@ -654,15 +654,16 @@ const supabase: any = createSupabaseServerClient()
       biarea_display: biarea === '--' ? '--' : `${biarea} +/-2 %`,
     }
   })
-  const areaMeasurementBuildingYear =
+  const buildingYearFromConditions =
+    inspectionConditions?.building_year === null || inspectionConditions?.building_year === undefined
+      ? null
+      : String(inspectionConditions.building_year)
+  const buildingYearFromBuildingData = trimText(buildingDataMap['Byggnadsår:'] ?? '')
+  const areaMeasurementBuildingYear = valueOrFallback(
     areaMeasurementHeader?.building_year === null || areaMeasurementHeader?.building_year === undefined
-      ? valueOrFallback(
-          inspectionConditions?.building_year === null ||
-            inspectionConditions?.building_year === undefined
-            ? null
-            : String(inspectionConditions.building_year)
-        )
+      ? buildingYearFromBuildingData || buildingYearFromConditions
       : String(areaMeasurementHeader.building_year)
+  )
 
   let moistureControlHeader: MoistureControlHeaderRow | null = null
   let moistureControlRows: MoistureControlDataRow[] = []
@@ -1406,13 +1407,7 @@ const supabase: any = createSupabaseServerClient()
             ),
             building_year: valueOrFallback(
               moistureControlHeader?.building_year ?? null,
-              valueOrFallback(
-                inspectionConditions?.building_year === null ||
-                  inspectionConditions?.building_year === undefined
-                  ? null
-                  : String(inspectionConditions.building_year),
-                fallback
-              )
+              valueOrFallback(buildingYearFromBuildingData || buildingYearFromConditions, fallback)
             ),
             extension_note: valueOrFallback(moistureControlHeader?.extension_note ?? null),
             heating: valueOrFallback(

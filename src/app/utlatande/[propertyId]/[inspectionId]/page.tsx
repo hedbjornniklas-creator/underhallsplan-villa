@@ -859,6 +859,20 @@ export default async function Page({
       inspection?.date ??
       null
   )
+  const conditionBuildingYear =
+    inspectionConditions?.building_year === null || inspectionConditions?.building_year === undefined
+      ? null
+      : String(inspectionConditions.building_year)
+  const buildingDataBuildingYear = trimText(buildingDataMap['Byggnadsår:'] ?? '')
+  const areaMeasurementBuildingYear = valueOrFallback(
+    areaMeasurementHeader?.building_year === null || areaMeasurementHeader?.building_year === undefined
+      ? buildingDataBuildingYear || conditionBuildingYear
+      : String(areaMeasurementHeader.building_year)
+  )
+  const moistureControlBuildingYear = valueOrFallback(
+    (moistureControlHeader?.building_year as string | null | undefined) ??
+      (buildingDataBuildingYear || conditionBuildingYear)
+  )
 
   const { data: exteriorItems, error: exteriorItemsError } = await supabase
     .from('settings_exterior_items')
@@ -1392,13 +1406,7 @@ export default async function Page({
               valueOrFallback(buildingTypeParts.TYPE, fallback)
             ),
             building_year: valueOrFallback(
-              areaMeasurementHeader?.building_year === null ||
-                areaMeasurementHeader?.building_year === undefined
-                ? inspectionConditions?.building_year === null ||
-                    inspectionConditions?.building_year === undefined
-                  ? null
-                  : String(inspectionConditions.building_year)
-                : String(areaMeasurementHeader.building_year)
+              areaMeasurementBuildingYear
             ),
             object_other: valueOrFallback(
               (areaMeasurementHeader?.object_other as string | null | undefined) ?? null
@@ -1438,13 +1446,7 @@ export default async function Page({
               (moistureControlHeader?.building_type as string | null | undefined) ?? null,
               valueOrFallback(buildingTypeParts.TYPE, fallback)
             ),
-            building_year: valueOrFallback(
-              (moistureControlHeader?.building_year as string | null | undefined) ??
-                (inspectionConditions?.building_year === null ||
-                inspectionConditions?.building_year === undefined
-                  ? null
-                  : String(inspectionConditions.building_year))
-            ),
+            building_year: valueOrFallback(moistureControlBuildingYear),
             extension_note: valueOrFallback(
               (moistureControlHeader?.extension_note as string | null | undefined) ?? null
             ),

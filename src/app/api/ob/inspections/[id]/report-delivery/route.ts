@@ -94,6 +94,7 @@ type TimingLogger = {
 }
 
 type PdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
+type DeliveryAction = 'send_and_complete' | 'send_open' | 'complete_only'
 
 function normalizedText(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -225,6 +226,61 @@ function parseMarkAsCompleted(input: unknown) {
       return false
   }
   return true
+}
+
+function parseDeliveryAction(actionInput: unknown, markAsCompletedInput: unknown): DeliveryAction {
+  if (typeof actionInput === 'string') {
+    const normalized = actionInput.trim().toLowerCase()
+    if (normalized === 'complete_only') return 'complete_only'
+    if (normalized === 'send_open') return 'send_open'
+    if (normalized === 'send_and_complete') return 'send_and_complete'
+  }
+
+  return parseMarkAsCompleted(markAsCompletedInput) ? 'send_and_complete' : 'send_open'
+}
+
+async function markInspectionCompletedAndLocked(input: {
+  admin: AdminClient
+  inspectionId: string
+  inspectionStatus: string
+  userId: string
+}) {
+  const inspectionPatch =
+    input.inspectionStatus !== 'completed'
+      ? {
+          status: 'completed',
+          locked_at: new Date().toISOString(),
+          locked_by: input.userId,
+        }
+      : {
+          locked_at: new Date().toISOString(),
+          locked_by: input.userId,
+        }
+
+  const { error: updateInspectionError } = await input.admin
+    .from('inspections')
+    .update(inspectionPatch)
+    .eq('id', input.inspectionId)
+
+  if (!updateInspectionError) return
+
+  const message = updateInspectionError.message ?? ''
+  if (!isMissingInspectionLockColumnsError(message)) {
+    throw new Error(message || 'Kunde inte uppdatera låsstatus för besiktningen.')
+  }
+
+  if (input.inspectionStatus === 'completed') return
+
+  const { error: fallbackStatusError } = await input.admin
+    .from('inspections')
+    .update({ status: 'completed' })
+    .eq('id', input.inspectionId)
+
+  if (fallbackStatusError) {
+    throw new Error(
+      fallbackStatusError.message ?? 'Kunde inte uppdatera besiktningsstatus till klar.'
+    )
+  }
 }
 
 function getMailFromAddress() {
@@ -790,6 +846,7 @@ export async function POST(
           primary_recipient?: unknown
           extra_recipients?: unknown
           mark_as_completed?: unknown
+          action?: unknown
         }
       | null
     timing.mark('request_body_parsed')
@@ -811,6 +868,47 @@ export async function POST(
     }
 
     const fallbackOrdererEmail = assignment?.customer_email?.trim().toLowerCase() ?? null
+    const action = parseDeliveryAction(body?.action, body?.mark_as_completed)
+
+    if (action === 'complete_only') {
+      await markInspectionCompletedAndLocked({
+        admin,
+        inspectionId: id,
+        inspectionStatus,
+        userId: org.userId,
+      })
+      timing.mark('inspection_completed_without_send')
+
+      const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
+      const pdfState = await getReportPdfState(admin, id)
+      const activityLog = await buildDeliveryActivityLog({
+        admin,
+        orgId: org.orgId,
+        inspectionId: id,
+        history,
+      })
+
+      timing.mark('success', { finalInspectionStatus: 'completed', totalMs: timing.totalMs() })
+      return NextResponse.json({
+        inspectionId: id,
+        inspectionStatus: 'completed',
+        deliveryMode: 'link_only',
+        publicLink: '',
+        primaryRecipientEmail: '',
+        defaultRecipientEmail: fallbackOrdererEmail,
+        ordererEmail: fallbackOrdererEmail,
+        hasStoredPdf: pdfState.hasStoredPdf,
+        pdfStatus: pdfState.pdfStatus,
+        pdfError: pdfState.pdfError,
+        canDownloadPdf: pdfState.hasStoredPdf && pdfState.pdfStatus === 'ready',
+        sentRecipients: [],
+        failedRecipients: [],
+        history,
+        activityLog,
+        linkId: '',
+      })
+    }
+
     const primaryRecipient = parsePrimaryRecipient(body?.primary_recipient, fallbackOrdererEmail)
     if (!primaryRecipient) {
       return jsonError('Ange en giltig huvudmottagare.', 400)
@@ -822,7 +920,6 @@ export async function POST(
     }
 
     const extraRecipients = parseExtraRecipients(body?.extra_recipients, primaryRecipient)
-    const markAsCompleted = parseMarkAsCompleted(body?.mark_as_completed)
     const recipients = [primaryRecipient, ...extraRecipients]
     timing.mark('recipients_ready', { recipientCount: recipients.length })
 
@@ -967,43 +1064,13 @@ export async function POST(
       }
     }
 
-    if (primarySent && markAsCompleted) {
-      const inspectionPatch =
-        inspectionStatus !== 'completed'
-          ? {
-              status: 'completed',
-              locked_at: new Date().toISOString(),
-              locked_by: org.userId,
-            }
-          : {
-              locked_at: new Date().toISOString(),
-              locked_by: org.userId,
-            }
-
-      const { error: updateInspectionError } = await admin
-        .from('inspections')
-        .update(inspectionPatch)
-        .eq('id', id)
-
-      if (updateInspectionError) {
-        const message = updateInspectionError.message ?? ''
-        if (isMissingInspectionLockColumnsError(message)) {
-          if (inspectionStatus !== 'completed') {
-            const { error: fallbackStatusError } = await admin
-              .from('inspections')
-              .update({ status: 'completed' })
-              .eq('id', id)
-            if (fallbackStatusError) {
-              throw new Error(
-                fallbackStatusError.message ??
-                  'Kunde inte uppdatera besiktningsstatus till klar.'
-              )
-            }
-          }
-        } else {
-          throw new Error(message || 'Kunde inte uppdatera låsstatus för besiktningen.')
-        }
-      }
+    if (primarySent && action === 'send_and_complete') {
+      await markInspectionCompletedAndLocked({
+        admin,
+        inspectionId: id,
+        inspectionStatus,
+        userId: org.userId,
+      })
       timing.mark('inspection_locked_after_send')
     }
 
@@ -1028,7 +1095,8 @@ export async function POST(
       inspectionId: id,
       history,
     })
-    const finalInspectionStatus = primarySent && markAsCompleted ? 'completed' : inspectionStatus
+    const finalInspectionStatus =
+      primarySent && action === 'send_and_complete' ? 'completed' : inspectionStatus
     timing.mark('history_loaded', { historyCount: history.length })
     timing.mark('success', { finalInspectionStatus, totalMs: timing.totalMs() })
 

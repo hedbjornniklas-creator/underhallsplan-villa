@@ -128,7 +128,8 @@ type ReportDeliverySendResponse = {
   linkId: string
 }
 
-type SendCompletionChoice = 'lock' | 'send_open' | 'cancel'
+type SendCompletionChoice = 'lock' | 'send_open' | 'complete_only' | 'cancel'
+type DeliveryAction = 'send_and_complete' | 'send_open' | 'complete_only'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const isValidUuid = (value?: string | null) => !!value && UUID_RE.test(value)
@@ -337,11 +338,22 @@ export default function ObWizard({
       return
     }
 
+    if ((choice === 'lock' || choice === 'send_open') && !isValidEmail(primaryRecipientInput)) {
+      setDeliveryError('Ange en giltig huvudmottagare för utskick.')
+      return
+    }
+
     setSendConfirmationOpen(false)
-    await handleSendInspectionReport(choice === 'lock')
+    const action: DeliveryAction =
+      choice === 'complete_only'
+        ? 'complete_only'
+        : choice === 'lock'
+          ? 'send_and_complete'
+          : 'send_open'
+    await handleSendInspectionReport(action)
   }
 
-  const handleSendInspectionReport = async (markAsCompleted: boolean) => {
+  const handleSendInspectionReport = async (action: DeliveryAction) => {
     if (!hasValidIds || !inspectionId) return
 
     setSendingReport(true)
@@ -359,7 +371,8 @@ export default function ObWizard({
         body: JSON.stringify({
           primary_recipient: primaryRecipientInput,
           extra_recipients: extraRecipients,
-          mark_as_completed: markAsCompleted,
+          mark_as_completed: action === 'send_and_complete',
+          action,
         }),
       })
 
@@ -426,7 +439,9 @@ export default function ObWizard({
           history: okPayload.history ?? [],
           activityLog: okPayload.activityLog ?? prev?.activityLog ?? [],
       }))
-      setPrimaryRecipientInput(okPayload.primaryRecipientEmail ?? '')
+      if (action !== 'complete_only') {
+        setPrimaryRecipientInput(okPayload.primaryRecipientEmail ?? '')
+      }
 
       const failedText =
         okPayload.failedRecipients.length > 0
@@ -434,13 +449,17 @@ export default function ObWizard({
               .map((row) => row.email)
               .join(', ')}.`
           : ''
-      const completionText =
-        okPayload.inspectionStatus === 'completed'
-          ? ' Besiktningen är nu klarmarkerad och låst.'
-          : ' Besiktningen är fortsatt öppen för ändringar.'
-      setDeliveryResult(
-        `Utlåtandet skickades till ${okPayload.sentRecipients.length} mottagare.${failedText}${completionText} PDF genereras i bakgrunden. Länk: ${okPayload.publicLink}`
-      )
+      if (action === 'complete_only') {
+        setDeliveryResult('Besiktningen klarmarkerades och låstes. Inget utskick gjordes.')
+      } else {
+        const completionText =
+          okPayload.inspectionStatus === 'completed'
+            ? ' Besiktningen är nu klarmarkerad och låst.'
+            : ' Besiktningen är fortsatt öppen för ändringar.'
+        setDeliveryResult(
+          `Utlåtandet skickades till ${okPayload.sentRecipients.length} mottagare.${failedText}${completionText} PDF genereras i bakgrunden. Länk: ${okPayload.publicLink}`
+        )
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Kunde inte skicka utlåtandet.'
       setDeliveryError(message)
@@ -624,12 +643,13 @@ export default function ObWizard({
                       disabled={
                         sendingReport ||
                         deliveryMetaLoading ||
-                        !isValidEmail(primaryRecipientInput) ||
                         deliveryMeta?.canSend === false
                       }
                       className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {sendingReport ? 'Skickar utlåtande...' : 'Skicka utlåtande'}
+                      {sendingReport
+                        ? 'Utför åtgärd...'
+                        : 'Skicka & klarmarkera utlåtandet'}
                     </button>
                   </div>
 
@@ -637,10 +657,10 @@ export default function ObWizard({
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
                       <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-xl">
                         <h3 className="text-base font-semibold text-gray-900">
-                          Bekräfta utskick
+                          Skicka eller klarmarkera
                         </h3>
                         <p className="mt-2 text-sm text-gray-700">
-                          Välj hur besiktningen ska hanteras efter utskicket.
+                          Välj hur besiktningen ska hanteras.
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2 text-xs">
                           <span
@@ -672,6 +692,9 @@ export default function ObWizard({
                             <strong>Skicka utan låsning:</strong> Utlåtandet skickas men besiktningen förblir öppen.
                           </div>
                           <div>
+                            <strong>Enbart klarmarkera:</strong> Besiktningen klarmarkeras och låses utan utskick.
+                          </div>
+                          <div>
                             <strong>Avbryt:</strong> Inget utskick görs.
                           </div>
                         </div>
@@ -679,7 +702,8 @@ export default function ObWizard({
                           <button
                             type="button"
                             onClick={() => void handleSendConfirmationChoice('lock')}
-                            className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
+                            disabled={!isValidEmail(primaryRecipientInput)}
+                            className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {isCurrentlyCompleted
                               ? 'Skicka och behåll låst'
@@ -688,11 +712,19 @@ export default function ObWizard({
                           <button
                             type="button"
                             onClick={() => void handleSendConfirmationChoice('send_open')}
-                            className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 shadow-sm hover:bg-amber-100"
+                            disabled={!isValidEmail(primaryRecipientInput)}
+                            className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 shadow-sm hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {isCurrentlyCompleted
                               ? 'Skicka och lämna upplåst'
                               : 'Skicka utan låsning'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleSendConfirmationChoice('complete_only')}
+                            className="inline-flex items-center rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 shadow-sm hover:bg-emerald-100"
+                          >
+                            Enbart klarmarkera
                           </button>
                           <button
                             type="button"

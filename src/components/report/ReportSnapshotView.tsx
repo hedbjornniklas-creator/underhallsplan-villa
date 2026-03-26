@@ -18,6 +18,18 @@ type SnapshotInspectionBlock = {
   hasDeviations?: boolean | null
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return value as Record<string, unknown>
+}
+
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
+    .map((entry) => entry as Record<string, unknown>)
+}
+
 type ReportSnapshotViewProps = {
   snapshot: ReportSnapshotPayloadV1
   heading?: string
@@ -266,6 +278,26 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
   const appendix1Text = loadAppendixText(resolveAppendix1Id(inspectionSide))
   const appendix2Text = loadAppendixText('APPENDIX_2_LITEN_BYGGORDBOK_SBR')
   const appendix3Text = loadAppendixText('APPENDIX_3_LIFESPAN_TABLE_SBR')
+  const appendices = asRecord(mock.appendices)
+  const areaMeasurementAppendix = asRecord(appendices.area_measurement)
+  const moistureControlAppendix = asRecord(appendices.moisture_control)
+  const areaMeasurementEnabled = areaMeasurementAppendix.enabled === true
+  const moistureControlEnabled = moistureControlAppendix.enabled === true
+  const areaMeasurementNumber = areaMeasurementEnabled ? 4 : null
+  const moistureControlNumber = moistureControlEnabled
+    ? areaMeasurementEnabled
+      ? 5
+      : 4
+    : null
+  const areaObject = asRecord(areaMeasurementAppendix.object)
+  const areaMeasurement = asRecord(areaMeasurementAppendix.measurement)
+  const areaSummary = asRecord(areaMeasurementAppendix.summary)
+  const areaSigning = asRecord(areaMeasurementAppendix.signing)
+  const areaRows = asRecordArray(areaMeasurementAppendix.rows)
+  const moistureObject = asRecord(moistureControlAppendix.object)
+  const moistureMeasurement = asRecord(moistureControlAppendix.measurement)
+  const moistureSigning = asRecord(moistureControlAppendix.signing)
+  const moistureRows = asRecordArray(moistureControlAppendix.rows)
   const companyLogoUrl = toImageUrl(getTextByPath(mock, 'company.logo_url', ''))
   const coverImageUrl =
     toImageUrl(getTextByPath(mock, 'properties.cover_path', '')) ?? defaultCoverIllustrationSrc
@@ -636,6 +668,184 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
               </summary>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{appendix3Text}</p>
             </details>
+            {areaMeasurementNumber ? (
+              <details className="rounded-md border border-slate-200 p-3">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-900">
+                  Bilaga {areaMeasurementNumber} - Areamätning av boarea
+                </summary>
+                <div className="mt-3 space-y-3 text-sm text-slate-700">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Uppdragsnummer</div>
+                      <div>{toText(areaObject.assignment_number)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Adress</div>
+                      <div>{toText(areaObject.address)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Byggnadstyp</div>
+                      <div>{toText(areaObject.building_type)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Byggår</div>
+                      <div>{toText(areaObject.building_year)}</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Mätinstrument</div>
+                    <div>{toText(areaMeasurement.instrument)}</div>
+                  </div>
+                  {areaRows.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                            <th className="py-1 pr-2 font-semibold">Våning/byggdel</th>
+                            <th className="py-1 pr-2 font-semibold">Boarea</th>
+                            <th className="py-1 font-semibold">Biarea</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {areaRows.map((row, index) => (
+                            <tr key={`area-row-${index}`} className="border-b border-slate-100 align-top">
+                              <td className="py-1 pr-2">{toText(row.floor_or_part)}</td>
+                              <td className="py-1 pr-2">{toText(row.boarea_display)}</td>
+                              <td className="py-1">{toText(row.biarea_display)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">BOAREA</div>
+                      <div>{toText(areaSummary.boarea_total)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">BIAREA</div>
+                      <div>{toText(areaSummary.biarea_total)}</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Kommentar</div>
+                    <div className="whitespace-pre-wrap">{toText(areaMeasurement.comment)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Övrigt</div>
+                    <div className="whitespace-pre-wrap">{toText(areaMeasurement.other_notes)}</div>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Ort, datum</div>
+                      <div>{toText(areaSigning.place_date)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Besiktningsbolag</div>
+                      <div>{toText(areaSigning.company_name)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Namn och efternamn</div>
+                      <div>{toText(areaSigning.inspector_name)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Behörighet</div>
+                      <div className="whitespace-pre-wrap">
+                        {toText(areaSigning.secondary_qualification)}
+                        {toText(areaSigning.membership_line, '') ? `\n${toText(areaSigning.membership_line, '')}` : ''}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            ) : null}
+            {moistureControlNumber ? (
+              <details className="rounded-md border border-slate-200 p-3">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-900">
+                  Bilaga {moistureControlNumber} - Fuktkontroll av riskkonstruktion
+                </summary>
+                <div className="mt-3 space-y-3 text-sm text-slate-700">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Uppdragsnummer</div>
+                      <div>{toText(moistureObject.assignment_number)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Adress</div>
+                      <div>{toText(moistureObject.address)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Byggnadstyp</div>
+                      <div>{toText(moistureObject.building_type)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Byggår</div>
+                      <div>{toText(moistureObject.building_year)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Uppvärmning</div>
+                      <div>{toText(moistureObject.heating)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Ventilation</div>
+                      <div>{toText(moistureObject.ventilation)}</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Mätinstrument</div>
+                    <div>{toText(moistureMeasurement.instrument)}</div>
+                  </div>
+                  {moistureRows.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                            <th className="py-1 pr-2 font-semibold">Kontrollplats</th>
+                            <th className="py-1 pr-2 font-semibold">Resultat</th>
+                            <th className="py-1 font-semibold">Kritisk nivå</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {moistureRows.map((row, index) => (
+                            <tr key={`moisture-row-${index}`} className="border-b border-slate-100 align-top">
+                              <td className="py-1 pr-2 whitespace-pre-wrap">{toText(row.location_display)}</td>
+                              <td className="py-1 pr-2 whitespace-pre-wrap">{toText(row.result_display)}</td>
+                              <td className="py-1">{toText(row.critical_display)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Kommentar</div>
+                    <div className="whitespace-pre-wrap">{toText(moistureMeasurement.comment)}</div>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Ort, datum</div>
+                      <div>{toText(moistureSigning.place_date)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Besiktningsbolag</div>
+                      <div>{toText(moistureSigning.company_name)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Namn och efternamn</div>
+                      <div>{toText(moistureSigning.inspector_name)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Behörighet</div>
+                      <div className="whitespace-pre-wrap">
+                        {toText(moistureSigning.secondary_qualification)}
+                        {toText(moistureSigning.membership_line, '') ? `\n${toText(moistureSigning.membership_line, '')}` : ''}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            ) : null}
           </div>
         </section>
 

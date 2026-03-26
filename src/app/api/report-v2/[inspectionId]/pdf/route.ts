@@ -46,15 +46,27 @@ type LinkPdfRow = {
   created_at: string
 }
 
+const sanitizeFilenamePart = (value: string | null | undefined) => {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+  return raw.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim()
+}
+
+const buildReportFileName = (assignmentNumber: string | null | undefined) => {
+  const safeAssignment = sanitizeFilenamePart(assignmentNumber)
+  return safeAssignment ? `Utlåtande (${safeAssignment}).pdf` : 'Utlåtande.pdf'
+}
+
 async function createSignedPdfUrl(
   admin: ReturnType<typeof createSupabaseAdminClient>,
   bucket: string,
-  path: string
+  path: string,
+  fileName: string
 ) {
   const { data, error } = await admin.storage
     .from(bucket)
     .createSignedUrl(path, REPORT_PDF_SIGNED_URL_TTL_SECONDS, {
-      download: 'besiktningsutlatande.pdf',
+      download: fileName,
     })
   if (error || !data?.signedUrl) return null
   return data.signedUrl
@@ -75,7 +87,7 @@ export async function GET(
 
     const { data: inspection, error: inspectionError } = await admin
       .from('inspections')
-      .select('id,status')
+      .select('id,status,assignment_number')
       .eq('id', inspectionId)
       .maybeSingle()
 
@@ -88,6 +100,7 @@ export async function GET(
     }
 
     const inspectionStatus = normalizeInspectionStatus(inspection.status)
+    const fileName = buildReportFileName((inspection as { assignment_number?: string | null }).assignment_number)
     if (inspectionStatus !== 'completed') {
       return new NextResponse('PDF kan laddas ner först efter att utlåtandet har skickats.', {
         status: 409,
@@ -120,7 +133,7 @@ export async function GET(
     if (storageReadyRow) {
       const bucket = String(storageReadyRow.pdf_storage_bucket ?? '').trim()
       const path = String(storageReadyRow.pdf_storage_path ?? '').trim()
-      const signedUrl = await createSignedPdfUrl(admin, bucket, path)
+      const signedUrl = await createSignedPdfUrl(admin, bucket, path, fileName)
       if (signedUrl) {
         return NextResponse.redirect(signedUrl, 302)
       }
@@ -132,11 +145,12 @@ export async function GET(
       const storedPdfBase64 = String(legacyReadyRow.pdf_base64 ?? '').trim()
       const storedPdfBuffer = decodeStoredPdf(storedPdfBase64)
       if (storedPdfBuffer) {
+        const encodedFileName = encodeURIComponent(fileName)
         return new NextResponse(new Uint8Array(storedPdfBuffer), {
           status: 200,
           headers: {
             'Content-Type': 'application/pdf',
-            'Content-Disposition': 'attachment; filename="besiktningsutlatande.pdf"',
+            'Content-Disposition': `attachment; filename="${fileName}"; filename*=UTF-8''${encodedFileName}`,
             'Cache-Control': 'private, no-store',
           },
         })

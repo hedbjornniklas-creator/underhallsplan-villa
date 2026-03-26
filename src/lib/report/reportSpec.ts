@@ -1,4 +1,4 @@
-import type { StandardTextId } from '@/content/standardtexts/registry'
+﻿import type { StandardTextId } from '@/content/standardtexts/registry'
 import type { AppendixTextId } from '@/lib/report/loadAppendixText'
 
 export type TextSource =
@@ -148,13 +148,13 @@ export const REPORT_SPEC: ReportSection[] = [
   },
   {
     id: 'toc',
-    title: 'Innehållsförteckning',
+    title: 'InnehÃ¥llsfÃ¶rteckning',
     startOnNewPage: true,
     blocks: [
       {
         type: 'heading',
         level: 1,
-        text: 'INNEHÅLLSFÖRTECKNING',
+        text: 'INNEHÃ…LLSFÃ–RTECKNING',
         marginTopMm: 4.7625,
         marginBottomMm: 4,
         accent: true,
@@ -173,7 +173,7 @@ export const REPORT_SPEC: ReportSection[] = [
         marginBottomMm: 4,
         entries: [
           {
-            label: 'ÖVERLÅTELSEBESIKTNING FÖR SÄLJARE',
+            label: 'Ã–VERLÃ…TELSEBESIKTNING FÃ–R SÃ„LJARE',
             sectionId: 'assignment',
           },
           {
@@ -181,11 +181,11 @@ export const REPORT_SPEC: ReportSection[] = [
             sectionId: 'handlingar',
           },
           {
-            label: 'OKULÄR BESIKTNING',
+            label: 'OKULÃ„R BESIKTNING',
             sectionId: 'okular',
           },
           {
-            label: 'BILAGA 1: Villkor för överlåtelsebesiktning för säljare',
+            label: 'BILAGA 1: Villkor fÃ¶r Ã¶verlÃ¥telsebesiktning fÃ¶r sÃ¤ljare',
             sectionId: 'appendix-1',
           },
           {
@@ -193,7 +193,7 @@ export const REPORT_SPEC: ReportSection[] = [
             sectionId: 'appendix-2',
           },
           {
-            label: 'BILAGA 3: Tekniska medellivslängder',
+            label: 'BILAGA 3: Tekniska medellivslÃ¤ngder',
             sectionId: 'appendix-3',
           },
         ],
@@ -202,13 +202,13 @@ export const REPORT_SPEC: ReportSection[] = [
   },
   {
     id: 'assignment',
-    title: 'Övergripande uppdrag',
+    title: 'Ã–vergripande uppdrag',
     startOnNewPage: true,
     blocks: [
       {
         type: 'heading',
         level: 2,
-        text: 'ÖVERLÅTELSEBESIKTNING FÖR SÄLJARE',
+        text: 'Ã–VERLÃ…TELSEBESIKTNING FÃ–R SÃ„LJARE',
         marginTopMm: 4.7625,
         marginBottomMm: 4,
         accent: true,
@@ -250,7 +250,7 @@ export const REPORT_SPEC: ReportSection[] = [
             value: { kind: 'mock', path: 'mock.properties.municipality' },
           },
           {
-            label: 'Fastighetsägare:',
+            label: 'FastighetsÃ¤gare:',
             value: { kind: 'mock', path: 'mock.properties.owner_name' },
           },
         ],
@@ -320,7 +320,7 @@ export const REPORT_SPEC: ReportSection[] = [
         source: {
           kind: 'static',
           text:
-            'Besiktningsmannen är medlem i Svenska Byggingenjörers Riksförbund (SBR) och är registrerad i SBR:s förteckning över besiktningsmän med därtill hörande förpliktelser.',
+            'Besiktningsmannen Ã¤r medlem i Svenska ByggingenjÃ¶rers RiksfÃ¶rbund (SBR) och Ã¤r registrerad i SBR:s fÃ¶rteckning Ã¶ver besiktningsmÃ¤n med dÃ¤rtill hÃ¶rande fÃ¶rpliktelser.',
         },
         marginTopMm: 2,
         marginBottomMm: 4,
@@ -348,7 +348,7 @@ export const REPORT_SPEC: ReportSection[] = [
             value: { kind: 'mock', path: 'mock.inspections.date_time' },
           },
           {
-            label: 'Närvarande:',
+            label: 'NÃ¤rvarande:',
             value: { kind: 'mock', path: 'mock.inspections.attendees_text' },
           },
         ],
@@ -385,13 +385,13 @@ export const REPORT_SPEC: ReportSection[] = [
       {
         type: 'handlingarLayout',
         labels: {
-          provided: 'Tillhandahållna handlingar:',
-          info: 'Information från uppdragsgivare, fastighetsägare, eller dess ombud:',
+          provided: 'TillhandahÃ¥llna handlingar:',
+          info: 'Information frÃ¥n uppdragsgivare, fastighetsÃ¤gare, eller dess ombud:',
           faults: 'Upplysningar om fel i fastigheten:',
         },
         infoDisclaimer:
-          'Under denna rubrik är samtliga uppgifter lämnade av fastighetsägare eller dess ombud. Uppgifterna är inte kontrollerade av besiktningsmannen.',
-        renovationsLabel: 'Följande renoveringar och underhåll är utförda;',
+          'Under denna rubrik Ã¤r samtliga uppgifter lÃ¤mnade av fastighetsÃ¤gare eller dess ombud. Uppgifterna Ã¤r inte kontrollerade av besiktningsmannen.',
+        renovationsLabel: 'FÃ¶ljande renoveringar och underhÃ¥ll Ã¤r utfÃ¶rda;',
         emptyPlaceholder: '--',
         labelWidthMm: 37,
         rowGapMm: 8,
@@ -402,13 +402,13 @@ export const REPORT_SPEC: ReportSection[] = [
   },
   {
     id: 'okular',
-    title: 'Okulär besiktning',
+    title: 'OkulÃ¤r besiktning',
     startOnNewPage: true,
     blocks: [
       {
         type: 'heading',
         level: 2,
-        text: 'OKULÄR BESIKTNING',
+        text: 'OKULÃ„R BESIKTNING',
         marginTopMm: 0,
         marginBottomMm: 3,
         accent: true,
@@ -429,7 +429,7 @@ export const REPORT_SPEC: ReportSection[] = [
         marginBottomMm: 2,
         rows: [
           {
-            label: 'Särskilda förutsättningar vid besiktningen:',
+            label: 'SÃ¤rskilda fÃ¶rutsÃ¤ttningar vid besiktningen:',
             value: { kind: 'standardText', id: 'STD_VISUAL_INSPECTION_CONDITIONS' },
           },
           {
@@ -535,7 +535,7 @@ export const REPORT_SPEC: ReportSection[] = [
   },
   {
     id: 'appendix-1',
-    title: 'BILAGA 1: Villkor för överlåtelsebesiktning för säljare.',
+    title: 'BILAGA 1: Villkor fÃ¶r Ã¶verlÃ¥telsebesiktning fÃ¶r sÃ¤ljare.',
     startOnNewPage: true,
     type: 'appendix',
     appendixId: 'APPENDIX_1_VILLKOR_SELLER_SBR',
@@ -543,7 +543,7 @@ export const REPORT_SPEC: ReportSection[] = [
   },
   {
     id: 'appendix-2',
-    title: 'Bilaga 2 – Begreppsförklaringar',
+    title: 'Bilaga 2 â€“ BegreppsfÃ¶rklaringar',
     startOnNewPage: true,
     type: 'appendix',
     appendixId: 'APPENDIX_2_LITEN_BYGGORDBOK_SBR',
@@ -551,7 +551,7 @@ export const REPORT_SPEC: ReportSection[] = [
   },
   {
     id: 'appendix-3',
-    title: 'BILAGA 3: TEKNISKA MEDELLIVSLÄNGDER',
+    title: 'BILAGA 3: TEKNISKA MEDELLIVSLÃ„NGDER',
     startOnNewPage: true,
     type: 'appendix',
     appendixId: 'APPENDIX_3_LIFESPAN_TABLE_SBR',
@@ -756,7 +756,7 @@ export function buildReportSpec(params?: {
 
     if (includeAreaMeasurement) {
       const sectionId = `appendix-${appendixNo}-area-measurement`
-      const title = `Bilaga ${appendixNo}: Areamätning av boarea`
+      const title = `Bilaga ${appendixNo}: Aream\u00e4tning av boarea`
       dynamicSections.push({
         id: sectionId,
         title,
@@ -766,60 +766,43 @@ export function buildReportSpec(params?: {
           {
             type: 'heading',
             level: 2,
-            text: `BILAGA ${appendixNo}: UPPMÄTNING AV BOAREA`,
+            text: `BILAGA ${appendixNo}: UPPM\u00c4TNING AV BOAREA`,
             marginTopMm: 0,
-            marginBottomMm: 2,
+            marginBottomMm: 1.2,
             accent: true,
-            fontSizePt: 16,
+            fontSizePt: 14,
           },
           {
             type: 'image',
             label: '',
             widthMm: 0,
-            heightMm: 1.5,
+            heightMm: 1.2,
             marginTopMm: 0,
-            marginBottomMm: 3,
-          },
-          {
-            type: 'heading',
-            level: 3,
-            text: 'Uppmätning av boarea',
-            marginTopMm: 0,
-            marginBottomMm: 2,
-            fontSizePt: 12,
-          },
-          {
-            type: 'text',
-            source: {
-              kind: 'static',
-              text: 'Tilläggsuppdrag i samband med överlåtelsebesiktning.',
-            },
-            marginTopMm: 0,
-            marginBottomMm: 1,
+            marginBottomMm: 1.5,
           },
           {
             type: 'text',
             source: {
               kind: 'static',
               text:
-                'Villkoren för överlåtelsebesiktningen med vederbörliga villkor tillämpas även för detta tilläggsuppdrag och detta utlåtande, inklusive det som anges under rubrikerna "besiktningsmannens ansvar" och "äganderätt och nyttjanderätt till besiktningsutlåtandet".',
+                'Till\u00e4ggsuppdrag i samband med \u00f6verl\u00e5telsebesiktning. Villkoren f\u00f6r \u00f6verl\u00e5telsebesiktningen g\u00e4ller \u00e4ven denna bilaga.',
             },
             marginTopMm: 0,
-            marginBottomMm: 3,
+            marginBottomMm: 1.2,
           },
           {
             type: 'heading',
             level: 3,
             text: 'Objekt',
-            marginTopMm: 0,
-            marginBottomMm: 2,
-            fontSizePt: 12,
+            marginTopMm: 0.3,
+            marginBottomMm: 1.2,
+            fontSizePt: 11,
           },
           {
             type: 'twoColumn',
             marginTopMm: 0,
-            marginBottomMm: 3,
-            labelWidthMm: 55,
+            marginBottomMm: 1.6,
+            labelWidthMm: 52,
             rows: [
               {
                 label: 'Uppdragsnummer:',
@@ -834,11 +817,11 @@ export function buildReportSpec(params?: {
                 value: { kind: 'mock', path: 'mock.appendices.area_measurement.object.building_type' },
               },
               {
-                label: 'Byggår:',
+                label: 'Bygg\u00e5r:',
                 value: { kind: 'mock', path: 'mock.appendices.area_measurement.object.building_year' },
               },
               {
-                label: 'Övrigt:',
+                label: '\u00d6vrigt:',
                 value: { kind: 'mock', path: 'mock.appendices.area_measurement.object.object_other' },
               },
             ],
@@ -846,24 +829,24 @@ export function buildReportSpec(params?: {
           {
             type: 'heading',
             level: 3,
-            text: 'Mätning',
-            marginTopMm: 1,
-            marginBottomMm: 2,
-            fontSizePt: 12,
+            text: 'M\u00e4tning',
+            marginTopMm: 0.3,
+            marginBottomMm: 1,
+            fontSizePt: 11,
           },
           {
             type: 'text',
             marginTopMm: 0,
-            marginBottomMm: 1,
+            marginBottomMm: 0.6,
             source: {
               kind: 'static',
-              text: 'Mått är tagna på plats med instrument (märke och modell):',
+              text: 'M\u00e5tt \u00e4r tagna p\u00e5 plats med instrument (m\u00e4rke och modell):',
             },
           },
           {
             type: 'text',
             marginTopMm: 0,
-            marginBottomMm: 1,
+            marginBottomMm: 0.6,
             source: {
               kind: 'mock',
               path: 'mock.appendices.area_measurement.measurement.instrument',
@@ -872,45 +855,45 @@ export function buildReportSpec(params?: {
           {
             type: 'text',
             marginTopMm: 0,
-            marginBottomMm: 2,
+            marginBottomMm: 1.2,
             source: {
               kind: 'static',
-              text: 'Uppmätning enligt SVENSK STANDARD SS 21054:2020',
+              text: 'Uppm\u00e4tning enligt Svensk Standard SS 21054:2020.',
             },
           },
           {
             type: 'heading',
             level: 3,
             text: 'Resultat',
-            marginTopMm: 0,
-            marginBottomMm: 1,
-            fontSizePt: 12,
+            marginTopMm: 0.3,
+            marginBottomMm: 0.8,
+            fontSizePt: 11,
           },
           {
             type: 'table',
             rowsPath: 'mock.appendices.area_measurement.rows',
-            emptyPlaceholder: 'Inga mätpunkter registrerade',
+            emptyPlaceholder: 'Inga m\u00e4tpunkter registrerade',
             columns: [
-              { header: 'Våning/byggdel', key: 'floor_or_part', widthPercent: 46 },
+              { header: 'V\u00e5ning/byggdel', key: 'floor_or_part', widthPercent: 46 },
               { header: 'Boarea', key: 'boarea_display', align: 'right', widthPercent: 27 },
               { header: 'Biarea', key: 'biarea_display', align: 'right', widthPercent: 27 },
             ],
             marginTopMm: 0,
-            marginBottomMm: 3,
+            marginBottomMm: 1.2,
           },
           {
             type: 'heading',
             level: 3,
             text: 'Sammanfattning',
-            marginTopMm: 1,
-            marginBottomMm: 2,
-            fontSizePt: 12,
+            marginTopMm: 0.3,
+            marginBottomMm: 0.9,
+            fontSizePt: 11,
           },
           {
             type: 'twoColumn',
             marginTopMm: 0,
-            marginBottomMm: 2,
-            labelWidthMm: 55,
+            marginBottomMm: 1.2,
+            labelWidthMm: 52,
             rows: [
               {
                 label: 'Byggnaden har en BOAREA om:',
@@ -926,43 +909,43 @@ export function buildReportSpec(params?: {
             type: 'heading',
             level: 3,
             text: 'Kommentar',
-            marginTopMm: 1,
-            marginBottomMm: 2,
-            fontSizePt: 12,
+            marginTopMm: 0.3,
+            marginBottomMm: 0.8,
+            fontSizePt: 11,
           },
           {
             type: 'text',
             source: { kind: 'mock', path: 'mock.appendices.area_measurement.measurement.comment' },
             marginTopMm: 0,
-            marginBottomMm: 3,
+            marginBottomMm: 1.2,
           },
           {
             type: 'heading',
             level: 3,
-            text: 'Övrigt',
-            marginTopMm: 0,
-            marginBottomMm: 1,
-            fontSizePt: 12,
+            text: '\u00d6vrigt',
+            marginTopMm: 0.3,
+            marginBottomMm: 0.8,
+            fontSizePt: 11,
           },
           {
             type: 'text',
             source: { kind: 'mock', path: 'mock.appendices.area_measurement.measurement.other_notes' },
             marginTopMm: 0,
-            marginBottomMm: 3,
+            marginBottomMm: 1.2,
           },
           {
             type: 'heading',
             level: 3,
             text: 'Signering',
-            marginTopMm: 0,
-            marginBottomMm: 1,
-            fontSizePt: 12,
+            marginTopMm: 0.3,
+            marginBottomMm: 0.8,
+            fontSizePt: 11,
           },
           {
             type: 'twoColumn',
             marginTopMm: 0,
-            marginBottomMm: 2,
-            labelWidthMm: 55,
+            marginBottomMm: 0.8,
+            labelWidthMm: 52,
             rows: [
               {
                 label: 'Ort, datum:',
@@ -977,11 +960,12 @@ export function buildReportSpec(params?: {
                 value: { kind: 'mock', path: 'mock.appendices.area_measurement.signing.inspector_name' },
               },
               {
-                label: 'Behörighet:',
+                label: 'Beh\u00f6righet:',
                 value: [
                   {
                     kind: 'static',
-                    text: 'Av SBR Diplomerad Areamätare (FÖR DIG SOM GÅTT SBRs kurs inom Areamätning)',
+                    text:
+                      'Av SBR Diplomerad Aream\u00e4tare (F\u00d6R DIG SOM G\u00c5TT SBR:s kurs inom aream\u00e4tning)',
                   },
                   { kind: 'mock', path: 'mock.appendices.area_measurement.signing.secondary_qualification' },
                   { kind: 'mock', path: 'mock.appendices.area_measurement.signing.membership_line' },
@@ -992,7 +976,7 @@ export function buildReportSpec(params?: {
         ],
       })
       dynamicTocEntries.push({
-        label: `BILAGA ${appendixNo}: Areamätning av boarea`,
+        label: `BILAGA ${appendixNo}: Aream\u00e4tning av boarea`,
         sectionId,
       })
       appendixNo += 1
@@ -1012,58 +996,41 @@ export function buildReportSpec(params?: {
             level: 2,
             text: `BILAGA ${appendixNo}: FUKTKONTROLL`,
             marginTopMm: 0,
-            marginBottomMm: 2,
+            marginBottomMm: 1.2,
             accent: true,
-            fontSizePt: 16,
+            fontSizePt: 14,
           },
           {
             type: 'image',
             label: '',
             widthMm: 0,
-            heightMm: 1.5,
+            heightMm: 1.2,
             marginTopMm: 0,
-            marginBottomMm: 3,
-          },
-          {
-            type: 'heading',
-            level: 3,
-            text: 'Fuktkontroll av riskkonstruktion',
-            marginTopMm: 0,
-            marginBottomMm: 2,
-            fontSizePt: 12,
-          },
-          {
-            type: 'text',
-            source: {
-              kind: 'static',
-              text: 'Tilläggsuppdrag i samband med överlåtelsebesiktning.',
-            },
-            marginTopMm: 0,
-            marginBottomMm: 1,
+            marginBottomMm: 1.5,
           },
           {
             type: 'text',
             source: {
               kind: 'static',
               text:
-                'Villkoren för överlåtelsebesiktningen med vederbörliga villkor tillämpas även för detta tilläggsuppdrag och detta utlåtande, inklusive det som anges under rubrikerna "besiktningsmannens ansvar" och "äganderätt och nyttjanderätt till besiktningsutlåtandet".',
+                'Till\u00e4ggsuppdrag i samband med \u00f6verl\u00e5telsebesiktning. Villkoren f\u00f6r \u00f6verl\u00e5telsebesiktningen g\u00e4ller \u00e4ven denna bilaga.',
             },
             marginTopMm: 0,
-            marginBottomMm: 3,
+            marginBottomMm: 1.2,
           },
           {
             type: 'heading',
             level: 3,
             text: 'Objekt',
-            marginTopMm: 0,
-            marginBottomMm: 2,
-            fontSizePt: 12,
+            marginTopMm: 0.3,
+            marginBottomMm: 1,
+            fontSizePt: 11,
           },
           {
             type: 'twoColumn',
             marginTopMm: 0,
-            marginBottomMm: 3,
-            labelWidthMm: 55,
+            marginBottomMm: 1.2,
+            labelWidthMm: 52,
             rows: [
               {
                 label: 'Uppdragsnummer:',
@@ -1078,7 +1045,7 @@ export function buildReportSpec(params?: {
                 value: { kind: 'mock', path: 'mock.appendices.moisture_control.object.building_type' },
               },
               {
-                label: 'Byggår:',
+                label: 'Bygg\u00e5r:',
                 value: { kind: 'mock', path: 'mock.appendices.moisture_control.object.building_year' },
               },
               {
@@ -1086,7 +1053,7 @@ export function buildReportSpec(params?: {
                 value: { kind: 'mock', path: 'mock.appendices.moisture_control.object.extension_note' },
               },
               {
-                label: 'Uppvärmning:',
+                label: 'Uppv\u00e4rmning:',
                 value: { kind: 'mock', path: 'mock.appendices.moisture_control.object.heating' },
               },
               {
@@ -1094,7 +1061,7 @@ export function buildReportSpec(params?: {
                 value: { kind: 'mock', path: 'mock.appendices.moisture_control.object.ventilation' },
               },
               {
-                label: 'Övrigt:',
+                label: '\u00d6vrigt:',
                 value: { kind: 'mock', path: 'mock.appendices.moisture_control.object.object_other' },
               },
             ],
@@ -1102,24 +1069,24 @@ export function buildReportSpec(params?: {
           {
             type: 'heading',
             level: 3,
-            text: 'Mätning',
-            marginTopMm: 1,
-            marginBottomMm: 2,
-            fontSizePt: 12,
+            text: 'M\u00e4tning',
+            marginTopMm: 0.3,
+            marginBottomMm: 0.8,
+            fontSizePt: 11,
           },
           {
             type: 'text',
             marginTopMm: 0,
-            marginBottomMm: 1,
+            marginBottomMm: 0.6,
             source: {
               kind: 'static',
-              text: 'Fuktmätning utförs med instrument (märke och modell):',
+              text: 'Fuktm\u00e4tning utf\u00f6rs med instrument (m\u00e4rke och modell):',
             },
           },
           {
             type: 'text',
             marginTopMm: 0,
-            marginBottomMm: 2,
+            marginBottomMm: 1,
             source: {
               kind: 'mock',
               path: 'mock.appendices.moisture_control.measurement.instrument',
@@ -1129,9 +1096,9 @@ export function buildReportSpec(params?: {
             type: 'heading',
             level: 3,
             text: 'Resultat',
-            marginTopMm: 0,
-            marginBottomMm: 1,
-            fontSizePt: 12,
+            marginTopMm: 0.3,
+            marginBottomMm: 0.8,
+            fontSizePt: 11,
           },
           {
             type: 'table',
@@ -1140,74 +1107,47 @@ export function buildReportSpec(params?: {
             columns: [
               { header: 'Kontrollplats', key: 'location_display', widthPercent: 32 },
               { header: 'Resultat', key: 'result_display', widthPercent: 48 },
-              { header: 'Kritisk nivå', key: 'critical_display', align: 'right', widthPercent: 20 },
+              { header: 'Kritisk niv\u00e5', key: 'critical_display', align: 'right', widthPercent: 20 },
             ],
             marginTopMm: 0,
-            marginBottomMm: 3,
+            marginBottomMm: 1.2,
           },
           {
             type: 'heading',
             level: 3,
             text: 'Kommentar',
-            marginTopMm: 1,
-            marginBottomMm: 2,
-            fontSizePt: 12,
+            marginTopMm: 0.3,
+            marginBottomMm: 0.8,
+            fontSizePt: 11,
           },
           {
             type: 'text',
             source: { kind: 'mock', path: 'mock.appendices.moisture_control.measurement.comment' },
             marginTopMm: 0,
-            marginBottomMm: 3,
-          },
-          {
-            type: 'heading',
-            level: 3,
-            text: 'Kritiska värden',
-            marginTopMm: 1,
-            marginBottomMm: 2,
-            fontSizePt: 12,
+            marginBottomMm: 1,
           },
           {
             type: 'text',
             source: {
               kind: 'static',
-              text:
-                'Kritiskt värde gällande relativ fuktighet (RF) ligger vid 75 %. Kritiskt värde gällande fuktkvot (FK) ligger vid 17 %.',
+              text: 'Kritiska v\u00e4rden: RF 75 % och FK 17 %.',
             },
             marginTopMm: 0,
-            marginBottomMm: 2,
-          },
-          {
-            type: 'heading',
-            level: 3,
-            text: 'Övrigt',
-            marginTopMm: 1,
-            marginBottomMm: 2,
-            fontSizePt: 12,
-          },
-          {
-            type: 'text',
-            source: {
-              kind: 'static',
-              text:
-                'Relativ fuktighet (RF) indikerar i procent hur mycket vattenånga som finns i luften i relation till hur mycket som maximalt kan finnas vid en viss temperatur. Fuktkvot (FK) indikerar i procent hur mycket vatten som finns i materialet i relation till vikten av torrt material.',
-            },
-            marginTopMm: 0,
-            marginBottomMm: 3,
+            marginBottomMm: 1.1,
           },
           {
             type: 'heading',
             level: 3,
             text: 'Signering',
-            marginTopMm: 0,
-            marginBottomMm: 1,
-            fontSizePt: 12,
+            marginTopMm: 0.3,
+            marginBottomMm: 0.8,
+            fontSizePt: 11,
           },
           {
             type: 'twoColumn',
             marginTopMm: 0,
-            marginBottomMm: 2,
-            labelWidthMm: 55,
+            marginBottomMm: 0.8,
+            labelWidthMm: 52,
             rows: [
               {
                 label: 'Ort, datum:',
@@ -1222,11 +1162,12 @@ export function buildReportSpec(params?: {
                 value: { kind: 'mock', path: 'mock.appendices.moisture_control.signing.inspector_name' },
               },
               {
-                label: 'Behörighet:',
+                label: 'Beh\u00f6righet:',
                 value: [
                   {
                     kind: 'static',
-                    text: 'Av SBR Diplomerad fuktkontrollant (FÖR DIG SOM GÅTT SBRs kurs inom fuktmätning)',
+                    text:
+                      'Av SBR Diplomerad fuktkontrollant (F\u00d6R DIG SOM G\u00c5TT SBR:s kurs inom fuktm\u00e4tning)',
                   },
                   { kind: 'mock', path: 'mock.appendices.moisture_control.signing.secondary_qualification' },
                   { kind: 'mock', path: 'mock.appendices.moisture_control.signing.membership_line' },
@@ -1242,7 +1183,6 @@ export function buildReportSpec(params?: {
       })
       appendixNo += 1
     }
-
     if (dynamicSections.length > 0) {
       if (appendix3Index >= 0) {
         spec.splice(appendix3Index + 1, 0, ...dynamicSections)
@@ -1263,4 +1203,5 @@ export function buildReportSpec(params?: {
 
   return spec
 }
+
 

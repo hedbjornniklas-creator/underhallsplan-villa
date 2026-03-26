@@ -23,6 +23,31 @@ function normalizePdfStatus(value: unknown): 'pending' | 'processing' | 'ready' 
   return 'pending'
 }
 
+const sanitizeFilenamePart = (value: string | null | undefined) => {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+  return raw.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim()
+}
+
+const buildReportFileName = (assignmentNumber: string | null | undefined) => {
+  const safeAssignment = sanitizeFilenamePart(assignmentNumber)
+  return safeAssignment ? `Utlåtande (${safeAssignment}).pdf` : 'Utlåtande.pdf'
+}
+
+function extractAssignmentNumberFromSnapshot(snapshotPayload: unknown): string | null {
+  if (!snapshotPayload || typeof snapshotPayload !== 'object') return null
+  const snapshot = snapshotPayload as Record<string, unknown>
+  const reportData = snapshot.reportData
+  if (!reportData || typeof reportData !== 'object') return null
+  const mock = (reportData as Record<string, unknown>).mock
+  if (!mock || typeof mock !== 'object') return null
+  const inspections = (mock as Record<string, unknown>).inspections
+  if (!inspections || typeof inspections !== 'object') return null
+  const assignmentNumber = (inspections as Record<string, unknown>).assignment_number
+  const normalized = String(assignmentNumber ?? '').trim()
+  return normalized || null
+}
+
 function decodeBase64(base64: string, linkId: string): Buffer {
   let pdfBuffer: Buffer
   try {
@@ -96,7 +121,9 @@ export async function GET(
 
     const { data, error } = await admin
       .from('inspection_report_links')
-      .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,pdf_error,revoked_at,delivery_mode')
+      .select(
+        'id,inspection_id,snapshot_payload,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,pdf_error,revoked_at,delivery_mode'
+      )
       .eq('token_hash', tokenHash)
       .maybeSingle()
 
@@ -110,7 +137,19 @@ export async function GET(
     }
 
     const asAttachment = new URL(request.url).searchParams.get('download') === '1'
-    const fileName = 'besiktningsutlatande.pdf'
+    let assignmentNumber = extractAssignmentNumberFromSnapshot(
+      (data as Record<string, unknown>).snapshot_payload
+    )
+    const inspectionId = String((data as Record<string, unknown>).inspection_id ?? '').trim()
+    if (!assignmentNumber && inspectionId) {
+      const { data: inspection } = await admin
+        .from('inspections')
+        .select('assignment_number')
+        .eq('id', inspectionId)
+        .maybeSingle()
+      assignmentNumber = String((inspection as { assignment_number?: string | null } | null)?.assignment_number ?? '').trim() || null
+    }
+    const fileName = buildReportFileName(assignmentNumber)
     const pdfBase64 = String(data.pdf_base64 ?? '').trim()
     const pdfStorageBucket = String((data as Record<string, unknown>).pdf_storage_bucket ?? '').trim()
     const pdfStoragePath = String((data as Record<string, unknown>).pdf_storage_path ?? '').trim()
