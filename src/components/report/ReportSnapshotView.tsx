@@ -284,11 +284,14 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
         {showHeader ? (
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-[auto_1fr_auto] md:items-center">
-              <img
-                src={hushubLogoSrc}
-                alt="Hushub-logotyp"
-                className="h-10 w-auto justify-self-start object-contain"
-              />
+              <div className="flex items-center gap-2 justify-self-start">
+                <img
+                  src={hushubLogoSrc}
+                  alt="HusHub-logotyp"
+                  className="h-10 w-auto object-contain"
+                />
+                <span className="text-2xl font-semibold tracking-tight text-slate-900">HusHub</span>
+              </div>
               <div className="flex flex-wrap items-center justify-center gap-3">
                 {companyLogoUrl ? (
                   <img

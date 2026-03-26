@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import AppendixPage from '@/components/report/AppendixPage'
@@ -362,10 +362,9 @@ function parseBuildingDataLines(content: string) {
     .filter((row): row is { label: string; value: string } => Boolean(row))
 }
 
-const appendxBreakHeadings = [
+const appendixBreakHeadings = [
   'Besiktningsmannens ansvar',
-  'Ã„ganderÃ¤tt och nyttjanderÃ¤tt till besiktningsutlÃ¥tandet',
-  'Ãƒâ€žganderÃƒÂ¤tt och nyttjanderÃƒÂ¤tt till besiktningsutlÃƒÂ¥tandet',
+  'Äganderätt och nyttjanderätt till besiktningsutlåtandet',
 ]
 
 const normalizeAppendixLines = (lines: string[]) => {
@@ -390,7 +389,7 @@ const splitAppendixText = (rawText: string) => {
     const trimmed = line.trim()
     if (
       trimmed.length > 0 &&
-      appendxBreakHeadings.some((heading) => trimmed.startsWith(heading)) &&
+      appendixBreakHeadings.some((heading) => trimmed.startsWith(heading)) &&
       segments[segments.length - 1].length > 0
     ) {
       segments.push([line])
@@ -808,64 +807,93 @@ export default function ReportRendererClient({
       headerHeight -
       mmToPxNumber(safetyMm)
 
-    const pages: PagePlan[] = []
     const sectionPageMap = new Map<string, number>()
     const coverCount = coverSection ? 1 : 0
-
-    let currentEntries: Entry[] = []
-    let currentHeight = 0
 
     const hasMeaningfulEntry = (entries: Entry[]) =>
       entries.some((entry) => entry.kind === 'block')
 
-    const pushPage = () => {
-      if (currentEntries.length === 0) return
-      if (!hasMeaningfulEntry(currentEntries)) {
-        currentEntries = []
-        currentHeight = 0
-        return
-      }
-      pages.push({
-        kind: 'sections',
-        entries: currentEntries,
-        pageNumber: coverCount + pages.length + 1,
-      })
-      currentEntries = []
-      currentHeight = 0
-    }
-
+    const heightByEntryId = new Map<string, number>()
     contentEntries.forEach((entry, index) => {
-      const height = entry.kind === 'spacer' ? entry.heightPx : heights[index] ?? 0
-
-      if (entry.kind === 'block' && entry.sectionStartOnNewPage && currentEntries.length > 0) {
-        pushPage()
-      }
-
-      if (entry.kind === 'spacer' && currentEntries.length === 0) {
-        return
-      }
-
-      if (currentHeight + height > availableHeight && currentEntries.length > 0) {
-        if (entry.kind === 'spacer') {
-          pushPage()
-          return
-        }
-        pushPage()
-      }
-
-      if (entry.kind === 'spacer' && currentEntries.length === 0) {
-        return
-      }
-
-      currentEntries.push(entry)
-      currentHeight += height
-
-      if (entry.kind === 'block' && !sectionPageMap.has(entry.sectionId)) {
-        sectionPageMap.set(entry.sectionId, coverCount + pages.length + 1)
-      }
+      heightByEntryId.set(
+        entry.id,
+        entry.kind === 'spacer' ? entry.heightPx : heights[index] ?? 0
+      )
     })
 
-    pushPage()
+    const paginateSectionEntries = (
+      entriesSubset: Entry[],
+      startPageNumber: number
+    ): PagePlan[] => {
+      const subsetPages: PagePlan[] = []
+      let currentEntries: Entry[] = []
+      let currentHeight = 0
+
+      const pushSubsetPage = () => {
+        if (currentEntries.length === 0) return
+        if (!hasMeaningfulEntry(currentEntries)) {
+          currentEntries = []
+          currentHeight = 0
+          return
+        }
+        subsetPages.push({
+          kind: 'sections',
+          entries: currentEntries,
+          pageNumber: startPageNumber + subsetPages.length,
+        })
+        currentEntries = []
+        currentHeight = 0
+      }
+
+      entriesSubset.forEach((entry) => {
+        const height = heightByEntryId.get(entry.id) ?? 0
+
+        if (entry.kind === 'block' && entry.sectionStartOnNewPage && currentEntries.length > 0) {
+          pushSubsetPage()
+        }
+
+        if (entry.kind === 'spacer' && currentEntries.length === 0) {
+          return
+        }
+
+        if (currentHeight + height > availableHeight && currentEntries.length > 0) {
+          if (entry.kind === 'spacer') {
+            pushSubsetPage()
+            return
+          }
+          pushSubsetPage()
+        }
+
+        if (entry.kind === 'spacer' && currentEntries.length === 0) {
+          return
+        }
+
+        currentEntries.push(entry)
+        currentHeight += height
+
+        if (entry.kind === 'block' && !sectionPageMap.has(entry.sectionId)) {
+          sectionPageMap.set(entry.sectionId, startPageNumber + subsetPages.length)
+        }
+      })
+
+      pushSubsetPage()
+      return subsetPages
+    }
+
+    const firstPostAppendixEntryIndex = contentEntries.findIndex(
+      (entry) => entry.kind === 'block' && entry.sectionId.startsWith('appendix-')
+    )
+
+    const mainSectionEntries =
+      firstPostAppendixEntryIndex >= 0
+        ? contentEntries.slice(0, firstPostAppendixEntryIndex)
+        : contentEntries
+    const postAppendixEntries =
+      firstPostAppendixEntryIndex >= 0
+        ? contentEntries.slice(firstPostAppendixEntryIndex)
+        : []
+
+    const pages = paginateSectionEntries(mainSectionEntries, coverCount + 1)
 
     const appendixPages: PagePlan[] = []
     appendices.forEach((appendix, index) => {
@@ -882,6 +910,11 @@ export default function ReportRendererClient({
       }
     })
 
+    const postAppendixPages = paginateSectionEntries(
+      postAppendixEntries,
+      coverCount + pages.length + appendixPages.length + 1
+    )
+
     const coverPages: PagePlan[] = coverSection
       ? [
           {
@@ -893,7 +926,7 @@ export default function ReportRendererClient({
       : []
 
     setPagePlan({
-      pages: [...coverPages, ...pages, ...appendixPages],
+      pages: [...coverPages, ...pages, ...appendixPages, ...postAppendixPages],
       sectionPageMap,
     })
   }, [appendices, contentEntries, coverSection, mockData, isPdfMode])
@@ -1173,7 +1206,7 @@ export default function ReportRendererClient({
                 }}
               >
                 <span>{entry.label}</span>
-                <span>{pageNumber ?? 'â€“'}</span>
+                <span>{pageNumber ?? '–'}</span>
               </div>
             )
           })}
@@ -1340,6 +1373,109 @@ export default function ReportRendererClient({
       )
     }
 
+    if (block.type === 'table') {
+      const rows = getMockArray<Record<string, unknown>>(mockData, block.rowsPath)
+      const configuredWidth = block.columns.reduce(
+        (sum, column) => sum + (column.widthPercent ?? 0),
+        0
+      )
+      const unspecifiedCount = block.columns.filter(
+        (column) => column.widthPercent === undefined
+      ).length
+      const fallbackWidth =
+        unspecifiedCount > 0
+          ? Math.max(0, 100 - configuredWidth) / unspecifiedCount
+          : 0
+
+      const formatCellValue = (value: unknown) => {
+        if (value === null || value === undefined) return '--'
+        const text = String(value).trim()
+        return text.length > 0 ? text : '--'
+      }
+
+      return (
+        <div
+          key={`${sectionId}-table-${index}`}
+          style={blockMargins(block)}
+        >
+          <table
+            style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              tableLayout: 'fixed',
+              fontSize: REPORT_STYLES.BODY.fontSize,
+              color: REPORT_STYLES.BODY.color,
+            }}
+          >
+            <thead>
+              <tr>
+                {block.columns.map((column, columnIndex) => (
+                  <th
+                    key={`${sectionId}-table-head-${index}-${columnIndex}`}
+                    style={{
+                      textAlign: column.align ?? 'left',
+                      fontWeight: 700,
+                      borderBottom: '1px solid #334155',
+                      padding: `${mmToPx(1)}px ${mmToPx(1.5)}px`,
+                      width: `${column.widthPercent ?? fallbackWidth}%`,
+                    }}
+                  >
+                    {column.header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length > 0 ? (
+                rows.map((row, rowIndex) => (
+                  <tr key={`${sectionId}-table-row-${index}-${rowIndex}`}>
+                    {block.columns.map((column, columnIndex) => {
+                      const text = formatCellValue(row[column.key])
+                      return (
+                        <td
+                          key={`${sectionId}-table-cell-${index}-${rowIndex}-${columnIndex}`}
+                          style={{
+                            textAlign: column.align ?? 'left',
+                            verticalAlign: 'top',
+                            borderBottom: '1px solid #cbd5e1',
+                            padding: `${mmToPx(1)}px ${mmToPx(1.5)}px`,
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        >
+                          {text
+                            .split(/\r?\n/)
+                            .map((line, lineIndex) => (
+                              <div
+                                key={`${sectionId}-table-line-${index}-${rowIndex}-${columnIndex}-${lineIndex}`}
+                              >
+                                {line || '\u00A0'}
+                              </div>
+                            ))}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={block.columns.length}
+                    style={{
+                      textAlign: 'left',
+                      padding: `${mmToPx(1.5)}px`,
+                      color: '#475569',
+                    }}
+                  >
+                    {block.emptyPlaceholder ?? '--'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+
     if (block.type === 'handlingarLayout') {
       const labelWidth = block.labelWidthMm ?? 55
       const rowGap = block.rowGapMm ?? 6
@@ -1450,7 +1586,7 @@ export default function ReportRendererClient({
         block.source.kind === 'static' &&
         block.source.text.includes('Byggnaden var')
       const boldHeadings = new Set([
-        'SÃ¤rskilda fÃ¶rutsÃ¤ttningar vid besiktningen:',
+        'Särskilda förutsättningar vid besiktningen:',
         'Muntliga uppgifter:',
       ])
       if (isBuildingData) {
@@ -1506,9 +1642,9 @@ export default function ReportRendererClient({
               if (
                 furnishingText &&
                 line.includes('Byggnaden var') &&
-                line.includes('vid besiktningstillfÃ¤llet')
+                line.includes('vid besiktningstillfället')
               ) {
-                renderedLine = line.replace('fullt mÃ¶blerad', furnishingText)
+                renderedLine = line.replace('fullt möblerad', furnishingText)
               }
               const trimmed = renderedLine.trim()
               const isBold = boldHeadings.has(trimmed)

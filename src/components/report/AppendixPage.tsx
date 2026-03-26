@@ -151,7 +151,7 @@ export default function AppendixPage({
       | { kind: 'row'; left: string; right: string }
       | { kind: 'gap' }
 
-    const separatorCandidates = ['|', 'Æ’?', 'â€“', '-']
+    const separatorCandidates = ['|', '–', '—', '-']
     const isSeparatorLine = (line: string) =>
       separatorCandidates.some((sep) => line.includes(sep))
 
@@ -166,7 +166,7 @@ export default function AppendixPage({
         }
       })
       if (idx === -1) return null
-      const left = line.slice(0, idx).replace(/^[\s|Æ’â€“-]+/, '').trim()
+      const left = line.slice(0, idx).replace(/^[\s|–—-]+/, '').trim()
       const right = line.slice(idx + sep.length).trim()
       if (!right) return null
       return { left, right }
@@ -190,7 +190,7 @@ export default function AppendixPage({
         const parsed = splitLine(line)
         if (parsed) {
           entries.push({ kind: 'row', left: parsed.left, right: parsed.right })
-          if (parsed.left.includes('Nytt undertak, invÃ¤ndigt')) {
+          if (parsed.left.includes('Nytt undertak, invändigt')) {
             entries.push({ kind: 'gap' })
           }
           continue

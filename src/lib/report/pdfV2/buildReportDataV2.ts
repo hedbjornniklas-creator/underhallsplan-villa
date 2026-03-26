@@ -87,6 +87,9 @@ type AreaMeasurementHeaderRow = {
   object_other: string | null
   measurement_instrument: string | null
   comment: string | null
+  other_notes: string | null
+  place_name: string | null
+  signed_date: string | null
 }
 
 type AreaMeasurementDataRow = {
@@ -105,6 +108,8 @@ type MoistureControlHeaderRow = {
   object_other: string | null
   measurement_instrument: string | null
   comment: string | null
+  place_name: string | null
+  signed_date: string | null
 }
 
 type MoistureControlDataRow = {
@@ -152,6 +157,12 @@ const supabase: any = createSupabaseServerClient()
     const parsed = new Date(raw)
     if (Number.isNaN(parsed.getTime())) return raw
     return parsed.toISOString().slice(0, 10)
+  }
+  const composePlaceDate = (place: string, date: string) => {
+    if (place !== fallback && date !== fallback) return `${place}, ${date}`
+    if (place !== fallback) return place
+    if (date !== fallback) return date
+    return fallback
   }
   const isMissingRelationError = (error: unknown, relationNames: string[]) => {
     const message = String((error as { message?: unknown } | null)?.message ?? '').toLowerCase()
@@ -572,7 +583,9 @@ const supabase: any = createSupabaseServerClient()
   let areaMeasurementRows: AreaMeasurementDataRow[] = []
   const { data: areaMeasurementHeaderData, error: areaMeasurementHeaderError } = await supabase
     .from('inspection_area_measurements')
-    .select('building_type,building_year,object_other,measurement_instrument,comment')
+    .select(
+      'building_type,building_year,object_other,measurement_instrument,comment,other_notes,place_name,signed_date'
+    )
     .eq('inspection_id', resolvedParams.inspectionId)
     .maybeSingle()
 
@@ -622,8 +635,25 @@ const supabase: any = createSupabaseServerClient()
       hasDeviations: hasValues,
     }
   })
+  const areaMeasurementTotals = areaMeasurementRows.reduce(
+    (acc, row) => ({
+      boarea: acc.boarea + (row.boarea_m2 ?? 0),
+      biarea: acc.biarea + (row.biarea_m2 ?? 0),
+    }),
+    { boarea: 0, biarea: 0 }
+  )
   const areaMeasurementEnabled =
     areaMeasurementHeader !== null || areaMeasurementRows.length > 0
+  const areaMeasurementRowsForReport = areaMeasurementRows.map((row, index) => {
+    const floorOrPart = trimText(row.floor_or_part ?? '') || `Del ${index + 1}`
+    const boarea = formatSquareMeters(row.boarea_m2)
+    const biarea = formatSquareMeters(row.biarea_m2)
+    return {
+      floor_or_part: floorOrPart,
+      boarea_display: boarea === '--' ? '--' : `${boarea} +/-2 %`,
+      biarea_display: biarea === '--' ? '--' : `${biarea} +/-2 %`,
+    }
+  })
   const areaMeasurementBuildingYear =
     areaMeasurementHeader?.building_year === null || areaMeasurementHeader?.building_year === undefined
       ? valueOrFallback(
@@ -640,7 +670,7 @@ const supabase: any = createSupabaseServerClient()
   const { data: moistureControlHeaderData, error: moistureControlHeaderError } = await supabase
     .from('inspection_moisture_controls')
     .select(
-      'building_type,building_year,extension_note,heating,ventilation,object_other,measurement_instrument,comment'
+      'building_type,building_year,extension_note,heating,ventilation,object_other,measurement_instrument,comment,place_name,signed_date'
     )
     .eq('inspection_id', resolvedParams.inspectionId)
     .maybeSingle()
@@ -737,6 +767,60 @@ const supabase: any = createSupabaseServerClient()
     }
   })
   const moistureControlEnabled = moistureControlHeader !== null || moistureControlRows.length > 0
+  const moistureControlRowsForReport = moistureControlRows.map((row, index) => {
+    const locationLabel = trimText(row.location_label ?? '') || `Kontrollplats ${index + 1}`
+    const buildingPart = trimText(row.building_part ?? '')
+    const method = measurementTypeLabel(row.measurement_type)
+    const value = formatMeasurementValue(row.measurement_value)
+    const temperature =
+      row.temperature_c !== null && row.temperature_c !== undefined && Number.isFinite(row.temperature_c)
+        ? ` vid ${Number(row.temperature_c).toFixed(2)} °C`
+        : ''
+    const resultText =
+      value === '--' ? `${method}: --` : `${value} % ${method}${method === 'RF' ? temperature : ''}`
+    const note = trimText(row.note ?? '')
+    return {
+      location_display: buildingPart ? `${locationLabel}\n${buildingPart}` : locationLabel,
+      result_display: note ? `${resultText}\nAnteckning: ${note}` : resultText,
+      critical_display: criticalLevelLabel(row.critical_level),
+    }
+  })
+
+  const inspectorNameForSigning = valueOrFallback(
+    (frozenProfileFromSnapshot?.full_name as string | null | undefined) ?? profile?.full_name ?? null
+  )
+  const companyNameForSigning = valueOrFallback(
+    (frozenProfileFromSnapshot?.company_name as string | null | undefined) ?? profile?.company_name ?? null
+  )
+  const inspectorStatusForSigning = valueOrFallback(
+    (frozenProfileFromSnapshot?.sbr_status as string | null | undefined) ??
+      profileCertificationSummary.sbr_status ??
+      null
+  )
+  const inspectorMembershipNumberForSigning = valueOrFallback(
+    (frozenProfileFromSnapshot?.membership_number as string | null | undefined) ??
+      profileCertificationSummary.membership_number ??
+      null,
+    ''
+  )
+  const inspectorMembershipLineForSigning =
+    inspectorMembershipNumberForSigning.trim().length > 0
+      ? `Medlemsnummer: ${inspectorMembershipNumberForSigning}`
+      : fallback
+  const areaSigningPlace = valueOrFallback(
+    areaMeasurementHeader?.place_name ?? null,
+    valueOrFallback(property?.city ?? null)
+  )
+  const areaSigningDate = valueOrFallback(
+    formatDateOnly(areaMeasurementHeader?.signed_date ?? inspection?.date ?? null)
+  )
+  const moistureSigningPlace = valueOrFallback(
+    moistureControlHeader?.place_name ?? null,
+    valueOrFallback(property?.city ?? null)
+  )
+  const moistureSigningDate = valueOrFallback(
+    formatDateOnly(moistureControlHeader?.signed_date ?? inspection?.date ?? null)
+  )
 
   const { data: exteriorItems, error: exteriorItemsError } = await supabase
     .from('settings_exterior_items')
@@ -1295,6 +1379,19 @@ const supabase: any = createSupabaseServerClient()
           measurement: {
             instrument: valueOrFallback(areaMeasurementHeader?.measurement_instrument ?? null),
             comment: valueOrFallback(areaMeasurementHeader?.comment ?? null),
+            other_notes: valueOrFallback(areaMeasurementHeader?.other_notes ?? null),
+          },
+          summary: {
+            boarea_total: `${formatSquareMeters(areaMeasurementTotals.boarea)} +/-2 %`,
+            biarea_total: `${formatSquareMeters(areaMeasurementTotals.biarea)} +/-2 %`,
+          },
+          rows: areaMeasurementRowsForReport,
+          signing: {
+            place_date: composePlaceDate(areaSigningPlace, areaSigningDate),
+            company_name: companyNameForSigning,
+            inspector_name: inspectorNameForSigning,
+            secondary_qualification: inspectorStatusForSigning,
+            membership_line: inspectorMembershipLineForSigning,
           },
           blocks: areaMeasurementBlocks,
         },
@@ -1331,6 +1428,14 @@ const supabase: any = createSupabaseServerClient()
           measurement: {
             instrument: valueOrFallback(moistureControlHeader?.measurement_instrument ?? null),
             comment: valueOrFallback(moistureControlHeader?.comment ?? null),
+          },
+          rows: moistureControlRowsForReport,
+          signing: {
+            place_date: composePlaceDate(moistureSigningPlace, moistureSigningDate),
+            company_name: companyNameForSigning,
+            inspector_name: inspectorNameForSigning,
+            secondary_qualification: inspectorStatusForSigning,
+            membership_line: inspectorMembershipLineForSigning,
           },
           blocks: moistureControlBlocks,
         },

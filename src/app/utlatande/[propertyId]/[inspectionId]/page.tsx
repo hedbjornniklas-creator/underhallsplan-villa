@@ -121,6 +121,12 @@ export default async function Page({
     const trimmed = String(value).trim()
     return trimmed.length > 0 ? trimmed : alt
   }
+  const composePlaceDate = (place: string, date: string) => {
+    if (place !== fallback && date !== fallback) return `${place}, ${date}`
+    if (place !== fallback) return place
+    if (date !== fallback) return date
+    return fallback
+  }
   const trimText = (value: string | null | undefined) => (value ?? '').trim()
   const normalizeSwedish = (value: string) =>
     String(value ?? '')
@@ -590,7 +596,9 @@ export default async function Page({
   let areaMeasurementRows: Array<Record<string, unknown>> = []
   const { data: areaMeasurementHeaderData, error: areaMeasurementHeaderError } = await supabase
     .from('inspection_area_measurements')
-    .select('building_type,building_year,object_other,measurement_instrument,comment')
+    .select(
+      'building_type,building_year,object_other,measurement_instrument,comment,other_notes,place_name,signed_date'
+    )
     .eq('inspection_id', resolvedParams.inspectionId)
     .maybeSingle()
 
@@ -646,8 +654,33 @@ export default async function Page({
       hasDeviations: hasValues,
     }
   })
+  const areaMeasurementTotals = areaMeasurementRows.reduce(
+    (acc, row) => ({
+      boarea:
+        acc.boarea +
+        (typeof row.boarea_m2 === 'number' ? row.boarea_m2 : Number(row.boarea_m2 ?? 0) || 0),
+      biarea:
+        acc.biarea +
+        (typeof row.biarea_m2 === 'number' ? row.biarea_m2 : Number(row.biarea_m2 ?? 0) || 0),
+    }),
+    { boarea: 0, biarea: 0 }
+  )
   const areaMeasurementEnabled =
     areaMeasurementHeader !== null || areaMeasurementRows.length > 0
+  const areaMeasurementRowsForReport = areaMeasurementRows.map((row, index) => {
+    const floorOrPart = trimText(String(row.floor_or_part ?? '')) || `Del ${index + 1}`
+    const boarea = formatSquareMeters(
+      typeof row.boarea_m2 === 'number' ? row.boarea_m2 : Number(row.boarea_m2 ?? NaN)
+    )
+    const biarea = formatSquareMeters(
+      typeof row.biarea_m2 === 'number' ? row.biarea_m2 : Number(row.biarea_m2 ?? NaN)
+    )
+    return {
+      floor_or_part: floorOrPart,
+      boarea_display: boarea === '--' ? '--' : `${boarea} +/-2 %`,
+      biarea_display: biarea === '--' ? '--' : `${biarea} +/-2 %`,
+    }
+  })
 
   let moistureControlHeader: Record<string, unknown> | null = null
   let moistureControlRows: Array<Record<string, unknown>> = []
@@ -655,7 +688,7 @@ export default async function Page({
   const { data: moistureControlHeaderData, error: moistureControlHeaderError } = await supabase
     .from('inspection_moisture_controls')
     .select(
-      'building_type,building_year,extension_note,heating,ventilation,object_other,measurement_instrument,comment'
+      'building_type,building_year,extension_note,heating,ventilation,object_other,measurement_instrument,comment,place_name,signed_date'
     )
     .eq('inspection_id', resolvedParams.inspectionId)
     .maybeSingle()
@@ -766,6 +799,66 @@ export default async function Page({
   })
   const moistureControlEnabled =
     moistureControlHeader !== null || moistureControlRows.length > 0
+  const moistureControlRowsForReport = moistureControlRows.map((row, index) => {
+    const locationLabel = trimText(String(row.location_label ?? '')) || `Kontrollplats ${index + 1}`
+    const buildingPart = trimText(String(row.building_part ?? ''))
+    const method = measurementTypeLabel(String(row.measurement_type ?? ''))
+    const value = formatMeasurementValue(
+      typeof row.measurement_value === 'number'
+        ? row.measurement_value
+        : Number(row.measurement_value ?? NaN)
+    )
+    const temperatureNumber =
+      typeof row.temperature_c === 'number' ? row.temperature_c : Number(row.temperature_c ?? NaN)
+    const temperatureText =
+      Number.isFinite(temperatureNumber) && method === 'RF'
+        ? ` vid ${Number(temperatureNumber).toFixed(2)} °C`
+        : ''
+    const resultText =
+      value === '--' ? `${method}: --` : `${value} % ${method}${temperatureText}`
+    const note = trimText(String(row.note ?? ''))
+    return {
+      location_display: buildingPart ? `${locationLabel}\n${buildingPart}` : locationLabel,
+      result_display: note ? `${resultText}\nAnteckning: ${note}` : resultText,
+      critical_display: criticalLevelLabel(String(row.critical_level ?? '')),
+    }
+  })
+
+  const inspectorNameForSigning = valueOrFallback(
+    frozenProfileFromSnapshot?.full_name ?? profile?.full_name ?? null
+  )
+  const companyNameForSigning = valueOrFallback(
+    frozenProfileFromSnapshot?.company_name ?? profile?.company_name ?? null
+  )
+  const inspectorStatusForSigning = valueOrFallback(
+    frozenProfileFromSnapshot?.sbr_status ?? profileCertificationSummary.sbr_status ?? null
+  )
+  const inspectorMembershipNumberForSigning = valueOrFallback(
+    frozenProfileFromSnapshot?.membership_number ?? profileCertificationSummary.membership_number ?? null,
+    ''
+  )
+  const inspectorMembershipLineForSigning =
+    inspectorMembershipNumberForSigning.trim().length > 0
+      ? `Medlemsnummer: ${inspectorMembershipNumberForSigning}`
+      : fallback
+  const areaSigningPlace = valueOrFallback(
+    (areaMeasurementHeader?.place_name as string | null | undefined) ?? null,
+    valueOrFallback(property?.city ?? null)
+  )
+  const areaSigningDate = valueOrFallback(
+    (areaMeasurementHeader?.signed_date as string | null | undefined) ??
+      inspection?.date ??
+      null
+  )
+  const moistureSigningPlace = valueOrFallback(
+    (moistureControlHeader?.place_name as string | null | undefined) ?? null,
+    valueOrFallback(property?.city ?? null)
+  )
+  const moistureSigningDate = valueOrFallback(
+    (moistureControlHeader?.signed_date as string | null | undefined) ??
+      inspection?.date ??
+      null
+  )
 
   const { data: exteriorItems, error: exteriorItemsError } = await supabase
     .from('settings_exterior_items')
@@ -1318,6 +1411,21 @@ export default async function Page({
             comment: valueOrFallback(
               (areaMeasurementHeader?.comment as string | null | undefined) ?? null
             ),
+            other_notes: valueOrFallback(
+              (areaMeasurementHeader?.other_notes as string | null | undefined) ?? null
+            ),
+          },
+          summary: {
+            boarea_total: `${formatSquareMeters(areaMeasurementTotals.boarea)} +/-2 %`,
+            biarea_total: `${formatSquareMeters(areaMeasurementTotals.biarea)} +/-2 %`,
+          },
+          rows: areaMeasurementRowsForReport,
+          signing: {
+            place_date: composePlaceDate(areaSigningPlace, areaSigningDate),
+            company_name: companyNameForSigning,
+            inspector_name: inspectorNameForSigning,
+            secondary_qualification: inspectorStatusForSigning,
+            membership_line: inspectorMembershipLineForSigning,
           },
           blocks: areaMeasurementBlocks,
         },
@@ -1359,6 +1467,14 @@ export default async function Page({
             comment: valueOrFallback(
               (moistureControlHeader?.comment as string | null | undefined) ?? null
             ),
+          },
+          rows: moistureControlRowsForReport,
+          signing: {
+            place_date: composePlaceDate(moistureSigningPlace, moistureSigningDate),
+            company_name: companyNameForSigning,
+            inspector_name: inspectorNameForSigning,
+            secondary_qualification: inspectorStatusForSigning,
+            membership_line: inspectorMembershipLineForSigning,
           },
           blocks: moistureControlBlocks,
         },
