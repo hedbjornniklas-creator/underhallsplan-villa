@@ -99,7 +99,14 @@ export default async function ReportPreviewPage({
     inspectionId,
     propertyId,
   })
-  const reportSpec = buildReportSpec({ inspectionSide: specInspectionSide })
+  const appendices = (reportData.mock?.appendices as Record<string, any> | undefined) ?? {}
+  const reportSpec = buildReportSpec({
+    inspectionSide: specInspectionSide,
+    dynamicAppendices: {
+      includeAreaMeasurement: appendices.area_measurement?.enabled === true,
+      includeMoistureControl: appendices.moisture_control?.enabled === true,
+    },
+  })
   const snapshot: ReportSnapshotPayloadV1 = createReportSnapshotPayloadV1({
     inspectionId,
     propertyId,

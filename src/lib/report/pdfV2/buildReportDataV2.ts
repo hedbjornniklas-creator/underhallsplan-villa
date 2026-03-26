@@ -81,6 +81,51 @@ type InspectionBlock = {
   hasDeviations: boolean
 }
 
+type AreaMeasurementHeaderRow = {
+  building_type: string | null
+  building_year: number | null
+  object_other: string | null
+  measurement_instrument: string | null
+  comment: string | null
+}
+
+type AreaMeasurementDataRow = {
+  floor_or_part: string | null
+  boarea_m2: number | null
+  biarea_m2: number | null
+  sort_order: number | null
+}
+
+type MoistureControlHeaderRow = {
+  building_type: string | null
+  building_year: string | null
+  extension_note: string | null
+  heating: string | null
+  ventilation: string | null
+  object_other: string | null
+  measurement_instrument: string | null
+  comment: string | null
+}
+
+type MoistureControlDataRow = {
+  id: string
+  location_label: string | null
+  building_part: string | null
+  measurement_type: 'rf' | 'fk' | 'other' | string | null
+  measurement_value: number | null
+  temperature_c: number | null
+  note: string | null
+  critical_level: 'under' | 'over' | string | null
+  sort_order: number | null
+}
+
+type MoistureControlImageRow = {
+  id: string
+  moisture_control_row_id: string | null
+  file_path: string | null
+  sort_order: number | null
+}
+
 export type ReportDataV2 = {
   mock: Record<string, any>
 }
@@ -107,6 +152,32 @@ const supabase: any = createSupabaseServerClient()
     const parsed = new Date(raw)
     if (Number.isNaN(parsed.getTime())) return raw
     return parsed.toISOString().slice(0, 10)
+  }
+  const isMissingRelationError = (error: unknown, relationNames: string[]) => {
+    const message = String((error as { message?: unknown } | null)?.message ?? '').toLowerCase()
+    return (
+      message.includes('42p01') ||
+      message.includes('does not exist') ||
+      relationNames.some((relationName) => message.includes(relationName.toLowerCase()))
+    )
+  }
+  const formatSquareMeters = (value: number | null | undefined) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) return '--'
+    return `${Number(value).toFixed(2)} m\u00b2`
+  }
+  const formatMeasurementValue = (value: number | null | undefined) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) return '--'
+    return Number(value).toFixed(2)
+  }
+  const measurementTypeLabel = (value: string | null | undefined) => {
+    const normalized = String(value ?? '').trim().toLowerCase()
+    if (normalized === 'rf') return 'RF'
+    if (normalized === 'fk') return 'FK'
+    return 'Annat'
+  }
+  const criticalLevelLabel = (value: string | null | undefined) => {
+    const normalized = String(value ?? '').trim().toLowerCase()
+    return normalized === 'over' ? '\u00d6ver kritisk niv\u00e5' : 'Under kritisk niv\u00e5'
   }
   const normalizeSwedish = (value: string) =>
     String(value ?? '')
@@ -496,6 +567,176 @@ const supabase: any = createSupabaseServerClient()
     undefined,
     buildingTypeParts
   )
+
+  let areaMeasurementHeader: AreaMeasurementHeaderRow | null = null
+  let areaMeasurementRows: AreaMeasurementDataRow[] = []
+  const { data: areaMeasurementHeaderData, error: areaMeasurementHeaderError } = await supabase
+    .from('inspection_area_measurements')
+    .select('building_type,building_year,object_other,measurement_instrument,comment')
+    .eq('inspection_id', resolvedParams.inspectionId)
+    .maybeSingle()
+
+  if (areaMeasurementHeaderError) {
+    if (
+      !isMissingRelationError(areaMeasurementHeaderError, [
+        'inspection_area_measurements',
+        'inspection_area_measurement_rows',
+      ])
+    ) {
+      console.error('Kunde inte hämta areamätning (header)', areaMeasurementHeaderError)
+    }
+  } else {
+    areaMeasurementHeader = (areaMeasurementHeaderData as AreaMeasurementHeaderRow | null) ?? null
+  }
+
+  const { data: areaMeasurementRowsData, error: areaMeasurementRowsError } = await supabase
+    .from('inspection_area_measurement_rows')
+    .select('floor_or_part,boarea_m2,biarea_m2,sort_order')
+    .eq('inspection_id', resolvedParams.inspectionId)
+    .order('sort_order', { ascending: true })
+
+  if (areaMeasurementRowsError) {
+    if (
+      !isMissingRelationError(areaMeasurementRowsError, [
+        'inspection_area_measurements',
+        'inspection_area_measurement_rows',
+      ])
+    ) {
+      console.error('Kunde inte hämta areamätning (rader)', areaMeasurementRowsError)
+    }
+  } else {
+    areaMeasurementRows = (areaMeasurementRowsData ?? []) as AreaMeasurementDataRow[]
+  }
+
+  const areaMeasurementBlocks: InspectionBlock[] = areaMeasurementRows.map((row, index) => {
+    const title = trimText(row.floor_or_part ?? '') || `Del ${index + 1}`
+    const boarea = formatSquareMeters(row.boarea_m2)
+    const biarea = formatSquareMeters(row.biarea_m2)
+    const hasValues = boarea !== '--' || biarea !== '--'
+    return {
+      title,
+      noteText: `Boarea: ${boarea}\nBiarea: ${biarea}`,
+      riskText: '',
+      ftuText: '',
+      photoUrls: [],
+      hasDeviations: hasValues,
+    }
+  })
+  const areaMeasurementEnabled =
+    areaMeasurementHeader !== null || areaMeasurementRows.length > 0
+  const areaMeasurementBuildingYear =
+    areaMeasurementHeader?.building_year === null || areaMeasurementHeader?.building_year === undefined
+      ? valueOrFallback(
+          inspectionConditions?.building_year === null ||
+            inspectionConditions?.building_year === undefined
+            ? null
+            : String(inspectionConditions.building_year)
+        )
+      : String(areaMeasurementHeader.building_year)
+
+  let moistureControlHeader: MoistureControlHeaderRow | null = null
+  let moistureControlRows: MoistureControlDataRow[] = []
+  let moistureControlImages: MoistureControlImageRow[] = []
+  const { data: moistureControlHeaderData, error: moistureControlHeaderError } = await supabase
+    .from('inspection_moisture_controls')
+    .select(
+      'building_type,building_year,extension_note,heating,ventilation,object_other,measurement_instrument,comment'
+    )
+    .eq('inspection_id', resolvedParams.inspectionId)
+    .maybeSingle()
+
+  if (moistureControlHeaderError) {
+    if (
+      !isMissingRelationError(moistureControlHeaderError, [
+        'inspection_moisture_controls',
+        'inspection_moisture_control_rows',
+      ])
+    ) {
+      console.error('Kunde inte hämta fuktkontroll (header)', moistureControlHeaderError)
+    }
+  } else {
+    moistureControlHeader = (moistureControlHeaderData as MoistureControlHeaderRow | null) ?? null
+  }
+
+  const { data: moistureControlRowsData, error: moistureControlRowsError } = await supabase
+    .from('inspection_moisture_control_rows')
+    .select(
+      'id,location_label,building_part,measurement_type,measurement_value,temperature_c,note,critical_level,sort_order'
+    )
+    .eq('inspection_id', resolvedParams.inspectionId)
+    .order('sort_order', { ascending: true })
+
+  if (moistureControlRowsError) {
+    if (
+      !isMissingRelationError(moistureControlRowsError, [
+        'inspection_moisture_controls',
+        'inspection_moisture_control_rows',
+      ])
+    ) {
+      console.error('Kunde inte hämta fuktkontroll (rader)', moistureControlRowsError)
+    }
+  } else {
+    moistureControlRows = (moistureControlRowsData ?? []) as MoistureControlDataRow[]
+  }
+
+  const { data: moistureControlImagesData, error: moistureControlImagesError } = await supabase
+    .from('inspection_moisture_control_images')
+    .select('id,moisture_control_row_id,file_path,sort_order')
+    .eq('inspection_id', resolvedParams.inspectionId)
+    .order('sort_order', { ascending: true })
+
+  if (moistureControlImagesError) {
+    if (
+      !isMissingRelationError(moistureControlImagesError, [
+        'inspection_moisture_control_images',
+      ])
+    ) {
+      console.error('Kunde inte hämta bilder för fuktkontroll', moistureControlImagesError)
+    }
+  } else {
+    moistureControlImages = (moistureControlImagesData ?? []) as MoistureControlImageRow[]
+  }
+
+  const moistureImagesByRowId = new Map<string, string[]>()
+  for (const rowImage of moistureControlImages) {
+    const rowId = trimText(rowImage.moisture_control_row_id ?? '')
+    if (!rowId) continue
+    const url = buildInspectionImageUrl(rowImage.file_path)
+    if (!url) continue
+    const bucket = moistureImagesByRowId.get(rowId) ?? []
+    bucket.push(url)
+    moistureImagesByRowId.set(rowId, bucket)
+  }
+
+  const moistureControlBlocks: InspectionBlock[] = moistureControlRows.map((row, index) => {
+    const title = trimText(row.location_label ?? '') || `Kontrollplats ${index + 1}`
+    const lines: string[] = []
+    const buildingPart = trimText(row.building_part ?? '')
+    if (buildingPart) lines.push(`Byggdel/kontrollpunkt: ${buildingPart}`)
+    lines.push(`Mätmetod: ${measurementTypeLabel(row.measurement_type)}`)
+    lines.push(`Värde: ${formatMeasurementValue(row.measurement_value)}`)
+    if (row.temperature_c !== null && row.temperature_c !== undefined && Number.isFinite(row.temperature_c)) {
+      lines.push(`Temperatur: ${Number(row.temperature_c).toFixed(2)} °C`)
+    }
+    lines.push(`Kritisk nivå: ${criticalLevelLabel(row.critical_level)}`)
+    const note = trimText(row.note ?? '')
+    if (note) lines.push(`Anteckning: ${note}`)
+
+    const photoUrls = moistureImagesByRowId.get(row.id) ?? []
+
+    return {
+      title,
+      noteText: lines.length > 0 ? lines.join('\n') : '--',
+      riskText: '',
+      ftuText: '',
+      photoUrls,
+      hasDeviations:
+        String(row.critical_level ?? '')
+          .trim()
+          .toLowerCase() === 'over' || note.length > 0 || photoUrls.length > 0,
+    }
+  })
+  const moistureControlEnabled = moistureControlHeader !== null || moistureControlRows.length > 0
 
   const { data: exteriorItems, error: exteriorItemsError } = await supabase
     .from('settings_exterior_items')
@@ -1037,6 +1278,62 @@ const supabase: any = createSupabaseServerClient()
       },
       ftu: {
         text: ftuText || fallback,
+      },
+      appendices: {
+        area_measurement: {
+          enabled: areaMeasurementEnabled,
+          object: {
+            assignment_number: valueOrFallback(inspection?.assignment_number ?? null),
+            address: valueOrFallback(fullAddress, fallback),
+            building_type: valueOrFallback(
+              areaMeasurementHeader?.building_type ?? null,
+              valueOrFallback(buildingTypeParts.TYPE, fallback)
+            ),
+            building_year: areaMeasurementBuildingYear,
+            object_other: valueOrFallback(areaMeasurementHeader?.object_other ?? null),
+          },
+          measurement: {
+            instrument: valueOrFallback(areaMeasurementHeader?.measurement_instrument ?? null),
+            comment: valueOrFallback(areaMeasurementHeader?.comment ?? null),
+          },
+          blocks: areaMeasurementBlocks,
+        },
+        moisture_control: {
+          enabled: moistureControlEnabled,
+          object: {
+            assignment_number: valueOrFallback(inspection?.assignment_number ?? null),
+            address: valueOrFallback(fullAddress, fallback),
+            building_type: valueOrFallback(
+              moistureControlHeader?.building_type ?? null,
+              valueOrFallback(buildingTypeParts.TYPE, fallback)
+            ),
+            building_year: valueOrFallback(
+              moistureControlHeader?.building_year ?? null,
+              valueOrFallback(
+                inspectionConditions?.building_year === null ||
+                  inspectionConditions?.building_year === undefined
+                  ? null
+                  : String(inspectionConditions.building_year),
+                fallback
+              )
+            ),
+            extension_note: valueOrFallback(moistureControlHeader?.extension_note ?? null),
+            heating: valueOrFallback(
+              moistureControlHeader?.heating ?? null,
+              valueOrFallback(buildingDataMap['Uppvärmning:'], fallback)
+            ),
+            ventilation: valueOrFallback(
+              moistureControlHeader?.ventilation ?? null,
+              valueOrFallback(buildingDataMap['Ventilation:'], fallback)
+            ),
+            object_other: valueOrFallback(moistureControlHeader?.object_other ?? null),
+          },
+          measurement: {
+            instrument: valueOrFallback(moistureControlHeader?.measurement_instrument ?? null),
+            comment: valueOrFallback(moistureControlHeader?.comment ?? null),
+          },
+          blocks: moistureControlBlocks,
+        },
       },
     },
   }

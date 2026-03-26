@@ -838,7 +838,14 @@ export async function POST(
       propertyId,
     })
     timing.mark('report_data_built')
-    const reportSpec = buildReportSpec({ inspectionSide: specInspectionSide })
+    const appendices = (reportData.mock?.appendices as Record<string, any> | undefined) ?? {}
+    const reportSpec = buildReportSpec({
+      inspectionSide: specInspectionSide,
+      dynamicAppendices: {
+        includeAreaMeasurement: appendices.area_measurement?.enabled === true,
+        includeMoistureControl: appendices.moisture_control?.enabled === true,
+      },
+    })
     timing.mark('report_spec_built')
     const snapshotPayload: ReportSnapshotPayloadV1 = createReportSnapshotPayloadV1({
       inspectionId: id,

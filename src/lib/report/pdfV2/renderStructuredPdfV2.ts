@@ -107,10 +107,22 @@ export async function renderStructuredPdfFromSnapshot(
   snapshot: ReportSnapshotPayloadV1
 ): Promise<Buffer> {
   const specInspectionSide = snapshot.inspectionSide === 'seller' ? 'seller' : snapshot.inspectionSide === 'apartment' ? 'apartment' : 'buyer'
+  const snapshotAppendices =
+    (snapshot.reportData?.mock?.appendices as Record<string, unknown> | undefined) ?? {}
   const spec =
     Array.isArray(snapshot.reportSpec) && snapshot.reportSpec.length > 0
       ? snapshot.reportSpec
-      : buildReportSpec({ inspectionSide: specInspectionSide })
+      : buildReportSpec({
+          inspectionSide: specInspectionSide,
+          dynamicAppendices: {
+            includeAreaMeasurement:
+              (snapshotAppendices.area_measurement as Record<string, unknown> | undefined)
+                ?.enabled === true,
+            includeMoistureControl:
+              (snapshotAppendices.moisture_control as Record<string, unknown> | undefined)
+                ?.enabled === true,
+          },
+        })
   const document = createDocument(spec, snapshot.reportData)
   return await renderDocumentToBuffer(document)
 }
@@ -125,7 +137,14 @@ export async function renderStructuredPdfV2(
   const compactData = stripPhotoUrls(data)
   const inspectionSide = await resolveInspectionSide(params.inspectionId)
   const specInspectionSide = inspectionSide === 'seller' ? 'seller' : inspectionSide === 'apartment' ? 'apartment' : 'buyer'
-  const spec = buildReportSpec({ inspectionSide: specInspectionSide })
+  const appendices = (compactData.mock?.appendices as Record<string, any> | undefined) ?? {}
+  const spec = buildReportSpec({
+    inspectionSide: specInspectionSide,
+    dynamicAppendices: {
+      includeAreaMeasurement: appendices.area_measurement?.enabled === true,
+      includeMoistureControl: appendices.moisture_control?.enabled === true,
+    },
+  })
   const document = createDocument(spec, compactData)
   return await renderDocumentToBuffer(document)
 }

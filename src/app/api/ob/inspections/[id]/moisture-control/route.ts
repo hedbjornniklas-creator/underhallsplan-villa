@@ -70,7 +70,7 @@ async function loadProfileSnapshot(
     .maybeSingle()
 
   if (profileResult.error) {
-    throw new Error(profileResult.error.message ?? 'Kunde inte lÃ¤sa profil.')
+    throw new Error(profileResult.error.message ?? 'Kunde inte läsa profil.')
   }
 
   const { summary } = await resolveInspectorCertificationSummary(admin, {
@@ -609,7 +609,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
           defaults,
         })
       }
-      throw new Error(message || 'Kunde inte lÃ¤sa fuktkontroll.')
+      throw new Error(message || 'Kunde inte läsa fuktkontroll.')
     }
 
     if (!control) {
@@ -651,13 +651,13 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
           defaults,
         })
       }
-      throw new Error(message || 'Kunde inte lÃ¤sa fuktkontrollrader.')
+      throw new Error(message || 'Kunde inte läsa fuktkontrollrader.')
     }
 
     if (rowImagesError) {
       const message = rowImagesError.message ?? ''
       if (!isMissingImagesTableError(message)) {
-        throw new Error(message || 'Kunde inte lasa bilder for fuktkontroll.')
+        throw new Error(message || 'Kunde inte läsa bilder för fuktkontroll.')
       }
     }
 
@@ -670,10 +670,10 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       defaults,
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
+    const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
-    return jsonError(message || 'Kunde inte lÃ¤sa fuktkontroll.', 500)
+    return jsonError(message || 'Kunde inte läsa fuktkontroll.', 500)
   }
 }
 
@@ -694,12 +694,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (inspectionError) {
       const message = inspectionError.message ?? ''
       if (!isMissingLockColumnError(message)) {
-        throw new Error(message || 'Kunde inte lÃ¤sa besiktning.')
+        throw new Error(message || 'Kunde inte läsa besiktning.')
       }
     } else if (!inspectionRow) {
       return jsonError('Besiktningen hittades inte.', 404)
     } else if (inspectionRow.locked_at) {
-      return jsonError('Besiktningen Ã¤r lÃ¥st och kan inte uppdateras.', 409)
+      return jsonError('Besiktningen är låst och kan inte uppdateras.', 409)
     }
 
     const payload = {
@@ -727,7 +727,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (upsertError || !upserted?.id) {
       const message = upsertError?.message ?? 'Kunde inte spara fuktkontroll.'
       if (isMissingTableError(message)) {
-        return jsonError('Fuktkontroll Ã¤r inte aktiverad i databasen Ã¤nnu.', 409)
+        return jsonError('Fuktkontroll är inte aktiverad i databasen ännu.', 409)
       }
       throw new Error(message)
     }
@@ -742,9 +742,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       .eq('inspection_id', id)
 
     if (existingRowsError) {
-      const message = existingRowsError.message ?? 'Kunde inte lasa befintliga fuktkontrollrader.'
+      const message = existingRowsError.message ?? 'Kunde inte läsa befintliga fuktkontrollrader.'
       if (isMissingTableError(message)) {
-        return jsonError('Fuktkontroll ar inte aktiverad i databasen annu.', 409)
+        return jsonError('Fuktkontroll är inte aktiverad i databasen ännu.', 409)
       }
       throw new Error(message)
     }
@@ -838,7 +838,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       if (insertRowsError) {
         const message = insertRowsError.message ?? 'Kunde inte spara fuktkontrollrader.'
         if (isMissingTableError(message)) {
-          return jsonError('Fuktkontroll ar inte aktiverad i databasen annu.', 409)
+          return jsonError('Fuktkontroll är inte aktiverad i databasen ännu.', 409)
         }
         throw new Error(message)
       }
@@ -856,7 +856,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       if (deleteCandidateImagesError) {
         const message = deleteCandidateImagesError.message ?? ''
         if (!isMissingImagesTableError(message)) {
-          throw new Error(message || 'Kunde inte lasa bilder for borttagna fuktrader.')
+          throw new Error(message || 'Kunde inte läsa bilder för borttagna fuktrader.')
         }
       } else if (Array.isArray(deleteCandidateImages) && deleteCandidateImages.length > 0) {
         const filePaths = deleteCandidateImages
@@ -880,7 +880,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       if (deleteRowsError) {
         const message = deleteRowsError.message ?? 'Kunde inte ta bort gamla fuktkontrollrader.'
         if (isMissingTableError(message)) {
-          return jsonError('Fuktkontroll ar inte aktiverad i databasen annu.', 409)
+          return jsonError('Fuktkontroll är inte aktiverad i databasen ännu.', 409)
         }
         throw new Error(message)
       }
@@ -896,15 +896,17 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       .order('sort_order', { ascending: true })
 
     if (savedRowsError) {
-      throw new Error(savedRowsError.message ?? 'Kunde inte lasa sparade fuktkontrollrader.')
+      throw new Error(savedRowsError.message ?? 'Kunde inte läsa sparade fuktkontrollrader.')
     }
 
     return NextResponse.json({ ok: true, rows: Array.isArray(savedRows) ? savedRows : [] })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
+    const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     return jsonError(message || 'Kunde inte spara fuktkontroll.', 500)
   }
 }
+
+
 

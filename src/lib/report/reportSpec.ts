@@ -118,6 +118,11 @@ export type ReportSection = {
   blocks: ReportBlock[]
 }
 
+export type DynamicAppendixConfig = {
+  includeAreaMeasurement?: boolean
+  includeMoistureControl?: boolean
+}
+
 export const REPORT_SPEC: ReportSection[] = [
   {
     id: 'cover',
@@ -608,6 +613,7 @@ const buildObjectRows = (
 
 export function buildReportSpec(params?: {
   inspectionSide?: 'buyer' | 'seller' | 'apartment' | null
+  dynamicAppendices?: DynamicAppendixConfig
 }): ReportSection[] {
   const inspectionSide = resolveInspectionSide(params?.inspectionSide)
   const assignmentLabel =
@@ -718,9 +724,241 @@ export function buildReportSpec(params?: {
     appendixSection.appendixId = appendixId
   }
 
+  const includeAreaMeasurement = params?.dynamicAppendices?.includeAreaMeasurement === true
+  const includeMoistureControl = params?.dynamicAppendices?.includeMoistureControl === true
+  const hasDynamicAppendices = includeAreaMeasurement || includeMoistureControl
+
+  if (hasDynamicAppendices) {
+    const tocSection = spec.find((section) => section.id === 'toc')
+    const tocBlock = tocSection?.blocks.find((block) => block.type === 'toc') as
+      | { type: 'toc'; entries: { label: string; sectionId?: string }[] }
+      | undefined
+
+    const appendix3Index = spec.findIndex((section) => section.id === 'appendix-3')
+    const dynamicSections: ReportSection[] = []
+    const dynamicTocEntries: Array<{ label: string; sectionId: string }> = []
+    let appendixNo = 4
+
+    if (includeAreaMeasurement) {
+      const sectionId = `appendix-${appendixNo}-area-measurement`
+      const title = `Bilaga ${appendixNo}: Aream\u00e4tning av boarea`
+      dynamicSections.push({
+        id: sectionId,
+        title,
+        startOnNewPage: true,
+        type: 'standard',
+        blocks: [
+          {
+            type: 'heading',
+            level: 3,
+            text: 'Objekt',
+            marginTopMm: 0,
+            marginBottomMm: 2,
+            fontSizePt: 12,
+          },
+          {
+            type: 'twoColumn',
+            marginTopMm: 0,
+            marginBottomMm: 3,
+            labelWidthMm: 55,
+            rows: [
+              {
+                label: 'Uppdragsnummer:',
+                value: { kind: 'mock', path: 'mock.appendices.area_measurement.object.assignment_number' },
+              },
+              {
+                label: 'Adress:',
+                value: { kind: 'mock', path: 'mock.appendices.area_measurement.object.address' },
+              },
+              {
+                label: 'Byggnadstyp:',
+                value: { kind: 'mock', path: 'mock.appendices.area_measurement.object.building_type' },
+              },
+              {
+                label: 'Bygg\u00e5r:',
+                value: { kind: 'mock', path: 'mock.appendices.area_measurement.object.building_year' },
+              },
+              {
+                label: '\u00d6vrigt:',
+                value: { kind: 'mock', path: 'mock.appendices.area_measurement.object.object_other' },
+              },
+            ],
+          },
+          {
+            type: 'heading',
+            level: 3,
+            text: 'M\u00e4tning',
+            marginTopMm: 1,
+            marginBottomMm: 2,
+            fontSizePt: 12,
+          },
+          {
+            type: 'twoColumn',
+            marginTopMm: 0,
+            marginBottomMm: 2,
+            labelWidthMm: 55,
+            rows: [
+              {
+                label: 'Instrument:',
+                value: { kind: 'mock', path: 'mock.appendices.area_measurement.measurement.instrument' },
+              },
+            ],
+          },
+          {
+            type: 'inspectionBlocks',
+            itemsPath: 'mock.appendices.area_measurement.blocks',
+            marginTopMm: 0,
+            marginBottomMm: 3,
+          },
+          {
+            type: 'heading',
+            level: 3,
+            text: 'Kommentar',
+            marginTopMm: 1,
+            marginBottomMm: 2,
+            fontSizePt: 12,
+          },
+          {
+            type: 'text',
+            source: { kind: 'mock', path: 'mock.appendices.area_measurement.measurement.comment' },
+            marginTopMm: 0,
+            marginBottomMm: 2,
+          },
+        ],
+      })
+      dynamicTocEntries.push({
+        label: `BILAGA ${appendixNo}: Aream\u00e4tning av boarea`,
+        sectionId,
+      })
+      appendixNo += 1
+    }
+
+    if (includeMoistureControl) {
+      const sectionId = `appendix-${appendixNo}-moisture-control`
+      const title = `Bilaga ${appendixNo}: Fuktkontroll av riskkonstruktion`
+      dynamicSections.push({
+        id: sectionId,
+        title,
+        startOnNewPage: true,
+        type: 'standard',
+        blocks: [
+          {
+            type: 'heading',
+            level: 3,
+            text: 'Objekt',
+            marginTopMm: 0,
+            marginBottomMm: 2,
+            fontSizePt: 12,
+          },
+          {
+            type: 'twoColumn',
+            marginTopMm: 0,
+            marginBottomMm: 3,
+            labelWidthMm: 55,
+            rows: [
+              {
+                label: 'Uppdragsnummer:',
+                value: { kind: 'mock', path: 'mock.appendices.moisture_control.object.assignment_number' },
+              },
+              {
+                label: 'Adress:',
+                value: { kind: 'mock', path: 'mock.appendices.moisture_control.object.address' },
+              },
+              {
+                label: 'Byggnadstyp:',
+                value: { kind: 'mock', path: 'mock.appendices.moisture_control.object.building_type' },
+              },
+              {
+                label: 'Bygg\u00e5r:',
+                value: { kind: 'mock', path: 'mock.appendices.moisture_control.object.building_year' },
+              },
+              {
+                label: 'Tillbyggd:',
+                value: { kind: 'mock', path: 'mock.appendices.moisture_control.object.extension_note' },
+              },
+              {
+                label: 'Uppv\u00e4rmning:',
+                value: { kind: 'mock', path: 'mock.appendices.moisture_control.object.heating' },
+              },
+              {
+                label: 'Ventilation:',
+                value: { kind: 'mock', path: 'mock.appendices.moisture_control.object.ventilation' },
+              },
+              {
+                label: '\u00d6vrigt:',
+                value: { kind: 'mock', path: 'mock.appendices.moisture_control.object.object_other' },
+              },
+            ],
+          },
+          {
+            type: 'heading',
+            level: 3,
+            text: 'M\u00e4tning',
+            marginTopMm: 1,
+            marginBottomMm: 2,
+            fontSizePt: 12,
+          },
+          {
+            type: 'twoColumn',
+            marginTopMm: 0,
+            marginBottomMm: 2,
+            labelWidthMm: 55,
+            rows: [
+              {
+                label: 'Instrument:',
+                value: { kind: 'mock', path: 'mock.appendices.moisture_control.measurement.instrument' },
+              },
+            ],
+          },
+          {
+            type: 'inspectionBlocks',
+            itemsPath: 'mock.appendices.moisture_control.blocks',
+            marginTopMm: 0,
+            marginBottomMm: 3,
+          },
+          {
+            type: 'heading',
+            level: 3,
+            text: 'Kommentar',
+            marginTopMm: 1,
+            marginBottomMm: 2,
+            fontSizePt: 12,
+          },
+          {
+            type: 'text',
+            source: { kind: 'mock', path: 'mock.appendices.moisture_control.measurement.comment' },
+            marginTopMm: 0,
+            marginBottomMm: 2,
+          },
+        ],
+      })
+      dynamicTocEntries.push({
+        label: `BILAGA ${appendixNo}: Fuktkontroll av riskkonstruktion`,
+        sectionId,
+      })
+      appendixNo += 1
+    }
+
+    if (dynamicSections.length > 0) {
+      if (appendix3Index >= 0) {
+        spec.splice(appendix3Index + 1, 0, ...dynamicSections)
+      } else {
+        spec.push(...dynamicSections)
+      }
+
+      if (tocBlock?.entries && dynamicTocEntries.length > 0) {
+        const appendix3TocIndex = tocBlock.entries.findIndex((entry) => entry.sectionId === 'appendix-3')
+        if (appendix3TocIndex >= 0) {
+          tocBlock.entries.splice(appendix3TocIndex + 1, 0, ...dynamicTocEntries)
+        } else {
+          tocBlock.entries.push(...dynamicTocEntries)
+        }
+      }
+    }
+  }
+
   return spec
 }
-
 
 
 
