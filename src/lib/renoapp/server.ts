@@ -250,6 +250,12 @@ export type RenoAppCaseAccessResult = {
     uploadedAt: string
     note: string | null
   }>
+  documentOptions: Array<{
+    id: string
+    label: string
+    description: string | null
+    isRequired: boolean
+  }>
 }
 
 export type RenoAppViewerContext = {
@@ -315,6 +321,87 @@ export type RenoAppUnitListItem = {
     verificationStatus: string
     relationshipType: string
   }>
+}
+
+export type RenoAppCaseDetail = {
+  id: string
+  caseNumber: string
+  title: string
+  description: string | null
+  status: string
+  riskLevel: string | null
+  submittedAt: string
+  updatedAt: string
+  blockedAt: string | null
+  blockedReason: string | null
+  brf: {
+    id: string
+    name: string | null
+    slug: string | null
+  }
+  actionType: {
+    id: string | null
+    key: string | null
+    label: string | null
+  }
+  applicant: {
+    id: string | null
+    name: string | null
+    email: string | null
+    phone: string | null
+  }
+  unit: {
+    id: string | null
+    unitNumberInternal: string | null
+    unitNumberSkatteverket: string | null
+    status: string | null
+  }
+  checks: {
+    affectsStructure: boolean
+    affectsPlumbing: boolean
+    affectsVentilation: boolean
+    affectsElectrical: boolean
+    affectsWetRoom: boolean
+    affectsSurfaceOnly: boolean
+  } | null
+  currentContacts: Array<{
+    id: string
+    name: string | null
+    email: string | null
+    verificationStatus: string
+    relationshipType: string
+  }>
+  documents: Array<{
+    id: string
+    documentTypeId: string | null
+    documentTypeLabel: string | null
+    fileName: string | null
+    status: string
+    uploadedAt: string
+    note: string | null
+  }>
+  requirements: PublicRequirement[]
+  decisions: Array<{
+    id: string
+    decision: string
+    conditions: string | null
+    reason: string | null
+    decidedAt: string
+  }>
+  accessLinks: Array<{
+    id: string
+    email: string
+    scope: string
+    expiresAt: string
+    revokedAt: string | null
+    lastUsedAt: string | null
+  }>
+}
+
+export type UpdateRenoAppCaseStatusInput = {
+  status: 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected'
+  reason?: string | null
+  conditions?: string | null
 }
 
 function normalizeText(value: unknown) {
@@ -828,6 +915,15 @@ export async function getCaseAccessByToken(token: string): Promise<RenoAppCaseAc
   if (actionResult.error) throw new Error(actionResult.error.message ?? 'Kunde inte hämta åtgärdstyp.')
   if (documentsResult.error) throw new Error(documentsResult.error.message ?? 'Kunde inte hämta dokument.')
 
+  const [activeDocumentTypes, caseRequirements] = caseRow.action_type_id
+    ? await Promise.all([listActiveDocumentTypes(admin), listRequirements(admin, caseRow.brf_id)])
+    : [[], [] as RequirementRow[]]
+  const requirementByDocumentId = new Map(
+    caseRequirements
+      .filter((item) => item.action_type_id === caseRow.action_type_id)
+      .map((item) => [item.document_type_id, item] as const)
+  )
+
   return {
     state: isRevoked ? 'revoked' : isExpired ? 'expired' : 'open',
     access: {
@@ -878,6 +974,15 @@ export async function getCaseAccessByToken(token: string): Promise<RenoAppCaseAc
       uploadedAt: String(document.uploaded_at ?? ''),
       note: (document.note as string | null | undefined) ?? null,
     })),
+    documentOptions: activeDocumentTypes
+      .filter((item) => requirementByDocumentId.size === 0 || requirementByDocumentId.has(item.id))
+      .sort((left, right) => left.sort_order - right.sort_order)
+      .map((item) => ({
+        id: item.id,
+        label: item.label,
+        description: item.description,
+        isRequired: requirementByDocumentId.get(item.id)?.is_required ?? false,
+      })),
   }
 }
 
@@ -1170,4 +1275,319 @@ export async function listRenoAppUnits(): Promise<RenoAppUnitListItem[]> {
       currentContacts: contactsByUnitId.get(unitId) ?? [],
     }
   })
+}
+
+export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseDetail | null> {
+  const context = await requireRenoAppViewerContext()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const { data: caseData, error: caseError } = await admin
+    .from('renovation_cases')
+    .select(
+      'id,brf_id,unit_id,applicant_contact_id,action_type_id,case_number,title,description,status,risk_level,blocked_at,blocked_reason,submitted_at,updated_at'
+    )
+    .eq('id', caseId)
+    .maybeSingle()
+
+  if (caseError) {
+    throw new Error(caseError.message ?? 'Kunde inte läsa RenoApp-ärende.')
+  }
+
+  if (!caseData) {
+    return null
+  }
+
+  const caseRow = caseData as CaseRow
+  if (context.accessibleBrfIds && !context.accessibleBrfIds.includes(caseRow.brf_id)) {
+    throw new Error('CASE_NOT_FOUND')
+  }
+
+  const [brfResult, contactResult, unitResult, checksResult, docsResult, decisionsResult, linksResult, actionResult] =
+    await Promise.all([
+      admin.from('brf_associations').select('id,name,slug').eq('id', caseRow.brf_id).maybeSingle(),
+      caseRow.applicant_contact_id
+        ? admin.from('contacts').select('id,name,email,phone').eq('id', caseRow.applicant_contact_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      caseRow.unit_id
+        ? admin
+            .from('brf_units')
+            .select('id,unit_number_internal,unit_number_skatteverket,status')
+            .eq('id', caseRow.unit_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      admin
+        .from('renovation_case_checks')
+        .select(
+          'affects_structure,affects_plumbing,affects_ventilation,affects_electrical,affects_wet_room,affects_surface_only'
+        )
+        .eq('case_id', caseId)
+        .maybeSingle(),
+      admin
+        .from('renovation_case_documents')
+        .select('id,document_type_id,file_name,status,uploaded_at,note')
+        .eq('case_id', caseId)
+        .order('uploaded_at', { ascending: false }),
+      admin
+        .from('renovation_case_decisions')
+        .select('id,decision,conditions,reason,decided_at')
+        .eq('case_id', caseId)
+        .order('decided_at', { ascending: false }),
+      admin
+        .from('case_access_links')
+        .select('id,email,scope,expires_at,revoked_at,last_used_at')
+        .eq('case_id', caseId)
+        .order('created_at', { ascending: false }),
+      caseRow.action_type_id
+        ? admin.from('renovation_action_types').select('id,key,label').eq('id', caseRow.action_type_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ])
+
+  if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte läsa BRF.')
+  if (contactResult.error) throw new Error(contactResult.error.message ?? 'Kunde inte läsa kontakt.')
+  if (unitResult.error) throw new Error(unitResult.error.message ?? 'Kunde inte läsa lägenhet.')
+  if (checksResult.error) throw new Error(checksResult.error.message ?? 'Kunde inte läsa ärendechecks.')
+  if (docsResult.error) throw new Error(docsResult.error.message ?? 'Kunde inte läsa dokument.')
+  if (decisionsResult.error) throw new Error(decisionsResult.error.message ?? 'Kunde inte läsa beslut.')
+  if (linksResult.error) throw new Error(linksResult.error.message ?? 'Kunde inte läsa access links.')
+  if (actionResult.error) throw new Error(actionResult.error.message ?? 'Kunde inte läsa åtgärdstyp.')
+
+  const currentContactsResult =
+    caseRow.unit_id
+      ? await admin
+          .from('unit_contacts')
+          .select('contact_id,verification_status,relationship_type')
+          .eq('unit_id', caseRow.unit_id)
+          .eq('is_current', true)
+      : { data: [], error: null }
+
+  if (currentContactsResult.error) {
+    throw new Error(currentContactsResult.error.message ?? 'Kunde inte läsa kontaktkopplingar.')
+  }
+
+  const currentContactRows = (currentContactsResult.data ?? []) as Array<Record<string, unknown>>
+  const currentContactIds = Array.from(
+    new Set(currentContactRows.map((row) => String(row.contact_id ?? '')).filter(Boolean))
+  )
+  const documentTypeIds = Array.from(
+    new Set(
+      ((docsResult.data ?? []) as Array<Record<string, unknown>>)
+        .map((row) => String(row.document_type_id ?? ''))
+        .filter(Boolean)
+    )
+  )
+
+  const [currentContactsLookup, documentTypesLookup, requirements] = await Promise.all([
+    currentContactIds.length > 0
+      ? admin.from('contacts').select('id,name,email').in('id', currentContactIds)
+      : Promise.resolve({ data: [], error: null }),
+    documentTypeIds.length > 0
+      ? admin.from('renovation_document_types').select('id,label').in('id', documentTypeIds)
+      : Promise.resolve({ data: [], error: null }),
+    caseRow.action_type_id ? listRequirements(admin, caseRow.brf_id) : Promise.resolve([] as RequirementRow[]),
+  ])
+
+  if (currentContactsLookup.error) {
+    throw new Error(currentContactsLookup.error.message ?? 'Kunde inte läsa kontaktdata.')
+  }
+  if (documentTypesLookup.error) {
+    throw new Error(documentTypesLookup.error.message ?? 'Kunde inte läsa dokumenttyper.')
+  }
+
+  const contactMap = new Map(
+    ((currentContactsLookup.data ?? []) as Array<Record<string, unknown>>).map((row) => [
+      String(row.id ?? ''),
+      {
+        id: String(row.id ?? ''),
+        name: (row.name as string | null | undefined) ?? null,
+        email: (row.email as string | null | undefined) ?? null,
+      },
+    ])
+  )
+  const documentTypeMap = new Map(
+    ((documentTypesLookup.data ?? []) as Array<Record<string, unknown>>).map((row) => [
+      String(row.id ?? ''),
+      (row.label as string | null | undefined) ?? null,
+    ])
+  )
+
+  const requiredDocumentTypes = caseRow.action_type_id
+    ? await listActiveDocumentTypes(admin)
+    : []
+  const requiredDocumentTypeMap = new Map(requiredDocumentTypes.map((item) => [item.id, item]))
+  const requirementMap = new Map<string, RequirementRow>()
+  for (const requirement of requirements) {
+    const key = `${requirement.action_type_id}:${requirement.document_type_id}`
+    requirementMap.set(key, requirement)
+  }
+
+  const requirementItems: PublicRequirement[] = caseRow.action_type_id
+    ? Array.from(requirementMap.values())
+        .filter((item) => item.action_type_id === caseRow.action_type_id)
+        .map((item) => {
+          const documentType = requiredDocumentTypeMap.get(item.document_type_id)
+          return {
+            id: item.id,
+            documentTypeId: item.document_type_id,
+            documentKey: documentType?.key ?? 'unknown',
+            documentLabel: documentType?.label ?? 'Okänd dokumenttyp',
+            documentDescription: documentType?.description ?? null,
+            isRequired: item.is_required,
+            note: item.note,
+            sortOrder: item.sort_order,
+          }
+        })
+        .sort((left, right) => left.sortOrder - right.sortOrder)
+    : []
+
+  return {
+    id: caseRow.id,
+    caseNumber: caseRow.case_number,
+    title: caseRow.title,
+    description: caseRow.description,
+    status: caseRow.status,
+    riskLevel: caseRow.risk_level,
+    submittedAt: caseRow.submitted_at,
+    updatedAt: caseRow.updated_at,
+    blockedAt: caseRow.blocked_at,
+    blockedReason: caseRow.blocked_reason,
+    brf: {
+      id: String(brfResult.data?.id ?? caseRow.brf_id),
+      name: (brfResult.data?.name as string | null | undefined) ?? null,
+      slug: (brfResult.data?.slug as string | null | undefined) ?? null,
+    },
+    actionType: {
+      id: (actionResult.data?.id as string | null | undefined) ?? null,
+      key: (actionResult.data?.key as string | null | undefined) ?? null,
+      label: (actionResult.data?.label as string | null | undefined) ?? null,
+    },
+    applicant: {
+      id: (contactResult.data?.id as string | null | undefined) ?? null,
+      name: (contactResult.data?.name as string | null | undefined) ?? null,
+      email: (contactResult.data?.email as string | null | undefined) ?? null,
+      phone: (contactResult.data?.phone as string | null | undefined) ?? null,
+    },
+    unit: {
+      id: (unitResult.data?.id as string | null | undefined) ?? null,
+      unitNumberInternal: (unitResult.data?.unit_number_internal as string | null | undefined) ?? null,
+      unitNumberSkatteverket: (unitResult.data?.unit_number_skatteverket as string | null | undefined) ?? null,
+      status: (unitResult.data?.status as string | null | undefined) ?? null,
+    },
+    checks: checksResult.data
+      ? {
+          affectsStructure: Boolean(checksResult.data.affects_structure),
+          affectsPlumbing: Boolean(checksResult.data.affects_plumbing),
+          affectsVentilation: Boolean(checksResult.data.affects_ventilation),
+          affectsElectrical: Boolean(checksResult.data.affects_electrical),
+          affectsWetRoom: Boolean(checksResult.data.affects_wet_room),
+          affectsSurfaceOnly: Boolean(checksResult.data.affects_surface_only),
+        }
+      : null,
+    currentContacts: currentContactRows.map((row) => {
+      const contact = contactMap.get(String(row.contact_id ?? '')) ?? { id: String(row.contact_id ?? ''), name: null, email: null }
+      return {
+        id: contact.id,
+        name: contact.name,
+        email: contact.email,
+        verificationStatus: String(row.verification_status ?? ''),
+        relationshipType: String(row.relationship_type ?? ''),
+      }
+    }),
+    documents: ((docsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+      id: String(row.id ?? ''),
+      documentTypeId: (row.document_type_id as string | null | undefined) ?? null,
+      documentTypeLabel: documentTypeMap.get(String(row.document_type_id ?? '')) ?? null,
+      fileName: (row.file_name as string | null | undefined) ?? null,
+      status: String(row.status ?? ''),
+      uploadedAt: String(row.uploaded_at ?? ''),
+      note: (row.note as string | null | undefined) ?? null,
+    })),
+    requirements: requirementItems,
+    decisions: ((decisionsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+      id: String(row.id ?? ''),
+      decision: String(row.decision ?? ''),
+      conditions: (row.conditions as string | null | undefined) ?? null,
+      reason: (row.reason as string | null | undefined) ?? null,
+      decidedAt: String(row.decided_at ?? ''),
+    })),
+    accessLinks: ((linksResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+      id: String(row.id ?? ''),
+      email: String(row.email ?? ''),
+      scope: String(row.scope ?? ''),
+      expiresAt: String(row.expires_at ?? ''),
+      revokedAt: (row.revoked_at as string | null | undefined) ?? null,
+      lastUsedAt: (row.last_used_at as string | null | undefined) ?? null,
+    })),
+  }
+}
+
+export async function updateRenoAppCaseStatus(
+  caseId: string,
+  input: UpdateRenoAppCaseStatusInput
+): Promise<RenoAppCaseDetail> {
+  const context = await requireRenoAppViewerContext()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const allowedStatuses = new Set(['review', 'need_info', 'approved', 'conditional', 'rejected'])
+  const decisionStatuses = new Set(['approved', 'conditional', 'rejected'])
+
+  if (!allowedStatuses.has(input.status)) {
+    throw new Error('INVALID_CASE_STATUS')
+  }
+
+  const reason = normalizeText(input.reason)
+  const conditions = normalizeText(input.conditions)
+
+  if (input.status === 'rejected' && !reason) {
+    throw new Error('DECISION_REASON_REQUIRED')
+  }
+
+  if (input.status === 'conditional' && !conditions) {
+    throw new Error('DECISION_CONDITIONS_REQUIRED')
+  }
+
+  const { data: caseData, error: caseError } = await admin
+    .from('renovation_cases')
+    .select('id,brf_id')
+    .eq('id', caseId)
+    .maybeSingle()
+
+  if (caseError) {
+    throw new Error(caseError.message ?? 'Kunde inte läsa RenoApp-ärende.')
+  }
+
+  if (!caseData) {
+    throw new Error('CASE_NOT_FOUND')
+  }
+
+  const brfId = String(caseData.brf_id ?? '')
+  if (context.accessibleBrfIds && !context.accessibleBrfIds.includes(brfId)) {
+    throw new Error('CASE_NOT_FOUND')
+  }
+
+  const { error: updateError } = await admin.from('renovation_cases').update({ status: input.status }).eq('id', caseId)
+
+  if (updateError) {
+    throw new Error(updateError.message ?? 'Kunde inte uppdatera RenoApp-ärende.')
+  }
+
+  if (decisionStatuses.has(input.status)) {
+    const { error: insertError } = await admin.from('renovation_case_decisions').insert({
+      case_id: caseId,
+      decision: input.status,
+      conditions,
+      reason,
+      decided_by: context.profile.id,
+    })
+
+    if (insertError) {
+      throw new Error(insertError.message ?? 'Kunde inte spara beslut.')
+    }
+  }
+
+  const updatedCase = await getRenoAppCaseDetail(caseId)
+  if (!updatedCase) {
+    throw new Error('CASE_NOT_FOUND')
+  }
+
+  return updatedCase
 }

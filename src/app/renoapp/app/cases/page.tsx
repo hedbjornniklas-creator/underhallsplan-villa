@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
 type CaseItem = {
@@ -93,7 +94,11 @@ export default function RenoAppCasesPage() {
         ) : (
           <div className="divide-y divide-stone-200">
             {items.map((item) => (
-              <article key={item.id} className="grid gap-2 px-4 py-4 text-sm text-stone-700 md:grid-cols-[1.2fr_1fr_1fr_0.9fr_1fr_1fr] md:items-center">
+              <Link
+                key={item.id}
+                href={`/renoapp/app/cases/${item.id}`}
+                className="grid gap-2 px-4 py-4 text-sm text-stone-700 transition hover:bg-stone-50/80 md:grid-cols-[1.2fr_1fr_1fr_0.9fr_1fr_1fr] md:items-center"
+              >
                 <div>
                   <p className="font-semibold text-stone-900">{item.caseNumber}</p>
                   <p className="mt-1 text-xs text-stone-500">{item.title}</p>
@@ -106,7 +111,7 @@ export default function RenoAppCasesPage() {
                   <p>{item.applicant.name ?? '-'}</p>
                   <p className="text-xs text-stone-500">{item.applicant.email ?? '-'}</p>
                 </div>
-              </article>
+              </Link>
             ))}
           </div>
         )}
