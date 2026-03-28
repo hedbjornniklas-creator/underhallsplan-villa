@@ -36,6 +36,10 @@ type ReviewResult = {
     emailSent: boolean
     emailError: string | null
   } | null
+  decisionEmail: {
+    emailSent: boolean
+    emailError: string | null
+  } | null
 }
 
 type DraftState = {
@@ -228,6 +232,8 @@ export default function RenoAppAdminBrfRequestsPage() {
                           {result.brf ? <p className="mt-1">BRF skapad: {result.brf.name} ({result.brf.slug})</p> : null}
                           {result.invite ? <p className="mt-1 break-all">Invite: {result.invite.inviteUrl}</p> : null}
                           {result.invite?.emailError ? <p className="mt-1 text-amber-900">{result.invite.emailError}</p> : null}
+                          {result.decisionEmail?.emailSent ? <p className="mt-1">Beskedsmejl skickades till kontaktpersonen.</p> : null}
+                          {result.decisionEmail?.emailError ? <p className="mt-1 text-amber-900">Beskedsmejl kunde inte skickas: {result.decisionEmail.emailError}</p> : null}
                         </div>
                       ) : null}
                     </article>

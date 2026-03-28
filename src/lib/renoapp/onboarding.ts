@@ -127,6 +127,10 @@ export type CreateBrfRequestInput = {
 export type CreateBrfRequestResult = {
   id: string
   status: 'pending'
+  receipt: {
+    emailSent: boolean
+    emailError: string | null
+  }
 }
 
 export type BrfRequestListItem = {
@@ -186,6 +190,10 @@ export type ReviewBrfRequestResult = {
     slug: string
   } | null
   invite: AdminCreateBrfResult['invite'] | null
+  decisionEmail: {
+    emailSent: boolean
+    emailError: string | null
+  } | null
 }
 
 export type RenoAppInvitePreview = {
@@ -258,6 +266,15 @@ function getMailFromAddress() {
   const mailFrom = process.env.ASSIGNMENTS_MAIL_FROM?.trim()
   if (!mailFrom) return null
   return mailFrom
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 function slugify(value: string) {
@@ -479,6 +496,135 @@ async function createInviteRecord(
   }
 }
 
+async function sendRenoAppEmail(input: {
+  to: string | null
+  subject: string
+  html: string
+  text: string
+}) {
+  const recipient = normalizeEmail(input.to)
+  assertValidEmail(recipient, 'EMAIL_INVALID')
+
+  const mailFrom = getMailFromAddress()
+  if (!mailFrom) {
+    return {
+      emailSent: false,
+      emailError: 'ASSIGNMENTS_MAIL_FROM saknas. Mejlet kunde inte skickas.',
+    }
+  }
+
+  try {
+    await sendAssignmentEmail({
+      to: recipient as string,
+      from: mailFrom,
+      subject: input.subject,
+      html: input.html,
+      text: input.text,
+    })
+
+    return {
+      emailSent: true,
+      emailError: null,
+    }
+  } catch (error) {
+    return {
+      emailSent: false,
+      emailError: error instanceof Error ? error.message : 'Mejlutskick misslyckades.',
+    }
+  }
+}
+
+async function sendBrfRequestReceiptEmail(input: {
+  brfName: string
+  contactName: string | null
+  contactEmail: string | null
+}) {
+  const safeBrfName = escapeHtml(input.brfName)
+  const safeContactName = escapeHtml(input.contactName ?? 'er')
+
+  return sendRenoAppEmail({
+    to: input.contactEmail,
+    subject: `Vi har tagit emot er BRF-förfrågan för ${input.brfName}`,
+    html: `
+      <p>Hej ${safeContactName},</p>
+      <p>Vi har tagit emot er intresseanmälan för <strong>${safeBrfName}</strong> i RenoApp.</p>
+      <p>Förfrågan granskas nu av admin. Om BRF:en godkänns skickas en säker invite till styrelsen.</p>
+      <p>Ni hör från oss när förfrågan har behandlats.</p>
+    `,
+    text: [
+      `Hej ${input.contactName ?? 'er'},`,
+      `Vi har tagit emot er intresseanmälan för ${input.brfName} i RenoApp.`,
+      'Förfrågan granskas nu av admin. Om BRF:en godkänns skickas en säker invite till styrelsen.',
+      'Ni hör från oss när förfrågan har behandlats.',
+    ].join('\n'),
+  })
+}
+
+async function sendBrfRequestApprovedEmail(input: {
+  brfName: string
+  contactName: string | null
+  contactEmail: string | null
+  boardEmail: string
+  inviteSent: boolean
+  reviewNote: string | null
+}) {
+  const safeBrfName = escapeHtml(input.brfName)
+  const safeContactName = escapeHtml(input.contactName ?? 'er')
+  const safeBoardEmail = escapeHtml(input.boardEmail)
+  const safeReviewNote = input.reviewNote ? escapeHtml(input.reviewNote) : null
+
+  return sendRenoAppEmail({
+    to: input.contactEmail,
+    subject: `Er BRF-förfrågan för ${input.brfName} har godkänts`,
+    html: `
+      <p>Hej ${safeContactName},</p>
+      <p>Er intresseanmälan för <strong>${safeBrfName}</strong> har godkänts.</p>
+      <p>${input.inviteSent ? 'En invite har skickats' : 'En invite har skapats'} till styrelseadressen <strong>${safeBoardEmail}</strong>.</p>
+      ${safeReviewNote ? `<p><strong>Kommentar:</strong> ${safeReviewNote}</p>` : ''}
+      <p>Nästa steg är att styrelsen aktiverar sitt konto via länken i mejlet.</p>
+    `,
+    text: [
+      `Hej ${input.contactName ?? 'er'},`,
+      `Er intresseanmälan för ${input.brfName} har godkänts.`,
+      `${input.inviteSent ? 'En invite har skickats' : 'En invite har skapats'} till styrelseadressen ${input.boardEmail}.`,
+      input.reviewNote ? `Kommentar: ${input.reviewNote}` : null,
+      'Nästa steg är att styrelsen aktiverar sitt konto via länken i mejlet.',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  })
+}
+
+async function sendBrfRequestRejectedEmail(input: {
+  brfName: string
+  contactName: string | null
+  contactEmail: string | null
+  reviewNote: string | null
+}) {
+  const safeBrfName = escapeHtml(input.brfName)
+  const safeContactName = escapeHtml(input.contactName ?? 'er')
+  const safeReviewNote = input.reviewNote ? escapeHtml(input.reviewNote) : null
+
+  return sendRenoAppEmail({
+    to: input.contactEmail,
+    subject: `Er BRF-förfrågan för ${input.brfName} har behandlats`,
+    html: `
+      <p>Hej ${safeContactName},</p>
+      <p>Er intresseanmälan för <strong>${safeBrfName}</strong> har behandlats, men går inte vidare i nuläget.</p>
+      ${safeReviewNote ? `<p><strong>Kommentar:</strong> ${safeReviewNote}</p>` : ''}
+      <p>Om ni vill kan ni återkomma med uppdaterade uppgifter längre fram.</p>
+    `,
+    text: [
+      `Hej ${input.contactName ?? 'er'},`,
+      `Er intresseanmälan för ${input.brfName} har behandlats, men går inte vidare i nuläget.`,
+      input.reviewNote ? `Kommentar: ${input.reviewNote}` : null,
+      'Om ni vill kan ni återkomma med uppdaterade uppgifter längre fram.',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  })
+}
+
 function mapRequestRow(row: BrfRequestRow): BrfRequestListItem {
   return {
     id: row.id,
@@ -531,9 +677,16 @@ export async function createBrfRequest(input: CreateBrfRequestInput): Promise<Cr
     throw new Error(error?.message ?? 'Kunde inte skapa BRF-intresseanmälan.')
   }
 
+  const receipt = await sendBrfRequestReceiptEmail({
+    brfName: name as string,
+    contactName,
+    contactEmail,
+  })
+
   return {
     id: String(data.id ?? ''),
     status: 'pending',
+    receipt,
   }
 }
 
@@ -661,10 +814,18 @@ export async function reviewBrfRequest(
       throw new Error(rejectError?.message ?? 'Kunde inte avslå BRF-intresseanmälan.')
     }
 
+    const decisionEmail = await sendBrfRequestRejectedEmail({
+      brfName: requestRow.name,
+      contactName: requestRow.contact_name,
+      contactEmail: requestRow.contact_email,
+      reviewNote,
+    })
+
     return {
       request: mapRequestRow(rejectedData as BrfRequestRow),
       brf: null,
       invite: null,
+      decisionEmail,
     }
   }
 
@@ -719,6 +880,15 @@ export async function reviewBrfRequest(
     throw new Error(approveError?.message ?? 'Kunde inte uppdatera BRF-intresseanmälan.')
   }
 
+  const decisionEmail = await sendBrfRequestApprovedEmail({
+    brfName: brf.name,
+    contactName: requestRow.contact_name,
+    contactEmail: requestRow.contact_email,
+    boardEmail: boardEmail as string,
+    inviteSent: invite.emailSent,
+    reviewNote,
+  })
+
   return {
     request: mapRequestRow(approvedData as BrfRequestRow),
     brf: {
@@ -727,6 +897,7 @@ export async function reviewBrfRequest(
       slug: brf.slug,
     },
     invite,
+    decisionEmail,
   }
 }
 

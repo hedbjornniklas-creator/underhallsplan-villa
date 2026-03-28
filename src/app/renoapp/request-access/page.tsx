@@ -12,6 +12,15 @@ type FormState = {
   message: string
 }
 
+type SubmitResult = {
+  id: string
+  status: 'pending'
+  receipt: {
+    emailSent: boolean
+    emailError: string | null
+  }
+}
+
 const INITIAL_FORM: FormState = {
   name: '',
   orgNumber: '',
@@ -35,6 +44,7 @@ export default function RenoAppRequestAccessPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null)
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }))
@@ -53,6 +63,7 @@ export default function RenoAppRequestAccessPage() {
     setSubmitting(true)
     setError(null)
     setSuccess(false)
+    setSubmitResult(null)
 
     try {
       const response = await fetch('/api/renoapp/request-access', {
@@ -63,13 +74,14 @@ export default function RenoAppRequestAccessPage() {
           orgNumber: formattedOrgNumber,
         }),
       })
-      const payload = (await response.json().catch(() => ({}))) as { error?: string }
+      const payload = (await response.json().catch(() => ({}))) as SubmitResult & { error?: string }
 
       if (!response.ok) {
         throw new Error(payload.error ?? 'Kunde inte skicka intresseanmälan.')
       }
 
       setSuccess(true)
+      setSubmitResult(payload)
       setForm(INITIAL_FORM)
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Kunde inte skicka intresseanmälan.')
@@ -123,7 +135,16 @@ export default function RenoAppRequestAccessPage() {
             <input value={form.contactPhone} onChange={(event) => updateField('contactPhone', event.target.value)} className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900" placeholder="Telefon" />
             <textarea value={form.message} onChange={(event) => updateField('message', event.target.value)} className="min-h-32 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900" placeholder="Kort beskrivning eller frågor" />
             {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div> : null}
-            {success ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Intresseanmälan skickades. Admin behöver godkänna BRF innan någon invite kan skickas.</div> : null}
+            {success ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                <p>Intresseanmälan skickades. Admin behöver godkänna BRF innan någon invite kan skickas.</p>
+                {submitResult?.receipt.emailSent ? (
+                  <p className="mt-1">Bekräftelsemejl skickades till kontaktadressen.</p>
+                ) : submitResult?.receipt.emailError ? (
+                  <p className="mt-1 text-amber-900">Bekräftelsemejl kunde inte skickas: {submitResult.receipt.emailError}</p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="flex flex-wrap gap-3">
               <button type="submit" disabled={submitting} className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60">
                 {submitting ? 'Skickar...' : 'Skicka intresseanmälan'}
