@@ -30,7 +30,7 @@ type ReviewResult = {
   } | null
   invite: {
     email: string
-    role: 'board' | 'admin'
+    role: 'board'
     expiresAt: string
     inviteUrl: string
     emailSent: boolean
@@ -44,8 +44,6 @@ type ReviewResult = {
 
 type DraftState = {
   reviewNote: string
-  boardEmail: string
-  role: 'board' | 'admin'
 }
 
 type StatusFilter = 'pending' | 'approved' | 'rejected' | 'all'
@@ -97,8 +95,6 @@ export default function RenoAppAdminBrfRequestsPage() {
               if (!nextDrafts[item.id]) {
                 nextDrafts[item.id] = {
                   reviewNote: item.reviewNote ?? '',
-                  boardEmail: item.contactEmail,
-                  role: 'board',
                 }
               }
             }
@@ -107,7 +103,11 @@ export default function RenoAppAdminBrfRequestsPage() {
         }
       } catch (fetchError) {
         if (active) {
-          setError(fetchError instanceof Error ? fetchError.message : 'Kunde inte läsa BRF-intresseanmälningar.')
+          setError(
+            fetchError instanceof Error
+              ? fetchError.message
+              : 'Kunde inte läsa BRF-intresseanmälningar.'
+          )
         }
       } finally {
         if (active) setPageLoading(false)
@@ -125,27 +125,15 @@ export default function RenoAppAdminBrfRequestsPage() {
     }
   }, [isAdmin, loading])
 
-  const updateDraft = (id: string, patch: Partial<DraftState>) => {
+  const updateDraft = (id: string, reviewNote: string) => {
     setDrafts((current) => ({
       ...current,
-      [id]: {
-        reviewNote: current[id]?.reviewNote ?? '',
-        boardEmail: current[id]?.boardEmail ?? '',
-        role: current[id]?.role ?? 'board',
-        ...patch,
-      },
+      [id]: { reviewNote },
     }))
   }
 
   const handleAction = async (id: string, action: 'approve' | 'reject') => {
-    const draft = drafts[id]
-    const reviewNote = draft?.reviewNote?.trim() ?? ''
-
-    if (action === 'reject' && !reviewNote) {
-      setExpandedId(id)
-      setError('Ange en motivering innan du avslår ansökan.')
-      return
-    }
+    const reviewNote = drafts[id]?.reviewNote?.trim() ?? ''
 
     setSubmittingId(id)
     setError(null)
@@ -157,8 +145,6 @@ export default function RenoAppAdminBrfRequestsPage() {
         body: JSON.stringify({
           action,
           reviewNote,
-          boardEmail: draft?.boardEmail ?? '',
-          role: draft?.role ?? 'board',
         }),
       })
       const payload = (await response.json().catch(() => ({}))) as ReviewResult & { error?: string }
@@ -219,7 +205,7 @@ export default function RenoAppAdminBrfRequestsPage() {
                 <div>
                   <h2 className="text-lg font-semibold text-stone-900">Granskningskö</h2>
                   <p className="mt-1 text-sm leading-6 text-stone-600">
-                    Börja med väntande. Öppna en rad när du behöver mer information.
+                    Ett godkännande skickar en kombinerad länk för aktivering och slutförande av BRF-anslutningen.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -251,11 +237,7 @@ export default function RenoAppAdminBrfRequestsPage() {
                 </article>
               ) : (
                 filteredItems.map((item) => {
-                  const draft = drafts[item.id] ?? {
-                    reviewNote: '',
-                    boardEmail: item.contactEmail,
-                    role: 'board' as const,
-                  }
+                  const reviewNote = drafts[item.id]?.reviewNote ?? ''
                   const result = resultById[item.id]
                   const isExpanded = expandedId === item.id
                   const statusTone =
@@ -277,7 +259,7 @@ export default function RenoAppAdminBrfRequestsPage() {
                             <span
                               className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${statusTone}`}
                             >
-                              {item.status}
+                              {FILTER_LABELS[item.status as Exclude<StatusFilter, 'all'>]}
                             </span>
                           </div>
                           <div className="mt-2 flex flex-col gap-1 text-sm text-stone-600 md:flex-row md:flex-wrap md:gap-x-4">
@@ -324,51 +306,46 @@ export default function RenoAppAdminBrfRequestsPage() {
 
                       {isExpanded ? (
                         <div className="border-t border-stone-200/80 px-4 py-4 md:px-5">
-                          <div className="grid gap-3 text-sm text-stone-700 md:grid-cols-2">
-                            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-                              <p className="font-semibold text-stone-900">Adress</p>
-                              <p className="mt-1">{item.address ?? 'Ingen adress angiven.'}</p>
+                          <div className="grid gap-4 md:grid-cols-[1.15fr_0.85fr]">
+                            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
+                              <p>
+                                <strong>Kontaktperson:</strong> {item.contactName}
+                              </p>
+                              <p className="mt-1 break-all">
+                                <strong>E-post:</strong> {item.contactEmail}
+                              </p>
+                              <p className="mt-1">
+                                <strong>Telefon:</strong> {item.contactPhone ?? 'Saknas'}
+                              </p>
+                              <p className="mt-1">
+                                <strong>Adress:</strong> {item.address ?? 'Saknas'}
+                              </p>
+                              <p className="mt-1">
+                                <strong>Meddelande:</strong> {item.message ?? 'Inget meddelande'}
+                              </p>
                             </div>
-                            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-                              <p className="font-semibold text-stone-900">Meddelande</p>
-                              <p className="mt-1">{item.message ?? 'Inget meddelande.'}</p>
+
+                            <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                              <label className="block text-sm font-semibold text-stone-900">
+                                Kommentar
+                                <textarea
+                                  value={reviewNote}
+                                  onChange={(event) => updateDraft(item.id, event.target.value)}
+                                  className="mt-3 min-h-[120px] w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                                  placeholder="Valfri intern anteckning eller kommentar"
+                                />
+                              </label>
+                              <p className="mt-3 text-xs leading-6 text-stone-500">
+                                Godkännande skickar en kombinerad aktiveringslänk till samma e-postadress. Rollen sätts
+                                alltid till styrelsemedlem i MVP.
+                              </p>
                             </div>
                           </div>
 
-                          {item.status === 'pending' ? (
-                            <div className="mt-4 grid gap-4 rounded-3xl border border-stone-200 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.92))] p-5">
-                              <div className="grid gap-4 md:grid-cols-[1fr_220px]">
-                                <input
-                                  value={draft.boardEmail}
-                                  onChange={(event) => updateDraft(item.id, { boardEmail: event.target.value })}
-                                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                                  placeholder="Styrelsemejl"
-                                  type="email"
-                                />
-                                <select
-                                  value={draft.role}
-                                  onChange={(event) =>
-                                    updateDraft(item.id, {
-                                      role: event.target.value === 'admin' ? 'admin' : 'board',
-                                    })
-                                  }
-                                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                                >
-                                  <option value="board">board</option>
-                                  <option value="admin">admin</option>
-                                </select>
-                              </div>
-                              <textarea
-                                value={draft.reviewNote}
-                                onChange={(event) => updateDraft(item.id, { reviewNote: event.target.value })}
-                                className="min-h-28 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                                placeholder="Intern anteckning eller motivering. Krävs vid avslag."
-                              />
-                            </div>
-                          ) : (
+                          {item.status !== 'pending' ? (
                             <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
                               <p>
-                                <strong>Beslutsdatum:</strong> {formatDateTime(item.reviewedAt)}
+                                <strong>Hanterad:</strong> {formatDateTime(item.reviewedAt)}
                               </p>
                               <p className="mt-1">
                                 <strong>Kommentar:</strong> {item.reviewNote ?? 'Ingen kommentar sparad.'}
@@ -379,28 +356,36 @@ export default function RenoAppAdminBrfRequestsPage() {
                                 </p>
                               ) : null}
                             </div>
-                          )}
+                          ) : null}
 
                           {result ? (
-                            <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                              <p className="font-semibold">Förfrågan uppdaterad.</p>
-                              {result.brf ? (
-                                <p className="mt-1">
-                                  BRF skapad: {result.brf.name} ({result.brf.slug})
-                                </p>
-                              ) : null}
-                              {result.invite ? <p className="mt-1 break-all">Invite: {result.invite.inviteUrl}</p> : null}
-                              {result.invite?.emailError ? (
-                                <p className="mt-1 text-amber-900">{result.invite.emailError}</p>
-                              ) : null}
-                              {result.decisionEmail?.emailSent ? (
-                                <p className="mt-1">Beskedsmejl skickades till kontaktpersonen.</p>
-                              ) : null}
-                              {result.decisionEmail?.emailError ? (
-                                <p className="mt-1 text-amber-900">
-                                  Beskedsmejl kunde inte skickas: {result.decisionEmail.emailError}
-                                </p>
-                              ) : null}
+                            <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+                              {result.request.status === 'approved' ? (
+                                <>
+                                  <p className="font-semibold">BRF skapades och aktiveringslänk genererades.</p>
+                                  {result.invite ? <p className="mt-1 break-all">Länk: {result.invite.inviteUrl}</p> : null}
+                                  {result.invite?.emailSent ? (
+                                    <p className="mt-1">Det kombinerade godkännande- och invite-mejlet skickades.</p>
+                                  ) : null}
+                                  {result.invite?.emailError ? (
+                                    <p className="mt-1 text-amber-900">
+                                      Mejlet kunde inte skickas: {result.invite.emailError}
+                                    </p>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <>
+                                  <p className="font-semibold">Intresseanmälan markerades som avslagen.</p>
+                                  {result.decisionEmail?.emailSent ? (
+                                    <p className="mt-1">Avslagsmejl skickades till kontaktpersonen.</p>
+                                  ) : null}
+                                  {result.decisionEmail?.emailError ? (
+                                    <p className="mt-1 text-amber-900">
+                                      Avslagsmejl kunde inte skickas: {result.decisionEmail.emailError}
+                                    </p>
+                                  ) : null}
+                                </>
+                              )}
                             </div>
                           ) : null}
                         </div>
@@ -414,13 +399,13 @@ export default function RenoAppAdminBrfRequestsPage() {
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
                 href="/admin/renoapp"
-                className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                className="rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
               >
                 Till adminstart
               </Link>
               <Link
                 href="/admin/renoapp/brf/create"
-                className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700"
+                className="rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
               >
                 Skapa BRF manuellt
               </Link>

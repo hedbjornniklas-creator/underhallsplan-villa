@@ -17,9 +17,7 @@ export async function POST(request: Request) {
         name: String(body.name ?? ''),
         orgNumber: typeof body.orgNumber === 'string' ? body.orgNumber : null,
         address: typeof body.address === 'string' ? body.address : null,
-        boardEmail: String(body.boardEmail ?? ''),
-        boardFullName: typeof body.boardFullName === 'string' ? body.boardFullName : null,
-        role: body.role === 'admin' ? 'admin' : 'board',
+        boardEmail: String(body.email ?? body.boardEmail ?? ''),
       },
       origin
     )
@@ -31,7 +29,7 @@ export async function POST(request: Request) {
     if (message === 'PROFILE_NOT_FOUND') return jsonError('Ingen profil hittades för användaren.', 403)
     if (message === 'ADMIN_REQUIRED') return jsonError('Adminbehörighet krävs.', 403)
     if (message === 'BRF_NAME_REQUIRED') return jsonError('Ange BRF-namn.', 400)
-    if (message === 'BOARD_EMAIL_INVALID') return jsonError('Ange giltig styrelsemejl.', 400)
+    if (message === 'BOARD_EMAIL_INVALID') return jsonError('Ange giltig e-postadress.', 400)
     return jsonError(message || 'Kunde inte skapa BRF.', 500)
   }
 }

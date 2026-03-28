@@ -24,9 +24,6 @@ export async function POST(request: Request, context: RouteContext) {
       {
         action: body.action === 'reject' ? 'reject' : 'approve',
         reviewNote: typeof body.reviewNote === 'string' ? body.reviewNote : null,
-        boardEmail: typeof body.boardEmail === 'string' ? body.boardEmail : null,
-        boardFullName: typeof body.boardFullName === 'string' ? body.boardFullName : null,
-        role: body.role === 'admin' ? 'admin' : 'board',
       },
       origin
     )
@@ -39,8 +36,6 @@ export async function POST(request: Request, context: RouteContext) {
     if (message === 'ADMIN_REQUIRED') return jsonError('Adminbehörighet krävs.', 403)
     if (message === 'BRF_REQUEST_NOT_FOUND') return jsonError('Intresseanmälan hittades inte.', 404)
     if (message === 'BRF_REQUEST_ALREADY_REVIEWED') return jsonError('Intresseanmälan är redan hanterad.', 409)
-    if (message === 'REJECT_NOTE_REQUIRED') return jsonError('Ange en motivering innan du avslår ansökan.', 400)
-    if (message === 'BOARD_EMAIL_INVALID') return jsonError('Ange giltig styrelsemejl.', 400)
     return jsonError(message || 'Kunde inte hantera BRF-intresseanmälan.', 500)
   }
 }
