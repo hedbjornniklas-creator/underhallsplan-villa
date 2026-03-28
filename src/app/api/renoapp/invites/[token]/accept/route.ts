@@ -18,8 +18,11 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const { token } = await context.params
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const origin = new URL(request.url).origin
     const result = await acceptBrfInvite(token, {
+      origin,
       password: typeof body.password === 'string' ? body.password : null,
+      inviteUserName: typeof body.inviteUserName === 'string' ? body.inviteUserName : null,
       name: typeof body.name === 'string' ? body.name : null,
       orgNumber: typeof body.orgNumber === 'string' ? body.orgNumber : null,
       propertyDesignation: typeof body.propertyDesignation === 'string' ? body.propertyDesignation : null,
@@ -39,6 +42,16 @@ export async function POST(request: Request, context: RouteContext) {
       brfPhone: typeof body.brfPhone === 'string' ? body.brfPhone : null,
       technicalContact: typeof body.technicalContact === 'string' ? body.technicalContact : null,
       onboardingComment: typeof body.onboardingComment === 'string' ? body.onboardingComment : null,
+      additionalUsers: Array.isArray(body.additionalUsers)
+        ? body.additionalUsers.map((user) =>
+            typeof user === 'object' && user !== null
+              ? {
+                  name: typeof user.name === 'string' ? user.name : null,
+                  email: typeof user.email === 'string' ? user.email : null,
+                }
+              : { name: null, email: null }
+          )
+        : null,
     })
 
     return NextResponse.json(result)
@@ -50,6 +63,7 @@ export async function POST(request: Request, context: RouteContext) {
     if (message === 'INVITE_EXPIRED') return jsonError('Inviten har gått ut.', 409)
     if (message === 'BRF_NAME_REQUIRED') return jsonError('Ange BRF-namn.', 400)
     if (message === 'FULL_NAME_REQUIRED') return jsonError('Ange huvudkontaktens namn.', 400)
+    if (message === 'INVITE_USER_NAME_REQUIRED') return jsonError('Ange namn för första användaren.', 400)
     if (message === 'PASSWORD_TOO_SHORT') return jsonError('Lösenordet måste vara minst 8 tecken.', 400)
     if (message === 'ORG_NUMBER_INVALID') return jsonError('Ange organisationsnummer i formatet XXXXXX-XXXX.', 400)
     if (message === 'PROPERTY_DESIGNATION_REQUIRED') return jsonError('Ange fastighetsbeteckning.', 400)
@@ -63,6 +77,11 @@ export async function POST(request: Request, context: RouteContext) {
     if (message === 'PRIMARY_CONTACT_PHONE_REQUIRED') return jsonError('Ange huvudkontaktens telefonnummer.', 400)
     if (message === 'UNIT_COUNT_INVALID') return jsonError('Ange antal lägenheter som ett positivt heltal.', 400)
     if (message === 'GENERAL_EMAIL_INVALID') return jsonError('Ange giltig allmän BRF-e-post.', 400)
+    if (message === 'ADDITIONAL_USER_NAME_REQUIRED') return jsonError('Ange namn för varje extra användare.', 400)
+    if (message === 'ADDITIONAL_USER_EMAIL_REQUIRED') return jsonError('Ange e-post för varje extra användare.', 400)
+    if (message === 'ADDITIONAL_USER_EMAIL_INVALID') return jsonError('Ange giltig e-post för extra användare.', 400)
+    if (message === 'ADDITIONAL_USER_DUPLICATE_EMAIL') return jsonError('Varje användare måste ha en unik e-postadress.', 400)
+    if (message === 'TOO_MANY_ADDITIONAL_USERS') return jsonError('Du kan lägga till högst tre extra användare i detta steg.', 400)
     if (message === 'EXISTING_USER_LOGIN_REQUIRED') {
       return jsonError('E-postadressen har redan ett konto. Logga in först och öppna inviten igen.', 409)
     }

@@ -9,6 +9,7 @@ type InvitePreview = {
   state: 'open' | 'expired' | 'revoked' | 'accepted'
   invite: {
     email: string
+    fullName: string | null
     role: 'board'
     expiresAt: string
     acceptedAt: string | null
@@ -43,6 +44,11 @@ type InvitePreview = {
   }
 }
 
+type UserState = {
+  name: string
+  email: string
+}
+
 type FormState = {
   name: string
   orgNumber: string
@@ -62,6 +68,27 @@ type FormState = {
   brfPhone: string
   technicalContact: string
   onboardingComment: string
+}
+
+type InputFieldProps = {
+  label: string
+  required?: boolean
+  value: string
+  onChange?: (value: string) => void
+  placeholder?: string
+  type?: string
+  readOnly?: boolean
+  inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode']
+  className?: string
+}
+
+type TextareaFieldProps = {
+  label: string
+  required?: boolean
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  className?: string
 }
 
 const EMPTY_FORM: FormState = {
@@ -84,6 +111,13 @@ const EMPTY_FORM: FormState = {
   technicalContact: '',
   onboardingComment: '',
 }
+
+const EMPTY_USER: UserState = {
+  name: '',
+  email: '',
+}
+
+const MAX_ADDITIONAL_USERS = 3
 
 function formatDateTime(value: string | null) {
   if (!value) return '-'
@@ -115,6 +149,71 @@ function toFormState(payload: InvitePreview): FormState {
   }
 }
 
+function toInviteUserName(payload: InvitePreview) {
+  return payload.invite.fullName ?? payload.brf.primaryContactName ?? ''
+}
+
+function FieldLabel({ label, required = false }: { label: string; required?: boolean }) {
+  return (
+    <span className="mb-2 block text-sm font-semibold text-stone-800">
+      {label}
+      {required ? ' *' : ''}
+    </span>
+  )
+}
+
+function InputField({
+  label,
+  required = false,
+  value,
+  onChange,
+  placeholder,
+  type = 'text',
+  readOnly = false,
+  inputMode,
+  className = '',
+}: InputFieldProps) {
+  return (
+    <label className={`block ${className}`.trim()}>
+      <FieldLabel label={label} required={required} />
+      <input
+        value={value}
+        onChange={onChange ? (event) => onChange(event.target.value) : undefined}
+        className={`w-full rounded-2xl border px-4 py-3 text-sm ${
+          readOnly
+            ? 'border-stone-200 bg-stone-100 text-stone-600'
+            : 'border-stone-300 bg-white text-stone-900'
+        }`}
+        placeholder={placeholder}
+        type={type}
+        readOnly={readOnly}
+        inputMode={inputMode}
+      />
+    </label>
+  )
+}
+
+function TextareaField({
+  label,
+  required = false,
+  value,
+  onChange,
+  placeholder,
+  className = '',
+}: TextareaFieldProps) {
+  return (
+    <label className={`block ${className}`.trim()}>
+      <FieldLabel label={label} required={required} />
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="min-h-[110px] w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+        placeholder={placeholder}
+      />
+    </label>
+  )
+}
+
 export default function RenoAppInvitePage() {
   const router = useRouter()
   const params = useParams<{ token: string }>()
@@ -123,6 +222,8 @@ export default function RenoAppInvitePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
+  const [inviteUserName, setInviteUserName] = useState('')
+  const [additionalUsers, setAdditionalUsers] = useState<UserState[]>([])
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -146,6 +247,8 @@ export default function RenoAppInvitePage() {
         if (active) {
           setPayload(data)
           setForm(toFormState(data))
+          setInviteUserName(toInviteUserName(data))
+          setAdditionalUsers([])
         }
       } catch (fetchError) {
         if (active) {
@@ -175,6 +278,29 @@ export default function RenoAppInvitePage() {
     }))
   }
 
+  const updateAdditionalUser = (index: number, field: keyof UserState, value: string) => {
+    setAdditionalUsers((current) =>
+      current.map((user, currentIndex) =>
+        currentIndex === index
+          ? {
+              ...user,
+              [field]: value,
+            }
+          : user
+      )
+    )
+  }
+
+  const addAdditionalUser = () => {
+    setAdditionalUsers((current) =>
+      current.length >= MAX_ADDITIONAL_USERS ? current : [...current, { ...EMPTY_USER }]
+    )
+  }
+
+  const removeAdditionalUser = (index: number) => {
+    setAdditionalUsers((current) => current.filter((_, currentIndex) => currentIndex !== index))
+  }
+
   const handleAccept = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setSubmitting(true)
@@ -187,6 +313,8 @@ export default function RenoAppInvitePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
+          inviteUserName,
+          additionalUsers,
           password,
         }),
       })
@@ -245,8 +373,8 @@ export default function RenoAppInvitePage() {
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-8 md:px-6 md:py-10">
-      <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <section className="rounded-[32px] border border-stone-200/80 bg-white/92 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+      <div className="grid gap-6 lg:grid-cols-[0.82fr_1.18fr]">
+        <section className="rounded-[32px] border border-stone-200/80 bg-white/92 p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:p-7">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">RenoApp</p>
           <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">Slutför BRF-anslutning</h1>
           <p className="mt-4 text-base leading-8 text-stone-700">
@@ -254,23 +382,23 @@ export default function RenoAppInvitePage() {
             BRF:en är klar i RenoApp.
           </p>
 
-          <div className="mt-8 grid gap-4">
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
+          <div className="mt-6 grid gap-3">
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
               <p className="text-sm font-semibold text-stone-900">BRF</p>
-              <p className="mt-2 text-sm text-stone-700">{payload.brf.name}</p>
+              <p className="mt-1 text-sm text-stone-700">{payload.brf.name}</p>
             </div>
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
               <p className="text-sm font-semibold text-stone-900">Inbjuden e-post</p>
-              <p className="mt-2 break-all text-sm text-stone-700">{payload.invite.email}</p>
+              <p className="mt-1 break-all text-sm text-stone-700">{payload.invite.email}</p>
             </div>
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
               <p className="text-sm font-semibold text-stone-900">Roll</p>
-              <p className="mt-2 text-sm text-stone-700">Styrelsemedlem</p>
+              <p className="mt-1 text-sm text-stone-700">Styrelsemedlem</p>
             </div>
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
               <p className="text-sm font-semibold text-stone-900">Invite-status</p>
-              <p className="mt-2 text-sm text-stone-700">{payload.state}</p>
-              <p className="mt-2 text-xs text-stone-500">Giltig till {formatDateTime(payload.invite.expiresAt)}</p>
+              <p className="mt-1 text-sm text-stone-700">{payload.state}</p>
+              <p className="mt-1 text-xs text-stone-500">Giltig till {formatDateTime(payload.invite.expiresAt)}</p>
             </div>
           </div>
         </section>
@@ -313,10 +441,11 @@ export default function RenoAppInvitePage() {
                     <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
                       Kontot skapas för <strong>{payload.invite.email}</strong>.
                     </div>
-                    <input
+                    <InputField
+                      label="Lösenord"
+                      required
                       value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                      onChange={setPassword}
                       placeholder="Välj lösenord"
                       type="password"
                     />
@@ -338,122 +467,215 @@ export default function RenoAppInvitePage() {
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <input
+                <InputField
+                  label="BRF-namn"
+                  required
                   value={form.name}
-                  onChange={(event) => updateField('name', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                  onChange={(value) => updateField('name', value)}
                   placeholder="BRF-namn *"
                 />
-                <input
+                <InputField
+                  label="Organisationsnummer"
+                  required
                   value={form.orgNumber}
-                  onChange={(event) => updateField('orgNumber', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                  onChange={(value) => updateField('orgNumber', value)}
                   placeholder="Organisationsnummer *"
                 />
-                <input
+                <InputField
+                  label="Fastighetsbeteckning"
+                  required
                   value={form.propertyDesignation}
-                  onChange={(event) => updateField('propertyDesignation', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
+                  onChange={(value) => updateField('propertyDesignation', value)}
+                  className="md:col-span-2"
                   placeholder="Fastighetsbeteckning *"
                 />
-                <input
+                <InputField
+                  label="Gatuadress"
+                  required
                   value={form.address}
-                  onChange={(event) => updateField('address', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
+                  onChange={(value) => updateField('address', value)}
+                  className="md:col-span-2"
                   placeholder="Gatuadress *"
                 />
-                <input
+                <InputField
+                  label="Adressrad 2"
                   value={form.addressLine2}
-                  onChange={(event) => updateField('addressLine2', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
+                  onChange={(value) => updateField('addressLine2', value)}
+                  className="md:col-span-2"
                   placeholder="C/o eller adressrad 2"
                 />
-                <input
+                <InputField
+                  label="Postnummer"
+                  required
                   value={form.postalCode}
-                  onChange={(event) => updateField('postalCode', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                  onChange={(value) => updateField('postalCode', value)}
                   inputMode="numeric"
                   placeholder="Postnummer *"
                 />
-                <input
+                <InputField
+                  label="Ort"
+                  required
                   value={form.city}
-                  onChange={(event) => updateField('city', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                  onChange={(value) => updateField('city', value)}
                   placeholder="Ort *"
                 />
-                <textarea
+                <TextareaField
+                  label="Fakturaadress"
+                  required
                   value={form.invoiceAddress}
-                  onChange={(event) => updateField('invoiceAddress', event.target.value)}
-                  className="min-h-[110px] rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
+                  onChange={(value) => updateField('invoiceAddress', value)}
+                  className="md:col-span-2"
                   placeholder="Fakturaadress *"
                 />
-                <input
+                <InputField
+                  label="Faktura-e-post"
+                  required
                   value={form.invoiceEmail}
-                  onChange={(event) => updateField('invoiceEmail', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                  onChange={(value) => updateField('invoiceEmail', value)}
                   placeholder="Faktura-e-post *"
                   type="email"
                 />
-                <input
+                <InputField
+                  label="Antal lägenheter"
+                  required
                   value={form.unitCount}
-                  onChange={(event) => updateField('unitCount', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                  onChange={(value) => updateField('unitCount', value)}
                   inputMode="numeric"
                   placeholder="Antal lägenheter *"
                 />
-                <input
+                <InputField
+                  label="Huvudkontakt namn"
+                  required
                   value={form.primaryContactName}
-                  onChange={(event) => updateField('primaryContactName', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                  onChange={(value) => updateField('primaryContactName', value)}
                   placeholder="Huvudkontakt namn *"
                 />
-                <input
+                <InputField
+                  label="Huvudkontakt telefon"
+                  required
                   value={form.primaryContactPhone}
-                  onChange={(event) => updateField('primaryContactPhone', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                  onChange={(value) => updateField('primaryContactPhone', value)}
                   placeholder="Huvudkontakt telefon *"
                 />
-                <input
+                <InputField
+                  label="Huvudkontakt e-post"
+                  required
                   value={form.primaryContactEmail}
                   readOnly
-                  className="rounded-2xl border border-stone-200 bg-stone-100 px-4 py-3 text-sm text-stone-600 md:col-span-2"
+                  className="md:col-span-2"
                   placeholder="Huvudkontakt e-post *"
                   type="email"
                 />
               </div>
 
+              <div className="rounded-[28px] border border-stone-200 bg-white/70 p-5 md:p-6">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Steg 3</p>
+                <h2 className="mt-2 text-2xl font-semibold text-stone-900">Första användare</h2>
+                <p className="mt-2 text-sm leading-7 text-stone-600">
+                  Personen som öppnat länken aktiveras direkt. Du kan samtidigt lägga till upp till tre extra
+                  användare som får egna invite-länkar.
+                </p>
+
+                <div className="mt-5 grid gap-4 rounded-3xl border border-stone-200 bg-stone-50 p-4 md:grid-cols-2">
+                  <InputField
+                    label="Första användare namn"
+                    required
+                    value={inviteUserName}
+                    onChange={setInviteUserName}
+                    placeholder="Första användare namn *"
+                  />
+                  <InputField
+                    label="Första användare e-post"
+                    required
+                    value={payload.invite.email}
+                    readOnly
+                    placeholder="Första användare e-post *"
+                    type="email"
+                  />
+                </div>
+
+                <div className="mt-5 grid gap-4">
+                  {additionalUsers.map((user, index) => (
+                    <div
+                      key={`additional-user-${index}`}
+                      className="grid gap-4 rounded-3xl border border-stone-200 bg-stone-50 p-4 md:grid-cols-[1fr_1fr_auto]"
+                    >
+                      <InputField
+                        label={`Extra användare ${index + 1} namn`}
+                        value={user.name}
+                        onChange={(value) => updateAdditionalUser(index, 'name', value)}
+                        placeholder="Namn"
+                      />
+                      <InputField
+                        label={`Extra användare ${index + 1} e-post`}
+                        value={user.email}
+                        onChange={(value) => updateAdditionalUser(index, 'email', value)}
+                        placeholder="namn@exempel.se"
+                        type="email"
+                      />
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          onClick={() => removeAdditionalUser(index)}
+                          className="w-full rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                        >
+                          Ta bort
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-5 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={addAdditionalUser}
+                    disabled={additionalUsers.length >= MAX_ADDITIONAL_USERS}
+                    className="rounded-full border border-stone-300 px-4 py-2.5 text-sm font-semibold text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Lägg till användare
+                  </button>
+                  <p className="text-xs text-stone-500">
+                    {additionalUsers.length >= MAX_ADDITIONAL_USERS
+                      ? 'Max tre extra användare i detta steg.'
+                      : 'Extra användare får egna invite-länkar efter att BRF-anslutningen skickats in.'}
+                  </p>
+                </div>
+              </div>
+
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Valfritt</p>
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <input
+                  <InputField
+                    label="Allmän BRF-e-post"
                     value={form.generalEmail}
-                    onChange={(event) => updateField('generalEmail', event.target.value)}
-                    className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                    onChange={(value) => updateField('generalEmail', value)}
                     placeholder="Allmän BRF-e-post"
                     type="email"
                   />
-                  <input
+                  <InputField
+                    label="BRF-telefon"
                     value={form.brfPhone}
-                    onChange={(event) => updateField('brfPhone', event.target.value)}
-                    className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                    onChange={(value) => updateField('brfPhone', value)}
                     placeholder="BRF-telefon"
                   />
-                  <input
+                  <InputField
+                    label="Fakturareferens"
                     value={form.invoiceReference}
-                    onChange={(event) => updateField('invoiceReference', event.target.value)}
-                    className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                    onChange={(value) => updateField('invoiceReference', value)}
                     placeholder="Fakturareferens"
                   />
-                  <input
+                  <InputField
+                    label="Teknisk förvaltare eller extern kontakt"
                     value={form.technicalContact}
-                    onChange={(event) => updateField('technicalContact', event.target.value)}
-                    className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                    onChange={(value) => updateField('technicalContact', value)}
                     placeholder="Teknisk förvaltare eller extern kontakt"
                   />
-                  <textarea
+                  <TextareaField
+                    label="Kommentar till onboarding"
                     value={form.onboardingComment}
-                    onChange={(event) => updateField('onboardingComment', event.target.value)}
-                    className="min-h-[110px] rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
+                    onChange={(value) => updateField('onboardingComment', value)}
+                    className="md:col-span-2"
                     placeholder="Kommentar till onboarding"
                   />
                 </div>
