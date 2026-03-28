@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import Protected from '@/components/Protected'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import type { Database } from '@/types/supabase'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -163,6 +164,29 @@ type ControlPointOutcomeDraft = {
   sort_order: number
   is_active: boolean
 }
+
+const RENOAPP_ADMIN_LINKS = [
+  {
+    href: '/admin/renoapp',
+    label: 'RenoApp-admin',
+    description: 'Samlad översikt för RenoApp, onboarding och interna nästa steg.',
+  },
+  {
+    href: '/admin/renoapp/brf-requests',
+    label: 'BRF-ansökningar',
+    description: 'Granska inkomna intresseanmälningar och godkänn eller avslå dem.',
+  },
+  {
+    href: '/admin/renoapp/brf/create',
+    label: 'Skapa BRF',
+    description: 'Lägg upp BRF manuellt och skicka första styrelseinviten.',
+  },
+  {
+    href: '/renoapp/app',
+    label: 'Öppna RenoApp',
+    description: 'Gå vidare till RenoApps styrelseyta och den operativa handläggningen.',
+  },
+] as const
 
 export default function AdminClient() {
   const { isAdmin, loading } = useProfile()
@@ -1539,6 +1563,36 @@ export default function AdminClient() {
             </button>
           </div>
         </div>
+
+        <section className="rounded-2xl border border-stone-200 bg-[linear-gradient(145deg,rgba(255,250,244,0.98),rgba(248,244,238,0.92))] p-5 shadow-sm">
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-stone-900">RenoApp i samma adminpanel</h2>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-stone-700">
+                Hantera BRF-onboarding, inkomna ansökningar och vidare RenoApp-arbete härifrån utan att lämna den interna adminytan.
+              </p>
+            </div>
+            <Link
+              href="/admin/renoapp"
+              className="inline-flex items-center justify-center rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700"
+            >
+              Öppna RenoApp-admin
+            </Link>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {RENOAPP_ADMIN_LINKS.map(link => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="rounded-2xl border border-stone-200 bg-white/90 p-4 transition hover:border-stone-300 hover:bg-white"
+              >
+                <div className="text-sm font-semibold text-stone-900">{link.label}</div>
+                <p className="mt-2 text-sm leading-6 text-stone-700">{link.description}</p>
+              </Link>
+            ))}
+          </div>
+        </section>
 
         {tab === 'forutsattningar' && <ForutsattningarSettingsPage />}
 
