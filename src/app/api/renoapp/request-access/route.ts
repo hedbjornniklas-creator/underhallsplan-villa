@@ -25,6 +25,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'BRF_NAME_REQUIRED') return jsonError('Ange BRF-namn.', 400)
+    if (message === 'ORG_NUMBER_INVALID') return jsonError('Ange organisationsnummer i formatet XXXXXX-XXXX.', 400)
     if (message === 'CONTACT_NAME_REQUIRED') return jsonError('Ange kontaktperson.', 400)
     if (message === 'CONTACT_EMAIL_INVALID') return jsonError('Ange en giltig e-postadress.', 400)
     return jsonError(message || 'Kunde inte skapa intresseanmälan.', 500)

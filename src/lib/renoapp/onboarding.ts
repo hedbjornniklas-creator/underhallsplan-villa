@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const ORG_NUMBER_REGEX = /^\d{6}-\d{4}$/
 const INVITE_TTL_HOURS = 24 * 7
 const MIN_PASSWORD_LENGTH = 8
 
@@ -231,6 +232,12 @@ function normalizeEmail(value: unknown) {
 
 function assertValidEmail(value: string | null, fieldName: string) {
   if (!value || !EMAIL_REGEX.test(value)) {
+    throw new Error(fieldName)
+  }
+}
+
+function assertValidOrgNumber(value: string | null, fieldName: string) {
+  if (!value || !ORG_NUMBER_REGEX.test(value)) {
     throw new Error(fieldName)
   }
 }
@@ -501,6 +508,7 @@ export async function createBrfRequest(input: CreateBrfRequestInput): Promise<Cr
   const message = normalizeText(input.message)
 
   if (!name) throw new Error('BRF_NAME_REQUIRED')
+  assertValidOrgNumber(orgNumber, 'ORG_NUMBER_INVALID')
   if (!contactName) throw new Error('CONTACT_NAME_REQUIRED')
   assertValidEmail(contactEmail, 'CONTACT_EMAIL_INVALID')
 

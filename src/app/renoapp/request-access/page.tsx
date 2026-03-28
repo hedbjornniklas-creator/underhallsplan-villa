@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useState } from 'react'
 
 type FormState = {
@@ -23,6 +22,14 @@ const INITIAL_FORM: FormState = {
   message: '',
 }
 
+const ORG_NUMBER_PATTERN = /^\d{6}-\d{4}$/
+
+function formatOrgNumber(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 10)
+  if (digits.length <= 6) return digits
+  return `${digits.slice(0, 6)}-${digits.slice(6)}`
+}
+
 export default function RenoAppRequestAccessPage() {
   const [form, setForm] = useState<FormState>(INITIAL_FORM)
   const [submitting, setSubmitting] = useState(false)
@@ -35,6 +42,14 @@ export default function RenoAppRequestAccessPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const formattedOrgNumber = formatOrgNumber(form.orgNumber)
+
+    if (!ORG_NUMBER_PATTERN.test(formattedOrgNumber)) {
+      setError('Ange organisationsnummer i formatet XXXXXX-XXXX.')
+      setSuccess(false)
+      return
+    }
+
     setSubmitting(true)
     setError(null)
     setSuccess(false)
@@ -43,7 +58,10 @@ export default function RenoAppRequestAccessPage() {
       const response = await fetch('/api/renoapp/request-access', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          orgNumber: formattedOrgNumber,
+        }),
       })
       const payload = (await response.json().catch(() => ({}))) as { error?: string }
 
@@ -85,7 +103,18 @@ export default function RenoAppRequestAccessPage() {
           <h2 className="text-2xl font-semibold text-stone-900">Skicka intresseanmälan</h2>
           <form className="mt-6 grid gap-4" onSubmit={handleSubmit}>
             <input value={form.name} onChange={(event) => updateField('name', event.target.value)} className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900" placeholder="BRF-namn" />
-            <input value={form.orgNumber} onChange={(event) => updateField('orgNumber', event.target.value)} className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900" placeholder="Organisationsnummer" />
+            <input
+              value={form.orgNumber}
+              onChange={(event) => updateField('orgNumber', formatOrgNumber(event.target.value))}
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+              placeholder="Organisationsnummer, t.ex. 769600-1234"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={11}
+              pattern="^\d{6}-\d{4}$"
+              title="Ange organisationsnummer i formatet XXXXXX-XXXX."
+              required
+            />
             <input value={form.address} onChange={(event) => updateField('address', event.target.value)} className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900" placeholder="Adress" />
             <div className="grid gap-4 sm:grid-cols-2">
               <input value={form.contactName} onChange={(event) => updateField('contactName', event.target.value)} className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900" placeholder="Kontaktperson" />
@@ -99,9 +128,6 @@ export default function RenoAppRequestAccessPage() {
               <button type="submit" disabled={submitting} className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60">
                 {submitting ? 'Skickar...' : 'Skicka intresseanmälan'}
               </button>
-              <Link href="/renoapp" className="rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100">
-                Till RenoApp-start
-              </Link>
             </div>
           </form>
         </section>
