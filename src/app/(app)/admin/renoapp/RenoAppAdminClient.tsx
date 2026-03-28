@@ -6,19 +6,22 @@ import { useProfile } from '@/hooks/useProfile'
 
 const CONFIG_SECTIONS = [
   {
+    title: 'BRF-onboarding',
+    description: 'Adminskapad BRF, publika intresseanmälningar och invite-styrd styrelseaktivering.',
+    links: [
+      { href: '/admin/renoapp/brf/create', label: 'Skapa BRF' },
+      { href: '/admin/renoapp/brf-requests', label: 'Hantera intresseanmälningar' },
+    ],
+  },
+  {
     title: 'BRF-inställningar',
-    description: 'Slug, publik ansökningsstatus, kontaktuppgifter och introtext.',
-    tables: ['brf_associations', 'brf_members'],
+    description: 'Slug, publik ansökningsstatus, kontaktuppgifter och introtext för godkända BRF:er.',
+    links: [{ href: '/admin/renoapp/brf/create', label: 'Skapa ny BRF' }],
   },
   {
-    title: 'Dokumentkonfiguration',
-    description: 'Åtgärdstyper, dokumenttyper och BRF-specifika krav per åtgärd.',
-    tables: ['renovation_action_types', 'renovation_document_types', 'renovation_action_document_requirements'],
-  },
-  {
-    title: 'Öppen ärendeåtkomst',
-    description: 'Översikt för access links, spärrning och manuell uppföljning.',
-    tables: ['renovation_cases', 'case_access_links'],
+    title: 'Drift och handläggning',
+    description: 'Översikt för invites, access links och vidare konfiguration av RenoApp-flöden.',
+    links: [{ href: '/renoapp/app', label: 'Öppna styrelseportalen' }],
   },
 ]
 
@@ -30,9 +33,10 @@ export default function RenoAppAdminClient() {
       <main className="mx-auto w-full max-w-6xl px-4 py-8 md:px-6 md:py-10">
         <section className="rounded-[32px] border border-stone-200/80 bg-white/90 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Intern RenoApp-admin</p>
-          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">Konfiguration utan påverkan på befintliga moduler</h1>
+          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">Kontrollerad BRF-onboarding för MVP</h1>
           <p className="mt-4 max-w-3xl text-base leading-8 text-stone-700">
-            Den här sidan är ett separat administrativt startläge för RenoApp. Allt som visas här bygger på nya, additiva tabeller och påverkar inte existerande OB- eller dashboardlogik.
+            RenoApp använder i MVP ingen fri BRF-signup. Härifrån skapar admin BRF:er, granskar intresseanmälningar
+            och skickar säkra invites till styrelsemedlemmar.
           </p>
         </section>
 
@@ -49,29 +53,31 @@ export default function RenoAppAdminClient() {
                 <article key={section.title} className="rounded-[28px] border border-stone-200/80 bg-white/90 p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
                   <h2 className="text-xl font-semibold text-stone-900">{section.title}</h2>
                   <p className="mt-3 text-sm leading-7 text-stone-700">{section.description}</p>
-                  <ul className="mt-4 list-disc space-y-1 pl-5 text-xs uppercase tracking-[0.12em] text-stone-500">
-                    {section.tables.map((tableName) => (
-                      <li key={tableName}>{tableName}</li>
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    {section.links.map((link) => (
+                      <Link key={link.href} href={link.href} className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100">
+                        {link.label}
+                      </Link>
                     ))}
-                  </ul>
+                  </div>
                 </article>
               ))}
             </section>
 
             <section className="mt-6 rounded-[32px] border border-stone-200/80 bg-[linear-gradient(145deg,rgba(255,251,245,0.96),rgba(247,242,235,0.9))] p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-              <h2 className="text-2xl font-semibold text-stone-900">Nästa adminsteg</h2>
+              <h2 className="text-2xl font-semibold text-stone-900">Aktiva nästa steg</h2>
               <div className="mt-5 grid gap-3 text-sm leading-7 text-stone-700 md:grid-cols-2">
                 <div className="rounded-2xl border border-stone-200 bg-white/80 p-4">
-                  1. CRUD för BRF-poster och publik ansökningsstatus.
+                  1. Skapa BRF manuellt och skicka första styrelse-inviten.
                 </div>
                 <div className="rounded-2xl border border-stone-200 bg-white/80 p-4">
-                  2. CRUD för åtgärdstyper, dokumenttyper och krav per BRF.
+                  2. Granska publika BRF-intresseanmälningar och godkänn vid behov.
                 </div>
                 <div className="rounded-2xl border border-stone-200 bg-white/80 p-4">
-                  3. Översikt för `case_access_links` med återkallelse och spärr.
+                  3. Följ vidare onboarding via invite-länk och styrelselogin.
                 </div>
                 <div className="rounded-2xl border border-stone-200 bg-white/80 p-4">
-                  4. Koppling till RenoApps styrelsevy när runtime-logiken byggs på.
+                  4. Bygg vidare BRF-inställningar och invite-hantering i nästa steg.
                 </div>
               </div>
 
@@ -79,8 +85,8 @@ export default function RenoAppAdminClient() {
                 <Link href="/renoapp" className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100">
                   Till RenoApp-start
                 </Link>
-                <Link href="/renoapp/app" className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700">
-                  Till styrelseportalen
+                <Link href="/admin/renoapp/brf/create" className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700">
+                  Skapa BRF nu
                 </Link>
               </div>
             </section>

@@ -14,9 +14,9 @@ const primaryCards = [
     eyebrow: 'BRF',
     title: 'Anslut din BRF',
     description:
-      'För styrelser som vill börja hantera renoveringsärenden strukturerat med ansökan, komplettering och beslut.',
-    href: '#brf',
-    label: 'Så ansluter ni',
+      'Skicka en intresseanmälan om ni vill börja använda RenoApp. Ingen fri BRF-signup används i MVP.',
+    href: '/renoapp/request-access',
+    label: 'Ansök om anslutning',
     tone: 'border-emerald-300 bg-emerald-50/90',
   },
   {
@@ -56,9 +56,9 @@ const faqItems = [
       'Nej. Grundflödet i RenoApp bygger på att boende ansöker utan konto via en BRF-specifik länk och därefter får tillgång till sitt ärende via säker länk.',
   },
   {
-    question: 'Hur får vi vår egen ansökningslänk?',
+    question: 'Kan en BRF registrera sig fritt?',
     answer:
-      'Varje BRF får en egen publik länk enligt formatet /renoapp/brf/[slug]/apply. När föreningen är upplagd pekar länken till just den föreningens ansökan.',
+      'Nej. I MVP skapas BRF antingen manuellt av admin eller via en godkänd intresseanmälan. Styrelsen får sedan invite för aktivering.',
   },
   {
     question: 'Vad kan styrelsen göra i RenoApp?',
@@ -76,31 +76,20 @@ export default function RenoAppLandingPage() {
   return (
     <main className="relative overflow-hidden bg-[linear-gradient(180deg,#f8f3ea_0%,#f7f7f5_42%,#edf4f2_100%)]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(180,123,70,0.18),transparent_34%),radial-gradient(circle_at_82%_16%,rgba(23,92,102,0.16),transparent_28%),linear-gradient(140deg,rgba(255,255,255,0.72),rgba(255,255,255,0))]" />
-
       <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-12 md:px-10 lg:px-12">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-stone-500">RenoApp</p>
             <p className="mt-2 text-sm text-stone-600">För BRF, boende och renoveringsärenden med tydlig handläggning.</p>
           </div>
-
           <div className="flex flex-wrap gap-3">
-            <Link
-              href="#boende"
-              className="rounded-full border border-stone-300 bg-white/80 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-white"
-            >
+            <Link href="#boende" className="rounded-full border border-stone-300 bg-white/80 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-white">
               För boende
             </Link>
-            <Link
-              href="#brf"
-              className="rounded-full border border-emerald-300 bg-emerald-50 px-5 py-3 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100"
-            >
-              För BRF
+            <Link href="/renoapp/request-access" className="rounded-full border border-emerald-300 bg-emerald-50 px-5 py-3 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100">
+              Anslut BRF
             </Link>
-            <Link
-              href="/renoapp/login"
-              className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700"
-            >
+            <Link href="/renoapp/login" className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700">
               BRF-login
             </Link>
           </div>
@@ -116,24 +105,14 @@ export default function RenoAppLandingPage() {
               RenoApp gör det lättare att samla in ansökningar, begära kompletteringar och dokumentera beslut utan att
               blanda ihop boendes upplevelse med styrelsens handläggning.
             </p>
-
             <div className="mt-8 flex flex-wrap gap-4">
-              <Link
-                href="#boende"
-                className="rounded-full bg-stone-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-stone-700"
-              >
+              <Link href="#boende" className="rounded-full bg-stone-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-stone-700">
                 Skicka ansökan
               </Link>
-              <Link
-                href="#brf"
-                className="rounded-full border border-emerald-700 bg-emerald-50 px-6 py-3 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100"
-              >
+              <Link href="/renoapp/request-access" className="rounded-full border border-emerald-700 bg-emerald-50 px-6 py-3 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100">
                 Anslut din BRF
               </Link>
-              <Link
-                href="/renoapp/login"
-                className="rounded-full border border-stone-300 bg-white/80 px-6 py-3 text-sm font-semibold text-stone-800 transition hover:bg-white"
-              >
+              <Link href="/renoapp/login" className="rounded-full border border-stone-300 bg-white/80 px-6 py-3 text-sm font-semibold text-stone-800 transition hover:bg-white">
                 BRF-login
               </Link>
             </div>
@@ -141,17 +120,11 @@ export default function RenoAppLandingPage() {
 
           <aside className="grid gap-4">
             {primaryCards.map((card) => (
-              <article
-                key={card.title}
-                className={`rounded-[30px] border p-6 shadow-[0_24px_70px_-42px_rgba(41,37,36,0.45)] ${card.tone}`}
-              >
+              <article key={card.title} className={`rounded-[30px] border p-6 shadow-[0_24px_70px_-42px_rgba(41,37,36,0.45)] ${card.tone}`}>
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">{card.eyebrow}</p>
                 <h2 className="mt-3 text-2xl font-semibold text-stone-900">{card.title}</h2>
                 <p className="mt-3 text-sm leading-7 text-stone-700">{card.description}</p>
-                <Link
-                  href={card.href}
-                  className="mt-6 inline-flex items-center rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700"
-                >
+                <Link href={card.href} className="mt-6 inline-flex items-center rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700">
                   {card.label}
                 </Link>
               </article>
@@ -161,10 +134,7 @@ export default function RenoAppLandingPage() {
 
         <section className="grid gap-5 pb-6 md:grid-cols-2 xl:grid-cols-4">
           {steps.map((step) => (
-            <article
-              key={step.title}
-              className="rounded-[28px] border border-stone-200/80 bg-white/85 p-6 shadow-[0_24px_60px_-40px_rgba(41,37,36,0.42)]"
-            >
+            <article key={step.title} className="rounded-[28px] border border-stone-200/80 bg-white/85 p-6 shadow-[0_24px_60px_-40px_rgba(41,37,36,0.42)]">
               <h2 className="text-xl font-semibold text-stone-900">{step.title}</h2>
               <p className="mt-3 text-sm leading-7 text-stone-700">{step.description}</p>
             </article>
@@ -194,16 +164,10 @@ export default function RenoAppLandingPage() {
               intyg eller entreprenörsuppgifter.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                href="#faq"
-                className="rounded-full bg-amber-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-600"
-              >
+              <Link href="#faq" className="rounded-full bg-amber-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-600">
                 Läs FAQ
               </Link>
-              <Link
-                href="#om"
-                className="rounded-full border border-amber-300 px-5 py-3 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
-              >
+              <Link href="#om" className="rounded-full border border-amber-300 px-5 py-3 text-sm font-semibold text-amber-900 transition hover:bg-amber-100">
                 Om RenoApp
               </Link>
             </div>
@@ -221,20 +185,14 @@ export default function RenoAppLandingPage() {
             <ul className="mt-6 space-y-3 text-sm leading-7 text-stone-700">
               <li>Ni får en egen publik ansökningslänk för föreningen.</li>
               <li>Styrelsen får en separat inloggad yta för granskning och beslut.</li>
-              <li>Ärenden, kompletteringar och beslut blir spårbara från start.</li>
+              <li>BRF skapas endast av admin eller via godkänd intresseanmälan.</li>
             </ul>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                href="/renoapp/login"
-                className="rounded-full bg-emerald-800 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700"
-              >
-                BRF-login
+              <Link href="/renoapp/request-access" className="rounded-full bg-emerald-800 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700">
+                Ansök om att ansluta BRF
               </Link>
-              <Link
-                href="#faq"
-                className="rounded-full border border-emerald-300 px-5 py-3 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100"
-              >
-                Frågor och svar
+              <Link href="/renoapp/login" className="rounded-full border border-emerald-300 px-5 py-3 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100">
+                BRF-login
               </Link>
             </div>
           </article>
@@ -247,8 +205,8 @@ export default function RenoAppLandingPage() {
               interna Dashboarden. Det gör det möjligt att hålla publik ansökan, handläggning och intern drift åtskilda.
             </p>
             <p className="mt-4 text-base leading-8 text-stone-700">
-              Fokus i första versionen är enkel ansökan, kompletteringsloop, dokumenthantering och beslut, utan att
-              boende måste börja med full kontoregistrering.
+              Fokus i första versionen är enkel ansökan, kompletteringsloop, dokumenthantering, kontrollerad
+              BRF-onboarding och beslut, utan fri signup för föreningar eller styrelse.
             </p>
           </article>
         </section>
@@ -258,10 +216,7 @@ export default function RenoAppLandingPage() {
           <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">Vanliga frågor om RenoApp</h2>
           <div className="mt-8 grid gap-4">
             {faqItems.map((item) => (
-              <details
-                key={item.question}
-                className="rounded-[24px] border border-stone-200 bg-stone-50/80 px-5 py-4 text-stone-800"
-              >
+              <details key={item.question} className="rounded-[24px] border border-stone-200 bg-stone-50/80 px-5 py-4 text-stone-800">
                 <summary className="cursor-pointer list-none text-base font-semibold leading-7">{item.question}</summary>
                 <p className="mt-3 text-sm leading-7 text-stone-700">{item.answer}</p>
               </details>
