@@ -48,6 +48,20 @@ type DraftState = {
   role: 'board' | 'admin'
 }
 
+type StatusFilter = 'pending' | 'approved' | 'rejected' | 'all'
+
+const FILTER_LABELS: Record<StatusFilter, string> = {
+  pending: 'Väntande',
+  approved: 'Godkända',
+  rejected: 'Avslagna',
+  all: 'Alla',
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return '-'
+  return new Date(value).toLocaleString('sv-SE')
+}
+
 export default function RenoAppAdminBrfRequestsPage() {
   const { isAdmin, loading } = useProfile()
   const [items, setItems] = useState<RequestItem[]>([])
@@ -56,6 +70,8 @@ export default function RenoAppAdminBrfRequestsPage() {
   const [submittingId, setSubmittingId] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, DraftState>>({})
   const [resultById, setResultById] = useState<Record<string, ReviewResult>>({})
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -145,12 +161,23 @@ export default function RenoAppAdminBrfRequestsPage() {
 
       setItems((current) => current.map((item) => (item.id === id ? payload.request : item)))
       setResultById((current) => ({ ...current, [id]: payload }))
+      setExpandedId(id)
+      setStatusFilter(payload.request.status === 'pending' ? 'pending' : payload.request.status)
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Kunde inte hantera intresseanmälan.')
     } finally {
       setSubmittingId(null)
     }
   }
+
+  const counts = {
+    pending: items.filter((item) => item.status === 'pending').length,
+    approved: items.filter((item) => item.status === 'approved').length,
+    rejected: items.filter((item) => item.status === 'rejected').length,
+    all: items.length,
+  }
+
+  const filteredItems = items.filter((item) => statusFilter === 'all' || item.status === statusFilter)
 
   return (
     <Protected>
@@ -159,81 +186,215 @@ export default function RenoAppAdminBrfRequestsPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">RenoApp Admin</p>
           <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">BRF-intresseanmälningar</h1>
           <p className="mt-4 max-w-3xl text-base leading-8 text-stone-700">
-            Godkänn eller avslå publika BRF-förfrågningar. Vid godkännande skapas BRF och invite skickas till vald
-            styrelsemejl.
+            Väntande ansökningar är arbetskön. Godkända och avslagna ansökningar ligger kvar som historik.
           </p>
         </section>
 
         {loading || pageLoading ? (
-          <div className="mt-6 rounded-3xl border border-stone-200 bg-white/85 p-6 text-sm text-stone-600">Laddar intresseanmälningar...</div>
+          <div className="mt-6 rounded-3xl border border-stone-200 bg-white/85 p-6 text-sm text-stone-600">
+            Laddar intresseanmälningar...
+          </div>
         ) : !isAdmin ? (
-          <div className="mt-6 rounded-3xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800">Adminbehörighet krävs.</div>
+          <div className="mt-6 rounded-3xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800">
+            Adminbehörighet krävs.
+          </div>
         ) : (
           <>
-            {error ? <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div> : null}
-            <section className="mt-6 grid gap-5">
-              {items.length === 0 ? (
+            {error ? (
+              <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                {error}
+              </div>
+            ) : null}
+
+            <section className="mt-6 rounded-[28px] border border-stone-200/80 bg-white/90 p-4 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:p-5">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-stone-900">Granskningskö</h2>
+                  <p className="mt-1 text-sm leading-6 text-stone-600">
+                    Börja med väntande. Öppna en rad när du behöver mer information.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(['pending', 'approved', 'rejected', 'all'] as StatusFilter[]).map((filterKey) => {
+                    const active = statusFilter === filterKey
+                    return (
+                      <button
+                        key={filterKey}
+                        type="button"
+                        onClick={() => setStatusFilter(filterKey)}
+                        className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                          active
+                            ? 'bg-stone-900 text-white'
+                            : 'border border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
+                        }`}
+                      >
+                        {FILTER_LABELS[filterKey]} ({counts[filterKey]})
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </section>
+
+            <section className="mt-6 grid gap-3">
+              {filteredItems.length === 0 ? (
                 <article className="rounded-[28px] border border-stone-200/80 bg-white/85 p-6 text-sm text-stone-700 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-                  Inga BRF-intresseanmälningar hittades ännu.
+                  Inga BRF-intresseanmälningar hittades i den här vyn.
                 </article>
               ) : (
-                items.map((item) => {
-                  const draft = drafts[item.id] ?? { reviewNote: '', boardEmail: item.contactEmail, role: 'board' as const }
+                filteredItems.map((item) => {
+                  const draft = drafts[item.id] ?? {
+                    reviewNote: '',
+                    boardEmail: item.contactEmail,
+                    role: 'board' as const,
+                  }
                   const result = resultById[item.id]
+                  const isExpanded = expandedId === item.id
+                  const statusTone =
+                    item.status === 'pending'
+                      ? 'border-amber-200 bg-amber-50 text-amber-900'
+                      : item.status === 'approved'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                        : 'border-rose-200 bg-rose-50 text-rose-900'
 
                   return (
-                    <article key={item.id} className="rounded-[28px] border border-stone-200/80 bg-white/90 p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">{item.status}</p>
-                          <h2 className="mt-2 text-2xl font-semibold text-stone-900">{item.name}</h2>
-                          <p className="mt-2 text-sm text-stone-700">{item.contactName} · {item.contactEmail} · {item.contactPhone ?? 'ingen telefon'}</p>
+                    <article
+                      key={item.id}
+                      className="rounded-[24px] border border-stone-200/80 bg-white/92 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]"
+                    >
+                      <div className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between md:p-5">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h2 className="text-lg font-semibold text-stone-900 md:text-xl">{item.name}</h2>
+                            <span
+                              className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${statusTone}`}
+                            >
+                              {item.status}
+                            </span>
+                          </div>
+                          <div className="mt-2 flex flex-col gap-1 text-sm text-stone-600 md:flex-row md:flex-wrap md:gap-x-4">
+                            <span>{item.orgNumber ?? 'Org.nr saknas'}</span>
+                            <span>{item.contactName}</span>
+                            <span className="break-all">{item.contactEmail}</span>
+                            <span>{item.contactPhone ?? 'Ingen telefon'}</span>
+                          </div>
                         </div>
-                        <div className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800">
-                          {new Date(item.createdAt).toLocaleString('sv-SE')}
+
+                        <div className="flex flex-col items-start gap-3 md:items-end">
+                          <div className="text-sm text-stone-500">{formatDateTime(item.createdAt)}</div>
+                          <div className="flex flex-wrap gap-2">
+                            {item.status === 'pending' ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleAction(item.id, 'approve')}
+                                  disabled={submittingId === item.id}
+                                  className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {submittingId === item.id ? 'Sparar...' : 'Godkänn'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleAction(item.id, 'reject')}
+                                  disabled={submittingId === item.id}
+                                  className="rounded-full border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-800 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Avslå
+                                </button>
+                              </>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => setExpandedId((current) => (current === item.id ? null : item.id))}
+                              className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                            >
+                              {isExpanded ? 'Dölj detaljer' : 'Visa mer'}
+                            </button>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="mt-5 grid gap-3 text-sm text-stone-700 md:grid-cols-2">
-                        <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-                          <p><strong>Org.nr:</strong> {item.orgNumber ?? '-'}</p>
-                          <p className="mt-1"><strong>Adress:</strong> {item.address ?? '-'}</p>
-                        </div>
-                        <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-                          <p><strong>Meddelande:</strong></p>
-                          <p className="mt-1">{item.message ?? 'Inget meddelande.'}</p>
-                        </div>
-                      </div>
-
-                      {item.status === 'pending' ? (
-                        <div className="mt-5 grid gap-4 rounded-3xl border border-stone-200 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.92))] p-5">
-                          <div className="grid gap-4 md:grid-cols-[1fr_220px]">
-                            <input value={draft.boardEmail} onChange={(event) => updateDraft(item.id, { boardEmail: event.target.value })} className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900" placeholder="Styrelsemejl" type="email" />
-                            <select value={draft.role} onChange={(event) => updateDraft(item.id, { role: event.target.value === 'admin' ? 'admin' : 'board' })} className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900">
-                              <option value="board">board</option>
-                              <option value="admin">admin</option>
-                            </select>
+                      {isExpanded ? (
+                        <div className="border-t border-stone-200/80 px-4 py-4 md:px-5">
+                          <div className="grid gap-3 text-sm text-stone-700 md:grid-cols-2">
+                            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                              <p className="font-semibold text-stone-900">Adress</p>
+                              <p className="mt-1">{item.address ?? 'Ingen adress angiven.'}</p>
+                            </div>
+                            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                              <p className="font-semibold text-stone-900">Meddelande</p>
+                              <p className="mt-1">{item.message ?? 'Inget meddelande.'}</p>
+                            </div>
                           </div>
-                          <textarea value={draft.reviewNote} onChange={(event) => updateDraft(item.id, { reviewNote: event.target.value })} className="min-h-28 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900" placeholder="Intern anteckning eller beslutskommentar" />
-                          <div className="flex flex-wrap gap-3">
-                            <button type="button" onClick={() => void handleAction(item.id, 'approve')} disabled={submittingId === item.id} className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60">
-                              {submittingId === item.id ? 'Sparar...' : 'Godkänn och skicka invite'}
-                            </button>
-                            <button type="button" onClick={() => void handleAction(item.id, 'reject')} disabled={submittingId === item.id} className="rounded-full border border-rose-300 px-5 py-3 text-sm font-semibold text-rose-800 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60">
-                              Avslå
-                            </button>
-                          </div>
-                        </div>
-                      ) : null}
 
-                      {result ? (
-                        <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                          <p className="font-semibold">Förfrågan uppdaterad.</p>
-                          {result.brf ? <p className="mt-1">BRF skapad: {result.brf.name} ({result.brf.slug})</p> : null}
-                          {result.invite ? <p className="mt-1 break-all">Invite: {result.invite.inviteUrl}</p> : null}
-                          {result.invite?.emailError ? <p className="mt-1 text-amber-900">{result.invite.emailError}</p> : null}
-                          {result.decisionEmail?.emailSent ? <p className="mt-1">Beskedsmejl skickades till kontaktpersonen.</p> : null}
-                          {result.decisionEmail?.emailError ? <p className="mt-1 text-amber-900">Beskedsmejl kunde inte skickas: {result.decisionEmail.emailError}</p> : null}
+                          {item.status === 'pending' ? (
+                            <div className="mt-4 grid gap-4 rounded-3xl border border-stone-200 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.92))] p-5">
+                              <div className="grid gap-4 md:grid-cols-[1fr_220px]">
+                                <input
+                                  value={draft.boardEmail}
+                                  onChange={(event) => updateDraft(item.id, { boardEmail: event.target.value })}
+                                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                                  placeholder="Styrelsemejl"
+                                  type="email"
+                                />
+                                <select
+                                  value={draft.role}
+                                  onChange={(event) =>
+                                    updateDraft(item.id, {
+                                      role: event.target.value === 'admin' ? 'admin' : 'board',
+                                    })
+                                  }
+                                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                                >
+                                  <option value="board">board</option>
+                                  <option value="admin">admin</option>
+                                </select>
+                              </div>
+                              <textarea
+                                value={draft.reviewNote}
+                                onChange={(event) => updateDraft(item.id, { reviewNote: event.target.value })}
+                                className="min-h-28 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                                placeholder="Intern anteckning eller beslutskommentar"
+                              />
+                            </div>
+                          ) : (
+                            <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
+                              <p>
+                                <strong>Beslutsdatum:</strong> {formatDateTime(item.reviewedAt)}
+                              </p>
+                              <p className="mt-1">
+                                <strong>Kommentar:</strong> {item.reviewNote ?? 'Ingen kommentar sparad.'}
+                              </p>
+                              {item.approvedBrfId ? (
+                                <p className="mt-1">
+                                  <strong>Skapad BRF:</strong> {item.approvedBrfId}
+                                </p>
+                              ) : null}
+                            </div>
+                          )}
+
+                          {result ? (
+                            <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                              <p className="font-semibold">Förfrågan uppdaterad.</p>
+                              {result.brf ? (
+                                <p className="mt-1">
+                                  BRF skapad: {result.brf.name} ({result.brf.slug})
+                                </p>
+                              ) : null}
+                              {result.invite ? <p className="mt-1 break-all">Invite: {result.invite.inviteUrl}</p> : null}
+                              {result.invite?.emailError ? (
+                                <p className="mt-1 text-amber-900">{result.invite.emailError}</p>
+                              ) : null}
+                              {result.decisionEmail?.emailSent ? (
+                                <p className="mt-1">Beskedsmejl skickades till kontaktpersonen.</p>
+                              ) : null}
+                              {result.decisionEmail?.emailError ? (
+                                <p className="mt-1 text-amber-900">
+                                  Beskedsmejl kunde inte skickas: {result.decisionEmail.emailError}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                     </article>
@@ -243,10 +404,16 @@ export default function RenoAppAdminBrfRequestsPage() {
             </section>
 
             <div className="mt-6 flex flex-wrap gap-3">
-              <Link href="/admin/renoapp" className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100">
+              <Link
+                href="/admin/renoapp"
+                className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+              >
                 Till adminstart
               </Link>
-              <Link href="/admin/renoapp/brf/create" className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700">
+              <Link
+                href="/admin/renoapp/brf/create"
+                className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700"
+              >
                 Skapa BRF manuellt
               </Link>
             </div>
