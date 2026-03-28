@@ -4,15 +4,34 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const ORG_NUMBER_REGEX = /^\d{6}-\d{4}$/
+const POSTAL_CODE_REGEX = /^\d{3}\s\d{2}$/
 const INVITE_TTL_HOURS = 24 * 7
 
 type BrfAssociationRow = {
   id: string
   name: string
   slug: string
+  org_number: string | null
+  address: string | null
+  address_line_2: string | null
+  postal_code: string | null
+  city: string | null
   email: string | null
+  phone: string | null
+  property_designation: string | null
+  invoice_address: string | null
+  invoice_email: string | null
+  invoice_reference: string | null
+  primary_contact_name: string | null
+  primary_contact_email: string | null
+  primary_contact_phone: string | null
+  unit_count: number | null
+  technical_contact: string | null
   is_public_apply_enabled: boolean
+  is_public_apply_listed: boolean
   apply_intro_text: string | null
+  onboarding_completed_at: string | null
 }
 
 type ActionTypeRow = {
@@ -321,6 +340,56 @@ export type CreateRenoAppUserInviteResult = {
     emailSent: boolean
     emailError: string | null
   }
+}
+
+export type RenoAppEditableBrf = {
+  id: string
+  name: string
+  slug: string
+  orgNumber: string | null
+  propertyDesignation: string | null
+  address: string | null
+  addressLine2: string | null
+  postalCode: string | null
+  city: string | null
+  generalEmail: string | null
+  brfPhone: string | null
+  invoiceAddress: string | null
+  invoiceEmail: string | null
+  invoiceReference: string | null
+  primaryContactName: string | null
+  primaryContactEmail: string | null
+  primaryContactPhone: string | null
+  unitCount: number | null
+  technicalContact: string | null
+  applyIntroText: string | null
+  isPublicApplyEnabled: boolean
+  isPublicApplyListed: boolean
+  onboardingCompletedAt: string | null
+}
+
+type UpdateRenoAppBrfInput = {
+  brfId: string
+  name: string
+  orgNumber: string
+  propertyDesignation: string
+  address: string
+  addressLine2?: string | null
+  postalCode: string
+  city: string
+  generalEmail?: string | null
+  brfPhone?: string | null
+  invoiceAddress: string
+  invoiceEmail: string
+  invoiceReference?: string | null
+  primaryContactName: string
+  primaryContactEmail: string
+  primaryContactPhone: string
+  unitCount?: string | number | null
+  technicalContact?: string | null
+  applyIntroText?: string | null
+  isPublicApplyEnabled: boolean
+  isPublicApplyListed: boolean
 }
 
 export type RenoAppCaseListItem = {
@@ -1080,6 +1149,14 @@ function applyBrfScope(query: QueryBuilder, accessibleBrfIds: string[] | null) {
   return query
 }
 
+function applyBrfAssociationScope(query: QueryBuilder, accessibleBrfIds: string[] | null) {
+  if (accessibleBrfIds && accessibleBrfIds.length > 0) {
+    return query.in('id', accessibleBrfIds)
+  }
+
+  return query
+}
+
 function normalizeText(value: unknown) {
   const text = String(value ?? '').trim()
   return text === '' ? null : text
@@ -1090,9 +1167,80 @@ function normalizeEmail(value: unknown) {
   return text ? text.toLowerCase() : null
 }
 
+function normalizePostalCode(value: unknown) {
+  const text = normalizeText(value)
+  if (!text) return null
+
+  const digits = text.replace(/\s+/g, '')
+  if (!/^\d{5}$/.test(digits)) {
+    return text
+  }
+
+  return `${digits.slice(0, 3)} ${digits.slice(3)}`
+}
+
 function assertValidEmail(value: string | null, fieldName: string) {
   if (!value || !EMAIL_REGEX.test(value)) {
     throw new Error(fieldName)
+  }
+}
+
+function assertValidOrgNumber(value: string | null, fieldName: string) {
+  if (!value || !ORG_NUMBER_REGEX.test(value)) {
+    throw new Error(fieldName)
+  }
+}
+
+function assertRequiredText(value: string | null, fieldName: string) {
+  if (!value) {
+    throw new Error(fieldName)
+  }
+}
+
+function assertValidPostalCode(value: string | null, fieldName: string) {
+  if (!value || !POSTAL_CODE_REGEX.test(value)) {
+    throw new Error(fieldName)
+  }
+}
+
+function parseOptionalPositiveInteger(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+
+  const parsed = typeof value === 'number' ? value : Number(String(value).trim())
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error('UNIT_COUNT_INVALID')
+  }
+
+  return parsed
+}
+
+function mapEditableBrfRow(row: BrfAssociationRow): RenoAppEditableBrf {
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    orgNumber: row.org_number ?? null,
+    propertyDesignation: row.property_designation ?? null,
+    address: row.address ?? null,
+    addressLine2: row.address_line_2 ?? null,
+    postalCode: row.postal_code ?? null,
+    city: row.city ?? null,
+    generalEmail: row.email ?? null,
+    brfPhone: row.phone ?? null,
+    invoiceAddress: row.invoice_address ?? null,
+    invoiceEmail: row.invoice_email ?? null,
+    invoiceReference: row.invoice_reference ?? null,
+    primaryContactName: row.primary_contact_name ?? null,
+    primaryContactEmail: row.primary_contact_email ?? null,
+    primaryContactPhone: row.primary_contact_phone ?? null,
+    unitCount: row.unit_count ?? null,
+    technicalContact: row.technical_contact ?? null,
+    applyIntroText: row.apply_intro_text ?? null,
+    isPublicApplyEnabled: Boolean(row.is_public_apply_enabled),
+    isPublicApplyListed: Boolean(row.is_public_apply_listed),
+    onboardingCompletedAt: row.onboarding_completed_at ?? null,
   }
 }
 
@@ -1482,6 +1630,129 @@ export async function listRenoAppUsers(): Promise<RenoAppUserListItem[]> {
     members: membersByBrfId.get(brfId) ?? [],
     pendingInvites: invitesByBrfId.get(brfId) ?? [],
   }))
+}
+
+export async function listEditableRenoAppBrfs(): Promise<RenoAppEditableBrf[]> {
+  const context = await requireRenoAppViewerContext()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const query = applyBrfAssociationScope(
+    admin
+      .from('brf_associations')
+      .select(
+        'id,name,slug,org_number,address,address_line_2,postal_code,city,email,phone,property_designation,invoice_address,invoice_email,invoice_reference,primary_contact_name,primary_contact_email,primary_contact_phone,unit_count,technical_contact,is_public_apply_enabled,is_public_apply_listed,apply_intro_text,onboarding_completed_at'
+      )
+      .order('name', { ascending: true }),
+    context.accessibleBrfIds
+  )
+
+  const { data, error } = await query
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa BRF-data.')
+  }
+
+  return ((data ?? []) as BrfAssociationRow[]).map(mapEditableBrfRow)
+}
+
+export async function updateEditableRenoAppBrf(input: UpdateRenoAppBrfInput): Promise<RenoAppEditableBrf> {
+  const context = await requireRenoAppViewerContext()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  if (!input.brfId) {
+    throw new Error('BRF_NOT_FOUND')
+  }
+
+  const name = normalizeText(input.name)
+  const orgNumber = normalizeText(input.orgNumber)
+  const propertyDesignation = normalizeText(input.propertyDesignation)
+  const address = normalizeText(input.address)
+  const addressLine2 = normalizeText(input.addressLine2)
+  const postalCode = normalizePostalCode(input.postalCode)
+  const city = normalizeText(input.city)
+  const generalEmail = normalizeEmail(input.generalEmail)
+  const brfPhone = normalizeText(input.brfPhone)
+  const invoiceAddress = normalizeText(input.invoiceAddress)
+  const invoiceEmail = normalizeEmail(input.invoiceEmail)
+  const invoiceReference = normalizeText(input.invoiceReference)
+  const primaryContactName = normalizeText(input.primaryContactName)
+  const primaryContactEmail = normalizeEmail(input.primaryContactEmail)
+  const primaryContactPhone = normalizeText(input.primaryContactPhone)
+  const unitCount = parseOptionalPositiveInteger(input.unitCount)
+  const technicalContact = normalizeText(input.technicalContact)
+  const applyIntroText = normalizeText(input.applyIntroText)
+  const isPublicApplyEnabled = Boolean(input.isPublicApplyEnabled)
+  const isPublicApplyListed = isPublicApplyEnabled ? Boolean(input.isPublicApplyListed) : false
+
+  assertRequiredText(name, 'NAME_REQUIRED')
+  assertValidOrgNumber(orgNumber, 'ORG_NUMBER_INVALID')
+  assertRequiredText(propertyDesignation, 'PROPERTY_DESIGNATION_REQUIRED')
+  assertRequiredText(address, 'ADDRESS_REQUIRED')
+  assertValidPostalCode(postalCode, 'POSTAL_CODE_INVALID')
+  assertRequiredText(city, 'CITY_REQUIRED')
+  assertRequiredText(invoiceAddress, 'INVOICE_ADDRESS_REQUIRED')
+  assertValidEmail(invoiceEmail, 'INVOICE_EMAIL_INVALID')
+  assertRequiredText(primaryContactName, 'PRIMARY_CONTACT_NAME_REQUIRED')
+  assertValidEmail(primaryContactEmail, 'PRIMARY_CONTACT_EMAIL_INVALID')
+  assertRequiredText(primaryContactPhone, 'PRIMARY_CONTACT_PHONE_REQUIRED')
+
+  if (generalEmail) {
+    assertValidEmail(generalEmail, 'GENERAL_EMAIL_INVALID')
+  }
+
+  const scopedQuery = applyBrfAssociationScope(
+    admin
+      .from('brf_associations')
+      .select(
+        'id,name,slug,org_number,address,address_line_2,postal_code,city,email,phone,property_designation,invoice_address,invoice_email,invoice_reference,primary_contact_name,primary_contact_email,primary_contact_phone,unit_count,technical_contact,is_public_apply_enabled,is_public_apply_listed,apply_intro_text,onboarding_completed_at'
+      )
+      .eq('id', input.brfId),
+    context.accessibleBrfIds
+  )
+  const { data: existingBrf, error: existingBrfError } = await scopedQuery.maybeSingle()
+
+  if (existingBrfError) {
+    throw new Error(existingBrfError.message ?? 'Kunde inte läsa BRF.')
+  }
+  if (!existingBrf) {
+    throw new Error('BRF_NOT_FOUND')
+  }
+
+  const { data: updatedBrf, error: updateError } = await admin
+    .from('brf_associations')
+    .update({
+      name,
+      org_number: orgNumber,
+      property_designation: propertyDesignation,
+      address,
+      address_line_2: addressLine2,
+      postal_code: postalCode,
+      city,
+      email: generalEmail,
+      phone: brfPhone,
+      invoice_address: invoiceAddress,
+      invoice_email: invoiceEmail,
+      invoice_reference: invoiceReference,
+      primary_contact_name: primaryContactName,
+      primary_contact_email: primaryContactEmail,
+      primary_contact_phone: primaryContactPhone,
+      unit_count: unitCount,
+      technical_contact: technicalContact,
+      apply_intro_text: applyIntroText,
+      is_public_apply_enabled: isPublicApplyEnabled,
+      is_public_apply_listed: isPublicApplyListed,
+    })
+    .eq('id', input.brfId)
+    .select(
+      'id,name,slug,org_number,address,address_line_2,postal_code,city,email,phone,property_designation,invoice_address,invoice_email,invoice_reference,primary_contact_name,primary_contact_email,primary_contact_phone,unit_count,technical_contact,is_public_apply_enabled,is_public_apply_listed,apply_intro_text,onboarding_completed_at'
+    )
+    .single()
+
+  if (updateError || !updatedBrf) {
+    throw new Error(updateError?.message ?? 'Kunde inte uppdatera BRF.')
+  }
+
+  return mapEditableBrfRow(updatedBrf as BrfAssociationRow)
 }
 
 export async function createRenoAppUserInvite(input: {
