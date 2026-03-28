@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const INVITE_TTL_HOURS = 24 * 7
 
 type BrfAssociationRow = {
   id: string
@@ -127,6 +128,7 @@ type QueryBuilder<T = Record<string, unknown>> = {
   select: (columns: string) => QueryBuilder<T>
   insert: (values: unknown) => QueryBuilder<T>
   update: (values: unknown) => QueryBuilder<T>
+  delete: () => QueryBuilder<T>
   eq: (column: string, value: unknown) => QueryBuilder<T>
   is: (column: string, value: unknown) => QueryBuilder<T>
   in: (column: string, values: unknown[]) => QueryBuilder<T>
@@ -302,6 +304,18 @@ export type RenoAppUserListItem = {
   }>
 }
 
+export type CreateRenoAppUserInviteResult = {
+  invite: {
+    id: string
+    email: string
+    fullName: string | null
+    expiresAt: string
+    inviteUrl: string
+    emailSent: boolean
+    emailError: string | null
+  }
+}
+
 export type RenoAppCaseListItem = {
   id: string
   caseNumber: string
@@ -424,40 +438,6 @@ export type UpdateRenoAppCaseStatusInput = {
   status: 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected'
   reason?: string | null
   conditions?: string | null
-}
-
-function normalizeText(value: unknown) {
-  const text = String(value ?? '').trim()
-  return text === '' ? null : text
-}
-
-function normalizeEmail(value: unknown) {
-  const text = normalizeText(value)
-  return text ? text.toLowerCase() : null
-}
-
-function assertValidEmail(value: string | null, fieldName: string) {
-  if (!value || !EMAIL_REGEX.test(value)) {
-    throw new Error(fieldName)
-  }
-}
-
-function makeToken() {
-  return crypto.randomBytes(24).toString('base64url')
-}
-
-function hashToken(token: string) {
-  return crypto.createHash('sha256').update(token).digest('hex')
-}
-
-function buildAbsoluteUrl(origin: string, path: string) {
-  return `${origin.replace(/\/+$/, '')}${path.startsWith('/') ? path : `/${path}`}`
-}
-
-function getMailFromAddress() {
-  const mailFrom = process.env.ASSIGNMENTS_MAIL_FROM?.trim()
-  if (!mailFrom) return null
-  return mailFrom
 }
 
 function parseBrfAssociationValue(value: BrfMemberRow['brf_associations']) {
@@ -1072,6 +1052,84 @@ function applyBrfScope(query: QueryBuilder, accessibleBrfIds: string[] | null) {
   return query
 }
 
+function normalizeText(value: unknown) {
+  const text = String(value ?? '').trim()
+  return text === '' ? null : text
+}
+
+function normalizeEmail(value: unknown) {
+  const text = normalizeText(value)
+  return text ? text.toLowerCase() : null
+}
+
+function assertValidEmail(value: string | null, fieldName: string) {
+  if (!value || !EMAIL_REGEX.test(value)) {
+    throw new Error(fieldName)
+  }
+}
+
+function makeToken() {
+  return crypto.randomBytes(24).toString('base64url')
+}
+
+function hashToken(token: string) {
+  return crypto.createHash('sha256').update(token).digest('hex')
+}
+
+function buildAbsoluteUrl(origin: string, path: string) {
+  return `${origin.replace(/\/+$/, '')}${path.startsWith('/') ? path : `/${path}`}`
+}
+
+function getMailFromAddress() {
+  const mailFrom = process.env.ASSIGNMENTS_MAIL_FROM?.trim()
+  if (!mailFrom) return null
+  return mailFrom
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function buildRenoAppEmailHtml(input: {
+  origin: string
+  preheader?: string | null
+  bodyHtml: string
+}) {
+  const logoUrl = buildAbsoluteUrl(input.origin, '/landing/Renoapp.png')
+  const preheader = input.preheader ? escapeHtml(input.preheader) : null
+
+  return `
+    <div style="margin:0;padding:0;background:#f6f1ea;color:#1c1917;font-family:Arial,sans-serif;">
+      ${
+        preheader
+          ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${preheader}</div>`
+          : ''
+      }
+      <div style="max-width:640px;margin:0 auto;padding:32px 20px;">
+        <div style="background:#ffffff;border:1px solid #e7e5e4;border-radius:24px;padding:32px;">
+          <div style="margin-bottom:24px;">
+            <img
+              src="${logoUrl}"
+              alt="RenoApp"
+              width="132"
+              style="display:block;width:132px;max-width:132px;height:auto;border:0;outline:none;text-decoration:none;"
+            />
+          </div>
+          <div style="font-size:16px;line-height:1.75;color:#292524;">
+            ${input.bodyHtml}
+            <p style="margin:24px 0 0;">Med vänlig hälsning,<br />RenoApp-teamet på HusHub</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `
+}
+
 export async function getRenoAppDashboardSummary(): Promise<RenoAppDashboardSummary> {
   const context = await requireRenoAppViewerContext()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
@@ -1396,6 +1454,202 @@ export async function listRenoAppUsers(): Promise<RenoAppUserListItem[]> {
     members: membersByBrfId.get(brfId) ?? [],
     pendingInvites: invitesByBrfId.get(brfId) ?? [],
   }))
+}
+
+export async function createRenoAppUserInvite(input: {
+  brfId: string
+  fullName: string
+  email: string
+  origin: string
+}): Promise<CreateRenoAppUserInviteResult> {
+  const context = await requireRenoAppViewerContext()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  if (context.accessibleBrfIds && !context.accessibleBrfIds.includes(input.brfId)) {
+    throw new Error('BRF_NOT_FOUND')
+  }
+
+  const fullName = normalizeText(input.fullName)
+  const email = normalizeEmail(input.email)
+  const origin = normalizeText(input.origin) ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushub.se'
+
+  if (!fullName) throw new Error('FULL_NAME_REQUIRED')
+  assertValidEmail(email, 'EMAIL_INVALID')
+
+  const { data: brfData, error: brfError } = await admin
+    .from('brf_associations')
+    .select('id,name,slug')
+    .eq('id', input.brfId)
+    .maybeSingle()
+
+  if (brfError) {
+    throw new Error(brfError.message ?? 'Kunde inte läsa BRF.')
+  }
+  if (!brfData) {
+    throw new Error('BRF_NOT_FOUND')
+  }
+
+  const { data: existingMemberRows, error: existingMemberError } = await admin
+    .from('brf_members')
+    .select('profile_id')
+    .eq('brf_id', input.brfId)
+    .eq('is_active', true)
+
+  if (existingMemberError) {
+    throw new Error(existingMemberError.message ?? 'Kunde inte läsa användare.')
+  }
+
+  const profileIds = Array.from(
+    new Set(((existingMemberRows ?? []) as Array<Record<string, unknown>>).map((row) => String(row.profile_id ?? '')).filter(Boolean))
+  )
+  const profilesResult =
+    profileIds.length > 0
+      ? await admin.from('profiles').select('id,email').in('id', profileIds)
+      : { data: [], error: null }
+
+  if (profilesResult.error) {
+    throw new Error(profilesResult.error.message ?? 'Kunde inte läsa användarprofiler.')
+  }
+
+  const activeEmails = new Set(
+    ((profilesResult.data ?? []) as Array<Record<string, unknown>>)
+      .map((row) => normalizeEmail(row.email))
+      .filter((value): value is string => Boolean(value))
+  )
+  if (email && activeEmails.has(email)) {
+    throw new Error('EMAIL_ALREADY_MEMBER')
+  }
+
+  const { data: existingInvite, error: existingInviteError } = await admin
+    .from('brf_member_invites')
+    .select('id')
+    .eq('brf_id', input.brfId)
+    .eq('email', email)
+    .is('accepted_at', null)
+    .is('revoked_at', null)
+    .maybeSingle()
+
+  if (existingInviteError) {
+    throw new Error(existingInviteError.message ?? 'Kunde inte läsa befintliga invites.')
+  }
+  if (existingInvite) {
+    throw new Error('EMAIL_ALREADY_INVITED')
+  }
+
+  const token = makeToken()
+  const tokenHash = hashToken(token)
+  const expiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 60 * 60 * 1000).toISOString()
+
+  const { data: inviteData, error: insertError } = await admin
+    .from('brf_member_invites')
+    .insert({
+      brf_id: input.brfId,
+      email,
+      full_name: fullName,
+      role: 'board',
+      token_hash: tokenHash,
+      expires_at: expiresAt,
+      created_by: context.userId,
+    })
+    .select('id')
+    .single()
+
+  if (insertError || !inviteData) {
+    throw new Error(insertError?.message ?? 'Kunde inte skapa invite.')
+  }
+
+  const inviteUrl = buildAbsoluteUrl(origin, `/renoapp/invite/${token}`)
+  const mailFrom = getMailFromAddress()
+  let emailSent = false
+  let emailError: string | null = null
+
+  if (mailFrom) {
+    try {
+      const subject = `Inbjudan till RenoApp för ${String(brfData.name ?? 'er BRF')}`
+      await sendAssignmentEmail({
+        to: email as string,
+        from: mailFrom,
+        subject,
+        html: buildRenoAppEmailHtml({
+          origin,
+          preheader: subject,
+          bodyHtml: `
+            <p>Hej ${escapeHtml(fullName as string)},</p>
+            <p>Du har blivit inbjuden till RenoApp för <strong>${escapeHtml(String(brfData.name ?? 'er BRF'))}</strong>.</p>
+            <p>Öppna länken nedan för att aktivera ditt konto:</p>
+            <p><a href="${inviteUrl}">${inviteUrl}</a></p>
+            <p>Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>
+          `,
+        }),
+        text: [
+          `Hej ${fullName},`,
+          `Du har blivit inbjuden till RenoApp för ${String(brfData.name ?? 'er BRF')}.`,
+          `Öppna länken för att aktivera ditt konto: ${inviteUrl}`,
+          `Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
+          '',
+          'Med vänlig hälsning,',
+          'RenoApp-teamet på HusHub',
+        ].join('\n'),
+      })
+      emailSent = true
+    } catch (error) {
+      emailError = error instanceof Error ? error.message : 'Mejlutskick misslyckades.'
+    }
+  } else {
+    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Invite skapades men inget mejl skickades.'
+  }
+
+  return {
+    invite: {
+      id: String(inviteData.id ?? ''),
+      email: email as string,
+      fullName,
+      expiresAt,
+      inviteUrl,
+      emailSent,
+      emailError,
+    },
+  }
+}
+
+export async function revokeRenoAppUserInvite(inviteId: string) {
+  const context = await requireRenoAppViewerContext()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const { data: inviteData, error: inviteError } = await admin
+    .from('brf_member_invites')
+    .select('id,brf_id,accepted_at,revoked_at')
+    .eq('id', inviteId)
+    .maybeSingle()
+
+  if (inviteError) {
+    throw new Error(inviteError.message ?? 'Kunde inte läsa invite.')
+  }
+  if (!inviteData) {
+    throw new Error('INVITE_NOT_FOUND')
+  }
+
+  const brfId = String((inviteData as Record<string, unknown>).brf_id ?? '')
+  if (context.accessibleBrfIds && !context.accessibleBrfIds.includes(brfId)) {
+    throw new Error('INVITE_NOT_FOUND')
+  }
+  if ((inviteData as Record<string, unknown>).accepted_at) {
+    throw new Error('INVITE_ALREADY_ACCEPTED')
+  }
+  if ((inviteData as Record<string, unknown>).revoked_at) {
+    throw new Error('INVITE_ALREADY_REVOKED')
+  }
+
+  const { error: updateError } = await admin
+    .from('brf_member_invites')
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('id', inviteId)
+
+  if (updateError) {
+    throw new Error(updateError.message ?? 'Kunde inte återkalla invite.')
+  }
+
+  return { revoked: true as const }
 }
 
 export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseDetail | null> {
