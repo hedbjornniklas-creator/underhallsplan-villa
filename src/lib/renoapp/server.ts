@@ -1652,6 +1652,60 @@ export async function revokeRenoAppUserInvite(inviteId: string) {
   return { revoked: true as const }
 }
 
+export async function removeRenoAppUserMember(input: { brfId: string; profileId: string }) {
+  const context = await requireRenoAppViewerContext()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  if (context.accessibleBrfIds && !context.accessibleBrfIds.includes(input.brfId)) {
+    throw new Error('BRF_NOT_FOUND')
+  }
+
+  if (input.profileId === context.userId) {
+    throw new Error('CANNOT_REMOVE_SELF')
+  }
+
+  const { data: memberData, error: memberError } = await admin
+    .from('brf_members')
+    .select('id,brf_id,profile_id,is_active')
+    .eq('brf_id', input.brfId)
+    .eq('profile_id', input.profileId)
+    .maybeSingle()
+
+  if (memberError) {
+    throw new Error(memberError.message ?? 'Kunde inte läsa BRF-användare.')
+  }
+  if (!memberData || !(memberData as Record<string, unknown>).is_active) {
+    throw new Error('MEMBER_NOT_FOUND')
+  }
+
+  const { data: activeMembers, error: activeMembersError } = await admin
+    .from('brf_members')
+    .select('profile_id')
+    .eq('brf_id', input.brfId)
+    .eq('is_active', true)
+
+  if (activeMembersError) {
+    throw new Error(activeMembersError.message ?? 'Kunde inte läsa aktiva BRF-användare.')
+  }
+
+  const activeCount = ((activeMembers ?? []) as Array<Record<string, unknown>>).length
+  if (activeCount <= 1) {
+    throw new Error('CANNOT_REMOVE_LAST_MEMBER')
+  }
+
+  const { error: updateError } = await admin
+    .from('brf_members')
+    .update({ is_active: false })
+    .eq('brf_id', input.brfId)
+    .eq('profile_id', input.profileId)
+
+  if (updateError) {
+    throw new Error(updateError.message ?? 'Kunde inte ta bort användaren.')
+  }
+
+  return { removed: true as const }
+}
+
 export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseDetail | null> {
   const context = await requireRenoAppViewerContext()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient

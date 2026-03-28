@@ -3,9 +3,9 @@ import Link from 'next/link'
 const PRIMARY_ACTIONS = [
   {
     title: 'Skicka ansökan',
-    description: 'För boende som redan har fått en BRF-specifik ansökningslänk.',
-    href: '#boende',
-    label: 'För boende',
+    description: 'För boende och lägenhetsinnehavare som ska vidare till sin BRF:s ansökan.',
+    href: '/renoapp/apply',
+    label: 'Skicka ansökan',
     tone: 'border-amber-300 bg-[linear-gradient(145deg,rgba(255,251,235,0.96),rgba(255,255,255,0.92))]',
   },
   {
@@ -28,7 +28,7 @@ const FAQ_ITEMS = [
   {
     question: 'Behöver boende skapa konto för att skicka in en ansökan?',
     answer:
-      'Nej. Boende ansöker via en BRF-specifik länk och får vid behov en säker ärendelänk för kompletteringar.',
+      'Nej. Boende ansöker via sin BRF:s ansökningssida och får vid behov en säker ärendelänk för kompletteringar.',
   },
   {
     question: 'Kan en BRF registrera sig fritt?',
@@ -53,8 +53,8 @@ export default function RenoAppLandingPage() {
               Renoveringsärenden för BRF, styrelse och boende.
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-8 text-stone-700 sm:text-lg">
-              Välj rätt väg direkt. Ansökan är för boende, login är för styrelse, och BRF-anslutning är för föreningar
-              som vill komma igång med RenoApp.
+              Välj rätt väg direkt. Ansökan är för boende, login är för styrelse, och BRF-anslutning
+              är för föreningar som vill komma igång med RenoApp.
             </p>
           </div>
 
@@ -77,20 +77,32 @@ export default function RenoAppLandingPage() {
           </div>
         </section>
 
-        <section id="boende" className="grid gap-6 py-8 lg:grid-cols-2">
+        <section className="grid gap-6 py-8 lg:grid-cols-2">
           <article className="rounded-[30px] border border-stone-200/80 bg-white/88 p-6 shadow-[0_24px_70px_-44px_rgba(41,37,36,0.42)] sm:p-8">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">För boende</p>
-            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-stone-900">När du ska skicka en ansökan</h2>
+            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-stone-900">
+              När du ska skicka en ansökan
+            </h2>
             <ul className="mt-5 space-y-3 text-sm leading-7 text-stone-700 sm:text-base">
               <li>Du använder länken du har fått från din BRF eller styrelse.</li>
               <li>Du fyller i åtgärd, kontaktuppgifter och relevant underlag.</li>
               <li>Om något saknas kan du komplettera via säker länk utan att börja om.</li>
             </ul>
+            <div className="mt-6">
+              <Link
+                href="/renoapp/apply"
+                className="inline-flex items-center justify-center rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700"
+              >
+                Till boendeansökan
+              </Link>
+            </div>
           </article>
 
           <article className="rounded-[30px] border border-stone-200/80 bg-white/88 p-6 shadow-[0_24px_70px_-44px_rgba(41,37,36,0.42)] sm:p-8">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">För styrelse</p>
-            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-stone-900">När du arbetar i RenoApp</h2>
+            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-stone-900">
+              När du arbetar i RenoApp
+            </h2>
             <ul className="mt-5 space-y-3 text-sm leading-7 text-stone-700 sm:text-base">
               <li>Logga in för att öppna ärenden, dokument och beslut.</li>
               <li>Begär kompletteringar när underlag saknas.</li>
@@ -118,7 +130,10 @@ export default function RenoAppLandingPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Vanliga frågor</p>
           <div className="mt-6 grid gap-4">
             {FAQ_ITEMS.map((item) => (
-              <details key={item.question} className="rounded-[22px] border border-stone-200 bg-stone-50/80 px-4 py-4 sm:px-5">
+              <details
+                key={item.question}
+                className="rounded-[22px] border border-stone-200 bg-stone-50/80 px-4 py-4 sm:px-5"
+              >
                 <summary className="cursor-pointer list-none text-base font-semibold leading-7 text-stone-900">
                   {item.question}
                 </summary>

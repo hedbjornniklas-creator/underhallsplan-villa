@@ -42,6 +42,7 @@ export default function RenoAppUsersPage() {
   const [inviteFormByBrf, setInviteFormByBrf] = useState<Record<string, { fullName: string; email: string }>>({})
   const [submittingBrfId, setSubmittingBrfId] = useState<string | null>(null)
   const [revokingInviteId, setRevokingInviteId] = useState<string | null>(null)
+  const [removingMemberKey, setRemovingMemberKey] = useState<string | null>(null)
 
   const refreshUsers = async () => {
     const response = await fetch('/api/renoapp/app/users', { cache: 'no-store' })
@@ -161,6 +162,31 @@ export default function RenoAppUsersPage() {
     }
   }
 
+  const handleRemoveMember = async (brfId: string, profileId: string) => {
+    const memberKey = `${brfId}:${profileId}`
+    setRemovingMemberKey(memberKey)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/renoapp/app/users/member', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brfId, profileId }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as { error?: string }
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Kunde inte ta bort anvÃ¤ndaren.')
+      }
+
+      await refreshUsers()
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : 'Kunde inte ta bort anvÃ¤ndaren.')
+    } finally {
+      setRemovingMemberKey(null)
+    }
+  }
+
   return (
     <div className="grid gap-6">
       <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
@@ -221,6 +247,18 @@ export default function RenoAppUsersPage() {
                           <p className="text-xs uppercase tracking-[0.12em] text-stone-500">
                             {formatRole(member.role)} · accepterad {formatDateTime(member.acceptedAt)}
                           </p>
+                          <div className="mt-3">
+                            <button
+                              type="button"
+                              onClick={() => void handleRemoveMember(group.brf.id, member.profileId)}
+                              disabled={removingMemberKey === `${group.brf.id}:${member.profileId}`}
+                              className="rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {removingMemberKey === `${group.brf.id}:${member.profileId}`
+                                ? 'Tar bort...'
+                                : 'Ta bort anvandare'}
+                            </button>
+                          </div>
                         </li>
                       ))}
                     </ul>

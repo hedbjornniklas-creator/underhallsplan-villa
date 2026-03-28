@@ -6,9 +6,7 @@ import { usePathname } from 'next/navigation'
 
 export default function RenoAppHeader() {
   const pathname = usePathname()
-  const isInvite = pathname.startsWith('/renoapp/invite/')
   const isAppPortal = pathname === '/renoapp/app' || pathname.startsWith('/renoapp/app/')
-  const hideActions = isInvite || isAppPortal
   const appNavItems = [
     { href: '/renoapp/app', label: 'Översikt' },
     { href: '/renoapp/app/cases', label: 'Ärenden' },
@@ -23,9 +21,9 @@ export default function RenoAppHeader() {
           <Image
             src="/landing/Renoapp.png"
             alt="RenoApp"
-            width={156}
-            height={40}
-            className="h-8 w-auto md:h-9"
+            width={188}
+            height={48}
+            className="h-9 w-auto object-contain md:h-10"
             priority
           />
         </Link>
@@ -51,22 +49,7 @@ export default function RenoAppHeader() {
               )
             })}
           </nav>
-        ) : hideActions ? null : (
-          <nav className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/renoapp/request-access"
-              className="rounded-full border border-stone-300 bg-white/80 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
-            >
-              Anslut BRF
-            </Link>
-            <Link
-              href="/renoapp/login"
-              className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700"
-            >
-              BRF-login
-            </Link>
-          </nav>
-        )}
+        ) : null}
       </div>
     </header>
   )
