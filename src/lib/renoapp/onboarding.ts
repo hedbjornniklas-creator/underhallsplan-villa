@@ -296,7 +296,12 @@ function buildRenoAppEmailHtml(input: {
       <div style="max-width:640px;margin:0 auto;padding:32px 20px;">
         <div style="background:#ffffff;border:1px solid #e7e5e4;border-radius:24px;padding:32px;">
           <div style="margin-bottom:24px;">
-            <img src="${logoUrl}" alt="RenoApp" style="display:block;height:40px;width:auto;max-width:180px;" />
+            <img
+              src="${logoUrl}"
+              alt="RenoApp"
+              width="132"
+              style="display:block;width:132px;max-width:132px;height:auto;border:0;outline:none;text-decoration:none;"
+            />
           </div>
           <div style="font-size:16px;line-height:1.75;color:#292524;">
             ${input.bodyHtml}
@@ -847,6 +852,10 @@ export async function reviewBrfRequest(
   }
 
   if (input.action === 'reject') {
+    if (!reviewNote) {
+      throw new Error('REJECT_NOTE_REQUIRED')
+    }
+
     const { data: rejectedData, error: rejectError } = await admin
       .from('brf_requests')
       .update({

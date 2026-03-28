@@ -139,6 +139,14 @@ export default function RenoAppAdminBrfRequestsPage() {
 
   const handleAction = async (id: string, action: 'approve' | 'reject') => {
     const draft = drafts[id]
+    const reviewNote = draft?.reviewNote?.trim() ?? ''
+
+    if (action === 'reject' && !reviewNote) {
+      setExpandedId(id)
+      setError('Ange en motivering innan du avslår ansökan.')
+      return
+    }
+
     setSubmittingId(id)
     setError(null)
 
@@ -148,7 +156,7 @@ export default function RenoAppAdminBrfRequestsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action,
-          reviewNote: draft?.reviewNote ?? '',
+          reviewNote,
           boardEmail: draft?.boardEmail ?? '',
           role: draft?.role ?? 'board',
         }),
@@ -354,7 +362,7 @@ export default function RenoAppAdminBrfRequestsPage() {
                                 value={draft.reviewNote}
                                 onChange={(event) => updateDraft(item.id, { reviewNote: event.target.value })}
                                 className="min-h-28 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                                placeholder="Intern anteckning eller beslutskommentar"
+                                placeholder="Intern anteckning eller motivering. Krävs vid avslag."
                               />
                             </div>
                           ) : (
