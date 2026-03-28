@@ -177,6 +177,13 @@ export type RenoAppPublicBrfConfig = {
   actionTypes: PublicActionType[]
 }
 
+export type RenoAppPublicBrfListItem = {
+  id: string
+  name: string
+  slug: string
+  address: string | null
+}
+
 export type CreatePublicApplicationInput = {
   brfSlug: string
   applicantName: string
@@ -495,6 +502,27 @@ async function getPublicBrfBySlug(admin: SupabaseAdminClient, slug: string) {
   }
 
   return (data ?? null) as BrfAssociationRow | null
+}
+
+export async function listRenoAppPublicBrfs(): Promise<RenoAppPublicBrfListItem[]> {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const { data, error } = await admin
+    .from('brf_associations')
+    .select('id,name,slug,address,is_public_apply_enabled,is_public_apply_listed')
+    .eq('is_public_apply_enabled', true)
+    .eq('is_public_apply_listed', true)
+    .order('name', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta publika BRF:er.')
+  }
+
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    id: String(row.id ?? ''),
+    name: String(row.name ?? ''),
+    slug: String(row.slug ?? ''),
+    address: (row.address as string | null | undefined) ?? null,
+  }))
 }
 
 async function listActiveActionTypes(admin: SupabaseAdminClient) {

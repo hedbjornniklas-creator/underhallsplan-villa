@@ -37,6 +37,8 @@ type InvitePreview = {
     technicalContact: string | null
     onboardingComment: string | null
     onboardingCompletedAt: string | null
+    isPublicApplyEnabled: boolean
+    isPublicApplyListed: boolean
   }
   currentUser: {
     email: string | null
@@ -67,6 +69,7 @@ type FormState = {
   generalEmail: string
   brfPhone: string
   technicalContact: string
+  publicApplyMode: 'listed' | 'direct_link'
 }
 
 type InputFieldProps = {
@@ -99,6 +102,7 @@ const EMPTY_FORM: FormState = {
   generalEmail: '',
   brfPhone: '',
   technicalContact: '',
+  publicApplyMode: 'direct_link',
 }
 
 const EMPTY_USER: UserState = {
@@ -137,6 +141,7 @@ function toFormState(payload: InvitePreview): FormState {
     generalEmail,
     brfPhone: payload.brf.brfPhone ?? '',
     technicalContact: payload.brf.technicalContact ?? '',
+    publicApplyMode: payload.brf.isPublicApplyListed ? 'listed' : 'direct_link',
   }
 }
 
@@ -286,6 +291,7 @@ export default function RenoAppInvitePage() {
           inviteUserName,
           additionalUsers,
           password,
+          publicApplyMode: form.publicApplyMode,
         }),
       })
       const result = (await response.json().catch(() => ({}))) as {
@@ -537,6 +543,45 @@ export default function RenoAppInvitePage() {
                 </p>
 
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <div className="md:col-span-2">
+                    <FieldLabel label="Hur boende får tillgång till ansökan" required />
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="rounded-2xl border border-stone-200 bg-white px-4 py-4 text-sm text-stone-700">
+                        <div className="flex items-start gap-3">
+                          <input
+                            checked={form.publicApplyMode === 'listed'}
+                            onChange={() => updateField('publicApplyMode', 'listed')}
+                            type="radio"
+                            name="publicApplyMode"
+                            className="mt-1"
+                          />
+                          <div>
+                            <p className="font-semibold text-stone-900">Synlig i öppen BRF-lista</p>
+                            <p className="mt-1 leading-6 text-stone-600">
+                              Boende kan hitta BRF:en direkt på RenoApps ansökningssida utan att först få en separat länk.
+                            </p>
+                          </div>
+                        </div>
+                      </label>
+                      <label className="rounded-2xl border border-stone-200 bg-white px-4 py-4 text-sm text-stone-700">
+                        <div className="flex items-start gap-3">
+                          <input
+                            checked={form.publicApplyMode === 'direct_link'}
+                            onChange={() => updateField('publicApplyMode', 'direct_link')}
+                            type="radio"
+                            name="publicApplyMode"
+                            className="mt-1"
+                          />
+                          <div>
+                            <p className="font-semibold text-stone-900">Endast via länk från styrelsen</p>
+                            <p className="mt-1 leading-6 text-stone-600">
+                              BRF:en visas inte i den öppna listan. Boende behöver få rätt ansökningslänk direkt från styrelsen.
+                            </p>
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
                   <InputField
                     label="Första användare namn"
                     required

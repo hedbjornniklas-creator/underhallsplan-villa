@@ -118,6 +118,8 @@ type BrfRow = {
   technical_contact: string | null
   onboarding_comment: string | null
   onboarding_completed_at: string | null
+  is_public_apply_enabled: boolean
+  is_public_apply_listed: boolean
 }
 
 type InviteRow = {
@@ -246,6 +248,8 @@ export type RenoAppInvitePreview = {
     technicalContact: string | null
     onboardingComment: string | null
     onboardingCompletedAt: string | null
+    isPublicApplyEnabled: boolean
+    isPublicApplyListed: boolean
   }
   currentUser: {
     email: string | null
@@ -275,6 +279,7 @@ export type AcceptBrfInviteInput = {
   brfPhone?: string | null
   technicalContact?: string | null
   onboardingComment?: string | null
+  publicApplyMode?: string | null
   additionalUsers?: OnboardingUserInput[] | null
 }
 
@@ -482,6 +487,7 @@ type PreparedBrfCompletionInput = {
   brfPhone: string | null
   technicalContact: string | null
   onboardingComment: string | null
+  publicApplyMode: 'listed' | 'direct_link'
 }
 
 function parseOptionalPositiveInteger(value: unknown, fieldName: string) {
@@ -521,6 +527,7 @@ function prepareBrfCompletionInput(input: AcceptBrfInviteInput): PreparedBrfComp
   const brfPhone = normalizeText(input.brfPhone)
   const technicalContact = normalizeText(input.technicalContact)
   const onboardingComment = normalizeText(input.onboardingComment)
+  const publicApplyMode = normalizeText(input.publicApplyMode)
   const unitCount = parseOptionalPositiveInteger(input.unitCount, 'UNIT_COUNT_INVALID')
 
   assertRequiredText(name, 'BRF_NAME_REQUIRED')
@@ -537,6 +544,10 @@ function prepareBrfCompletionInput(input: AcceptBrfInviteInput): PreparedBrfComp
 
   if (generalEmail) {
     assertValidEmail(generalEmail, 'GENERAL_EMAIL_INVALID')
+  }
+
+  if (publicApplyMode !== 'listed' && publicApplyMode !== 'direct_link') {
+    throw new Error('PUBLIC_APPLY_MODE_REQUIRED')
   }
 
   const requiredName = name as string
@@ -570,6 +581,7 @@ function prepareBrfCompletionInput(input: AcceptBrfInviteInput): PreparedBrfComp
     brfPhone,
     technicalContact,
     onboardingComment,
+    publicApplyMode,
   }
 }
 
@@ -1037,7 +1049,7 @@ export async function createBrfWithInvite(
       is_public_apply_enabled: false,
     })
     .select(
-      'id,name,slug,org_number,address,address_line_2,postal_code,city,email,phone,property_designation,invoice_address,invoice_email,invoice_reference,primary_contact_name,primary_contact_email,primary_contact_phone,unit_count,technical_contact,onboarding_comment,onboarding_completed_at'
+      'id,name,slug,org_number,address,address_line_2,postal_code,city,email,phone,property_designation,invoice_address,invoice_email,invoice_reference,primary_contact_name,primary_contact_email,primary_contact_phone,unit_count,technical_contact,onboarding_comment,onboarding_completed_at,is_public_apply_enabled,is_public_apply_listed'
     )
     .single()
 
@@ -1149,7 +1161,7 @@ export async function reviewBrfRequest(
       is_public_apply_enabled: false,
     })
     .select(
-      'id,name,slug,org_number,address,address_line_2,postal_code,city,email,phone,property_designation,invoice_address,invoice_email,invoice_reference,primary_contact_name,primary_contact_email,primary_contact_phone,unit_count,technical_contact,onboarding_comment,onboarding_completed_at'
+      'id,name,slug,org_number,address,address_line_2,postal_code,city,email,phone,property_designation,invoice_address,invoice_email,invoice_reference,primary_contact_name,primary_contact_email,primary_contact_phone,unit_count,technical_contact,onboarding_comment,onboarding_completed_at,is_public_apply_enabled,is_public_apply_listed'
     )
     .single()
 
@@ -1227,7 +1239,7 @@ export async function getBrfInviteByToken(token: string): Promise<RenoAppInviteP
   const { data: brfData, error: brfError } = await admin
     .from('brf_associations')
     .select(
-      'id,name,slug,org_number,address,address_line_2,postal_code,city,email,phone,property_designation,invoice_address,invoice_email,invoice_reference,primary_contact_name,primary_contact_email,primary_contact_phone,unit_count,technical_contact,onboarding_comment,onboarding_completed_at'
+      'id,name,slug,org_number,address,address_line_2,postal_code,city,email,phone,property_designation,invoice_address,invoice_email,invoice_reference,primary_contact_name,primary_contact_email,primary_contact_phone,unit_count,technical_contact,onboarding_comment,onboarding_completed_at,is_public_apply_enabled,is_public_apply_listed'
     )
     .eq('id', invite.brf_id)
     .maybeSingle()
@@ -1289,6 +1301,8 @@ export async function getBrfInviteByToken(token: string): Promise<RenoAppInviteP
       technicalContact: (brfData.technical_contact as string | null | undefined) ?? null,
       onboardingComment: (brfData.onboarding_comment as string | null | undefined) ?? null,
       onboardingCompletedAt: (brfData.onboarding_completed_at as string | null | undefined) ?? null,
+      isPublicApplyEnabled: Boolean(brfData.is_public_apply_enabled),
+      isPublicApplyListed: Boolean(brfData.is_public_apply_listed),
     },
     currentUser: {
       email: currentUserEmail,
@@ -1358,6 +1372,8 @@ export async function acceptBrfInvite(
         phone: completion.brfPhone ?? completion.primaryContactPhone,
         technical_contact: completion.technicalContact,
         onboarding_comment: completion.onboardingComment,
+        is_public_apply_enabled: true,
+        is_public_apply_listed: completion.publicApplyMode === 'listed',
         onboarding_completed_at: new Date().toISOString(),
       })
       .eq('id', invite.brf_id)

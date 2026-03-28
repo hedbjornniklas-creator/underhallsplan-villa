@@ -53,20 +53,6 @@ export default function HomePage() {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/renoapp/request-access"
-              className="rounded-full border border-stone-300 bg-white/85 px-4 py-2.5 text-sm font-semibold text-stone-800 transition hover:bg-white"
-            >
-              Anslut BRF
-            </Link>
-            <Link
-              href="/renoapp/login"
-              className="rounded-full border border-stone-300 bg-white/85 px-4 py-2.5 text-sm font-semibold text-stone-800 transition hover:bg-white"
-            >
-              BRF-login
-            </Link>
-          </div>
         </header>
 
         <section className="grid flex-1 gap-6 py-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-8 lg:py-12">
