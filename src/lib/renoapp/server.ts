@@ -280,6 +280,28 @@ export type RenoAppDashboardSummary = {
   }
 }
 
+export type RenoAppUserListItem = {
+  brf: {
+    id: string
+    name: string | null
+    slug: string | null
+  }
+  members: Array<{
+    profileId: string
+    fullName: string | null
+    email: string | null
+    role: 'board' | 'admin'
+    acceptedAt: string | null
+  }>
+  pendingInvites: Array<{
+    id: string
+    fullName: string | null
+    email: string
+    expiresAt: string
+    createdAt: string
+  }>
+}
+
 export type RenoAppCaseListItem = {
   id: string
   caseNumber: string
@@ -1275,6 +1297,105 @@ export async function listRenoAppUnits(): Promise<RenoAppUnitListItem[]> {
       currentContacts: contactsByUnitId.get(unitId) ?? [],
     }
   })
+}
+
+export async function listRenoAppUsers(): Promise<RenoAppUserListItem[]> {
+  const context = await requireRenoAppViewerContext()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const brfIds = context.accessibleBrfIds ?? context.brfs.map((item) => item.id)
+
+  if (brfIds.length === 0) {
+    return []
+  }
+
+  const [brfsResult, membersResult, invitesResult] = await Promise.all([
+    admin.from('brf_associations').select('id,name,slug').in('id', brfIds),
+    admin
+      .from('brf_members')
+      .select('brf_id,profile_id,role,accepted_at,is_active')
+      .in('brf_id', brfIds)
+      .eq('is_active', true),
+    admin
+      .from('brf_member_invites')
+      .select('id,brf_id,email,full_name,expires_at,accepted_at,revoked_at,created_at')
+      .in('brf_id', brfIds)
+      .is('accepted_at', null)
+      .is('revoked_at', null)
+      .order('created_at', { ascending: false }),
+  ])
+
+  if (brfsResult.error) throw new Error(brfsResult.error.message ?? 'Kunde inte hämta BRF-data.')
+  if (membersResult.error) throw new Error(membersResult.error.message ?? 'Kunde inte hämta RenoApp-användare.')
+  if (invitesResult.error) throw new Error(invitesResult.error.message ?? 'Kunde inte hämta väntande invites.')
+
+  const memberRows = (membersResult.data ?? []) as Array<Record<string, unknown>>
+  const profileIds = Array.from(new Set(memberRows.map((row) => String(row.profile_id ?? '')).filter(Boolean)))
+  const profilesResult =
+    profileIds.length > 0
+      ? await admin.from('profiles').select('id,full_name,email').in('id', profileIds)
+      : { data: [], error: null }
+
+  if (profilesResult.error) {
+    throw new Error(profilesResult.error.message ?? 'Kunde inte hämta användarprofiler.')
+  }
+
+  const brfMap = new Map(
+    ((brfsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => [
+      String(row.id ?? ''),
+      {
+        id: String(row.id ?? ''),
+        name: (row.name as string | null | undefined) ?? null,
+        slug: (row.slug as string | null | undefined) ?? null,
+      },
+    ])
+  )
+
+  const profileMap = new Map(
+    ((profilesResult.data ?? []) as Array<Record<string, unknown>>).map((row) => [
+      String(row.id ?? ''),
+      {
+        fullName: (row.full_name as string | null | undefined) ?? null,
+        email: (row.email as string | null | undefined) ?? null,
+      },
+    ])
+  )
+
+  const membersByBrfId = new Map<string, RenoAppUserListItem['members']>()
+  for (const row of memberRows) {
+    const brfId = String(row.brf_id ?? '')
+    const profileId = String(row.profile_id ?? '')
+    const profile = profileMap.get(profileId) ?? { fullName: null, email: null }
+    const bucket = membersByBrfId.get(brfId) ?? []
+    bucket.push({
+      profileId,
+      fullName: profile.fullName,
+      email: profile.email,
+      role: String(row.role ?? 'board') as 'board' | 'admin',
+      acceptedAt: (row.accepted_at as string | null | undefined) ?? null,
+    })
+    membersByBrfId.set(brfId, bucket)
+  }
+
+  const invitesByBrfId = new Map<string, RenoAppUserListItem['pendingInvites']>()
+  for (const row of (invitesResult.data ?? []) as Array<Record<string, unknown>>) {
+    const brfId = String(row.brf_id ?? '')
+    const bucket = invitesByBrfId.get(brfId) ?? []
+    bucket.push({
+      id: String(row.id ?? ''),
+      fullName: (row.full_name as string | null | undefined) ?? null,
+      email: String(row.email ?? ''),
+      expiresAt: String(row.expires_at ?? ''),
+      createdAt: String(row.created_at ?? ''),
+    })
+    invitesByBrfId.set(brfId, bucket)
+  }
+
+  return brfIds.map((brfId) => ({
+    brf: brfMap.get(brfId) ?? { id: brfId, name: null, slug: null },
+    members: membersByBrfId.get(brfId) ?? [],
+    pendingInvites: invitesByBrfId.get(brfId) ?? [],
+  }))
 }
 
 export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseDetail | null> {
