@@ -67,7 +67,6 @@ type FormState = {
   generalEmail: string
   brfPhone: string
   technicalContact: string
-  onboardingComment: string
 }
 
 type InputFieldProps = {
@@ -79,15 +78,6 @@ type InputFieldProps = {
   type?: string
   readOnly?: boolean
   inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode']
-  className?: string
-}
-
-type TextareaFieldProps = {
-  label: string
-  required?: boolean
-  value: string
-  onChange: (value: string) => void
-  placeholder?: string
   className?: string
 }
 
@@ -109,7 +99,6 @@ const EMPTY_FORM: FormState = {
   generalEmail: '',
   brfPhone: '',
   technicalContact: '',
-  onboardingComment: '',
 }
 
 const EMPTY_USER: UserState = {
@@ -127,6 +116,9 @@ function formatDateTime(value: string | null) {
 }
 
 function toFormState(payload: InvitePreview): FormState {
+  const generalEmail =
+    payload.brf.generalEmail && payload.brf.generalEmail !== payload.invite.email ? payload.brf.generalEmail : ''
+
   return {
     name: payload.brf.name ?? '',
     orgNumber: payload.brf.orgNumber ?? '',
@@ -139,13 +131,12 @@ function toFormState(payload: InvitePreview): FormState {
     invoiceEmail: payload.brf.invoiceEmail ?? '',
     invoiceReference: payload.brf.invoiceReference ?? '',
     primaryContactName: payload.brf.primaryContactName ?? '',
-    primaryContactEmail: payload.invite.email,
+    primaryContactEmail: payload.brf.primaryContactEmail ?? payload.invite.email,
     primaryContactPhone: payload.brf.primaryContactPhone ?? '',
     unitCount: payload.brf.unitCount ? String(payload.brf.unitCount) : '',
-    generalEmail: payload.brf.generalEmail ?? '',
+    generalEmail,
     brfPhone: payload.brf.brfPhone ?? '',
     technicalContact: payload.brf.technicalContact ?? '',
-    onboardingComment: payload.brf.onboardingComment ?? '',
   }
 }
 
@@ -188,27 +179,6 @@ function InputField({
         type={type}
         readOnly={readOnly}
         inputMode={inputMode}
-      />
-    </label>
-  )
-}
-
-function TextareaField({
-  label,
-  required = false,
-  value,
-  onChange,
-  placeholder,
-  className = '',
-}: TextareaFieldProps) {
-  return (
-    <label className={`block ${className}`.trim()}>
-      <FieldLabel label={label} required={required} />
-      <textarea
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="min-h-[110px] w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-        placeholder={placeholder}
       />
     </label>
   )
@@ -373,37 +343,35 @@ export default function RenoAppInvitePage() {
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-8 md:px-6 md:py-10">
-      <div className="grid gap-6 lg:grid-cols-[0.82fr_1.18fr]">
-        <section className="rounded-[32px] border border-stone-200/80 bg-white/92 p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:p-7">
+      <div className="grid gap-5">
+        <section className="rounded-[28px] border border-stone-200/80 bg-white/94 p-5 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">RenoApp</p>
-          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">Slutför BRF-anslutning</h1>
-          <p className="mt-4 text-base leading-8 text-stone-700">
-            Den här länken används för att aktivera styrelsekontot och fylla i de uppgifter som krävs innan
-            BRF:en är klar i RenoApp.
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900 md:text-3xl">Slutför BRF-anslutning</h1>
+          <p className="mt-2 text-sm leading-7 text-stone-600">
+            Slutför uppgifterna för {payload.brf.name} och lägg till de första användarna innan BRF:en börjar arbeta i RenoApp.
           </p>
 
-          <div className="mt-6 grid gap-3">
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-              <p className="text-sm font-semibold text-stone-900">BRF</p>
+          <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">BRF</p>
               <p className="mt-1 text-sm text-stone-700">{payload.brf.name}</p>
             </div>
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-              <p className="text-sm font-semibold text-stone-900">Inbjuden e-post</p>
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">E-post</p>
               <p className="mt-1 break-all text-sm text-stone-700">{payload.invite.email}</p>
             </div>
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-              <p className="text-sm font-semibold text-stone-900">Roll</p>
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Roll</p>
               <p className="mt-1 text-sm text-stone-700">Styrelsemedlem</p>
             </div>
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-              <p className="text-sm font-semibold text-stone-900">Invite-status</p>
-              <p className="mt-1 text-sm text-stone-700">{payload.state}</p>
-              <p className="mt-1 text-xs text-stone-500">Giltig till {formatDateTime(payload.invite.expiresAt)}</p>
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Giltig till</p>
+              <p className="mt-1 text-sm text-stone-700">{formatDateTime(payload.invite.expiresAt)}</p>
             </div>
           </div>
         </section>
 
-        <section className="rounded-[32px] border border-stone-200/80 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.96))] p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+        <section className="rounded-[32px] border border-stone-200/80 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.96))] p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:p-8">
           {payload.state === 'accepted' ? (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-800">
               <p className="font-semibold">Inviten har redan accepterats.</p>
@@ -519,7 +487,7 @@ export default function RenoAppInvitePage() {
                   onChange={(value) => updateField('city', value)}
                   placeholder="Ort *"
                 />
-                <TextareaField
+                <InputField
                   label="Fakturaadress"
                   required
                   value={form.invoiceAddress}
@@ -536,39 +504,31 @@ export default function RenoAppInvitePage() {
                   type="email"
                 />
                 <InputField
-                  label="Antal lägenheter"
-                  required
-                  value={form.unitCount}
-                  onChange={(value) => updateField('unitCount', value)}
-                  inputMode="numeric"
-                  placeholder="Antal lägenheter *"
-                />
-                <InputField
-                  label="Huvudkontakt namn"
+                  label="Kontaktperson namn"
                   required
                   value={form.primaryContactName}
                   onChange={(value) => updateField('primaryContactName', value)}
-                  placeholder="Huvudkontakt namn *"
+                  placeholder="Kontaktperson namn *"
                 />
                 <InputField
-                  label="Huvudkontakt telefon"
+                  label="Kontaktperson telefon"
                   required
                   value={form.primaryContactPhone}
                   onChange={(value) => updateField('primaryContactPhone', value)}
-                  placeholder="Huvudkontakt telefon *"
+                  placeholder="Kontaktperson telefon *"
                 />
                 <InputField
-                  label="Huvudkontakt e-post"
+                  label="Kontaktperson e-post"
                   required
                   value={form.primaryContactEmail}
-                  readOnly
+                  onChange={(value) => updateField('primaryContactEmail', value)}
                   className="md:col-span-2"
-                  placeholder="Huvudkontakt e-post *"
+                  placeholder="Kontaktperson e-post *"
                   type="email"
                 />
               </div>
 
-              <div className="rounded-[28px] border border-stone-200 bg-white/70 p-5 md:p-6">
+              <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Steg 3</p>
                 <h2 className="mt-2 text-2xl font-semibold text-stone-900">Första användare</h2>
                 <p className="mt-2 text-sm leading-7 text-stone-600">
@@ -576,7 +536,7 @@ export default function RenoAppInvitePage() {
                   användare som får egna invite-länkar.
                 </p>
 
-                <div className="mt-5 grid gap-4 rounded-3xl border border-stone-200 bg-stone-50 p-4 md:grid-cols-2">
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <InputField
                     label="Första användare namn"
                     required
@@ -598,7 +558,7 @@ export default function RenoAppInvitePage() {
                   {additionalUsers.map((user, index) => (
                     <div
                       key={`additional-user-${index}`}
-                      className="grid gap-4 rounded-3xl border border-stone-200 bg-stone-50 p-4 md:grid-cols-[1fr_1fr_auto]"
+                      className="grid gap-4 rounded-2xl border border-stone-200 bg-white px-4 py-4 md:grid-cols-[1fr_1fr_auto]"
                     >
                       <InputField
                         label={`Extra användare ${index + 1} namn`}
@@ -666,17 +626,17 @@ export default function RenoAppInvitePage() {
                     placeholder="Fakturareferens"
                   />
                   <InputField
+                    label="Antal lägenheter"
+                    value={form.unitCount}
+                    onChange={(value) => updateField('unitCount', value)}
+                    inputMode="numeric"
+                    placeholder="Antal lägenheter"
+                  />
+                  <InputField
                     label="Teknisk förvaltare eller extern kontakt"
                     value={form.technicalContact}
                     onChange={(value) => updateField('technicalContact', value)}
                     placeholder="Teknisk förvaltare eller extern kontakt"
-                  />
-                  <TextareaField
-                    label="Kommentar till onboarding"
-                    value={form.onboardingComment}
-                    onChange={(value) => updateField('onboardingComment', value)}
-                    className="md:col-span-2"
-                    placeholder="Kommentar till onboarding"
                   />
                 </div>
               </div>

@@ -332,20 +332,6 @@ function assertValidPostalCode(value: string | null, fieldName: string) {
   }
 }
 
-function parsePositiveInteger(value: unknown, fieldName: string) {
-  const text = normalizeText(value)
-  if (!text) {
-    throw new Error(fieldName)
-  }
-
-  const parsed = Number.parseInt(text, 10)
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(fieldName)
-  }
-
-  return parsed
-}
-
 function makeToken() {
   return crypto.randomBytes(24).toString('base64url')
 }
@@ -491,11 +477,25 @@ type PreparedBrfCompletionInput = {
   primaryContactName: string
   primaryContactEmail: string
   primaryContactPhone: string
-  unitCount: number
+  unitCount: number | null
   generalEmail: string | null
   brfPhone: string | null
   technicalContact: string | null
   onboardingComment: string | null
+}
+
+function parseOptionalPositiveInteger(value: unknown, fieldName: string) {
+  const text = normalizeText(value)
+  if (!text) {
+    return null
+  }
+
+  const parsed = Number.parseInt(text, 10)
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(fieldName)
+  }
+
+  return parsed
 }
 
 type PreparedInviteUserInput = {
@@ -503,7 +503,7 @@ type PreparedInviteUserInput = {
   email: string
 }
 
-function prepareBrfCompletionInput(input: AcceptBrfInviteInput, inviteEmail: string): PreparedBrfCompletionInput {
+function prepareBrfCompletionInput(input: AcceptBrfInviteInput): PreparedBrfCompletionInput {
   const name = normalizeText(input.name)
   const orgNumber = normalizeText(input.orgNumber)
   const propertyDesignation = normalizeText(input.propertyDesignation)
@@ -515,12 +515,13 @@ function prepareBrfCompletionInput(input: AcceptBrfInviteInput, inviteEmail: str
   const invoiceEmail = normalizeEmail(input.invoiceEmail)
   const invoiceReference = normalizeText(input.invoiceReference)
   const primaryContactName = normalizeText(input.primaryContactName)
+  const primaryContactEmail = normalizeEmail(input.primaryContactEmail)
   const primaryContactPhone = normalizeText(input.primaryContactPhone)
   const generalEmail = normalizeEmail(input.generalEmail)
   const brfPhone = normalizeText(input.brfPhone)
   const technicalContact = normalizeText(input.technicalContact)
   const onboardingComment = normalizeText(input.onboardingComment)
-  const unitCount = parsePositiveInteger(input.unitCount, 'UNIT_COUNT_INVALID')
+  const unitCount = parseOptionalPositiveInteger(input.unitCount, 'UNIT_COUNT_INVALID')
 
   assertRequiredText(name, 'BRF_NAME_REQUIRED')
   assertValidOrgNumber(orgNumber, 'ORG_NUMBER_INVALID')
@@ -531,10 +532,8 @@ function prepareBrfCompletionInput(input: AcceptBrfInviteInput, inviteEmail: str
   assertRequiredText(invoiceAddress, 'INVOICE_ADDRESS_REQUIRED')
   assertValidEmail(invoiceEmail, 'INVOICE_EMAIL_INVALID')
   assertRequiredText(primaryContactName, 'PRIMARY_CONTACT_NAME_REQUIRED')
-  assertRequiredText(primaryContactPhone, 'PRIMARY_CONTACT_PHONE_REQUIRED')
-
-  const primaryContactEmail = inviteEmail
   assertValidEmail(primaryContactEmail, 'PRIMARY_CONTACT_EMAIL_INVALID')
+  assertRequiredText(primaryContactPhone, 'PRIMARY_CONTACT_PHONE_REQUIRED')
 
   if (generalEmail) {
     assertValidEmail(generalEmail, 'GENERAL_EMAIL_INVALID')
@@ -1327,7 +1326,7 @@ export async function acceptBrfInvite(
 
   const inviteEmail = normalizeEmail(invite.email)
   assertValidEmail(inviteEmail, 'INVITE_EMAIL_INVALID')
-  const completion = prepareBrfCompletionInput(input, inviteEmail as string)
+  const completion = prepareBrfCompletionInput(input)
   const inviteUserName = normalizeText(input.inviteUserName) ?? normalizeText(invite.full_name)
   if (!inviteUserName) throw new Error('INVITE_USER_NAME_REQUIRED')
   const additionalUsers = prepareAdditionalInviteUsers(input.additionalUsers, inviteEmail as string)
@@ -1355,7 +1354,7 @@ export async function acceptBrfInvite(
         primary_contact_email: completion.primaryContactEmail,
         primary_contact_phone: completion.primaryContactPhone,
         unit_count: completion.unitCount,
-        email: completion.generalEmail ?? completion.primaryContactEmail,
+        email: completion.generalEmail,
         phone: completion.brfPhone ?? completion.primaryContactPhone,
         technical_contact: completion.technicalContact,
         onboarding_comment: completion.onboardingComment,
