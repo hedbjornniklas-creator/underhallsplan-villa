@@ -116,6 +116,7 @@ type InviteRow = {
 
 export type CreateBrfRequestInput = {
   name: string
+  origin?: string | null
   orgNumber?: string | null
   address?: string | null
   contactName: string
@@ -275,6 +276,36 @@ function escapeHtml(value: string) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+}
+
+function buildRenoAppEmailHtml(input: {
+  origin: string
+  preheader?: string | null
+  bodyHtml: string
+}) {
+  const logoUrl = buildAbsoluteUrl(input.origin, '/landing/Renoapp.png')
+  const preheader = input.preheader ? escapeHtml(input.preheader) : null
+
+  return `
+    <div style="margin:0;padding:0;background:#f6f1ea;color:#1c1917;font-family:Arial,sans-serif;">
+      ${
+        preheader
+          ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${preheader}</div>`
+          : ''
+      }
+      <div style="max-width:640px;margin:0 auto;padding:32px 20px;">
+        <div style="background:#ffffff;border:1px solid #e7e5e4;border-radius:24px;padding:32px;">
+          <div style="margin-bottom:24px;">
+            <img src="${logoUrl}" alt="RenoApp" style="display:block;height:40px;width:auto;max-width:180px;" />
+          </div>
+          <div style="font-size:16px;line-height:1.75;color:#292524;">
+            ${input.bodyHtml}
+            <p style="margin:24px 0 0;">Med vänlig hälsning,<br />RenoApp-teamet på HusHub</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `
 }
 
 function slugify(value: string) {
@@ -466,16 +497,23 @@ async function createInviteRecord(
         to: input.email,
         from: mailFrom,
         subject: `Inbjudan till RenoApp för ${input.brfName}`,
-        html: `
+        html: buildRenoAppEmailHtml({
+          origin: input.origin,
+          preheader: `Inbjudan till RenoApp för ${input.brfName}`,
+          bodyHtml: `
           <p>Du har blivit inbjuden till RenoApp för <strong>${input.brfName}</strong>.</p>
           <p>Öppna länken nedan för att aktivera ditt styrelsekonto:</p>
           <p><a href="${inviteUrl}">${inviteUrl}</a></p>
           <p>Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>
         `,
+        }),
         text: [
           `Du har blivit inbjuden till RenoApp för ${input.brfName}.`,
           `Öppna länken för att aktivera ditt konto: ${inviteUrl}`,
           `Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
+          '',
+          'Med vänlig hälsning,',
+          'RenoApp-teamet på HusHub',
         ].join('\n'),
       })
       emailSent = true
@@ -498,8 +536,9 @@ async function createInviteRecord(
 
 async function sendRenoAppEmail(input: {
   to: string | null
+  origin: string
   subject: string
-  html: string
+  htmlBody: string
   text: string
 }) {
   const recipient = normalizeEmail(input.to)
@@ -518,8 +557,12 @@ async function sendRenoAppEmail(input: {
       to: recipient as string,
       from: mailFrom,
       subject: input.subject,
-      html: input.html,
-      text: input.text,
+      html: buildRenoAppEmailHtml({
+        origin: input.origin,
+        preheader: input.subject,
+        bodyHtml: input.htmlBody,
+      }),
+      text: `${input.text}\n\nMed vänlig hälsning,\nRenoApp-teamet på HusHub`,
     })
 
     return {
@@ -535,6 +578,7 @@ async function sendRenoAppEmail(input: {
 }
 
 async function sendBrfRequestReceiptEmail(input: {
+  origin: string
   brfName: string
   contactName: string | null
   contactEmail: string | null
@@ -544,8 +588,9 @@ async function sendBrfRequestReceiptEmail(input: {
 
   return sendRenoAppEmail({
     to: input.contactEmail,
+    origin: input.origin,
     subject: `Vi har tagit emot er BRF-förfrågan för ${input.brfName}`,
-    html: `
+    htmlBody: `
       <p>Hej ${safeContactName},</p>
       <p>Vi har tagit emot er intresseanmälan för <strong>${safeBrfName}</strong> i RenoApp.</p>
       <p>Förfrågan granskas nu av admin. Om BRF:en godkänns skickas en säker invite till styrelsen.</p>
@@ -561,6 +606,7 @@ async function sendBrfRequestReceiptEmail(input: {
 }
 
 async function sendBrfRequestApprovedEmail(input: {
+  origin: string
   brfName: string
   contactName: string | null
   contactEmail: string | null
@@ -575,8 +621,9 @@ async function sendBrfRequestApprovedEmail(input: {
 
   return sendRenoAppEmail({
     to: input.contactEmail,
+    origin: input.origin,
     subject: `Er BRF-förfrågan för ${input.brfName} har godkänts`,
-    html: `
+    htmlBody: `
       <p>Hej ${safeContactName},</p>
       <p>Er intresseanmälan för <strong>${safeBrfName}</strong> har godkänts.</p>
       <p>${input.inviteSent ? 'En invite har skickats' : 'En invite har skapats'} till styrelseadressen <strong>${safeBoardEmail}</strong>.</p>
@@ -596,6 +643,7 @@ async function sendBrfRequestApprovedEmail(input: {
 }
 
 async function sendBrfRequestRejectedEmail(input: {
+  origin: string
   brfName: string
   contactName: string | null
   contactEmail: string | null
@@ -607,8 +655,9 @@ async function sendBrfRequestRejectedEmail(input: {
 
   return sendRenoAppEmail({
     to: input.contactEmail,
+    origin: input.origin,
     subject: `Er BRF-förfrågan för ${input.brfName} har behandlats`,
-    html: `
+    htmlBody: `
       <p>Hej ${safeContactName},</p>
       <p>Er intresseanmälan för <strong>${safeBrfName}</strong> har behandlats, men går inte vidare i nuläget.</p>
       ${safeReviewNote ? `<p><strong>Kommentar:</strong> ${safeReviewNote}</p>` : ''}
@@ -644,6 +693,7 @@ function mapRequestRow(row: BrfRequestRow): BrfRequestListItem {
 }
 
 export async function createBrfRequest(input: CreateBrfRequestInput): Promise<CreateBrfRequestResult> {
+  const origin = normalizeText(input.origin)
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const name = normalizeText(input.name)
   const orgNumber = normalizeText(input.orgNumber)
@@ -678,6 +728,7 @@ export async function createBrfRequest(input: CreateBrfRequestInput): Promise<Cr
   }
 
   const receipt = await sendBrfRequestReceiptEmail({
+    origin: origin ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushub.se',
     brfName: name as string,
     contactName,
     contactEmail,
@@ -815,6 +866,7 @@ export async function reviewBrfRequest(
     }
 
     const decisionEmail = await sendBrfRequestRejectedEmail({
+      origin,
       brfName: requestRow.name,
       contactName: requestRow.contact_name,
       contactEmail: requestRow.contact_email,
@@ -881,6 +933,7 @@ export async function reviewBrfRequest(
   }
 
   const decisionEmail = await sendBrfRequestApprovedEmail({
+    origin,
     brfName: brf.name,
     contactName: requestRow.contact_name,
     contactEmail: requestRow.contact_email,

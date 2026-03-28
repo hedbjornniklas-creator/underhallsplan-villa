@@ -11,8 +11,10 @@ function jsonError(message: string, status: number) {
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const origin = new URL(request.url).origin
     const result = await createBrfRequest({
       name: String(body.name ?? ''),
+      origin,
       orgNumber: typeof body.orgNumber === 'string' ? body.orgNumber : null,
       address: typeof body.address === 'string' ? body.address : null,
       contactName: String(body.contactName ?? ''),
