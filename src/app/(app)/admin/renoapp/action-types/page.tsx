@@ -60,6 +60,16 @@ const EMPTY_DRAFT: DraftActionType = {
   isActive: true,
 }
 
+function slugifyActionTypeKey(value: string) {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-')
+}
+
 export default function RenoAppActionTypesAdminPage() {
   const [items, setItems] = useState<ActionTypeItem[]>([])
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeItem[]>([])
@@ -74,6 +84,9 @@ export default function RenoAppActionTypesAdminPage() {
   const [actionModalOpen, setActionModalOpen] = useState(false)
   const [actionDraft, setActionDraft] = useState<DraftActionType>(EMPTY_DRAFT)
   const [documentsActionId, setDocumentsActionId] = useState<string | null>(null)
+
+  const generatedActionKey =
+    actionDraft.id && actionDraft.key ? actionDraft.key : slugifyActionTypeKey(actionDraft.label)
 
   useEffect(() => {
     let active = true
@@ -99,11 +112,11 @@ export default function RenoAppActionTypesAdminPage() {
         }
 
         if (!actionResponse.ok) {
-          throw new Error(actionPayload.error ?? 'Kunde inte läsa renoveringstyper.')
+          throw new Error(actionPayload.error ?? 'Kunde inte lasa renoveringstyper.')
         }
 
         if (!requirementResponse.ok) {
-          throw new Error(requirementPayload.error ?? 'Kunde inte läsa dokumentkrav.')
+          throw new Error(requirementPayload.error ?? 'Kunde inte lasa dokumentkrav.')
         }
 
         if (!active) return
@@ -136,13 +149,12 @@ export default function RenoAppActionTypesAdminPage() {
         setItems(nextItems)
         setDocumentTypes(nextDocumentTypes)
         setRequirementDrafts(nextRequirementDrafts)
-        setDocumentsActionId((current) => {
-          if (current && nextItems.some((item) => item.id === current)) return current
-          return null
-        })
+        setDocumentsActionId((current) =>
+          current && nextItems.some((item) => item.id === current) ? current : null
+        )
       } catch (loadError) {
         if (active) {
-          setError(loadError instanceof Error ? loadError.message : 'Kunde inte läsa RenoApp-adminen.')
+          setError(loadError instanceof Error ? loadError.message : 'Kunde inte lasa RenoApp-adminen.')
         }
       } finally {
         if (active) setLoading(false)
@@ -159,12 +171,12 @@ export default function RenoAppActionTypesAdminPage() {
     const normalizedQuery = query.trim().toLowerCase()
     if (!normalizedQuery) return items
 
-    return items.filter((item) => {
-      const haystack = [item.label, item.key, item.description ?? '', item.isActive ? 'aktiv' : 'inaktiv']
+    return items.filter((item) =>
+      [item.label, item.key, item.description ?? '', item.isActive ? 'aktiv' : 'inaktiv']
         .join(' ')
         .toLowerCase()
-      return haystack.includes(normalizedQuery)
-    })
+        .includes(normalizedQuery)
+    )
   }, [items, query])
 
   const activeDocumentTypes = useMemo(
@@ -212,7 +224,7 @@ export default function RenoAppActionTypesAdminPage() {
 
   const openDuplicateModal = (item: ActionTypeItem) => {
     setActionDraft({
-      key: `${item.key}-copy`,
+      key: '',
       label: `${item.label} kopia`,
       description: item.description ?? '',
       sortOrder: String(item.sortOrder),
@@ -231,7 +243,7 @@ export default function RenoAppActionTypesAdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: actionDraft.id,
-          key: actionDraft.key,
+          key: generatedActionKey,
           label: actionDraft.label,
           description: actionDraft.description,
           sortOrder: Number(actionDraft.sortOrder || '100'),
@@ -328,18 +340,13 @@ export default function RenoAppActionTypesAdminPage() {
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 pb-8 md:px-6 md:pb-10">
-      <section className="rounded-[28px] border border-stone-200/80 bg-white/90 p-6 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">RenoApp admin</p>
-        <h2 className="mt-3 text-3xl font-semibold tracking-tight text-stone-900">
-          Renoveringstyper
-        </h2>
-        <p className="mt-3 max-w-3xl text-sm leading-7 text-stone-700">
-          Hantera RenoApps renoveringstyper. Dokument fungerar som motsvarande chips och öppnas per rad.
-        </p>
-        {error ? <p className="mt-4 text-sm text-rose-700">{error}</p> : null}
-      </section>
+      {error ? (
+        <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error}
+        </div>
+      ) : null}
 
-      <section className="mt-6 rounded-[28px] border border-stone-200/80 bg-white/92 p-5 shadow-sm">
+      <section className="rounded-[28px] border border-stone-200/80 bg-white/92 p-5 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="text-lg font-semibold text-stone-900">Renoveringstyper</h3>
@@ -382,7 +389,7 @@ export default function RenoAppActionTypesAdminPage() {
                   <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Åtgärder</th>
                 </tr>
               </thead>
-              <tbody className="space-y-3">
+              <tbody>
                 {filteredItems.map((item) => {
                   const documentsOpen = documentsActionId === item.id
                   return (
@@ -441,148 +448,159 @@ export default function RenoAppActionTypesAdminPage() {
       </section>
 
       {documentsAction ? (
-        <section className="mt-6 rounded-[28px] border border-stone-200/80 bg-white/92 p-5 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-stone-900">
-                Dokumentkrav för {documentsAction.label}
-              </h3>
-              <p className="mt-1 text-sm leading-6 text-stone-600">
-                Dokumenttyperna nedan fungerar som RenoApps motsvarighet till chips.
-              </p>
+        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-auto bg-black/40 p-4">
+          <div className="w-full max-w-6xl rounded-[28px] border border-stone-200 bg-white p-6 shadow-xl">
+            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h3 className="text-2xl font-semibold text-stone-900">
+                  Dokumentkrav för {documentsAction.label}
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-stone-600">
+                  Dokumenttyperna nedan fungerar som RenoApps motsvarighet till chips.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="text-sm text-stone-600">
+                  {documentsChips.length} aktiva dokumenttyper
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDocumentsActionId(null)}
+                  className="rounded-xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                >
+                  Stäng
+                </button>
+              </div>
             </div>
-            <div className="text-sm text-stone-600">
-              {documentsChips.length} aktiva dokumenttyper
-            </div>
-          </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            {documentsChips.length > 0 ? (
-              documentsChips.map((documentType) => {
-                const draft = getRequirementDraft(documentsAction.id, documentType.id)
-                return (
-                  <span
-                    key={documentType.id}
-                    className="rounded-full border border-stone-300 bg-stone-100 px-3 py-1.5 text-xs font-semibold text-stone-800"
-                  >
-                    {documentType.label}
-                    {draft?.isRequired ? ' • obligatorisk' : ''}
-                  </span>
-                )
-              })
-            ) : (
-              <span className="rounded-full border border-dashed border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-semibold text-stone-500">
-                Inga dokumenttyper valda ännu
-              </span>
-            )}
-          </div>
-
-          <div className="mt-5 overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left text-stone-500">
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Dokumenttyp</th>
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Aktivt</th>
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Obligatoriskt</th>
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Sortering</th>
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Notering</th>
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Åtgärd</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeDocumentTypes.map((documentType) => {
+            <div className="mt-4 flex flex-wrap gap-2">
+              {documentsChips.length > 0 ? (
+                documentsChips.map((documentType) => {
                   const draft = getRequirementDraft(documentsAction.id, documentType.id)
-                  if (!draft) return null
-                  const draftKey = `${documentsAction.id}:${documentType.id}`
-
                   return (
-                    <tr key={draftKey} className="border-t border-stone-200">
-                      <td className="px-3 py-4 align-top">
-                        <div className="font-medium text-stone-900">{documentType.label}</div>
-                        {documentType.description ? (
-                          <div className="mt-1 text-xs text-stone-600">{documentType.description}</div>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-4 align-top">
-                        <input
-                          type="checkbox"
-                          checked={draft.isEnabled}
-                          onChange={(event) =>
-                            updateRequirementDraft(
-                              documentsAction.id,
-                              documentType.id,
-                              'isEnabled',
-                              event.target.checked
-                            )
-                          }
-                        />
-                      </td>
-                      <td className="px-3 py-4 align-top">
-                        <select
-                          value={draft.isRequired ? 'required' : 'optional'}
-                          onChange={(event) =>
-                            updateRequirementDraft(
-                              documentsAction.id,
-                              documentType.id,
-                              'isRequired',
-                              event.target.value === 'required'
-                            )
-                          }
-                          disabled={!draft.isEnabled}
-                          className="rounded-xl border border-stone-300 px-3 py-2 text-sm disabled:bg-stone-100"
-                        >
-                          <option value="required">Ja</option>
-                          <option value="optional">Nej</option>
-                        </select>
-                      </td>
-                      <td className="px-3 py-4 align-top">
-                        <input
-                          value={draft.sortOrder}
-                          onChange={(event) =>
-                            updateRequirementDraft(
-                              documentsAction.id,
-                              documentType.id,
-                              'sortOrder',
-                              event.target.value
-                            )
-                          }
-                          disabled={!draft.isEnabled}
-                          className="w-28 rounded-xl border border-stone-300 px-3 py-2 text-sm disabled:bg-stone-100"
-                        />
-                      </td>
-                      <td className="px-3 py-4 align-top">
-                        <input
-                          value={draft.note}
-                          onChange={(event) =>
-                            updateRequirementDraft(
-                              documentsAction.id,
-                              documentType.id,
-                              'note',
-                              event.target.value
-                            )
-                          }
-                          disabled={!draft.isEnabled}
-                          className="w-full min-w-[240px] rounded-xl border border-stone-300 px-3 py-2 text-sm disabled:bg-stone-100"
-                          placeholder="Kort hjälptext eller specialkrav"
-                        />
-                      </td>
-                      <td className="px-3 py-4 align-top">
-                        <button
-                          type="button"
-                          onClick={() => void saveRequirement(documentsAction.id, documentType.id)}
-                          disabled={savingRequirementKey === draftKey}
-                          className="rounded-xl border border-stone-300 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-stone-100 disabled:opacity-60"
-                        >
-                          {savingRequirementKey === draftKey ? 'Sparar...' : 'Spara'}
-                        </button>
-                      </td>
-                    </tr>
+                    <span
+                      key={documentType.id}
+                      className="rounded-full border border-stone-300 bg-stone-100 px-3 py-1.5 text-xs font-semibold text-stone-800"
+                    >
+                      {documentType.label}
+                      {draft?.isRequired ? ' • obligatorisk' : ''}
+                    </span>
                   )
-                })}
-              </tbody>
-            </table>
+                })
+              ) : (
+                <span className="rounded-full border border-dashed border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-semibold text-stone-500">
+                  Inga dokumenttyper valda ännu
+                </span>
+              )}
+            </div>
+
+            <div className="mt-5 overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-stone-500">
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Dokumenttyp</th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Aktivt</th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Obligatoriskt</th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Sortering</th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Notering</th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Åtgärd</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeDocumentTypes.map((documentType) => {
+                    const draft = getRequirementDraft(documentsAction.id, documentType.id)
+                    if (!draft) return null
+                    const draftKey = `${documentsAction.id}:${documentType.id}`
+
+                    return (
+                      <tr key={draftKey} className="border-t border-stone-200">
+                        <td className="px-3 py-4 align-top">
+                          <div className="font-medium text-stone-900">{documentType.label}</div>
+                          {documentType.description ? (
+                            <div className="mt-1 text-xs text-stone-600">{documentType.description}</div>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-4 align-top">
+                          <input
+                            type="checkbox"
+                            checked={draft.isEnabled}
+                            onChange={(event) =>
+                              updateRequirementDraft(
+                                documentsAction.id,
+                                documentType.id,
+                                'isEnabled',
+                                event.target.checked
+                              )
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-4 align-top">
+                          <select
+                            value={draft.isRequired ? 'required' : 'optional'}
+                            onChange={(event) =>
+                              updateRequirementDraft(
+                                documentsAction.id,
+                                documentType.id,
+                                'isRequired',
+                                event.target.value === 'required'
+                              )
+                            }
+                            disabled={!draft.isEnabled}
+                            className="rounded-xl border border-stone-300 px-3 py-2 text-sm disabled:bg-stone-100"
+                          >
+                            <option value="required">Ja</option>
+                            <option value="optional">Nej</option>
+                          </select>
+                        </td>
+                        <td className="px-3 py-4 align-top">
+                          <input
+                            value={draft.sortOrder}
+                            onChange={(event) =>
+                              updateRequirementDraft(
+                                documentsAction.id,
+                                documentType.id,
+                                'sortOrder',
+                                event.target.value
+                              )
+                            }
+                            disabled={!draft.isEnabled}
+                            className="w-28 rounded-xl border border-stone-300 px-3 py-2 text-sm disabled:bg-stone-100"
+                          />
+                        </td>
+                        <td className="px-3 py-4 align-top">
+                          <input
+                            value={draft.note}
+                            onChange={(event) =>
+                              updateRequirementDraft(
+                                documentsAction.id,
+                                documentType.id,
+                                'note',
+                                event.target.value
+                              )
+                            }
+                            disabled={!draft.isEnabled}
+                            className="w-full min-w-[240px] rounded-xl border border-stone-300 px-3 py-2 text-sm disabled:bg-stone-100"
+                            placeholder="Kort hjälptext eller specialkrav"
+                          />
+                        </td>
+                        <td className="px-3 py-4 align-top">
+                          <button
+                            type="button"
+                            onClick={() => void saveRequirement(documentsAction.id, documentType.id)}
+                            disabled={savingRequirementKey === draftKey}
+                            className="rounded-xl border border-stone-300 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-stone-100 disabled:opacity-60"
+                          >
+                            {savingRequirementKey === draftKey ? 'Sparar...' : 'Spara'}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </section>
+        </div>
       ) : null}
 
       {actionModalOpen ? (
@@ -631,15 +649,13 @@ export default function RenoAppActionTypesAdminPage() {
               <label className="block">
                 <span className="mb-2 block text-sm font-semibold text-stone-800">Intern nyckel</span>
                 <input
-                  value={actionDraft.key}
-                  onChange={(event) =>
-                    setActionDraft((current) => ({
-                      ...current,
-                      key: event.target.value.toLowerCase(),
-                    }))
-                  }
-                  className="w-full rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                  value={generatedActionKey}
+                  readOnly
+                  className="w-full rounded-2xl border border-stone-300 bg-stone-100 px-4 py-3 text-sm text-stone-700"
                 />
+                <div className="mt-2 text-xs text-stone-500">
+                  Nyckeln genereras automatiskt från visningsnamnet.
+                </div>
               </label>
 
               <label className="block">

@@ -2186,6 +2186,19 @@ function normalizeText(value: unknown) {
   return text === '' ? null : text
 }
 
+function normalizeMachineKey(value: unknown) {
+  const text = normalizeText(value)
+  if (!text) return null
+
+  return text
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-')
+}
+
 function normalizeEmail(value: unknown) {
   const text = normalizeText(value)
   return text ? text.toLowerCase() : null
@@ -2839,8 +2852,8 @@ export async function saveRenoAppAdminDocumentType(input: {
   await requireRenoAppAdminProfile()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
 
-  const key = normalizeText(input.key)?.toLowerCase() ?? null
   const label = normalizeText(input.label)
+  const key = normalizeMachineKey(input.key) ?? normalizeMachineKey(label) ?? null
   const description = normalizeText(input.description)
   const sortOrder = Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0 ? Number(input.sortOrder) : 100
   const isActive = input.isActive !== false
