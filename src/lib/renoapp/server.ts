@@ -36,8 +36,33 @@ type BrfAssociationRow = {
 
 type ActionTypeRow = {
   id: string
+  category_id: string | null
   key: string
   label: string
+  description: string | null
+  risk_level: 'low' | 'medium' | 'high'
+  contractor_requirement:
+    | 'none'
+    | 'qualified_contractor'
+    | 'authorized_electrician'
+    | 'safe_water'
+    | 'bkr_or_gvk'
+    | 'structural_engineer'
+  implies_structure: boolean
+  implies_plumbing: boolean
+  implies_ventilation: boolean
+  implies_electrical: boolean
+  implies_wet_room: boolean
+  implies_surface_only: boolean
+  sort_order: number
+  is_active: boolean
+}
+
+type ActionCategoryRow = {
+  id: string
+  slug: string
+  label: string
+  description: string | null
   sort_order: number
   is_active: boolean
 }
@@ -57,6 +82,7 @@ type RequirementRow = {
   action_type_id: string
   document_type_id: string
   is_required: boolean
+  phase: 'before_required' | 'before_conditional' | 'after_completion'
   note: string | null
   sort_order: number
 }
@@ -86,6 +112,11 @@ type CaseRow = {
   case_number: string
   title: string
   description: string | null
+  contractor_name: string | null
+  contractor_org_number: string | null
+  contractor_email: string | null
+  contractor_phone: string | null
+  contractor_has_required_certification: boolean
   status: string
   risk_level: string | null
   blocked_at: string | null
@@ -102,6 +133,11 @@ type CaseAccessLinkRow = {
   expires_at: string
   revoked_at: string | null
   last_used_at: string | null
+}
+
+type CaseActionTypeRow = {
+  case_id: string
+  action_type_id: string
 }
 
 type BrfMemberRow = {
@@ -174,14 +210,33 @@ type PublicRequirement = {
   documentLabel: string
   documentDescription: string | null
   isRequired: boolean
+  phase?: 'before_required' | 'before_conditional' | 'after_completion'
   note: string | null
+  sortOrder: number
+}
+
+type PublicActionCategory = {
+  id: string
+  slug: string
+  label: string
+  description: string | null
   sortOrder: number
 }
 
 type PublicActionType = {
   id: string
+  category?: PublicActionCategory
   key: string
   label: string
+  description?: string | null
+  riskLevel?: 'low' | 'medium' | 'high'
+  contractorRequirement?:
+    | 'none'
+    | 'qualified_contractor'
+    | 'authorized_electrician'
+    | 'safe_water'
+    | 'bkr_or_gvk'
+    | 'structural_engineer'
   sortOrder: number
   requirements: PublicRequirement[]
 }
@@ -205,14 +260,21 @@ export type RenoAppPublicBrfListItem = {
 
 export type CreatePublicApplicationInput = {
   brfSlug: string
+  draftToken?: string | null
+  mode?: 'draft' | 'submit'
   applicantName: string
   applicantEmail: string
   applicantPhone?: string | null
   unitNumberInternal?: string | null
   unitNumberSkatteverket?: string | null
   description: string
-  actionTypeKey: string
-  checks: {
+  contractorName?: string | null
+  contractorOrgNumber?: string | null
+  contractorEmail?: string | null
+  contractorPhone?: string | null
+  contractorHasRequiredCertification?: boolean
+  actionTypeKeys: string[]
+  checks?: {
     affectsStructure: boolean
     affectsPlumbing: boolean
     affectsVentilation: boolean
@@ -226,8 +288,98 @@ export type CreatePublicApplicationResult = {
   caseId: string
   caseNumber: string
   accessUrl: string
+  resumeUrl: string
+  status: 'draft' | 'submitted'
   emailSent: boolean
   emailError: string | null
+}
+
+export type RenoAppPublicApplicationDraft = {
+  state: 'open' | 'expired' | 'revoked'
+  access: {
+    email: string
+    expiresAt: string
+    lastUsedAt: string | null
+  }
+  brf: {
+    id: string
+    name: string
+    slug: string
+  }
+  form: {
+    applicantName: string
+    applicantEmail: string
+    applicantPhone: string
+    unitNumberInternal: string
+    unitNumberSkatteverket: string
+    description: string
+    contractorName: string
+    contractorOrgNumber: string
+    contractorEmail: string
+    contractorPhone: string
+    contractorHasRequiredCertification: boolean
+    actionTypeKeys: string[]
+  }
+  case: {
+    id: string
+    caseNumber: string
+    status: string
+    submittedAt: string
+    updatedAt: string
+  }
+}
+
+export type RenoAppAdminActionType = {
+  id: string
+  categoryId: string | null
+  key: string
+  label: string
+  description: string | null
+  riskLevel: 'low' | 'medium' | 'high'
+  contractorRequirement:
+    | 'none'
+    | 'qualified_contractor'
+    | 'authorized_electrician'
+    | 'safe_water'
+    | 'bkr_or_gvk'
+    | 'structural_engineer'
+  sortOrder: number
+  isActive: boolean
+}
+
+export type RenoAppAdminDocumentRequirement = {
+  id: string
+  documentTypeId: string
+  documentKey: string
+  documentLabel: string
+  documentDescription: string | null
+  isRequired: boolean
+  phase?: 'before_required' | 'before_conditional' | 'after_completion'
+  note: string | null
+  sortOrder: number
+}
+
+export type RenoAppAdminRequirementGroup = {
+  actionType: RenoAppAdminActionType
+  requirements: RenoAppAdminDocumentRequirement[]
+}
+
+export type RenoAppAdminDocumentType = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  sortOrder: number
+  isActive: boolean
+}
+
+export type RenoAppAdminActionCategory = {
+  id: string
+  slug: string
+  label: string
+  description: string | null
+  sortOrder: number
+  isActive: boolean
 }
 
 export type RenoAppCaseAccessResult = {
@@ -521,11 +673,62 @@ function parseBrfAssociationValue(value: BrfMemberRow['brf_associations']) {
   return value ?? null
 }
 
-function computeRiskLevel(checks: CreatePublicApplicationInput['checks']) {
+function computeRiskLevelFromActionTypes(actionTypes: ActionTypeRow[]) {
+  if (actionTypes.some((item) => item.risk_level === 'high')) return 'high'
+  if (actionTypes.some((item) => item.risk_level === 'medium')) return 'medium'
+  if (actionTypes.some((item) => item.risk_level === 'low')) return 'low'
+  return null
+}
+
+function computeRiskLevel(checks?: CreatePublicApplicationInput['checks']) {
+  if (!checks) return null
   if (checks.affectsStructure || checks.affectsPlumbing || checks.affectsVentilation) return 'high'
   if (checks.affectsElectrical || checks.affectsWetRoom) return 'medium'
   if (checks.affectsSurfaceOnly) return 'low'
   return null
+}
+
+function deriveChecksFromActionTypes(actionTypes: ActionTypeRow[]) {
+  return {
+    affectsStructure: actionTypes.some((item) => item.implies_structure),
+    affectsPlumbing: actionTypes.some((item) => item.implies_plumbing),
+    affectsVentilation: actionTypes.some((item) => item.implies_ventilation),
+    affectsElectrical: actionTypes.some((item) => item.implies_electrical),
+    affectsWetRoom: actionTypes.some((item) => item.implies_wet_room),
+    affectsSurfaceOnly:
+      actionTypes.length > 0 &&
+      actionTypes.every((item) => item.implies_surface_only) &&
+      !actionTypes.some(
+        (item) =>
+          item.implies_structure ||
+          item.implies_plumbing ||
+          item.implies_ventilation ||
+          item.implies_electrical ||
+          item.implies_wet_room
+      ),
+  }
+}
+
+function requiresQualifiedContractor(actionTypes: ActionTypeRow[]) {
+  return actionTypes.some((item) => item.contractor_requirement !== 'none')
+}
+
+function getContractorRequirementLabel(requirement: ActionTypeRow['contractor_requirement']) {
+  if (requirement === 'authorized_electrician') return 'Behörig elektriker'
+  if (requirement === 'safe_water') return 'Säker Vatten-auktoriserad VVS-entreprenör'
+  if (requirement === 'bkr_or_gvk') return 'Behörig våtrumsentreprenör enligt BKR eller GVK'
+  if (requirement === 'structural_engineer') return 'Konstruktör eller särskilt sakkunnig'
+  if (requirement === 'qualified_contractor') return 'Kvalificerad entreprenör'
+  return 'Ingen särskild entreprenör krävs'
+}
+
+function buildContractorRequirementSummary(actionTypes: ActionTypeRow[]) {
+  return Array.from(new Set(actionTypes.map((item) => item.contractor_requirement)))
+    .filter((item) => item !== 'none')
+    .map((item) => ({
+      code: item,
+      label: getContractorRequirementLabel(item),
+    }))
 }
 
 function allowedActionsFromScope(scope: CaseAccessLinkRow['scope']) {
@@ -597,7 +800,9 @@ export async function listRenoAppPublicBrfs(): Promise<RenoAppPublicBrfListItem[
 async function listActiveActionTypes(admin: SupabaseAdminClient) {
   const { data, error } = await admin
     .from('renovation_action_types')
-    .select('id,key,label,sort_order,is_active')
+    .select(
+      'id,category_id,key,label,description,risk_level,contractor_requirement,implies_structure,implies_plumbing,implies_ventilation,implies_electrical,implies_wet_room,implies_surface_only,sort_order,is_active'
+    )
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
 
@@ -606,6 +811,20 @@ async function listActiveActionTypes(admin: SupabaseAdminClient) {
   }
 
   return (data ?? []) as ActionTypeRow[]
+}
+
+async function listActiveActionCategories(admin: SupabaseAdminClient) {
+  const { data, error } = await admin
+    .from('renovation_action_categories')
+    .select('id,slug,label,description,sort_order,is_active')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta åtgärdskategorier.')
+  }
+
+  return (data ?? []) as ActionCategoryRow[]
 }
 
 async function listActiveDocumentTypes(admin: SupabaseAdminClient) {
@@ -625,7 +844,7 @@ async function listActiveDocumentTypes(admin: SupabaseAdminClient) {
 async function listRequirements(admin: SupabaseAdminClient, brfId: string) {
   const globalQuery = await admin
     .from('renovation_action_document_requirements')
-    .select('id,brf_id,action_type_id,document_type_id,is_required,note,sort_order')
+    .select('id,brf_id,action_type_id,document_type_id,is_required,phase,note,sort_order')
     .is('brf_id', null)
     .order('sort_order', { ascending: true })
 
@@ -635,7 +854,7 @@ async function listRequirements(admin: SupabaseAdminClient, brfId: string) {
 
   const localQuery = await admin
     .from('renovation_action_document_requirements')
-    .select('id,brf_id,action_type_id,document_type_id,is_required,note,sort_order')
+    .select('id,brf_id,action_type_id,document_type_id,is_required,phase,note,sort_order')
     .eq('brf_id', brfId)
     .order('sort_order', { ascending: true })
 
@@ -646,20 +865,13 @@ async function listRequirements(admin: SupabaseAdminClient, brfId: string) {
   return [...((globalQuery.data ?? []) as RequirementRow[]), ...((localQuery.data ?? []) as RequirementRow[])]
 }
 
-export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPublicBrfConfig | null> {
-  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
-  const brf = await getPublicBrfBySlug(admin, slug)
-
-  if (!brf || !brf.is_public_apply_enabled) {
-    return null
-  }
-
-  const [actionTypes, documentTypes, requirements] = await Promise.all([
-    listActiveActionTypes(admin),
-    listActiveDocumentTypes(admin),
-    listRequirements(admin, brf.id),
-  ])
-
+function buildPublicActionTypes(
+  categories: ActionCategoryRow[],
+  actionTypes: ActionTypeRow[],
+  documentTypes: DocumentTypeRow[],
+  requirements: RequirementRow[]
+): PublicActionType[] {
+  const categoryById = new Map(categories.map((item) => [item.id, item]))
   const documentById = new Map(documentTypes.map((item) => [item.id, item]))
   const requirementMap = new Map<string, RequirementRow>()
 
@@ -668,6 +880,87 @@ export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPubli
     requirementMap.set(key, requirement)
   }
 
+  return actionTypes.map((actionType) => ({
+    id: actionType.id,
+    category: (() => {
+      const category = actionType.category_id ? categoryById.get(actionType.category_id) : null
+      return {
+        id: category?.id ?? '',
+        slug: category?.slug ?? 'ovrigt',
+        label: category?.label ?? 'Övrigt',
+        description: category?.description ?? null,
+        sortOrder: category?.sort_order ?? 999,
+      }
+    })(),
+    key: actionType.key,
+    label: actionType.label,
+    description: actionType.description ?? null,
+    riskLevel: actionType.risk_level,
+    contractorRequirement: actionType.contractor_requirement,
+    sortOrder: actionType.sort_order,
+    requirements: Array.from(requirementMap.values())
+      .filter((requirement) => requirement.action_type_id === actionType.id)
+      .map((requirement) => {
+        const documentType = documentById.get(requirement.document_type_id)
+
+        return {
+          id: requirement.id,
+          documentTypeId: requirement.document_type_id,
+          documentKey: documentType?.key ?? 'unknown',
+          documentLabel: documentType?.label ?? 'Okänd dokumenttyp',
+          documentDescription: documentType?.description ?? null,
+          isRequired: requirement.is_required,
+          phase: requirement.phase,
+          note: requirement.note,
+          sortOrder: requirement.sort_order,
+        }
+      })
+      .sort((left, right) => left.sortOrder - right.sortOrder),
+  }))
+}
+
+async function listCaseActionTypes(admin: SupabaseAdminClient, caseIds: string[]) {
+  if (caseIds.length === 0) return [] as CaseActionTypeRow[]
+
+  const { data, error } = await admin
+    .from('renovation_case_action_types')
+    .select('case_id,action_type_id')
+    .in('case_id', caseIds)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa ärendets åtgärdstyper.')
+  }
+
+  return (data ?? []) as CaseActionTypeRow[]
+}
+
+export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPublicBrfConfig | null> {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const brf = await getPublicBrfBySlug(admin, slug)
+
+  if (!brf || !brf.is_public_apply_enabled) {
+    return null
+  }
+
+  const [categories, actionTypes, documentTypes, requirements] = await Promise.all([
+    listActiveActionCategories(admin),
+    listActiveActionTypes(admin),
+    listActiveDocumentTypes(admin),
+    listRequirements(admin, brf.id),
+  ])
+
+  const publicActionTypes = buildPublicActionTypes(categories, actionTypes, documentTypes, requirements)
+
+  return {
+    brf: {
+      id: brf.id,
+      name: brf.name,
+      slug: brf.slug,
+      applyIntroText: brf.apply_intro_text,
+    },
+    actionTypes: publicActionTypes,
+  }
+/*
   return {
     brf: {
       id: brf.id,
@@ -698,7 +991,7 @@ export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPubli
         })
         .sort((left, right) => left.sortOrder - right.sortOrder),
     })),
-  }
+  }*/
 }
 
 export async function createPublicApplication(
@@ -718,7 +1011,7 @@ export async function createPublicApplication(
   const unitNumberInternal = normalizeText(input.unitNumberInternal)
   const unitNumberSkatteverket = normalizeText(input.unitNumberSkatteverket)
   const description = normalizeText(input.description)
-  const actionTypeKey = normalizeText(input.actionTypeKey)
+  const actionTypeKey = normalizeText(input.actionTypeKeys?.[0] ?? null)
 
   if (!applicantName) throw new Error('APPLICANT_NAME_REQUIRED')
   assertValidEmail(applicantEmail, 'APPLICANT_EMAIL_INVALID')
@@ -873,12 +1166,12 @@ export async function createPublicApplication(
 
   const { error: checksError } = await admin.from('renovation_case_checks').insert({
     case_id: insertedCase.id,
-    affects_structure: !!input.checks.affectsStructure,
-    affects_plumbing: !!input.checks.affectsPlumbing,
-    affects_ventilation: !!input.checks.affectsVentilation,
-    affects_electrical: !!input.checks.affectsElectrical,
-    affects_wet_room: !!input.checks.affectsWetRoom,
-    affects_surface_only: !!input.checks.affectsSurfaceOnly,
+    affects_structure: !!input.checks?.affectsStructure,
+    affects_plumbing: !!input.checks?.affectsPlumbing,
+    affects_ventilation: !!input.checks?.affectsVentilation,
+    affects_electrical: !!input.checks?.affectsElectrical,
+    affects_wet_room: !!input.checks?.affectsWetRoom,
+    affects_surface_only: !!input.checks?.affectsSurfaceOnly,
   })
 
   if (checksError) {
@@ -942,6 +1235,706 @@ export async function createPublicApplication(
     caseId: insertedCase.id as string,
     caseNumber,
     accessUrl,
+    resumeUrl: buildAbsoluteUrl(requestOrigin, `/renoapp/brf/${brf.slug}/apply?draft=${plainToken}`),
+    status: 'submitted',
+    emailSent,
+    emailError,
+  }
+}
+
+async function loadActiveActionTypesByKeys(admin: SupabaseAdminClient, keys: string[]) {
+  const normalizedKeys = Array.from(new Set(keys.map((key) => normalizeText(key)).filter((value): value is string => Boolean(value))))
+  if (normalizedKeys.length === 0) return [] as ActionTypeRow[]
+
+  const { data, error } = await admin
+    .from('renovation_action_types')
+    .select(
+      'id,category_id,key,label,description,risk_level,contractor_requirement,implies_structure,implies_plumbing,implies_ventilation,implies_electrical,implies_wet_room,implies_surface_only,sort_order,is_active'
+    )
+    .in('key', normalizedKeys)
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa åtgärdstyper.')
+  }
+
+  return (data ?? []) as ActionTypeRow[]
+}
+
+function buildPublicCaseTitle(actionTypes: ActionTypeRow[]) {
+  if (actionTypes.length === 0) return 'Renoveringsansökan'
+  if (actionTypes.length === 1) return `Renovering: ${actionTypes[0].label}`
+  return `Renovering: ${actionTypes.map((item) => item.label).join(', ')}`
+}
+
+async function ensureUnitForPublicApplication(input: {
+  admin: SupabaseAdminClient
+  brfId: string
+  unitNumberInternal: string | null
+  unitNumberSkatteverket: string | null
+}) {
+  const { admin, brfId, unitNumberInternal, unitNumberSkatteverket } = input
+
+  if (!unitNumberInternal && !unitNumberSkatteverket) {
+    return null
+  }
+
+  let unit: UnitRow | null = null
+
+  if (unitNumberInternal) {
+    const { data } = await admin
+      .from('brf_units')
+      .select('id,brf_id,unit_number_internal,unit_number_skatteverket,status,updated_at')
+      .eq('brf_id', brfId)
+      .eq('unit_number_internal', unitNumberInternal)
+      .limit(1)
+      .maybeSingle()
+    unit = (data ?? null) as UnitRow | null
+  }
+
+  if (!unit && unitNumberSkatteverket) {
+    const { data } = await admin
+      .from('brf_units')
+      .select('id,brf_id,unit_number_internal,unit_number_skatteverket,status,updated_at')
+      .eq('brf_id', brfId)
+      .eq('unit_number_skatteverket', unitNumberSkatteverket)
+      .limit(1)
+      .maybeSingle()
+    unit = (data ?? null) as UnitRow | null
+  }
+
+  if (!unit) {
+    const { data, error } = await admin
+      .from('brf_units')
+      .insert({
+        brf_id: brfId,
+        unit_number_internal: unitNumberInternal,
+        unit_number_skatteverket: unitNumberSkatteverket,
+        status: 'preliminary',
+      })
+      .select('id,brf_id,unit_number_internal,unit_number_skatteverket,status,updated_at')
+      .single()
+
+    if (error) {
+      throw new Error(error.message ?? 'Kunde inte skapa lägenhet.')
+    }
+
+    unit = data as UnitRow
+  }
+
+  return unit
+}
+
+async function ensureCurrentUnitContact(input: {
+  admin: SupabaseAdminClient
+  unitId: string | null
+  contactId: string | null
+}) {
+  const { admin, unitId, contactId } = input
+  if (!unitId || !contactId) return
+
+  const { data: existingUnitContact } = await admin
+    .from('unit_contacts')
+    .select('id')
+    .eq('unit_id', unitId)
+    .eq('contact_id', contactId)
+    .eq('is_current', true)
+    .limit(1)
+    .maybeSingle()
+
+  if (!existingUnitContact) {
+    const { error } = await admin.from('unit_contacts').insert({
+      unit_id: unitId,
+      contact_id: contactId,
+      relationship_type: 'unknown',
+      verification_status: 'unverified',
+      is_current: true,
+    })
+
+    if (error) {
+      throw new Error(error.message ?? 'Kunde inte koppla kontakt till lägenhet.')
+    }
+  }
+}
+
+async function upsertPublicApplicationContact(input: {
+  admin: SupabaseAdminClient
+  existingContactId?: string | null
+  applicantName: string | null
+  applicantEmail: string | null
+  applicantPhone: string | null
+  requireContact: boolean
+}) {
+  const { admin, existingContactId, applicantName, applicantEmail, applicantPhone, requireContact } = input
+
+  if (!applicantName && !applicantEmail && !applicantPhone) {
+    if (requireContact) {
+      throw new Error('APPLICANT_NAME_REQUIRED')
+    }
+    return null
+  }
+
+  if (!applicantName) {
+    throw new Error('APPLICANT_NAME_REQUIRED')
+  }
+
+  if (!applicantEmail) {
+    throw new Error('APPLICANT_EMAIL_INVALID')
+  }
+
+  assertValidEmail(applicantEmail, 'APPLICANT_EMAIL_INVALID')
+
+  if (existingContactId) {
+    const { data, error } = await admin
+      .from('contacts')
+      .update({
+        name: applicantName,
+        email: applicantEmail,
+        phone: applicantPhone,
+      })
+      .eq('id', existingContactId)
+      .select('id,name,email,phone')
+      .single()
+
+    if (error || !data) {
+      throw new Error(error?.message ?? 'Kunde inte uppdatera kontakt.')
+    }
+
+    return data as ContactRow
+  }
+
+  let contact: ContactRow | null = null
+  const applicantEmailValue = applicantEmail as string
+
+  const { data: byEmail } = await admin
+    .from('contacts')
+    .select('id,name,email,phone')
+    .eq('email', applicantEmailValue)
+    .limit(1)
+    .maybeSingle()
+  contact = (byEmail ?? null) as ContactRow | null
+
+  if (!contact && applicantPhone) {
+    const { data: byPhone } = await admin
+      .from('contacts')
+      .select('id,name,email,phone')
+      .eq('phone', applicantPhone)
+      .limit(1)
+      .maybeSingle()
+    contact = (byPhone ?? null) as ContactRow | null
+  }
+
+  if (contact) {
+    const { data, error } = await admin
+      .from('contacts')
+      .update({
+        name: applicantName,
+        email: applicantEmail,
+        phone: applicantPhone,
+      })
+      .eq('id', contact.id)
+      .select('id,name,email,phone')
+      .single()
+
+    if (error || !data) {
+      throw new Error(error?.message ?? 'Kunde inte uppdatera kontakt.')
+    }
+
+    return data as ContactRow
+  }
+
+  const { data, error } = await admin
+    .from('contacts')
+    .insert({
+      name: applicantName,
+      email: applicantEmail,
+      phone: applicantPhone,
+    })
+    .select('id,name,email,phone')
+    .single()
+
+  if (error || !data) {
+    throw new Error(error?.message ?? 'Kunde inte skapa kontakt.')
+  }
+
+  return data as ContactRow
+}
+
+async function replaceCaseActionTypes(admin: SupabaseAdminClient, caseId: string, actionTypeIds: string[]) {
+  const { error: deleteError } = await admin.from('renovation_case_action_types').delete().eq('case_id', caseId)
+  if (deleteError) {
+    throw new Error(deleteError.message ?? 'Kunde inte uppdatera ärendets åtgärdstyper.')
+  }
+
+  if (actionTypeIds.length === 0) return
+
+  const { error: insertError } = await admin.from('renovation_case_action_types').insert(
+    actionTypeIds.map((actionTypeId) => ({
+      case_id: caseId,
+      action_type_id: actionTypeId,
+    }))
+  )
+
+  if (insertError) {
+    throw new Error(insertError.message ?? 'Kunde inte spara ärendets åtgärdstyper.')
+  }
+}
+
+async function createCaseAccessToken(admin: SupabaseAdminClient, caseId: string, email: string) {
+  const plainToken = makeToken()
+  const tokenHash = hashToken(plainToken)
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString()
+
+  const { error } = await admin.from('case_access_links').insert({
+    case_id: caseId,
+    token_hash: tokenHash,
+    email,
+    scope: 'answer_questions',
+    expires_at: expiresAt,
+  })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte skapa åtkomstlänk.')
+  }
+
+  return { token: plainToken, expiresAt }
+}
+
+export async function getRenoAppPublicGuideConfig(slug: string): Promise<RenoAppPublicBrfConfig | null> {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const brf = await getPublicBrfBySlug(admin, slug)
+
+  if (!brf || !brf.is_public_apply_enabled) {
+    return null
+  }
+
+  const [categories, actionTypes, documentTypes, requirements] = await Promise.all([
+    listActiveActionCategories(admin),
+    listActiveActionTypes(admin),
+    listActiveDocumentTypes(admin),
+    listRequirements(admin, brf.id),
+  ])
+
+  return {
+    brf: {
+      id: brf.id,
+      name: brf.name,
+      slug: brf.slug,
+      applyIntroText: brf.apply_intro_text,
+    },
+    actionTypes: buildPublicActionTypes(categories, actionTypes, documentTypes, requirements),
+  }
+}
+
+export async function getPublicApplicationDraftByToken(token: string): Promise<RenoAppPublicApplicationDraft | null> {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const tokenHash = hashToken(token)
+
+  const { data: accessData, error: accessError } = await admin
+    .from('case_access_links')
+    .select('id,case_id,email,expires_at,revoked_at,last_used_at')
+    .eq('token_hash', tokenHash)
+    .maybeSingle()
+
+  if (accessError) {
+    throw new Error(accessError.message ?? 'Kunde inte läsa utkastslänk.')
+  }
+  if (!accessData) {
+    return null
+  }
+
+  const access = accessData as Record<string, unknown>
+  const isRevoked = Boolean(access.revoked_at)
+  const isExpired = new Date(String(access.expires_at ?? '')).getTime() < Date.now()
+  const state: RenoAppPublicApplicationDraft['state'] = isRevoked ? 'revoked' : isExpired ? 'expired' : 'open'
+
+  const { data: caseData, error: caseError } = await admin
+    .from('renovation_cases')
+    .select(
+      'id,brf_id,unit_id,applicant_contact_id,case_number,description,contractor_name,contractor_org_number,contractor_email,contractor_phone,contractor_has_required_certification,status,submitted_at,updated_at'
+    )
+    .eq('id', String(access.case_id ?? ''))
+    .maybeSingle()
+
+  if (caseError) {
+    throw new Error(caseError.message ?? 'Kunde inte läsa utkast.')
+  }
+  if (!caseData) {
+    return null
+  }
+
+  const caseRow = caseData as Record<string, unknown>
+  const brfId = String(caseRow.brf_id ?? '')
+  const [brfResult, contactResult, unitResult, actionTypeRows, actionTypes] = await Promise.all([
+    admin.from('brf_associations').select('id,name,slug').eq('id', brfId).maybeSingle(),
+    caseRow.applicant_contact_id
+      ? admin.from('contacts').select('id,name,email,phone').eq('id', String(caseRow.applicant_contact_id)).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    caseRow.unit_id
+      ? admin
+          .from('brf_units')
+          .select('id,unit_number_internal,unit_number_skatteverket,status')
+          .eq('id', String(caseRow.unit_id))
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    listCaseActionTypes(admin, [String(caseRow.id ?? '')]),
+    listActiveActionTypes(admin),
+  ])
+
+  if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte läsa BRF.')
+  if (contactResult.error) throw new Error(contactResult.error.message ?? 'Kunde inte läsa kontakt.')
+  if (unitResult.error) throw new Error(unitResult.error.message ?? 'Kunde inte läsa lägenhet.')
+
+  const actionTypeIdSet = new Set(
+    actionTypeRows
+      .filter((row) => row.case_id === String(caseRow.id ?? ''))
+      .map((row) => row.action_type_id)
+  )
+
+  return {
+    state,
+    access: {
+      email: String(access.email ?? ''),
+      expiresAt: String(access.expires_at ?? ''),
+      lastUsedAt: (access.last_used_at as string | null | undefined) ?? null,
+    },
+    brf: {
+      id: String(brfResult.data?.id ?? brfId),
+      name: String(brfResult.data?.name ?? ''),
+      slug: String(brfResult.data?.slug ?? ''),
+    },
+    form: {
+      applicantName: (contactResult.data?.name as string | null | undefined) ?? '',
+      applicantEmail: (contactResult.data?.email as string | null | undefined) ?? String(access.email ?? ''),
+      applicantPhone: (contactResult.data?.phone as string | null | undefined) ?? '',
+      unitNumberInternal: (unitResult.data?.unit_number_internal as string | null | undefined) ?? '',
+      unitNumberSkatteverket: (unitResult.data?.unit_number_skatteverket as string | null | undefined) ?? '',
+      description: (caseRow.description as string | null | undefined) ?? '',
+      contractorName: (caseRow.contractor_name as string | null | undefined) ?? '',
+      contractorOrgNumber: (caseRow.contractor_org_number as string | null | undefined) ?? '',
+      contractorEmail: (caseRow.contractor_email as string | null | undefined) ?? '',
+      contractorPhone: (caseRow.contractor_phone as string | null | undefined) ?? '',
+      contractorHasRequiredCertification: Boolean(caseRow.contractor_has_required_certification),
+      actionTypeKeys: actionTypes.filter((item) => actionTypeIdSet.has(item.id)).map((item) => item.key),
+    },
+    case: {
+      id: String(caseRow.id ?? ''),
+      caseNumber: String(caseRow.case_number ?? ''),
+      status: String(caseRow.status ?? ''),
+      submittedAt: String(caseRow.submitted_at ?? ''),
+      updatedAt: String(caseRow.updated_at ?? ''),
+    },
+  }
+}
+
+export async function upsertPublicApplication(
+  input: CreatePublicApplicationInput,
+  requestOrigin: string
+): Promise<CreatePublicApplicationResult> {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const brf = await getPublicBrfBySlug(admin, input.brfSlug)
+
+  if (!brf || !brf.is_public_apply_enabled) {
+    throw new Error('BRF_NOT_FOUND')
+  }
+
+  const mode = input.mode === 'draft' ? 'draft' : 'submit'
+  const applicantName = normalizeText(input.applicantName)
+  const applicantEmail = normalizeEmail(input.applicantEmail)
+  const applicantPhone = normalizeText(input.applicantPhone)
+  const unitNumberInternal = normalizeText(input.unitNumberInternal)
+  const unitNumberSkatteverket = normalizeText(input.unitNumberSkatteverket)
+  const description = normalizeText(input.description)
+  const contractorName = normalizeText(input.contractorName)
+  const contractorOrgNumber = normalizeText(input.contractorOrgNumber)
+  const contractorEmail = normalizeEmail(input.contractorEmail)
+  const contractorPhone = normalizeText(input.contractorPhone)
+  const contractorHasRequiredCertification = input.contractorHasRequiredCertification === true
+  const actionTypeKeys = Array.from(
+    new Set((input.actionTypeKeys ?? []).map((value) => normalizeText(value)).filter((value): value is string => Boolean(value)))
+  )
+
+  if (mode === 'submit') {
+    if (!applicantName) throw new Error('APPLICANT_NAME_REQUIRED')
+    assertValidEmail(applicantEmail, 'APPLICANT_EMAIL_INVALID')
+    if (!unitNumberInternal && !unitNumberSkatteverket) throw new Error('UNIT_NUMBER_REQUIRED')
+    if (!description) throw new Error('DESCRIPTION_REQUIRED')
+    if (actionTypeKeys.length === 0) throw new Error('ACTION_TYPE_REQUIRED')
+  } else {
+    if (!applicantName) throw new Error('APPLICANT_NAME_REQUIRED')
+    assertValidEmail(applicantEmail, 'APPLICANT_EMAIL_INVALID')
+  }
+
+  const selectedActionTypes = await loadActiveActionTypesByKeys(admin, actionTypeKeys)
+  if (mode === 'submit' && selectedActionTypes.length !== actionTypeKeys.length) {
+    throw new Error('ACTION_TYPE_REQUIRED')
+  }
+  const contractorRequirementSummary = buildContractorRequirementSummary(selectedActionTypes)
+  const contractorCertification = requiresQualifiedContractor(selectedActionTypes)
+    ? contractorHasRequiredCertification
+    : false
+
+  let draftCaseId: string | null = null
+  let accessTokenForResult: string | null = null
+  let isNewDraft = false
+
+  if (input.draftToken) {
+    const tokenHash = hashToken(input.draftToken)
+    const { data: existingLink, error: existingLinkError } = await admin
+      .from('case_access_links')
+      .select('case_id,revoked_at')
+      .eq('token_hash', tokenHash)
+      .maybeSingle()
+
+    if (existingLinkError) {
+      throw new Error(existingLinkError.message ?? 'Kunde inte läsa utkastslänk.')
+    }
+
+    if (existingLink?.revoked_at) {
+      throw new Error('DRAFT_LINK_INVALID')
+    }
+
+    draftCaseId = existingLink ? String(existingLink.case_id ?? '') : null
+    accessTokenForResult = input.draftToken
+  }
+
+  let existingCase: Record<string, unknown> | null = null
+  if (draftCaseId) {
+    const { data: caseData, error: caseError } = await admin
+      .from('renovation_cases')
+      .select('id,applicant_contact_id,unit_id,case_number,status,submitted_at')
+      .eq('id', draftCaseId)
+      .maybeSingle()
+
+    if (caseError) {
+      throw new Error(caseError.message ?? 'Kunde inte läsa utkastärende.')
+    }
+
+    existingCase = (caseData ?? null) as Record<string, unknown> | null
+    if (!existingCase) {
+      throw new Error('DRAFT_LINK_INVALID')
+    }
+  }
+
+  const contact = await upsertPublicApplicationContact({
+    admin,
+    existingContactId: (existingCase?.applicant_contact_id as string | null | undefined) ?? null,
+    applicantName,
+    applicantEmail,
+    applicantPhone,
+    requireContact: true,
+  })
+
+  const unit = await ensureUnitForPublicApplication({
+    admin,
+    brfId: brf.id,
+    unitNumberInternal,
+    unitNumberSkatteverket,
+  })
+
+  await ensureCurrentUnitContact({
+    admin,
+    unitId: unit?.id ?? null,
+    contactId: contact?.id ?? null,
+  })
+
+  const derivedChecks = deriveChecksFromActionTypes(selectedActionTypes)
+  const riskLevel = computeRiskLevelFromActionTypes(selectedActionTypes)
+  const title = buildPublicCaseTitle(selectedActionTypes)
+
+  let caseId = existingCase ? String(existingCase.id ?? '') : ''
+  let caseNumber = existingCase ? String(existingCase.case_number ?? '') : ''
+
+  if (!existingCase) {
+    caseNumber = await createUniqueCaseNumber(admin)
+    const submittedAt = mode === 'submit' ? new Date().toISOString() : new Date().toISOString()
+
+    const { data: insertedCase, error: insertCaseError } = await admin
+      .from('renovation_cases')
+      .insert({
+        brf_id: brf.id,
+        unit_id: unit?.id ?? null,
+        applicant_contact_id: contact?.id ?? null,
+        action_type_id: selectedActionTypes[0]?.id ?? null,
+        case_number: caseNumber,
+        title,
+        description,
+        contractor_name: contractorName,
+        contractor_org_number: contractorOrgNumber,
+        contractor_email: contractorEmail,
+        contractor_phone: contractorPhone,
+        contractor_has_required_certification: contractorCertification,
+        status: mode === 'submit' ? 'submitted' : 'draft',
+        risk_level: riskLevel,
+        submitted_at: submittedAt,
+      })
+      .select('id')
+      .single()
+
+    if (insertCaseError || !insertedCase) {
+      throw new Error(insertCaseError?.message ?? 'Kunde inte skapa ärende.')
+    }
+
+    caseId = String(insertedCase.id ?? '')
+    isNewDraft = true
+
+    const { error: checksError } = await admin.from('renovation_case_checks').insert({
+      case_id: caseId,
+      affects_structure: derivedChecks.affectsStructure,
+      affects_plumbing: derivedChecks.affectsPlumbing,
+      affects_ventilation: derivedChecks.affectsVentilation,
+      affects_electrical: derivedChecks.affectsElectrical,
+      affects_wet_room: derivedChecks.affectsWetRoom,
+      affects_surface_only: derivedChecks.affectsSurfaceOnly,
+    })
+
+    if (checksError) {
+      throw new Error(checksError.message ?? 'Kunde inte spara teknisk påverkan.')
+    }
+  } else {
+    const { error: updateCaseError } = await admin
+      .from('renovation_cases')
+      .update({
+        unit_id: unit?.id ?? null,
+        applicant_contact_id: contact?.id ?? null,
+        action_type_id: selectedActionTypes[0]?.id ?? null,
+        title,
+        description,
+        contractor_name: contractorName,
+        contractor_org_number: contractorOrgNumber,
+        contractor_email: contractorEmail,
+        contractor_phone: contractorPhone,
+        contractor_has_required_certification: contractorCertification,
+        status: mode === 'submit' ? 'submitted' : 'draft',
+        risk_level: riskLevel,
+        submitted_at: mode === 'submit' ? new Date().toISOString() : String(existingCase.submitted_at ?? new Date().toISOString()),
+      })
+      .eq('id', caseId)
+
+    if (updateCaseError) {
+      throw new Error(updateCaseError.message ?? 'Kunde inte uppdatera ärendet.')
+    }
+
+    const { error: checksError } = await admin
+      .from('renovation_case_checks')
+      .update({
+        affects_structure: derivedChecks.affectsStructure,
+        affects_plumbing: derivedChecks.affectsPlumbing,
+        affects_ventilation: derivedChecks.affectsVentilation,
+        affects_electrical: derivedChecks.affectsElectrical,
+        affects_wet_room: derivedChecks.affectsWetRoom,
+        affects_surface_only: derivedChecks.affectsSurfaceOnly,
+      })
+      .eq('case_id', caseId)
+
+    if (checksError) {
+      throw new Error(checksError.message ?? 'Kunde inte uppdatera teknisk påverkan.')
+    }
+  }
+
+  await replaceCaseActionTypes(
+    admin,
+    caseId,
+    selectedActionTypes.map((item) => item.id)
+  )
+
+  const applicantEmailValue = applicantEmail as string
+  let token = accessTokenForResult
+  if (!token) {
+    const createdLink = await createCaseAccessToken(admin, caseId, applicantEmailValue)
+    token = createdLink.token
+  }
+
+  const accessUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/case/${token}`)
+  const resumeUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/brf/${brf.slug}/apply?draft=${token}`)
+
+  const mailFrom = getMailFromAddress()
+  let emailSent = false
+  let emailError: string | null = null
+
+  if (mailFrom) {
+    try {
+      if (mode === 'draft') {
+        if (isNewDraft) {
+          await sendAssignmentEmail({
+            to: applicantEmailValue,
+            from: mailFrom,
+            replyTo: brf.email ?? null,
+            subject: `RenoApp: fortsätt din ansökan för ${brf.name}`,
+            html: buildRenoAppEmailHtml({
+              origin: requestOrigin,
+              preheader: `Fortsätt din ansökan för ${brf.name}`,
+              bodyHtml: `
+              <p>Hej ${escapeHtml(applicantName as string)},</p>
+              <p>Vi har sparat ditt utkast för <strong>${escapeHtml(brf.name)}</strong>.</p>
+              ${
+                contractorRequirementSummary.length > 0
+                  ? `<p>Kom ihåg att följande entreprenörskrav gäller: ${escapeHtml(
+                      contractorRequirementSummary.map((item) => item.label).join(', ')
+                    )}.</p>`
+                  : ''
+              }
+              <p>Öppna länken nedan för att fortsätta senare:</p>
+                <p><a href="${resumeUrl}">${resumeUrl}</a></p>
+              `,
+            }),
+            text: [
+              `Hej ${applicantName},`,
+              `Vi har sparat ditt utkast för ${brf.name}.`,
+              `Fortsätt här: ${resumeUrl}`,
+            ].join('\n'),
+          })
+          emailSent = true
+        }
+      } else {
+        await sendAssignmentEmail({
+          to: applicantEmailValue,
+          from: mailFrom,
+          replyTo: brf.email ?? null,
+          subject: `RenoApp: din ansökan ${caseNumber}`,
+          html: buildRenoAppEmailHtml({
+            origin: requestOrigin,
+            preheader: `Din ansökan ${caseNumber}`,
+            bodyHtml: `
+              <p>Hej ${escapeHtml(applicantName as string)},</p>
+              <p>Vi har tagit emot din renoveringsansökan för <strong>${escapeHtml(brf.name)}</strong>.</p>
+              <p>Ärendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
+              ${
+                contractorRequirementSummary.length > 0
+                  ? `<p>Ansökan gäller arbete där följande entreprenörskrav normalt gäller: ${escapeHtml(
+                      contractorRequirementSummary.map((item) => item.label).join(', ')
+                    )}.</p>`
+                  : ''
+              }
+              <p>Öppna och komplettera ditt ärende via länken nedan:</p>
+              <p><a href="${accessUrl}">${accessUrl}</a></p>
+            `,
+          }),
+          text: [
+            `Hej ${applicantName},`,
+            `Vi har tagit emot din renoveringsansökan för ${brf.name}.`,
+            `Ärendenummer: ${caseNumber}`,
+            `Öppna ärendet här: ${accessUrl}`,
+          ].join('\n'),
+        })
+        emailSent = true
+      }
+    } catch (mailError) {
+      emailError = mailError instanceof Error ? mailError.message : 'Mejlutskick misslyckades.'
+    }
+  } else if (mode === 'draft' && isNewDraft) {
+    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Utkastet sparades men ingen fortsätt-länk skickades.'
+  } else if (mode === 'submit') {
+    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Ärendet skapades men inget mejl skickades.'
+  }
+
+  return {
+    caseId,
+    caseNumber,
+    accessUrl,
+    resumeUrl,
+    status: mode === 'submit' ? 'submitted' : 'draft',
     emailSent,
     emailError,
   }
@@ -1139,6 +2132,14 @@ export async function requireRenoAppViewerContext(): Promise<RenoAppViewerContex
     brfs,
     accessibleBrfIds: brfs.length > 0 ? brfs.map((item) => item.id) : null,
   }
+}
+
+async function requireRenoAppAdminProfile() {
+  const context = await requireRenoAppViewerContext()
+  if (!context.isInternalAdmin) {
+    throw new Error('ADMIN_REQUIRED')
+  }
+  return context
 }
 
 function applyBrfScope(query: QueryBuilder, accessibleBrfIds: string[] | null) {
@@ -1753,6 +2754,246 @@ export async function updateEditableRenoAppBrf(input: UpdateRenoAppBrfInput): Pr
   }
 
   return mapEditableBrfRow(updatedBrf as BrfAssociationRow)
+}
+
+export async function listRenoAppAdminActionTypes(): Promise<RenoAppAdminActionType[]> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const { data, error } = await admin
+    .from('renovation_action_types')
+    .select('id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active')
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa renoveringstyper.')
+  }
+
+  return ((data ?? []) as ActionTypeRow[]).map((item) => ({
+    id: item.id,
+    categoryId: item.category_id,
+    key: item.key,
+    label: item.label,
+    description: item.description ?? null,
+    riskLevel: item.risk_level,
+    contractorRequirement: item.contractor_requirement,
+    sortOrder: item.sort_order,
+    isActive: item.is_active,
+  }))
+}
+
+export async function saveRenoAppAdminActionType(input: {
+  id?: string | null
+  categoryId?: string | null
+  key: string
+  label: string
+  description?: string | null
+  riskLevel?: 'low' | 'medium' | 'high'
+  contractorRequirement?:
+    | 'none'
+    | 'qualified_contractor'
+    | 'authorized_electrician'
+    | 'safe_water'
+    | 'bkr_or_gvk'
+    | 'structural_engineer'
+  sortOrder?: number | null
+  isActive?: boolean
+}): Promise<RenoAppAdminActionType> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const key = normalizeText(input.key)?.toLowerCase() ?? null
+  const label = normalizeText(input.label)
+  const description = normalizeText(input.description)
+  const categoryId = normalizeText(input.categoryId)
+  const riskLevel = input.riskLevel === 'low' || input.riskLevel === 'high' ? input.riskLevel : 'medium'
+  const contractorRequirement =
+    input.contractorRequirement && input.contractorRequirement !== 'none'
+      ? input.contractorRequirement
+      : 'none'
+  const sortOrder = Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0 ? Number(input.sortOrder) : 100
+  const isActive = input.isActive !== false
+
+  assertRequiredText(key, 'ACTION_TYPE_KEY_REQUIRED')
+  assertRequiredText(label, 'ACTION_TYPE_LABEL_REQUIRED')
+
+  const payload = {
+    category_id: categoryId,
+    key,
+    label,
+    description,
+    risk_level: riskLevel,
+    contractor_requirement: contractorRequirement,
+    sort_order: sortOrder,
+    is_active: isActive,
+  }
+
+  const query = input.id
+    ? admin.from('renovation_action_types').update(payload).eq('id', input.id)
+    : admin.from('renovation_action_types').insert(payload)
+
+  const { data, error } = await query
+    .select('id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active')
+    .single()
+
+  if (error || !data) {
+    throw new Error(error?.message ?? 'Kunde inte spara renoveringstyp.')
+  }
+
+  const row = data as ActionTypeRow
+  return {
+    id: row.id,
+    categoryId: row.category_id,
+    key: row.key,
+    label: row.label,
+    description: row.description ?? null,
+    riskLevel: row.risk_level,
+    contractorRequirement: row.contractor_requirement,
+    sortOrder: row.sort_order,
+    isActive: row.is_active,
+  }
+}
+
+export async function listRenoAppAdminRequirementConfig(): Promise<{
+  categories?: RenoAppAdminActionCategory[]
+  documentTypes: RenoAppAdminDocumentType[]
+  actionTypes: RenoAppAdminRequirementGroup[]
+}> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const [actionTypeRows, documentTypeRows, requirementRows] = await Promise.all([
+    admin
+      .from('renovation_action_types')
+      .select('id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active')
+      .order('sort_order', { ascending: true }),
+    admin.from('renovation_document_types').select('id,key,label,description,sort_order,is_active').order('sort_order', { ascending: true }),
+    admin
+      .from('renovation_action_document_requirements')
+      .select('id,brf_id,action_type_id,document_type_id,is_required,phase,note,sort_order')
+      .is('brf_id', null)
+      .order('sort_order', { ascending: true }),
+  ])
+
+  if (actionTypeRows.error) throw new Error(actionTypeRows.error.message ?? 'Kunde inte läsa renoveringstyper.')
+  if (documentTypeRows.error) throw new Error(documentTypeRows.error.message ?? 'Kunde inte läsa dokumenttyper.')
+  if (requirementRows.error) throw new Error(requirementRows.error.message ?? 'Kunde inte läsa dokumentkrav.')
+
+  const actionTypes = (actionTypeRows.data ?? []) as ActionTypeRow[]
+  const documentTypes = (documentTypeRows.data ?? []) as DocumentTypeRow[]
+  const requirements = (requirementRows.data ?? []) as RequirementRow[]
+
+  const publicActionTypes = buildPublicActionTypes([], actionTypes, documentTypes, requirements)
+
+  return {
+    documentTypes: documentTypes.map((item) => ({
+      id: item.id,
+      key: item.key,
+      label: item.label,
+      description: item.description ?? null,
+      sortOrder: item.sort_order,
+      isActive: item.is_active,
+    })),
+    actionTypes: publicActionTypes.map((item) => ({
+      actionType: {
+        id: item.id,
+        categoryId: actionTypes.find((actionType) => actionType.id === item.id)?.category_id ?? null,
+        key: item.key,
+        label: item.label,
+        description: item.description ?? null,
+        riskLevel: actionTypes.find((actionType) => actionType.id === item.id)?.risk_level ?? 'low',
+        contractorRequirement:
+          actionTypes.find((actionType) => actionType.id === item.id)?.contractor_requirement ?? 'none',
+        sortOrder: item.sortOrder,
+        isActive: actionTypes.find((actionType) => actionType.id === item.id)?.is_active ?? true,
+      },
+      requirements: item.requirements.map((requirement) => ({
+        id: requirement.id,
+        documentTypeId: requirement.documentTypeId,
+        documentKey: requirement.documentKey,
+        documentLabel: requirement.documentLabel,
+        documentDescription: requirement.documentDescription,
+        isRequired: requirement.isRequired,
+        phase: requirement.phase,
+        note: requirement.note,
+        sortOrder: requirement.sortOrder,
+      })),
+    })),
+  }
+}
+
+export async function saveRenoAppAdminRequirement(input: {
+  actionTypeId: string
+  documentTypeId: string
+  isEnabled: boolean
+  isRequired?: boolean
+  note?: string | null
+  sortOrder?: number | null
+}) {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  if (!input.actionTypeId || !input.documentTypeId) {
+    throw new Error('REQUIREMENT_TARGET_REQUIRED')
+  }
+
+  const note = normalizeText(input.note)
+  const sortOrder = Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0 ? Number(input.sortOrder) : 100
+
+  const { data: existingRequirement, error: existingRequirementError } = await admin
+    .from('renovation_action_document_requirements')
+    .select('id')
+    .is('brf_id', null)
+    .eq('action_type_id', input.actionTypeId)
+    .eq('document_type_id', input.documentTypeId)
+    .maybeSingle()
+
+  if (existingRequirementError) {
+    throw new Error(existingRequirementError.message ?? 'Kunde inte läsa dokumentkrav.')
+  }
+
+  if (!input.isEnabled) {
+    if (existingRequirement) {
+      const { error } = await admin
+        .from('renovation_action_document_requirements')
+        .delete()
+        .eq('id', String((existingRequirement as Record<string, unknown>).id ?? ''))
+
+      if (error) {
+        throw new Error(error.message ?? 'Kunde inte ta bort dokumentkrav.')
+      }
+    }
+
+    return { saved: true as const }
+  }
+
+  const payload = {
+    brf_id: null,
+    action_type_id: input.actionTypeId,
+    document_type_id: input.documentTypeId,
+    is_required: input.isRequired !== false,
+    note,
+    sort_order: sortOrder,
+  }
+
+  if (existingRequirement) {
+    const { error } = await admin
+      .from('renovation_action_document_requirements')
+      .update(payload)
+      .eq('id', String((existingRequirement as Record<string, unknown>).id ?? ''))
+
+    if (error) {
+      throw new Error(error.message ?? 'Kunde inte uppdatera dokumentkrav.')
+    }
+  } else {
+    const { error } = await admin.from('renovation_action_document_requirements').insert(payload)
+
+    if (error) {
+      throw new Error(error.message ?? 'Kunde inte skapa dokumentkrav.')
+    }
+  }
+
+  return { saved: true as const }
 }
 
 export async function createRenoAppUserInvite(input: {

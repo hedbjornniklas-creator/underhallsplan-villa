@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getRenoAppPublicGuideConfig } from '@/lib/renoapp/server'
+import { getPublicApplicationDraftByToken } from '@/lib/renoapp/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -10,22 +10,22 @@ function jsonError(message: string, status: number) {
 
 type RouteContext = {
   params: Promise<{
-    slug: string
+    token: string
   }>
 }
 
 export async function GET(_request: Request, context: RouteContext) {
   try {
-    const { slug } = await context.params
-    const config = await getRenoAppPublicGuideConfig(slug)
+    const { token } = await context.params
+    const payload = await getPublicApplicationDraftByToken(token)
 
-    if (!config) {
-      return jsonError('BRF hittades inte eller har inte publik ansökan aktiverad.', 404)
+    if (!payload) {
+      return jsonError('Utkastet hittades inte.', 404)
     }
 
-    return NextResponse.json(config)
+    return NextResponse.json(payload)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
-    return jsonError(message || 'Kunde inte hämta publik BRF-konfiguration.', 500)
+    return jsonError(message || 'Kunde inte läsa utkastet.', 500)
   }
 }

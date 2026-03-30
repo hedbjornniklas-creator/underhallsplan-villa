@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createPublicApplication, type CreatePublicApplicationInput } from '@/lib/renoapp/server'
+import { upsertPublicApplication, type CreatePublicApplicationInput } from '@/lib/renoapp/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -12,11 +12,17 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const origin = new URL(request.url).origin
-    const checks = body?.checks && typeof body.checks === 'object' ? (body.checks as Record<string, unknown>) : {}
+    const actionTypeKeys = Array.isArray(body.actionTypeKeys)
+      ? body.actionTypeKeys.filter((value): value is string => typeof value === 'string')
+      : typeof body.actionTypeKey === 'string' && body.actionTypeKey.trim()
+        ? [body.actionTypeKey]
+        : []
 
-    const result = await createPublicApplication(
+    const result = await upsertPublicApplication(
       {
         brfSlug: String(body.brfSlug ?? ''),
+        draftToken: typeof body.draftToken === 'string' ? body.draftToken : null,
+        mode: body.mode === 'draft' ? 'draft' : 'submit',
         applicantName: String(body.applicantName ?? ''),
         applicantEmail: String(body.applicantEmail ?? ''),
         applicantPhone: typeof body.applicantPhone === 'string' ? body.applicantPhone : null,
@@ -24,15 +30,15 @@ export async function POST(request: Request) {
         unitNumberSkatteverket:
           typeof body.unitNumberSkatteverket === 'string' ? body.unitNumberSkatteverket : null,
         description: String(body.description ?? ''),
-        actionTypeKey: String(body.actionTypeKey ?? ''),
-        checks: {
-          affectsStructure: Boolean(checks.affectsStructure),
-          affectsPlumbing: Boolean(checks.affectsPlumbing),
-          affectsVentilation: Boolean(checks.affectsVentilation),
-          affectsElectrical: Boolean(checks.affectsElectrical),
-          affectsWetRoom: Boolean(checks.affectsWetRoom),
-          affectsSurfaceOnly: Boolean(checks.affectsSurfaceOnly),
-        },
+        contractorName: typeof body.contractorName === 'string' ? body.contractorName : null,
+        contractorOrgNumber: typeof body.contractorOrgNumber === 'string' ? body.contractorOrgNumber : null,
+        contractorEmail: typeof body.contractorEmail === 'string' ? body.contractorEmail : null,
+        contractorPhone: typeof body.contractorPhone === 'string' ? body.contractorPhone : null,
+        contractorHasRequiredCertification:
+          typeof body.contractorHasRequiredCertification === 'boolean'
+            ? body.contractorHasRequiredCertification
+            : false,
+        actionTypeKeys,
       } satisfies CreatePublicApplicationInput,
       origin
     )
@@ -41,11 +47,12 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'BRF_NOT_FOUND') return jsonError('BRF hittades inte eller har inte publik ansökan aktiverad.', 404)
+    if (message === 'DRAFT_LINK_INVALID') return jsonError('Utkastslänken är inte längre giltig.', 409)
     if (message === 'APPLICANT_NAME_REQUIRED') return jsonError('Ange namn.', 400)
     if (message === 'APPLICANT_EMAIL_INVALID') return jsonError('Ange en giltig e-postadress.', 400)
     if (message === 'UNIT_NUMBER_REQUIRED') return jsonError('Ange lägenhetsnummer.', 400)
     if (message === 'DESCRIPTION_REQUIRED') return jsonError('Beskriv åtgärden.', 400)
-    if (message === 'ACTION_TYPE_REQUIRED') return jsonError('Välj åtgärdstyp.', 400)
+    if (message === 'ACTION_TYPE_REQUIRED') return jsonError('Välj minst en renoveringstyp.', 400)
     return jsonError(message || 'Kunde inte skapa RenoApp-ärende.', 500)
   }
 }
