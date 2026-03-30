@@ -1,6 +1,5 @@
 ﻿'use client'
 
-import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 
@@ -138,8 +137,8 @@ const INITIAL_FORM: FormState = {
 const STEP_ITEMS = [
   { id: 1, label: 'Vad vill du renovera?' },
   { id: 2, label: 'Dokument och underlag' },
-  { id: 3, label: 'Projekt och entreprenÃ¶r' },
-  { id: 4, label: 'LÃ¤genhet och kontakt' },
+  { id: 3, label: 'Projekt och entreprenör' },
+  { id: 4, label: 'Lägenhet och kontakt' },
   { id: 5, label: 'Granska och skicka' },
 ]
 
@@ -186,7 +185,7 @@ function groupActionsByCategory(actions: ActionType[]) {
     const category = action.category ?? {
       id: 'ovrigt',
       slug: 'ovrigt',
-      label: 'Ã–vrigt',
+      label: 'Övrigt',
       description: null,
       sortOrder: 999,
     }
@@ -211,11 +210,11 @@ function groupRequirementsByPhase(requirements: Requirement[]) {
 }
 
 function getContractorRequirementText(requirement?: ActionType['contractorRequirement']) {
-  if (requirement === 'authorized_electrician') return 'KrÃ¤ver behÃ¶rig elektriker.'
-  if (requirement === 'safe_water') return 'KrÃ¤ver SÃ¤ker Vatten-auktoriserad VVS-entreprenÃ¶r.'
-  if (requirement === 'bkr_or_gvk') return 'KrÃ¤ver behÃ¶rig vÃ¥trumsentreprenÃ¶r enligt BKR eller GVK.'
-  if (requirement === 'structural_engineer') return 'KrÃ¤ver konstruktÃ¶r eller sÃ¤rskilt sakkunnig.'
-  if (requirement === 'qualified_contractor') return 'KrÃ¤ver kvalificerad entreprenÃ¶r.'
+  if (requirement === 'authorized_electrician') return 'Kräver behörig elektriker.'
+  if (requirement === 'safe_water') return 'Kräver Säker Vatten-auktoriserad VVS-entreprenör.'
+  if (requirement === 'bkr_or_gvk') return 'Kräver behörig våtrumsentreprenör enligt BKR eller GVK.'
+  if (requirement === 'structural_engineer') return 'Kräver konstruktör eller särskilt sakkunnig.'
+  if (requirement === 'qualified_contractor') return 'Kräver kvalificerad entreprenör.'
   return null
 }
 
@@ -238,7 +237,7 @@ function renderRequirementList(items: Requirement[]) {
 
 const compactDescriptionStyle = {
   display: '-webkit-box',
-  WebkitLineClamp: 2,
+  WebkitLineClamp: 1,
   WebkitBoxOrient: 'vertical' as const,
   overflow: 'hidden',
 }
@@ -254,7 +253,7 @@ export default function RenoAppApplyPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(INITIAL_FORM)
-  const [step, setStep] = useState(1)
+  const [step, setStep] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null)
   const [activeDraftToken, setActiveDraftToken] = useState(initialDraftToken)
@@ -273,14 +272,14 @@ export default function RenoAppApplyPage() {
         const payload = (await response.json().catch(() => ({}))) as PublicConfigResponse & { error?: string }
 
         if (!response.ok) {
-          throw new Error(payload.error ?? 'Kunde inte lÃ¤sa BRF-konfiguration.')
+          throw new Error(payload.error ?? 'Kunde inte läsa BRF-konfiguration.')
         }
 
         if (!active) return
         setConfig(payload)
       } catch (fetchError) {
         if (!active) return
-        setError(fetchError instanceof Error ? fetchError.message : 'Kunde inte lÃ¤sa BRF-konfiguration.')
+        setError(fetchError instanceof Error ? fetchError.message : 'Kunde inte läsa BRF-konfiguration.')
       } finally {
         if (active) {
           setLoading(false)
@@ -311,7 +310,7 @@ export default function RenoAppApplyPage() {
         const payload = (await response.json().catch(() => ({}))) as DraftResponse & { error?: string }
 
         if (!response.ok) {
-          throw new Error(payload.error ?? 'Kunde inte lÃ¤sa utkastet.')
+          throw new Error(payload.error ?? 'Kunde inte läsa utkastet.')
         }
 
         if (!active) return
@@ -333,7 +332,7 @@ export default function RenoAppApplyPage() {
         })
       } catch (fetchError) {
         if (!active) return
-        setError(fetchError instanceof Error ? fetchError.message : 'Kunde inte lÃ¤sa utkastet.')
+        setError(fetchError instanceof Error ? fetchError.message : 'Kunde inte läsa utkastet.')
       }
     }
 
@@ -367,27 +366,27 @@ export default function RenoAppApplyPage() {
               .map((action) => action.label)
               .slice(0, 3)
               .join(', ')
-          : 'Inga renoveringar valda Ã¤nnu.',
+          : 'Inga renoveringar valda ännu.',
       2:
         mergedRequirements.length > 0
           ? `${requirementGroups.beforeRequired.length} obligatoriska dokument, ${
               mergedRequirements.length - requirementGroups.beforeRequired.length
-            } Ã¶vriga underlag.`
-          : 'VÃ¤lj fÃ¶rst vad du vill renovera.',
+            } övriga underlag.`
+          : 'Välj först vad du vill renovera.',
       3:
         form.contractorName || form.description
-          ? `${form.contractorName ? `EntreprenÃ¶r: ${form.contractorName}. ` : ''}${
-              form.contractorHasRequiredCertification ? 'BehÃ¶righet bekrÃ¤ftad.' : 'BehÃ¶righet inte bekrÃ¤ftad Ã¤nnu.'
+          ? `${form.contractorName ? `Entreprenör: ${form.contractorName}. ` : ''}${
+              form.contractorHasRequiredCertification ? 'Behörighet bekräftad.' : 'Behörighet inte bekräftad ännu.'
             }`
-          : 'Projektbeskrivning och entreprenÃ¶r saknas Ã¤nnu.',
+          : 'Projektbeskrivning och entreprenör saknas ännu.',
       4:
         form.applicantName || form.applicantEmail
-          ? `${form.applicantName || 'Ingen sÃ¶kande angiven'}${form.applicantEmail ? `, ${form.applicantEmail}` : ''}`
-          : 'Kontaktuppgifter saknas Ã¤nnu.',
+          ? `${form.applicantName || 'Ingen sökande angiven'}${form.applicantEmail ? `, ${form.applicantEmail}` : ''}`
+          : 'Kontaktuppgifter saknas ännu.',
       5:
         submitResult?.caseNumber
-          ? `Ã„rendenummer ${submitResult.caseNumber}.`
-          : `${selectedActions.length} valda renoveringar och ${mergedRequirements.length} dokumentkrav sammanstÃ¤llda.`,
+          ? `Ärendenummer ${submitResult.caseNumber}.`
+          : `${selectedActions.length} valda renoveringar och ${mergedRequirements.length} dokumentkrav sammanställda.`,
     }),
     [
       form.applicantEmail,
@@ -450,7 +449,7 @@ export default function RenoAppApplyPage() {
 
       const payload = (await response.json().catch(() => ({}))) as SubmitResult & { error?: string }
       if (!response.ok) {
-        throw new Error(payload.error ?? 'Kunde inte spara ansÃ¶kan.')
+        throw new Error(payload.error ?? 'Kunde inte spara ansökan.')
       }
 
       setSubmitResult(payload)
@@ -467,7 +466,7 @@ export default function RenoAppApplyPage() {
         setStep(5)
       }
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Kunde inte spara ansÃ¶kan.')
+      setError(submitError instanceof Error ? submitError.message : 'Kunde inte spara ansökan.')
     } finally {
       setSavingDraft(false)
       setSubmitting(false)
@@ -490,14 +489,13 @@ export default function RenoAppApplyPage() {
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {group.actions.map((action) => {
                   const selected = form.actionTypeKeys.includes(action.key)
-                  const contractorRequirementText = getContractorRequirementText(action.contractorRequirement)
 
                   return (
                     <button
                       key={action.id}
                       type="button"
                       onClick={() => toggleActionType(action.key)}
-                      className={`min-h-[102px] rounded-[22px] border px-4 py-3 text-left transition ${
+                      className={`min-h-[74px] rounded-[22px] border px-4 py-3 text-left transition ${
                         selected
                           ? 'border-emerald-600 bg-emerald-50 shadow-[0_10px_30px_-20px_rgba(5,150,105,0.7)]'
                           : 'border-stone-200 bg-white hover:border-stone-300'
@@ -507,13 +505,8 @@ export default function RenoAppApplyPage() {
                         <div>
                           <p className="truncate text-base font-semibold text-stone-900">{action.label}</p>
                           {action.description ? (
-                            <p className="mt-1 text-xs leading-5 text-stone-700" style={compactDescriptionStyle}>
+                            <p className="mt-1 text-sm leading-6 text-stone-700" style={compactDescriptionStyle}>
                               {action.description}
-                            </p>
-                          ) : null}
-                          {contractorRequirementText ? (
-                            <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.16em] text-stone-500">
-                              {contractorRequirementText}
                             </p>
                           ) : null}
                         </div>
@@ -542,13 +535,13 @@ export default function RenoAppApplyPage() {
         <div className="grid gap-4">
           <div className="rounded-3xl border border-stone-200 bg-white p-5">
             <p className="text-sm leading-7 text-stone-700">
-              HÃ¤r ser du vad som normalt behÃ¶ver bifogas utifrÃ¥n de renoveringstyper du valt. Om nÃ¥got saknas nu kan
-              du Ã¤ndÃ¥ spara utkastet och komplettera senare.
+              Här ser du vad som normalt behöver bifogas utifrån de renoveringstyper du valt. Om något saknas nu kan
+              du ändå spara utkastet och komplettera senare.
             </p>
           </div>
           {mergedRequirements.length === 0 ? (
             <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
-              VÃ¤lj fÃ¶rst minst en renoveringstyp i steg 1.
+              Välj först minst en renoveringstyp i steg 1.
             </div>
           ) : (
             mergedRequirements.map((requirement) => (
@@ -580,14 +573,14 @@ export default function RenoAppApplyPage() {
               onChange={(event) => updateField('description', event.target.value)}
               rows={7}
               className="mt-3 min-h-44 w-full rounded-3xl border border-stone-300 bg-white px-5 py-4 text-sm text-stone-900"
-              placeholder="Beskriv kort vad du vill gora, hur omfattande arbetet ar och om du redan har ritningar eller annan dokumentation klar."
+              placeholder="Beskriv kort vad du vill göra, hur omfattande arbetet är och om du redan har ritningar eller annan dokumentation klar."
             />
           </div>
 
           <div className="rounded-3xl border border-stone-200 bg-white p-5">
-            <p className="text-sm font-semibold text-stone-900">Entreprenor</p>
+            <p className="text-sm font-semibold text-stone-900">Entreprenör</p>
             <p className="mt-2 text-sm leading-7 text-stone-700">
-              Vi fokuserar pa vem som ska utfora arbetet och om ratt behorighet finns, i stallet for att fraga efter
+              Vi fokuserar på vem som ska utföra arbetet och om rätt behörighet finns, i stället för att fråga efter
               tekniska detaljval i detta steg.
             </p>
             {contractorRequirementTexts.length > 0 ? (
@@ -604,7 +597,7 @@ export default function RenoAppApplyPage() {
                 value={form.contractorName}
                 onChange={(event) => updateField('contractorName', event.target.value)}
                 className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
-                placeholder="Foretag eller entreprenor"
+                placeholder="Företag eller entreprenör"
               />
               <input
                 value={form.contractorOrgNumber}
@@ -633,7 +626,7 @@ export default function RenoAppApplyPage() {
                 type="checkbox"
                 className="mt-1"
               />
-              <span>Jag bekraftar att entreprenoren har den behorighet eller certifiering som arbetet kraver.</span>
+              <span>Jag bekräftar att entreprenören har den behörighet eller certifiering som arbetet kräver.</span>
             </label>
           </div>
         </div>
@@ -667,20 +660,20 @@ export default function RenoAppApplyPage() {
               value={form.unitNumberInternal}
               onChange={(event) => updateField('unitNumberInternal', event.target.value)}
               className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-              placeholder="Internt lagenhetsnummer"
+              placeholder="Internt lägenhetsnummer"
             />
             <input
               value={form.unitNumberSkatteverket}
               onChange={(event) => updateField('unitNumberSkatteverket', event.target.value)}
               className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-              placeholder="Skatteverkets lagenhetsnummer"
+              placeholder="Skatteverkets lägenhetsnummer"
             />
           </div>
 
           <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm leading-7 text-stone-700">
-            <p className="font-semibold text-stone-900">Spara och fortsÃ¤tt senare</p>
+            <p className="font-semibold text-stone-900">Spara och fortsätt senare</p>
             <p className="mt-2">
-              NÃ¤r du sparar skapas ett utkast och du fÃ¥r en sÃ¤ker lÃ¤nk som du kan Ã¶ppna senare fÃ¶r att fortsÃ¤tta.
+              När du sparar skapas ett utkast och du får en säker länk som du kan öppna senare för att fortsätta.
             </p>
           </div>
         </div>
@@ -693,13 +686,13 @@ export default function RenoAppApplyPage() {
           <p className="text-sm font-semibold text-stone-900">Sammanfattning</p>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
-              <p className="font-medium text-stone-900">SÃ¶kande</p>
+              <p className="font-medium text-stone-900">Sökande</p>
               <p className="mt-1">{form.applicantName || '-'}</p>
               <p>{form.applicantEmail || '-'}</p>
               <p>{form.applicantPhone || '-'}</p>
             </div>
             <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
-              <p className="font-medium text-stone-900">LÃ¤genhet</p>
+              <p className="font-medium text-stone-900">Lägenhet</p>
               <p className="mt-1">Internt nr: {form.unitNumberInternal || '-'}</p>
               <p>Skatteverket: {form.unitNumberSkatteverket || '-'}</p>
             </div>
@@ -708,10 +701,10 @@ export default function RenoAppApplyPage() {
 
         {submitResult ? (
           <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950">
-            <p className="font-semibold">{submitResult.status === 'draft' ? 'Utkast sparat' : 'AnsÃ¶kan registrerad'}</p>
-            <p className="mt-2">Ã„rendenummer: {submitResult.caseNumber}</p>
+            <p className="font-semibold">{submitResult.status === 'draft' ? 'Utkast sparat' : 'Ansökan registrerad'}</p>
+            <p className="mt-2">Ärendenummer: {submitResult.caseNumber}</p>
             <p className="mt-2 break-all">
-              {submitResult.status === 'draft' ? 'FortsÃ¤tt senare via:' : 'Ã–ppna Ã¤rendet via:'}{' '}
+              {submitResult.status === 'draft' ? 'Fortsätt senare via:' : 'Öppna ärendet via:'}{' '}
               {submitResult.status === 'draft' ? submitResult.resumeUrl : submitResult.accessUrl}
             </p>
             {submitResult.emailError ? <p className="mt-2 text-amber-900">{submitResult.emailError}</p> : null}
@@ -722,7 +715,7 @@ export default function RenoAppApplyPage() {
   }
 
   if (loading) {
-    return <main className="mx-auto min-h-screen max-w-6xl px-6 py-14 md:px-10">Laddar ansÃ¶kningsguide...</main>
+    return <main className="mx-auto min-h-screen max-w-6xl px-6 py-14 md:px-10">Laddar ansökningsguide...</main>
   }
 
   if (error && !config) {
@@ -876,18 +869,10 @@ export default function RenoAppApplyPage() {
           ) : null}
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setStep((current) => Math.max(1, current - 1))}
-              disabled={step === 1}
-              className="rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Föregående
-            </button>
-            {step < 5 ? (
+            {step !== 5 ? (
               <button
                 type="button"
-                onClick={() => setStep((current) => Math.min(5, current + 1))}
+                onClick={() => setStep((current) => (current == null ? 1 : Math.min(5, current + 1)))}
                 className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700"
               >
                 Nästa steg
@@ -910,12 +895,6 @@ export default function RenoAppApplyPage() {
             >
               {savingDraft ? 'Sparar...' : 'Spara och fortsätt senare'}
             </button>
-            <Link
-              href="/renoapp/apply"
-              className="rounded-full border border-stone-300 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
-            >
-              Byt BRF
-            </Link>
           </div>
         </div>
       </section>
