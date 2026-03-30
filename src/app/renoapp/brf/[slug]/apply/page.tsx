@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
@@ -138,8 +138,8 @@ const INITIAL_FORM: FormState = {
 const STEP_ITEMS = [
   { id: 1, label: 'Vad vill du renovera?' },
   { id: 2, label: 'Dokument och underlag' },
-  { id: 3, label: 'Projekt och entreprenör' },
-  { id: 4, label: 'Lägenhet och kontakt' },
+  { id: 3, label: 'Projekt och entreprenÃ¶r' },
+  { id: 4, label: 'LÃ¤genhet och kontakt' },
   { id: 5, label: 'Granska och skicka' },
 ]
 
@@ -186,7 +186,7 @@ function groupActionsByCategory(actions: ActionType[]) {
     const category = action.category ?? {
       id: 'ovrigt',
       slug: 'ovrigt',
-      label: 'Övrigt',
+      label: 'Ã–vrigt',
       description: null,
       sortOrder: 999,
     }
@@ -211,11 +211,11 @@ function groupRequirementsByPhase(requirements: Requirement[]) {
 }
 
 function getContractorRequirementText(requirement?: ActionType['contractorRequirement']) {
-  if (requirement === 'authorized_electrician') return 'Kräver behörig elektriker.'
-  if (requirement === 'safe_water') return 'Kräver Säker Vatten-auktoriserad VVS-entreprenör.'
-  if (requirement === 'bkr_or_gvk') return 'Kräver behörig våtrumsentreprenör enligt BKR eller GVK.'
-  if (requirement === 'structural_engineer') return 'Kräver konstruktör eller särskilt sakkunnig.'
-  if (requirement === 'qualified_contractor') return 'Kräver kvalificerad entreprenör.'
+  if (requirement === 'authorized_electrician') return 'KrÃ¤ver behÃ¶rig elektriker.'
+  if (requirement === 'safe_water') return 'KrÃ¤ver SÃ¤ker Vatten-auktoriserad VVS-entreprenÃ¶r.'
+  if (requirement === 'bkr_or_gvk') return 'KrÃ¤ver behÃ¶rig vÃ¥trumsentreprenÃ¶r enligt BKR eller GVK.'
+  if (requirement === 'structural_engineer') return 'KrÃ¤ver konstruktÃ¶r eller sÃ¤rskilt sakkunnig.'
+  if (requirement === 'qualified_contractor') return 'KrÃ¤ver kvalificerad entreprenÃ¶r.'
   return null
 }
 
@@ -273,14 +273,14 @@ export default function RenoAppApplyPage() {
         const payload = (await response.json().catch(() => ({}))) as PublicConfigResponse & { error?: string }
 
         if (!response.ok) {
-          throw new Error(payload.error ?? 'Kunde inte läsa BRF-konfiguration.')
+          throw new Error(payload.error ?? 'Kunde inte lÃ¤sa BRF-konfiguration.')
         }
 
         if (!active) return
         setConfig(payload)
       } catch (fetchError) {
         if (!active) return
-        setError(fetchError instanceof Error ? fetchError.message : 'Kunde inte läsa BRF-konfiguration.')
+        setError(fetchError instanceof Error ? fetchError.message : 'Kunde inte lÃ¤sa BRF-konfiguration.')
       } finally {
         if (active) {
           setLoading(false)
@@ -311,7 +311,7 @@ export default function RenoAppApplyPage() {
         const payload = (await response.json().catch(() => ({}))) as DraftResponse & { error?: string }
 
         if (!response.ok) {
-          throw new Error(payload.error ?? 'Kunde inte läsa utkastet.')
+          throw new Error(payload.error ?? 'Kunde inte lÃ¤sa utkastet.')
         }
 
         if (!active) return
@@ -333,7 +333,7 @@ export default function RenoAppApplyPage() {
         })
       } catch (fetchError) {
         if (!active) return
-        setError(fetchError instanceof Error ? fetchError.message : 'Kunde inte läsa utkastet.')
+        setError(fetchError instanceof Error ? fetchError.message : 'Kunde inte lÃ¤sa utkastet.')
       }
     }
 
@@ -358,6 +358,48 @@ export default function RenoAppApplyPage() {
         new Set(selectedActions.map((action) => getContractorRequirementText(action.contractorRequirement)).filter(Boolean))
       ) as string[],
     [selectedActions]
+  )
+  const stepSummaries = useMemo<Record<number, string>>(
+    () => ({
+      1:
+        selectedActions.length > 0
+          ? selectedActions
+              .map((action) => action.label)
+              .slice(0, 3)
+              .join(', ')
+          : 'Inga renoveringar valda Ã¤nnu.',
+      2:
+        mergedRequirements.length > 0
+          ? `${requirementGroups.beforeRequired.length} obligatoriska dokument, ${
+              mergedRequirements.length - requirementGroups.beforeRequired.length
+            } Ã¶vriga underlag.`
+          : 'VÃ¤lj fÃ¶rst vad du vill renovera.',
+      3:
+        form.contractorName || form.description
+          ? `${form.contractorName ? `EntreprenÃ¶r: ${form.contractorName}. ` : ''}${
+              form.contractorHasRequiredCertification ? 'BehÃ¶righet bekrÃ¤ftad.' : 'BehÃ¶righet inte bekrÃ¤ftad Ã¤nnu.'
+            }`
+          : 'Projektbeskrivning och entreprenÃ¶r saknas Ã¤nnu.',
+      4:
+        form.applicantName || form.applicantEmail
+          ? `${form.applicantName || 'Ingen sÃ¶kande angiven'}${form.applicantEmail ? `, ${form.applicantEmail}` : ''}`
+          : 'Kontaktuppgifter saknas Ã¤nnu.',
+      5:
+        submitResult?.caseNumber
+          ? `Ã„rendenummer ${submitResult.caseNumber}.`
+          : `${selectedActions.length} valda renoveringar och ${mergedRequirements.length} dokumentkrav sammanstÃ¤llda.`,
+    }),
+    [
+      form.applicantEmail,
+      form.applicantName,
+      form.contractorHasRequiredCertification,
+      form.contractorName,
+      form.description,
+      mergedRequirements.length,
+      requirementGroups.beforeRequired.length,
+      selectedActions,
+      submitResult?.caseNumber,
+    ]
   )
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
@@ -408,7 +450,7 @@ export default function RenoAppApplyPage() {
 
       const payload = (await response.json().catch(() => ({}))) as SubmitResult & { error?: string }
       if (!response.ok) {
-        throw new Error(payload.error ?? 'Kunde inte spara ansökan.')
+        throw new Error(payload.error ?? 'Kunde inte spara ansÃ¶kan.')
       }
 
       setSubmitResult(payload)
@@ -425,15 +467,262 @@ export default function RenoAppApplyPage() {
         setStep(5)
       }
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Kunde inte spara ansökan.')
+      setError(submitError instanceof Error ? submitError.message : 'Kunde inte spara ansÃ¶kan.')
     } finally {
       setSavingDraft(false)
       setSubmitting(false)
     }
   }
 
+  const renderStepContent = (stepId: number) => {
+    if (stepId === 1) {
+      return (
+        <div className="space-y-6">
+          {actionGroups.map((group) => (
+            <div key={group.category.id}>
+              <div className="mb-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">{group.category.label}</p>
+                {group.category.description ? (
+                  <p className="mt-1 text-sm text-stone-700">{group.category.description}</p>
+                ) : null}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {group.actions.map((action) => {
+                  const selected = form.actionTypeKeys.includes(action.key)
+                  const contractorRequirementText = getContractorRequirementText(action.contractorRequirement)
+
+                  return (
+                    <button
+                      key={action.id}
+                      type="button"
+                      onClick={() => toggleActionType(action.key)}
+                      className={`min-h-[102px] rounded-[22px] border px-4 py-3 text-left transition ${
+                        selected
+                          ? 'border-emerald-600 bg-emerald-50 shadow-[0_10px_30px_-20px_rgba(5,150,105,0.7)]'
+                          : 'border-stone-200 bg-white hover:border-stone-300'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="truncate text-base font-semibold text-stone-900">{action.label}</p>
+                          {action.description ? (
+                            <p className="mt-1 text-xs leading-5 text-stone-700" style={compactDescriptionStyle}>
+                              {action.description}
+                            </p>
+                          ) : null}
+                          {contractorRequirementText ? (
+                            <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.16em] text-stone-500">
+                              {contractorRequirementText}
+                            </p>
+                          ) : null}
+                        </div>
+                        <span
+                          className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${
+                            selected
+                              ? 'border-emerald-700 bg-emerald-700 text-white'
+                              : 'border-stone-300 bg-white text-stone-500'
+                          }`}
+                        >
+                          {selected ? 'x' : '+'}
+                        </span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )
+    }
+
+    if (stepId === 2) {
+      return (
+        <div className="grid gap-4">
+          <div className="rounded-3xl border border-stone-200 bg-white p-5">
+            <p className="text-sm leading-7 text-stone-700">
+              HÃ¤r ser du vad som normalt behÃ¶ver bifogas utifrÃ¥n de renoveringstyper du valt. Om nÃ¥got saknas nu kan
+              du Ã¤ndÃ¥ spara utkastet och komplettera senare.
+            </p>
+          </div>
+          {mergedRequirements.length === 0 ? (
+            <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
+              VÃ¤lj fÃ¶rst minst en renoveringstyp i steg 1.
+            </div>
+          ) : (
+            mergedRequirements.map((requirement) => (
+              <div key={requirement.documentTypeId} className="rounded-3xl border border-stone-200 bg-white p-5">
+                <p className="font-semibold text-stone-900">
+                  {requirement.documentLabel} {requirement.isRequired ? '(obligatorisk)' : '(bra att ha)'}
+                </p>
+                {requirement.documentDescription ? (
+                  <p className="mt-2 text-sm leading-7 text-stone-700">{requirement.documentDescription}</p>
+                ) : null}
+                {requirement.note ? <p className="mt-2 text-sm text-stone-500">{requirement.note}</p> : null}
+              </div>
+            ))
+          )}
+        </div>
+      )
+    }
+
+    if (stepId === 3) {
+      return (
+        <div className="grid gap-4">
+          <div className="rounded-3xl border border-stone-200 bg-white p-5">
+            <label className="block text-sm font-semibold text-stone-900" htmlFor="description">
+              Beskriv projektet
+            </label>
+            <textarea
+              id="description"
+              value={form.description}
+              onChange={(event) => updateField('description', event.target.value)}
+              rows={7}
+              className="mt-3 min-h-44 w-full rounded-3xl border border-stone-300 bg-white px-5 py-4 text-sm text-stone-900"
+              placeholder="Beskriv kort vad du vill gora, hur omfattande arbetet ar och om du redan har ritningar eller annan dokumentation klar."
+            />
+          </div>
+
+          <div className="rounded-3xl border border-stone-200 bg-white p-5">
+            <p className="text-sm font-semibold text-stone-900">Entreprenor</p>
+            <p className="mt-2 text-sm leading-7 text-stone-700">
+              Vi fokuserar pa vem som ska utfora arbetet och om ratt behorighet finns, i stallet for att fraga efter
+              tekniska detaljval i detta steg.
+            </p>
+            {contractorRequirementTexts.length > 0 ? (
+              <ul className="mt-3 space-y-2 text-sm text-stone-700">
+                {contractorRequirementTexts.map((item) => (
+                  <li key={item} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <input
+                value={form.contractorName}
+                onChange={(event) => updateField('contractorName', event.target.value)}
+                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
+                placeholder="Foretag eller entreprenor"
+              />
+              <input
+                value={form.contractorOrgNumber}
+                onChange={(event) => updateField('contractorOrgNumber', event.target.value)}
+                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                placeholder="Organisationsnummer"
+              />
+              <input
+                value={form.contractorPhone}
+                onChange={(event) => updateField('contractorPhone', event.target.value)}
+                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                placeholder="Telefon"
+              />
+              <input
+                value={form.contractorEmail}
+                onChange={(event) => updateField('contractorEmail', event.target.value)}
+                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
+                placeholder="E-post"
+                type="email"
+              />
+            </div>
+            <label className="mt-4 flex items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+              <input
+                checked={form.contractorHasRequiredCertification}
+                onChange={(event) => updateField('contractorHasRequiredCertification', event.target.checked)}
+                type="checkbox"
+                className="mt-1"
+              />
+              <span>Jag bekraftar att entreprenoren har den behorighet eller certifiering som arbetet kraver.</span>
+            </label>
+          </div>
+        </div>
+      )
+    }
+
+    if (stepId === 4) {
+      return (
+        <div className="grid gap-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <input
+              value={form.applicantName}
+              onChange={(event) => updateField('applicantName', event.target.value)}
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+              placeholder="Namn"
+            />
+            <input
+              value={form.applicantEmail}
+              onChange={(event) => updateField('applicantEmail', event.target.value)}
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+              placeholder="E-post"
+              type="email"
+            />
+            <input
+              value={form.applicantPhone}
+              onChange={(event) => updateField('applicantPhone', event.target.value)}
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
+              placeholder="Telefon"
+            />
+            <input
+              value={form.unitNumberInternal}
+              onChange={(event) => updateField('unitNumberInternal', event.target.value)}
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+              placeholder="Internt lagenhetsnummer"
+            />
+            <input
+              value={form.unitNumberSkatteverket}
+              onChange={(event) => updateField('unitNumberSkatteverket', event.target.value)}
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+              placeholder="Skatteverkets lagenhetsnummer"
+            />
+          </div>
+
+          <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm leading-7 text-stone-700">
+            <p className="font-semibold text-stone-900">Spara och fortsÃ¤tt senare</p>
+            <p className="mt-2">
+              NÃ¤r du sparar skapas ett utkast och du fÃ¥r en sÃ¤ker lÃ¤nk som du kan Ã¶ppna senare fÃ¶r att fortsÃ¤tta.
+            </p>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div className="grid gap-4">
+        <div className="rounded-3xl border border-stone-200 bg-white p-5">
+          <p className="text-sm font-semibold text-stone-900">Sammanfattning</p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+              <p className="font-medium text-stone-900">SÃ¶kande</p>
+              <p className="mt-1">{form.applicantName || '-'}</p>
+              <p>{form.applicantEmail || '-'}</p>
+              <p>{form.applicantPhone || '-'}</p>
+            </div>
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+              <p className="font-medium text-stone-900">LÃ¤genhet</p>
+              <p className="mt-1">Internt nr: {form.unitNumberInternal || '-'}</p>
+              <p>Skatteverket: {form.unitNumberSkatteverket || '-'}</p>
+            </div>
+          </div>
+        </div>
+
+        {submitResult ? (
+          <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950">
+            <p className="font-semibold">{submitResult.status === 'draft' ? 'Utkast sparat' : 'AnsÃ¶kan registrerad'}</p>
+            <p className="mt-2">Ã„rendenummer: {submitResult.caseNumber}</p>
+            <p className="mt-2 break-all">
+              {submitResult.status === 'draft' ? 'FortsÃ¤tt senare via:' : 'Ã–ppna Ã¤rendet via:'}{' '}
+              {submitResult.status === 'draft' ? submitResult.resumeUrl : submitResult.accessUrl}
+            </p>
+            {submitResult.emailError ? <p className="mt-2 text-amber-900">{submitResult.emailError}</p> : null}
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
   if (loading) {
-    return <main className="mx-auto min-h-screen max-w-6xl px-6 py-14 md:px-10">Laddar ansökningsguide...</main>
+    return <main className="mx-auto min-h-screen max-w-6xl px-6 py-14 md:px-10">Laddar ansÃ¶kningsguide...</main>
   }
 
   if (error && !config) {
@@ -450,20 +739,20 @@ export default function RenoAppApplyPage() {
     <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-8 md:px-6 md:py-10">
       <div className="grid gap-6 lg:grid-cols-[0.92fr_1.08fr]">
         <section className="rounded-[32px] border border-stone-200/80 bg-white/88 p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Ansökningsguide</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">AnsÃ¶kningsguide</p>
           <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">
             {config?.brf.name ?? slug}
           </h1>
           <p className="mt-4 text-base leading-8 text-stone-700">
             {config?.brf.applyIntroText ??
-              'Guiden hjälper dig att välja rätt renoveringstyper, förstå vilka dokument som behövs och skicka in ett komplett underlag till din BRF.'}
+              'Guiden hjÃ¤lper dig att vÃ¤lja rÃ¤tt renoveringstyper, fÃ¶rstÃ¥ vilka dokument som behÃ¶vs och skicka in ett komplett underlag till din BRF.'}
           </p>
 
           {draftInfo ? (
             <div className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
               <p className="font-semibold">Du arbetar i ett sparat utkast.</p>
               <p className="mt-2">
-                Ärendenummer {draftInfo.case.caseNumber} uppdaterades senast {formatDateTime(draftInfo.case.updatedAt)}.
+                Ã„rendenummer {draftInfo.case.caseNumber} uppdaterades senast {formatDateTime(draftInfo.case.updatedAt)}.
               </p>
             </div>
           ) : null}
@@ -491,7 +780,7 @@ export default function RenoAppApplyPage() {
           <div className="mt-6 rounded-3xl border border-stone-200 bg-stone-50 p-5">
             <p className="text-sm font-semibold text-stone-900">Valda renoveringar</p>
             {selectedActions.length === 0 ? (
-              <p className="mt-3 text-sm text-stone-700">Inga renoveringstyper valda ännu.</p>
+              <p className="mt-3 text-sm text-stone-700">Inga renoveringstyper valda Ã¤nnu.</p>
             ) : (
               <ul className="mt-3 space-y-2 text-sm text-stone-700">
                 {selectedActions.map((action) => (
@@ -505,9 +794,9 @@ export default function RenoAppApplyPage() {
           </div>
 
           <div className="mt-6 rounded-3xl border border-stone-200 bg-stone-50 p-5">
-            <p className="text-sm font-semibold text-stone-900">Dokument som behövs</p>
+            <p className="text-sm font-semibold text-stone-900">Dokument som behÃ¶vs</p>
             {mergedRequirements.length === 0 ? (
-              <p className="mt-3 text-sm text-stone-700">Välj renoveringstyper för att se dokumentkrav.</p>
+              <p className="mt-3 text-sm text-stone-700">VÃ¤lj renoveringstyper fÃ¶r att se dokumentkrav.</p>
             ) : (
               <div className="mt-3 space-y-4 text-sm text-stone-700">
                 {requirementGroups.beforeRequired.length > 0 ? (
@@ -542,10 +831,12 @@ export default function RenoAppApplyPage() {
         <section className="rounded-[32px] border border-stone-200/80 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.96))] p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:p-8">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Steg {step}</p>
-              <h2 className="mt-2 text-2xl font-semibold text-stone-900">
-                {STEP_ITEMS.find((item) => item.id === step)?.label}
-              </h2>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">AnsÃ¶kan steg fÃ¶r steg</p>
+              <h2 className="mt-2 text-2xl font-semibold text-stone-900">Fyll ett steg i taget</h2>
+              <p className="mt-2 text-sm text-stone-600">
+                Ett steg Ã¤r Ã¶ppet Ã¥t gÃ¥ngen. De andra minimeras till en kort sammanfattning men kan Ã¶ppnas igen nÃ¤r du
+                vill Ã¤ndra nÃ¥got.
+              </p>
             </div>
             <div className="text-right text-xs text-stone-500">
               <p>BRF-kod</p>
@@ -553,244 +844,47 @@ export default function RenoAppApplyPage() {
             </div>
           </div>
 
-          {step === 1 ? (
-            <div className="mt-6 space-y-6">
-              {actionGroups.map((group) => (
-                <div key={group.category.id}>
-                  <div className="mb-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">{group.category.label}</p>
-                    {group.category.description ? (
-                      <p className="mt-1 text-sm text-stone-700">{group.category.description}</p>
-                    ) : null}
-                  </div>
+          <div className="mt-6 space-y-3">
+            {STEP_ITEMS.map((item) => {
+              const isOpen = step === item.id
 
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {group.actions.map((action) => {
-                      const selected = form.actionTypeKeys.includes(action.key)
-                      const contractorRequirementText = getContractorRequirementText(action.contractorRequirement)
+              return (
+                <section
+                  key={item.id}
+                  className={`overflow-hidden rounded-[28px] border transition ${
+                    isOpen ? 'border-stone-300 bg-white shadow-[0_18px_50px_-35px_rgba(41,37,36,0.45)]' : 'border-stone-200 bg-stone-50/80'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setStep(item.id)}
+                    className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left"
+                  >
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span
+                        className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${
+                          isOpen
+                            ? 'border-stone-900 bg-stone-900 text-white'
+                            : 'border-stone-300 bg-white text-stone-700'
+                        }`}
+                      >
+                        {item.id}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-base font-semibold text-stone-900">{item.label}</p>
+                        {!isOpen ? <p className="mt-1 text-sm text-stone-600">{stepSummaries[item.id]}</p> : null}
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                      {isOpen ? 'Ã–ppet' : 'Ã–ppna'}
+                    </span>
+                  </button>
 
-                      return (
-                        <button
-                          key={action.id}
-                          type="button"
-                          onClick={() => toggleActionType(action.key)}
-                          className={`min-h-[102px] rounded-[22px] border px-4 py-3 text-left transition ${
-                            selected
-                              ? 'border-emerald-600 bg-emerald-50 shadow-[0_10px_30px_-20px_rgba(5,150,105,0.7)]'
-                              : 'border-stone-200 bg-white hover:border-stone-300'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <p className="truncate text-base font-semibold text-stone-900">{action.label}</p>
-                              {action.description ? (
-                                <p className="mt-1 text-xs leading-5 text-stone-700" style={compactDescriptionStyle}>
-                                  {action.description}
-                                </p>
-                              ) : null}
-                              {contractorRequirementText ? (
-                                <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.16em] text-stone-500">
-                                  {contractorRequirementText}
-                                </p>
-                              ) : null}
-                            </div>
-                            <span
-                              className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${
-                                selected
-                                  ? 'border-emerald-700 bg-emerald-700 text-white'
-                                  : 'border-stone-300 bg-white text-stone-500'
-                              }`}
-                            >
-                              {selected ? 'x' : '+'}
-                            </span>
-                          </div>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {step === 2 ? (
-            <div className="mt-6 grid gap-4">
-              <div className="rounded-3xl border border-stone-200 bg-white p-5">
-                <p className="text-sm leading-7 text-stone-700">
-                  Här ser du vad som normalt behöver bifogas utifrån de renoveringstyper du valt. Om något saknas nu
-                  kan du ändå spara utkastet och komplettera senare.
-                </p>
-              </div>
-              {mergedRequirements.length === 0 ? (
-                <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
-                  Välj först minst en renoveringstyp i steg 1.
-                </div>
-              ) : (
-                mergedRequirements.map((requirement) => (
-                  <div key={requirement.documentTypeId} className="rounded-3xl border border-stone-200 bg-white p-5">
-                    <p className="font-semibold text-stone-900">
-                      {requirement.documentLabel} {requirement.isRequired ? '(obligatorisk)' : '(bra att ha)'}
-                    </p>
-                    {requirement.documentDescription ? (
-                      <p className="mt-2 text-sm leading-7 text-stone-700">{requirement.documentDescription}</p>
-                    ) : null}
-                    {requirement.note ? <p className="mt-2 text-sm text-stone-500">{requirement.note}</p> : null}
-                  </div>
-                ))
-              )}
-            </div>
-          ) : null}
-
-          {step === 3 ? (
-            <div className="mt-6 grid gap-4">
-              <div className="rounded-3xl border border-stone-200 bg-white p-5">
-                <label className="block text-sm font-semibold text-stone-900" htmlFor="description">
-                  Beskriv projektet
-                </label>
-                <textarea
-                  id="description"
-                  value={form.description}
-                  onChange={(event) => updateField('description', event.target.value)}
-                  rows={7}
-                  className="mt-3 min-h-44 w-full rounded-3xl border border-stone-300 bg-white px-5 py-4 text-sm text-stone-900"
-                  placeholder="Beskriv kort vad du vill gora, hur omfattande arbetet ar och om du redan har ritningar eller annan dokumentation klar."
-                />
-              </div>
-
-              <div className="rounded-3xl border border-stone-200 bg-white p-5">
-                <p className="text-sm font-semibold text-stone-900">Entreprenor</p>
-                <p className="mt-2 text-sm leading-7 text-stone-700">
-                  Vi fokuserar pa vem som ska utfora arbetet och om ratt behorighet finns, i stallet for att fraga efter
-                  tekniska detaljval i detta steg.
-                </p>
-                {contractorRequirementTexts.length > 0 ? (
-                  <ul className="mt-3 space-y-2 text-sm text-stone-700">
-                    {contractorRequirementTexts.map((item) => (
-                      <li key={item} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <input
-                    value={form.contractorName}
-                    onChange={(event) => updateField('contractorName', event.target.value)}
-                    className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
-                    placeholder="Foretag eller entreprenor"
-                  />
-                  <input
-                    value={form.contractorOrgNumber}
-                    onChange={(event) => updateField('contractorOrgNumber', event.target.value)}
-                    className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                    placeholder="Organisationsnummer"
-                  />
-                  <input
-                    value={form.contractorPhone}
-                    onChange={(event) => updateField('contractorPhone', event.target.value)}
-                    className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                    placeholder="Telefon"
-                  />
-                  <input
-                    value={form.contractorEmail}
-                    onChange={(event) => updateField('contractorEmail', event.target.value)}
-                    className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
-                    placeholder="E-post"
-                    type="email"
-                  />
-                </div>
-                <label className="mt-4 flex items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
-                  <input
-                    checked={form.contractorHasRequiredCertification}
-                    onChange={(event) => updateField('contractorHasRequiredCertification', event.target.checked)}
-                    type="checkbox"
-                    className="mt-1"
-                  />
-                  <span>Jag bekraftar att entreprenoren har den behorighet eller certifiering som arbetet kraver.</span>
-                </label>
-              </div>
-            </div>
-          ) : null}
-
-          {step === 4 ? (
-            <div className="mt-6 grid gap-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <input
-                  value={form.applicantName}
-                  onChange={(event) => updateField('applicantName', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                  placeholder="Namn"
-                />
-                <input
-                  value={form.applicantEmail}
-                  onChange={(event) => updateField('applicantEmail', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                  placeholder="E-post"
-                  type="email"
-                />
-                <input
-                  value={form.applicantPhone}
-                  onChange={(event) => updateField('applicantPhone', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
-                  placeholder="Telefon"
-                />
-                <input
-                  value={form.unitNumberInternal}
-                  onChange={(event) => updateField('unitNumberInternal', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                  placeholder="Internt lägenhetsnummer"
-                />
-                <input
-                  value={form.unitNumberSkatteverket}
-                  onChange={(event) => updateField('unitNumberSkatteverket', event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                  placeholder="Skatteverkets lägenhetsnummer"
-                />
-              </div>
-
-              <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm leading-7 text-stone-700">
-                <p className="font-semibold text-stone-900">Spara och fortsätt senare</p>
-                <p className="mt-2">
-                  När du sparar skapas ett utkast och du får en säker länk som du kan öppna senare för att fortsätta.
-                </p>
-              </div>
-            </div>
-          ) : null}
-
-          {step === 5 ? (
-            <div className="mt-6 grid gap-4">
-              <div className="rounded-3xl border border-stone-200 bg-white p-5">
-                <p className="text-sm font-semibold text-stone-900">Sammanfattning</p>
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
-                    <p className="font-medium text-stone-900">Sökande</p>
-                    <p className="mt-1">{form.applicantName || '-'}</p>
-                    <p>{form.applicantEmail || '-'}</p>
-                    <p>{form.applicantPhone || '-'}</p>
-                  </div>
-                  <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
-                    <p className="font-medium text-stone-900">Lägenhet</p>
-                    <p className="mt-1">Internt nr: {form.unitNumberInternal || '-'}</p>
-                    <p>Skatteverket: {form.unitNumberSkatteverket || '-'}</p>
-                  </div>
-                </div>
-              </div>
-
-              {submitResult ? (
-                <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950">
-                  <p className="font-semibold">
-                    {submitResult.status === 'draft' ? 'Utkast sparat' : 'Ansökan registrerad'}
-                  </p>
-                  <p className="mt-2">Ärendenummer: {submitResult.caseNumber}</p>
-                  <p className="mt-2 break-all">
-                    {submitResult.status === 'draft' ? 'Fortsätt senare via:' : 'Öppna ärendet via:'}{' '}
-                    {submitResult.status === 'draft' ? submitResult.resumeUrl : submitResult.accessUrl}
-                  </p>
-                  {submitResult.emailError ? <p className="mt-2 text-amber-900">{submitResult.emailError}</p> : null}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+                  {isOpen ? <div className="border-t border-stone-200 px-5 py-5">{renderStepContent(item.id)}</div> : null}
+                </section>
+              )
+            })}
+          </div>
 
           {error ? (
             <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
@@ -805,7 +899,7 @@ export default function RenoAppApplyPage() {
               disabled={step === 1}
               className="rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Föregående
+              FÃ¶regÃ¥ende
             </button>
             {step < 5 ? (
               <button
@@ -813,7 +907,7 @@ export default function RenoAppApplyPage() {
                 onClick={() => setStep((current) => Math.min(5, current + 1))}
                 className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700"
               >
-                Nästa steg
+                NÃ¤sta steg
               </button>
             ) : (
               <button
@@ -822,7 +916,7 @@ export default function RenoAppApplyPage() {
                 disabled={submitting}
                 className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {submitting ? 'Skickar...' : 'Skicka ansökan'}
+                {submitting ? 'Skickar...' : 'Skicka ansÃ¶kan'}
               </button>
             )}
             <button
@@ -831,7 +925,7 @@ export default function RenoAppApplyPage() {
               disabled={savingDraft}
               className="rounded-full border border-stone-300 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {savingDraft ? 'Sparar...' : 'Spara och fortsätt senare'}
+              {savingDraft ? 'Sparar...' : 'Spara och fortsÃ¤tt senare'}
             </button>
             <Link
               href="/renoapp/apply"
@@ -845,3 +939,4 @@ export default function RenoAppApplyPage() {
     </main>
   )
 }
+
