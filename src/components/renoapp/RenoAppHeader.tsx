@@ -26,14 +26,14 @@ export default function RenoAppHeader() {
 
   return (
     <header className="border-b border-stone-200/80 bg-white/75 backdrop-blur">
-      <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-4 md:px-10 lg:px-12">
+      <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-2 md:px-10 lg:px-12">
         <Link href="/renoapp" className="flex items-center gap-3">
           <Image
             src="/landing/Renoapp.png"
             alt="RenoApp"
             width={320}
             height={84}
-            className="h-12 w-auto object-contain md:h-14"
+            className="h-[4.5rem] w-auto object-contain md:h-[5rem]"
             priority
           />
         </Link>

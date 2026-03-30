@@ -41,7 +41,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     normalizedPathname === '/inspections' || normalizedPathname?.startsWith('/inspections/')
   )
   const useObBranding = (isObModuleSubpage || isInspectionsModule) && !isObRoot
-  const logoHref = useObBranding ? '/ob' : '/dashboard-v1'
+  const logoHref = useObBranding ? '/ob' : '/'
 
   const handleLogout = async () => {
     await supabase.auth.signOut()

@@ -2782,6 +2782,78 @@ export async function listRenoAppAdminActionTypes(): Promise<RenoAppAdminActionT
   }))
 }
 
+export async function listRenoAppAdminDocumentTypes(): Promise<RenoAppAdminDocumentType[]> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const { data, error } = await admin
+    .from('renovation_document_types')
+    .select('id,key,label,description,sort_order,is_active')
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa dokumenttyper.')
+  }
+
+  return ((data ?? []) as DocumentTypeRow[]).map((item) => ({
+    id: item.id,
+    key: item.key,
+    label: item.label,
+    description: item.description ?? null,
+    sortOrder: item.sort_order,
+    isActive: item.is_active,
+  }))
+}
+
+export async function saveRenoAppAdminDocumentType(input: {
+  id?: string | null
+  key: string
+  label: string
+  description?: string | null
+  sortOrder?: number | null
+  isActive?: boolean
+}): Promise<RenoAppAdminDocumentType> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const key = normalizeText(input.key)?.toLowerCase() ?? null
+  const label = normalizeText(input.label)
+  const description = normalizeText(input.description)
+  const sortOrder = Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0 ? Number(input.sortOrder) : 100
+  const isActive = input.isActive !== false
+
+  assertRequiredText(key, 'DOCUMENT_TYPE_KEY_REQUIRED')
+  assertRequiredText(label, 'DOCUMENT_TYPE_LABEL_REQUIRED')
+
+  const payload = {
+    key,
+    label,
+    description,
+    sort_order: sortOrder,
+    is_active: isActive,
+  }
+
+  const query = input.id
+    ? admin.from('renovation_document_types').update(payload).eq('id', input.id)
+    : admin.from('renovation_document_types').insert(payload)
+
+  const { data, error } = await query.select('id,key,label,description,sort_order,is_active').single()
+
+  if (error || !data) {
+    throw new Error(error?.message ?? 'Kunde inte spara dokumenttyp.')
+  }
+
+  const row = data as DocumentTypeRow
+  return {
+    id: row.id,
+    key: row.key,
+    label: row.label,
+    description: row.description ?? null,
+    sortOrder: row.sort_order,
+    isActive: row.is_active,
+  }
+}
+
 export async function saveRenoAppAdminActionType(input: {
   id?: string | null
   categoryId?: string | null

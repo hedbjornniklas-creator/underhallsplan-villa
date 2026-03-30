@@ -23,6 +23,7 @@ const CONFIG_SECTIONS = [
     description: 'Styr vilka renoveringstyper som visas för boende och vilka dokument som krävs för varje val.',
     links: [
       { href: '/admin/renoapp/action-types', label: 'Renoveringstyper' },
+      { href: '/admin/renoapp/document-types', label: 'Dokumenttyper' },
       { href: '/admin/renoapp/requirements', label: 'Dokumentkrav' },
     ],
   },

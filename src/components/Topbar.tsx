@@ -38,7 +38,7 @@ export default function Topbar() {
   const hasUser = isLoggedIn
   const normalizedPath = (pathname || '').toLowerCase()
   const isObContext = normalizedPath.includes('/ob')
-  const logoHref = isObContext ? '/ob' : '/dashboard-v1'
+  const logoHref = isObContext ? '/ob' : '/'
 
   const handleLogout = async () => {
     await supabase.auth.signOut()

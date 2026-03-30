@@ -236,6 +236,13 @@ function renderRequirementList(items: Requirement[]) {
   )
 }
 
+const compactDescriptionStyle = {
+  display: '-webkit-box',
+  WebkitLineClamp: 2,
+  WebkitBoxOrient: 'vertical' as const,
+  overflow: 'hidden',
+}
+
 export default function RenoAppApplyPage() {
   const router = useRouter()
   const params = useParams<{ slug: string }>()
@@ -557,7 +564,7 @@ export default function RenoAppApplyPage() {
                     ) : null}
                   </div>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {group.actions.map((action) => {
                       const selected = form.actionTypeKeys.includes(action.key)
                       const contractorRequirementText = getContractorRequirementText(action.contractorRequirement)
@@ -567,7 +574,7 @@ export default function RenoAppApplyPage() {
                           key={action.id}
                           type="button"
                           onClick={() => toggleActionType(action.key)}
-                          className={`rounded-[26px] border p-5 text-left transition ${
+                          className={`min-h-[102px] rounded-[22px] border px-4 py-3 text-left transition ${
                             selected
                               ? 'border-emerald-600 bg-emerald-50 shadow-[0_10px_30px_-20px_rgba(5,150,105,0.7)]'
                               : 'border-stone-200 bg-white hover:border-stone-300'
@@ -575,16 +582,20 @@ export default function RenoAppApplyPage() {
                         >
                           <div className="flex items-start justify-between gap-4">
                             <div>
-                              <p className="text-lg font-semibold text-stone-900">{action.label}</p>
+                              <p className="truncate text-base font-semibold text-stone-900">{action.label}</p>
                               {action.description ? (
-                                <p className="mt-2 text-sm leading-7 text-stone-700">{action.description}</p>
+                                <p className="mt-1 text-xs leading-5 text-stone-700" style={compactDescriptionStyle}>
+                                  {action.description}
+                                </p>
                               ) : null}
                               {contractorRequirementText ? (
-                                <p className="mt-2 text-sm font-medium text-stone-900">{contractorRequirementText}</p>
+                                <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.16em] text-stone-500">
+                                  {contractorRequirementText}
+                                </p>
                               ) : null}
                             </div>
                             <span
-                              className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-sm font-semibold ${
+                              className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${
                                 selected
                                   ? 'border-emerald-700 bg-emerald-700 text-white'
                                   : 'border-stone-300 bg-white text-stone-500'
