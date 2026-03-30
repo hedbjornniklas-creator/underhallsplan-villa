@@ -327,6 +327,14 @@ export type RenoAppPublicApplicationDraft = {
     submittedAt: string
     updatedAt: string
   }
+  documents: Array<{
+    id: string
+    documentTypeId: string | null
+    fileName: string | null
+    status: string
+    uploadedAt: string
+    note: string | null
+  }>
 }
 
 export type RenoAppAdminActionType = {
@@ -1566,7 +1574,7 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
 
   const caseRow = caseData as Record<string, unknown>
   const brfId = String(caseRow.brf_id ?? '')
-  const [brfResult, contactResult, unitResult, actionTypeRows, actionTypes] = await Promise.all([
+  const [brfResult, contactResult, unitResult, actionTypeRows, actionTypes, documentsResult] = await Promise.all([
     admin.from('brf_associations').select('id,name,slug').eq('id', brfId).maybeSingle(),
     caseRow.applicant_contact_id
       ? admin.from('contacts').select('id,name,email,phone').eq('id', String(caseRow.applicant_contact_id)).maybeSingle()
@@ -1580,11 +1588,18 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
       : Promise.resolve({ data: null, error: null }),
     listCaseActionTypes(admin, [String(caseRow.id ?? '')]),
     listActiveActionTypes(admin),
+    admin
+      .from('renovation_case_documents')
+      .select('id,document_type_id,file_name,status,uploaded_at,note')
+      .eq('case_id', String(caseRow.id ?? ''))
+      .order('uploaded_at', { ascending: false }),
   ])
 
   if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte läsa BRF.')
   if (contactResult.error) throw new Error(contactResult.error.message ?? 'Kunde inte läsa kontakt.')
   if (unitResult.error) throw new Error(unitResult.error.message ?? 'Kunde inte läsa lägenhet.')
+
+  if (documentsResult.error) throw new Error(documentsResult.error.message ?? 'Kunde inte lasa dokument.')
 
   const actionTypeIdSet = new Set(
     actionTypeRows
@@ -1625,6 +1640,14 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
       submittedAt: String(caseRow.submitted_at ?? ''),
       updatedAt: String(caseRow.updated_at ?? ''),
     },
+    documents: ((documentsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+      id: String(row.id ?? ''),
+      documentTypeId: (row.document_type_id as string | null | undefined) ?? null,
+      fileName: (row.file_name as string | null | undefined) ?? null,
+      status: String(row.status ?? ''),
+      uploadedAt: String(row.uploaded_at ?? ''),
+      note: (row.note as string | null | undefined) ?? null,
+    })),
   }
 }
 

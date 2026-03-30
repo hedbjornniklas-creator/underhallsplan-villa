@@ -92,6 +92,14 @@ type DraftResponse = {
     submittedAt: string
     updatedAt: string
   }
+  documents: Array<{
+    id: string
+    documentTypeId: string | null
+    fileName: string | null
+    status: string
+    uploadedAt: string
+    note: string | null
+  }>
 }
 
 type SubmitResult = {
@@ -102,6 +110,15 @@ type SubmitResult = {
   status: 'draft' | 'submitted'
   emailSent: boolean
   emailError: string | null
+}
+
+type UploadedDocument = {
+  id: string
+  documentTypeId: string | null
+  fileName: string | null
+  status: string
+  uploadedAt: string
+  note: string | null
 }
 
 type FormState = {
@@ -258,7 +275,9 @@ export default function RenoAppApplyPage() {
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null)
   const [activeDraftToken, setActiveDraftToken] = useState(initialDraftToken)
   const [draftInfo, setDraftInfo] = useState<DraftResponse | null>(null)
+  const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([])
   const [savingDraft, setSavingDraft] = useState(false)
+  const [uploadingDocumentTypeId, setUploadingDocumentTypeId] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -300,6 +319,7 @@ export default function RenoAppApplyPage() {
     const loadDraft = async () => {
       if (!activeDraftToken) {
         setDraftInfo(null)
+        setUploadedDocuments([])
         return
       }
 
@@ -316,6 +336,7 @@ export default function RenoAppApplyPage() {
         if (!active) return
 
         setDraftInfo(payload)
+        setUploadedDocuments(payload.documents ?? [])
         setForm({
           applicantName: payload.form.applicantName,
           applicantEmail: payload.form.applicantEmail,
@@ -412,6 +433,43 @@ export default function RenoAppApplyPage() {
         ? current.actionTypeKeys.filter((value) => value !== key)
         : [...current.actionTypeKeys, key],
     }))
+  }
+
+  const uploadDocument = async (documentTypeId: string, file: File | null) => {
+    if (!file) return
+    if (!activeDraftToken) {
+      setError('Spara först ansökan som utkast innan du laddar upp dokument.')
+      return
+    }
+
+    setUploadingDocumentTypeId(documentTypeId)
+    setError(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('document_type_id', documentTypeId)
+
+      const response = await fetch(`/api/renoapp/case-access/${activeDraftToken}/documents`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string
+        document?: UploadedDocument
+      }
+
+      if (!response.ok || !payload.document) {
+        throw new Error(payload.error ?? 'Kunde inte ladda upp dokument.')
+      }
+
+      setUploadedDocuments((current) => [payload.document as UploadedDocument, ...current])
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp dokument.')
+    } finally {
+      setUploadingDocumentTypeId(null)
+    }
   }
 
   const submitApplication = async (mode: 'draft' | 'submit') => {
@@ -539,6 +597,11 @@ export default function RenoAppApplyPage() {
               du ändå spara utkastet och komplettera senare.
             </p>
           </div>
+          {!activeDraftToken ? (
+            <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+              Spara först ansökan som utkast för att kunna ladda upp dokument i detta steg.
+            </div>
+          ) : null}
           {mergedRequirements.length === 0 ? (
             <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
               Välj först minst en renoveringstyp i steg 1.
@@ -553,6 +616,46 @@ export default function RenoAppApplyPage() {
                   <p className="mt-2 text-sm leading-7 text-stone-700">{requirement.documentDescription}</p>
                 ) : null}
                 {requirement.note ? <p className="mt-2 text-sm text-stone-500">{requirement.note}</p> : null}
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <label
+                    className={`inline-flex cursor-pointer items-center rounded-full px-4 py-2 text-sm font-semibold transition ${
+                      activeDraftToken
+                        ? 'bg-stone-900 text-white hover:bg-stone-700'
+                        : 'cursor-not-allowed border border-stone-300 bg-stone-100 text-stone-500'
+                    }`}
+                  >
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
+                      disabled={!activeDraftToken || uploadingDocumentTypeId === requirement.documentTypeId}
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null
+                        void uploadDocument(requirement.documentTypeId, file)
+                        event.currentTarget.value = ''
+                      }}
+                    />
+                    {uploadingDocumentTypeId === requirement.documentTypeId ? 'Laddar upp...' : 'Ladda upp dokument'}
+                  </label>
+                </div>
+                {uploadedDocuments.filter((item) => item.documentTypeId === requirement.documentTypeId).length > 0 ? (
+                  <ul className="mt-4 space-y-2">
+                    {uploadedDocuments
+                      .filter((item) => item.documentTypeId === requirement.documentTypeId)
+                      .map((item) => (
+                        <li
+                          key={item.id}
+                          className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700"
+                        >
+                          <p className="font-medium text-stone-900">{item.fileName ?? 'Dokument'}</p>
+                          <p className="mt-1 text-xs uppercase tracking-[0.16em] text-stone-500">
+                            {item.status} · uppladdad {formatDateTime(item.uploadedAt)}
+                          </p>
+                          {item.note ? <p className="mt-1 text-stone-500">{item.note}</p> : null}
+                        </li>
+                      ))}
+                  </ul>
+                ) : null}
               </div>
             ))
           )}
