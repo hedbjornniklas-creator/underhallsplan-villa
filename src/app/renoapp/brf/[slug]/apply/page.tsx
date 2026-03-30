@@ -737,50 +737,36 @@ export default function RenoAppApplyPage() {
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-8 md:px-6 md:py-10">
-      <div className="grid gap-6 lg:grid-cols-[0.92fr_1.08fr]">
-        <section className="rounded-[32px] border border-stone-200/80 bg-white/88 p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">AnsÃ¶kningsguide</p>
-          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">
-            {config?.brf.name ?? slug}
-          </h1>
-          <p className="mt-4 text-base leading-8 text-stone-700">
-            {config?.brf.applyIntroText ??
-              'Guiden hjÃ¤lper dig att vÃ¤lja rÃ¤tt renoveringstyper, fÃ¶rstÃ¥ vilka dokument som behÃ¶vs och skicka in ett komplett underlag till din BRF.'}
-          </p>
-
-          {draftInfo ? (
-            <div className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-              <p className="font-semibold">Du arbetar i ett sparat utkast.</p>
-              <p className="mt-2">
-                Ã„rendenummer {draftInfo.case.caseNumber} uppdaterades senast {formatDateTime(draftInfo.case.updatedAt)}.
-              </p>
-            </div>
-          ) : null}
-
-          <div className="mt-6 grid gap-3">
-            {STEP_ITEMS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setStep(item.id)}
-                className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
-                  step === item.id
-                    ? 'border-stone-900 bg-stone-900 text-white'
-                    : 'border-stone-200 bg-stone-50 text-stone-800 hover:bg-white'
-                }`}
-              >
-                <span className="mr-3 inline-flex h-7 w-7 items-center justify-center rounded-full border border-current text-xs font-semibold">
-                  {item.id}
-                </span>
-                {item.label}
-              </button>
-            ))}
+      <section className="rounded-[32px] border border-stone-200/80 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.98))] p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:p-8">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Ansökningsguide</p>
+            <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">{config?.brf.name ?? slug}</h1>
+            <p className="mt-4 max-w-4xl text-base leading-8 text-stone-700">
+              {config?.brf.applyIntroText ??
+                'Guiden hjälper dig att välja rätt renoveringstyper, förstå vilka dokument som behövs och skicka in ett komplett underlag till din BRF.'}
+            </p>
           </div>
+          <div className="text-right text-xs text-stone-500">
+            <p>BRF-kod</p>
+            <p className="mt-1 font-semibold uppercase tracking-[0.18em] text-stone-700">{config?.brf.slug}</p>
+          </div>
+        </div>
 
-          <div className="mt-6 rounded-3xl border border-stone-200 bg-stone-50 p-5">
+        {draftInfo ? (
+          <div className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+            <p className="font-semibold">Du arbetar i ett sparat utkast.</p>
+            <p className="mt-2">
+              Ärendenummer {draftInfo.case.caseNumber} uppdaterades senast {formatDateTime(draftInfo.case.updatedAt)}.
+            </p>
+          </div>
+        ) : null}
+
+        <div className="mt-6 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+          <div className="rounded-3xl border border-stone-200 bg-white/85 p-5">
             <p className="text-sm font-semibold text-stone-900">Valda renoveringar</p>
             {selectedActions.length === 0 ? (
-              <p className="mt-3 text-sm text-stone-700">Inga renoveringstyper valda Ã¤nnu.</p>
+              <p className="mt-3 text-sm text-stone-700">Inga renoveringstyper valda ännu.</p>
             ) : (
               <ul className="mt-3 space-y-2 text-sm text-stone-700">
                 {selectedActions.map((action) => (
@@ -793,54 +779,49 @@ export default function RenoAppApplyPage() {
             )}
           </div>
 
-          <div className="mt-6 rounded-3xl border border-stone-200 bg-stone-50 p-5">
-            <p className="text-sm font-semibold text-stone-900">Dokument som behÃ¶vs</p>
+          <div className="rounded-3xl border border-stone-200 bg-white/85 p-5">
+            <p className="text-sm font-semibold text-stone-900">Dokument som behövs</p>
             {mergedRequirements.length === 0 ? (
-              <p className="mt-3 text-sm text-stone-700">VÃ¤lj renoveringstyper fÃ¶r att se dokumentkrav.</p>
+              <p className="mt-3 text-sm text-stone-700">Välj renoveringstyper för att se dokumentkrav.</p>
             ) : (
               <div className="mt-3 space-y-4 text-sm text-stone-700">
                 {requirementGroups.beforeRequired.length > 0 ? (
                   <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Kravs fore ansokan</p>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Krävs före ansökan</p>
                     {renderRequirementList(requirementGroups.beforeRequired)}
                   </div>
                 ) : null}
                 {requirementGroups.beforeConditional.length > 0 ? (
                   <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Kan behovas beroende pa arbete</p>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Kan behövas beroende på arbete</p>
                     {renderRequirementList(requirementGroups.beforeConditional)}
                   </div>
                 ) : null}
                 {requirementGroups.afterCompletion.length > 0 ? (
                   <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Lamnas efter fardigstallande</p>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Lämnas efter färdigställande</p>
                     {renderRequirementList(requirementGroups.afterCompletion)}
                   </div>
                 ) : null}
                 {requirementGroups.uncategorized.length > 0 ? (
                   <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Ovrigt underlag</p>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Övrigt underlag</p>
                     {renderRequirementList(requirementGroups.uncategorized)}
                   </div>
                 ) : null}
               </div>
             )}
           </div>
-        </section>
+        </div>
 
-        <section className="rounded-[32px] border border-stone-200/80 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.96))] p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:p-8">
+        <div className="mt-6 rounded-3xl border border-stone-200 bg-white/80 p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">AnsÃ¶kan steg fÃ¶r steg</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Ansökan steg för steg</p>
               <h2 className="mt-2 text-2xl font-semibold text-stone-900">Fyll ett steg i taget</h2>
               <p className="mt-2 text-sm text-stone-600">
-                Ett steg Ã¤r Ã¶ppet Ã¥t gÃ¥ngen. De andra minimeras till en kort sammanfattning men kan Ã¶ppnas igen nÃ¤r du
-                vill Ã¤ndra nÃ¥got.
+                Varje steg öppnas direkt under sin egen rad. Du kan alltid öppna ett tidigare steg igen och ändra något.
               </p>
-            </div>
-            <div className="text-right text-xs text-stone-500">
-              <p>BRF-kod</p>
-              <p className="mt-1 font-semibold uppercase tracking-[0.18em] text-stone-700">{config?.brf.slug}</p>
             </div>
           </div>
 
@@ -852,7 +833,9 @@ export default function RenoAppApplyPage() {
                 <section
                   key={item.id}
                   className={`overflow-hidden rounded-[28px] border transition ${
-                    isOpen ? 'border-stone-300 bg-white shadow-[0_18px_50px_-35px_rgba(41,37,36,0.45)]' : 'border-stone-200 bg-stone-50/80'
+                    isOpen
+                      ? 'border-stone-300 bg-white shadow-[0_18px_50px_-35px_rgba(41,37,36,0.45)]'
+                      : 'border-stone-200 bg-stone-50/80'
                   }`}
                 >
                   <button
@@ -876,7 +859,7 @@ export default function RenoAppApplyPage() {
                       </div>
                     </div>
                     <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                      {isOpen ? 'Ã–ppet' : 'Ã–ppna'}
+                      {isOpen ? 'Öppet' : 'Öppna'}
                     </span>
                   </button>
 
@@ -899,7 +882,7 @@ export default function RenoAppApplyPage() {
               disabled={step === 1}
               className="rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              FÃ¶regÃ¥ende
+              Föregående
             </button>
             {step < 5 ? (
               <button
@@ -907,7 +890,7 @@ export default function RenoAppApplyPage() {
                 onClick={() => setStep((current) => Math.min(5, current + 1))}
                 className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700"
               >
-                NÃ¤sta steg
+                Nästa steg
               </button>
             ) : (
               <button
@@ -916,7 +899,7 @@ export default function RenoAppApplyPage() {
                 disabled={submitting}
                 className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {submitting ? 'Skickar...' : 'Skicka ansÃ¶kan'}
+                {submitting ? 'Skickar...' : 'Skicka ansökan'}
               </button>
             )}
             <button
@@ -925,7 +908,7 @@ export default function RenoAppApplyPage() {
               disabled={savingDraft}
               className="rounded-full border border-stone-300 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {savingDraft ? 'Sparar...' : 'Spara och fortsÃ¤tt senare'}
+              {savingDraft ? 'Sparar...' : 'Spara och fortsätt senare'}
             </button>
             <Link
               href="/renoapp/apply"
@@ -934,8 +917,8 @@ export default function RenoAppApplyPage() {
               Byt BRF
             </Link>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
     </main>
   )
 }
