@@ -1,13 +1,16 @@
 ﻿'use client'
 
 import Protected from '@/components/Protected'
-import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import type { Database } from '@/types/supabase'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useProfile } from '@/hooks/useProfile'
 import { useRouter, useSearchParams } from 'next/navigation'
 import ForutsattningarSettingsPage from '@/app/(app)/settings/forutsattningar/page'
+import {
+  BESIKTAPP_ADMIN_TABS,
+  type BesiktAppAdminTab as AdminTab,
+} from '@/lib/admin/navigation'
 
 type DocType = {
   id: string
@@ -164,76 +167,6 @@ type ControlPointOutcomeDraft = {
   sort_order: number
   is_active: boolean
 }
-
-type AdminTab =
-  | 'docs'
-  | 'comps'
-  | 'control-points'
-  | 'room-types'
-  | 'certifications'
-  | 'forutsattningar'
-  | 'addon-services'
-
-const ADMIN_TAB_LINKS: { key: AdminTab; label: string; description: string }[] = [
-  {
-    key: 'docs',
-    label: 'Dokumenttyper',
-    description: 'Hantera dokumentmallar, etiketter och vilka typer som ska finnas i systemet.',
-  },
-  {
-    key: 'comps',
-    label: 'Komponentkatalog',
-    description: 'Underhåll komponenttyper, livslängder och grunddata för bedömningar.',
-  },
-  {
-    key: 'room-types',
-    label: 'Rumstyper',
-    description: 'Bygg upp vilka rumstyper som används i interiöra flöden och kontrollpunkter.',
-  },
-  {
-    key: 'addon-services',
-    label: 'Tilläggsuppdrag',
-    description: 'Konfigurera tilläggstjänster och extra uppdrag som kan kopplas till arbetet.',
-  },
-  {
-    key: 'certifications',
-    label: 'Certifieringar',
-    description: 'Styr certifierings- och medlemskapstyper för organisationer och användare.',
-  },
-  {
-    key: 'forutsattningar',
-    label: 'Förutsättningar',
-    description: 'Redigera antaganden och styrparametrar som används i plattformens logik.',
-  },
-  {
-    key: 'control-points',
-    label: 'Kontrollpunkter',
-    description: 'Hantera kontrollpunkter, triggers och utfall för besiktningsstödet.',
-  },
-] as const
-
-const RENOAPP_ADMIN_LINKS = [
-  {
-    href: '/admin/renoapp',
-    label: 'RenoApp-admin',
-    description: 'Samlad översikt för RenoApp, onboarding och interna nästa steg.',
-  },
-  {
-    href: '/admin/renoapp/brf-requests',
-    label: 'BRF-ansökningar',
-    description: 'Granska inkomna intresseanmälningar och godkänn eller avslå dem.',
-  },
-  {
-    href: '/admin/renoapp/brf/create',
-    label: 'Skapa BRF',
-    description: 'Lägg upp BRF manuellt och skicka första styrelseinviten.',
-  },
-  {
-    href: '/renoapp/app',
-    label: 'Öppna RenoApp',
-    description: 'Gå vidare till RenoApps styrelseyta och den operativa handläggningen.',
-  },
-] as const
 
 export default function AdminClient() {
   const { isAdmin, loading } = useProfile()
@@ -1553,83 +1486,46 @@ export default function AdminClient() {
       </Protected>
     )
 
-  const activeAdminSection = ADMIN_TAB_LINKS.find(section => section.key === tab) ?? ADMIN_TAB_LINKS[0]
+  const activeAdminSection =
+    BESIKTAPP_ADMIN_TABS.find(section => section.key === tab) ?? BESIKTAPP_ADMIN_TABS[0]
 
   return (
     <Protected>
       <div className="space-y-6">
         <section className="rounded-[28px] border border-stone-200/80 bg-[linear-gradient(145deg,rgba(255,251,247,0.98),rgba(245,242,238,0.94))] p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.45)]">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Intern admin</p>
-              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-stone-900">Samlad översikt för HusHub och RenoApp</h1>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">BesiktApp admin</p>
+              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-stone-900">Systeminställningar</h1>
               <p className="mt-3 max-w-3xl text-sm leading-7 text-stone-700">
-                Den här sidan är nu en lugnare arbetsyta. Välj område nedan för att öppna rätt adminmodul i stället för att mötas av alla verktyg samtidigt.
+                Växla mellan BesiktApps inställningsområden här uppe. Innehållet nedan hålls i samma arbetsyta.
               </p>
             </div>
             <div className="rounded-2xl border border-stone-200 bg-white/85 px-4 py-3 text-sm text-stone-700">
               Visar nu: <span className="font-semibold text-stone-900">{activeAdminSection.label}</span>
             </div>
           </div>
-        </section>
 
-        <div className="grid gap-6 xl:grid-cols-[1.8fr,1fr]">
-          <section className="rounded-[28px] border border-stone-200/80 bg-white/92 p-6 shadow-sm">
-            <div className="flex items-end justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-stone-900">Systeminställningar</h2>
-                <p className="mt-1 text-sm leading-6 text-stone-600">
-                  Välj en modul för att öppna den befintliga adminfunktionen i samma vy.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
-              {ADMIN_TAB_LINKS.map(section => {
-                const active = section.key === tab
-                return (
-                  <button
-                    key={section.key}
-                    type="button"
-                    onClick={() => setTabAndPush(section.key)}
-                    className={`rounded-2xl border p-4 text-left transition ${
-                      active
-                        ? 'border-stone-900 bg-stone-900 text-white shadow-sm'
-                        : 'border-stone-200 bg-stone-50/70 text-stone-900 hover:border-stone-300 hover:bg-stone-100/80'
-                    }`}
-                  >
-                    <div className="text-sm font-semibold">{section.label}</div>
-                    <p className={`mt-2 text-sm leading-6 ${active ? 'text-stone-100' : 'text-stone-600'}`}>
-                      {section.description}
-                    </p>
-                  </button>
-                )
-              })}
-            </div>
-          </section>
-
-          <section className="rounded-[28px] border border-stone-200/80 bg-[linear-gradient(145deg,rgba(255,250,244,0.98),rgba(248,244,238,0.92))] p-6 shadow-sm">
-            <div>
-              <h2 className="text-lg font-semibold text-stone-900">RenoApp</h2>
-              <p className="mt-1 text-sm leading-6 text-stone-700">
-                Separat men integrerad adminslinga för BRF-onboarding, ansökningar och vidare handläggning.
-              </p>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              {RENOAPP_ADMIN_LINKS.map(link => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className="block rounded-2xl border border-stone-200 bg-white/90 p-4 transition hover:border-stone-300 hover:bg-white"
+          <nav className="mt-5 flex flex-wrap gap-2" aria-label="BesiktApp admin navigation">
+            {BESIKTAPP_ADMIN_TABS.map(section => {
+              const active = section.key === tab
+              return (
+                <button
+                  key={section.key}
+                  type="button"
+                  onClick={() => setTabAndPush(section.key)}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                    active
+                      ? 'bg-stone-900 text-white'
+                      : 'border border-stone-300 bg-white text-stone-800 hover:bg-stone-100'
+                  }`}
                 >
-                  <div className="text-sm font-semibold text-stone-900">{link.label}</div>
-                  <p className="mt-2 text-sm leading-6 text-stone-700">{link.description}</p>
-                </Link>
-              ))}
-            </div>
-          </section>
-        </div>
+                  {section.label}
+                </button>
+              )
+            })}
+          </nav>
+        </section>
 
         <section className="rounded-2xl border border-stone-200/80 bg-white/90 p-4 shadow-sm">
           <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">

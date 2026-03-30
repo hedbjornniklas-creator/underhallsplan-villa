@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useState } from 'react'
 import Protected from '@/components/Protected'
 import { useProfile } from '@/hooks/useProfile'
@@ -140,12 +139,6 @@ export default function RenoAppAdminCreateBrfPage() {
                 >
                   {submitting ? 'Skapar...' : 'Skapa BRF'}
                 </button>
-                <Link
-                  href="/admin/renoapp"
-                  className="rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
-                >
-                  Till adminstart
-                </Link>
               </div>
             </form>
           </section>

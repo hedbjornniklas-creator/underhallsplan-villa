@@ -936,7 +936,7 @@ export default function RenoAppApplyPage() {
                 >
                   <button
                     type="button"
-                    onClick={() => setStep(item.id)}
+                    onClick={() => setStep((current) => (current === item.id ? null : item.id))}
                     className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left"
                   >
                     <div className="flex min-w-0 items-start gap-3">

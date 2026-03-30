@@ -398,12 +398,6 @@ export default function RenoAppAdminBrfRequestsPage() {
 
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
-                href="/admin/renoapp"
-                className="rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
-              >
-                Till adminstart
-              </Link>
-              <Link
                 href="/admin/renoapp/brf/create"
                 className="rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
               >
