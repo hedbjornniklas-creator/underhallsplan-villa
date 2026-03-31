@@ -148,8 +148,17 @@ export default function RenoAppActionTypesAdminPage() {
   const [requirementDrafts, setRequirementDrafts] = useState<Record<string, DraftRequirementState>>(
     {}
   )
+  const [savedRequirementDrafts, setSavedRequirementDrafts] = useState<
+    Record<string, DraftRequirementState>
+  >({})
   const [questionDrafts, setQuestionDrafts] = useState<Record<string, DraftActionQuestionState>>({})
+  const [savedQuestionDrafts, setSavedQuestionDrafts] = useState<
+    Record<string, DraftActionQuestionState>
+  >({})
   const [participantRoleDrafts, setParticipantRoleDrafts] = useState<
+    Record<string, DraftParticipantRoleState>
+  >({})
+  const [savedParticipantRoleDrafts, setSavedParticipantRoleDrafts] = useState<
     Record<string, DraftParticipantRoleState>
   >({})
   const [loading, setLoading] = useState(true)
@@ -283,8 +292,11 @@ export default function RenoAppActionTypesAdminPage() {
         setQuestionItems(questionPayload.questions ?? [])
         setParticipantRoles(participantRolePayload.participantRoles ?? [])
         setRequirementDrafts(nextRequirementDrafts)
+        setSavedRequirementDrafts(nextRequirementDrafts)
         setQuestionDrafts(nextQuestionDrafts)
+        setSavedQuestionDrafts(nextQuestionDrafts)
         setParticipantRoleDrafts(nextParticipantRoleDrafts)
+        setSavedParticipantRoleDrafts(nextParticipantRoleDrafts)
         setDocumentsActionId((current) =>
           current && nextItems.some((item) => item.id === current) ? current : null
         )
@@ -515,6 +527,21 @@ export default function RenoAppActionTypesAdminPage() {
         }
         return next
       })
+      setSavedRequirementDrafts((current) => {
+        const next = { ...current }
+        for (const documentType of activeDocumentTypes) {
+          const key = `${savedItem.id}:${documentType.id}`
+          if (!next[key]) {
+            next[key] = {
+              isEnabled: false,
+              isRequired: true,
+              note: '',
+              sortOrder: String(documentType.sortOrder ?? 100),
+            }
+          }
+        }
+        return next
+      })
       setQuestionDrafts((current) => {
         const next = { ...current }
         for (const question of activeQuestions) {
@@ -529,7 +556,35 @@ export default function RenoAppActionTypesAdminPage() {
         }
         return next
       })
+      setSavedQuestionDrafts((current) => {
+        const next = { ...current }
+        for (const question of activeQuestions) {
+          const key = `${savedItem.id}:${question.id}`
+          if (!next[key]) {
+            next[key] = {
+              isEnabled: false,
+              isRequired: true,
+              sortOrder: String(question.sortOrder ?? 100),
+            }
+          }
+        }
+        return next
+      })
       setParticipantRoleDrafts((current) => {
+        const next = { ...current }
+        for (const participantRole of activeParticipantRoles) {
+          const key = `${savedItem.id}:${participantRole.id}`
+          if (!next[key]) {
+            next[key] = {
+              isEnabled: false,
+              isRequired: true,
+              sortOrder: String(participantRole.sortOrder ?? 100),
+            }
+          }
+        }
+        return next
+      })
+      setSavedParticipantRoleDrafts((current) => {
         const next = { ...current }
         for (const participantRole of activeParticipantRoles) {
           const key = `${savedItem.id}:${participantRole.id}`
@@ -625,6 +680,11 @@ export default function RenoAppActionTypesAdminPage() {
       if (!response.ok) {
         throw new Error(payload.error ?? 'Kunde inte spara dokumentkrav.')
       }
+
+      setSavedRequirementDrafts((current) => ({
+        ...current,
+        [key]: { ...draft },
+      }))
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara dokumentkrav.')
     } finally {
@@ -657,6 +717,11 @@ export default function RenoAppActionTypesAdminPage() {
       if (!response.ok) {
         throw new Error(payload.error ?? 'Kunde inte spara fragekoppling.')
       }
+
+      setSavedQuestionDrafts((current) => ({
+        ...current,
+        [key]: { ...draft },
+      }))
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara fragekoppling.')
     } finally {
@@ -689,6 +754,11 @@ export default function RenoAppActionTypesAdminPage() {
       if (!response.ok) {
         throw new Error(payload.error ?? 'Kunde inte spara medverkandekoppling.')
       }
+
+      setSavedParticipantRoleDrafts((current) => ({
+        ...current,
+        [key]: { ...draft },
+      }))
     } catch (saveError) {
       setError(
         saveError instanceof Error ? saveError.message : 'Kunde inte spara medverkandekoppling.'
@@ -696,6 +766,21 @@ export default function RenoAppActionTypesAdminPage() {
     } finally {
       setSavingParticipantRoleKey(null)
     }
+  }
+
+  const closeDocumentsModal = () => {
+    setRequirementDrafts(savedRequirementDrafts)
+    setDocumentsActionId(null)
+  }
+
+  const closeQuestionsModal = () => {
+    setQuestionDrafts(savedQuestionDrafts)
+    setQuestionsActionId(null)
+  }
+
+  const closeParticipantRolesModal = () => {
+    setParticipantRoleDrafts(savedParticipantRoleDrafts)
+    setParticipantRolesActionId(null)
   }
 
   const deleteActionType = async (item: ActionTypeItem) => {
@@ -722,12 +807,27 @@ export default function RenoAppActionTypesAdminPage() {
           Object.entries(current).filter(([key]) => !key.startsWith(`${item.id}:`))
         )
       )
+      setSavedRequirementDrafts((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([key]) => !key.startsWith(`${item.id}:`))
+        )
+      )
       setQuestionDrafts((current) =>
         Object.fromEntries(
           Object.entries(current).filter(([key]) => !key.startsWith(`${item.id}:`))
         )
       )
+      setSavedQuestionDrafts((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([key]) => !key.startsWith(`${item.id}:`))
+        )
+      )
       setParticipantRoleDrafts((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([key]) => !key.startsWith(`${item.id}:`))
+        )
+      )
+      setSavedParticipantRoleDrafts((current) =>
         Object.fromEntries(
           Object.entries(current).filter(([key]) => !key.startsWith(`${item.id}:`))
         )
@@ -857,9 +957,13 @@ export default function RenoAppActionTypesAdminPage() {
                         <div className="grid grid-cols-3 gap-1 whitespace-nowrap text-[11px]">
                           <button
                             type="button"
-                            onClick={() =>
-                              setQuestionsActionId((current) => (current === item.id ? null : item.id))
-                            }
+                            onClick={() => {
+                              if (questionsOpen) {
+                                closeQuestionsModal()
+                                return
+                              }
+                              setQuestionsActionId(item.id)
+                            }}
                             className={`w-full rounded-md border ${
                               questionsOpen
                                 ? 'border-sky-300 bg-sky-100 text-sky-900'
@@ -870,9 +974,13 @@ export default function RenoAppActionTypesAdminPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() =>
-                              setDocumentsActionId((current) => (current === item.id ? null : item.id))
-                            }
+                            onClick={() => {
+                              if (documentsOpen) {
+                                closeDocumentsModal()
+                                return
+                              }
+                              setDocumentsActionId(item.id)
+                            }}
                             className={`w-full rounded-md border ${
                               documentsOpen
                                 ? 'border-blue-300 bg-blue-100 text-blue-900'
@@ -883,9 +991,13 @@ export default function RenoAppActionTypesAdminPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() =>
-                              setParticipantRolesActionId((current) => (current === item.id ? null : item.id))
-                            }
+                            onClick={() => {
+                              if (participantRolesOpen) {
+                                closeParticipantRolesModal()
+                                return
+                              }
+                              setParticipantRolesActionId(item.id)
+                            }}
                             className={`w-full rounded-md border ${
                               participantRolesOpen
                                 ? 'border-violet-300 bg-violet-100 text-violet-900'
@@ -948,7 +1060,7 @@ export default function RenoAppActionTypesAdminPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setDocumentsActionId(null)}
+                  onClick={closeDocumentsModal}
                   className="rounded-xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
                 >
                   Stäng
@@ -1104,7 +1216,7 @@ export default function RenoAppActionTypesAdminPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setParticipantRolesActionId(null)}
+                  onClick={closeParticipantRolesModal}
                   className="rounded-xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
                 >
                   Stäng
@@ -1247,7 +1359,7 @@ export default function RenoAppActionTypesAdminPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setQuestionsActionId(null)}
+                  onClick={closeQuestionsModal}
                   className="rounded-xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
                 >
                   Stäng

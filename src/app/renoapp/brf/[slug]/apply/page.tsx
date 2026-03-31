@@ -558,7 +558,7 @@ function renderParticipantRoleList(items: ParticipantRole[]) {
 
 const compactDescriptionStyle = {
   display: '-webkit-box',
-  WebkitLineClamp: 1,
+  WebkitLineClamp: 2,
   WebkitBoxOrient: 'vertical' as const,
   overflow: 'hidden',
 }
@@ -867,13 +867,13 @@ export default function RenoAppApplyPage() {
   const renderStepContent = (stepId: number) => {
     if (stepId === 1) {
       return (
-        <div className="space-y-6">
+        <div className="space-y-4 md:space-y-6">
           {actionGroups.map((group) => (
             <div key={group.category.id}>
-              <div className="mb-3">
+              <div className="mb-2 md:mb-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">{group.category.label}</p>
                 {group.category.description ? (
-                  <p className="mt-1 text-sm text-stone-700">{group.category.description}</p>
+                  <p className="mt-1 hidden text-sm text-stone-700 sm:block">{group.category.description}</p>
                 ) : null}
               </div>
 
@@ -886,17 +886,19 @@ export default function RenoAppApplyPage() {
                       key={action.id}
                       type="button"
                       onClick={() => toggleActionType(action.key)}
-                      className={`min-h-[74px] rounded-[22px] border px-4 py-3 text-left transition ${
+                      className={`min-h-[64px] rounded-[18px] border px-3 py-2.5 text-left transition md:min-h-[74px] md:rounded-[22px] md:px-4 md:py-3 ${
                         selected
                           ? 'border-emerald-600 bg-emerald-50 shadow-[0_10px_30px_-20px_rgba(5,150,105,0.7)]'
                           : 'border-stone-200 bg-white hover:border-stone-300'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="truncate text-base font-semibold text-stone-900">{action.label}</p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[15px] font-semibold leading-5 text-stone-900 md:text-base md:leading-6">
+                            {action.label}
+                          </p>
                           {action.description ? (
-                            <p className="mt-1 text-sm leading-6 text-stone-700" style={compactDescriptionStyle}>
+                            <p className="mt-1 text-xs leading-5 text-stone-700 md:text-sm md:leading-6" style={compactDescriptionStyle}>
                               {action.description}
                             </p>
                           ) : null}
@@ -919,7 +921,7 @@ export default function RenoAppApplyPage() {
           ))}
 
           {selectedActions.length > 0 ? (
-            <div className="rounded-3xl border border-stone-200 bg-white p-5">
+            <div className="rounded-2xl border-0 bg-transparent p-0 md:rounded-3xl md:border md:border-stone-200 md:bg-white md:p-5">
               <p className="text-sm font-semibold text-stone-900">Följdfrågor</p>
               <p className="mt-2 text-sm leading-7 text-stone-700">
                 Besvara bara de frågor som hör till de renoveringstyper du valt. De används för att styra
@@ -936,7 +938,7 @@ export default function RenoAppApplyPage() {
                     const selectedValues = form.questionAnswers[question.key] ?? []
 
                     return (
-                      <div key={question.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
+                      <div key={question.id} className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-3 md:rounded-2xl md:px-4 md:py-4">
                         <div className="flex items-start justify-between gap-4">
                           <div>
                             <p className="font-semibold text-stone-900">
@@ -944,7 +946,7 @@ export default function RenoAppApplyPage() {
                               {question.isRequired ? ' *' : ''}
                             </p>
                             {question.helpText ? (
-                              <p className="mt-1 text-sm leading-7 text-stone-700">{question.helpText}</p>
+                              <p className="mt-1 text-sm leading-6 text-stone-700 md:leading-7">{question.helpText}</p>
                             ) : null}
                           </div>
                           <span className="shrink-0 rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-semibold text-stone-600">
@@ -967,7 +969,7 @@ export default function RenoAppApplyPage() {
                                       : [option.key]
                                   )
                                 }
-                                className={`rounded-2xl border px-4 py-3 text-left transition ${
+                                className={`rounded-xl border px-3 py-2.5 text-left transition md:rounded-2xl md:px-4 md:py-3 ${
                                   selected
                                     ? 'border-emerald-600 bg-emerald-50'
                                     : 'border-stone-200 bg-white hover:border-stone-300'
@@ -1248,8 +1250,8 @@ export default function RenoAppApplyPage() {
   }
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-8 md:px-6 md:py-10">
-      <section className="rounded-[32px] border border-stone-200/80 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.98))] p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:p-8">
+    <main className="mx-auto min-h-screen w-full max-w-6xl px-3 py-4 md:px-6 md:py-10">
+      <section className="rounded-[24px] border border-stone-200/80 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.98))] p-4 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:rounded-[32px] md:p-8">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Ansökningsguide</p>
@@ -1274,7 +1276,7 @@ export default function RenoAppApplyPage() {
           </div>
         ) : null}
 
-        <div className="mt-6 rounded-3xl border border-stone-200 bg-white/80 p-5">
+        <div className="mt-4 rounded-2xl border border-stone-200 bg-white/80 p-4 md:mt-6 md:rounded-3xl md:p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Ansökan steg för steg</p>
@@ -1285,14 +1287,14 @@ export default function RenoAppApplyPage() {
             </div>
           </div>
 
-          <div className="mt-6 space-y-3">
+          <div className="mt-4 space-y-2 md:mt-6 md:space-y-3">
             {STEP_ITEMS.map((item) => {
               const isOpen = step === item.id
 
               return (
                 <section
                   key={item.id}
-                  className={`overflow-hidden rounded-[28px] border transition ${
+                  className={`overflow-hidden rounded-[22px] border transition md:rounded-[28px] ${
                     isOpen
                       ? 'border-stone-300 bg-white shadow-[0_18px_50px_-35px_rgba(41,37,36,0.45)]'
                       : 'border-stone-200 bg-stone-50/80'
@@ -1301,7 +1303,7 @@ export default function RenoAppApplyPage() {
                   <button
                     type="button"
                     onClick={() => setStep((current) => (current === item.id ? null : item.id))}
-                    className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left"
+                    className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left md:gap-4 md:px-5 md:py-4"
                   >
                     <div className="flex min-w-0 items-start gap-3">
                       <span
@@ -1314,8 +1316,8 @@ export default function RenoAppApplyPage() {
                         {item.id}
                       </span>
                       <div className="min-w-0">
-                        <p className="text-base font-semibold text-stone-900">{item.label}</p>
-                        {!isOpen ? <p className="mt-1 text-sm text-stone-600">{stepSummaries[item.id]}</p> : null}
+                        <p className="text-[15px] font-semibold text-stone-900 md:text-base">{item.label}</p>
+                        {!isOpen ? <p className="mt-1 hidden text-sm text-stone-600 sm:block">{stepSummaries[item.id]}</p> : null}
                       </div>
                     </div>
                     <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
@@ -1323,7 +1325,7 @@ export default function RenoAppApplyPage() {
                     </span>
                   </button>
 
-                  {isOpen ? <div className="border-t border-stone-200 px-5 py-5">{renderStepContent(item.id)}</div> : null}
+                  {isOpen ? <div className="border-t border-stone-200 px-4 py-4 md:px-5 md:py-5">{renderStepContent(item.id)}</div> : null}
                 </section>
               )
             })}
