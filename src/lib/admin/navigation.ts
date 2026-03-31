@@ -80,4 +80,10 @@ export const RENOAPP_ADMIN_TABS = [
     description: 'Hantera den centrala katalogen av dokument i RenoApp.',
     match: (pathname: string) => pathname === '/admin/renoapp/document-types',
   },
+  {
+    href: '/admin/renoapp/terminology',
+    label: 'Terminologi',
+    description: 'Lås och underhåll RenoApps ordlista, alias och grundregler.',
+    match: (pathname: string) => pathname === '/admin/renoapp/terminology',
+  },
 ] as const

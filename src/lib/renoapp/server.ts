@@ -76,6 +76,51 @@ type DocumentTypeRow = {
   is_active: boolean
 }
 
+type TerminologyGroupRow = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  sort_order: number
+  is_locked: boolean
+  is_active: boolean
+}
+
+type TerminologyTermRow = {
+  id: string
+  group_id: string
+  code: string
+  label: string
+  definition: string | null
+  term_level: 'ux' | 'technical' | 'classification' | 'status' | 'document_phase' | 'decision'
+  input_kind: 'user_visible' | 'system_internal' | 'system_generated'
+  is_locked: boolean
+  is_user_selectable: boolean
+  is_system_generated: boolean
+  is_active: boolean
+  sort_order: number
+  metadata: unknown
+}
+
+type TerminologyAliasRow = {
+  id: string
+  term_id: string
+  alias: string
+  sort_order: number
+  is_active: boolean
+}
+
+type TerminologyRuleRow = {
+  id: string
+  term_id: string
+  rule_key: string
+  label: string
+  description: string | null
+  config: unknown
+  sort_order: number
+  is_active: boolean
+}
+
 type RequirementRow = {
   id: string
   brf_id: string | null
@@ -388,6 +433,53 @@ export type RenoAppAdminActionCategory = {
   description: string | null
   sortOrder: number
   isActive: boolean
+}
+
+export type RenoAppAdminTerminologyGroup = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  sortOrder: number
+  isLocked: boolean
+  isActive: boolean
+}
+
+export type RenoAppAdminTerminologyAlias = {
+  id: string
+  alias: string
+  sortOrder: number
+  isActive: boolean
+}
+
+export type RenoAppAdminTerminologyRule = {
+  id: string
+  ruleKey: string
+  label: string
+  description: string | null
+  config: unknown
+  sortOrder: number
+  isActive: boolean
+}
+
+export type RenoAppAdminTerminologyTerm = {
+  id: string
+  groupId: string
+  groupKey: string
+  groupLabel: string
+  code: string
+  label: string
+  definition: string | null
+  termLevel: 'ux' | 'technical' | 'classification' | 'status' | 'document_phase' | 'decision'
+  inputKind: 'user_visible' | 'system_internal' | 'system_generated'
+  isLocked: boolean
+  isUserSelectable: boolean
+  isSystemGenerated: boolean
+  isActive: boolean
+  sortOrder: number
+  metadata: unknown
+  aliases: RenoAppAdminTerminologyAlias[]
+  rules: RenoAppAdminTerminologyRule[]
 }
 
 export type RenoAppCaseAccessResult = {
@@ -2199,9 +2291,55 @@ function normalizeMachineKey(value: unknown) {
     .replace(/-{2,}/g, '-')
 }
 
+function normalizeTerminologyCode(value: unknown) {
+  const text = normalizeText(value)
+  if (!text) return null
+
+  return text
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_{2,}/g, '_')
+}
+
 function normalizeEmail(value: unknown) {
   const text = normalizeText(value)
   return text ? text.toLowerCase() : null
+}
+
+function normalizeTerminologyTermLevel(
+  value: unknown
+): 'ux' | 'technical' | 'classification' | 'status' | 'document_phase' | 'decision' {
+  return value === 'technical' ||
+    value === 'classification' ||
+    value === 'status' ||
+    value === 'document_phase' ||
+    value === 'decision'
+    ? value
+    : 'ux'
+}
+
+function normalizeTerminologyInputKind(
+  value: unknown
+): 'user_visible' | 'system_internal' | 'system_generated' {
+  return value === 'system_internal' || value === 'system_generated' ? value : 'user_visible'
+}
+
+function normalizeJsonValue(value: unknown) {
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    Array.isArray(value) ||
+    (typeof value === 'object' && value !== null)
+  ) {
+    return value
+  }
+
+  return {}
 }
 
 function normalizePostalCode(value: unknown) {
@@ -2841,6 +2979,96 @@ export async function listRenoAppAdminDocumentTypes(): Promise<RenoAppAdminDocum
   }))
 }
 
+export async function listRenoAppAdminTerminology(): Promise<{
+  groups: RenoAppAdminTerminologyGroup[]
+  terms: RenoAppAdminTerminologyTerm[]
+}> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const [groupRows, termRows, aliasRows, ruleRows] = await Promise.all([
+    admin
+      .from('renoapp_terminology_groups')
+      .select('id,key,label,description,sort_order,is_locked,is_active')
+      .order('sort_order', { ascending: true }),
+    admin
+      .from('renoapp_terminology_terms')
+      .select(
+        'id,group_id,code,label,definition,term_level,input_kind,is_locked,is_user_selectable,is_system_generated,is_active,sort_order,metadata'
+      )
+      .order('sort_order', { ascending: true }),
+    admin
+      .from('renoapp_terminology_aliases')
+      .select('id,term_id,alias,sort_order,is_active')
+      .order('sort_order', { ascending: true }),
+    admin
+      .from('renoapp_terminology_rules')
+      .select('id,term_id,rule_key,label,description,config,sort_order,is_active')
+      .order('sort_order', { ascending: true }),
+  ])
+
+  if (groupRows.error) throw new Error(groupRows.error.message ?? 'Kunde inte lasa terminologigrupper.')
+  if (termRows.error) throw new Error(termRows.error.message ?? 'Kunde inte lasa terminologi.')
+  if (aliasRows.error) throw new Error(aliasRows.error.message ?? 'Kunde inte lasa alias.')
+  if (ruleRows.error) throw new Error(ruleRows.error.message ?? 'Kunde inte lasa regler.')
+
+  const groups = ((groupRows.data ?? []) as TerminologyGroupRow[]).map((item) => ({
+    id: item.id,
+    key: item.key,
+    label: item.label,
+    description: item.description ?? null,
+    sortOrder: item.sort_order,
+    isLocked: item.is_locked,
+    isActive: item.is_active,
+  }))
+
+  const groupMap = new Map(groups.map((item) => [item.id, item]))
+  const aliases = (aliasRows.data ?? []) as TerminologyAliasRow[]
+  const rules = (ruleRows.data ?? []) as TerminologyRuleRow[]
+
+  const terms = ((termRows.data ?? []) as TerminologyTermRow[]).map((item) => {
+    const group = groupMap.get(item.group_id)
+    return {
+      id: item.id,
+      groupId: item.group_id,
+      groupKey: group?.key ?? '',
+      groupLabel: group?.label ?? '',
+      code: item.code,
+      label: item.label,
+      definition: item.definition ?? null,
+      termLevel: item.term_level,
+      inputKind: item.input_kind,
+      isLocked: item.is_locked,
+      isUserSelectable: item.is_user_selectable,
+      isSystemGenerated: item.is_system_generated,
+      isActive: item.is_active,
+      sortOrder: item.sort_order,
+      metadata: item.metadata ?? {},
+      aliases: aliases
+        .filter((alias) => alias.term_id === item.id)
+        .map((alias) => ({
+          id: alias.id,
+          alias: alias.alias,
+          sortOrder: alias.sort_order,
+          isActive: alias.is_active,
+        })),
+      rules: rules
+        .filter((rule) => rule.term_id === item.id)
+        .map((rule) => ({
+          id: rule.id,
+          ruleKey: rule.rule_key,
+          label: rule.label,
+          description: rule.description ?? null,
+          config: rule.config ?? {},
+          sortOrder: rule.sort_order,
+          isActive: rule.is_active,
+        })),
+    }
+  })
+
+  return { groups, terms }
+}
+
 export async function saveRenoAppAdminDocumentType(input: {
   id?: string | null
   key: string
@@ -2888,6 +3116,229 @@ export async function saveRenoAppAdminDocumentType(input: {
     sortOrder: row.sort_order,
     isActive: row.is_active,
   }
+}
+
+export async function saveRenoAppAdminTerminology(input: {
+  term: {
+    id?: string | null
+    groupId: string
+    code: string
+    label: string
+    definition?: string | null
+    termLevel?: 'ux' | 'technical' | 'classification' | 'status' | 'document_phase' | 'decision'
+    inputKind?: 'user_visible' | 'system_internal' | 'system_generated'
+    isLocked?: boolean
+    isUserSelectable?: boolean
+    isSystemGenerated?: boolean
+    isActive?: boolean
+    sortOrder?: number | null
+    metadata?: unknown
+  }
+  aliases?: Array<{
+    id?: string | null
+    alias: string
+    sortOrder?: number | null
+    isActive?: boolean
+  }>
+  rules?: Array<{
+    id?: string | null
+    ruleKey: string
+    label: string
+    description?: string | null
+    config?: unknown
+    sortOrder?: number | null
+    isActive?: boolean
+  }>
+}): Promise<RenoAppAdminTerminologyTerm> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const existingTerm = input.term.id
+    ? await admin
+        .from('renoapp_terminology_terms')
+        .select(
+          'id,group_id,code,label,definition,term_level,input_kind,is_locked,is_user_selectable,is_system_generated,is_active,sort_order,metadata'
+        )
+        .eq('id', input.term.id)
+        .maybeSingle()
+    : null
+
+  if (existingTerm?.error) {
+    throw new Error(existingTerm.error.message ?? 'Kunde inte lasa terminologiterm.')
+  }
+
+  const existingTermRow = (existingTerm?.data ?? null) as TerminologyTermRow | null
+  const label = normalizeText(input.term.label)
+  const computedCode = normalizeTerminologyCode(input.term.code) ?? normalizeTerminologyCode(label) ?? null
+  const code = existingTermRow?.is_locked ? existingTermRow.code : computedCode
+  const definition = normalizeText(input.term.definition)
+  const groupId = normalizeText(input.term.groupId)
+  const termLevel = normalizeTerminologyTermLevel(input.term.termLevel)
+  const inputKind = normalizeTerminologyInputKind(input.term.inputKind)
+  const isLocked = existingTermRow?.is_locked ?? input.term.isLocked !== false
+  const isUserSelectable = input.term.isUserSelectable !== false
+  const isSystemGenerated = input.term.isSystemGenerated === true
+  const isActive = input.term.isActive !== false
+  const sortOrder =
+    Number.isFinite(input.term.sortOrder) && Number(input.term.sortOrder) > 0
+      ? Number(input.term.sortOrder)
+      : 100
+  const metadata = normalizeJsonValue(input.term.metadata ?? {})
+
+  assertRequiredText(groupId, 'TERMINOLOGY_GROUP_REQUIRED')
+  assertRequiredText(code, 'TERMINOLOGY_CODE_REQUIRED')
+  assertRequiredText(label, 'TERMINOLOGY_LABEL_REQUIRED')
+
+  const payload = {
+    group_id: groupId,
+    code,
+    label,
+    definition,
+    term_level: termLevel,
+    input_kind: inputKind,
+    is_locked: isLocked,
+    is_user_selectable: isUserSelectable,
+    is_system_generated: isSystemGenerated,
+    is_active: isActive,
+    sort_order: sortOrder,
+    metadata,
+  }
+
+  const termQuery = input.term.id
+    ? admin.from('renoapp_terminology_terms').update(payload).eq('id', input.term.id)
+    : admin.from('renoapp_terminology_terms').insert(payload)
+
+  const { data: savedTermData, error: savedTermError } = await termQuery
+    .select(
+      'id,group_id,code,label,definition,term_level,input_kind,is_locked,is_user_selectable,is_system_generated,is_active,sort_order,metadata'
+    )
+    .single()
+
+  if (savedTermError || !savedTermData) {
+    throw new Error(savedTermError?.message ?? 'Kunde inte spara terminologiterm.')
+  }
+
+  const savedTerm = savedTermData as TerminologyTermRow
+  const termId = savedTerm.id
+
+  const existingAliasesResult = await admin
+    .from('renoapp_terminology_aliases')
+    .select('id,term_id,alias,sort_order,is_active')
+    .eq('term_id', termId)
+
+  if (existingAliasesResult.error) {
+    throw new Error(existingAliasesResult.error.message ?? 'Kunde inte lasa alias.')
+  }
+
+  const existingRulesResult = await admin
+    .from('renoapp_terminology_rules')
+    .select('id,term_id,rule_key,label,description,config,sort_order,is_active')
+    .eq('term_id', termId)
+
+  if (existingRulesResult.error) {
+    throw new Error(existingRulesResult.error.message ?? 'Kunde inte lasa regler.')
+  }
+
+  const keptAliasIds = new Set<string>()
+  const aliases = (input.aliases ?? []).filter((item) => normalizeText(item.alias))
+
+  for (const aliasInput of aliases) {
+    const alias = normalizeText(aliasInput.alias)
+    const aliasSortOrder =
+      Number.isFinite(aliasInput.sortOrder) && Number(aliasInput.sortOrder) > 0
+        ? Number(aliasInput.sortOrder)
+        : 100
+
+    if (!alias) continue
+
+    const aliasPayload = {
+      term_id: termId,
+      alias,
+      sort_order: aliasSortOrder,
+      is_active: aliasInput.isActive !== false,
+    }
+
+    const aliasQuery = aliasInput.id
+      ? admin.from('renoapp_terminology_aliases').update(aliasPayload).eq('id', aliasInput.id)
+      : admin.from('renoapp_terminology_aliases').insert(aliasPayload)
+
+    const { data: savedAliasData, error: savedAliasError } = await aliasQuery
+      .select('id,term_id,alias,sort_order,is_active')
+      .single()
+
+    if (savedAliasError || !savedAliasData) {
+      throw new Error(savedAliasError?.message ?? 'Kunde inte spara alias.')
+    }
+
+    keptAliasIds.add(String((savedAliasData as TerminologyAliasRow).id))
+  }
+
+  for (const existingAlias of (existingAliasesResult.data ?? []) as TerminologyAliasRow[]) {
+    if (!keptAliasIds.has(existingAlias.id)) {
+      const { error } = await admin.from('renoapp_terminology_aliases').delete().eq('id', existingAlias.id)
+      if (error) {
+        throw new Error(error.message ?? 'Kunde inte ta bort alias.')
+      }
+    }
+  }
+
+  const keptRuleIds = new Set<string>()
+  const rules = (input.rules ?? []).filter(
+    (item) => normalizeTerminologyCode(item.ruleKey) && normalizeText(item.label)
+  )
+
+  for (const ruleInput of rules) {
+    const ruleKey = normalizeTerminologyCode(ruleInput.ruleKey)
+    const ruleLabel = normalizeText(ruleInput.label)
+    const ruleDescription = normalizeText(ruleInput.description)
+    const ruleSortOrder =
+      Number.isFinite(ruleInput.sortOrder) && Number(ruleInput.sortOrder) > 0
+        ? Number(ruleInput.sortOrder)
+        : 100
+
+    if (!ruleKey || !ruleLabel) continue
+
+    const rulePayload = {
+      term_id: termId,
+      rule_key: ruleKey,
+      label: ruleLabel,
+      description: ruleDescription,
+      config: normalizeJsonValue(ruleInput.config ?? {}),
+      sort_order: ruleSortOrder,
+      is_active: ruleInput.isActive !== false,
+    }
+
+    const ruleQuery = ruleInput.id
+      ? admin.from('renoapp_terminology_rules').update(rulePayload).eq('id', ruleInput.id)
+      : admin.from('renoapp_terminology_rules').insert(rulePayload)
+
+    const { data: savedRuleData, error: savedRuleError } = await ruleQuery
+      .select('id,term_id,rule_key,label,description,config,sort_order,is_active')
+      .single()
+
+    if (savedRuleError || !savedRuleData) {
+      throw new Error(savedRuleError?.message ?? 'Kunde inte spara regel.')
+    }
+
+    keptRuleIds.add(String((savedRuleData as TerminologyRuleRow).id))
+  }
+
+  for (const existingRule of (existingRulesResult.data ?? []) as TerminologyRuleRow[]) {
+    if (!keptRuleIds.has(existingRule.id)) {
+      const { error } = await admin.from('renoapp_terminology_rules').delete().eq('id', existingRule.id)
+      if (error) {
+        throw new Error(error.message ?? 'Kunde inte ta bort regel.')
+      }
+    }
+  }
+
+  const terminology = await listRenoAppAdminTerminology()
+  const saved = terminology.terms.find((item) => item.id === termId)
+  if (!saved) {
+    throw new Error('Kunde inte lasa sparad terminologiterm.')
+  }
+
+  return saved
 }
 
 export async function saveRenoAppAdminActionType(input: {
