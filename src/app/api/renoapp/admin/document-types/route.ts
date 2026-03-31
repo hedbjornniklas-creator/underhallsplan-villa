@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server'
-import { listRenoAppAdminDocumentTypes, saveRenoAppAdminDocumentType } from '@/lib/renoapp/server'
+import {
+  deleteRenoAppAdminDocumentType,
+  listRenoAppAdminDocumentTypes,
+  saveRenoAppAdminDocumentType,
+} from '@/lib/renoapp/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -40,5 +44,24 @@ export async function POST(request: Request) {
     if (message === 'DOCUMENT_TYPE_KEY_REQUIRED') return jsonError('Ange intern nyckel.', 400)
     if (message === 'DOCUMENT_TYPE_LABEL_REQUIRED') return jsonError('Ange visningsnamn.', 400)
     return jsonError(message || 'Kunde inte spara dokumenttyp.', 500)
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const id = typeof body.id === 'string' ? body.id : ''
+
+    if (!id) {
+      return jsonError('Ange vilken dokumenttyp som ska raderas.', 400)
+    }
+
+    await deleteRenoAppAdminDocumentType(id)
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
+    if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+    if (message === 'ADMIN_REQUIRED') return jsonError('Endast admin har Ã¥tkomst.', 403)
+    return jsonError(message || 'Kunde inte radera dokumenttyp.', 500)
   }
 }

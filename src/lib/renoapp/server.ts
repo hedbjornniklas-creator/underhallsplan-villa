@@ -3437,6 +3437,16 @@ export async function saveRenoAppAdminDocumentType(input: {
   }
 }
 
+export async function deleteRenoAppAdminDocumentType(id: string): Promise<void> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const { error } = await admin.from('renovation_document_types').delete().eq('id', id)
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte radera dokumenttyp.')
+  }
+}
+
 export async function saveRenoAppAdminTerminology(input: {
   term: {
     id?: string | null
@@ -3660,6 +3670,16 @@ export async function saveRenoAppAdminTerminology(input: {
   return saved
 }
 
+export async function deleteRenoAppAdminTerminologyTerm(id: string): Promise<void> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const { error } = await admin.from('renoapp_terminology_terms').delete().eq('id', id)
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte radera terminologiterm.')
+  }
+}
+
 export async function saveRenoAppAdminActionType(input: {
   id?: string | null
   categoryId?: string | null
@@ -3729,6 +3749,16 @@ export async function saveRenoAppAdminActionType(input: {
     contractorRequirement: row.contractor_requirement,
     sortOrder: row.sort_order,
     isActive: row.is_active,
+  }
+}
+
+export async function deleteRenoAppAdminActionType(id: string): Promise<void> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const { error } = await admin.from('renovation_action_types').delete().eq('id', id)
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte radera renoveringstyp.')
   }
 }
 

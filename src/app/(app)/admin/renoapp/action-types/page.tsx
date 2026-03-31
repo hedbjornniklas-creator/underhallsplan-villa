@@ -52,6 +52,8 @@ type DraftRequirementState = {
   sortOrder: string
 }
 
+type SortKey = 'label' | 'key' | 'isActive' | 'requirementCount'
+
 const EMPTY_DRAFT: DraftActionType = {
   key: '',
   label: '',
@@ -70,6 +72,11 @@ function slugifyActionTypeKey(value: string) {
     .replace(/-{2,}/g, '-')
 }
 
+function renderSortIcon(active: boolean, dir: 'asc' | 'desc') {
+  if (!active) return <span className="text-gray-300">◇</span>
+  return <span className="text-gray-500">{dir === 'asc' ? '↑' : '↓'}</span>
+}
+
 export default function RenoAppActionTypesAdminPage() {
   const [items, setItems] = useState<ActionTypeItem[]>([])
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeItem[]>([])
@@ -79,8 +86,14 @@ export default function RenoAppActionTypesAdminPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [activeFilter, setActiveFilter] = useState('')
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({
+    key: 'label',
+    dir: 'asc',
+  })
   const [savingActionKey, setSavingActionKey] = useState<string | null>(null)
   const [savingRequirementKey, setSavingRequirementKey] = useState<string | null>(null)
+  const [deletingActionId, setDeletingActionId] = useState<string | null>(null)
   const [actionModalOpen, setActionModalOpen] = useState(false)
   const [actionDraft, setActionDraft] = useState<DraftActionType>(EMPTY_DRAFT)
   const [documentsActionId, setDocumentsActionId] = useState<string | null>(null)
@@ -169,15 +182,17 @@ export default function RenoAppActionTypesAdminPage() {
 
   const filteredItems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
-    if (!normalizedQuery) return items
-
-    return items.filter((item) =>
-      [item.label, item.key, item.description ?? '', item.isActive ? 'aktiv' : 'inaktiv']
+    return items.filter((item) => {
+      const haystack = [item.label, item.key, item.description ?? '', item.isActive ? 'aktiv' : 'inaktiv']
         .join(' ')
         .toLowerCase()
-        .includes(normalizedQuery)
-    )
-  }, [items, query])
+
+      if (normalizedQuery && !haystack.includes(normalizedQuery)) return false
+      if (activeFilter === 'active' && !item.isActive) return false
+      if (activeFilter === 'inactive' && item.isActive) return false
+      return true
+    })
+  }, [activeFilter, items, query])
 
   const activeDocumentTypes = useMemo(
     () => documentTypes.filter((documentType) => documentType.isActive),
@@ -198,12 +213,57 @@ export default function RenoAppActionTypesAdminPage() {
   const getRequirementDraft = (actionTypeId: string, documentTypeId: string) =>
     requirementDrafts[`${actionTypeId}:${documentTypeId}`]
 
-  const countEnabledRequirements = (actionTypeId: string) =>
-    activeDocumentTypes.reduce(
-      (count, documentType) =>
-        getRequirementDraft(actionTypeId, documentType.id)?.isEnabled ? count + 1 : count,
-      0
+  const requirementCountByActionId = useMemo(() => {
+    return Object.fromEntries(
+      items.map((item) => [
+        item.id,
+        activeDocumentTypes.reduce(
+          (count, documentType) =>
+            requirementDrafts[`${item.id}:${documentType.id}`]?.isEnabled ? count + 1 : count,
+          0
+        ),
+      ])
+    ) as Record<string, number>
+  }, [activeDocumentTypes, items, requirementDrafts])
+
+  const sortedItems = useMemo(() => {
+    return [...filteredItems].sort((left, right) => {
+      let comparison = 0
+
+      switch (sort.key) {
+        case 'key':
+          comparison = left.key.localeCompare(right.key, 'sv')
+          break
+        case 'isActive':
+          comparison = Number(left.isActive) - Number(right.isActive)
+          break
+        case 'requirementCount':
+          comparison =
+            (requirementCountByActionId[left.id] ?? 0) - (requirementCountByActionId[right.id] ?? 0)
+          break
+        default:
+          comparison = left.label.localeCompare(right.label, 'sv')
+          break
+      }
+
+      if (comparison === 0) {
+        comparison =
+          left.sortOrder - right.sortOrder ||
+          left.label.localeCompare(right.label, 'sv') ||
+          left.key.localeCompare(right.key, 'sv')
+      }
+
+      return sort.dir === 'asc' ? comparison : -comparison
+    })
+  }, [filteredItems, requirementCountByActionId, sort])
+
+  const toggleSort = (key: SortKey) => {
+    setSort((current) =>
+      current.key === key
+        ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: 'asc' }
     )
+  }
 
   const openNewModal = () => {
     setActionDraft(EMPTY_DRAFT)
@@ -338,6 +398,40 @@ export default function RenoAppActionTypesAdminPage() {
     }
   }
 
+  const deleteActionType = async (item: ActionTypeItem) => {
+    if (!window.confirm(`Radera renoveringstypen "${item.label}"?`)) return
+
+    setDeletingActionId(item.id)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/renoapp/admin/action-types', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: item.id }),
+      })
+
+      const payload = (await response.json().catch(() => ({}))) as { error?: string }
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Kunde inte radera renoveringstyp.')
+      }
+
+      setItems((current) => current.filter((candidate) => candidate.id !== item.id))
+      setRequirementDrafts((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([key]) => !key.startsWith(`${item.id}:`))
+        )
+      )
+      setDocumentsActionId((current) => (current === item.id ? null : current))
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error ? deleteError.message : 'Kunde inte radera renoveringstyp.'
+      )
+    } finally {
+      setDeletingActionId(null)
+    }
+  }
+
   return (
     <main className="mx-auto w-full max-w-7xl px-4 pb-8 md:px-6 md:pb-10">
       {error ? (
@@ -369,52 +463,92 @@ export default function RenoAppActionTypesAdminPage() {
           </div>
         </div>
 
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+          <span className="text-gray-400">Sortera:</span>
+          {[
+            ['label', 'Term'],
+            ['key', 'Kod'],
+            ['requirementCount', 'Dokument'],
+            ['isActive', 'Aktiv'],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => toggleSort(key as SortKey)}
+              className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2.5 py-1 hover:bg-gray-50"
+            >
+              {label}
+              {renderSortIcon(sort.key === key, sort.dir)}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+          <span className="text-gray-400">Filtrera:</span>
+          <select
+            className="border rounded-full px-2.5 py-1 bg-white"
+            value={activeFilter}
+            onChange={(event) => setActiveFilter(event.target.value)}
+          >
+            <option value="">Aktiv</option>
+            <option value="active">Endast aktiva</option>
+            <option value="inactive">Endast inaktiva</option>
+          </select>
+        </div>
+
         {loading ? (
           <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 p-5 text-sm text-stone-600">
             Laddar renoveringstyper...
           </div>
-        ) : filteredItems.length === 0 ? (
+        ) : sortedItems.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 p-5 text-sm text-stone-600">
             Inga renoveringstyper hittades.
           </div>
         ) : (
-          <div className="mt-5 overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="mt-5 space-y-2 overflow-x-auto">
+            <table className="w-full table-fixed border-separate border-spacing-y-2 text-[11px]">
               <thead>
-                <tr className="text-left text-stone-500">
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Titel</th>
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Nyckel</th>
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Beskrivning</th>
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Aktiv</th>
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Åtgärder</th>
+                <tr className="whitespace-nowrap text-left text-[10px] uppercase text-gray-400">
+                  <th className="w-[22%] px-3 py-1">Term</th>
+                  <th className="w-[14%] px-3 py-1">Kod</th>
+                  <th className="w-[28%] px-3 py-1">Beskrivning</th>
+                  <th className="w-[10%] px-3 py-1">Dokument</th>
+                  <th className="w-[8%] px-3 py-1">Aktiv</th>
+                  <th className="w-[18%] px-3 py-1 text-center">Åtgärder</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredItems.map((item) => {
+                {sortedItems.map((item) => {
                   const documentsOpen = documentsActionId === item.id
+                  const requirementCount = requirementCountByActionId[item.id] ?? 0
                   return (
-                    <tr key={item.id} className="border-t border-stone-200">
-                      <td className="px-3 py-4 align-top">
-                        <div className="font-medium text-stone-900">{item.label}</div>
+                    <tr key={item.id} className="group transition-colors hover:bg-blue-50">
+                      <td className="rounded-l-xl border border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        <div className="truncate font-medium text-gray-900">{item.label}</div>
                       </td>
-                      <td className="px-3 py-4 align-top text-stone-700">{item.key}</td>
-                      <td className="px-3 py-4 align-top text-stone-700">
-                        <div className="max-w-[520px] truncate">{item.description || '-'}</div>
+                      <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        <div className="truncate">{item.key}</div>
                       </td>
-                      <td className="px-3 py-4 align-top text-stone-700">
-                        {item.isActive ? 'Ja' : 'Nej'}
+                      <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        <div className="truncate">{item.description || '-'}</div>
                       </td>
-                      <td className="px-3 py-4 align-top">
-                        <div className="flex flex-wrap gap-2">
+                      <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        <div className="truncate">{requirementCount}</div>
+                      </td>
+                      <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        <div className="truncate">{item.isActive ? 'Ja' : 'Nej'}</div>
+                      </td>
+                      <td className="rounded-r-xl border border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        <div className="grid grid-cols-2 gap-1 whitespace-nowrap text-[11px]">
                           <button
                             type="button"
                             onClick={() =>
                               setDocumentsActionId((current) => (current === item.id ? null : item.id))
                             }
-                            className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+                            className={`w-full rounded-md border ${
                               documentsOpen
-                                ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
-                                : 'border-indigo-200 bg-white text-indigo-600 hover:bg-indigo-50'
+                                ? 'border-blue-300 bg-blue-100 text-blue-900'
+                                : 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100'
                             }`}
                           >
                             Dokument
@@ -422,20 +556,25 @@ export default function RenoAppActionTypesAdminPage() {
                           <button
                             type="button"
                             onClick={() => openEditModal(item)}
-                            className="rounded-xl border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50"
+                            className="w-full rounded-md border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
                           >
                             Editera
                           </button>
                           <button
                             type="button"
                             onClick={() => openDuplicateModal(item)}
-                            className="rounded-xl border border-amber-200 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-50"
+                            className="w-full rounded-md border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
                           >
                             Duplicera
                           </button>
-                        </div>
-                        <div className="mt-2 text-xs text-stone-500">
-                          {countEnabledRequirements(item.id)} dokument kopplade
+                          <button
+                            type="button"
+                            onClick={() => void deleteActionType(item)}
+                            disabled={deletingActionId === item.id}
+                            className="w-full rounded-md border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                          >
+                            {deletingActionId === item.id ? 'Raderar...' : 'Radera'}
+                          </button>
                         </div>
                       </td>
                     </tr>

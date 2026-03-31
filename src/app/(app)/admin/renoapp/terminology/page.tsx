@@ -193,6 +193,7 @@ export default function RenoAppTerminologyAdminPage() {
     dir: 'asc',
   })
   const [savingKey, setSavingKey] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const [termModalOpen, setTermModalOpen] = useState(false)
   const [termDraft, setTermDraft] = useState<DraftTerm>(EMPTY_TERM)
@@ -457,6 +458,38 @@ export default function RenoAppTerminologyAdminPage() {
     }
   }
 
+  const deleteTerm = async (term: TerminologyTerm) => {
+    if (!window.confirm(`Radera terminologitypen "${term.label}"?`)) return
+
+    setDeletingId(term.id)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/renoapp/admin/terminology', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: term.id }),
+      })
+
+      const payload = (await response.json().catch(() => ({}))) as { error?: string }
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Kunde inte radera terminologityp.')
+      }
+
+      setTerms((current) => current.filter((item) => item.id !== term.id))
+      setAliasTermId((current) => (current === term.id ? null : current))
+      setRuleTermId((current) => (current === term.id ? null : current))
+      if (termModalOpen && termDraft.id === term.id) {
+        setTermModalOpen(false)
+        setTermDraft(EMPTY_TERM)
+      }
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera terminologityp.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   return (
     <main className="mx-auto w-full max-w-7xl px-4 pb-8 md:px-6 md:pb-10">
       {error ? (
@@ -619,7 +652,7 @@ export default function RenoAppTerminologyAdminPage() {
                         <div className="truncate">{term.isActive ? 'Ja' : 'Nej'}</div>
                       </td>
                       <td className="rounded-r-xl border border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
-                        <div className="grid grid-cols-3 gap-1 whitespace-nowrap text-[11px]">
+                        <div className="grid grid-cols-2 gap-1 whitespace-nowrap text-[11px]">
                           <button
                             type="button"
                             onClick={() => {
@@ -646,6 +679,14 @@ export default function RenoAppTerminologyAdminPage() {
                             className="w-full rounded-md border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
                           >
                             Editera
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteTerm(term)}
+                            disabled={deletingId === term.id}
+                            className="w-full rounded-md border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                          >
+                            {deletingId === term.id ? 'Raderar...' : 'Radera'}
                           </button>
                         </div>
                       </td>
