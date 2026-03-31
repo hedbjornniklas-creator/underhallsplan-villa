@@ -91,4 +91,8 @@ left join public.renoapp_apply_questions question_target
 left join public.renovation_document_types document_target
   on seed.trigger_type = 'document'
  and document_target.key = seed.target_document_key
+where
+  (seed.trigger_type = 'question' and question_target.id is not null)
+  or
+  (seed.trigger_type = 'document' and document_target.id is not null)
 on conflict do nothing;

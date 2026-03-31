@@ -30,6 +30,16 @@ const EMPTY_DRAFT: DraftDocumentType = {
   isActive: true,
 }
 
+function slugifyDocumentTypeKey(value: string) {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-')
+}
+
 function renderSortIcon(active: boolean, dir: 'asc' | 'desc') {
   if (!active) return <span className="text-gray-300">◇</span>
   return <span className="text-gray-500">{dir === 'asc' ? '↑' : '↓'}</span>
@@ -49,6 +59,8 @@ export default function RenoAppDocumentTypesAdminPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [draft, setDraft] = useState<DraftDocumentType>(EMPTY_DRAFT)
+  const generatedDocumentKey =
+    draft.id && draft.key ? slugifyDocumentTypeKey(draft.label) || draft.key : slugifyDocumentTypeKey(draft.label)
 
   useEffect(() => {
     let active = true
@@ -162,7 +174,7 @@ export default function RenoAppDocumentTypesAdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: draft.id,
-          key: draft.key,
+          key: generatedDocumentKey,
           label: draft.label,
           description: draft.description,
           sortOrder: Number(draft.sortOrder || '100'),
@@ -226,7 +238,7 @@ export default function RenoAppDocumentTypesAdminPage() {
       <div className="rounded-xl bg-white p-4 shadow">
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <h2 className="font-semibold">Dokumenttyper</h2>
+            <h2 className="font-semibold">Underlagstyper</h2>
             <div className="text-xs text-gray-500">renovation_document_types</div>
           </div>
           <div className="flex items-center gap-2">
@@ -357,8 +369,11 @@ export default function RenoAppDocumentTypesAdminPage() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold">
-                  {draft.id ? 'Redigera dokumenttyp' : 'Ny dokumenttyp'}
+                  {draft.id ? 'Redigera underlagstyp' : 'Ny underlagstyp'}
                 </h3>
+                {generatedDocumentKey ? (
+                  <div className="mt-1 text-xs text-gray-500">Kod: {generatedDocumentKey}</div>
+                ) : null}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -392,9 +407,9 @@ export default function RenoAppDocumentTypesAdminPage() {
               <label className="space-y-1">
                 <div className="text-xs font-medium text-gray-600">Intern nyckel</div>
                 <input
-                  value={draft.key}
-                  onChange={(event) => setDraft((current) => ({ ...current, key: event.target.value }))}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  value={generatedDocumentKey}
+                  readOnly
+                  className="w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm"
                 />
               </label>
 

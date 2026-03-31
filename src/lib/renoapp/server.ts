@@ -3973,7 +3973,7 @@ export async function saveRenoAppAdminDocumentType(input: {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
 
   const label = normalizeText(input.label)
-  const key = normalizeMachineKey(input.key) ?? normalizeMachineKey(label) ?? null
+  const key = normalizeMachineKey(label) ?? null
   const description = normalizeText(input.description)
   const sortOrder = Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0 ? Number(input.sortOrder) : 100
   const isActive = input.isActive !== false

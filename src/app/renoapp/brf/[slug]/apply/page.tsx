@@ -189,7 +189,7 @@ const INITIAL_FORM: FormState = {
 
 const STEP_ITEMS = [
   { id: 1, label: 'Vad vill du renovera?' },
-  { id: 2, label: 'Dokument och underlag' },
+  { id: 2, label: 'Underlag' },
   { id: 3, label: 'Projekt och entreprenör' },
   { id: 4, label: 'Lägenhet och kontakt' },
   { id: 5, label: 'Granska och skicka' },
@@ -592,7 +592,7 @@ export default function RenoAppApplyPage() {
           : 'Inga renoveringar valda ännu.',
       2:
         mergedRequirements.length > 0
-          ? `${requirementGroups.beforeRequired.length} obligatoriska dokument, ${
+          ? `${requirementGroups.beforeRequired.length} obligatoriska underlag, ${
               mergedRequirements.length - requirementGroups.beforeRequired.length
             } övriga underlag.`
           : 'Välj först vad du vill renovera.',
@@ -609,7 +609,7 @@ export default function RenoAppApplyPage() {
       5:
         submitResult?.caseNumber
           ? `Ärendenummer ${submitResult.caseNumber}.`
-          : `${selectedActions.length} valda renoveringar och ${mergedRequirements.length} dokumentkrav sammanställda.`,
+          : `${selectedActions.length} valda renoveringar och ${mergedRequirements.length} underlagskrav sammanställda.`,
     }),
     [
       form.applicantEmail,
@@ -1160,9 +1160,9 @@ export default function RenoAppApplyPage() {
           </div>
 
           <div className="rounded-3xl border border-stone-200 bg-white/85 p-5">
-            <p className="text-sm font-semibold text-stone-900">Dokument som behövs</p>
+            <p className="text-sm font-semibold text-stone-900">Underlag som behövs</p>
             {mergedRequirements.length === 0 ? (
-              <p className="mt-3 text-sm text-stone-700">Välj renoveringstyper för att se dokumentkrav.</p>
+              <p className="mt-3 text-sm text-stone-700">Välj renoveringstyper för att se vilket underlag som behövs.</p>
             ) : (
               <div className="mt-3 space-y-4 text-sm text-stone-700">
                 {requirementGroups.beforeRequired.length > 0 ? (

@@ -627,7 +627,7 @@ export default function RenoAppActionTypesAdminPage() {
           {[
             ['label', 'Term'],
             ['key', 'Kod'],
-            ['requirementCount', 'Dokument'],
+            ['requirementCount', 'Underlag'],
             ['isActive', 'Aktiv'],
           ].map(([key, label]) => (
             <button
@@ -671,7 +671,7 @@ export default function RenoAppActionTypesAdminPage() {
                   <th className="w-[22%] px-3 py-1">Term</th>
                   <th className="w-[14%] px-3 py-1">Kod</th>
                   <th className="w-[28%] px-3 py-1">Beskrivning</th>
-                  <th className="w-[10%] px-3 py-1">Dokument</th>
+                  <th className="w-[10%] px-3 py-1">Underlag</th>
                   <th className="w-[8%] px-3 py-1">Aktiv</th>
                   <th className="w-[18%] px-3 py-1 text-center">Åtgärder</th>
                 </tr>
@@ -704,19 +704,6 @@ export default function RenoAppActionTypesAdminPage() {
                           <button
                             type="button"
                             onClick={() =>
-                              setDocumentsActionId((current) => (current === item.id ? null : item.id))
-                            }
-                            className={`w-full rounded-md border ${
-                              documentsOpen
-                                ? 'border-blue-300 bg-blue-100 text-blue-900'
-                                : 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100'
-                            }`}
-                          >
-                            Dokument
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
                               setQuestionsActionId((current) => (current === item.id ? null : item.id))
                             }
                             className={`w-full rounded-md border ${
@@ -726,6 +713,19 @@ export default function RenoAppActionTypesAdminPage() {
                             }`}
                           >
                             Frågor
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDocumentsActionId((current) => (current === item.id ? null : item.id))
+                            }
+                            className={`w-full rounded-md border ${
+                              documentsOpen
+                                ? 'border-blue-300 bg-blue-100 text-blue-900'
+                                : 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100'
+                            }`}
+                          >
+                            Underlag
                           </button>
                           <button
                             type="button"
@@ -751,7 +751,7 @@ export default function RenoAppActionTypesAdminPage() {
                           </button>
                         </div>
                         <div className="mt-2 text-[10px] text-gray-500">
-                          {requirementCount} dokument, {questionCount} frågor
+                          {questionCount} frågor, {requirementCount} underlag
                         </div>
                       </td>
                     </tr>
@@ -769,15 +769,15 @@ export default function RenoAppActionTypesAdminPage() {
             <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
               <div>
                 <h3 className="text-2xl font-semibold text-stone-900">
-                  Dokumentkrav för {documentsAction.label}
+                  Underlag för {documentsAction.label}
                 </h3>
                 <p className="mt-1 text-sm leading-6 text-stone-600">
-                  Dokumenttyperna nedan fungerar som RenoApps motsvarighet till chips.
+                  Underlagstyperna nedan styr vilket underlag som ska samlas in för den här renoveringstypen.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="text-sm text-stone-600">
-                  {documentsChips.length} aktiva dokumenttyper
+                  {documentsChips.length} aktiva underlagstyper
                 </div>
                 <button
                   type="button"
@@ -805,7 +805,7 @@ export default function RenoAppActionTypesAdminPage() {
                 })
               ) : (
                 <span className="rounded-full border border-dashed border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-semibold text-stone-500">
-                  Inga dokumenttyper valda ännu
+                  Inga underlagstyper valda än
                 </span>
               )}
             </div>
@@ -814,7 +814,7 @@ export default function RenoAppActionTypesAdminPage() {
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="text-left text-stone-500">
-                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Dokumenttyp</th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Underlagstyp</th>
                     <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Aktivt</th>
                     <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Obligatoriskt</th>
                     <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Sortering</th>
@@ -1067,7 +1067,7 @@ export default function RenoAppActionTypesAdminPage() {
                   {actionDraft.id ? 'Redigera renoveringstyp' : 'Ny renoveringstyp'}
                 </h3>
                 <p className="mt-1 text-sm text-stone-600">
-                  Ändra grunddata här. Dokumentkraven hanteras via knappen `Dokument` på respektive rad.
+                  Ändra grunddata här. Frågor och underlag hanteras via respektive knappar på raden.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">

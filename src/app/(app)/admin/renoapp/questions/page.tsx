@@ -864,7 +864,7 @@ export default function RenoAppQuestionsAdminPage() {
                         </label>
 
                         <label className="space-y-1">
-                          <div className="text-xs font-medium text-gray-600">Triggar dokument</div>
+                          <div className="text-xs font-medium text-gray-600">Triggar underlag</div>
                           <select
                             multiple
                             value={option.triggeredDocumentTypeIds}

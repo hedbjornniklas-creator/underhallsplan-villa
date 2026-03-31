@@ -75,16 +75,16 @@ export const RENOAPP_ADMIN_TABS = [
     match: (pathname: string) => pathname === '/admin/renoapp/action-types',
   },
   {
-    href: '/admin/renoapp/document-types',
-    label: 'Dokumenttyper',
-    description: 'Hantera den centrala katalogen av dokument i RenoApp.',
-    match: (pathname: string) => pathname === '/admin/renoapp/document-types',
-  },
-  {
     href: '/admin/renoapp/questions',
     label: 'Frågor',
     description: 'Bygg upp RenoApps frågebank och återanvändbara svarsalternativ.',
     match: (pathname: string) => pathname === '/admin/renoapp/questions',
+  },
+  {
+    href: '/admin/renoapp/document-types',
+    label: 'Underlagstyper',
+    description: 'Hantera den centrala katalogen av underlag i RenoApp.',
+    match: (pathname: string) => pathname === '/admin/renoapp/document-types',
   },
   {
     href: '/admin/renoapp/terminology',
