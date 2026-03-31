@@ -10,6 +10,27 @@ type QuestionOptionItem = {
   sortOrder: number
   isActive: boolean
   metadata: unknown
+  triggers: QuestionOptionTriggerItem[]
+}
+
+type QuestionOptionTriggerItem = {
+  id: string
+  triggerType: 'question' | 'document'
+  questionId: string | null
+  questionLabel: string | null
+  documentTypeId: string | null
+  documentTypeLabel: string | null
+  sortOrder: number
+  isActive: boolean
+}
+
+type DocumentTypeItem = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  sortOrder: number
+  isActive: boolean
 }
 
 type QuestionItem = {
@@ -43,6 +64,8 @@ type DraftOption = {
   description: string
   sortOrder: string
   isActive: boolean
+  triggeredQuestionIds: string[]
+  triggeredDocumentTypeIds: string[]
 }
 
 type SortKey = 'label' | 'key' | 'responseType' | 'optionCount' | 'isActive'
@@ -104,11 +127,18 @@ function createOptionDrafts(item: QuestionItem): DraftOption[] {
     description: option.description ?? '',
     sortOrder: String(option.sortOrder),
     isActive: option.isActive,
+    triggeredQuestionIds: option.triggers
+      .filter((trigger) => trigger.triggerType === 'question' && trigger.questionId)
+      .map((trigger) => trigger.questionId as string),
+    triggeredDocumentTypeIds: option.triggers
+      .filter((trigger) => trigger.triggerType === 'document' && trigger.documentTypeId)
+      .map((trigger) => trigger.documentTypeId as string),
   }))
 }
 
 export default function RenoAppQuestionsAdminPage() {
   const [items, setItems] = useState<QuestionItem[]>([])
+  const [documentTypes, setDocumentTypes] = useState<DocumentTypeItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -134,18 +164,31 @@ export default function RenoAppQuestionsAdminPage() {
       setError(null)
 
       try {
-        const response = await fetch('/api/renoapp/admin/questions', { cache: 'no-store' })
-        const payload = (await response.json().catch(() => ({}))) as {
+        const [questionsResponse, documentTypesResponse] = await Promise.all([
+          fetch('/api/renoapp/admin/questions', { cache: 'no-store' }),
+          fetch('/api/renoapp/admin/document-types', { cache: 'no-store' }),
+        ])
+
+        const questionsPayload = (await questionsResponse.json().catch(() => ({}))) as {
           items?: QuestionItem[]
           error?: string
         }
+        const documentTypesPayload = (await documentTypesResponse.json().catch(() => ({}))) as {
+          items?: DocumentTypeItem[]
+          error?: string
+        }
 
-        if (!response.ok) {
-          throw new Error(payload.error ?? 'Kunde inte lasa fragor.')
+        if (!questionsResponse.ok) {
+          throw new Error(questionsPayload.error ?? 'Kunde inte lasa fragor.')
+        }
+
+        if (!documentTypesResponse.ok) {
+          throw new Error(documentTypesPayload.error ?? 'Kunde inte lasa dokumenttyper.')
         }
 
         if (!active) return
-        setItems(payload.items ?? [])
+        setItems(questionsPayload.items ?? [])
+        setDocumentTypes(documentTypesPayload.items ?? [])
       } catch (loadError) {
         if (active) {
           setError(loadError instanceof Error ? loadError.message : 'Kunde inte lasa fragor.')
@@ -260,6 +303,20 @@ export default function RenoAppQuestionsAdminPage() {
             sortOrder: Number(option.sortOrder || '100'),
             isActive: option.isActive,
             metadata: {},
+            triggers: [
+              ...option.triggeredQuestionIds.map((questionId, index) => ({
+                triggerType: 'question' as const,
+                questionId,
+                sortOrder: (index + 1) * 10,
+                isActive: true,
+              })),
+              ...option.triggeredDocumentTypeIds.map((documentTypeId, index) => ({
+                triggerType: 'document' as const,
+                documentTypeId,
+                sortOrder: (option.triggeredQuestionIds.length + index + 1) * 10,
+                isActive: true,
+              })),
+            ],
           })),
         }),
       })
@@ -669,6 +726,8 @@ export default function RenoAppQuestionsAdminPage() {
                         description: '',
                         sortOrder: String(current.length * 10 + 10),
                         isActive: true,
+                        triggeredQuestionIds: [],
+                        triggeredDocumentTypeIds: [],
                       },
                     ])
                   }
@@ -700,7 +759,7 @@ export default function RenoAppQuestionsAdminPage() {
                   return (
                     <div
                       key={option.id ?? `option-${index}`}
-                      className="grid gap-2 rounded-md border border-gray-200 p-3 md:grid-cols-[1.2fr_1fr_120px_120px_auto]"
+                      className="grid gap-3 rounded-md border border-gray-200 p-3 md:grid-cols-[1.1fr_1fr_120px_120px_auto]"
                     >
                       <div className="space-y-2">
                         <input
@@ -775,6 +834,64 @@ export default function RenoAppQuestionsAdminPage() {
                       >
                         Ta bort
                       </button>
+
+                      <div className="md:col-span-5 grid gap-3 md:grid-cols-2">
+                        <label className="space-y-1">
+                          <div className="text-xs font-medium text-gray-600">Triggar foljdfragor</div>
+                          <select
+                            multiple
+                            value={option.triggeredQuestionIds}
+                            onChange={(event) => {
+                              const values = Array.from(event.target.selectedOptions)
+                                .map((selectedOption) => selectedOption.value)
+                                .filter(Boolean)
+                              setOptionDrafts((current) =>
+                                current.map((item, itemIndex) =>
+                                  itemIndex === index ? { ...item, triggeredQuestionIds: values } : item
+                                )
+                              )
+                            }}
+                            className="min-h-32 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                          >
+                            {items
+                              .filter((question) => question.id !== optionsQuestion.id)
+                              .map((question) => (
+                                <option key={question.id} value={question.id}>
+                                  {question.label}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+
+                        <label className="space-y-1">
+                          <div className="text-xs font-medium text-gray-600">Triggar dokument</div>
+                          <select
+                            multiple
+                            value={option.triggeredDocumentTypeIds}
+                            onChange={(event) => {
+                              const values = Array.from(event.target.selectedOptions)
+                                .map((selectedOption) => selectedOption.value)
+                                .filter(Boolean)
+                              setOptionDrafts((current) =>
+                                current.map((item, itemIndex) =>
+                                  itemIndex === index
+                                    ? { ...item, triggeredDocumentTypeIds: values }
+                                    : item
+                                )
+                              )
+                            }}
+                            className="min-h-32 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                          >
+                            {documentTypes
+                              .filter((documentType) => documentType.isActive)
+                              .map((documentType) => (
+                                <option key={documentType.id} value={documentType.id}>
+                                  {documentType.label}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+                      </div>
                     </div>
                   )
                 })

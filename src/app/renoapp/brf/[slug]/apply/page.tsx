@@ -48,6 +48,18 @@ type ApplyQuestionOption = {
   label: string
   description: string | null
   sortOrder: number
+  triggers: ApplyQuestionOptionTrigger[]
+}
+
+type ApplyQuestionOptionTrigger = {
+  id: string
+  triggerType: 'question' | 'document'
+  questionId: string | null
+  documentTypeId: string | null
+  documentKey: string | null
+  documentLabel: string | null
+  documentDescription: string | null
+  sortOrder: number
 }
 
 type ApplyQuestion = {
@@ -69,6 +81,7 @@ type PublicConfigResponse = {
     applyIntroText: string | null
   }
   actionTypes: ActionType[]
+  questionBank: ApplyQuestion[]
 }
 
 type DraftResponse = {
@@ -234,6 +247,134 @@ function mergeQuestions(actions: ActionType[]) {
         isRequired: current.isRequired || question.isRequired,
         sortOrder: Math.min(current.sortOrder, question.sortOrder),
       })
+    }
+  }
+
+  return Array.from(merged.values()).sort((left, right) => left.sortOrder - right.sortOrder)
+}
+
+function buildQuestionMap(questionBank: ApplyQuestion[]) {
+  return new Map(questionBank.map((question) => [question.id, question]))
+}
+
+function resolveVisibleQuestions(
+  baseQuestions: ApplyQuestion[],
+  questionBank: ApplyQuestion[],
+  questionAnswers: Record<string, string[]>
+) {
+  const questionBankById = buildQuestionMap(questionBank)
+  const resolved = new Map<string, ApplyQuestion>()
+
+  const mergeQuestion = (question: ApplyQuestion) => {
+    const current = resolved.get(question.id)
+    if (!current) {
+      resolved.set(question.id, question)
+      return true
+    }
+
+    const next = {
+      ...current,
+      isRequired: current.isRequired || question.isRequired,
+      sortOrder: Math.min(current.sortOrder, question.sortOrder),
+      options: current.options.length > 0 ? current.options : question.options,
+    }
+    const changed =
+      next.isRequired !== current.isRequired ||
+      next.sortOrder !== current.sortOrder ||
+      next.options !== current.options
+
+    if (changed) {
+      resolved.set(question.id, next)
+    }
+
+    return changed
+  }
+
+  for (const question of baseQuestions) {
+    mergeQuestion(question)
+  }
+
+  let changed = true
+  while (changed) {
+    changed = false
+
+    for (const question of Array.from(resolved.values())) {
+      const selectedOptionKeys = questionAnswers[question.key] ?? []
+      if (selectedOptionKeys.length === 0) continue
+
+      for (const option of question.options) {
+        if (!selectedOptionKeys.includes(option.key)) continue
+
+        for (const trigger of option.triggers) {
+          if (trigger.triggerType !== 'question' || !trigger.questionId) continue
+          const triggeredQuestion = questionBankById.get(trigger.questionId)
+          if (!triggeredQuestion) continue
+
+          changed =
+            mergeQuestion({
+              ...triggeredQuestion,
+              isRequired: true,
+            }) || changed
+        }
+      }
+    }
+  }
+
+  return Array.from(resolved.values()).sort(
+    (left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv')
+  )
+}
+
+function resolveTriggeredRequirements(
+  baseRequirements: Requirement[],
+  visibleQuestions: ApplyQuestion[],
+  questionAnswers: Record<string, string[]>
+) {
+  const merged = new Map<string, Requirement>()
+
+  for (const requirement of baseRequirements) {
+    merged.set(requirement.documentTypeId, requirement)
+  }
+
+  for (const question of visibleQuestions) {
+    const selectedOptionKeys = questionAnswers[question.key] ?? []
+    if (selectedOptionKeys.length === 0) continue
+
+    for (const option of question.options) {
+      if (!selectedOptionKeys.includes(option.key)) continue
+
+      for (const trigger of option.triggers) {
+        if (trigger.triggerType !== 'document' || !trigger.documentTypeId) continue
+
+        const current = merged.get(trigger.documentTypeId)
+        const candidate: Requirement = {
+          id: trigger.id,
+          documentTypeId: trigger.documentTypeId,
+          documentKey: trigger.documentKey ?? trigger.documentTypeId,
+          documentLabel: trigger.documentLabel ?? 'Dokument',
+          documentDescription: trigger.documentDescription,
+          isRequired: true,
+          phase: 'before_required',
+          note: current?.note ?? 'Detta dokument kravs utifran dina svar i foljdfragorna.',
+          sortOrder: current?.sortOrder ?? 1000 + trigger.sortOrder,
+        }
+
+        if (!current) {
+          merged.set(trigger.documentTypeId, candidate)
+          continue
+        }
+
+        merged.set(trigger.documentTypeId, {
+          ...current,
+          isRequired: current.isRequired || candidate.isRequired,
+          phase:
+            current.phase === 'before_required' || candidate.phase === 'before_required'
+              ? 'before_required'
+              : current.phase,
+          note: current.note || candidate.note,
+          sortOrder: Math.min(current.sortOrder, candidate.sortOrder),
+        })
+      }
     }
   }
 
@@ -421,8 +562,16 @@ export default function RenoAppApplyPage() {
     [config, form.actionTypeKeys]
   )
 
-  const mergedRequirements = useMemo(() => mergeRequirements(selectedActions), [selectedActions])
-  const mergedQuestions = useMemo(() => mergeQuestions(selectedActions), [selectedActions])
+  const baseRequirements = useMemo(() => mergeRequirements(selectedActions), [selectedActions])
+  const baseQuestions = useMemo(() => mergeQuestions(selectedActions), [selectedActions])
+  const visibleQuestions = useMemo(
+    () => resolveVisibleQuestions(baseQuestions, config?.questionBank ?? [], form.questionAnswers),
+    [baseQuestions, config?.questionBank, form.questionAnswers]
+  )
+  const mergedRequirements = useMemo(
+    () => resolveTriggeredRequirements(baseRequirements, visibleQuestions, form.questionAnswers),
+    [baseRequirements, form.questionAnswers, visibleQuestions]
+  )
   const actionGroups = useMemo(() => groupActionsByCategory(config?.actionTypes ?? []), [config?.actionTypes])
   const requirementGroups = useMemo(() => groupRequirementsByPhase(mergedRequirements), [mergedRequirements])
   const contractorRequirementTexts = useMemo(
@@ -657,13 +806,13 @@ export default function RenoAppApplyPage() {
                 vilket underlag som behöver bifogas i nästa steg.
               </p>
 
-              {mergedQuestions.length === 0 ? (
+              {visibleQuestions.length === 0 ? (
                 <p className="mt-4 text-sm text-stone-600">
                   Inga följdfrågor är kopplade till de valda renoveringstyperna ännu.
                 </p>
               ) : (
                 <div className="mt-4 space-y-4">
-                  {mergedQuestions.map((question) => {
+                  {visibleQuestions.map((question) => {
                     const selectedValues = form.questionAnswers[question.key] ?? []
 
                     return (

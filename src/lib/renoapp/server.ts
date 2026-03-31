@@ -99,6 +99,16 @@ type ApplyQuestionOptionRow = {
   metadata: unknown
 }
 
+type ApplyOptionTriggerRow = {
+  id: string
+  option_id: string
+  trigger_type: 'question' | 'document'
+  question_id: string | null
+  document_type_id: string | null
+  sort_order: number
+  is_active: boolean
+}
+
 type ActionTypeQuestionRow = {
   id: string
   action_type_id: string
@@ -596,6 +606,18 @@ export type PublicApplyQuestionOption = {
   label: string
   description: string | null
   sortOrder: number
+  triggers: PublicApplyQuestionOptionTrigger[]
+}
+
+export type PublicApplyQuestionOptionTrigger = {
+  id: string
+  triggerType: 'question' | 'document'
+  questionId: string | null
+  documentTypeId: string | null
+  documentKey: string | null
+  documentLabel: string | null
+  documentDescription: string | null
+  sortOrder: number
 }
 
 export type PublicApplyQuestion = {
@@ -617,6 +639,7 @@ export type RenoAppPublicBrfConfig = {
     applyIntroText: string | null
   }
   actionTypes: PublicActionType[]
+  questionBank: PublicApplyQuestion[]
 }
 
 export type RenoAppPublicBrfListItem = {
@@ -759,6 +782,18 @@ export type RenoAppAdminQuestionOption = {
   sortOrder: number
   isActive: boolean
   metadata: unknown
+  triggers: RenoAppAdminQuestionOptionTrigger[]
+}
+
+export type RenoAppAdminQuestionOptionTrigger = {
+  id: string
+  triggerType: 'question' | 'document'
+  questionId: string | null
+  questionLabel: string | null
+  documentTypeId: string | null
+  documentTypeLabel: string | null
+  sortOrder: number
+  isActive: boolean
 }
 
 export type RenoAppAdminQuestion = {
@@ -1329,7 +1364,7 @@ async function listRequirements(admin: SupabaseAdminClient, brfId: string) {
 }
 
 async function listActiveApplyQuestions(admin: SupabaseAdminClient) {
-  const [questionRows, optionRows, linkRows] = await Promise.all([
+  const [questionRows, optionRows, linkRows, triggerRows] = await Promise.all([
     admin
       .from('renoapp_apply_questions')
       .select('id,key,label,help_text,response_type,sort_order,is_locked,is_active,metadata')
@@ -1345,16 +1380,23 @@ async function listActiveApplyQuestions(admin: SupabaseAdminClient) {
       .select('id,action_type_id,question_id,sort_order,is_required,is_active')
       .eq('is_active', true)
       .order('sort_order', { ascending: true }),
+    admin
+      .from('renoapp_apply_option_triggers')
+      .select('id,option_id,trigger_type,question_id,document_type_id,sort_order,is_active')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true }),
   ])
 
   if (questionRows.error) throw new Error(questionRows.error.message ?? 'Kunde inte hämta frågor.')
   if (optionRows.error) throw new Error(optionRows.error.message ?? 'Kunde inte hämta svarsalternativ.')
   if (linkRows.error) throw new Error(linkRows.error.message ?? 'Kunde inte hämta frågekopplingar.')
+  if (triggerRows.error) throw new Error(triggerRows.error.message ?? 'Kunde inte hämta frågetriggers.')
 
   return {
     questions: (questionRows.data ?? []) as ApplyQuestionRow[],
     options: (optionRows.data ?? []) as ApplyQuestionOptionRow[],
     links: (linkRows.data ?? []) as ActionTypeQuestionRow[],
+    triggers: (triggerRows.data ?? []) as ApplyOptionTriggerRow[],
   }
 }
 
@@ -1365,7 +1407,8 @@ function buildPublicActionTypes(
   requirements: RequirementRow[],
   questionRows: ApplyQuestionRow[] = [],
   optionRows: ApplyQuestionOptionRow[] = [],
-  questionLinks: ActionTypeQuestionRow[] = []
+  questionLinks: ActionTypeQuestionRow[] = [],
+  triggerRows: ApplyOptionTriggerRow[] = []
 ): PublicActionType[] {
   const categoryById = new Map(categories.map((item) => [item.id, item]))
   const documentById = new Map(documentTypes.map((item) => [item.id, item]))
@@ -1435,6 +1478,25 @@ function buildPublicActionTypes(
               label: repairLikelyMojibakeText(option.label) ?? '',
               description: repairLikelyMojibakeText(option.description ?? null),
               sortOrder: option.sort_order,
+              triggers: triggerRows
+                .filter((trigger) => trigger.option_id === option.id)
+                .map((trigger) => {
+                  const documentType = trigger.document_type_id
+                    ? documentById.get(trigger.document_type_id)
+                    : null
+
+                  return {
+                    id: trigger.id,
+                    triggerType: trigger.trigger_type,
+                    questionId: trigger.question_id ?? null,
+                    documentTypeId: trigger.document_type_id ?? null,
+                    documentKey: documentType?.key ?? null,
+                    documentLabel: documentType?.label ?? null,
+                    documentDescription: documentType?.description ?? null,
+                    sortOrder: trigger.sort_order,
+                  } satisfies PublicApplyQuestionOptionTrigger
+                })
+                .sort((left, right) => left.sortOrder - right.sortOrder),
             }))
             .sort((left, right) => left.sortOrder - right.sortOrder),
         } satisfies PublicApplyQuestion
@@ -1442,6 +1504,188 @@ function buildPublicActionTypes(
       .filter((item): item is PublicApplyQuestion => Boolean(item))
       .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv')),
   }))
+}
+
+function buildPublicQuestionBank(
+  questionRows: ApplyQuestionRow[],
+  optionRows: ApplyQuestionOptionRow[],
+  documentTypes: DocumentTypeRow[],
+  triggerRows: ApplyOptionTriggerRow[]
+): PublicApplyQuestion[] {
+  const documentById = new Map(documentTypes.map((item) => [item.id, item]))
+
+  return questionRows
+    .map((question) => ({
+      id: question.id,
+      key: question.key,
+      label: repairLikelyMojibakeText(question.label) ?? '',
+      helpText: repairLikelyMojibakeText(question.help_text ?? null),
+      responseType: question.response_type,
+      sortOrder: question.sort_order,
+      isRequired: false,
+      options: optionRows
+        .filter((option) => option.question_id === question.id)
+        .map((option) => ({
+          id: option.id,
+          key: option.key,
+          label: repairLikelyMojibakeText(option.label) ?? '',
+          description: repairLikelyMojibakeText(option.description ?? null),
+          sortOrder: option.sort_order,
+          triggers: triggerRows
+            .filter((trigger) => trigger.option_id === option.id)
+            .map((trigger) => {
+              const documentType = trigger.document_type_id
+                ? documentById.get(trigger.document_type_id)
+                : null
+
+              return {
+                id: trigger.id,
+                triggerType: trigger.trigger_type,
+                questionId: trigger.question_id ?? null,
+                documentTypeId: trigger.document_type_id ?? null,
+                documentKey: documentType?.key ?? null,
+                documentLabel: documentType?.label ?? null,
+                documentDescription: documentType?.description ?? null,
+                sortOrder: trigger.sort_order,
+              } satisfies PublicApplyQuestionOptionTrigger
+            })
+            .sort((left, right) => left.sortOrder - right.sortOrder),
+        }))
+        .sort((left, right) => left.sortOrder - right.sortOrder),
+    }))
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv'))
+}
+
+function resolveApplicableQuestionsForSelection(params: {
+  selectedActionTypes: ActionTypeRow[]
+  questionRows: ApplyQuestionRow[]
+  optionRows: ApplyQuestionOptionRow[]
+  questionLinks: ActionTypeQuestionRow[]
+  triggerRows: ApplyOptionTriggerRow[]
+  questionAnswers: Record<string, string[]>
+}): PublicApplyQuestion[] {
+  const { selectedActionTypes, questionRows, optionRows, questionLinks, triggerRows, questionAnswers } = params
+  const selectedActionTypeIds = new Set(selectedActionTypes.map((item) => item.id))
+  const questionById = new Map(questionRows.map((item) => [item.id, item]))
+  const optionRowsByQuestionId = new Map<string, ApplyQuestionOptionRow[]>()
+  const triggerRowsByOptionId = new Map<string, ApplyOptionTriggerRow[]>()
+
+  for (const option of optionRows) {
+    const current = optionRowsByQuestionId.get(option.question_id) ?? []
+    current.push(option)
+    optionRowsByQuestionId.set(option.question_id, current)
+  }
+
+  for (const trigger of triggerRows) {
+    const current = triggerRowsByOptionId.get(trigger.option_id) ?? []
+    current.push(trigger)
+    triggerRowsByOptionId.set(trigger.option_id, current)
+  }
+
+  const questionBankById = new Map<string, PublicApplyQuestion>()
+  for (const questionRow of questionRows) {
+    questionBankById.set(questionRow.id, {
+      id: questionRow.id,
+      key: questionRow.key,
+      label: questionRow.label,
+      helpText: questionRow.help_text ?? null,
+      responseType: questionRow.response_type,
+      sortOrder: questionRow.sort_order,
+      isRequired: false,
+      options: (optionRowsByQuestionId.get(questionRow.id) ?? [])
+        .map((optionRow) => ({
+          id: optionRow.id,
+          key: optionRow.key,
+          label: optionRow.label,
+          description: optionRow.description ?? null,
+          sortOrder: optionRow.sort_order,
+          triggers: (triggerRowsByOptionId.get(optionRow.id) ?? [])
+            .map((triggerRow) => ({
+              id: triggerRow.id,
+              triggerType: triggerRow.trigger_type,
+              questionId: triggerRow.question_id ?? null,
+              documentTypeId: triggerRow.document_type_id ?? null,
+              documentKey: null,
+              documentLabel: null,
+              documentDescription: null,
+              sortOrder: triggerRow.sort_order,
+            }))
+            .sort((left, right) => left.sortOrder - right.sortOrder),
+        }))
+        .sort((left, right) => left.sortOrder - right.sortOrder),
+    })
+  }
+
+  const resolvedQuestionMap = new Map<string, PublicApplyQuestion>()
+
+  const mergeQuestion = (candidate: PublicApplyQuestion) => {
+    const current = resolvedQuestionMap.get(candidate.id)
+    if (!current) {
+      resolvedQuestionMap.set(candidate.id, candidate)
+      return true
+    }
+
+    const next = {
+      ...current,
+      isRequired: current.isRequired || candidate.isRequired,
+      sortOrder: Math.min(current.sortOrder, candidate.sortOrder),
+      options: current.options.length > 0 ? current.options : candidate.options,
+    }
+
+    const changed =
+      next.isRequired !== current.isRequired ||
+      next.sortOrder !== current.sortOrder ||
+      next.options !== current.options
+
+    if (changed) {
+      resolvedQuestionMap.set(candidate.id, next)
+    }
+
+    return changed
+  }
+
+  for (const link of questionLinks) {
+    if (!selectedActionTypeIds.has(link.action_type_id)) continue
+    const questionRow = questionById.get(link.question_id)
+    const question = questionRow ? questionBankById.get(questionRow.id) : null
+    if (!question) continue
+
+    mergeQuestion({
+      ...question,
+      isRequired: link.is_required,
+      sortOrder: Math.min(question.sortOrder, link.sort_order),
+    })
+  }
+
+  let changed = true
+  while (changed) {
+    changed = false
+
+    for (const question of Array.from(resolvedQuestionMap.values())) {
+      const selectedOptionKeys = questionAnswers[question.key] ?? []
+      if (selectedOptionKeys.length === 0) continue
+
+      for (const option of question.options) {
+        if (!selectedOptionKeys.includes(option.key)) continue
+
+        for (const trigger of option.triggers) {
+          if (trigger.triggerType !== 'question' || !trigger.questionId) continue
+          const triggeredQuestion = questionBankById.get(trigger.questionId)
+          if (!triggeredQuestion) continue
+
+          changed =
+            mergeQuestion({
+              ...triggeredQuestion,
+              isRequired: true,
+            }) || changed
+        }
+      }
+    }
+  }
+
+  return Array.from(resolvedQuestionMap.values()).sort(
+    (left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv')
+  )
 }
 
 async function listCaseActionTypes(admin: SupabaseAdminClient, caseIds: string[]) {
@@ -1497,7 +1741,8 @@ export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPubli
     requirements,
     questionConfig.questions,
     questionConfig.options,
-    questionConfig.links
+    questionConfig.links,
+    questionConfig.triggers
   )
 
   return {
@@ -1508,6 +1753,12 @@ export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPubli
       applyIntroText: brf.apply_intro_text,
     },
     actionTypes: publicActionTypes,
+    questionBank: buildPublicQuestionBank(
+      questionConfig.questions,
+      questionConfig.options,
+      documentTypes,
+      questionConfig.triggers
+    ),
   }
 /*
   return {
@@ -2080,7 +2331,14 @@ export async function getRenoAppPublicGuideConfig(slug: string): Promise<RenoApp
       requirements,
       questionConfig.questions,
       questionConfig.options,
-      questionConfig.links
+      questionConfig.links,
+      questionConfig.triggers
+    ),
+    questionBank: buildPublicQuestionBank(
+      questionConfig.questions,
+      questionConfig.options,
+      documentTypes,
+      questionConfig.triggers
     ),
   }
 }
@@ -2289,57 +2547,22 @@ export async function upsertPublicApplication(
     throw new Error('ACTION_TYPE_REQUIRED')
   }
   const publicQuestionConfig =
-    selectedActionTypes.length > 0 ? await listActiveApplyQuestions(admin) : { questions: [], options: [], links: [] }
+    selectedActionTypes.length > 0
+      ? await listActiveApplyQuestions(admin)
+      : { questions: [], options: [], links: [], triggers: [] }
   const contractorRequirementSummary = buildContractorRequirementSummary(selectedActionTypes)
   const contractorCertification = requiresQualifiedContractor(selectedActionTypes)
     ? contractorHasRequiredCertification
     : false
 
-  const applicableQuestionMap = new Map<string, PublicApplyQuestion>()
-  for (const link of publicQuestionConfig.links) {
-    if (!selectedActionTypes.some((actionType) => actionType.id === link.action_type_id)) continue
-    const questionRow = publicQuestionConfig.questions.find((question) => question.id === link.question_id)
-    if (!questionRow) continue
-
-    const options = publicQuestionConfig.options
-      .filter((option) => option.question_id === questionRow.id)
-      .map((option) => ({
-        id: option.id,
-        key: option.key,
-        label: option.label,
-        description: option.description ?? null,
-        sortOrder: option.sort_order,
-      }))
-      .sort((left, right) => left.sortOrder - right.sortOrder)
-
-    const current = applicableQuestionMap.get(questionRow.key)
-    const candidate: PublicApplyQuestion = {
-      id: questionRow.id,
-      key: questionRow.key,
-      label: questionRow.label,
-      helpText: questionRow.help_text ?? null,
-      responseType: questionRow.response_type,
-      sortOrder: link.sort_order,
-      isRequired: link.is_required,
-      options,
-    }
-
-    if (!current) {
-      applicableQuestionMap.set(questionRow.key, candidate)
-      continue
-    }
-
-    applicableQuestionMap.set(questionRow.key, {
-      ...current,
-      sortOrder: Math.min(current.sortOrder, candidate.sortOrder),
-      isRequired: current.isRequired || candidate.isRequired,
-      options: current.options.length > 0 ? current.options : candidate.options,
-    })
-  }
-
-  const applicableQuestions = Array.from(applicableQuestionMap.values()).sort(
-    (left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv')
-  )
+  const applicableQuestions = resolveApplicableQuestionsForSelection({
+    selectedActionTypes,
+    questionRows: publicQuestionConfig.questions,
+    optionRows: publicQuestionConfig.options,
+    questionLinks: publicQuestionConfig.links,
+    triggerRows: publicQuestionConfig.triggers,
+    questionAnswers: questionAnswersInput,
+  })
 
   if (mode === 'submit') {
     for (const question of applicableQuestions) {
@@ -3801,7 +4024,7 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
   await requireRenoAppAdminProfile()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
 
-  const [questionRows, optionRows] = await Promise.all([
+  const [questionRows, optionRows, triggerRows, documentRows] = await Promise.all([
     admin
       .from('renoapp_apply_questions')
       .select('id,key,label,help_text,response_type,sort_order,is_locked,is_active,metadata')
@@ -3810,14 +4033,28 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
       .from('renoapp_apply_question_options')
       .select('id,question_id,key,label,description,sort_order,is_active,metadata')
       .order('sort_order', { ascending: true }),
+    admin
+      .from('renoapp_apply_option_triggers')
+      .select('id,option_id,trigger_type,question_id,document_type_id,sort_order,is_active')
+      .order('sort_order', { ascending: true }),
+    admin
+      .from('renovation_document_types')
+      .select('id,key,label,description,sort_order,is_active')
+      .order('sort_order', { ascending: true }),
   ])
 
   if (questionRows.error) throw new Error(questionRows.error.message ?? 'Kunde inte lasa fragor.')
   if (optionRows.error) throw new Error(optionRows.error.message ?? 'Kunde inte lasa svarsalternativ.')
+  if (triggerRows.error) throw new Error(triggerRows.error.message ?? 'Kunde inte lasa svarstriggers.')
+  if (documentRows.error) throw new Error(documentRows.error.message ?? 'Kunde inte lasa dokumenttyper.')
 
   const options = (optionRows.data ?? []) as ApplyQuestionOptionRow[]
+  const triggers = (triggerRows.data ?? []) as ApplyOptionTriggerRow[]
+  const questions = (questionRows.data ?? []) as ApplyQuestionRow[]
+  const documentById = new Map(((documentRows.data ?? []) as DocumentTypeRow[]).map((item) => [item.id, item]))
+  const questionById = new Map(questions.map((item) => [item.id, item]))
 
-  return ((questionRows.data ?? []) as ApplyQuestionRow[]).map((item) => ({
+  return questions.map((item) => ({
     id: item.id,
     key: item.key,
     label: repairLikelyMojibakeText(item.label) ?? '',
@@ -3837,6 +4074,22 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
         sortOrder: option.sort_order,
         isActive: option.is_active,
         metadata: repairLikelyMojibakeValue(option.metadata ?? {}),
+        triggers: triggers
+          .filter((trigger) => trigger.option_id === option.id)
+          .map((trigger) => ({
+            id: trigger.id,
+            triggerType: trigger.trigger_type,
+            questionId: trigger.question_id ?? null,
+            questionLabel: trigger.question_id
+              ? repairLikelyMojibakeText(questionById.get(trigger.question_id)?.label ?? null)
+              : null,
+            documentTypeId: trigger.document_type_id ?? null,
+            documentTypeLabel: trigger.document_type_id
+              ? repairLikelyMojibakeText(documentById.get(trigger.document_type_id)?.label ?? null)
+              : null,
+            sortOrder: trigger.sort_order,
+            isActive: trigger.is_active,
+          })),
       })),
   }))
 }
@@ -3861,6 +4114,13 @@ export async function saveRenoAppAdminQuestion(input: {
     sortOrder?: number | null
     isActive?: boolean
     metadata?: unknown
+    triggers?: Array<{
+      triggerType: 'question' | 'document'
+      questionId?: string | null
+      documentTypeId?: string | null
+      sortOrder?: number | null
+      isActive?: boolean
+    }>
   }>
 }): Promise<RenoAppAdminQuestion> {
   await requireRenoAppAdminProfile()
@@ -3971,7 +4231,66 @@ export async function saveRenoAppAdminQuestion(input: {
       throw new Error(savedOptionError?.message ?? 'Kunde inte spara svarsalternativ.')
     }
 
-    keptOptionIds.add(String(savedOptionData.id))
+    const savedOptionId = String(savedOptionData.id)
+    keptOptionIds.add(savedOptionId)
+
+    const { error: deleteTriggerError } = await admin
+      .from('renoapp_apply_option_triggers')
+      .delete()
+      .eq('option_id', savedOptionId)
+
+    if (deleteTriggerError) {
+      throw new Error(deleteTriggerError.message ?? 'Kunde inte uppdatera svarstriggers.')
+    }
+
+    const triggerRowsToInsert = (optionInput.triggers ?? [])
+      .map((triggerInput, index) => {
+        const triggerType = triggerInput.triggerType
+        const targetQuestionId =
+          triggerType === 'question' && triggerInput.questionId && triggerInput.questionId !== questionId
+            ? triggerInput.questionId
+            : null
+        const targetDocumentTypeId =
+          triggerType === 'document' && triggerInput.documentTypeId ? triggerInput.documentTypeId : null
+        const triggerSortOrder =
+          Number.isFinite(triggerInput.sortOrder) && Number(triggerInput.sortOrder) > 0
+            ? Number(triggerInput.sortOrder)
+            : (index + 1) * 10
+
+        if (triggerType === 'question' && !targetQuestionId) return null
+        if (triggerType === 'document' && !targetDocumentTypeId) return null
+
+        return {
+          option_id: savedOptionId,
+          trigger_type: triggerType,
+          question_id: targetQuestionId,
+          document_type_id: targetDocumentTypeId,
+          sort_order: triggerSortOrder,
+          is_active: triggerInput.isActive !== false,
+        }
+      })
+      .filter(
+        (
+          item
+        ): item is {
+          option_id: string
+          trigger_type: 'question' | 'document'
+          question_id: string | null
+          document_type_id: string | null
+          sort_order: number
+          is_active: boolean
+        } => Boolean(item)
+      )
+
+    if (triggerRowsToInsert.length > 0) {
+      const { error: insertTriggerError } = await admin
+        .from('renoapp_apply_option_triggers')
+        .insert(triggerRowsToInsert)
+
+      if (insertTriggerError) {
+        throw new Error(insertTriggerError.message ?? 'Kunde inte spara svarstriggers.')
+      }
+    }
   }
 
   for (const existingOption of (existingOptionsResult.data ?? []) as ApplyQuestionOptionRow[]) {

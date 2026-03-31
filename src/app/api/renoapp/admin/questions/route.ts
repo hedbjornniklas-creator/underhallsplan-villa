@@ -59,6 +59,40 @@ export async function POST(request: Request) {
           typeof option.sortOrder === 'number' ? option.sortOrder : Number(option.sortOrder ?? 100),
         isActive: typeof option.isActive === 'boolean' ? option.isActive : true,
         metadata: option.metadata ?? {},
+        triggers: Array.isArray(option.triggers)
+          ? option.triggers
+              .map((trigger) => {
+                if (!trigger || typeof trigger !== 'object') return null
+                const triggerRecord = trigger as Record<string, unknown>
+                return {
+                  triggerType:
+                    triggerRecord.triggerType === 'document' ? 'document' : 'question',
+                  questionId:
+                    typeof triggerRecord.questionId === 'string' ? triggerRecord.questionId : null,
+                  documentTypeId:
+                    typeof triggerRecord.documentTypeId === 'string'
+                      ? triggerRecord.documentTypeId
+                      : null,
+                  sortOrder:
+                    typeof triggerRecord.sortOrder === 'number'
+                      ? triggerRecord.sortOrder
+                      : Number(triggerRecord.sortOrder ?? 100),
+                  isActive:
+                    typeof triggerRecord.isActive === 'boolean' ? triggerRecord.isActive : true,
+                }
+              })
+              .filter(
+                (
+                  trigger
+                ): trigger is {
+                  triggerType: 'question' | 'document'
+                  questionId: string | null
+                  documentTypeId: string | null
+                  sortOrder: number
+                  isActive: boolean
+                } => Boolean(trigger)
+              )
+          : [],
       })),
     })
 
