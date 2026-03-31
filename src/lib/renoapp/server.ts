@@ -2278,6 +2278,36 @@ function normalizeText(value: unknown) {
   return text === '' ? null : text
 }
 
+function repairLikelyMojibakeText(value: string | null) {
+  if (!value || !/[\u00c2\u00c3\u00e2]/.test(value)) return value
+
+  try {
+    const repaired = Buffer.from(value, 'latin1').toString('utf8')
+    return repaired.includes('\uFFFD') ? value : repaired
+  } catch {
+    return value
+  }
+}
+
+function repairLikelyMojibakeValue(value: unknown): unknown {
+  if (typeof value === 'string') return repairLikelyMojibakeText(value)
+  if (Array.isArray(value)) return value.map((item) => repairLikelyMojibakeValue(item))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        key,
+        repairLikelyMojibakeValue(item),
+      ])
+    )
+  }
+
+  return value
+}
+
+function normalizeTerminologyText(value: unknown) {
+  return repairLikelyMojibakeText(normalizeText(value))
+}
+
 function normalizeMachineKey(value: unknown) {
   const text = normalizeText(value)
   if (!text) return null
@@ -3015,8 +3045,8 @@ export async function listRenoAppAdminTerminology(): Promise<{
   const groups = ((groupRows.data ?? []) as TerminologyGroupRow[]).map((item) => ({
     id: item.id,
     key: item.key,
-    label: item.label,
-    description: item.description ?? null,
+    label: repairLikelyMojibakeText(item.label) ?? '',
+    description: repairLikelyMojibakeText(item.description ?? null),
     sortOrder: item.sort_order,
     isLocked: item.is_locked,
     isActive: item.is_active,
@@ -3032,10 +3062,10 @@ export async function listRenoAppAdminTerminology(): Promise<{
       id: item.id,
       groupId: item.group_id,
       groupKey: group?.key ?? '',
-      groupLabel: group?.label ?? '',
+      groupLabel: repairLikelyMojibakeText(group?.label ?? '') ?? '',
       code: item.code,
-      label: item.label,
-      definition: item.definition ?? null,
+      label: repairLikelyMojibakeText(item.label) ?? '',
+      definition: repairLikelyMojibakeText(item.definition ?? null),
       termLevel: item.term_level,
       inputKind: item.input_kind,
       isLocked: item.is_locked,
@@ -3043,12 +3073,12 @@ export async function listRenoAppAdminTerminology(): Promise<{
       isSystemGenerated: item.is_system_generated,
       isActive: item.is_active,
       sortOrder: item.sort_order,
-      metadata: item.metadata ?? {},
+      metadata: repairLikelyMojibakeValue(item.metadata ?? {}),
       aliases: aliases
         .filter((alias) => alias.term_id === item.id)
         .map((alias) => ({
           id: alias.id,
-          alias: alias.alias,
+          alias: repairLikelyMojibakeText(alias.alias) ?? '',
           sortOrder: alias.sort_order,
           isActive: alias.is_active,
         })),
@@ -3057,9 +3087,9 @@ export async function listRenoAppAdminTerminology(): Promise<{
         .map((rule) => ({
           id: rule.id,
           ruleKey: rule.rule_key,
-          label: rule.label,
-          description: rule.description ?? null,
-          config: rule.config ?? {},
+          label: repairLikelyMojibakeText(rule.label) ?? '',
+          description: repairLikelyMojibakeText(rule.description ?? null),
+          config: repairLikelyMojibakeValue(rule.config ?? {}),
           sortOrder: rule.sort_order,
           isActive: rule.is_active,
         })),
@@ -3168,10 +3198,10 @@ export async function saveRenoAppAdminTerminology(input: {
   }
 
   const existingTermRow = (existingTerm?.data ?? null) as TerminologyTermRow | null
-  const label = normalizeText(input.term.label)
+  const label = normalizeTerminologyText(input.term.label)
   const computedCode = normalizeTerminologyCode(input.term.code) ?? normalizeTerminologyCode(label) ?? null
   const code = existingTermRow?.is_locked ? existingTermRow.code : computedCode
-  const definition = normalizeText(input.term.definition)
+  const definition = normalizeTerminologyText(input.term.definition)
   const groupId = normalizeText(input.term.groupId)
   const termLevel = normalizeTerminologyTermLevel(input.term.termLevel)
   const inputKind = normalizeTerminologyInputKind(input.term.inputKind)
@@ -3243,7 +3273,7 @@ export async function saveRenoAppAdminTerminology(input: {
   const aliases = (input.aliases ?? []).filter((item) => normalizeText(item.alias))
 
   for (const aliasInput of aliases) {
-    const alias = normalizeText(aliasInput.alias)
+    const alias = normalizeTerminologyText(aliasInput.alias)
     const aliasSortOrder =
       Number.isFinite(aliasInput.sortOrder) && Number(aliasInput.sortOrder) > 0
         ? Number(aliasInput.sortOrder)
@@ -3289,8 +3319,8 @@ export async function saveRenoAppAdminTerminology(input: {
 
   for (const ruleInput of rules) {
     const ruleKey = normalizeTerminologyCode(ruleInput.ruleKey)
-    const ruleLabel = normalizeText(ruleInput.label)
-    const ruleDescription = normalizeText(ruleInput.description)
+    const ruleLabel = normalizeTerminologyText(ruleInput.label)
+    const ruleDescription = normalizeTerminologyText(ruleInput.description)
     const ruleSortOrder =
       Number.isFinite(ruleInput.sortOrder) && Number(ruleInput.sortOrder) > 0
         ? Number(ruleInput.sortOrder)
