@@ -69,6 +69,7 @@ type DraftOption = {
 }
 
 type SortKey = 'label' | 'key' | 'responseType' | 'optionCount' | 'isActive'
+type OptionsModalMode = 'options' | 'rules'
 
 const EMPTY_QUESTION: DraftQuestion = {
   key: '',
@@ -154,6 +155,7 @@ export default function RenoAppQuestionsAdminPage() {
   const [questionModalOpen, setQuestionModalOpen] = useState(false)
   const [questionDraft, setQuestionDraft] = useState<DraftQuestion>(EMPTY_QUESTION)
   const [optionsQuestionId, setOptionsQuestionId] = useState<string | null>(null)
+  const [optionsModalMode, setOptionsModalMode] = useState<OptionsModalMode>('options')
   const [optionDrafts, setOptionDrafts] = useState<DraftOption[]>([])
 
   useEffect(() => {
@@ -362,8 +364,9 @@ export default function RenoAppQuestionsAdminPage() {
     setQuestionModalOpen(true)
   }
 
-  const openOptionsModal = (item: QuestionItem) => {
+  const openOptionsModal = (item: QuestionItem, mode: OptionsModalMode = 'options') => {
     setOptionsQuestionId(item.id)
+    setOptionsModalMode(mode)
     setOptionDrafts(createOptionDrafts(item))
   }
 
@@ -509,7 +512,7 @@ export default function RenoAppQuestionsAdminPage() {
                   <th className="w-[14%] px-3 py-1">Svarstyp</th>
                   <th className="w-[8%] px-3 py-1">Svar</th>
                   <th className="w-[6%] px-3 py-1">Aktiv</th>
-                  <th className="w-[16%] px-3 py-1 text-center">Åtgärder</th>
+                  <th className="w-[22%] px-3 py-1 text-center">Åtgärder</th>
                 </tr>
               </thead>
               <tbody>
@@ -545,13 +548,20 @@ export default function RenoAppQuestionsAdminPage() {
                         {item.isActive ? 'Ja' : 'Nej'}
                       </td>
                       <td className="rounded-r-xl border border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
-                        <div className="grid grid-cols-3 gap-1 whitespace-nowrap text-[11px]">
+                        <div className="grid grid-cols-4 gap-1 whitespace-nowrap text-[11px]">
                           <button
                             type="button"
-                            onClick={() => openOptionsModal(item)}
+                            onClick={() => openOptionsModal(item, 'options')}
                             className="w-full rounded-md border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100"
                           >
                             Svar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openOptionsModal(item, 'rules')}
+                            className="w-full rounded-md border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                          >
+                            Regler
                           </button>
                           <button
                             type="button"
@@ -704,7 +714,11 @@ export default function RenoAppQuestionsAdminPage() {
           <div className="w-full max-w-5xl rounded-xl bg-white p-4 shadow-lg">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h3 className="text-lg font-semibold">Svarsalternativ - {optionsQuestion.label}</h3>
+                <h3 className="text-lg font-semibold">
+                  {optionsModalMode === 'rules'
+                    ? `Regler för svar - ${optionsQuestion.label}`
+                    : `Svarsalternativ - ${optionsQuestion.label}`}
+                </h3>
                 <div className="mt-1 text-xs text-gray-500">{optionsQuestion.key}</div>
               </div>
               <div className="flex items-center gap-2">
@@ -715,26 +729,28 @@ export default function RenoAppQuestionsAdminPage() {
                 >
                   Stäng
                 </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setOptionDrafts((current) => [
-                      ...current,
-                      {
-                        key: '',
-                        label: '',
-                        description: '',
-                        sortOrder: String(current.length * 10 + 10),
-                        isActive: true,
-                        triggeredQuestionIds: [],
-                        triggeredDocumentTypeIds: [],
-                      },
-                    ])
-                  }
-                  className="rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm text-blue-800 hover:bg-blue-100"
-                >
-                  + Nytt svar
-                </button>
+                {optionsModalMode === 'options' ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOptionDrafts((current) => [
+                        ...current,
+                        {
+                          key: '',
+                          label: '',
+                          description: '',
+                          sortOrder: String(current.length * 10 + 10),
+                          isActive: true,
+                          triggeredQuestionIds: [],
+                          triggeredDocumentTypeIds: [],
+                        },
+                      ])
+                    }
+                    className="rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm text-blue-800 hover:bg-blue-100"
+                  >
+                    + Nytt svar
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => void saveOptions()}
@@ -749,12 +765,94 @@ export default function RenoAppQuestionsAdminPage() {
             <div className="mt-4 space-y-2">
               {optionDrafts.length === 0 ? (
                 <div className="rounded-md border border-dashed border-gray-300 px-3 py-4 text-sm text-gray-500">
-                  Inga svarsalternativ ännu.
+                  {optionsModalMode === 'rules'
+                    ? 'Skapa först minst ett svarsalternativ innan du kopplar regler.'
+                    : 'Inga svarsalternativ ännu.'}
                 </div>
               ) : (
                 optionDrafts.map((option, index) => {
                   const generatedOptionKey =
                     option.key || slugifyQuestionKey(option.label)
+
+                  if (optionsModalMode === 'rules') {
+                    return (
+                      <div
+                        key={option.id ?? `option-${index}`}
+                        className="grid gap-3 rounded-md border border-gray-200 p-3 md:grid-cols-[280px_1fr]"
+                      >
+                        <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-3">
+                          <div className="font-medium text-gray-900">
+                            {option.label.trim() || `Svar ${index + 1}`}
+                          </div>
+                          <div className="mt-1 text-xs text-gray-500">
+                            {option.description.trim() || 'Ingen beskrivning ännu.'}
+                          </div>
+                          <div className="mt-3 text-xs text-gray-600">
+                            {option.triggeredQuestionIds.length} följdfrågor,{' '}
+                            {option.triggeredDocumentTypeIds.length} underlag
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <label className="space-y-1">
+                            <div className="text-xs font-medium text-gray-600">Följdfrågor</div>
+                            <select
+                              multiple
+                              value={option.triggeredQuestionIds}
+                              onChange={(event) => {
+                                const values = Array.from(event.target.selectedOptions)
+                                  .map((selectedOption) => selectedOption.value)
+                                  .filter(Boolean)
+                                setOptionDrafts((current) =>
+                                  current.map((item, itemIndex) =>
+                                    itemIndex === index ? { ...item, triggeredQuestionIds: values } : item
+                                  )
+                                )
+                              }}
+                              className="min-h-32 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                            >
+                              {items
+                                .filter((question) => question.id !== optionsQuestion.id)
+                                .map((question) => (
+                                  <option key={question.id} value={question.id}>
+                                    {question.label}
+                                  </option>
+                                ))}
+                            </select>
+                          </label>
+
+                          <label className="space-y-1">
+                            <div className="text-xs font-medium text-gray-600">Underlag</div>
+                            <select
+                              multiple
+                              value={option.triggeredDocumentTypeIds}
+                              onChange={(event) => {
+                                const values = Array.from(event.target.selectedOptions)
+                                  .map((selectedOption) => selectedOption.value)
+                                  .filter(Boolean)
+                                setOptionDrafts((current) =>
+                                  current.map((item, itemIndex) =>
+                                    itemIndex === index
+                                      ? { ...item, triggeredDocumentTypeIds: values }
+                                      : item
+                                  )
+                                )
+                              }}
+                              className="min-h-32 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                            >
+                              {documentTypes
+                                .filter((documentType) => documentType.isActive)
+                                .map((documentType) => (
+                                  <option key={documentType.id} value={documentType.id}>
+                                    {documentType.label}
+                                  </option>
+                                ))}
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    )
+                  }
 
                   return (
                     <div
@@ -835,63 +933,6 @@ export default function RenoAppQuestionsAdminPage() {
                         Ta bort
                       </button>
 
-                      <div className="md:col-span-5 grid gap-3 md:grid-cols-2">
-                        <label className="space-y-1">
-                          <div className="text-xs font-medium text-gray-600">Triggar foljdfragor</div>
-                          <select
-                            multiple
-                            value={option.triggeredQuestionIds}
-                            onChange={(event) => {
-                              const values = Array.from(event.target.selectedOptions)
-                                .map((selectedOption) => selectedOption.value)
-                                .filter(Boolean)
-                              setOptionDrafts((current) =>
-                                current.map((item, itemIndex) =>
-                                  itemIndex === index ? { ...item, triggeredQuestionIds: values } : item
-                                )
-                              )
-                            }}
-                            className="min-h-32 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                          >
-                            {items
-                              .filter((question) => question.id !== optionsQuestion.id)
-                              .map((question) => (
-                                <option key={question.id} value={question.id}>
-                                  {question.label}
-                                </option>
-                              ))}
-                          </select>
-                        </label>
-
-                        <label className="space-y-1">
-                          <div className="text-xs font-medium text-gray-600">Triggar underlag</div>
-                          <select
-                            multiple
-                            value={option.triggeredDocumentTypeIds}
-                            onChange={(event) => {
-                              const values = Array.from(event.target.selectedOptions)
-                                .map((selectedOption) => selectedOption.value)
-                                .filter(Boolean)
-                              setOptionDrafts((current) =>
-                                current.map((item, itemIndex) =>
-                                  itemIndex === index
-                                    ? { ...item, triggeredDocumentTypeIds: values }
-                                    : item
-                                )
-                              )
-                            }}
-                            className="min-h-32 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                          >
-                            {documentTypes
-                              .filter((documentType) => documentType.isActive)
-                              .map((documentType) => (
-                                <option key={documentType.id} value={documentType.id}>
-                                  {documentType.label}
-                                </option>
-                              ))}
-                          </select>
-                        </label>
-                      </div>
                     </div>
                   )
                 })
