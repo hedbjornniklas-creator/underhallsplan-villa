@@ -15,11 +15,13 @@ type QuestionOptionItem = {
 
 type QuestionOptionTriggerItem = {
   id: string
-  triggerType: 'question' | 'document'
+  triggerType: 'question' | 'document' | 'participant_role'
   questionId: string | null
   questionLabel: string | null
   documentTypeId: string | null
   documentTypeLabel: string | null
+  participantRoleId: string | null
+  participantRoleLabel: string | null
   sortOrder: number
   isActive: boolean
 }
@@ -29,6 +31,16 @@ type DocumentTypeItem = {
   key: string
   label: string
   description: string | null
+  sortOrder: number
+  isActive: boolean
+}
+
+type ParticipantRoleItem = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  roleKind: 'contractor' | 'consultant'
   sortOrder: number
   isActive: boolean
 }
@@ -66,6 +78,7 @@ type DraftOption = {
   isActive: boolean
   triggeredQuestionIds: string[]
   triggeredDocumentTypeIds: string[]
+  triggeredParticipantRoleIds: string[]
 }
 
 type SortKey = 'label' | 'key' | 'responseType' | 'optionCount' | 'isActive'
@@ -134,6 +147,9 @@ function createOptionDrafts(item: QuestionItem): DraftOption[] {
     triggeredDocumentTypeIds: option.triggers
       .filter((trigger) => trigger.triggerType === 'document' && trigger.documentTypeId)
       .map((trigger) => trigger.documentTypeId as string),
+    triggeredParticipantRoleIds: option.triggers
+      .filter((trigger) => trigger.triggerType === 'participant_role' && trigger.participantRoleId)
+      .map((trigger) => trigger.participantRoleId as string),
   }))
 }
 
@@ -148,6 +164,7 @@ function toggleSelection(list: string[], value: string, checked: boolean) {
 export default function RenoAppQuestionsAdminPage() {
   const [items, setItems] = useState<QuestionItem[]>([])
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeItem[]>([])
+  const [participantRoles, setParticipantRoles] = useState<ParticipantRoleItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -174,9 +191,10 @@ export default function RenoAppQuestionsAdminPage() {
       setError(null)
 
       try {
-        const [questionsResponse, documentTypesResponse] = await Promise.all([
+        const [questionsResponse, documentTypesResponse, participantRolesResponse] = await Promise.all([
           fetch('/api/renoapp/admin/questions', { cache: 'no-store' }),
           fetch('/api/renoapp/admin/document-types', { cache: 'no-store' }),
+          fetch('/api/renoapp/admin/participants', { cache: 'no-store' }),
         ])
 
         const questionsPayload = (await questionsResponse.json().catch(() => ({}))) as {
@@ -187,6 +205,10 @@ export default function RenoAppQuestionsAdminPage() {
           items?: DocumentTypeItem[]
           error?: string
         }
+        const participantRolesPayload = (await participantRolesResponse.json().catch(() => ({}))) as {
+          items?: ParticipantRoleItem[]
+          error?: string
+        }
 
         if (!questionsResponse.ok) {
           throw new Error(questionsPayload.error ?? 'Kunde inte lasa fragor.')
@@ -195,10 +217,14 @@ export default function RenoAppQuestionsAdminPage() {
         if (!documentTypesResponse.ok) {
           throw new Error(documentTypesPayload.error ?? 'Kunde inte lasa dokumenttyper.')
         }
+        if (!participantRolesResponse.ok) {
+          throw new Error(participantRolesPayload.error ?? 'Kunde inte lasa medverkandetyper.')
+        }
 
         if (!active) return
         setItems(questionsPayload.items ?? [])
         setDocumentTypes(documentTypesPayload.items ?? [])
+        setParticipantRoles(participantRolesPayload.items ?? [])
       } catch (loadError) {
         if (active) {
           setError(loadError instanceof Error ? loadError.message : 'Kunde inte lasa fragor.')
@@ -324,6 +350,17 @@ export default function RenoAppQuestionsAdminPage() {
                 triggerType: 'document' as const,
                 documentTypeId,
                 sortOrder: (option.triggeredQuestionIds.length + index + 1) * 10,
+                isActive: true,
+              })),
+              ...option.triggeredParticipantRoleIds.map((participantRoleId, index) => ({
+                triggerType: 'participant_role' as const,
+                participantRoleId,
+                sortOrder:
+                  (option.triggeredQuestionIds.length +
+                    option.triggeredDocumentTypeIds.length +
+                    index +
+                    1) *
+                  10,
                 isActive: true,
               })),
             ],
@@ -751,6 +788,7 @@ export default function RenoAppQuestionsAdminPage() {
                           isActive: true,
                           triggeredQuestionIds: [],
                           triggeredDocumentTypeIds: [],
+                          triggeredParticipantRoleIds: [],
                         },
                       ])
                     }
@@ -801,7 +839,7 @@ export default function RenoAppQuestionsAdminPage() {
                           </div>
                         </div>
 
-                        <div className="grid gap-3 md:grid-cols-2">
+                        <div className="grid gap-3 md:grid-cols-3">
                           <label className="space-y-1">
                             <div className="text-xs font-medium text-gray-600">Följdfrågor</div>
                             <div className="max-h-48 space-y-2 overflow-auto rounded-md border border-gray-300 px-3 py-2">
@@ -878,6 +916,47 @@ export default function RenoAppQuestionsAdminPage() {
                                         }
                                       />
                                       <span>{documentType.label}</span>
+                                    </label>
+                                  )
+                                })}
+                            </div>
+                          </label>
+                          <label className="space-y-1">
+                            <div className="text-xs font-medium text-gray-600">Medverkande</div>
+                            <div className="max-h-48 space-y-2 overflow-auto rounded-md border border-gray-300 px-3 py-2">
+                              {participantRoles
+                                .filter((participantRole) => participantRole.isActive)
+                                .map((participantRole) => {
+                                  const checked = option.triggeredParticipantRoleIds.includes(
+                                    participantRole.id
+                                  )
+
+                                  return (
+                                    <label
+                                      key={participantRole.id}
+                                      className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-1 text-sm hover:bg-gray-50"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={(event) =>
+                                          setOptionDrafts((current) =>
+                                            current.map((item, itemIndex) =>
+                                              itemIndex === index
+                                                ? {
+                                                    ...item,
+                                                    triggeredParticipantRoleIds: toggleSelection(
+                                                      item.triggeredParticipantRoleIds,
+                                                      participantRole.id,
+                                                      event.target.checked
+                                                    ),
+                                                  }
+                                                : item
+                                            )
+                                          )
+                                        }
+                                      />
+                                      <span>{participantRole.label}</span>
                                     </label>
                                   )
                                 })}

@@ -64,14 +64,23 @@ export async function POST(request: Request) {
               .map((trigger) => {
                 if (!trigger || typeof trigger !== 'object') return null
                 const triggerRecord = trigger as Record<string, unknown>
+                const triggerType =
+                  triggerRecord.triggerType === 'document'
+                    ? 'document'
+                    : triggerRecord.triggerType === 'participant_role'
+                      ? 'participant_role'
+                      : 'question'
                 return {
-                  triggerType:
-                    triggerRecord.triggerType === 'document' ? 'document' : 'question',
+                  triggerType,
                   questionId:
                     typeof triggerRecord.questionId === 'string' ? triggerRecord.questionId : null,
                   documentTypeId:
                     typeof triggerRecord.documentTypeId === 'string'
                       ? triggerRecord.documentTypeId
+                      : null,
+                  participantRoleId:
+                    typeof triggerRecord.participantRoleId === 'string'
+                      ? triggerRecord.participantRoleId
                       : null,
                   sortOrder:
                     typeof triggerRecord.sortOrder === 'number'
@@ -85,9 +94,10 @@ export async function POST(request: Request) {
                 (
                   trigger
                 ): trigger is {
-                  triggerType: 'question' | 'document'
+                  triggerType: 'question' | 'document' | 'participant_role'
                   questionId: string | null
                   documentTypeId: string | null
+                  participantRoleId: string | null
                   sortOrder: number
                   isActive: boolean
                 } => Boolean(trigger)

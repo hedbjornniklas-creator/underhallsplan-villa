@@ -70,6 +70,32 @@ type ActionTypeQuestionGroup = {
   questions: ActionQuestionItem[]
 }
 
+type ParticipantRoleItem = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  roleKind: 'contractor' | 'consultant'
+  sortOrder: number
+  isActive: boolean
+}
+
+type ActionParticipantRoleItem = {
+  id: string
+  participantRoleId: string
+  participantRoleKey: string
+  participantRoleLabel: string
+  participantRoleDescription: string | null
+  roleKind: 'contractor' | 'consultant'
+  isRequired: boolean
+  sortOrder: number
+}
+
+type ActionTypeParticipantRoleGroup = {
+  actionType: ActionTypeItem
+  participantRoles: ActionParticipantRoleItem[]
+}
+
 type DraftRequirementState = {
   isEnabled: boolean
   isRequired: boolean
@@ -78,6 +104,12 @@ type DraftRequirementState = {
 }
 
 type DraftActionQuestionState = {
+  isEnabled: boolean
+  isRequired: boolean
+  sortOrder: string
+}
+
+type DraftParticipantRoleState = {
   isEnabled: boolean
   isRequired: boolean
   sortOrder: string
@@ -112,10 +144,14 @@ export default function RenoAppActionTypesAdminPage() {
   const [items, setItems] = useState<ActionTypeItem[]>([])
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeItem[]>([])
   const [questionItems, setQuestionItems] = useState<QuestionItem[]>([])
+  const [participantRoles, setParticipantRoles] = useState<ParticipantRoleItem[]>([])
   const [requirementDrafts, setRequirementDrafts] = useState<Record<string, DraftRequirementState>>(
     {}
   )
   const [questionDrafts, setQuestionDrafts] = useState<Record<string, DraftActionQuestionState>>({})
+  const [participantRoleDrafts, setParticipantRoleDrafts] = useState<
+    Record<string, DraftParticipantRoleState>
+  >({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -127,11 +163,13 @@ export default function RenoAppActionTypesAdminPage() {
   const [savingActionKey, setSavingActionKey] = useState<string | null>(null)
   const [savingRequirementKey, setSavingRequirementKey] = useState<string | null>(null)
   const [savingQuestionKey, setSavingQuestionKey] = useState<string | null>(null)
+  const [savingParticipantRoleKey, setSavingParticipantRoleKey] = useState<string | null>(null)
   const [deletingActionId, setDeletingActionId] = useState<string | null>(null)
   const [actionModalOpen, setActionModalOpen] = useState(false)
   const [actionDraft, setActionDraft] = useState<DraftActionType>(EMPTY_DRAFT)
   const [documentsActionId, setDocumentsActionId] = useState<string | null>(null)
   const [questionsActionId, setQuestionsActionId] = useState<string | null>(null)
+  const [participantRolesActionId, setParticipantRolesActionId] = useState<string | null>(null)
 
   const generatedActionKey =
     actionDraft.id && actionDraft.key ? actionDraft.key : slugifyActionTypeKey(actionDraft.label)
@@ -144,11 +182,13 @@ export default function RenoAppActionTypesAdminPage() {
       setError(null)
 
       try {
-        const [actionResponse, requirementResponse, questionResponse] = await Promise.all([
+        const [actionResponse, requirementResponse, questionResponse, participantRoleResponse] =
+          await Promise.all([
           fetch('/api/renoapp/admin/action-types', { cache: 'no-store' }),
           fetch('/api/renoapp/admin/requirements', { cache: 'no-store' }),
           fetch('/api/renoapp/admin/action-type-questions', { cache: 'no-store' }),
-        ])
+          fetch('/api/renoapp/admin/action-type-participants', { cache: 'no-store' }),
+          ])
 
         const actionPayload = (await actionResponse.json().catch(() => ({}))) as {
           items?: ActionTypeItem[]
@@ -164,6 +204,11 @@ export default function RenoAppActionTypesAdminPage() {
           actionTypes?: ActionTypeQuestionGroup[]
           error?: string
         }
+        const participantRolePayload = (await participantRoleResponse.json().catch(() => ({}))) as {
+          participantRoles?: ParticipantRoleItem[]
+          actionTypes?: ActionTypeParticipantRoleGroup[]
+          error?: string
+        }
 
         if (!actionResponse.ok) {
           throw new Error(actionPayload.error ?? 'Kunde inte lasa renoveringstyper.')
@@ -175,6 +220,9 @@ export default function RenoAppActionTypesAdminPage() {
 
         if (!questionResponse.ok) {
           throw new Error(questionPayload.error ?? 'Kunde inte lasa fragekopplingar.')
+        }
+        if (!participantRoleResponse.ok) {
+          throw new Error(participantRolePayload.error ?? 'Kunde inte lasa medverkandekopplingar.')
         }
 
         if (!active) return
@@ -188,11 +236,15 @@ export default function RenoAppActionTypesAdminPage() {
 
         const nextRequirementDrafts: Record<string, DraftRequirementState> = {}
         const nextQuestionDrafts: Record<string, DraftActionQuestionState> = {}
+        const nextParticipantRoleDrafts: Record<string, DraftParticipantRoleState> = {}
         for (const actionType of nextItems) {
           const group = (requirementPayload.actionTypes ?? []).find(
             (candidate) => candidate.actionType.id === actionType.id
           )
           const questionGroup = (questionPayload.actionTypes ?? []).find(
+            (candidate) => candidate.actionType.id === actionType.id
+          )
+          const participantRoleGroup = (participantRolePayload.actionTypes ?? []).find(
             (candidate) => candidate.actionType.id === actionType.id
           )
           for (const documentType of nextDocumentTypes) {
@@ -214,17 +266,32 @@ export default function RenoAppActionTypesAdminPage() {
               sortOrder: String(link?.sortOrder ?? question.sortOrder ?? 100),
             }
           }
+          for (const participantRole of participantRolePayload.participantRoles ?? []) {
+            const link = participantRoleGroup?.participantRoles.find(
+              (item) => item.participantRoleId === participantRole.id
+            )
+            nextParticipantRoleDrafts[`${actionType.id}:${participantRole.id}`] = {
+              isEnabled: Boolean(link),
+              isRequired: link?.isRequired ?? true,
+              sortOrder: String(link?.sortOrder ?? participantRole.sortOrder ?? 100),
+            }
+          }
         }
 
         setItems(nextItems)
         setDocumentTypes(nextDocumentTypes)
         setQuestionItems(questionPayload.questions ?? [])
+        setParticipantRoles(participantRolePayload.participantRoles ?? [])
         setRequirementDrafts(nextRequirementDrafts)
         setQuestionDrafts(nextQuestionDrafts)
+        setParticipantRoleDrafts(nextParticipantRoleDrafts)
         setDocumentsActionId((current) =>
           current && nextItems.some((item) => item.id === current) ? current : null
         )
         setQuestionsActionId((current) =>
+          current && nextItems.some((item) => item.id === current) ? current : null
+        )
+        setParticipantRolesActionId((current) =>
           current && nextItems.some((item) => item.id === current) ? current : null
         )
       } catch (loadError) {
@@ -273,6 +340,9 @@ export default function RenoAppActionTypesAdminPage() {
   const questionsAction = questionsActionId
     ? items.find((item) => item.id === questionsActionId) ?? null
     : null
+  const participantRolesAction = participantRolesActionId
+    ? items.find((item) => item.id === participantRolesActionId) ?? null
+    : null
 
   const documentsChips = useMemo(() => {
     if (!documentsActionId) return []
@@ -287,6 +357,19 @@ export default function RenoAppActionTypesAdminPage() {
       (question) => questionDrafts[`${questionsActionId}:${question.id}`]?.isEnabled
     )
   }, [activeQuestions, questionDrafts, questionsActionId])
+
+  const activeParticipantRoles = useMemo(
+    () => participantRoles.filter((participantRole) => participantRole.isActive),
+    [participantRoles]
+  )
+
+  const participantRoleChips = useMemo(() => {
+    if (!participantRolesActionId) return []
+    return activeParticipantRoles.filter(
+      (participantRole) =>
+        participantRoleDrafts[`${participantRolesActionId}:${participantRole.id}`]?.isEnabled
+    )
+  }, [activeParticipantRoles, participantRoleDrafts, participantRolesActionId])
 
   const getRequirementDraft = (actionTypeId: string, documentTypeId: string) =>
     requirementDrafts[`${actionTypeId}:${documentTypeId}`]
@@ -446,6 +529,20 @@ export default function RenoAppActionTypesAdminPage() {
         }
         return next
       })
+      setParticipantRoleDrafts((current) => {
+        const next = { ...current }
+        for (const participantRole of activeParticipantRoles) {
+          const key = `${savedItem.id}:${participantRole.id}`
+          if (!next[key]) {
+            next[key] = {
+              isEnabled: false,
+              isRequired: true,
+              sortOrder: String(participantRole.sortOrder ?? 100),
+            }
+          }
+        }
+        return next
+      })
       setActionModalOpen(false)
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara renoveringstyp.')
@@ -478,6 +575,22 @@ export default function RenoAppActionTypesAdminPage() {
   ) => {
     const key = `${actionTypeId}:${questionId}`
     setQuestionDrafts((current) => ({
+      ...current,
+      [key]: {
+        ...current[key],
+        [field]: value,
+      },
+    }))
+  }
+
+  const updateParticipantRoleDraft = (
+    actionTypeId: string,
+    participantRoleId: string,
+    field: keyof DraftParticipantRoleState,
+    value: string | boolean
+  ) => {
+    const key = `${actionTypeId}:${participantRoleId}`
+    setParticipantRoleDrafts((current) => ({
       ...current,
       [key]: {
         ...current[key],
@@ -551,6 +664,40 @@ export default function RenoAppActionTypesAdminPage() {
     }
   }
 
+  const saveActionParticipantRole = async (actionTypeId: string, participantRoleId: string) => {
+    const key = `${actionTypeId}:${participantRoleId}`
+    const draft = participantRoleDrafts[key]
+    if (!draft) return
+
+    setSavingParticipantRoleKey(key)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/renoapp/admin/action-type-participants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actionTypeId,
+          participantRoleId,
+          isEnabled: draft.isEnabled,
+          isRequired: draft.isRequired,
+          sortOrder: Number(draft.sortOrder || '100'),
+        }),
+      })
+
+      const payload = (await response.json().catch(() => ({}))) as { error?: string }
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Kunde inte spara medverkandekoppling.')
+      }
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error ? saveError.message : 'Kunde inte spara medverkandekoppling.'
+      )
+    } finally {
+      setSavingParticipantRoleKey(null)
+    }
+  }
+
   const deleteActionType = async (item: ActionTypeItem) => {
     if (!window.confirm(`Radera renoveringstypen "${item.label}"?`)) return
 
@@ -580,8 +727,14 @@ export default function RenoAppActionTypesAdminPage() {
           Object.entries(current).filter(([key]) => !key.startsWith(`${item.id}:`))
         )
       )
+      setParticipantRoleDrafts((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([key]) => !key.startsWith(`${item.id}:`))
+        )
+      )
       setDocumentsActionId((current) => (current === item.id ? null : current))
       setQuestionsActionId((current) => (current === item.id ? null : current))
+      setParticipantRolesActionId((current) => (current === item.id ? null : current))
     } catch (deleteError) {
       setError(
         deleteError instanceof Error ? deleteError.message : 'Kunde inte radera renoveringstyp.'
@@ -680,6 +833,7 @@ export default function RenoAppActionTypesAdminPage() {
                 {sortedItems.map((item) => {
                   const documentsOpen = documentsActionId === item.id
                   const questionsOpen = questionsActionId === item.id
+                  const participantRolesOpen = participantRolesActionId === item.id
                   const requirementCount = requirementCountByActionId[item.id] ?? 0
                   const questionCount = questionCountByActionId[item.id] ?? 0
                   return (
@@ -726,6 +880,19 @@ export default function RenoAppActionTypesAdminPage() {
                             }`}
                           >
                             Underlag
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setParticipantRolesActionId((current) => (current === item.id ? null : item.id))
+                            }
+                            className={`w-full rounded-md border ${
+                              participantRolesOpen
+                                ? 'border-violet-300 bg-violet-100 text-violet-900'
+                                : 'border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100'
+                            }`}
+                          >
+                            Medverkande
                           </button>
                           <button
                             type="button"
@@ -907,6 +1074,149 @@ export default function RenoAppActionTypesAdminPage() {
                             className="rounded-xl border border-stone-300 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-stone-100 disabled:opacity-60"
                           >
                             {savingRequirementKey === draftKey ? 'Sparar...' : 'Spara'}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {participantRolesAction ? (
+        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-auto bg-black/40 p-4">
+          <div className="w-full max-w-6xl rounded-[28px] border border-stone-200 bg-white p-6 shadow-xl">
+            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h3 className="text-2xl font-semibold text-stone-900">
+                  Medverkande för {participantRolesAction.label}
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-stone-600">
+                  Styr vilka entreprenörer och konsulter som normalt krävs för den här renoveringstypen.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="text-sm text-stone-600">
+                  {participantRoleChips.length} aktiva medverkandetyper
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setParticipantRolesActionId(null)}
+                  className="rounded-xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                >
+                  StÃ¤ng
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {participantRoleChips.length > 0 ? (
+                participantRoleChips.map((participantRole) => {
+                  const draft =
+                    participantRoleDrafts[`${participantRolesAction.id}:${participantRole.id}`]
+                  return (
+                    <span
+                      key={participantRole.id}
+                      className="rounded-full border border-stone-300 bg-stone-100 px-3 py-1.5 text-xs font-semibold text-stone-800"
+                    >
+                      {participantRole.label}
+                      {draft?.isRequired ? ' • obligatorisk' : ''}
+                    </span>
+                  )
+                })
+              ) : (
+                <span className="rounded-full border border-dashed border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-semibold text-stone-500">
+                  Inga medverkande valda än
+                </span>
+              )}
+            </div>
+
+            <div className="mt-5 overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-stone-500">
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Medverkande</th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Aktiv</th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Obligatorisk</th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Sortering</th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Åtgärd</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeParticipantRoles.map((participantRole) => {
+                    const draftKey = `${participantRolesAction.id}:${participantRole.id}`
+                    const draft = participantRoleDrafts[draftKey]
+                    if (!draft) return null
+
+                    return (
+                      <tr key={draftKey} className="border-t border-stone-200">
+                        <td className="px-3 py-4 align-top">
+                          <div className="font-medium text-stone-900">{participantRole.label}</div>
+                          <div className="mt-1 text-xs text-stone-600">
+                            {participantRole.roleKind === 'consultant' ? 'Konsult' : 'Entreprenör'}
+                            {participantRole.description ? ` • ${participantRole.description}` : ''}
+                          </div>
+                        </td>
+                        <td className="px-3 py-4 align-top">
+                          <input
+                            type="checkbox"
+                            checked={draft.isEnabled}
+                            onChange={(event) =>
+                              updateParticipantRoleDraft(
+                                participantRolesAction.id,
+                                participantRole.id,
+                                'isEnabled',
+                                event.target.checked
+                              )
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-4 align-top">
+                          <select
+                            value={draft.isRequired ? 'required' : 'optional'}
+                            onChange={(event) =>
+                              updateParticipantRoleDraft(
+                                participantRolesAction.id,
+                                participantRole.id,
+                                'isRequired',
+                                event.target.value === 'required'
+                              )
+                            }
+                            disabled={!draft.isEnabled}
+                            className="rounded-xl border border-stone-300 px-3 py-2 text-sm disabled:bg-stone-100"
+                          >
+                            <option value="required">Ja</option>
+                            <option value="optional">Nej</option>
+                          </select>
+                        </td>
+                        <td className="px-3 py-4 align-top">
+                          <input
+                            value={draft.sortOrder}
+                            onChange={(event) =>
+                              updateParticipantRoleDraft(
+                                participantRolesAction.id,
+                                participantRole.id,
+                                'sortOrder',
+                                event.target.value
+                              )
+                            }
+                            disabled={!draft.isEnabled}
+                            className="w-28 rounded-xl border border-stone-300 px-3 py-2 text-sm disabled:bg-stone-100"
+                          />
+                        </td>
+                        <td className="px-3 py-4 align-top">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void saveActionParticipantRole(participantRolesAction.id, participantRole.id)
+                            }
+                            disabled={savingParticipantRoleKey === draftKey}
+                            className="rounded-xl border border-stone-300 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-stone-100 disabled:opacity-60"
+                          >
+                            {savingParticipantRoleKey === draftKey ? 'Sparar...' : 'Spara'}
                           </button>
                         </td>
                       </tr>

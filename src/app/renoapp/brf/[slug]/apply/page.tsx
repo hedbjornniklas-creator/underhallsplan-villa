@@ -23,6 +23,22 @@ type ActionCategory = {
   sortOrder: number
 }
 
+type ParticipantRole = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  roleKind: 'contractor' | 'consultant'
+  requiresCompanyName: boolean
+  requiresOrgNumber: boolean
+  requiresContactName: boolean
+  requiresEmail: boolean
+  requiresPhone: boolean
+  requiresCertification: boolean
+  isRequired: boolean
+  sortOrder: number
+}
+
 type ActionType = {
   id: string
   category?: ActionCategory
@@ -39,6 +55,7 @@ type ActionType = {
     | 'structural_engineer'
   sortOrder: number
   requirements: Requirement[]
+  participantRoles: ParticipantRole[]
   questions: ApplyQuestion[]
 }
 
@@ -53,13 +70,15 @@ type ApplyQuestionOption = {
 
 type ApplyQuestionOptionTrigger = {
   id: string
-  triggerType: 'question' | 'document'
+  triggerType: 'question' | 'document' | 'participant_role'
   questionId: string | null
   documentTypeId: string | null
   documentKey: string | null
   documentLabel: string | null
   documentDescription: string | null
   documentPhase: 'before_required' | 'during_execution' | 'after_completion' | null
+  participantRoleId: string | null
+  participantRole: ParticipantRole | null
   sortOrder: number
 }
 
@@ -393,6 +412,68 @@ function resolveTriggeredRequirements(
   return Array.from(merged.values()).sort((left, right) => left.sortOrder - right.sortOrder)
 }
 
+function mergeParticipantRoles(actions: ActionType[]) {
+  const merged = new Map<string, ParticipantRole>()
+
+  for (const action of actions) {
+    for (const participantRole of action.participantRoles ?? []) {
+      const current = merged.get(participantRole.id)
+      if (!current) {
+        merged.set(participantRole.id, participantRole)
+        continue
+      }
+
+      merged.set(participantRole.id, {
+        ...current,
+        isRequired: current.isRequired || participantRole.isRequired,
+        sortOrder: Math.min(current.sortOrder, participantRole.sortOrder),
+      })
+    }
+  }
+
+  return Array.from(merged.values()).sort((left, right) => left.sortOrder - right.sortOrder)
+}
+
+function resolveTriggeredParticipantRoles(
+  baseParticipantRoles: ParticipantRole[],
+  visibleQuestions: ApplyQuestion[],
+  questionAnswers: Record<string, string[]>
+) {
+  const merged = new Map(baseParticipantRoles.map((participantRole) => [participantRole.id, participantRole]))
+
+  for (const question of visibleQuestions) {
+    const selectedOptionKeys = questionAnswers[question.key] ?? []
+    if (selectedOptionKeys.length === 0) continue
+
+    for (const option of question.options) {
+      if (!selectedOptionKeys.includes(option.key)) continue
+
+      for (const trigger of option.triggers) {
+        if (trigger.triggerType !== 'participant_role' || !trigger.participantRole) continue
+
+        const current = merged.get(trigger.participantRole.id)
+        const candidate = {
+          ...trigger.participantRole,
+          isRequired: trigger.participantRole.isRequired !== false,
+        }
+
+        if (!current) {
+          merged.set(candidate.id, candidate)
+          continue
+        }
+
+        merged.set(candidate.id, {
+          ...current,
+          isRequired: current.isRequired || candidate.isRequired,
+          sortOrder: Math.min(current.sortOrder, candidate.sortOrder),
+        })
+      }
+    }
+  }
+
+  return Array.from(merged.values()).sort((left, right) => left.sortOrder - right.sortOrder)
+}
+
 function groupActionsByCategory(actions: ActionType[]) {
   const grouped = new Map<string, { category: ActionCategory; actions: ActionType[] }>()
 
@@ -438,6 +519,40 @@ function getContractorRequirementText(requirement?: ActionType['contractorRequir
   if (requirement === 'structural_engineer') return 'Kräver konstruktör eller särskilt sakkunnig.'
   if (requirement === 'qualified_contractor') return 'Kräver kvalificerad entreprenör.'
   return null
+}
+
+function describeParticipantInfoRequirements(participantRole: ParticipantRole) {
+  return [
+    participantRole.requiresCompanyName ? 'företagsnamn' : null,
+    participantRole.requiresOrgNumber ? 'organisationsnummer' : null,
+    participantRole.requiresContactName ? 'kontaktperson' : null,
+    participantRole.requiresEmail ? 'e-post' : null,
+    participantRole.requiresPhone ? 'telefon' : null,
+    participantRole.requiresCertification ? 'behörighet/intyg' : null,
+  ]
+    .filter(Boolean)
+    .join(', ')
+}
+
+function renderParticipantRoleList(items: ParticipantRole[]) {
+  return (
+    <ul className="space-y-2">
+      {items.map((participantRole) => (
+        <li key={participantRole.id} className="rounded-2xl border border-stone-200 bg-white px-4 py-3">
+          <p className="font-medium text-stone-900">
+            {participantRole.label} {participantRole.isRequired ? '(obligatorisk)' : '(vid behov)'}
+          </p>
+          {participantRole.description ? <p className="mt-1">{participantRole.description}</p> : null}
+          <p className="mt-1 text-stone-500">
+            {participantRole.roleKind === 'consultant' ? 'Konsult' : 'Entreprenör'}
+            {describeParticipantInfoRequirements(participantRole)
+              ? ` • Uppgifter: ${describeParticipantInfoRequirements(participantRole)}`
+              : ''}
+          </p>
+        </li>
+      ))}
+    </ul>
+  )
 }
 
 
@@ -598,6 +713,7 @@ export default function RenoAppApplyPage() {
 
   const baseRequirements = useMemo(() => mergeRequirements(selectedActions), [selectedActions])
   const baseQuestions = useMemo(() => mergeQuestions(selectedActions), [selectedActions])
+  const baseParticipantRoles = useMemo(() => mergeParticipantRoles(selectedActions), [selectedActions])
   const visibleQuestions = useMemo(
     () => resolveVisibleQuestions(baseQuestions, config?.questionBank ?? [], form.questionAnswers),
     [baseQuestions, config?.questionBank, form.questionAnswers]
@@ -605,6 +721,10 @@ export default function RenoAppApplyPage() {
   const mergedRequirements = useMemo(
     () => resolveTriggeredRequirements(baseRequirements, visibleQuestions, form.questionAnswers),
     [baseRequirements, form.questionAnswers, visibleQuestions]
+  )
+  const mergedParticipantRoles = useMemo(
+    () => resolveTriggeredParticipantRoles(baseParticipantRoles, visibleQuestions, form.questionAnswers),
+    [baseParticipantRoles, form.questionAnswers, visibleQuestions]
   )
   const actionGroups = useMemo(() => groupActionsByCategory(config?.actionTypes ?? []), [config?.actionTypes])
   const requirementGroups = useMemo(() => groupRequirementsByPhase(mergedRequirements), [mergedRequirements])
@@ -635,7 +755,9 @@ export default function RenoAppApplyPage() {
           ? `${form.contractorName ? `Entreprenör: ${form.contractorName}. ` : ''}${
               form.contractorHasRequiredCertification ? 'Behörighet bekräftad.' : 'Behörighet inte bekräftad ännu.'
             }`
-          : 'Projektbeskrivning och entreprenör saknas ännu.',
+          : mergedParticipantRoles.length > 0
+            ? `${mergedParticipantRoles.length} medverkande behöver planeras.`
+            : 'Projektbeskrivning och entreprenör saknas ännu.',
       4:
         form.applicantName || form.applicantEmail
           ? `${form.applicantName || 'Ingen sökande angiven'}${form.applicantEmail ? `, ${form.applicantEmail}` : ''}`
@@ -651,6 +773,7 @@ export default function RenoAppApplyPage() {
       form.contractorHasRequiredCertification,
       form.contractorName,
       form.description,
+      mergedParticipantRoles.length,
       mergedRequirements.length,
       requirementGroups.beforeRequired.length,
       selectedActions,
@@ -984,6 +1107,18 @@ export default function RenoAppApplyPage() {
     if (stepId === 3) {
       return (
         <div className="grid gap-4">
+          {mergedParticipantRoles.length > 0 ? (
+            <div className="rounded-3xl border border-stone-200 bg-white p-5">
+              <p className="text-sm font-semibold text-stone-900">Medverkande som behövs</p>
+              <p className="mt-2 text-sm leading-7 text-stone-700">
+                Utifrån valda renoveringstyper och dina svar behöver följande entreprenörer eller konsulter normalt finnas med i projektet.
+              </p>
+              <div className="mt-4 text-sm text-stone-700">
+                {renderParticipantRoleList(mergedParticipantRoles)}
+              </div>
+            </div>
+          ) : null}
+
           <div className="rounded-3xl border border-stone-200 bg-white p-5">
             <label className="block text-sm font-semibold text-stone-900" htmlFor="description">
               Beskriv projektet
@@ -1199,6 +1334,12 @@ export default function RenoAppApplyPage() {
               <p className="mt-3 text-sm text-stone-700">Välj renoveringstyper för att se vilket underlag som behövs.</p>
             ) : (
               <div className="mt-3 space-y-4 text-sm text-stone-700">
+                {mergedParticipantRoles.length > 0 ? (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Medverkande som kan behövas</p>
+                    {renderParticipantRoleList(mergedParticipantRoles)}
+                  </div>
+                ) : null}
                 {requirementGroups.beforeRequired.length > 0 ? (
                   <div>
                     <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Krävs före ansökan</p>

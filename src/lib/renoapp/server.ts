@@ -77,6 +77,22 @@ type DocumentTypeRow = {
   is_active: boolean
 }
 
+type ParticipantRoleRow = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  role_kind: 'contractor' | 'consultant'
+  requires_company_name: boolean
+  requires_org_number: boolean
+  requires_contact_name: boolean
+  requires_email: boolean
+  requires_phone: boolean
+  requires_certification: boolean
+  sort_order: number
+  is_active: boolean
+}
+
 type ApplyQuestionRow = {
   id: string
   key: string
@@ -103,9 +119,10 @@ type ApplyQuestionOptionRow = {
 type ApplyOptionTriggerRow = {
   id: string
   option_id: string
-  trigger_type: 'question' | 'document'
+  trigger_type: 'question' | 'document' | 'participant_role'
   question_id: string | null
   document_type_id: string | null
+  participant_role_id: string | null
   sort_order: number
   is_active: boolean
 }
@@ -116,6 +133,15 @@ type ActionTypeQuestionRow = {
   question_id: string
   sort_order: number
   is_required: boolean
+  is_active: boolean
+}
+
+type ActionTypeParticipantRoleRow = {
+  id: string
+  action_type_id: string
+  participant_role_id: string
+  is_required: boolean
+  sort_order: number
   is_active: boolean
 }
 
@@ -574,6 +600,22 @@ type PublicRequirement = {
   sortOrder: number
 }
 
+export type PublicParticipantRole = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  roleKind: 'contractor' | 'consultant'
+  requiresCompanyName: boolean
+  requiresOrgNumber: boolean
+  requiresContactName: boolean
+  requiresEmail: boolean
+  requiresPhone: boolean
+  requiresCertification: boolean
+  isRequired: boolean
+  sortOrder: number
+}
+
 type PublicActionCategory = {
   id: string
   slug: string
@@ -598,6 +640,7 @@ type PublicActionType = {
     | 'structural_engineer'
   sortOrder: number
   requirements: PublicRequirement[]
+  participantRoles: PublicParticipantRole[]
   questions: PublicApplyQuestion[]
 }
 
@@ -612,13 +655,15 @@ export type PublicApplyQuestionOption = {
 
 export type PublicApplyQuestionOptionTrigger = {
   id: string
-  triggerType: 'question' | 'document'
+  triggerType: 'question' | 'document' | 'participant_role'
   questionId: string | null
   documentTypeId: string | null
   documentKey: string | null
   documentLabel: string | null
   documentDescription: string | null
   documentPhase: 'before_required' | 'during_execution' | 'after_completion' | null
+  participantRoleId: string | null
+  participantRole: PublicParticipantRole | null
   sortOrder: number
 }
 
@@ -777,6 +822,22 @@ export type RenoAppAdminDocumentType = {
   isActive: boolean
 }
 
+export type RenoAppAdminParticipantRole = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  roleKind: 'contractor' | 'consultant'
+  requiresCompanyName: boolean
+  requiresOrgNumber: boolean
+  requiresContactName: boolean
+  requiresEmail: boolean
+  requiresPhone: boolean
+  requiresCertification: boolean
+  sortOrder: number
+  isActive: boolean
+}
+
 export type RenoAppAdminQuestionOption = {
   id: string
   key: string
@@ -790,11 +851,13 @@ export type RenoAppAdminQuestionOption = {
 
 export type RenoAppAdminQuestionOptionTrigger = {
   id: string
-  triggerType: 'question' | 'document'
+  triggerType: 'question' | 'document' | 'participant_role'
   questionId: string | null
   questionLabel: string | null
   documentTypeId: string | null
   documentTypeLabel: string | null
+  participantRoleId: string | null
+  participantRoleLabel: string | null
   sortOrder: number
   isActive: boolean
 }
@@ -810,6 +873,22 @@ export type RenoAppAdminQuestion = {
   isActive: boolean
   metadata: unknown
   options: RenoAppAdminQuestionOption[]
+}
+
+export type RenoAppAdminActionTypeParticipantRole = {
+  id: string
+  participantRoleId: string
+  participantRoleKey: string
+  participantRoleLabel: string
+  participantRoleDescription: string | null
+  roleKind: 'contractor' | 'consultant'
+  isRequired: boolean
+  sortOrder: number
+}
+
+export type RenoAppAdminActionTypeParticipantRoleGroup = {
+  actionType: RenoAppAdminActionType
+  participantRoles: RenoAppAdminActionTypeParticipantRole[]
 }
 
 export type RenoAppAdminActionTypeQuestion = {
@@ -1342,6 +1421,61 @@ async function listActiveDocumentTypes(admin: SupabaseAdminClient) {
   return (data ?? []) as DocumentTypeRow[]
 }
 
+async function listActiveParticipantRoles(admin: SupabaseAdminClient) {
+  const { data, error } = await admin
+    .from('renoapp_participant_roles')
+    .select(
+      'id,key,label,description,role_kind,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
+    )
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta medverkandetyper.')
+  }
+
+  return (data ?? []) as ParticipantRoleRow[]
+}
+
+function mapParticipantRoleToPublic(
+  row: ParticipantRoleRow,
+  overrides?: Partial<Pick<PublicParticipantRole, 'isRequired' | 'sortOrder'>>
+): PublicParticipantRole {
+  return {
+    id: row.id,
+    key: row.key,
+    label: row.label,
+    description: row.description ?? null,
+    roleKind: row.role_kind,
+    requiresCompanyName: row.requires_company_name,
+    requiresOrgNumber: row.requires_org_number,
+    requiresContactName: row.requires_contact_name,
+    requiresEmail: row.requires_email,
+    requiresPhone: row.requires_phone,
+    requiresCertification: row.requires_certification,
+    isRequired: overrides?.isRequired ?? true,
+    sortOrder: overrides?.sortOrder ?? row.sort_order,
+  }
+}
+
+function mapParticipantRoleToAdmin(row: ParticipantRoleRow): RenoAppAdminParticipantRole {
+  return {
+    id: row.id,
+    key: row.key,
+    label: row.label,
+    description: row.description ?? null,
+    roleKind: row.role_kind,
+    requiresCompanyName: row.requires_company_name,
+    requiresOrgNumber: row.requires_org_number,
+    requiresContactName: row.requires_contact_name,
+    requiresEmail: row.requires_email,
+    requiresPhone: row.requires_phone,
+    requiresCertification: row.requires_certification,
+    sortOrder: row.sort_order,
+    isActive: row.is_active,
+  }
+}
+
 async function listRequirements(admin: SupabaseAdminClient, brfId: string) {
   const globalQuery = await admin
     .from('renovation_action_document_requirements')
@@ -1385,7 +1519,7 @@ async function listActiveApplyQuestions(admin: SupabaseAdminClient) {
       .order('sort_order', { ascending: true }),
     admin
       .from('renoapp_apply_option_triggers')
-      .select('id,option_id,trigger_type,question_id,document_type_id,sort_order,is_active')
+      .select('id,option_id,trigger_type,question_id,document_type_id,participant_role_id,sort_order,is_active')
       .eq('is_active', true)
       .order('sort_order', { ascending: true }),
   ])
@@ -1408,6 +1542,8 @@ function buildPublicActionTypes(
   actionTypes: ActionTypeRow[],
   documentTypes: DocumentTypeRow[],
   requirements: RequirementRow[],
+  participantRoles: ParticipantRoleRow[] = [],
+  actionTypeParticipantRoles: ActionTypeParticipantRoleRow[] = [],
   questionRows: ApplyQuestionRow[] = [],
   optionRows: ApplyQuestionOptionRow[] = [],
   questionLinks: ActionTypeQuestionRow[] = [],
@@ -1415,6 +1551,7 @@ function buildPublicActionTypes(
 ): PublicActionType[] {
   const categoryById = new Map(categories.map((item) => [item.id, item]))
   const documentById = new Map(documentTypes.map((item) => [item.id, item]))
+  const participantRoleById = new Map(participantRoles.map((item) => [item.id, item]))
   const requirementMap = new Map<string, RequirementRow>()
   const questionById = new Map(questionRows.map((item) => [item.id, item]))
 
@@ -1459,6 +1596,18 @@ function buildPublicActionTypes(
         }
       })
       .sort((left, right) => left.sortOrder - right.sortOrder),
+    participantRoles: actionTypeParticipantRoles
+      .filter((link) => link.action_type_id === actionType.id && link.is_active)
+      .map((link) => {
+        const participantRole = participantRoleById.get(link.participant_role_id)
+        if (!participantRole) return null
+        return mapParticipantRoleToPublic(participantRole, {
+          isRequired: link.is_required,
+          sortOrder: link.sort_order,
+        })
+      })
+      .filter((item): item is PublicParticipantRole => Boolean(item))
+      .sort((left, right) => left.sortOrder - right.sortOrder),
     questions: questionLinks
       .filter((link) => link.action_type_id === actionType.id)
       .map((link) => {
@@ -1487,6 +1636,9 @@ function buildPublicActionTypes(
                   const documentType = trigger.document_type_id
                     ? documentById.get(trigger.document_type_id)
                     : null
+                  const participantRole = trigger.participant_role_id
+                    ? participantRoleById.get(trigger.participant_role_id)
+                    : null
 
                   return {
                     id: trigger.id,
@@ -1497,6 +1649,10 @@ function buildPublicActionTypes(
                     documentLabel: documentType?.label ?? null,
                     documentDescription: documentType?.description ?? null,
                     documentPhase: documentType?.default_phase ?? null,
+                    participantRoleId: trigger.participant_role_id ?? null,
+                    participantRole: participantRole
+                      ? mapParticipantRoleToPublic(participantRole)
+                      : null,
                     sortOrder: trigger.sort_order,
                   } satisfies PublicApplyQuestionOptionTrigger
                 })
@@ -1514,9 +1670,11 @@ function buildPublicQuestionBank(
   questionRows: ApplyQuestionRow[],
   optionRows: ApplyQuestionOptionRow[],
   documentTypes: DocumentTypeRow[],
+  participantRoles: ParticipantRoleRow[],
   triggerRows: ApplyOptionTriggerRow[]
 ): PublicApplyQuestion[] {
   const documentById = new Map(documentTypes.map((item) => [item.id, item]))
+  const participantRoleById = new Map(participantRoles.map((item) => [item.id, item]))
 
   return questionRows
     .map((question) => ({
@@ -1541,6 +1699,9 @@ function buildPublicQuestionBank(
               const documentType = trigger.document_type_id
                 ? documentById.get(trigger.document_type_id)
                 : null
+              const participantRole = trigger.participant_role_id
+                ? participantRoleById.get(trigger.participant_role_id)
+                : null
 
               return {
                 id: trigger.id,
@@ -1551,6 +1712,8 @@ function buildPublicQuestionBank(
                 documentLabel: documentType?.label ?? null,
                 documentDescription: documentType?.description ?? null,
                 documentPhase: documentType?.default_phase ?? null,
+                participantRoleId: trigger.participant_role_id ?? null,
+                participantRole: participantRole ? mapParticipantRoleToPublic(participantRole) : null,
                 sortOrder: trigger.sort_order,
               } satisfies PublicApplyQuestionOptionTrigger
             })
@@ -1614,6 +1777,8 @@ function resolveApplicableQuestionsForSelection(params: {
               documentLabel: null,
               documentDescription: null,
               documentPhase: null,
+              participantRoleId: triggerRow.participant_role_id ?? null,
+              participantRole: null,
               sortOrder: triggerRow.sort_order,
             }))
             .sort((left, right) => left.sortOrder - right.sortOrder),
@@ -1732,19 +1897,32 @@ export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPubli
     return null
   }
 
-  const [categories, actionTypes, documentTypes, requirements, questionConfig] = await Promise.all([
+  const [categories, actionTypes, documentTypes, requirements, questionConfig, participantRoles, participantRoleConfig] =
+    await Promise.all([
     listActiveActionCategories(admin),
     listActiveActionTypes(admin),
     listActiveDocumentTypes(admin),
     listRequirements(admin, brf.id),
     listActiveApplyQuestions(admin),
-  ])
+    listActiveParticipantRoles(admin),
+    admin
+      .from('renoapp_action_type_participant_roles')
+      .select('id,action_type_id,participant_role_id,is_required,sort_order,is_active')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true }),
+    ])
+
+  if (participantRoleConfig.error) {
+    throw new Error(participantRoleConfig.error.message ?? 'Kunde inte läsa medverkandekopplingar.')
+  }
 
   const publicActionTypes = buildPublicActionTypes(
     categories,
     actionTypes,
     documentTypes,
     requirements,
+    participantRoles,
+    (participantRoleConfig.data ?? []) as ActionTypeParticipantRoleRow[],
     questionConfig.questions,
     questionConfig.options,
     questionConfig.links,
@@ -1763,6 +1941,7 @@ export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPubli
       questionConfig.questions,
       questionConfig.options,
       documentTypes,
+      participantRoles,
       questionConfig.triggers
     ),
   }
@@ -2315,13 +2494,24 @@ export async function getRenoAppPublicGuideConfig(slug: string): Promise<RenoApp
     return null
   }
 
-  const [categories, actionTypes, documentTypes, requirements, questionConfig] = await Promise.all([
+  const [categories, actionTypes, documentTypes, requirements, questionConfig, participantRoles, participantRoleConfig] =
+    await Promise.all([
     listActiveActionCategories(admin),
     listActiveActionTypes(admin),
     listActiveDocumentTypes(admin),
     listRequirements(admin, brf.id),
     listActiveApplyQuestions(admin),
-  ])
+    listActiveParticipantRoles(admin),
+    admin
+      .from('renoapp_action_type_participant_roles')
+      .select('id,action_type_id,participant_role_id,is_required,sort_order,is_active')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true }),
+    ])
+
+  if (participantRoleConfig.error) {
+    throw new Error(participantRoleConfig.error.message ?? 'Kunde inte läsa medverkandekopplingar.')
+  }
 
   return {
     brf: {
@@ -2335,6 +2525,8 @@ export async function getRenoAppPublicGuideConfig(slug: string): Promise<RenoApp
       actionTypes,
       documentTypes,
       requirements,
+      participantRoles,
+      (participantRoleConfig.data ?? []) as ActionTypeParticipantRoleRow[],
       questionConfig.questions,
       questionConfig.options,
       questionConfig.links,
@@ -2344,6 +2536,7 @@ export async function getRenoAppPublicGuideConfig(slug: string): Promise<RenoApp
       questionConfig.questions,
       questionConfig.options,
       documentTypes,
+      participantRoles,
       questionConfig.triggers
     ),
   }
@@ -4036,11 +4229,208 @@ export async function deleteRenoAppAdminDocumentType(id: string): Promise<void> 
   }
 }
 
+export async function listRenoAppAdminParticipantRoles(): Promise<RenoAppAdminParticipantRole[]> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const rows = await listActiveParticipantRoles(admin)
+  return rows.map(mapParticipantRoleToAdmin)
+}
+
+export async function saveRenoAppAdminParticipantRole(input: {
+  id?: string | null
+  key: string
+  label: string
+  description?: string | null
+  roleKind?: 'contractor' | 'consultant' | null
+  requiresCompanyName?: boolean
+  requiresOrgNumber?: boolean
+  requiresContactName?: boolean
+  requiresEmail?: boolean
+  requiresPhone?: boolean
+  requiresCertification?: boolean
+  sortOrder?: number | null
+  isActive?: boolean
+}): Promise<RenoAppAdminParticipantRole> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const label = normalizeText(input.label)
+  const key = normalizeMachineKey(label) ?? null
+  const description = normalizeText(input.description)
+  const roleKind = input.roleKind === 'consultant' ? 'consultant' : 'contractor'
+  const sortOrder = Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0 ? Number(input.sortOrder) : 100
+  const payload = {
+    key,
+    label,
+    description,
+    role_kind: roleKind,
+    requires_company_name: input.requiresCompanyName !== false,
+    requires_org_number: input.requiresOrgNumber === true,
+    requires_contact_name: input.requiresContactName === true,
+    requires_email: input.requiresEmail === true,
+    requires_phone: input.requiresPhone === true,
+    requires_certification: input.requiresCertification === true,
+    sort_order: sortOrder,
+    is_active: input.isActive !== false,
+  }
+
+  assertRequiredText(key, 'PARTICIPANT_ROLE_KEY_REQUIRED')
+  assertRequiredText(label, 'PARTICIPANT_ROLE_LABEL_REQUIRED')
+
+  const query = input.id
+    ? admin.from('renoapp_participant_roles').update(payload).eq('id', input.id)
+    : admin.from('renoapp_participant_roles').insert(payload)
+
+  const { data, error } = await query
+    .select(
+      'id,key,label,description,role_kind,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
+    )
+    .single()
+
+  if (error || !data) {
+    throw new Error(error?.message ?? 'Kunde inte spara medverkandetyp.')
+  }
+
+  return mapParticipantRoleToAdmin(data as ParticipantRoleRow)
+}
+
+export async function deleteRenoAppAdminParticipantRole(id: string): Promise<void> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const { error } = await admin.from('renoapp_participant_roles').delete().eq('id', id)
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte radera medverkandetyp.')
+  }
+}
+
+export async function listRenoAppAdminParticipantRoleConfig(): Promise<{
+  participantRoles: RenoAppAdminParticipantRole[]
+  actionTypes: RenoAppAdminActionTypeParticipantRoleGroup[]
+}> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const [actionTypeRows, participantRoleRows, linkRows] = await Promise.all([
+    admin
+      .from('renovation_action_types')
+      .select('id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active')
+      .order('sort_order', { ascending: true }),
+    admin
+      .from('renoapp_participant_roles')
+      .select(
+        'id,key,label,description,role_kind,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
+      )
+      .order('sort_order', { ascending: true }),
+    admin
+      .from('renoapp_action_type_participant_roles')
+      .select('id,action_type_id,participant_role_id,is_required,sort_order,is_active')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true }),
+  ])
+
+  if (actionTypeRows.error) throw new Error(actionTypeRows.error.message ?? 'Kunde inte läsa renoveringstyper.')
+  if (participantRoleRows.error) throw new Error(participantRoleRows.error.message ?? 'Kunde inte läsa medverkandetyper.')
+  if (linkRows.error) throw new Error(linkRows.error.message ?? 'Kunde inte läsa medverkandekopplingar.')
+
+  const participantRoles = ((participantRoleRows.data ?? []) as ParticipantRoleRow[]).map(mapParticipantRoleToAdmin)
+  const participantRoleMap = new Map(participantRoles.map((item) => [item.id, item]))
+  const actionTypes = ((actionTypeRows.data ?? []) as ActionTypeRow[]).map((row) => ({
+    id: row.id,
+    categoryId: row.category_id ?? null,
+    key: row.key,
+    label: row.label,
+    description: row.description ?? null,
+    riskLevel: row.risk_level,
+    contractorRequirement: row.contractor_requirement,
+    sortOrder: row.sort_order,
+    isActive: row.is_active,
+  }))
+
+  return {
+    participantRoles,
+    actionTypes: actionTypes.map((actionType) => ({
+      actionType,
+      participantRoles: ((linkRows.data ?? []) as ActionTypeParticipantRoleRow[])
+        .filter((link) => link.action_type_id === actionType.id)
+        .map((link) => {
+          const participantRole = participantRoleMap.get(link.participant_role_id)
+          if (!participantRole) return null
+          return {
+            id: link.id,
+            participantRoleId: participantRole.id,
+            participantRoleKey: participantRole.key,
+            participantRoleLabel: participantRole.label,
+            participantRoleDescription: participantRole.description,
+            roleKind: participantRole.roleKind,
+            isRequired: link.is_required,
+            sortOrder: link.sort_order,
+          } satisfies RenoAppAdminActionTypeParticipantRole
+        })
+        .filter((item): item is RenoAppAdminActionTypeParticipantRole => Boolean(item))
+        .sort((left, right) => left.sortOrder - right.sortOrder),
+    })),
+  }
+}
+
+export async function saveRenoAppAdminActionTypeParticipantRole(input: {
+  actionTypeId: string
+  participantRoleId: string
+  isEnabled: boolean
+  isRequired?: boolean
+  sortOrder?: number | null
+}): Promise<void> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  if (!input.actionTypeId || !input.participantRoleId) {
+    throw new Error('PARTICIPANT_ROLE_TARGET_REQUIRED')
+  }
+
+  const { data: existingLink, error: existingLinkError } = await admin
+    .from('renoapp_action_type_participant_roles')
+    .select('id')
+    .eq('action_type_id', input.actionTypeId)
+    .eq('participant_role_id', input.participantRoleId)
+    .maybeSingle()
+
+  if (existingLinkError) {
+    throw new Error(existingLinkError.message ?? 'Kunde inte läsa medverkandekoppling.')
+  }
+
+  if (!input.isEnabled) {
+    if (existingLink?.id) {
+      const { error } = await admin
+        .from('renoapp_action_type_participant_roles')
+        .delete()
+        .eq('id', existingLink.id)
+      if (error) throw new Error(error.message ?? 'Kunde inte ta bort medverkandekoppling.')
+    }
+    return
+  }
+
+  const payload = {
+    action_type_id: input.actionTypeId,
+    participant_role_id: input.participantRoleId,
+    is_required: input.isRequired !== false,
+    sort_order: Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0 ? Number(input.sortOrder) : 100,
+    is_active: true,
+  }
+
+  const query = existingLink?.id
+    ? admin.from('renoapp_action_type_participant_roles').update(payload).eq('id', existingLink.id)
+    : admin.from('renoapp_action_type_participant_roles').insert(payload)
+
+  const { error } = await query.select('id').single()
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte spara medverkandekoppling.')
+  }
+}
+
 export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[]> {
   await requireRenoAppAdminProfile()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
 
-  const [questionRows, optionRows, triggerRows, documentRows] = await Promise.all([
+  const [questionRows, optionRows, triggerRows, documentRows, participantRoleRows] = await Promise.all([
     admin
       .from('renoapp_apply_questions')
       .select('id,key,label,help_text,response_type,sort_order,is_locked,is_active,metadata')
@@ -4051,11 +4441,17 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
       .order('sort_order', { ascending: true }),
     admin
       .from('renoapp_apply_option_triggers')
-      .select('id,option_id,trigger_type,question_id,document_type_id,sort_order,is_active')
+      .select('id,option_id,trigger_type,question_id,document_type_id,participant_role_id,sort_order,is_active')
       .order('sort_order', { ascending: true }),
     admin
       .from('renovation_document_types')
       .select('id,key,label,description,default_phase,sort_order,is_active')
+      .order('sort_order', { ascending: true }),
+    admin
+      .from('renoapp_participant_roles')
+      .select(
+        'id,key,label,description,role_kind,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
+      )
       .order('sort_order', { ascending: true }),
   ])
 
@@ -4063,11 +4459,17 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
   if (optionRows.error) throw new Error(optionRows.error.message ?? 'Kunde inte lasa svarsalternativ.')
   if (triggerRows.error) throw new Error(triggerRows.error.message ?? 'Kunde inte lasa svarstriggers.')
   if (documentRows.error) throw new Error(documentRows.error.message ?? 'Kunde inte lasa dokumenttyper.')
+  if (participantRoleRows.error) {
+    throw new Error(participantRoleRows.error.message ?? 'Kunde inte lasa medverkandetyper.')
+  }
 
   const options = (optionRows.data ?? []) as ApplyQuestionOptionRow[]
   const triggers = (triggerRows.data ?? []) as ApplyOptionTriggerRow[]
   const questions = (questionRows.data ?? []) as ApplyQuestionRow[]
   const documentById = new Map(((documentRows.data ?? []) as DocumentTypeRow[]).map((item) => [item.id, item]))
+  const participantRoleById = new Map(
+    ((participantRoleRows.data ?? []) as ParticipantRoleRow[]).map((item) => [item.id, item])
+  )
   const questionById = new Map(questions.map((item) => [item.id, item]))
 
   return questions.map((item) => ({
@@ -4103,6 +4505,10 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
             documentTypeLabel: trigger.document_type_id
               ? repairLikelyMojibakeText(documentById.get(trigger.document_type_id)?.label ?? null)
               : null,
+            participantRoleId: trigger.participant_role_id ?? null,
+            participantRoleLabel: trigger.participant_role_id
+              ? repairLikelyMojibakeText(participantRoleById.get(trigger.participant_role_id)?.label ?? null)
+              : null,
             sortOrder: trigger.sort_order,
             isActive: trigger.is_active,
           })),
@@ -4131,9 +4537,10 @@ export async function saveRenoAppAdminQuestion(input: {
     isActive?: boolean
     metadata?: unknown
     triggers?: Array<{
-      triggerType: 'question' | 'document'
+      triggerType: 'question' | 'document' | 'participant_role'
       questionId?: string | null
       documentTypeId?: string | null
+      participantRoleId?: string | null
       sortOrder?: number | null
       isActive?: boolean
     }>
@@ -4268,6 +4675,10 @@ export async function saveRenoAppAdminQuestion(input: {
             : null
         const targetDocumentTypeId =
           triggerType === 'document' && triggerInput.documentTypeId ? triggerInput.documentTypeId : null
+        const targetParticipantRoleId =
+          triggerType === 'participant_role' && triggerInput.participantRoleId
+            ? triggerInput.participantRoleId
+            : null
         const triggerSortOrder =
           Number.isFinite(triggerInput.sortOrder) && Number(triggerInput.sortOrder) > 0
             ? Number(triggerInput.sortOrder)
@@ -4275,12 +4686,14 @@ export async function saveRenoAppAdminQuestion(input: {
 
         if (triggerType === 'question' && !targetQuestionId) return null
         if (triggerType === 'document' && !targetDocumentTypeId) return null
+        if (triggerType === 'participant_role' && !targetParticipantRoleId) return null
 
         return {
           option_id: savedOptionId,
           trigger_type: triggerType,
           question_id: targetQuestionId,
           document_type_id: targetDocumentTypeId,
+          participant_role_id: targetParticipantRoleId,
           sort_order: triggerSortOrder,
           is_active: triggerInput.isActive !== false,
         }
@@ -4290,9 +4703,10 @@ export async function saveRenoAppAdminQuestion(input: {
           item
         ): item is {
           option_id: string
-          trigger_type: 'question' | 'document'
+          trigger_type: 'question' | 'document' | 'participant_role'
           question_id: string | null
           document_type_id: string | null
+          participant_role_id: string | null
           sort_order: number
           is_active: boolean
         } => Boolean(item)

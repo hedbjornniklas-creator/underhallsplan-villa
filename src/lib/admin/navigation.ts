@@ -81,6 +81,12 @@ export const RENOAPP_ADMIN_TABS = [
     match: (pathname: string) => pathname === '/admin/renoapp/questions',
   },
   {
+    href: '/admin/renoapp/participants',
+    label: 'Medverkande',
+    description: 'Hantera entreprenÃ¶rer, konsulter och vilken information som ska samlas in.',
+    match: (pathname: string) => pathname === '/admin/renoapp/participants',
+  },
+  {
     href: '/admin/renoapp/document-types',
     label: 'Underlagstyper',
     description: 'Hantera den centrala katalogen av underlag i RenoApp.',
