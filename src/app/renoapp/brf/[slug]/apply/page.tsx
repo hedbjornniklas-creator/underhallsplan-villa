@@ -582,7 +582,6 @@ export default function RenoAppApplyPage() {
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([])
   const [savingDraft, setSavingDraft] = useState(false)
   const [uploadingDocumentTypeId, setUploadingDocumentTypeId] = useState<string | null>(null)
-  const [configRefreshKey, setConfigRefreshKey] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -616,27 +615,7 @@ export default function RenoAppApplyPage() {
     return () => {
       active = false
     }
-  }, [configRefreshKey, slug])
-
-  useEffect(() => {
-    const refreshConfig = () => {
-      setConfigRefreshKey((current) => current + 1)
-    }
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        refreshConfig()
-      }
-    }
-
-    window.addEventListener('focus', refreshConfig)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-
-    return () => {
-      window.removeEventListener('focus', refreshConfig)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [])
+  }, [slug])
 
   useEffect(() => {
     let active = true
