@@ -33,7 +33,7 @@ execute function public.renoapp_set_updated_at();
 create table if not exists public.renoapp_terminology_terms (
   id uuid primary key default gen_random_uuid(),
   group_id uuid not null references public.renoapp_terminology_groups (id) on delete cascade,
-  code text not null unique,
+  code text not null,
   label text not null,
   definition text,
   term_level text not null,
@@ -60,6 +60,21 @@ create table if not exists public.renoapp_terminology_terms (
 
 create index if not exists renoapp_terminology_terms_group_idx
   on public.renoapp_terminology_terms (group_id, sort_order);
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_constraint
+    where conname = 'renoapp_terminology_terms_code_key'
+  ) then
+    alter table public.renoapp_terminology_terms
+      drop constraint renoapp_terminology_terms_code_key;
+  end if;
+end $$;
+
+create unique index if not exists renoapp_terminology_terms_group_code_idx
+  on public.renoapp_terminology_terms (group_id, code);
 
 drop trigger if exists trg_renoapp_terminology_terms_set_updated_at on public.renoapp_terminology_terms;
 create trigger trg_renoapp_terminology_terms_set_updated_at
@@ -245,7 +260,7 @@ from (
 )
 join public.renoapp_terminology_groups grp
   on grp.key = seed.group_key
-on conflict (code) do update
+on conflict (group_id, code) do update
 set
   group_id = excluded.group_id,
   label = excluded.label,
@@ -267,27 +282,32 @@ select
   seed.is_active
 from (
   values
-    ('bathroom', 'Renovera badrum', 10, true),
-    ('bathroom', 'Bygga nytt badrum', 20, true),
-    ('bathroom', 'Installera tvÃ¤ttmaskin', 30, true),
-    ('bathroom', 'Flytta eller byta golvbrunn', 40, true),
-    ('bathroom', 'badrumsrenovering', 50, true),
-    ('kitchen', 'Renovera kÃ¶k', 10, true),
-    ('kitchen', 'Flytta kÃ¶k', 20, true),
-    ('kitchen', 'kÃ¶ksrenovering', 30, true),
-    ('wall', 'Ã„ndra planlÃ¶sning', 10, true),
-    ('wall', 'Riva vÃ¤gg', 20, true),
-    ('wall', 'Bygga vÃ¤gg', 30, true),
-    ('ventilation', 'Ã„ndra ventilation', 10, true),
-    ('plumbing', 'UtfÃ¶ra VVS-arbete', 10, true),
-    ('plumbing', 'VVS', 20, true),
-    ('electrical', 'UtfÃ¶ra elarbete', 10, true),
-    ('surface', 'Ytskiktsrenovering', 10, true),
-    ('ombyggnad', 'ombyggnation', 10, true),
-    ('kitchen', 'flytt av kÃ¶k', 40, true)
-) as seed (term_code, alias, sort_order, is_active)
+    ('action-types', 'bathroom', 'Renovera badrum', 10, true),
+    ('action-types', 'bathroom', 'Bygga nytt badrum', 20, true),
+    ('action-types', 'bathroom', 'Installera tvÃ¤ttmaskin', 30, true),
+    ('action-types', 'bathroom', 'Flytta eller byta golvbrunn', 40, true),
+    ('action-types', 'bathroom', 'badrumsrenovering', 50, true),
+    ('action-types', 'kitchen', 'Renovera kÃ¶k', 10, true),
+    ('action-types', 'kitchen', 'Flytta kÃ¶k', 20, true),
+    ('action-types', 'kitchen', 'kÃ¶ksrenovering', 30, true),
+    ('action-types', 'wall', 'Ã„ndra planlÃ¶sning', 10, true),
+    ('action-types', 'wall', 'Riva vÃ¤gg', 20, true),
+    ('action-types', 'wall', 'Bygga vÃ¤gg', 30, true),
+    ('action-types', 'ventilation', 'Ã„ndra ventilation', 10, true),
+    ('action-types', 'plumbing', 'UtfÃ¶ra VVS-arbete', 10, true),
+    ('action-types', 'plumbing', 'VVS', 20, true),
+    ('action-types', 'electrical', 'UtfÃ¶ra elarbete', 10, true),
+    ('action-types', 'surface', 'Ytskiktsrenovering', 10, true),
+    ('legal-classifications', 'ombyggnad', 'ombyggnation', 10, true),
+    ('action-types', 'kitchen', 'flytt av kÃ¶k', 40, true)
+) as seed (group_key, term_code, alias, sort_order, is_active)
 join public.renoapp_terminology_terms term_row
   on term_row.code = seed.term_code
+ and term_row.group_id = (
+   select id
+   from public.renoapp_terminology_groups
+   where key = seed.group_key
+ )
 on conflict (term_id, alias) do update
 set
   sort_order = excluded.sort_order,
@@ -304,32 +324,37 @@ select
   seed.is_active
 from (
   values
-    ('bathroom', 'maps_to_action_category', 'Kopplad kategori', 'PrimÃ¤r koppling till action category.', '{"categoryCode":"vatrum"}'::jsonb, 10, true),
-    ('bathroom', 'implies_impacts', 'Impakter', 'VÃ¥trumsarbete pÃ¥verkar normalt flera tekniska omrÃ¥den.', '{"impactCodes":["wet_room","plumbing","electrical"]}'::jsonb, 20, true),
-    ('bathroom', 'default_classification', 'Standardklassning', 'FÃ¶rvald systemklassning nÃ¤r inga ytterligare svar avviker.', '{"classificationCode":"renovering"}'::jsonb, 30, true),
-    ('kitchen', 'maps_to_action_category', 'Kopplad kategori', 'PrimÃ¤r koppling till action category.', '{"categoryCode":"kok"}'::jsonb, 10, true),
-    ('kitchen', 'implies_impacts', 'Impakter', 'KÃ¶ksarbete pÃ¥verkar normalt VVS och el.', '{"impactCodes":["plumbing","electrical"]}'::jsonb, 20, true),
-    ('kitchen', 'default_classification', 'Standardklassning', 'FÃ¶rvald systemklassning nÃ¤r inga ytterligare svar avviker.', '{"classificationCode":"renovering"}'::jsonb, 30, true),
-    ('wall', 'maps_to_action_category', 'Kopplad kategori', 'PrimÃ¤r koppling till action category.', '{"categoryCode":"vaggar_planlosning"}'::jsonb, 10, true),
-    ('wall', 'implies_impacts', 'Impakter', 'PlanlÃ¶sningsÃ¤ndringar antyder strukturell pÃ¥verkan.', '{"impactCodes":["structure"]}'::jsonb, 20, true),
-    ('wall', 'default_classification', 'Standardklassning', 'VÃ¤gg- och planlÃ¶sningsÃ¤ndringar klassas normalt som ombyggnad.', '{"classificationCode":"ombyggnad"}'::jsonb, 30, true),
-    ('surface', 'maps_to_action_category', 'Kopplad kategori', 'PrimÃ¤r koppling till action category.', '{"categoryCode":"ytskikt"}'::jsonb, 10, true),
-    ('surface', 'implies_impacts', 'Impakter', 'Ytskiktsrenovering begrÃ¤nsas normalt till surface_only.', '{"impactCodes":["surface_only"]}'::jsonb, 20, true),
-    ('surface', 'default_classification', 'Standardklassning', 'Enklare ytskiktsarbete klassas normalt som underhÃ¥ll.', '{"classificationCode":"underhall"}'::jsonb, 30, true),
-    ('ombyggnad', 'classification_policy', 'Klassningspolicy', 'Ombyggnad ska vara huvudterm och systemgenererad klassning.', '{"preferredAlias":"ombyggnation","userSelectable":false,"systemGenerated":true}'::jsonb, 10, true),
-    ('underhall', 'classification_policy', 'Klassningspolicy', 'UnderhÃ¥ll sÃ¤tts av systemet nÃ¤r arbetet inte Ã¤ndrar funktion eller teknisk huvudlÃ¶sning.', '{"userSelectable":false,"systemGenerated":true}'::jsonb, 10, true),
-    ('renovering', 'classification_policy', 'Klassningspolicy', 'Renovering sÃ¤tts av systemet efter analys av Ã¥tgÃ¤rden.', '{"userSelectable":false,"systemGenerated":true}'::jsonb, 10, true),
-    ('nyinstallation', 'classification_policy', 'Klassningspolicy', 'Nyinstallation sÃ¤tts av systemet nÃ¤r ny funktion tillfÃ¶rs.', '{"userSelectable":false,"systemGenerated":true}'::jsonb, 10, true),
-    ('before_required', 'phase_policy', 'Faspolicy', 'Dokumentet mÃ¥ste finnas innan ansÃ¶kan eller granskning gÃ¥r vidare.', '{"timing":"before","requiredByDefault":true}'::jsonb, 10, true),
-    ('before_conditional', 'phase_policy', 'Faspolicy', 'Dokumentet krÃ¤vs bara nÃ¤r vissa svar eller impacts finns.', '{"timing":"before","conditional":true}'::jsonb, 10, true),
-    ('after_completion', 'phase_policy', 'Faspolicy', 'Dokumentet efterfrÃ¥gas efter att arbetet Ã¤r utfÃ¶rt.', '{"timing":"after_completion"}'::jsonb, 10, true),
-    ('approved', 'workflow_state', 'Workflow policy', 'GodkÃ¤nd utan villkor.', '{"isTerminal":false,"allowsConditions":false}'::jsonb, 10, true),
-    ('approved_with_conditions', 'workflow_state', 'Workflow policy', 'GodkÃ¤nd med villkor som ska fÃ¶ljas upp.', '{"isTerminal":false,"allowsConditions":true}'::jsonb, 10, true),
-    ('rejected', 'workflow_state', 'Workflow policy', 'Avslag avslutar normalt handlÃ¤ggningen.', '{"isTerminal":true}'::jsonb, 10, true),
-    ('completed', 'workflow_state', 'Workflow policy', 'SlutfÃ¶rt och avslutat Ã¤rende.', '{"isTerminal":true,"isClosed":true}'::jsonb, 10, true)
-) as seed (term_code, rule_key, label, description, config, sort_order, is_active)
+    ('action-types', 'bathroom', 'maps_to_action_category', 'Kopplad kategori', 'PrimÃ¤r koppling till action category.', '{"categoryCode":"vatrum"}'::jsonb, 10, true),
+    ('action-types', 'bathroom', 'implies_impacts', 'Impakter', 'VÃ¥trumsarbete pÃ¥verkar normalt flera tekniska omrÃ¥den.', '{"impactCodes":["wet_room","plumbing","electrical"]}'::jsonb, 20, true),
+    ('action-types', 'bathroom', 'default_classification', 'Standardklassning', 'FÃ¶rvald systemklassning nÃ¤r inga ytterligare svar avviker.', '{"classificationCode":"renovering"}'::jsonb, 30, true),
+    ('action-types', 'kitchen', 'maps_to_action_category', 'Kopplad kategori', 'PrimÃ¤r koppling till action category.', '{"categoryCode":"kok"}'::jsonb, 10, true),
+    ('action-types', 'kitchen', 'implies_impacts', 'Impakter', 'KÃ¶ksarbete pÃ¥verkar normalt VVS och el.', '{"impactCodes":["plumbing","electrical"]}'::jsonb, 20, true),
+    ('action-types', 'kitchen', 'default_classification', 'Standardklassning', 'FÃ¶rvald systemklassning nÃ¤r inga ytterligare svar avviker.', '{"classificationCode":"renovering"}'::jsonb, 30, true),
+    ('action-types', 'wall', 'maps_to_action_category', 'Kopplad kategori', 'PrimÃ¤r koppling till action category.', '{"categoryCode":"vaggar_planlosning"}'::jsonb, 10, true),
+    ('action-types', 'wall', 'implies_impacts', 'Impakter', 'PlanlÃ¶sningsÃ¤ndringar antyder strukturell pÃ¥verkan.', '{"impactCodes":["structure"]}'::jsonb, 20, true),
+    ('action-types', 'wall', 'default_classification', 'Standardklassning', 'VÃ¤gg- och planlÃ¶sningsÃ¤ndringar klassas normalt som ombyggnad.', '{"classificationCode":"ombyggnad"}'::jsonb, 30, true),
+    ('action-types', 'surface', 'maps_to_action_category', 'Kopplad kategori', 'PrimÃ¤r koppling till action category.', '{"categoryCode":"ytskikt"}'::jsonb, 10, true),
+    ('action-types', 'surface', 'implies_impacts', 'Impakter', 'Ytskiktsrenovering begrÃ¤nsas normalt till surface_only.', '{"impactCodes":["surface_only"]}'::jsonb, 20, true),
+    ('action-types', 'surface', 'default_classification', 'Standardklassning', 'Enklare ytskiktsarbete klassas normalt som underhÃ¥ll.', '{"classificationCode":"underhall"}'::jsonb, 30, true),
+    ('legal-classifications', 'ombyggnad', 'classification_policy', 'Klassningspolicy', 'Ombyggnad ska vara huvudterm och systemgenererad klassning.', '{"preferredAlias":"ombyggnation","userSelectable":false,"systemGenerated":true}'::jsonb, 10, true),
+    ('legal-classifications', 'underhall', 'classification_policy', 'Klassningspolicy', 'UnderhÃ¥ll sÃ¤tts av systemet nÃ¤r arbetet inte Ã¤ndrar funktion eller teknisk huvudlÃ¶sning.', '{"userSelectable":false,"systemGenerated":true}'::jsonb, 10, true),
+    ('legal-classifications', 'renovering', 'classification_policy', 'Klassningspolicy', 'Renovering sÃ¤tts av systemet efter analys av Ã¥tgÃ¤rden.', '{"userSelectable":false,"systemGenerated":true}'::jsonb, 10, true),
+    ('legal-classifications', 'nyinstallation', 'classification_policy', 'Klassningspolicy', 'Nyinstallation sÃ¤tts av systemet nÃ¤r ny funktion tillfÃ¶rs.', '{"userSelectable":false,"systemGenerated":true}'::jsonb, 10, true),
+    ('document-phases', 'before_required', 'phase_policy', 'Faspolicy', 'Dokumentet mÃ¥ste finnas innan ansÃ¶kan eller granskning gÃ¥r vidare.', '{"timing":"before","requiredByDefault":true}'::jsonb, 10, true),
+    ('document-phases', 'before_conditional', 'phase_policy', 'Faspolicy', 'Dokumentet krÃ¤vs bara nÃ¤r vissa svar eller impacts finns.', '{"timing":"before","conditional":true}'::jsonb, 10, true),
+    ('document-phases', 'after_completion', 'phase_policy', 'Faspolicy', 'Dokumentet efterfrÃ¥gas efter att arbetet Ã¤r utfÃ¶rt.', '{"timing":"after_completion"}'::jsonb, 10, true),
+    ('statuses', 'approved', 'workflow_state', 'Workflow policy', 'GodkÃ¤nd utan villkor.', '{"isTerminal":false,"allowsConditions":false}'::jsonb, 10, true),
+    ('statuses', 'approved_with_conditions', 'workflow_state', 'Workflow policy', 'GodkÃ¤nd med villkor som ska fÃ¶ljas upp.', '{"isTerminal":false,"allowsConditions":true}'::jsonb, 10, true),
+    ('statuses', 'rejected', 'workflow_state', 'Workflow policy', 'Avslag avslutar normalt handlÃ¤ggningen.', '{"isTerminal":true}'::jsonb, 10, true),
+    ('statuses', 'completed', 'workflow_state', 'Workflow policy', 'SlutfÃ¶rt och avslutat Ã¤rende.', '{"isTerminal":true,"isClosed":true}'::jsonb, 10, true)
+) as seed (group_key, term_code, rule_key, label, description, config, sort_order, is_active)
 join public.renoapp_terminology_terms term_row
   on term_row.code = seed.term_code
+ and term_row.group_id = (
+   select id
+   from public.renoapp_terminology_groups
+   where key = seed.group_key
+ )
 on conflict (term_id, rule_key) do update
 set
   label = excluded.label,

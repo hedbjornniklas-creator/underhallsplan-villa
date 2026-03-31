@@ -81,6 +81,8 @@ type DraftRule = {
   isActive: boolean
 }
 
+type SortKey = 'label' | 'groupLabel' | 'termLevel' | 'inputKind' | 'aliasCount' | 'isActive'
+
 const EMPTY_TERM: DraftTerm = {
   groupId: '',
   code: '',
@@ -133,6 +135,11 @@ function labelForInputKind(value: TerminologyTerm['inputKind']) {
   }
 }
 
+function renderSortIcon(active: boolean, dir: 'asc' | 'desc') {
+  if (!active) return <span className="text-gray-300">◇</span>
+  return <span className="text-gray-500">{dir === 'asc' ? '↑' : '↓'}</span>
+}
+
 function createDraftFromTerm(item: TerminologyTerm): DraftTerm {
   return {
     id: item.id,
@@ -177,8 +184,16 @@ export default function RenoAppTerminologyAdminPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
-  const [groupFilter, setGroupFilter] = useState<string>('all')
+  const [groupFilter, setGroupFilter] = useState('')
+  const [levelFilter, setLevelFilter] = useState('')
+  const [inputFilter, setInputFilter] = useState('')
+  const [activeFilter, setActiveFilter] = useState('')
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({
+    key: 'groupLabel',
+    dir: 'asc',
+  })
   const [savingKey, setSavingKey] = useState<string | null>(null)
+
   const [termModalOpen, setTermModalOpen] = useState(false)
   const [termDraft, setTermDraft] = useState<DraftTerm>(EMPTY_TERM)
   const [aliasTermId, setAliasTermId] = useState<string | null>(null)
@@ -201,7 +216,10 @@ export default function RenoAppTerminologyAdminPage() {
           error?: string
         }
 
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte läsa terminologi.')
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Kunde inte läsa terminologi.')
+        }
+
         if (!active) return
         setGroups(payload.groups ?? [])
         setTerms(payload.terms ?? [])
@@ -220,12 +238,9 @@ export default function RenoAppTerminologyAdminPage() {
     }
   }, [])
 
-  const filteredTerms = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase()
-    return terms.filter((term) => {
-      if (groupFilter !== 'all' && term.groupId !== groupFilter) return false
-      if (!normalizedQuery) return true
-
+  const sortedTerms = useMemo(() => {
+    const filtered = terms.filter((term) => {
+      const normalizedQuery = query.trim().toLowerCase()
       const haystack = [
         term.label,
         term.code,
@@ -239,12 +254,66 @@ export default function RenoAppTerminologyAdminPage() {
         .join(' ')
         .toLowerCase()
 
-      return haystack.includes(normalizedQuery)
+      if (normalizedQuery && !haystack.includes(normalizedQuery)) return false
+      if (groupFilter && term.groupId !== groupFilter) return false
+      if (levelFilter && term.termLevel !== levelFilter) return false
+      if (inputFilter && term.inputKind !== inputFilter) return false
+      if (activeFilter === 'active' && !term.isActive) return false
+      if (activeFilter === 'inactive' && term.isActive) return false
+      return true
     })
-  }, [groupFilter, query, terms])
+
+    const valueFor = (term: TerminologyTerm) => {
+      switch (sort.key) {
+        case 'label':
+          return term.label
+        case 'groupLabel':
+          return term.groupLabel
+        case 'termLevel':
+          return labelForTermLevel(term.termLevel)
+        case 'inputKind':
+          return labelForInputKind(term.inputKind)
+        case 'aliasCount':
+          return term.aliases.length
+        case 'isActive':
+          return term.isActive ? 1 : 0
+        default:
+          return term.groupLabel
+      }
+    }
+
+    return [...filtered].sort((left, right) => {
+      const leftValue = valueFor(left)
+      const rightValue = valueFor(right)
+      let comparison = 0
+
+      if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+        comparison = leftValue - rightValue
+      } else {
+        comparison = String(leftValue).localeCompare(String(rightValue), 'sv')
+      }
+
+      if (comparison === 0) {
+        comparison =
+          left.groupLabel.localeCompare(right.groupLabel, 'sv') ||
+          left.sortOrder - right.sortOrder ||
+          left.label.localeCompare(right.label, 'sv')
+      }
+
+      return sort.dir === 'asc' ? comparison : -comparison
+    })
+  }, [activeFilter, groupFilter, inputFilter, levelFilter, query, sort, terms])
 
   const aliasTerm = aliasTermId ? terms.find((item) => item.id === aliasTermId) ?? null : null
   const ruleTerm = ruleTermId ? terms.find((item) => item.id === ruleTermId) ?? null : null
+
+  const toggleSort = (key: SortKey) => {
+    setSort((current) =>
+      current.key === key
+        ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: 'asc' }
+    )
+  }
 
   const saveBundle = async (
     draft: DraftTerm,
@@ -344,8 +413,8 @@ export default function RenoAppTerminologyAdminPage() {
     setTermModalOpen(true)
   }
 
-  const openEditTermModal = (item: TerminologyTerm) => {
-    setTermDraft(createDraftFromTerm(item))
+  const openEditTermModal = (term: TerminologyTerm) => {
+    setTermDraft(createDraftFromTerm(term))
     setTermModalOpen(true)
   }
 
@@ -391,172 +460,221 @@ export default function RenoAppTerminologyAdminPage() {
   return (
     <main className="mx-auto w-full max-w-7xl px-4 pb-8 md:px-6 md:pb-10">
       {error ? (
-        <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error}
         </div>
       ) : null}
 
-      <section className="rounded-[28px] border border-stone-200/80 bg-white/92 p-5 shadow-sm">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="rounded-xl bg-white p-4 shadow">
+        <div className="mb-3 flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-stone-900">Terminologi</h3>
-            <p className="mt-1 text-sm leading-6 text-stone-600">
-              Låst ordförråd, alias och grundregler för RenoApp.
-            </p>
+            <h2 className="font-semibold">Terminologi</h2>
+            <div className="text-xs text-gray-500">renoapp_terminology_terms</div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Sök..."
-              className="rounded-2xl border border-stone-300 px-4 py-2.5 text-sm text-stone-900"
+              className="border rounded px-2 py-1 text-sm"
             />
             <button
               type="button"
               onClick={openNewTermModal}
-              className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
+              className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white"
             >
-              + Ny term
+              + Ny
             </button>
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setGroupFilter('all')}
-            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-              groupFilter === 'all'
-                ? 'border-stone-900 bg-stone-900 text-white'
-                : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
-            }`}
-          >
-            Alla grupper
-          </button>
-          {groups.map((group) => (
-            <button
-              key={group.id}
-              type="button"
-              onClick={() => setGroupFilter(group.id)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                groupFilter === group.id
-                  ? 'border-stone-900 bg-stone-900 text-white'
-                  : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
-              }`}
-            >
-              {group.label}
-            </button>
-          ))}
-        </div>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+            <span className="text-gray-400">Sortera:</span>
+            {[
+              ['label', 'Term'],
+              ['groupLabel', 'Grupp'],
+              ['termLevel', 'Nivå'],
+              ['inputKind', 'Typ'],
+              ['aliasCount', 'Alias'],
+              ['isActive', 'Aktiv'],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => toggleSort(key as SortKey)}
+                className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2.5 py-1 hover:bg-gray-50"
+              >
+                {label}
+                {renderSortIcon(sort.key === key, sort.dir)}
+              </button>
+            ))}
+          </div>
 
-        {loading ? (
-          <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 p-5 text-sm text-stone-600">
-            Laddar terminologi...
+          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+            <span className="text-gray-400">Filtrera:</span>
+            <select
+              className="border rounded-full px-2.5 py-1 bg-white"
+              value={groupFilter}
+              onChange={(event) => setGroupFilter(event.target.value)}
+            >
+              <option value="">Grupp</option>
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.label}
+                </option>
+              ))}
+            </select>
+            <select
+              className="border rounded-full px-2.5 py-1 bg-white"
+              value={levelFilter}
+              onChange={(event) => setLevelFilter(event.target.value)}
+            >
+              <option value="">Nivå</option>
+              <option value="ux">UX</option>
+              <option value="technical">Teknisk</option>
+              <option value="classification">Klassning</option>
+              <option value="status">Status</option>
+              <option value="document_phase">Dokumentfas</option>
+              <option value="decision">Beslut</option>
+            </select>
+            <select
+              className="border rounded-full px-2.5 py-1 bg-white"
+              value={inputFilter}
+              onChange={(event) => setInputFilter(event.target.value)}
+            >
+              <option value="">Typ</option>
+              <option value="user_visible">Användarspråk</option>
+              <option value="system_internal">Systemintern</option>
+              <option value="system_generated">Systemgenererad</option>
+            </select>
+            <select
+              className="border rounded-full px-2.5 py-1 bg-white"
+              value={activeFilter}
+              onChange={(event) => setActiveFilter(event.target.value)}
+            >
+              <option value="">Aktiv</option>
+              <option value="active">Endast aktiva</option>
+              <option value="inactive">Endast inaktiva</option>
+            </select>
           </div>
-        ) : filteredTerms.length === 0 ? (
-          <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 p-5 text-sm text-stone-600">
-            Inga termer hittades.
-          </div>
-        ) : (
-          <div className="mt-5 overflow-x-auto">
-            <table className="min-w-full text-sm">
+
+          <div className="space-y-2">
+            <table className="w-full table-fixed border-separate border-spacing-y-2 text-[11px]">
               <thead>
-                <tr className="text-left text-stone-500">
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Term</th>
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Kod</th>
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Grupp</th>
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Nivå</th>
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Typ</th>
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Aktiv</th>
-                  <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Åtgärder</th>
+                <tr className="whitespace-nowrap text-left text-[10px] uppercase text-gray-400">
+                  <th className="w-[22%] px-3 py-1">Term</th>
+                  <th className="w-[14%] px-3 py-1">Kod</th>
+                  <th className="w-[16%] px-3 py-1">Grupp</th>
+                  <th className="w-[10%] px-3 py-1">Nivå</th>
+                  <th className="w-[12%] px-3 py-1">Typ</th>
+                  <th className="w-[8%] px-3 py-1">Alias</th>
+                  <th className="w-[6%] px-3 py-1">Aktiv</th>
+                  <th className="w-[12%] px-3 py-1 text-center">Åtgärder</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredTerms.map((term) => (
-                  <tr key={term.id} className="border-t border-stone-200">
-                    <td className="px-3 py-4 align-top">
-                      <div className="font-medium text-stone-900">{term.label}</div>
-                      <div className="mt-1 max-w-[360px] text-xs text-stone-600">
-                        {term.definition || '-'}
-                      </div>
-                    </td>
-                    <td className="px-3 py-4 align-top text-stone-700">
-                      <div>{term.code}</div>
-                      {term.isLocked ? (
-                        <div className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">
-                          låst
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-4 align-top text-stone-700">{term.groupLabel}</td>
-                    <td className="px-3 py-4 align-top text-stone-700">
-                      {labelForTermLevel(term.termLevel)}
-                    </td>
-                    <td className="px-3 py-4 align-top text-stone-700">
-                      {labelForInputKind(term.inputKind)}
-                    </td>
-                    <td className="px-3 py-4 align-top text-stone-700">
-                      {term.isActive ? 'Ja' : 'Nej'}
-                    </td>
-                    <td className="px-3 py-4 align-top">
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAliasTermId(term.id)
-                            setAliasDrafts(createAliasDrafts(term))
-                          }}
-                          className="rounded-xl border border-indigo-200 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50"
-                        >
-                          Alias
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRuleTermId(term.id)
-                            setRuleDrafts(createRuleDrafts(term))
-                          }}
-                          className="rounded-xl border border-amber-200 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-50"
-                        >
-                          Regler
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openEditTermModal(term)}
-                          className="rounded-xl border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50"
-                        >
-                          Editera
-                        </button>
-                      </div>
-                      <div className="mt-2 text-xs text-stone-500">
-                        {term.aliases.length} alias · {term.rules.length} regler
-                      </div>
+                {loading ? (
+                  <tr>
+                    <td className="py-4 text-xs text-gray-500" colSpan={8}>
+                      Laddar terminologi...
                     </td>
                   </tr>
-                ))}
+                ) : sortedTerms.length === 0 ? (
+                  <tr>
+                    <td className="py-4 text-xs text-gray-500" colSpan={8}>
+                      Inga rader.
+                    </td>
+                  </tr>
+                ) : (
+                  sortedTerms.map((term) => (
+                    <tr key={term.id} className="group transition-colors hover:bg-blue-50">
+                      <td className="rounded-l-xl border border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        <div className="truncate font-medium text-gray-900">{term.label}</div>
+                        <div className="truncate text-[10px] text-gray-500">
+                          {term.definition || '-'}
+                        </div>
+                      </td>
+                      <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        <div className="truncate">{term.code}</div>
+                        {term.isLocked ? (
+                          <div className="text-[10px] uppercase tracking-[0.12em] text-gray-400">
+                            låst
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        <div className="truncate">{term.groupLabel}</div>
+                      </td>
+                      <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        <div className="truncate">{labelForTermLevel(term.termLevel)}</div>
+                      </td>
+                      <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        <div className="truncate">{labelForInputKind(term.inputKind)}</div>
+                      </td>
+                      <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        <div className="truncate">{term.aliases.length}</div>
+                      </td>
+                      <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        <div className="truncate">{term.isActive ? 'Ja' : 'Nej'}</div>
+                      </td>
+                      <td className="rounded-r-xl border border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        <div className="grid grid-cols-3 gap-1 whitespace-nowrap text-[11px]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAliasTermId(term.id)
+                              setAliasDrafts(createAliasDrafts(term))
+                            }}
+                            className="w-full rounded-md border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100"
+                          >
+                            Alias
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRuleTermId(term.id)
+                              setRuleDrafts(createRuleDrafts(term))
+                            }}
+                            className="w-full rounded-md border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                          >
+                            Regler
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openEditTermModal(term)}
+                            className="w-full rounded-md border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                          >
+                            Editera
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
-        )}
-      </section>
+        </div>
+      </div>
 
       {termModalOpen ? (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-auto bg-black/40 p-4">
-          <div className="w-full max-w-5xl rounded-[28px] border border-stone-200 bg-white p-6 shadow-xl">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/40 p-4">
+          <div className="w-full max-w-4xl rounded-xl bg-white p-4 shadow-lg">
+            <div className="flex items-center justify-between gap-4">
               <div>
-                <h3 className="text-2xl font-semibold text-stone-900">
+                <h3 className="text-lg font-semibold">
                   {termDraft.id ? 'Redigera term' : 'Ny term'}
                 </h3>
-                <p className="mt-1 text-sm text-stone-600">
-                  Huvudtermen styr kod, definition och hur ordet används i RenoApp.
-                </p>
+                {termDraft.id ? (
+                  <div className="mt-1 text-xs text-gray-500">Kod: {termDraft.code}</div>
+                ) : null}
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setTermModalOpen(false)}
-                  className="rounded-xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                  className="rounded-md border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
                 >
                   Avbryt
                 </button>
@@ -564,22 +682,22 @@ export default function RenoAppTerminologyAdminPage() {
                   type="button"
                   onClick={() => void saveTermOnly()}
                   disabled={savingKey === (termDraft.id ?? 'new-term')}
-                  className="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:opacity-60"
+                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
                   {savingKey === (termDraft.id ?? 'new-term') ? 'Sparar...' : 'Spara'}
                 </button>
               </div>
             </div>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-stone-800">Grupp</span>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="space-y-1">
+                <div className="text-xs font-medium text-gray-600">Grupp</div>
                 <select
                   value={termDraft.groupId}
                   onChange={(event) =>
                     setTermDraft((current) => ({ ...current, groupId: event.target.value }))
                   }
-                  className="w-full rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 >
                   <option value="">Välj grupp</option>
                   {groups.map((group) => (
@@ -590,44 +708,42 @@ export default function RenoAppTerminologyAdminPage() {
                 </select>
               </label>
 
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-stone-800">Kod</span>
+              <label className="space-y-1">
+                <div className="text-xs font-medium text-gray-600">Kod</div>
                 <input
                   value={termDraft.code || (!termDraft.id ? slugifyTermCode(termDraft.label) : termDraft.code)}
-                  readOnly={termDraft.isLocked && Boolean(termDraft.id)}
+                  readOnly={Boolean(termDraft.id && termDraft.isLocked)}
                   onChange={(event) =>
                     setTermDraft((current) => ({ ...current, code: event.target.value }))
                   }
-                  className={`w-full rounded-2xl border border-stone-300 px-4 py-3 text-sm ${
-                    termDraft.isLocked && termDraft.id ? 'bg-stone-100 text-stone-700' : ''
-                  }`}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 />
               </label>
 
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-stone-800">Visningsnamn</span>
+              <label className="space-y-1">
+                <div className="text-xs font-medium text-gray-600">Visningsnamn</div>
                 <input
                   value={termDraft.label}
                   onChange={(event) =>
                     setTermDraft((current) => ({ ...current, label: event.target.value }))
                   }
-                  className="w-full rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 />
               </label>
 
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-stone-800">Sortering</span>
+              <label className="space-y-1">
+                <div className="text-xs font-medium text-gray-600">Sortering</div>
                 <input
                   value={termDraft.sortOrder}
                   onChange={(event) =>
                     setTermDraft((current) => ({ ...current, sortOrder: event.target.value }))
                   }
-                  className="w-full rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 />
               </label>
 
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-stone-800">Termnivå</span>
+              <label className="space-y-1">
+                <div className="text-xs font-medium text-gray-600">Nivå</div>
                 <select
                   value={termDraft.termLevel}
                   onChange={(event) =>
@@ -636,7 +752,7 @@ export default function RenoAppTerminologyAdminPage() {
                       termLevel: event.target.value as DraftTerm['termLevel'],
                     }))
                   }
-                  className="w-full rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 >
                   <option value="ux">UX</option>
                   <option value="technical">Teknisk</option>
@@ -647,8 +763,8 @@ export default function RenoAppTerminologyAdminPage() {
                 </select>
               </label>
 
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-stone-800">Användning</span>
+              <label className="space-y-1">
+                <div className="text-xs font-medium text-gray-600">Typ</div>
                 <select
                   value={termDraft.inputKind}
                   onChange={(event) =>
@@ -657,7 +773,7 @@ export default function RenoAppTerminologyAdminPage() {
                       inputKind: event.target.value as DraftTerm['inputKind'],
                     }))
                   }
-                  className="w-full rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 >
                   <option value="user_visible">Användarspråk</option>
                   <option value="system_internal">Systemintern</option>
@@ -665,19 +781,21 @@ export default function RenoAppTerminologyAdminPage() {
                 </select>
               </label>
 
-              <label className="block md:col-span-2">
-                <span className="mb-2 block text-sm font-semibold text-stone-800">Definition</span>
+              <label className="space-y-1 md:col-span-2">
+                <div className="text-xs font-medium text-gray-600">Definition</div>
                 <textarea
                   value={termDraft.definition}
                   onChange={(event) =>
                     setTermDraft((current) => ({ ...current, definition: event.target.value }))
                   }
                   rows={4}
-                  className="w-full rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 />
               </label>
+            </div>
 
-              <label className="flex items-center gap-3 rounded-2xl border border-stone-300 px-4 py-3 text-sm">
+            <div className="mt-4 grid gap-2 md:grid-cols-4">
+              <label className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm">
                 <input
                   type="checkbox"
                   checked={termDraft.isLocked}
@@ -686,10 +804,9 @@ export default function RenoAppTerminologyAdminPage() {
                     setTermDraft((current) => ({ ...current, isLocked: event.target.checked }))
                   }
                 />
-                Låst huvudterm
+                Låst
               </label>
-
-              <label className="flex items-center gap-3 rounded-2xl border border-stone-300 px-4 py-3 text-sm">
+              <label className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm">
                 <input
                   type="checkbox"
                   checked={termDraft.isUserSelectable}
@@ -702,8 +819,7 @@ export default function RenoAppTerminologyAdminPage() {
                 />
                 Användarvalbar
               </label>
-
-              <label className="flex items-center gap-3 rounded-2xl border border-stone-300 px-4 py-3 text-sm">
+              <label className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm">
                 <input
                   type="checkbox"
                   checked={termDraft.isSystemGenerated}
@@ -716,8 +832,7 @@ export default function RenoAppTerminologyAdminPage() {
                 />
                 Systemgenererad
               </label>
-
-              <label className="flex items-center gap-3 rounded-2xl border border-stone-300 px-4 py-3 text-sm">
+              <label className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm">
                 <input
                   type="checkbox"
                   checked={termDraft.isActive}
@@ -733,20 +848,18 @@ export default function RenoAppTerminologyAdminPage() {
       ) : null}
 
       {aliasTerm ? (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-auto bg-black/40 p-4">
-          <div className="w-full max-w-4xl rounded-[28px] border border-stone-200 bg-white p-6 shadow-xl">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/40 p-4">
+          <div className="w-full max-w-4xl rounded-xl bg-white p-4 shadow-lg">
+            <div className="flex items-center justify-between gap-4">
               <div>
-                <h3 className="text-2xl font-semibold text-stone-900">Alias för {aliasTerm.label}</h3>
-                <p className="mt-1 text-sm text-stone-600">
-                  Alias hjälper er hålla ett tydligt ordförråd utan att skapa dubbla huvudtermer.
-                </p>
+                <h3 className="text-lg font-semibold">Alias - {aliasTerm.label}</h3>
+                <div className="mt-1 text-xs text-gray-500">{aliasTerm.code}</div>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setAliasTermId(null)}
-                  className="rounded-xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                  className="rounded-md border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
                 >
                   Stäng
                 </button>
@@ -758,7 +871,7 @@ export default function RenoAppTerminologyAdminPage() {
                       { alias: '', sortOrder: String(current.length * 10 + 10), isActive: true },
                     ])
                   }
-                  className="rounded-xl border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50"
+                  className="rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm text-blue-800 hover:bg-blue-100"
                 >
                   + Nytt alias
                 </button>
@@ -766,23 +879,23 @@ export default function RenoAppTerminologyAdminPage() {
                   type="button"
                   onClick={() => void saveAliases()}
                   disabled={savingKey === `aliases:${aliasTerm.id}`}
-                  className="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:opacity-60"
+                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
                   {savingKey === `aliases:${aliasTerm.id}` ? 'Sparar...' : 'Spara'}
                 </button>
               </div>
             </div>
 
-            <div className="mt-5 grid gap-3">
+            <div className="mt-4 space-y-2">
               {aliasDrafts.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-4 text-sm text-stone-600">
+                <div className="rounded-md border border-dashed border-gray-300 px-3 py-4 text-sm text-gray-500">
                   Inga alias ännu.
                 </div>
               ) : (
                 aliasDrafts.map((alias, index) => (
                   <div
                     key={alias.id ?? `alias-${index}`}
-                    className="grid gap-3 rounded-2xl border border-stone-200 p-4 md:grid-cols-[1fr_120px_120px_auto]"
+                    className="grid gap-2 rounded-md border border-gray-200 p-3 md:grid-cols-[1fr_120px_120px_auto]"
                   >
                     <input
                       value={alias.alias}
@@ -793,7 +906,7 @@ export default function RenoAppTerminologyAdminPage() {
                           )
                         )
                       }
-                      className="rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                      className="rounded-md border border-gray-300 px-3 py-2 text-sm"
                       placeholder="Alias"
                     />
                     <input
@@ -805,10 +918,10 @@ export default function RenoAppTerminologyAdminPage() {
                           )
                         )
                       }
-                      className="rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                      className="rounded-md border border-gray-300 px-3 py-2 text-sm"
                       placeholder="Sortering"
                     />
-                    <label className="flex items-center gap-3 rounded-2xl border border-stone-300 px-4 py-3 text-sm">
+                    <label className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm">
                       <input
                         type="checkbox"
                         checked={alias.isActive}
@@ -829,7 +942,7 @@ export default function RenoAppTerminologyAdminPage() {
                           current.filter((_, itemIndex) => itemIndex !== index)
                         )
                       }
-                      className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-50"
+                      className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 hover:bg-rose-100"
                     >
                       Ta bort
                     </button>
@@ -842,20 +955,18 @@ export default function RenoAppTerminologyAdminPage() {
       ) : null}
 
       {ruleTerm ? (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-auto bg-black/40 p-4">
-          <div className="w-full max-w-5xl rounded-[28px] border border-stone-200 bg-white p-6 shadow-xl">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/40 p-4">
+          <div className="w-full max-w-5xl rounded-xl bg-white p-4 shadow-lg">
+            <div className="flex items-center justify-between gap-4">
               <div>
-                <h3 className="text-2xl font-semibold text-stone-900">Regler för {ruleTerm.label}</h3>
-                <p className="mt-1 text-sm text-stone-600">
-                  V1-reglerna är lätta nyckel-värdeblock som kan användas som grund för framtida logik.
-                </p>
+                <h3 className="text-lg font-semibold">Regler - {ruleTerm.label}</h3>
+                <div className="mt-1 text-xs text-gray-500">{ruleTerm.code}</div>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setRuleTermId(null)}
-                  className="rounded-xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                  className="rounded-md border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
                 >
                   Stäng
                 </button>
@@ -874,7 +985,7 @@ export default function RenoAppTerminologyAdminPage() {
                       },
                     ])
                   }
-                  className="rounded-xl border border-amber-300 px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-50"
+                  className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-800 hover:bg-amber-100"
                 >
                   + Ny regel
                 </button>
@@ -882,25 +993,22 @@ export default function RenoAppTerminologyAdminPage() {
                   type="button"
                   onClick={() => void saveRules()}
                   disabled={savingKey === `rules:${ruleTerm.id}`}
-                  className="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:opacity-60"
+                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
                   {savingKey === `rules:${ruleTerm.id}` ? 'Sparar...' : 'Spara'}
                 </button>
               </div>
             </div>
 
-            <div className="mt-5 grid gap-4">
+            <div className="mt-4 space-y-3">
               {ruleDrafts.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-4 text-sm text-stone-600">
+                <div className="rounded-md border border-dashed border-gray-300 px-3 py-4 text-sm text-gray-500">
                   Inga regler ännu.
                 </div>
               ) : (
                 ruleDrafts.map((rule, index) => (
-                  <div
-                    key={rule.id ?? `rule-${index}`}
-                    className="rounded-2xl border border-stone-200 p-4"
-                  >
-                    <div className="grid gap-3 md:grid-cols-2">
+                  <div key={rule.id ?? `rule-${index}`} className="rounded-md border border-gray-200 p-3">
+                    <div className="grid gap-2 md:grid-cols-2">
                       <input
                         value={rule.ruleKey}
                         onChange={(event) =>
@@ -910,7 +1018,7 @@ export default function RenoAppTerminologyAdminPage() {
                             )
                           )
                         }
-                        className="rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm"
                         placeholder="Regelnyckel"
                       />
                       <input
@@ -922,7 +1030,7 @@ export default function RenoAppTerminologyAdminPage() {
                             )
                           )
                         }
-                        className="rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm"
                         placeholder="Etikett"
                       />
                       <input
@@ -934,10 +1042,10 @@ export default function RenoAppTerminologyAdminPage() {
                             )
                           )
                         }
-                        className="rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm"
                         placeholder="Sortering"
                       />
-                      <label className="flex items-center gap-3 rounded-2xl border border-stone-300 px-4 py-3 text-sm">
+                      <label className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm">
                         <input
                           type="checkbox"
                           checked={rule.isActive}
@@ -961,7 +1069,7 @@ export default function RenoAppTerminologyAdminPage() {
                           )
                         }
                         rows={2}
-                        className="rounded-2xl border border-stone-300 px-4 py-3 text-sm md:col-span-2"
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm md:col-span-2"
                         placeholder="Beskrivning"
                       />
                       <textarea
@@ -973,12 +1081,12 @@ export default function RenoAppTerminologyAdminPage() {
                             )
                           )
                         }
-                        rows={8}
-                        className="rounded-2xl border border-stone-300 px-4 py-3 font-mono text-xs md:col-span-2"
+                        rows={7}
+                        className="rounded-md border border-gray-300 px-3 py-2 font-mono text-xs md:col-span-2"
                         placeholder='{"key":"value"}'
                       />
                     </div>
-                    <div className="mt-3 flex justify-end">
+                    <div className="mt-2 flex justify-end">
                       <button
                         type="button"
                         onClick={() =>
@@ -986,7 +1094,7 @@ export default function RenoAppTerminologyAdminPage() {
                             current.filter((_, itemIndex) => itemIndex !== index)
                           )
                         }
-                        className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-50"
+                        className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 hover:bg-rose-100"
                       >
                         Ta bort
                       </button>
