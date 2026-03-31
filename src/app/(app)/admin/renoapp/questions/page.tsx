@@ -137,6 +137,14 @@ function createOptionDrafts(item: QuestionItem): DraftOption[] {
   }))
 }
 
+function toggleSelection(list: string[], value: string, checked: boolean) {
+  if (checked) {
+    return list.includes(value) ? list : [...list, value]
+  }
+
+  return list.filter((item) => item !== value)
+}
+
 export default function RenoAppQuestionsAdminPage() {
   const [items, setItems] = useState<QuestionItem[]>([])
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeItem[]>([])
@@ -796,58 +804,84 @@ export default function RenoAppQuestionsAdminPage() {
                         <div className="grid gap-3 md:grid-cols-2">
                           <label className="space-y-1">
                             <div className="text-xs font-medium text-gray-600">Följdfrågor</div>
-                            <select
-                              multiple
-                              value={option.triggeredQuestionIds}
-                              onChange={(event) => {
-                                const values = Array.from(event.target.selectedOptions)
-                                  .map((selectedOption) => selectedOption.value)
-                                  .filter(Boolean)
-                                setOptionDrafts((current) =>
-                                  current.map((item, itemIndex) =>
-                                    itemIndex === index ? { ...item, triggeredQuestionIds: values } : item
-                                  )
-                                )
-                              }}
-                              className="min-h-32 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                            >
+                            <div className="max-h-48 space-y-2 overflow-auto rounded-md border border-gray-300 px-3 py-2">
                               {items
                                 .filter((question) => question.id !== optionsQuestion.id)
-                                .map((question) => (
-                                  <option key={question.id} value={question.id}>
-                                    {question.label}
-                                  </option>
-                                ))}
-                            </select>
+                                .map((question) => {
+                                  const checked = option.triggeredQuestionIds.includes(question.id)
+
+                                  return (
+                                    <label
+                                      key={question.id}
+                                      className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-1 text-sm hover:bg-gray-50"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={(event) =>
+                                          setOptionDrafts((current) =>
+                                            current.map((item, itemIndex) =>
+                                              itemIndex === index
+                                                ? {
+                                                    ...item,
+                                                    triggeredQuestionIds: toggleSelection(
+                                                      item.triggeredQuestionIds,
+                                                      question.id,
+                                                      event.target.checked
+                                                    ),
+                                                  }
+                                                : item
+                                            )
+                                          )
+                                        }
+                                      />
+                                      <span>{question.label}</span>
+                                    </label>
+                                  )
+                                })}
+                            </div>
                           </label>
 
                           <label className="space-y-1">
                             <div className="text-xs font-medium text-gray-600">Underlag</div>
-                            <select
-                              multiple
-                              value={option.triggeredDocumentTypeIds}
-                              onChange={(event) => {
-                                const values = Array.from(event.target.selectedOptions)
-                                  .map((selectedOption) => selectedOption.value)
-                                  .filter(Boolean)
-                                setOptionDrafts((current) =>
-                                  current.map((item, itemIndex) =>
-                                    itemIndex === index
-                                      ? { ...item, triggeredDocumentTypeIds: values }
-                                      : item
-                                  )
-                                )
-                              }}
-                              className="min-h-32 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                            >
+                            <div className="max-h-48 space-y-2 overflow-auto rounded-md border border-gray-300 px-3 py-2">
                               {documentTypes
                                 .filter((documentType) => documentType.isActive)
-                                .map((documentType) => (
-                                  <option key={documentType.id} value={documentType.id}>
-                                    {documentType.label}
-                                  </option>
-                                ))}
-                            </select>
+                                .map((documentType) => {
+                                  const checked = option.triggeredDocumentTypeIds.includes(
+                                    documentType.id
+                                  )
+
+                                  return (
+                                    <label
+                                      key={documentType.id}
+                                      className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-1 text-sm hover:bg-gray-50"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={(event) =>
+                                          setOptionDrafts((current) =>
+                                            current.map((item, itemIndex) =>
+                                              itemIndex === index
+                                                ? {
+                                                    ...item,
+                                                    triggeredDocumentTypeIds: toggleSelection(
+                                                      item.triggeredDocumentTypeIds,
+                                                      documentType.id,
+                                                      event.target.checked
+                                                    ),
+                                                  }
+                                                : item
+                                            )
+                                          )
+                                        }
+                                      />
+                                      <span>{documentType.label}</span>
+                                    </label>
+                                  )
+                                })}
+                            </div>
                           </label>
                         </div>
                       </div>
