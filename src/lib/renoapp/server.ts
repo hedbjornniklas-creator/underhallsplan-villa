@@ -108,6 +108,13 @@ type ActionTypeQuestionRow = {
   is_active: boolean
 }
 
+type CaseQuestionAnswerRow = {
+  id: string
+  case_id: string
+  question_id: string
+  option_id: string
+}
+
 type TerminologyGroupRow = {
   id: string
   key: string
@@ -580,6 +587,26 @@ type PublicActionType = {
     | 'structural_engineer'
   sortOrder: number
   requirements: PublicRequirement[]
+  questions: PublicApplyQuestion[]
+}
+
+export type PublicApplyQuestionOption = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  sortOrder: number
+}
+
+export type PublicApplyQuestion = {
+  id: string
+  key: string
+  label: string
+  helpText: string | null
+  responseType: 'single_select' | 'multi_select' | 'boolean'
+  sortOrder: number
+  isRequired: boolean
+  options: PublicApplyQuestionOption[]
 }
 
 export type RenoAppPublicBrfConfig = {
@@ -615,6 +642,7 @@ export type CreatePublicApplicationInput = {
   contractorPhone?: string | null
   contractorHasRequiredCertification?: boolean
   actionTypeKeys: string[]
+  questionAnswers?: Record<string, string[]>
   checks?: {
     affectsStructure: boolean
     affectsPlumbing: boolean
@@ -660,6 +688,7 @@ export type RenoAppPublicApplicationDraft = {
     contractorPhone: string
     contractorHasRequiredCertification: boolean
     actionTypeKeys: string[]
+    questionAnswers: Record<string, string[]>
   }
   case: {
     id: string
@@ -1299,15 +1328,49 @@ async function listRequirements(admin: SupabaseAdminClient, brfId: string) {
   return [...((globalQuery.data ?? []) as RequirementRow[]), ...((localQuery.data ?? []) as RequirementRow[])]
 }
 
+async function listActiveApplyQuestions(admin: SupabaseAdminClient) {
+  const [questionRows, optionRows, linkRows] = await Promise.all([
+    admin
+      .from('renoapp_apply_questions')
+      .select('id,key,label,help_text,response_type,sort_order,is_locked,is_active,metadata')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true }),
+    admin
+      .from('renoapp_apply_question_options')
+      .select('id,question_id,key,label,description,sort_order,is_active,metadata')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true }),
+    admin
+      .from('renoapp_action_type_questions')
+      .select('id,action_type_id,question_id,sort_order,is_required,is_active')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true }),
+  ])
+
+  if (questionRows.error) throw new Error(questionRows.error.message ?? 'Kunde inte hämta frågor.')
+  if (optionRows.error) throw new Error(optionRows.error.message ?? 'Kunde inte hämta svarsalternativ.')
+  if (linkRows.error) throw new Error(linkRows.error.message ?? 'Kunde inte hämta frågekopplingar.')
+
+  return {
+    questions: (questionRows.data ?? []) as ApplyQuestionRow[],
+    options: (optionRows.data ?? []) as ApplyQuestionOptionRow[],
+    links: (linkRows.data ?? []) as ActionTypeQuestionRow[],
+  }
+}
+
 function buildPublicActionTypes(
   categories: ActionCategoryRow[],
   actionTypes: ActionTypeRow[],
   documentTypes: DocumentTypeRow[],
-  requirements: RequirementRow[]
+  requirements: RequirementRow[],
+  questionRows: ApplyQuestionRow[] = [],
+  optionRows: ApplyQuestionOptionRow[] = [],
+  questionLinks: ActionTypeQuestionRow[] = []
 ): PublicActionType[] {
   const categoryById = new Map(categories.map((item) => [item.id, item]))
   const documentById = new Map(documentTypes.map((item) => [item.id, item]))
   const requirementMap = new Map<string, RequirementRow>()
+  const questionById = new Map(questionRows.map((item) => [item.id, item]))
 
   for (const requirement of requirements) {
     const key = `${requirement.action_type_id}:${requirement.document_type_id}`
@@ -1350,6 +1413,34 @@ function buildPublicActionTypes(
         }
       })
       .sort((left, right) => left.sortOrder - right.sortOrder),
+    questions: questionLinks
+      .filter((link) => link.action_type_id === actionType.id)
+      .map((link) => {
+        const question = questionById.get(link.question_id)
+        if (!question) return null
+
+        return {
+          id: question.id,
+          key: question.key,
+          label: repairLikelyMojibakeText(question.label) ?? '',
+          helpText: repairLikelyMojibakeText(question.help_text ?? null),
+          responseType: question.response_type,
+          sortOrder: link.sort_order,
+          isRequired: link.is_required,
+          options: optionRows
+            .filter((option) => option.question_id === question.id)
+            .map((option) => ({
+              id: option.id,
+              key: option.key,
+              label: repairLikelyMojibakeText(option.label) ?? '',
+              description: repairLikelyMojibakeText(option.description ?? null),
+              sortOrder: option.sort_order,
+            }))
+            .sort((left, right) => left.sortOrder - right.sortOrder),
+        } satisfies PublicApplyQuestion
+      })
+      .filter((item): item is PublicApplyQuestion => Boolean(item))
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv')),
   }))
 }
 
@@ -1368,6 +1459,21 @@ async function listCaseActionTypes(admin: SupabaseAdminClient, caseIds: string[]
   return (data ?? []) as CaseActionTypeRow[]
 }
 
+async function listCaseQuestionAnswers(admin: SupabaseAdminClient, caseIds: string[]) {
+  if (caseIds.length === 0) return [] as CaseQuestionAnswerRow[]
+
+  const { data, error } = await admin
+    .from('renoapp_case_question_answers')
+    .select('id,case_id,question_id,option_id')
+    .in('case_id', caseIds)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa ärendets frågesvar.')
+  }
+
+  return (data ?? []) as CaseQuestionAnswerRow[]
+}
+
 export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPublicBrfConfig | null> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const brf = await getPublicBrfBySlug(admin, slug)
@@ -1376,14 +1482,23 @@ export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPubli
     return null
   }
 
-  const [categories, actionTypes, documentTypes, requirements] = await Promise.all([
+  const [categories, actionTypes, documentTypes, requirements, questionConfig] = await Promise.all([
     listActiveActionCategories(admin),
     listActiveActionTypes(admin),
     listActiveDocumentTypes(admin),
     listRequirements(admin, brf.id),
+    listActiveApplyQuestions(admin),
   ])
 
-  const publicActionTypes = buildPublicActionTypes(categories, actionTypes, documentTypes, requirements)
+  const publicActionTypes = buildPublicActionTypes(
+    categories,
+    actionTypes,
+    documentTypes,
+    requirements,
+    questionConfig.questions,
+    questionConfig.options,
+    questionConfig.links
+  )
 
   return {
     brf: {
@@ -1943,11 +2058,12 @@ export async function getRenoAppPublicGuideConfig(slug: string): Promise<RenoApp
     return null
   }
 
-  const [categories, actionTypes, documentTypes, requirements] = await Promise.all([
+  const [categories, actionTypes, documentTypes, requirements, questionConfig] = await Promise.all([
     listActiveActionCategories(admin),
     listActiveActionTypes(admin),
     listActiveDocumentTypes(admin),
     listRequirements(admin, brf.id),
+    listActiveApplyQuestions(admin),
   ])
 
   return {
@@ -1957,7 +2073,15 @@ export async function getRenoAppPublicGuideConfig(slug: string): Promise<RenoApp
       slug: brf.slug,
       applyIntroText: brf.apply_intro_text,
     },
-    actionTypes: buildPublicActionTypes(categories, actionTypes, documentTypes, requirements),
+    actionTypes: buildPublicActionTypes(
+      categories,
+      actionTypes,
+      documentTypes,
+      requirements,
+      questionConfig.questions,
+      questionConfig.options,
+      questionConfig.links
+    ),
   }
 }
 
@@ -2000,7 +2124,7 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
 
   const caseRow = caseData as Record<string, unknown>
   const brfId = String(caseRow.brf_id ?? '')
-  const [brfResult, contactResult, unitResult, actionTypeRows, actionTypes, documentsResult] = await Promise.all([
+  const [brfResult, contactResult, unitResult, actionTypeRows, actionTypes, documentsResult, answerRows, questionRows, optionRows] = await Promise.all([
     admin.from('brf_associations').select('id,name,slug').eq('id', brfId).maybeSingle(),
     caseRow.applicant_contact_id
       ? admin.from('contacts').select('id,name,email,phone').eq('id', String(caseRow.applicant_contact_id)).maybeSingle()
@@ -2019,6 +2143,9 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
       .select('id,document_type_id,file_name,status,uploaded_at,note')
       .eq('case_id', String(caseRow.id ?? ''))
       .order('uploaded_at', { ascending: false }),
+    listCaseQuestionAnswers(admin, [String(caseRow.id ?? '')]),
+    admin.from('renoapp_apply_questions').select('id,key').order('sort_order', { ascending: true }),
+    admin.from('renoapp_apply_question_options').select('id,question_id,key').order('sort_order', { ascending: true }),
   ])
 
   if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte läsa BRF.')
@@ -2026,11 +2153,38 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
   if (unitResult.error) throw new Error(unitResult.error.message ?? 'Kunde inte läsa lägenhet.')
 
   if (documentsResult.error) throw new Error(documentsResult.error.message ?? 'Kunde inte lasa dokument.')
+  if (questionRows.error) throw new Error(questionRows.error.message ?? 'Kunde inte lasa frågor.')
+  if (optionRows.error) throw new Error(optionRows.error.message ?? 'Kunde inte lasa svarsalternativ.')
 
   const actionTypeIdSet = new Set(
     actionTypeRows
       .filter((row) => row.case_id === String(caseRow.id ?? ''))
       .map((row) => row.action_type_id)
+  )
+  const questionKeyById = new Map(
+    ((questionRows.data ?? []) as Array<Record<string, unknown>>).map((row) => [
+      String(row.id ?? ''),
+      String(row.key ?? ''),
+    ])
+  )
+  const optionById = new Map(
+    ((optionRows.data ?? []) as Array<Record<string, unknown>>).map((row) => [
+      String(row.id ?? ''),
+      {
+        questionId: String(row.question_id ?? ''),
+        key: String(row.key ?? ''),
+      },
+    ])
+  )
+  const questionAnswers = (answerRows ?? []).reduce(
+    (acc, row) => {
+      const questionKey = questionKeyById.get(row.question_id)
+      const option = optionById.get(row.option_id)
+      if (!questionKey || !option?.key) return acc
+      acc[questionKey] = [...(acc[questionKey] ?? []), option.key]
+      return acc
+    },
+    {} as Record<string, string[]>
   )
 
   return {
@@ -2058,6 +2212,7 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
       contractorPhone: (caseRow.contractor_phone as string | null | undefined) ?? '',
       contractorHasRequiredCertification: Boolean(caseRow.contractor_has_required_certification),
       actionTypeKeys: actionTypes.filter((item) => actionTypeIdSet.has(item.id)).map((item) => item.key),
+      questionAnswers,
     },
     case: {
       id: String(caseRow.id ?? ''),
@@ -2103,6 +2258,20 @@ export async function upsertPublicApplication(
   const actionTypeKeys = Array.from(
     new Set((input.actionTypeKeys ?? []).map((value) => normalizeText(value)).filter((value): value is string => Boolean(value)))
   )
+  const questionAnswersInput = Object.fromEntries(
+    Object.entries(input.questionAnswers ?? {}).map(([questionKey, optionKeys]) => [
+      normalizeMachineKey(questionKey) ?? '',
+      Array.isArray(optionKeys)
+        ? Array.from(
+            new Set(
+              optionKeys
+                .map((value) => normalizeMachineKey(value))
+                .filter((value): value is string => Boolean(value))
+            )
+          )
+        : [],
+    ])
+  ) as Record<string, string[]>
 
   if (mode === 'submit') {
     if (!applicantName) throw new Error('APPLICANT_NAME_REQUIRED')
@@ -2119,10 +2288,67 @@ export async function upsertPublicApplication(
   if (mode === 'submit' && selectedActionTypes.length !== actionTypeKeys.length) {
     throw new Error('ACTION_TYPE_REQUIRED')
   }
+  const publicQuestionConfig =
+    selectedActionTypes.length > 0 ? await listActiveApplyQuestions(admin) : { questions: [], options: [], links: [] }
   const contractorRequirementSummary = buildContractorRequirementSummary(selectedActionTypes)
   const contractorCertification = requiresQualifiedContractor(selectedActionTypes)
     ? contractorHasRequiredCertification
     : false
+
+  const applicableQuestionMap = new Map<string, PublicApplyQuestion>()
+  for (const link of publicQuestionConfig.links) {
+    if (!selectedActionTypes.some((actionType) => actionType.id === link.action_type_id)) continue
+    const questionRow = publicQuestionConfig.questions.find((question) => question.id === link.question_id)
+    if (!questionRow) continue
+
+    const options = publicQuestionConfig.options
+      .filter((option) => option.question_id === questionRow.id)
+      .map((option) => ({
+        id: option.id,
+        key: option.key,
+        label: option.label,
+        description: option.description ?? null,
+        sortOrder: option.sort_order,
+      }))
+      .sort((left, right) => left.sortOrder - right.sortOrder)
+
+    const current = applicableQuestionMap.get(questionRow.key)
+    const candidate: PublicApplyQuestion = {
+      id: questionRow.id,
+      key: questionRow.key,
+      label: questionRow.label,
+      helpText: questionRow.help_text ?? null,
+      responseType: questionRow.response_type,
+      sortOrder: link.sort_order,
+      isRequired: link.is_required,
+      options,
+    }
+
+    if (!current) {
+      applicableQuestionMap.set(questionRow.key, candidate)
+      continue
+    }
+
+    applicableQuestionMap.set(questionRow.key, {
+      ...current,
+      sortOrder: Math.min(current.sortOrder, candidate.sortOrder),
+      isRequired: current.isRequired || candidate.isRequired,
+      options: current.options.length > 0 ? current.options : candidate.options,
+    })
+  }
+
+  const applicableQuestions = Array.from(applicableQuestionMap.values()).sort(
+    (left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv')
+  )
+
+  if (mode === 'submit') {
+    for (const question of applicableQuestions) {
+      const selectedOptionKeys = questionAnswersInput[question.key] ?? []
+      if (question.isRequired && selectedOptionKeys.length === 0) {
+        throw new Error('QUESTION_REQUIRED')
+      }
+    }
+  }
 
   let draftCaseId: string | null = null
   let accessTokenForResult: string | null = null
@@ -2287,6 +2513,56 @@ export async function upsertPublicApplication(
     caseId,
     selectedActionTypes.map((item) => item.id)
   )
+
+  const optionIdByQuestionAndKey = new Map<string, string>()
+  for (const question of applicableQuestions) {
+    for (const option of question.options) {
+      optionIdByQuestionAndKey.set(`${question.id}:${option.key}`, option.id)
+    }
+  }
+
+  const { error: deleteAnswerError } = await admin
+    .from('renoapp_case_question_answers')
+    .delete()
+    .eq('case_id', caseId)
+
+  if (deleteAnswerError) {
+    throw new Error(deleteAnswerError.message ?? 'Kunde inte uppdatera frågesvar.')
+  }
+
+  const answerRowsToInsert = applicableQuestions.flatMap((question) => {
+    const selectedOptionKeys = questionAnswersInput[question.key] ?? []
+    const normalizedSelectedKeys =
+      question.responseType === 'multi_select' ? selectedOptionKeys : selectedOptionKeys.slice(0, 1)
+
+    return normalizedSelectedKeys
+      .map((optionKey) => optionIdByQuestionAndKey.get(`${question.id}:${optionKey}`))
+      .filter((optionId): optionId is string => Boolean(optionId))
+      .map((optionId) => ({
+        case_id: caseId,
+        question_id: question.id,
+        option_id: optionId,
+      }))
+  })
+
+  if (mode === 'submit') {
+    for (const question of applicableQuestions) {
+      const selectedCount = answerRowsToInsert.filter((row) => row.question_id === question.id).length
+      if (question.isRequired && selectedCount === 0) {
+        throw new Error('QUESTION_REQUIRED')
+      }
+    }
+  }
+
+  if (answerRowsToInsert.length > 0) {
+    const { error: insertAnswerError } = await admin
+      .from('renoapp_case_question_answers')
+      .insert(answerRowsToInsert)
+
+    if (insertAnswerError) {
+      throw new Error(insertAnswerError.message ?? 'Kunde inte spara frågesvar.')
+    }
+  }
 
   const applicantEmailValue = applicantEmail as string
   let token = accessTokenForResult

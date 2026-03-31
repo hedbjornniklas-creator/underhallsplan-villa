@@ -39,6 +39,26 @@ type ActionType = {
     | 'structural_engineer'
   sortOrder: number
   requirements: Requirement[]
+  questions: ApplyQuestion[]
+}
+
+type ApplyQuestionOption = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  sortOrder: number
+}
+
+type ApplyQuestion = {
+  id: string
+  key: string
+  label: string
+  helpText: string | null
+  responseType: 'single_select' | 'multi_select' | 'boolean'
+  sortOrder: number
+  isRequired: boolean
+  options: ApplyQuestionOption[]
 }
 
 type PublicConfigResponse = {
@@ -76,6 +96,7 @@ type DraftResponse = {
     contractorPhone: string
     contractorHasRequiredCertification: boolean
     actionTypeKeys: string[]
+    questionAnswers: Record<string, string[]>
     checks?: {
       affectsStructure: boolean
       affectsPlumbing: boolean
@@ -134,6 +155,7 @@ type FormState = {
   contractorEmail: string
   contractorPhone: string
   contractorHasRequiredCertification: boolean
+  questionAnswers: Record<string, string[]>
 }
 
 const INITIAL_FORM: FormState = {
@@ -149,6 +171,7 @@ const INITIAL_FORM: FormState = {
   contractorEmail: '',
   contractorPhone: '',
   contractorHasRequiredCertification: false,
+  questionAnswers: {},
 }
 
 const STEP_ITEMS = [
@@ -195,6 +218,28 @@ function mergeRequirements(actions: ActionType[]) {
   return Array.from(merged.values()).sort((left, right) => left.sortOrder - right.sortOrder)
 }
 
+function mergeQuestions(actions: ActionType[]) {
+  const merged = new Map<string, ApplyQuestion>()
+
+  for (const action of actions) {
+    for (const question of action.questions ?? []) {
+      const current = merged.get(question.id)
+      if (!current) {
+        merged.set(question.id, question)
+        continue
+      }
+
+      merged.set(question.id, {
+        ...current,
+        isRequired: current.isRequired || question.isRequired,
+        sortOrder: Math.min(current.sortOrder, question.sortOrder),
+      })
+    }
+  }
+
+  return Array.from(merged.values()).sort((left, right) => left.sortOrder - right.sortOrder)
+}
+
 function groupActionsByCategory(actions: ActionType[]) {
   const grouped = new Map<string, { category: ActionCategory; actions: ActionType[] }>()
 
@@ -224,6 +269,12 @@ function groupRequirementsByPhase(requirements: Requirement[]) {
     afterCompletion: requirements.filter((item) => item.phase === 'after_completion'),
     uncategorized: requirements.filter((item) => !item.phase),
   }
+}
+
+function toggleMultiSelectValue(values: string[], optionKey: string) {
+  return values.includes(optionKey)
+    ? values.filter((value) => value !== optionKey)
+    : [...values, optionKey]
 }
 
 function getContractorRequirementText(requirement?: ActionType['contractorRequirement']) {
@@ -350,6 +401,7 @@ export default function RenoAppApplyPage() {
           contractorEmail: payload.form.contractorEmail,
           contractorPhone: payload.form.contractorPhone,
           contractorHasRequiredCertification: payload.form.contractorHasRequiredCertification,
+          questionAnswers: payload.form.questionAnswers ?? {},
         })
       } catch (fetchError) {
         if (!active) return
@@ -370,6 +422,7 @@ export default function RenoAppApplyPage() {
   )
 
   const mergedRequirements = useMemo(() => mergeRequirements(selectedActions), [selectedActions])
+  const mergedQuestions = useMemo(() => mergeQuestions(selectedActions), [selectedActions])
   const actionGroups = useMemo(() => groupActionsByCategory(config?.actionTypes ?? []), [config?.actionTypes])
   const requirementGroups = useMemo(() => groupRequirementsByPhase(mergedRequirements), [mergedRequirements])
   const contractorRequirementTexts = useMemo(
@@ -424,6 +477,16 @@ export default function RenoAppApplyPage() {
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  const updateQuestionAnswer = (questionKey: string, value: string[]) => {
+    setForm((current) => ({
+      ...current,
+      questionAnswers: {
+        ...current.questionAnswers,
+        [questionKey]: value,
+      },
+    }))
   }
 
   const toggleActionType = (key: string) => {
@@ -502,6 +565,7 @@ export default function RenoAppApplyPage() {
           contractorPhone: form.contractorPhone,
           contractorHasRequiredCertification: form.contractorHasRequiredCertification,
           actionTypeKeys: form.actionTypeKeys,
+          questionAnswers: form.questionAnswers,
         }),
       })
 
@@ -584,6 +648,77 @@ export default function RenoAppApplyPage() {
               </div>
             </div>
           ))}
+
+          {selectedActions.length > 0 ? (
+            <div className="rounded-3xl border border-stone-200 bg-white p-5">
+              <p className="text-sm font-semibold text-stone-900">Följdfrågor</p>
+              <p className="mt-2 text-sm leading-7 text-stone-700">
+                Besvara bara de frågor som hör till de renoveringstyper du valt. De används för att styra
+                vilket underlag som behöver bifogas i nästa steg.
+              </p>
+
+              {mergedQuestions.length === 0 ? (
+                <p className="mt-4 text-sm text-stone-600">
+                  Inga följdfrågor är kopplade till de valda renoveringstyperna ännu.
+                </p>
+              ) : (
+                <div className="mt-4 space-y-4">
+                  {mergedQuestions.map((question) => {
+                    const selectedValues = form.questionAnswers[question.key] ?? []
+
+                    return (
+                      <div key={question.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="font-semibold text-stone-900">
+                              {question.label}
+                              {question.isRequired ? ' *' : ''}
+                            </p>
+                            {question.helpText ? (
+                              <p className="mt-1 text-sm leading-7 text-stone-700">{question.helpText}</p>
+                            ) : null}
+                          </div>
+                          <span className="shrink-0 rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-semibold text-stone-600">
+                            {question.responseType === 'multi_select' ? 'Flera val' : 'Ett val'}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          {question.options.map((option) => {
+                            const selected = selectedValues.includes(option.key)
+                            return (
+                              <button
+                                key={option.id}
+                                type="button"
+                                onClick={() =>
+                                  updateQuestionAnswer(
+                                    question.key,
+                                    question.responseType === 'multi_select'
+                                      ? toggleMultiSelectValue(selectedValues, option.key)
+                                      : [option.key]
+                                  )
+                                }
+                                className={`rounded-2xl border px-4 py-3 text-left transition ${
+                                  selected
+                                    ? 'border-emerald-600 bg-emerald-50'
+                                    : 'border-stone-200 bg-white hover:border-stone-300'
+                                }`}
+                              >
+                                <p className="font-medium text-stone-900">{option.label}</p>
+                                {option.description ? (
+                                  <p className="mt-1 text-sm leading-6 text-stone-700">{option.description}</p>
+                                ) : null}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       )
     }

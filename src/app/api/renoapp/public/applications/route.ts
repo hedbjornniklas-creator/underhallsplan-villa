@@ -17,6 +17,19 @@ export async function POST(request: Request) {
       : typeof body.actionTypeKey === 'string' && body.actionTypeKey.trim()
         ? [body.actionTypeKey]
         : []
+    const questionAnswers =
+      body.questionAnswers && typeof body.questionAnswers === 'object' && !Array.isArray(body.questionAnswers)
+        ? Object.fromEntries(
+            Object.entries(body.questionAnswers as Record<string, unknown>).map(([questionKey, value]) => [
+              questionKey,
+              Array.isArray(value)
+                ? value.filter((item): item is string => typeof item === 'string')
+                : typeof value === 'string'
+                  ? [value]
+                  : [],
+            ])
+          )
+        : {}
 
     const result = await upsertPublicApplication(
       {
@@ -39,20 +52,26 @@ export async function POST(request: Request) {
             ? body.contractorHasRequiredCertification
             : false,
         actionTypeKeys,
+        questionAnswers,
       } satisfies CreatePublicApplicationInput,
       origin
     )
 
     return NextResponse.json(result, { status: 201 })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okänt fel.'
-    if (message === 'BRF_NOT_FOUND') return jsonError('BRF hittades inte eller har inte publik ansökan aktiverad.', 404)
-    if (message === 'DRAFT_LINK_INVALID') return jsonError('Utkastslänken är inte längre giltig.', 409)
+    const message = error instanceof Error ? error.message : 'Okant fel.'
+    if (message === 'BRF_NOT_FOUND') {
+      return jsonError('BRF hittades inte eller har inte publik ansokan aktiverad.', 404)
+    }
+    if (message === 'DRAFT_LINK_INVALID') {
+      return jsonError('Utkastslanken ar inte langre giltig.', 409)
+    }
     if (message === 'APPLICANT_NAME_REQUIRED') return jsonError('Ange namn.', 400)
     if (message === 'APPLICANT_EMAIL_INVALID') return jsonError('Ange en giltig e-postadress.', 400)
-    if (message === 'UNIT_NUMBER_REQUIRED') return jsonError('Ange lägenhetsnummer.', 400)
-    if (message === 'DESCRIPTION_REQUIRED') return jsonError('Beskriv åtgärden.', 400)
-    if (message === 'ACTION_TYPE_REQUIRED') return jsonError('Välj minst en renoveringstyp.', 400)
-    return jsonError(message || 'Kunde inte skapa RenoApp-ärende.', 500)
+    if (message === 'UNIT_NUMBER_REQUIRED') return jsonError('Ange lagenhetsnummer.', 400)
+    if (message === 'DESCRIPTION_REQUIRED') return jsonError('Beskriv atgarden.', 400)
+    if (message === 'ACTION_TYPE_REQUIRED') return jsonError('Valj minst en renoveringstyp.', 400)
+    if (message === 'QUESTION_REQUIRED') return jsonError('Besvara alla obligatoriska fragor.', 400)
+    return jsonError(message || 'Kunde inte skapa RenoApp-arende.', 500)
   }
 }
