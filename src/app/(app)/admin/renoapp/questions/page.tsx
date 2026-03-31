@@ -133,6 +133,18 @@ function createDraftFromQuestion(item: QuestionItem): DraftQuestion {
   }
 }
 
+function createDuplicateDraftFromQuestion(item: QuestionItem): DraftQuestion {
+  return {
+    key: '',
+    label: `${item.label} (kopia)`,
+    helpText: item.helpText ?? '',
+    responseType: item.responseType,
+    sortOrder: String(item.sortOrder + 10),
+    isLocked: false,
+    isActive: item.isActive,
+  }
+}
+
 function createOptionDrafts(item: QuestionItem): DraftOption[] {
   return item.options.map((option) => ({
     id: option.id,
@@ -150,6 +162,14 @@ function createOptionDrafts(item: QuestionItem): DraftOption[] {
     triggeredParticipantRoleIds: option.triggers
       .filter((trigger) => trigger.triggerType === 'participant_role' && trigger.participantRoleId)
       .map((trigger) => trigger.participantRoleId as string),
+  }))
+}
+
+function createDuplicateOptionDrafts(item: QuestionItem): DraftOption[] {
+  return createOptionDrafts(item).map((option) => ({
+    ...option,
+    id: undefined,
+    key: '',
   }))
 }
 
@@ -409,6 +429,21 @@ export default function RenoAppQuestionsAdminPage() {
     setQuestionModalOpen(true)
   }
 
+  const duplicateQuestion = async (item: QuestionItem) => {
+    setError(null)
+
+    const saved = await saveBundle(
+      createDuplicateDraftFromQuestion(item),
+      createDuplicateOptionDrafts(item),
+      `duplicate:${item.id}`
+    )
+
+    if (saved) {
+      setQuestionDraft(createDraftFromQuestion(saved))
+      setQuestionModalOpen(true)
+    }
+  }
+
   const openOptionsModal = (item: QuestionItem, mode: OptionsModalMode = 'options') => {
     setOptionsQuestionId(item.id)
     setOptionsModalMode(mode)
@@ -593,7 +628,7 @@ export default function RenoAppQuestionsAdminPage() {
                         {item.isActive ? 'Ja' : 'Nej'}
                       </td>
                       <td className="rounded-r-xl border border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
-                        <div className="grid grid-cols-4 gap-1 whitespace-nowrap text-[11px]">
+                        <div className="grid grid-cols-5 gap-1 whitespace-nowrap text-[11px]">
                           <button
                             type="button"
                             onClick={() => openOptionsModal(item, 'options')}
@@ -614,6 +649,14 @@ export default function RenoAppQuestionsAdminPage() {
                             className="w-full rounded-md border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
                           >
                             Editera
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void duplicateQuestion(item)}
+                            disabled={savingKey === `duplicate:${item.id}`}
+                            className="w-full rounded-md border border-lime-200 bg-lime-50 text-lime-800 hover:bg-lime-100 disabled:opacity-60"
+                          >
+                            {savingKey === `duplicate:${item.id}` ? 'Duplicerar...' : 'Duplicera'}
                           </button>
                           <button
                             type="button"
