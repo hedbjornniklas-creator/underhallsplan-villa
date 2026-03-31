@@ -556,22 +556,6 @@ function renderParticipantRoleList(items: ParticipantRole[]) {
 }
 
 
-function renderRequirementList(items: Requirement[]) {
-  return (
-    <ul className="space-y-2">
-      {items.map((requirement) => (
-        <li key={requirement.documentTypeId} className="rounded-2xl border border-stone-200 bg-white px-4 py-3">
-          <p className="font-medium text-stone-900">
-            {requirement.documentLabel} {requirement.isRequired ? '(obligatorisk)' : '(bra att ha)'}
-          </p>
-          {requirement.documentDescription ? <p className="mt-1">{requirement.documentDescription}</p> : null}
-          {requirement.note ? <p className="mt-1 text-stone-500">{requirement.note}</p> : null}
-        </li>
-      ))}
-    </ul>
-  )
-}
-
 const compactDescriptionStyle = {
   display: '-webkit-box',
   WebkitLineClamp: 1,
@@ -1310,70 +1294,6 @@ export default function RenoAppApplyPage() {
             </p>
           </div>
         ) : null}
-
-        <div className="mt-6 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-          <div className="rounded-3xl border border-stone-200 bg-white/85 p-5">
-            <p className="text-sm font-semibold text-stone-900">Valda renoveringar</p>
-            {selectedActions.length === 0 ? (
-              <p className="mt-3 text-sm text-stone-700">Inga renoveringstyper valda ännu.</p>
-            ) : (
-              <ul className="mt-3 space-y-2 text-sm text-stone-700">
-                {selectedActions.map((action) => (
-                  <li key={action.id} className="rounded-2xl border border-stone-200 bg-white px-4 py-3">
-                    <p className="font-medium text-stone-900">{action.label}</p>
-                    {action.description ? <p className="mt-1">{action.description}</p> : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <div className="rounded-3xl border border-stone-200 bg-white/85 p-5">
-            <p className="text-sm font-semibold text-stone-900">Underlag som behövs</p>
-            {mergedRequirements.length === 0 ? (
-              <p className="mt-3 text-sm text-stone-700">Välj renoveringstyper för att se vilket underlag som behövs.</p>
-            ) : (
-              <div className="mt-3 space-y-4 text-sm text-stone-700">
-                {mergedParticipantRoles.length > 0 ? (
-                  <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Medverkande som kan behövas</p>
-                    {renderParticipantRoleList(mergedParticipantRoles)}
-                  </div>
-                ) : null}
-                {requirementGroups.beforeRequired.length > 0 ? (
-                  <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Krävs före ansökan</p>
-                    {renderRequirementList(requirementGroups.beforeRequired)}
-                  </div>
-                ) : null}
-                {requirementGroups.beforeConditional.length > 0 ? (
-                  <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Kan behövas beroende på arbete</p>
-                    {renderRequirementList(requirementGroups.beforeConditional)}
-                  </div>
-                ) : null}
-                {requirementGroups.duringExecution.length > 0 ? (
-                  <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Lämnas under arbetet</p>
-                    {renderRequirementList(requirementGroups.duringExecution)}
-                  </div>
-                ) : null}
-                {requirementGroups.afterCompletion.length > 0 ? (
-                  <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Lämnas efter färdigställande</p>
-                    {renderRequirementList(requirementGroups.afterCompletion)}
-                  </div>
-                ) : null}
-                {requirementGroups.uncategorized.length > 0 ? (
-                  <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Övrigt underlag</p>
-                    {renderRequirementList(requirementGroups.uncategorized)}
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </div>
-        </div>
 
         <div className="mt-6 rounded-3xl border border-stone-200 bg-white/80 p-5">
           <div className="flex items-start justify-between gap-4">

@@ -83,7 +83,7 @@ export const RENOAPP_ADMIN_TABS = [
   {
     href: '/admin/renoapp/participants',
     label: 'Medverkande',
-    description: 'Hantera entreprenÃ¶rer, konsulter och vilken information som ska samlas in.',
+    description: 'Hantera entreprenörer, konsulter och vilken information som ska samlas in.',
     match: (pathname: string) => pathname === '/admin/renoapp/participants',
   },
   {
