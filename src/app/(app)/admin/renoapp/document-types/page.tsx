@@ -7,6 +7,7 @@ type DocumentTypeItem = {
   key: string
   label: string
   description: string | null
+  defaultPhase: 'before_required' | 'during_execution' | 'after_completion'
   sortOrder: number
   isActive: boolean
 }
@@ -16,6 +17,7 @@ type DraftDocumentType = {
   key: string
   label: string
   description: string
+  defaultPhase: 'before_required' | 'during_execution' | 'after_completion'
   sortOrder: string
   isActive: boolean
 }
@@ -26,6 +28,7 @@ const EMPTY_DRAFT: DraftDocumentType = {
   key: '',
   label: '',
   description: '',
+  defaultPhase: 'before_required',
   sortOrder: '100',
   isActive: true,
 }
@@ -43,6 +46,12 @@ function slugifyDocumentTypeKey(value: string) {
 function renderSortIcon(active: boolean, dir: 'asc' | 'desc') {
   if (!active) return <span className="text-gray-300">◇</span>
   return <span className="text-gray-500">{dir === 'asc' ? '↑' : '↓'}</span>
+}
+
+function labelForDefaultPhase(value: DocumentTypeItem['defaultPhase']) {
+  if (value === 'during_execution') return 'Under'
+  if (value === 'after_completion') return 'Efter'
+  return 'Före'
 }
 
 export default function RenoAppDocumentTypesAdminPage() {
@@ -158,6 +167,7 @@ export default function RenoAppDocumentTypesAdminPage() {
       key: item.key,
       label: item.label,
       description: item.description ?? '',
+      defaultPhase: item.defaultPhase,
       sortOrder: String(item.sortOrder),
       isActive: item.isActive,
     })
@@ -177,6 +187,7 @@ export default function RenoAppDocumentTypesAdminPage() {
           key: generatedDocumentKey,
           label: draft.label,
           description: draft.description,
+          defaultPhase: draft.defaultPhase,
           sortOrder: Number(draft.sortOrder || '100'),
           isActive: draft.isActive,
         }),
@@ -298,7 +309,8 @@ export default function RenoAppDocumentTypesAdminPage() {
                 <tr className="whitespace-nowrap text-left text-[10px] uppercase text-gray-400">
                   <th className="w-[26%] px-3 py-1">Term</th>
                   <th className="w-[18%] px-3 py-1">Kod</th>
-                  <th className="w-[28%] px-3 py-1">Beskrivning</th>
+                  <th className="w-[18%] px-3 py-1">Beskrivning</th>
+                  <th className="w-[10%] px-3 py-1">Fas</th>
                   <th className="w-[10%] px-3 py-1">Sortering</th>
                   <th className="w-[6%] px-3 py-1">Aktiv</th>
                   <th className="w-[12%] px-3 py-1 text-center">Åtgärder</th>
@@ -307,13 +319,13 @@ export default function RenoAppDocumentTypesAdminPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td className="py-4 text-xs text-gray-500" colSpan={6}>
+                    <td className="py-4 text-xs text-gray-500" colSpan={7}>
                       Laddar dokumenttyper...
                     </td>
                   </tr>
                 ) : sortedItems.length === 0 ? (
                   <tr>
-                    <td className="py-4 text-xs text-gray-500" colSpan={6}>
+                    <td className="py-4 text-xs text-gray-500" colSpan={7}>
                       Inga rader.
                     </td>
                   </tr>
@@ -328,6 +340,9 @@ export default function RenoAppDocumentTypesAdminPage() {
                       </td>
                       <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
                         <div className="truncate">{item.description || '-'}</div>
+                      </td>
+                      <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        {labelForDefaultPhase(item.defaultPhase)}
                       </td>
                       <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
                         {item.sortOrder}
@@ -422,6 +437,24 @@ export default function RenoAppDocumentTypesAdminPage() {
                   }
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 />
+              </label>
+
+              <label className="space-y-1">
+                <div className="text-xs font-medium text-gray-600">Standardfas</div>
+                <select
+                  value={draft.defaultPhase}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      defaultPhase: event.target.value as DraftDocumentType['defaultPhase'],
+                    }))
+                  }
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                >
+                  <option value="before_required">Före</option>
+                  <option value="during_execution">Under</option>
+                  <option value="after_completion">Efter</option>
+                </select>
               </label>
 
               <label className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm">

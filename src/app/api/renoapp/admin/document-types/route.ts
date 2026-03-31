@@ -33,6 +33,10 @@ export async function POST(request: Request) {
       key: typeof body.key === 'string' ? body.key : '',
       label: typeof body.label === 'string' ? body.label : '',
       description: typeof body.description === 'string' ? body.description : null,
+      defaultPhase:
+        body.defaultPhase === 'during_execution' || body.defaultPhase === 'after_completion'
+          ? body.defaultPhase
+          : 'before_required',
       sortOrder: typeof body.sortOrder === 'number' ? body.sortOrder : Number(body.sortOrder ?? 100),
       isActive: typeof body.isActive === 'boolean' ? body.isActive : true,
     })

@@ -10,7 +10,7 @@ type Requirement = {
   documentLabel: string
   documentDescription: string | null
   isRequired: boolean
-  phase?: 'before_required' | 'before_conditional' | 'after_completion'
+  phase?: 'before_required' | 'before_conditional' | 'during_execution' | 'after_completion'
   note: string | null
   sortOrder: number
 }
@@ -59,6 +59,7 @@ type ApplyQuestionOptionTrigger = {
   documentKey: string | null
   documentLabel: string | null
   documentDescription: string | null
+  documentPhase: 'before_required' | 'during_execution' | 'after_completion' | null
   sortOrder: number
 }
 
@@ -202,6 +203,25 @@ function formatDateTime(value: string | null) {
   return date.toLocaleString('sv-SE')
 }
 
+function pickHigherPriorityPhase(
+  left?: Requirement['phase'],
+  right?: Requirement['phase']
+): Requirement['phase'] | undefined {
+  const priority: Array<NonNullable<Requirement['phase']>> = [
+    'before_required',
+    'before_conditional',
+    'during_execution',
+    'after_completion',
+  ]
+
+  const leftIndex = left ? priority.indexOf(left) : -1
+  const rightIndex = right ? priority.indexOf(right) : -1
+
+  if (leftIndex === -1) return right
+  if (rightIndex === -1) return left
+  return leftIndex <= rightIndex ? left : right
+}
+
 function mergeRequirements(actions: ActionType[]) {
   const merged = new Map<string, Requirement>()
 
@@ -216,12 +236,7 @@ function mergeRequirements(actions: ActionType[]) {
       merged.set(requirement.documentTypeId, {
         ...current,
         isRequired: current.isRequired || requirement.isRequired,
-        phase:
-          current.phase === 'before_required' || requirement.phase === 'before_required'
-            ? 'before_required'
-            : current.phase === 'before_conditional' || requirement.phase === 'before_conditional'
-              ? 'before_conditional'
-              : current.phase ?? requirement.phase,
+        phase: pickHigherPriorityPhase(current.phase, requirement.phase),
         note: current.note || requirement.note,
         sortOrder: Math.min(current.sortOrder, requirement.sortOrder),
       })
@@ -354,7 +369,7 @@ function resolveTriggeredRequirements(
           documentLabel: trigger.documentLabel ?? 'Dokument',
           documentDescription: trigger.documentDescription,
           isRequired: true,
-          phase: 'before_required',
+          phase: trigger.documentPhase ?? 'before_required',
           note: current?.note ?? 'Detta dokument kravs utifran dina svar i foljdfragorna.',
           sortOrder: current?.sortOrder ?? 1000 + trigger.sortOrder,
         }
@@ -367,10 +382,7 @@ function resolveTriggeredRequirements(
         merged.set(trigger.documentTypeId, {
           ...current,
           isRequired: current.isRequired || candidate.isRequired,
-          phase:
-            current.phase === 'before_required' || candidate.phase === 'before_required'
-              ? 'before_required'
-              : current.phase,
+          phase: pickHigherPriorityPhase(current.phase, candidate.phase),
           note: current.note || candidate.note,
           sortOrder: Math.min(current.sortOrder, candidate.sortOrder),
         })
@@ -407,6 +419,7 @@ function groupRequirementsByPhase(requirements: Requirement[]) {
   return {
     beforeRequired: requirements.filter((item) => item.phase === 'before_required'),
     beforeConditional: requirements.filter((item) => item.phase === 'before_conditional'),
+    duringExecution: requirements.filter((item) => item.phase === 'during_execution'),
     afterCompletion: requirements.filter((item) => item.phase === 'after_completion'),
     uncategorized: requirements.filter((item) => !item.phase),
   }
@@ -470,6 +483,7 @@ export default function RenoAppApplyPage() {
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([])
   const [savingDraft, setSavingDraft] = useState(false)
   const [uploadingDocumentTypeId, setUploadingDocumentTypeId] = useState<string | null>(null)
+  const [configRefreshKey, setConfigRefreshKey] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -503,7 +517,27 @@ export default function RenoAppApplyPage() {
     return () => {
       active = false
     }
-  }, [slug])
+  }, [configRefreshKey, slug])
+
+  useEffect(() => {
+    const refreshConfig = () => {
+      setConfigRefreshKey((current) => current + 1)
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshConfig()
+      }
+    }
+
+    window.addEventListener('focus', refreshConfig)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', refreshConfig)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -1175,6 +1209,12 @@ export default function RenoAppApplyPage() {
                   <div>
                     <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Kan behövas beroende på arbete</p>
                     {renderRequirementList(requirementGroups.beforeConditional)}
+                  </div>
+                ) : null}
+                {requirementGroups.duringExecution.length > 0 ? (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Lämnas under arbetet</p>
+                    {renderRequirementList(requirementGroups.duringExecution)}
                   </div>
                 ) : null}
                 {requirementGroups.afterCompletion.length > 0 ? (
