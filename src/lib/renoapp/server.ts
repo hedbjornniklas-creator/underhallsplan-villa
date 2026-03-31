@@ -248,6 +248,270 @@ type SupabaseAdminClient = {
   from: (table: string) => QueryBuilder
 }
 
+const RENOAPP_TERMINOLOGY_GROUP_FALLBACKS: Record<
+  string,
+  {
+    label: string
+    description: string | null
+  }
+> = {
+  'action-categories': {
+    label: 'Action categories',
+    description: 'Huvudgrupper som boende m\u00f6ter i ans\u00f6kningsguiden.',
+  },
+  'action-types': {
+    label: 'Action types',
+    description: 'Renoveringstyper och anv\u00e4ndarval som driver RenoApps fl\u00f6de.',
+  },
+  'ux-definitions': {
+    label: 'UX-definitioner',
+    description: 'L\u00e5sta definitioner av ord i boendefl\u00f6det.',
+  },
+  'technical-impacts': {
+    label: 'Technical impacts',
+    description: 'Tekniska p\u00e5verkansomr\u00e5den som styr logik, dokument och beslut.',
+  },
+  'legal-classifications': {
+    label: 'Juridisk klassning',
+    description: 'Systemgenererade klassningar som RenoApp h\u00e4rleder.',
+  },
+  statuses: {
+    label: 'Statusar',
+    description: 'L\u00e5sta statuskoder f\u00f6r ans\u00f6kans livscykel.',
+  },
+  'document-phases': {
+    label: 'Dokumentfaser',
+    description: 'Faser som styr n\u00e4r dokument ska finnas tillg\u00e4ngliga.',
+  },
+  'decision-terms': {
+    label: 'Besluts- och uppf\u00f6ljningstermer',
+    description: 'Termer f\u00f6r beslut, villkor och uppf\u00f6ljning.',
+  },
+}
+
+const RENOAPP_TERMINOLOGY_TERM_FALLBACKS: Record<
+  string,
+  {
+    label: string
+    definition: string | null
+  }
+> = {
+  'action-categories:vatrum': {
+    label: 'V\u00e5trum',
+    definition: 'Arbeten i badrum, tv\u00e4ttutrymmen och andra v\u00e5trum.',
+  },
+  'action-categories:kok': {
+    label: 'K\u00f6k',
+    definition: 'Arbeten i k\u00f6k, k\u00f6ksinredning och k\u00f6ksn\u00e4ra installationer.',
+  },
+  'action-categories:ytskikt': {
+    label: 'Ytskikt',
+    definition: 'M\u00e5lning, golv och andra enklare inv\u00e4ndiga ytskikt.',
+  },
+  'action-categories:vaggar_planlosning': {
+    label: 'V\u00e4ggar och planl\u00f6sning',
+    definition: '\u00c4ndringar av v\u00e4ggar och planl\u00f6sning i bostaden.',
+  },
+  'action-categories:installationer': {
+    label: 'Installationer',
+    definition: 'Arbeten som p\u00e5verkar VVS, el eller ventilation.',
+  },
+  'action-categories:ovrigt': {
+    label: '\u00d6vrigt',
+    definition: '\u00d6vriga renoveringar som inte passar i de vanliga kategorierna.',
+  },
+  'action-categories:fasad_fonster_balkong': {
+    label: 'Fasad, f\u00f6nster, balkong',
+    definition: 'Framtida kategori f\u00f6r arbeten som p\u00e5verkar fasad eller yttre delar.',
+  },
+  'action-categories:storre_renovering': {
+    label: 'St\u00f6rre renovering',
+    definition: 'Framtida samlingskategori f\u00f6r mer omfattande renoveringar.',
+  },
+  'action-types:bathroom': {
+    label: 'Badrum',
+    definition: 'Renovering av badrum, tv\u00e4ttutrymme eller andra v\u00e5trum.',
+  },
+  'action-types:kitchen': {
+    label: 'K\u00f6k',
+    definition: '\u00c4ndringar i k\u00f6k, k\u00f6ksinredning eller installationer kopplade till k\u00f6k.',
+  },
+  'action-types:wall': {
+    label: 'V\u00e4ggar och planl\u00f6sning',
+    definition: 'Rivning, flytt eller uppbyggnad av v\u00e4ggar och planl\u00f6snings\u00e4ndringar.',
+  },
+  'action-types:plumbing': {
+    label: 'VVS-arbete',
+    definition: '\u00c4ndringar i vatten, avlopp eller annan VVS-installation.',
+  },
+  'action-types:electrical': {
+    label: 'Elarbete',
+    definition: '\u00c4ndringar i elinstallationer, fasta elpunkter eller eldragning.',
+  },
+  'action-types:ventilation': {
+    label: 'Ventilation',
+    definition: '\u00c4ndringar som p\u00e5verkar ventilation eller fr\u00e5nluftssystem.',
+  },
+  'action-types:surface': {
+    label: 'Ytskiktsrenovering',
+    definition: 'Ytskiktsrenovering som m\u00e5lning, golv eller andra ytskikt utan st\u00f6rre ingrepp.',
+  },
+  'ux-definitions:renovera': {
+    label: 'Renovera',
+    definition:
+      '\u00c5terst\u00e4lla eller uppgradera ett befintligt utrymme utan att anv\u00e4ndaren sj\u00e4lv beh\u00f6ver avg\u00f6ra juridisk klassning.',
+  },
+  'ux-definitions:bygga_nytt': {
+    label: 'Bygga nytt',
+    definition: 'Skapa en funktion som inte tidigare fanns i utrymmet.',
+  },
+  'ux-definitions:flytta': {
+    label: 'Flytta',
+    definition: '\u00c4ndra placering av funktion, installation eller rumslig l\u00f6sning.',
+  },
+  'ux-definitions:installera': {
+    label: 'Installera',
+    definition: 'L\u00e4gga till en ny komponent eller utrustning.',
+  },
+  'ux-definitions:andra': {
+    label: '\u00c4ndra',
+    definition: 'Justera befintlig l\u00f6sning eller system.',
+  },
+  'technical-impacts:wet_room': {
+    label: 'wet_room',
+    definition: 'T\u00e4tskikt, golvbrunn eller v\u00e5trumsmilj\u00f6 p\u00e5verkas.',
+  },
+  'technical-impacts:plumbing': {
+    label: 'plumbing',
+    definition: 'Vatten, avlopp, r\u00f6r eller golvbrunn p\u00e5verkas.',
+  },
+  'technical-impacts:electrical': {
+    label: 'electrical',
+    definition: 'Fast installerad el p\u00e5verkas.',
+  },
+  'technical-impacts:ventilation': {
+    label: 'ventilation',
+    definition: 'Luftfl\u00f6de, ventil eller ventilationssystem p\u00e5verkas.',
+  },
+  'technical-impacts:structure': {
+    label: 'structure',
+    definition: 'V\u00e4gg, bj\u00e4lklag eller b\u00e4rande/stabiliserande del p\u00e5verkas.',
+  },
+  'technical-impacts:surface_only': {
+    label: 'surface_only',
+    definition: 'Arbetet \u00e4r begr\u00e4nsat till enklare ytskikt utan tekniska ingrepp.',
+  },
+  'technical-impacts:facade': {
+    label: 'facade',
+    definition: 'Byggnadens utsida p\u00e5verkas.',
+  },
+  'technical-impacts:balcony': {
+    label: 'balcony',
+    definition: 'Balkong, terrass eller uteplats p\u00e5verkas.',
+  },
+  'technical-impacts:heating': {
+    label: 'heating',
+    definition: 'V\u00e4rmesystem eller golvv\u00e4rme p\u00e5verkas.',
+  },
+  'technical-impacts:fire': {
+    label: 'fire',
+    definition: 'Brandklassning eller brandskydd p\u00e5verkas.',
+  },
+  'technical-impacts:noise': {
+    label: 'noise',
+    definition: 'Ljudisolering eller ljudp\u00e5verkan f\u00f6r\u00e4ndras.',
+  },
+  'technical-impacts:drainage': {
+    label: 'drainage',
+    definition: 'Vattenavledning, lutning eller dr\u00e4neringsliknande funktion p\u00e5verkas.',
+  },
+  'legal-classifications:underhall': {
+    label: 'underh\u00e5ll',
+    definition: '\u00c5tg\u00e4rd som normalt inte \u00e4ndrar funktion eller teknisk huvudl\u00f6sning.',
+  },
+  'legal-classifications:renovering': {
+    label: 'renovering',
+    definition: 'Uppgradering eller \u00e5terst\u00e4llning utan st\u00f6rre funktions\u00e4ndring.',
+  },
+  'legal-classifications:ombyggnad': {
+    label: 'ombyggnad',
+    definition: '\u00c4ndring av funktion, planl\u00f6sning eller teknisk huvudl\u00f6sning.',
+  },
+  'legal-classifications:tillbyggnad': {
+    label: 'tillbyggnad',
+    definition: '\u00d6kning av byggnadens volym.',
+  },
+  'legal-classifications:nyinstallation': {
+    label: 'nyinstallation',
+    definition: 'Ny teknisk funktion eller installation tillf\u00f6rs.',
+  },
+  'statuses:draft': {
+    label: 'Utkast',
+    definition: 'Utkast som \u00e4nnu inte skickats in.',
+  },
+  'statuses:submitted': {
+    label: 'Inskickad',
+    definition: 'Ans\u00f6kan \u00e4r inskickad.',
+  },
+  'statuses:need_info': {
+    label: 'Beh\u00f6ver komplettering',
+    definition: 'Komplettering kr\u00e4vs innan \u00e4rendet kan granskas vidare.',
+  },
+  'statuses:ready_for_review': {
+    label: 'Klar f\u00f6r granskning',
+    definition: '\u00c4rendet \u00e4r tillr\u00e4ckligt komplett f\u00f6r granskning.',
+  },
+  'statuses:approved': {
+    label: 'Godk\u00e4nd',
+    definition: '\u00c4rendet \u00e4r godk\u00e4nt utan s\u00e4rskilda villkor.',
+  },
+  'statuses:approved_with_conditions': {
+    label: 'Godk\u00e4nd med villkor',
+    definition: '\u00c4rendet \u00e4r godk\u00e4nt med villkor som m\u00e5ste f\u00f6ljas.',
+  },
+  'statuses:rejected': {
+    label: 'Avslagen',
+    definition: '\u00c4rendet \u00e4r avslaget.',
+  },
+  'statuses:completed': {
+    label: 'Avslutad',
+    definition: '\u00c4rendet \u00e4r slutredovisat, uppf\u00f6ljt och avslutat.',
+  },
+  'document-phases:before_required': {
+    label: 'before_required',
+    definition: 'Dokument som alltid m\u00e5ste finnas f\u00f6re ans\u00f6kan eller granskning.',
+  },
+  'document-phases:before_conditional': {
+    label: 'before_conditional',
+    definition: 'Dokument som kr\u00e4vs om viss teknisk p\u00e5verkan eller vissa svar finns.',
+  },
+  'document-phases:after_completion': {
+    label: 'after_completion',
+    definition: 'Dokument som ska l\u00e4mnas in efter att arbetet har utf\u00f6rts.',
+  },
+  'decision-terms:beslut': {
+    label: 'Beslut',
+    definition: 'Formellt st\u00e4llningstagande till ans\u00f6kan.',
+  },
+  'decision-terms:villkor': {
+    label: 'Villkor',
+    definition: 'Krav som kopplas till beslutet och som ska f\u00f6ljas under genomf\u00f6randet.',
+  },
+  'decision-terms:kontrollpunkt': {
+    label: 'Kontrollpunkt',
+    definition:
+      'Punkt som f\u00f6ljs upp efter utf\u00f6rt arbete f\u00f6r att verifiera att beslut och utf\u00f6rande st\u00e4mmer.',
+  },
+  'decision-terms:komplettering': {
+    label: 'Komplettering',
+    definition: 'Efterfr\u00e5gat underlag eller svar som beh\u00f6vs f\u00f6r fortsatt handl\u00e4ggning.',
+  },
+  'decision-terms:slutredovisning': {
+    label: 'Slutredovisning',
+    definition: 'Underlag som visar att arbetet \u00e4r utf\u00f6rt och kan avslutas.',
+  },
+}
+
 type PublicRequirement = {
   id: string
   documentTypeId: string
@@ -2289,6 +2553,24 @@ function repairLikelyMojibakeText(value: string | null) {
   }
 }
 
+function terminologyTextLooksBroken(value: string | null) {
+  if (!value) return true
+
+  return (
+    value.includes('\uFFFD') ||
+    /[\u00c2\u00c3\u00e2]/.test(value) ||
+    value.includes('\u00ef\u00bf\u00bd') ||
+    value.includes('f\u00c2') ||
+    value.includes('ï¿½')
+  )
+}
+
+function pickTerminologyText(value: string | null, fallback: string | null) {
+  const repaired = repairLikelyMojibakeText(value)
+  if (fallback && terminologyTextLooksBroken(repaired)) return fallback
+  return repaired
+}
+
 function repairLikelyMojibakeValue(value: unknown): unknown {
   if (typeof value === 'string') return repairLikelyMojibakeText(value)
   if (Array.isArray(value)) return value.map((item) => repairLikelyMojibakeValue(item))
@@ -3042,15 +3324,18 @@ export async function listRenoAppAdminTerminology(): Promise<{
   if (aliasRows.error) throw new Error(aliasRows.error.message ?? 'Kunde inte lasa alias.')
   if (ruleRows.error) throw new Error(ruleRows.error.message ?? 'Kunde inte lasa regler.')
 
-  const groups = ((groupRows.data ?? []) as TerminologyGroupRow[]).map((item) => ({
-    id: item.id,
-    key: item.key,
-    label: repairLikelyMojibakeText(item.label) ?? '',
-    description: repairLikelyMojibakeText(item.description ?? null),
-    sortOrder: item.sort_order,
-    isLocked: item.is_locked,
-    isActive: item.is_active,
-  }))
+  const groups = ((groupRows.data ?? []) as TerminologyGroupRow[]).map((item) => {
+    const fallback = RENOAPP_TERMINOLOGY_GROUP_FALLBACKS[item.key]
+    return {
+      id: item.id,
+      key: item.key,
+      label: pickTerminologyText(item.label, fallback?.label ?? null) ?? '',
+      description: pickTerminologyText(item.description ?? null, fallback?.description ?? null),
+      sortOrder: item.sort_order,
+      isLocked: item.is_locked,
+      isActive: item.is_active,
+    }
+  })
 
   const groupMap = new Map(groups.map((item) => [item.id, item]))
   const aliases = (aliasRows.data ?? []) as TerminologyAliasRow[]
@@ -3058,14 +3343,18 @@ export async function listRenoAppAdminTerminology(): Promise<{
 
   const terms = ((termRows.data ?? []) as TerminologyTermRow[]).map((item) => {
     const group = groupMap.get(item.group_id)
+    const fallback = RENOAPP_TERMINOLOGY_TERM_FALLBACKS[`${group?.key ?? ''}:${item.code}`]
     return {
       id: item.id,
       groupId: item.group_id,
       groupKey: group?.key ?? '',
-      groupLabel: repairLikelyMojibakeText(group?.label ?? '') ?? '',
+      groupLabel: pickTerminologyText(
+        group?.label ?? '',
+        RENOAPP_TERMINOLOGY_GROUP_FALLBACKS[group?.key ?? '']?.label ?? null
+      ) ?? '',
       code: item.code,
-      label: repairLikelyMojibakeText(item.label) ?? '',
-      definition: repairLikelyMojibakeText(item.definition ?? null),
+      label: pickTerminologyText(item.label, fallback?.label ?? null) ?? '',
+      definition: pickTerminologyText(item.definition ?? null, fallback?.definition ?? null),
       termLevel: item.term_level,
       inputKind: item.input_kind,
       isLocked: item.is_locked,
