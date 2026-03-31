@@ -76,6 +76,38 @@ type DocumentTypeRow = {
   is_active: boolean
 }
 
+type ApplyQuestionRow = {
+  id: string
+  key: string
+  label: string
+  help_text: string | null
+  response_type: 'single_select' | 'multi_select' | 'boolean'
+  sort_order: number
+  is_locked: boolean
+  is_active: boolean
+  metadata: unknown
+}
+
+type ApplyQuestionOptionRow = {
+  id: string
+  question_id: string
+  key: string
+  label: string
+  description: string | null
+  sort_order: number
+  is_active: boolean
+  metadata: unknown
+}
+
+type ActionTypeQuestionRow = {
+  id: string
+  action_type_id: string
+  question_id: string
+  sort_order: number
+  is_required: boolean
+  is_active: boolean
+}
+
 type TerminologyGroupRow = {
   id: string
   key: string
@@ -688,6 +720,44 @@ export type RenoAppAdminDocumentType = {
   description: string | null
   sortOrder: number
   isActive: boolean
+}
+
+export type RenoAppAdminQuestionOption = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  sortOrder: number
+  isActive: boolean
+  metadata: unknown
+}
+
+export type RenoAppAdminQuestion = {
+  id: string
+  key: string
+  label: string
+  helpText: string | null
+  responseType: 'single_select' | 'multi_select' | 'boolean'
+  sortOrder: number
+  isLocked: boolean
+  isActive: boolean
+  metadata: unknown
+  options: RenoAppAdminQuestionOption[]
+}
+
+export type RenoAppAdminActionTypeQuestion = {
+  id: string
+  questionId: string
+  questionKey: string
+  questionLabel: string
+  questionHelpText: string | null
+  isRequired: boolean
+  sortOrder: number
+}
+
+export type RenoAppAdminActionTypeQuestionGroup = {
+  actionType: RenoAppAdminActionType
+  questions: RenoAppAdminActionTypeQuestion[]
 }
 
 export type RenoAppAdminActionCategory = {
@@ -2639,6 +2709,10 @@ function normalizeTerminologyInputKind(
   return value === 'system_internal' || value === 'system_generated' ? value : 'user_visible'
 }
 
+function normalizeQuestionResponseType(value: unknown): 'single_select' | 'multi_select' | 'boolean' {
+  return value === 'multi_select' || value === 'boolean' ? value : 'single_select'
+}
+
 function normalizeJsonValue(value: unknown) {
   if (
     value === null ||
@@ -3444,6 +3518,315 @@ export async function deleteRenoAppAdminDocumentType(id: string): Promise<void> 
   const { error } = await admin.from('renovation_document_types').delete().eq('id', id)
   if (error) {
     throw new Error(error.message ?? 'Kunde inte radera dokumenttyp.')
+  }
+}
+
+export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[]> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const [questionRows, optionRows] = await Promise.all([
+    admin
+      .from('renoapp_apply_questions')
+      .select('id,key,label,help_text,response_type,sort_order,is_locked,is_active,metadata')
+      .order('sort_order', { ascending: true }),
+    admin
+      .from('renoapp_apply_question_options')
+      .select('id,question_id,key,label,description,sort_order,is_active,metadata')
+      .order('sort_order', { ascending: true }),
+  ])
+
+  if (questionRows.error) throw new Error(questionRows.error.message ?? 'Kunde inte lasa fragor.')
+  if (optionRows.error) throw new Error(optionRows.error.message ?? 'Kunde inte lasa svarsalternativ.')
+
+  const options = (optionRows.data ?? []) as ApplyQuestionOptionRow[]
+
+  return ((questionRows.data ?? []) as ApplyQuestionRow[]).map((item) => ({
+    id: item.id,
+    key: item.key,
+    label: repairLikelyMojibakeText(item.label) ?? '',
+    helpText: repairLikelyMojibakeText(item.help_text ?? null),
+    responseType: item.response_type,
+    sortOrder: item.sort_order,
+    isLocked: item.is_locked,
+    isActive: item.is_active,
+    metadata: repairLikelyMojibakeValue(item.metadata ?? {}),
+    options: options
+      .filter((option) => option.question_id === item.id)
+      .map((option) => ({
+        id: option.id,
+        key: option.key,
+        label: repairLikelyMojibakeText(option.label) ?? '',
+        description: repairLikelyMojibakeText(option.description ?? null),
+        sortOrder: option.sort_order,
+        isActive: option.is_active,
+        metadata: repairLikelyMojibakeValue(option.metadata ?? {}),
+      })),
+  }))
+}
+
+export async function saveRenoAppAdminQuestion(input: {
+  question: {
+    id?: string | null
+    key: string
+    label: string
+    helpText?: string | null
+    responseType?: 'single_select' | 'multi_select' | 'boolean'
+    sortOrder?: number | null
+    isLocked?: boolean
+    isActive?: boolean
+    metadata?: unknown
+  }
+  options?: Array<{
+    id?: string | null
+    key: string
+    label: string
+    description?: string | null
+    sortOrder?: number | null
+    isActive?: boolean
+    metadata?: unknown
+  }>
+}): Promise<RenoAppAdminQuestion> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const existingQuestion = input.question.id
+    ? await admin
+        .from('renoapp_apply_questions')
+        .select('id,key,is_locked')
+        .eq('id', input.question.id)
+        .maybeSingle()
+    : null
+
+  if (existingQuestion?.error) {
+    throw new Error(existingQuestion.error.message ?? 'Kunde inte lasa fraga.')
+  }
+
+  const existingQuestionRow = (existingQuestion?.data ?? null) as Pick<
+    ApplyQuestionRow,
+    'id' | 'key' | 'is_locked'
+  > | null
+
+  const label = normalizeTerminologyText(input.question.label)
+  const computedKey = normalizeMachineKey(input.question.key) ?? normalizeMachineKey(label) ?? null
+  const key = existingQuestionRow?.is_locked ? existingQuestionRow.key : computedKey
+  const helpText = normalizeTerminologyText(input.question.helpText)
+  const responseType = normalizeQuestionResponseType(input.question.responseType)
+  const sortOrder =
+    Number.isFinite(input.question.sortOrder) && Number(input.question.sortOrder) > 0
+      ? Number(input.question.sortOrder)
+      : 100
+  const isLocked = existingQuestionRow?.is_locked ?? input.question.isLocked === true
+  const isActive = input.question.isActive !== false
+  const metadata = normalizeJsonValue(input.question.metadata ?? {})
+
+  assertRequiredText(key, 'QUESTION_KEY_REQUIRED')
+  assertRequiredText(label, 'QUESTION_LABEL_REQUIRED')
+
+  const payload = {
+    key,
+    label,
+    help_text: helpText,
+    response_type: responseType,
+    sort_order: sortOrder,
+    is_locked: isLocked,
+    is_active: isActive,
+    metadata,
+  }
+
+  const questionQuery = input.question.id
+    ? admin.from('renoapp_apply_questions').update(payload).eq('id', input.question.id)
+    : admin.from('renoapp_apply_questions').insert(payload)
+
+  const { data: savedQuestionData, error: savedQuestionError } = await questionQuery
+    .select('id,key,label,help_text,response_type,sort_order,is_locked,is_active,metadata')
+    .single()
+
+  if (savedQuestionError || !savedQuestionData) {
+    throw new Error(savedQuestionError?.message ?? 'Kunde inte spara fraga.')
+  }
+
+  const savedQuestion = savedQuestionData as ApplyQuestionRow
+  const questionId = savedQuestion.id
+
+  const existingOptionsResult = await admin
+    .from('renoapp_apply_question_options')
+    .select('id,question_id,key,label,description,sort_order,is_active,metadata')
+    .eq('question_id', questionId)
+
+  if (existingOptionsResult.error) {
+    throw new Error(existingOptionsResult.error.message ?? 'Kunde inte lasa svarsalternativ.')
+  }
+
+  const keptOptionIds = new Set<string>()
+  const options = (input.options ?? []).filter((item) => normalizeText(item.label))
+
+  for (const optionInput of options) {
+    const optionLabel = normalizeTerminologyText(optionInput.label)
+    const computedOptionKey =
+      normalizeMachineKey(optionInput.key) ?? normalizeMachineKey(optionLabel) ?? null
+    const optionDescription = normalizeTerminologyText(optionInput.description)
+    const optionSortOrder =
+      Number.isFinite(optionInput.sortOrder) && Number(optionInput.sortOrder) > 0
+        ? Number(optionInput.sortOrder)
+        : 100
+
+    if (!optionLabel || !computedOptionKey) continue
+
+    const optionPayload = {
+      question_id: questionId,
+      key: computedOptionKey,
+      label: optionLabel,
+      description: optionDescription,
+      sort_order: optionSortOrder,
+      is_active: optionInput.isActive !== false,
+      metadata: normalizeJsonValue(optionInput.metadata ?? {}),
+    }
+
+    const optionQuery = optionInput.id
+      ? admin.from('renoapp_apply_question_options').update(optionPayload).eq('id', optionInput.id)
+      : admin.from('renoapp_apply_question_options').insert(optionPayload)
+
+    const { data: savedOptionData, error: savedOptionError } = await optionQuery
+      .select('id')
+      .single()
+
+    if (savedOptionError || !savedOptionData) {
+      throw new Error(savedOptionError?.message ?? 'Kunde inte spara svarsalternativ.')
+    }
+
+    keptOptionIds.add(String(savedOptionData.id))
+  }
+
+  for (const existingOption of (existingOptionsResult.data ?? []) as ApplyQuestionOptionRow[]) {
+    if (!keptOptionIds.has(existingOption.id)) {
+      const { error } = await admin
+        .from('renoapp_apply_question_options')
+        .delete()
+        .eq('id', existingOption.id)
+      if (error) {
+        throw new Error(error.message ?? 'Kunde inte ta bort svarsalternativ.')
+      }
+    }
+  }
+
+  const questions = await listRenoAppAdminQuestions()
+  const saved = questions.find((item) => item.id === questionId)
+  if (!saved) {
+    throw new Error('Kunde inte lasa sparad fraga.')
+  }
+
+  return saved
+}
+
+export async function deleteRenoAppAdminQuestion(id: string): Promise<void> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const { error } = await admin.from('renoapp_apply_questions').delete().eq('id', id)
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte radera fraga.')
+  }
+}
+
+export async function listRenoAppAdminActionTypeQuestionConfig(): Promise<{
+  questions: RenoAppAdminQuestion[]
+  actionTypes: RenoAppAdminActionTypeQuestionGroup[]
+}> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const [questions, actionTypes, linkRows] = await Promise.all([
+    listRenoAppAdminQuestions(),
+    listRenoAppAdminActionTypes(),
+    admin
+      .from('renoapp_action_type_questions')
+      .select('id,action_type_id,question_id,sort_order,is_required,is_active')
+      .order('sort_order', { ascending: true }),
+  ])
+
+  if (linkRows.error) {
+    throw new Error(linkRows.error.message ?? 'Kunde inte lasa fragekopplingar.')
+  }
+
+  const questionMap = new Map(questions.map((item) => [item.id, item]))
+  const links = (linkRows.data ?? []) as ActionTypeQuestionRow[]
+
+  return {
+    questions,
+    actionTypes: actionTypes.map((actionType) => ({
+      actionType,
+      questions: links
+        .filter((link) => link.action_type_id === actionType.id && link.is_active)
+        .map((link) => {
+          const question = questionMap.get(link.question_id)
+          return {
+            id: link.id,
+            questionId: link.question_id,
+            questionKey: question?.key ?? '',
+            questionLabel: question?.label ?? '',
+            questionHelpText: question?.helpText ?? null,
+            isRequired: link.is_required,
+            sortOrder: link.sort_order,
+          }
+        })
+        .filter((item) => item.questionId)
+        .sort((left, right) => left.sortOrder - right.sortOrder || left.questionLabel.localeCompare(right.questionLabel, 'sv')),
+    })),
+  }
+}
+
+export async function saveRenoAppAdminActionTypeQuestion(input: {
+  actionTypeId: string
+  questionId: string
+  isEnabled: boolean
+  isRequired?: boolean
+  sortOrder?: number | null
+}): Promise<void> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  if (!input.actionTypeId || !input.questionId) {
+    throw new Error('ACTION_TYPE_QUESTION_TARGET_REQUIRED')
+  }
+
+  const { data: existingLink, error: existingLinkError } = await admin
+    .from('renoapp_action_type_questions')
+    .select('id')
+    .eq('action_type_id', input.actionTypeId)
+    .eq('question_id', input.questionId)
+    .maybeSingle()
+
+  if (existingLinkError) {
+    throw new Error(existingLinkError.message ?? 'Kunde inte lasa fragekoppling.')
+  }
+
+  if (!input.isEnabled) {
+    if (existingLink?.id) {
+      const { error } = await admin.from('renoapp_action_type_questions').delete().eq('id', existingLink.id)
+      if (error) {
+        throw new Error(error.message ?? 'Kunde inte ta bort fragekoppling.')
+      }
+    }
+    return
+  }
+
+  const payload = {
+    action_type_id: input.actionTypeId,
+    question_id: input.questionId,
+    sort_order:
+      Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0 ? Number(input.sortOrder) : 100,
+    is_required: input.isRequired !== false,
+    is_active: true,
+  }
+
+  const query = existingLink?.id
+    ? admin.from('renoapp_action_type_questions').update(payload).eq('id', existingLink.id)
+    : admin.from('renoapp_action_type_questions').insert(payload)
+
+  const { error } = await query.select('id').single()
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte spara fragekoppling.')
   }
 }
 

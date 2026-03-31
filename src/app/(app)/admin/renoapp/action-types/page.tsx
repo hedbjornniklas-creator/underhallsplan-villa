@@ -40,15 +40,46 @@ type RequirementItem = {
   sortOrder: number
 }
 
+type QuestionItem = {
+  id: string
+  key: string
+  label: string
+  helpText: string | null
+  responseType: 'single_select' | 'multi_select' | 'boolean'
+  sortOrder: number
+  isActive: boolean
+}
+
+type ActionQuestionItem = {
+  id: string
+  questionId: string
+  questionKey: string
+  questionLabel: string
+  questionHelpText: string | null
+  isRequired: boolean
+  sortOrder: number
+}
+
 type ActionTypeGroup = {
   actionType: ActionTypeItem
   requirements: RequirementItem[]
+}
+
+type ActionTypeQuestionGroup = {
+  actionType: ActionTypeItem
+  questions: ActionQuestionItem[]
 }
 
 type DraftRequirementState = {
   isEnabled: boolean
   isRequired: boolean
   note: string
+  sortOrder: string
+}
+
+type DraftActionQuestionState = {
+  isEnabled: boolean
+  isRequired: boolean
   sortOrder: string
 }
 
@@ -80,9 +111,11 @@ function renderSortIcon(active: boolean, dir: 'asc' | 'desc') {
 export default function RenoAppActionTypesAdminPage() {
   const [items, setItems] = useState<ActionTypeItem[]>([])
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeItem[]>([])
+  const [questionItems, setQuestionItems] = useState<QuestionItem[]>([])
   const [requirementDrafts, setRequirementDrafts] = useState<Record<string, DraftRequirementState>>(
     {}
   )
+  const [questionDrafts, setQuestionDrafts] = useState<Record<string, DraftActionQuestionState>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -93,10 +126,12 @@ export default function RenoAppActionTypesAdminPage() {
   })
   const [savingActionKey, setSavingActionKey] = useState<string | null>(null)
   const [savingRequirementKey, setSavingRequirementKey] = useState<string | null>(null)
+  const [savingQuestionKey, setSavingQuestionKey] = useState<string | null>(null)
   const [deletingActionId, setDeletingActionId] = useState<string | null>(null)
   const [actionModalOpen, setActionModalOpen] = useState(false)
   const [actionDraft, setActionDraft] = useState<DraftActionType>(EMPTY_DRAFT)
   const [documentsActionId, setDocumentsActionId] = useState<string | null>(null)
+  const [questionsActionId, setQuestionsActionId] = useState<string | null>(null)
 
   const generatedActionKey =
     actionDraft.id && actionDraft.key ? actionDraft.key : slugifyActionTypeKey(actionDraft.label)
@@ -109,9 +144,10 @@ export default function RenoAppActionTypesAdminPage() {
       setError(null)
 
       try {
-        const [actionResponse, requirementResponse] = await Promise.all([
+        const [actionResponse, requirementResponse, questionResponse] = await Promise.all([
           fetch('/api/renoapp/admin/action-types', { cache: 'no-store' }),
           fetch('/api/renoapp/admin/requirements', { cache: 'no-store' }),
+          fetch('/api/renoapp/admin/action-type-questions', { cache: 'no-store' }),
         ])
 
         const actionPayload = (await actionResponse.json().catch(() => ({}))) as {
@@ -123,6 +159,11 @@ export default function RenoAppActionTypesAdminPage() {
           actionTypes?: ActionTypeGroup[]
           error?: string
         }
+        const questionPayload = (await questionResponse.json().catch(() => ({}))) as {
+          questions?: QuestionItem[]
+          actionTypes?: ActionTypeQuestionGroup[]
+          error?: string
+        }
 
         if (!actionResponse.ok) {
           throw new Error(actionPayload.error ?? 'Kunde inte lasa renoveringstyper.')
@@ -130,6 +171,10 @@ export default function RenoAppActionTypesAdminPage() {
 
         if (!requirementResponse.ok) {
           throw new Error(requirementPayload.error ?? 'Kunde inte lasa dokumentkrav.')
+        }
+
+        if (!questionResponse.ok) {
+          throw new Error(questionPayload.error ?? 'Kunde inte lasa fragekopplingar.')
         }
 
         if (!active) return
@@ -142,8 +187,12 @@ export default function RenoAppActionTypesAdminPage() {
         )
 
         const nextRequirementDrafts: Record<string, DraftRequirementState> = {}
+        const nextQuestionDrafts: Record<string, DraftActionQuestionState> = {}
         for (const actionType of nextItems) {
           const group = (requirementPayload.actionTypes ?? []).find(
+            (candidate) => candidate.actionType.id === actionType.id
+          )
+          const questionGroup = (questionPayload.actionTypes ?? []).find(
             (candidate) => candidate.actionType.id === actionType.id
           )
           for (const documentType of nextDocumentTypes) {
@@ -157,12 +206,25 @@ export default function RenoAppActionTypesAdminPage() {
               sortOrder: String(requirement?.sortOrder ?? documentType.sortOrder ?? 100),
             }
           }
+          for (const question of questionPayload.questions ?? []) {
+            const link = questionGroup?.questions.find((item) => item.questionId === question.id)
+            nextQuestionDrafts[`${actionType.id}:${question.id}`] = {
+              isEnabled: Boolean(link),
+              isRequired: link?.isRequired ?? true,
+              sortOrder: String(link?.sortOrder ?? question.sortOrder ?? 100),
+            }
+          }
         }
 
         setItems(nextItems)
         setDocumentTypes(nextDocumentTypes)
+        setQuestionItems(questionPayload.questions ?? [])
         setRequirementDrafts(nextRequirementDrafts)
+        setQuestionDrafts(nextQuestionDrafts)
         setDocumentsActionId((current) =>
+          current && nextItems.some((item) => item.id === current) ? current : null
+        )
+        setQuestionsActionId((current) =>
           current && nextItems.some((item) => item.id === current) ? current : null
         )
       } catch (loadError) {
@@ -199,8 +261,17 @@ export default function RenoAppActionTypesAdminPage() {
     [documentTypes]
   )
 
+  const activeQuestions = useMemo(
+    () => questionItems.filter((question) => question.isActive),
+    [questionItems]
+  )
+
   const documentsAction = documentsActionId
     ? items.find((item) => item.id === documentsActionId) ?? null
+    : null
+
+  const questionsAction = questionsActionId
+    ? items.find((item) => item.id === questionsActionId) ?? null
     : null
 
   const documentsChips = useMemo(() => {
@@ -209,6 +280,13 @@ export default function RenoAppActionTypesAdminPage() {
       (documentType) => requirementDrafts[`${documentsActionId}:${documentType.id}`]?.isEnabled
     )
   }, [activeDocumentTypes, documentsActionId, requirementDrafts])
+
+  const questionChips = useMemo(() => {
+    if (!questionsActionId) return []
+    return activeQuestions.filter(
+      (question) => questionDrafts[`${questionsActionId}:${question.id}`]?.isEnabled
+    )
+  }, [activeQuestions, questionDrafts, questionsActionId])
 
   const getRequirementDraft = (actionTypeId: string, documentTypeId: string) =>
     requirementDrafts[`${actionTypeId}:${documentTypeId}`]
@@ -225,6 +303,19 @@ export default function RenoAppActionTypesAdminPage() {
       ])
     ) as Record<string, number>
   }, [activeDocumentTypes, items, requirementDrafts])
+
+  const questionCountByActionId = useMemo(() => {
+    return Object.fromEntries(
+      items.map((item) => [
+        item.id,
+        activeQuestions.reduce(
+          (count, question) =>
+            questionDrafts[`${item.id}:${question.id}`]?.isEnabled ? count + 1 : count,
+          0
+        ),
+      ])
+    ) as Record<string, number>
+  }, [activeQuestions, items, questionDrafts])
 
   const sortedItems = useMemo(() => {
     return [...filteredItems].sort((left, right) => {
@@ -341,6 +432,20 @@ export default function RenoAppActionTypesAdminPage() {
         }
         return next
       })
+      setQuestionDrafts((current) => {
+        const next = { ...current }
+        for (const question of activeQuestions) {
+          const key = `${savedItem.id}:${question.id}`
+          if (!next[key]) {
+            next[key] = {
+              isEnabled: false,
+              isRequired: true,
+              sortOrder: String(question.sortOrder ?? 100),
+            }
+          }
+        }
+        return next
+      })
       setActionModalOpen(false)
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara renoveringstyp.')
@@ -357,6 +462,22 @@ export default function RenoAppActionTypesAdminPage() {
   ) => {
     const key = `${actionTypeId}:${documentTypeId}`
     setRequirementDrafts((current) => ({
+      ...current,
+      [key]: {
+        ...current[key],
+        [field]: value,
+      },
+    }))
+  }
+
+  const updateQuestionDraft = (
+    actionTypeId: string,
+    questionId: string,
+    field: keyof DraftActionQuestionState,
+    value: string | boolean
+  ) => {
+    const key = `${actionTypeId}:${questionId}`
+    setQuestionDrafts((current) => ({
       ...current,
       [key]: {
         ...current[key],
@@ -398,6 +519,38 @@ export default function RenoAppActionTypesAdminPage() {
     }
   }
 
+  const saveActionQuestion = async (actionTypeId: string, questionId: string) => {
+    const key = `${actionTypeId}:${questionId}`
+    const draft = questionDrafts[key]
+    if (!draft) return
+
+    setSavingQuestionKey(key)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/renoapp/admin/action-type-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actionTypeId,
+          questionId,
+          isEnabled: draft.isEnabled,
+          isRequired: draft.isRequired,
+          sortOrder: Number(draft.sortOrder || '100'),
+        }),
+      })
+
+      const payload = (await response.json().catch(() => ({}))) as { error?: string }
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Kunde inte spara fragekoppling.')
+      }
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara fragekoppling.')
+    } finally {
+      setSavingQuestionKey(null)
+    }
+  }
+
   const deleteActionType = async (item: ActionTypeItem) => {
     if (!window.confirm(`Radera renoveringstypen "${item.label}"?`)) return
 
@@ -422,7 +575,13 @@ export default function RenoAppActionTypesAdminPage() {
           Object.entries(current).filter(([key]) => !key.startsWith(`${item.id}:`))
         )
       )
+      setQuestionDrafts((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([key]) => !key.startsWith(`${item.id}:`))
+        )
+      )
       setDocumentsActionId((current) => (current === item.id ? null : current))
+      setQuestionsActionId((current) => (current === item.id ? null : current))
     } catch (deleteError) {
       setError(
         deleteError instanceof Error ? deleteError.message : 'Kunde inte radera renoveringstyp.'
@@ -520,7 +679,9 @@ export default function RenoAppActionTypesAdminPage() {
               <tbody>
                 {sortedItems.map((item) => {
                   const documentsOpen = documentsActionId === item.id
+                  const questionsOpen = questionsActionId === item.id
                   const requirementCount = requirementCountByActionId[item.id] ?? 0
+                  const questionCount = questionCountByActionId[item.id] ?? 0
                   return (
                     <tr key={item.id} className="group transition-colors hover:bg-blue-50">
                       <td className="rounded-l-xl border border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
@@ -539,7 +700,7 @@ export default function RenoAppActionTypesAdminPage() {
                         <div className="truncate">{item.isActive ? 'Ja' : 'Nej'}</div>
                       </td>
                       <td className="rounded-r-xl border border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
-                        <div className="grid grid-cols-2 gap-1 whitespace-nowrap text-[11px]">
+                        <div className="grid grid-cols-3 gap-1 whitespace-nowrap text-[11px]">
                           <button
                             type="button"
                             onClick={() =>
@@ -552,6 +713,19 @@ export default function RenoAppActionTypesAdminPage() {
                             }`}
                           >
                             Dokument
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setQuestionsActionId((current) => (current === item.id ? null : item.id))
+                            }
+                            className={`w-full rounded-md border ${
+                              questionsOpen
+                                ? 'border-sky-300 bg-sky-100 text-sky-900'
+                                : 'border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100'
+                            }`}
+                          >
+                            Frågor
                           </button>
                           <button
                             type="button"
@@ -575,6 +749,9 @@ export default function RenoAppActionTypesAdminPage() {
                           >
                             {deletingActionId === item.id ? 'Raderar...' : 'Radera'}
                           </button>
+                        </div>
+                        <div className="mt-2 text-[10px] text-gray-500">
+                          {requirementCount} dokument, {questionCount} frågor
                         </div>
                       </td>
                     </tr>
@@ -730,6 +907,145 @@ export default function RenoAppActionTypesAdminPage() {
                             className="rounded-xl border border-stone-300 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-stone-100 disabled:opacity-60"
                           >
                             {savingRequirementKey === draftKey ? 'Sparar...' : 'Spara'}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {questionsAction ? (
+        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-auto bg-black/40 p-4">
+          <div className="w-full max-w-6xl rounded-[28px] border border-stone-200 bg-white p-6 shadow-xl">
+            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h3 className="text-2xl font-semibold text-stone-900">
+                  Frågor för {questionsAction.label}
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-stone-600">
+                  Välj vilka frågor som ska ställas när den här renoveringstypen används i apply.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="text-sm text-stone-600">
+                  {questionChips.length} aktiva frågor
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuestionsActionId(null)}
+                  className="rounded-xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                >
+                  Stäng
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {questionChips.length > 0 ? (
+                questionChips.map((question) => {
+                  const draft = questionDrafts[`${questionsAction.id}:${question.id}`]
+                  return (
+                    <span
+                      key={question.id}
+                      className="rounded-full border border-stone-300 bg-stone-100 px-3 py-1.5 text-xs font-semibold text-stone-800"
+                    >
+                      {question.label}
+                      {draft?.isRequired ? ' • obligatorisk' : ''}
+                    </span>
+                  )
+                })
+              ) : (
+                <span className="rounded-full border border-dashed border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-semibold text-stone-500">
+                  Inga frågor valda ännu
+                </span>
+              )}
+            </div>
+
+            <div className="mt-5 overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-stone-500">
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Fråga</th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Aktiv</th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Obligatorisk</th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Sortering</th>
+                    <th className="px-3 py-3 font-semibold uppercase tracking-[0.16em]">Åtgärd</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeQuestions.map((question) => {
+                    const draftKey = `${questionsAction.id}:${question.id}`
+                    const draft = questionDrafts[draftKey]
+                    if (!draft) return null
+
+                    return (
+                      <tr key={draftKey} className="border-t border-stone-200">
+                        <td className="px-3 py-4 align-top">
+                          <div className="font-medium text-stone-900">{question.label}</div>
+                          {question.helpText ? (
+                            <div className="mt-1 text-xs text-stone-600">{question.helpText}</div>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-4 align-top">
+                          <input
+                            type="checkbox"
+                            checked={draft.isEnabled}
+                            onChange={(event) =>
+                              updateQuestionDraft(
+                                questionsAction.id,
+                                question.id,
+                                'isEnabled',
+                                event.target.checked
+                              )
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-4 align-top">
+                          <select
+                            value={draft.isRequired ? 'required' : 'optional'}
+                            onChange={(event) =>
+                              updateQuestionDraft(
+                                questionsAction.id,
+                                question.id,
+                                'isRequired',
+                                event.target.value === 'required'
+                              )
+                            }
+                            disabled={!draft.isEnabled}
+                            className="rounded-xl border border-stone-300 px-3 py-2 text-sm disabled:bg-stone-100"
+                          >
+                            <option value="required">Ja</option>
+                            <option value="optional">Nej</option>
+                          </select>
+                        </td>
+                        <td className="px-3 py-4 align-top">
+                          <input
+                            value={draft.sortOrder}
+                            onChange={(event) =>
+                              updateQuestionDraft(
+                                questionsAction.id,
+                                question.id,
+                                'sortOrder',
+                                event.target.value
+                              )
+                            }
+                            disabled={!draft.isEnabled}
+                            className="w-28 rounded-xl border border-stone-300 px-3 py-2 text-sm disabled:bg-stone-100"
+                          />
+                        </td>
+                        <td className="px-3 py-4 align-top">
+                          <button
+                            type="button"
+                            onClick={() => void saveActionQuestion(questionsAction.id, question.id)}
+                            disabled={savingQuestionKey === draftKey}
+                            className="rounded-xl border border-stone-300 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-stone-100 disabled:opacity-60"
+                          >
+                            {savingQuestionKey === draftKey ? 'Sparar...' : 'Spara'}
                           </button>
                         </td>
                       </tr>

@@ -81,6 +81,12 @@ export const RENOAPP_ADMIN_TABS = [
     match: (pathname: string) => pathname === '/admin/renoapp/document-types',
   },
   {
+    href: '/admin/renoapp/questions',
+    label: 'Frågor',
+    description: 'Bygg upp RenoApps frågebank och återanvändbara svarsalternativ.',
+    match: (pathname: string) => pathname === '/admin/renoapp/questions',
+  },
+  {
     href: '/admin/renoapp/terminology',
     label: 'Terminologi',
     description: 'Lås och underhåll RenoApps ordlista, alias och grundregler.',
