@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 
 type Requirement = {
@@ -207,11 +207,13 @@ const INITIAL_FORM: FormState = {
   questionAnswers: {},
 }
 
+const SIMPLE_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 const STEP_ITEMS = [
-  { id: 1, label: 'Vad vill du renovera?' },
-  { id: 2, label: 'Underlag' },
-  { id: 3, label: 'Projekt och entreprenör' },
-  { id: 4, label: 'Lägenhet och kontakt' },
+  { id: 1, label: 'Lägenhet och kontakt' },
+  { id: 2, label: 'Vad vill du renovera?' },
+  { id: 3, label: 'Underlag' },
+  { id: 4, label: 'Projekt och entreprenör' },
   { id: 5, label: 'Granska och skicka' },
 ]
 
@@ -506,6 +508,10 @@ function groupRequirementsByPhase(requirements: Requirement[]) {
   }
 }
 
+function isBeforePhaseRequirement(requirement: Requirement) {
+  return requirement.phase === 'before_required' || requirement.phase === 'before_conditional'
+}
+
 function toggleMultiSelectValue(values: string[], optionKey: string) {
   return values.includes(optionKey)
     ? values.filter((value) => value !== optionKey)
@@ -563,6 +569,33 @@ const compactDescriptionStyle = {
   overflow: 'hidden',
 }
 
+function buildDraftFingerprint(form: FormState) {
+  const sortedQuestionAnswers = Object.fromEntries(
+    Object.entries(form.questionAnswers)
+      .sort(([left], [right]) => left.localeCompare(right, 'sv'))
+      .map(([questionKey, values]) => [
+        questionKey,
+        [...values].sort((left, right) => left.localeCompare(right, 'sv')),
+      ])
+  )
+
+  return JSON.stringify({
+    applicantName: form.applicantName.trim(),
+    applicantEmail: form.applicantEmail.trim().toLowerCase(),
+    applicantPhone: form.applicantPhone.trim(),
+    unitNumberInternal: form.unitNumberInternal.trim(),
+    unitNumberSkatteverket: form.unitNumberSkatteverket.trim(),
+    actionTypeKeys: [...form.actionTypeKeys].sort((left, right) => left.localeCompare(right, 'sv')),
+    description: form.description.trim(),
+    contractorName: form.contractorName.trim(),
+    contractorOrgNumber: form.contractorOrgNumber.trim(),
+    contractorEmail: form.contractorEmail.trim().toLowerCase(),
+    contractorPhone: form.contractorPhone.trim(),
+    contractorHasRequiredCertification: form.contractorHasRequiredCertification,
+    questionAnswers: sortedQuestionAnswers,
+  })
+}
+
 export default function RenoAppApplyPage() {
   const router = useRouter()
   const params = useParams<{ slug: string }>()
@@ -574,14 +607,18 @@ export default function RenoAppApplyPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(INITIAL_FORM)
-  const [step, setStep] = useState<number | null>(null)
+  const [step, setStep] = useState<number | null>(1)
   const [submitting, setSubmitting] = useState(false)
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null)
   const [activeDraftToken, setActiveDraftToken] = useState(initialDraftToken)
   const [draftInfo, setDraftInfo] = useState<DraftResponse | null>(null)
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([])
   const [savingDraft, setSavingDraft] = useState(false)
+  const [autosaving, setAutosaving] = useState(false)
+  const [lastAutosavedAt, setLastAutosavedAt] = useState<string | null>(null)
   const [uploadingDocumentTypeId, setUploadingDocumentTypeId] = useState<string | null>(null)
+  const lastSavedDraftFingerprintRef = useRef('')
+  const autosaveDraftRef = useRef<(fingerprint: string) => void>(() => {})
 
   useEffect(() => {
     let active = true
@@ -641,7 +678,7 @@ export default function RenoAppApplyPage() {
 
         setDraftInfo(payload)
         setUploadedDocuments(payload.documents ?? [])
-        setForm({
+        const nextForm = {
           applicantName: payload.form.applicantName,
           applicantEmail: payload.form.applicantEmail,
           applicantPhone: payload.form.applicantPhone,
@@ -655,7 +692,10 @@ export default function RenoAppApplyPage() {
           contractorPhone: payload.form.contractorPhone,
           contractorHasRequiredCertification: payload.form.contractorHasRequiredCertification,
           questionAnswers: payload.form.questionAnswers ?? {},
-        })
+        }
+        setForm(nextForm)
+        lastSavedDraftFingerprintRef.current = buildDraftFingerprint(nextForm)
+        setLastAutosavedAt(payload.case.updatedAt ?? null)
       } catch (fetchError) {
         if (!active) return
         setError(fetchError instanceof Error ? fetchError.message : 'Kunde inte läsa utkastet.')
@@ -691,6 +731,10 @@ export default function RenoAppApplyPage() {
   )
   const actionGroups = useMemo(() => groupActionsByCategory(config?.actionTypes ?? []), [config?.actionTypes])
   const requirementGroups = useMemo(() => groupRequirementsByPhase(mergedRequirements), [mergedRequirements])
+  const beforePhaseRequirements = useMemo(
+    () => mergedRequirements.filter(isBeforePhaseRequirement),
+    [mergedRequirements]
+  )
   const contractorRequirementTexts = useMemo(
     () =>
       Array.from(
@@ -698,22 +742,35 @@ export default function RenoAppApplyPage() {
       ) as string[],
     [selectedActions]
   )
+  const autosaveEligible = useMemo(() => {
+    const hasName = form.applicantName.trim().length > 0
+    const hasValidEmail = SIMPLE_EMAIL_REGEX.test(form.applicantEmail.trim())
+    const hasUnit =
+      form.unitNumberInternal.trim().length > 0 || form.unitNumberSkatteverket.trim().length > 0
+
+    return hasName && hasValidEmail && hasUnit
+  }, [form.applicantEmail, form.applicantName, form.unitNumberInternal, form.unitNumberSkatteverket])
+  const draftFingerprint = useMemo(() => buildDraftFingerprint(form), [form])
   const stepSummaries = useMemo<Record<number, string>>(
     () => ({
       1:
+        form.applicantName || form.applicantEmail
+          ? `${form.applicantName || 'Ingen sökande angiven'}${form.applicantEmail ? `, ${form.applicantEmail}` : ''}`
+          : 'Kontaktuppgifter saknas ännu.',
+      2:
         selectedActions.length > 0
           ? selectedActions
               .map((action) => action.label)
               .slice(0, 3)
               .join(', ')
           : 'Inga renoveringar valda ännu.',
-      2:
-        mergedRequirements.length > 0
+      3:
+        beforePhaseRequirements.length > 0
           ? `${requirementGroups.beforeRequired.length} obligatoriska underlag, ${
-              mergedRequirements.length - requirementGroups.beforeRequired.length
+              beforePhaseRequirements.length - requirementGroups.beforeRequired.length
             } övriga underlag.`
           : 'Välj först vad du vill renovera.',
-      3:
+      4:
         form.contractorName || form.description
           ? `${form.contractorName ? `Entreprenör: ${form.contractorName}. ` : ''}${
               form.contractorHasRequiredCertification ? 'Behörighet bekräftad.' : 'Behörighet inte bekräftad ännu.'
@@ -721,23 +778,19 @@ export default function RenoAppApplyPage() {
           : mergedParticipantRoles.length > 0
             ? `${mergedParticipantRoles.length} medverkande behöver planeras.`
             : 'Projektbeskrivning och entreprenör saknas ännu.',
-      4:
-        form.applicantName || form.applicantEmail
-          ? `${form.applicantName || 'Ingen sökande angiven'}${form.applicantEmail ? `, ${form.applicantEmail}` : ''}`
-          : 'Kontaktuppgifter saknas ännu.',
       5:
         submitResult?.caseNumber
           ? `Ärendenummer ${submitResult.caseNumber}.`
-          : `${selectedActions.length} valda renoveringar och ${mergedRequirements.length} underlagskrav sammanställda.`,
+          : `${selectedActions.length} valda renoveringar och ${beforePhaseRequirements.length} underlagskrav sammanställda.`,
     }),
     [
+      beforePhaseRequirements.length,
       form.applicantEmail,
       form.applicantName,
       form.contractorHasRequiredCertification,
       form.contractorName,
       form.description,
       mergedParticipantRoles.length,
-      mergedRequirements.length,
       requirementGroups.beforeRequired.length,
       selectedActions,
       submitResult?.caseNumber,
@@ -756,6 +809,21 @@ export default function RenoAppApplyPage() {
         [questionKey]: value,
       },
     }))
+  }
+
+  const clearForm = () => {
+    if (!window.confirm('Rensa hela formuläret och börja om?')) return
+
+    setForm(INITIAL_FORM)
+    setStep(1)
+    setError(null)
+    setSubmitResult(null)
+    setDraftInfo(null)
+    setUploadedDocuments([])
+    setActiveDraftToken('')
+    setLastAutosavedAt(null)
+    lastSavedDraftFingerprintRef.current = ''
+    router.replace(`/renoapp/brf/${slug}/apply`)
   }
 
   const toggleActionType = (key: string) => {
@@ -804,15 +872,24 @@ export default function RenoAppApplyPage() {
     }
   }
 
-  const submitApplication = async (mode: 'draft' | 'submit') => {
-    if (mode === 'draft') {
+  const submitApplication = async (
+    mode: 'draft' | 'submit',
+    options?: { silent?: boolean; fingerprint?: string }
+  ) => {
+    const isSilentDraft = mode === 'draft' && options?.silent === true
+
+    if (mode === 'draft' && !isSilentDraft) {
       setSavingDraft(true)
+    } else if (isSilentDraft) {
+      setAutosaving(true)
     } else {
       setSubmitting(true)
     }
 
-    setError(null)
-    setSubmitResult(null)
+    if (!isSilentDraft) {
+      setError(null)
+      setSubmitResult(null)
+    }
 
     try {
       const response = await fetch('/api/renoapp/public/applications', {
@@ -843,14 +920,23 @@ export default function RenoAppApplyPage() {
         throw new Error(payload.error ?? 'Kunde inte spara ansökan.')
       }
 
-      setSubmitResult(payload)
+      if (!isSilentDraft) {
+        setSubmitResult(payload)
+      }
+
+      if (mode === 'draft') {
+        lastSavedDraftFingerprintRef.current = options?.fingerprint ?? draftFingerprint
+        setLastAutosavedAt(new Date().toISOString())
+      }
 
       const nextDraftToken =
         payload.resumeUrl.match(/[?&]draft=([^&]+)/)?.[1] ?? activeDraftToken
 
       if (nextDraftToken) {
         setActiveDraftToken(nextDraftToken)
-        router.replace(`/renoapp/brf/${slug}/apply?draft=${nextDraftToken}`)
+        if (nextDraftToken !== activeDraftToken) {
+          router.replace(`/renoapp/brf/${slug}/apply?draft=${nextDraftToken}`)
+        }
       }
 
       if (mode === 'submit') {
@@ -860,12 +946,75 @@ export default function RenoAppApplyPage() {
       setError(submitError instanceof Error ? submitError.message : 'Kunde inte spara ansökan.')
     } finally {
       setSavingDraft(false)
+      setAutosaving(false)
       setSubmitting(false)
     }
   }
 
+  autosaveDraftRef.current = (fingerprint: string) => {
+    void submitApplication('draft', { silent: true, fingerprint })
+  }
+
+  useEffect(() => {
+    if (!config || !autosaveEligible || submitting || savingDraft || autosaving) return
+    if (draftFingerprint === lastSavedDraftFingerprintRef.current) return
+
+    const timeoutId = window.setTimeout(() => {
+      autosaveDraftRef.current(draftFingerprint)
+    }, 1200)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [autosaveEligible, autosaving, config, draftFingerprint, savingDraft, submitting])
+
   const renderStepContent = (stepId: number) => {
     if (stepId === 1) {
+      return (
+        <div className="grid gap-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <input
+              value={form.applicantName}
+              onChange={(event) => updateField('applicantName', event.target.value)}
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+              placeholder="Namn"
+            />
+            <input
+              value={form.applicantEmail}
+              onChange={(event) => updateField('applicantEmail', event.target.value)}
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+              placeholder="E-post"
+              type="email"
+            />
+            <input
+              value={form.applicantPhone}
+              onChange={(event) => updateField('applicantPhone', event.target.value)}
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
+              placeholder="Telefon"
+            />
+            <input
+              value={form.unitNumberInternal}
+              onChange={(event) => updateField('unitNumberInternal', event.target.value)}
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+              placeholder="Internt lägenhetsnummer"
+            />
+            <input
+              value={form.unitNumberSkatteverket}
+              onChange={(event) => updateField('unitNumberSkatteverket', event.target.value)}
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+              placeholder="Skatteverkets lägenhetsnummer"
+            />
+          </div>
+
+          <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm leading-7 text-stone-700">
+            <p className="font-semibold text-stone-900">Spara och fortsätt senare</p>
+            <p className="mt-2">
+              När namn, e-post och lägenhet är ifyllt skapas utkastet automatiskt. Därefter autosparas dina ändringar löpande.
+            </p>
+          </div>
+        </div>
+      )
+    }
+
+    if (stepId === 2) {
       return (
         <div className="space-y-4 md:space-y-6">
           {actionGroups.map((group) => (
@@ -994,7 +1143,7 @@ export default function RenoAppApplyPage() {
       )
     }
 
-    if (stepId === 2) {
+    if (stepId === 3) {
       return (
         <div className="grid gap-4">
           <div className="rounded-3xl border border-stone-200 bg-white p-5">
@@ -1005,15 +1154,15 @@ export default function RenoAppApplyPage() {
           </div>
           {!activeDraftToken ? (
             <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-              Spara först ansökan som utkast för att kunna ladda upp dokument i detta steg.
+              Fyll först i lägenhet och kontakt så att utkastet kan skapas innan du laddar upp dokument.
             </div>
           ) : null}
-          {mergedRequirements.length === 0 ? (
+          {beforePhaseRequirements.length === 0 ? (
             <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
-              Välj först minst en renoveringstyp i steg 1.
+              Välj först minst en renoveringstyp i steg 2.
             </div>
           ) : (
-            mergedRequirements.map((requirement) => (
+            beforePhaseRequirements.map((requirement) => (
               <div key={requirement.documentTypeId} className="rounded-3xl border border-stone-200 bg-white p-5">
                 <p className="font-semibold text-stone-900">
                   {requirement.documentLabel} {requirement.isRequired ? '(obligatorisk)' : '(bra att ha)'}
@@ -1069,7 +1218,7 @@ export default function RenoAppApplyPage() {
       )
     }
 
-    if (stepId === 3) {
+    if (stepId === 4) {
       return (
         <div className="grid gap-4">
           {mergedParticipantRoles.length > 0 ? (
@@ -1149,53 +1298,6 @@ export default function RenoAppApplyPage() {
               />
               <span>Jag bekräftar att entreprenören har den behörighet eller certifiering som arbetet kräver.</span>
             </label>
-          </div>
-        </div>
-      )
-    }
-
-    if (stepId === 4) {
-      return (
-        <div className="grid gap-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <input
-              value={form.applicantName}
-              onChange={(event) => updateField('applicantName', event.target.value)}
-              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-              placeholder="Namn"
-            />
-            <input
-              value={form.applicantEmail}
-              onChange={(event) => updateField('applicantEmail', event.target.value)}
-              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-              placeholder="E-post"
-              type="email"
-            />
-            <input
-              value={form.applicantPhone}
-              onChange={(event) => updateField('applicantPhone', event.target.value)}
-              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
-              placeholder="Telefon"
-            />
-            <input
-              value={form.unitNumberInternal}
-              onChange={(event) => updateField('unitNumberInternal', event.target.value)}
-              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-              placeholder="Internt lägenhetsnummer"
-            />
-            <input
-              value={form.unitNumberSkatteverket}
-              onChange={(event) => updateField('unitNumberSkatteverket', event.target.value)}
-              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-              placeholder="Skatteverkets lägenhetsnummer"
-            />
-          </div>
-
-          <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm leading-7 text-stone-700">
-            <p className="font-semibold text-stone-900">Spara och fortsätt senare</p>
-            <p className="mt-2">
-              När du sparar skapas ett utkast och du får en säker länk som du kan öppna senare för att fortsätta.
-            </p>
           </div>
         </div>
       )
@@ -1337,6 +1439,16 @@ export default function RenoAppApplyPage() {
             </div>
           ) : null}
 
+          {autosaveEligible && !submitResult ? (
+            <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+              {autosaving
+                ? 'Autosparar utkast...'
+                : lastAutosavedAt
+                  ? `Utkast autosparat ${formatDateTime(lastAutosavedAt)}.`
+                  : 'Utkast skapas automatiskt när kontakt och lägenhet är ifyllt.'}
+            </div>
+          ) : null}
+
           <div className="mt-8 flex flex-wrap items-center gap-3">
             {step !== 5 ? (
               <button
@@ -1363,6 +1475,13 @@ export default function RenoAppApplyPage() {
               className="rounded-full border border-stone-300 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {savingDraft ? 'Sparar...' : 'Spara och fortsätt senare'}
+            </button>
+            <button
+              type="button"
+              onClick={clearForm}
+              className="rounded-full border border-rose-300 px-5 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-50"
+            >
+              Rensa formulär
             </button>
           </div>
         </div>
