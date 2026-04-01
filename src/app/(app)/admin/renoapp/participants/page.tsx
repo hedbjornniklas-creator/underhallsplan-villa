@@ -8,6 +8,9 @@ type ParticipantRoleItem = {
   label: string
   description: string | null
   roleKind: 'contractor' | 'consultant'
+  verificationInstructions: string | null
+  verificationUrl: string | null
+  insuranceRequired: boolean
   requiresCompanyName: boolean
   requiresOrgNumber: boolean
   requiresContactName: boolean
@@ -24,6 +27,9 @@ type DraftParticipantRole = {
   label: string
   description: string
   roleKind: 'contractor' | 'consultant'
+  verificationInstructions: string
+  verificationUrl: string
+  insuranceRequired: boolean
   requiresCompanyName: boolean
   requiresOrgNumber: boolean
   requiresContactName: boolean
@@ -39,6 +45,9 @@ const EMPTY_DRAFT: DraftParticipantRole = {
   label: '',
   description: '',
   roleKind: 'contractor',
+  verificationInstructions: '',
+  verificationUrl: '',
+  insuranceRequired: false,
   requiresCompanyName: true,
   requiresOrgNumber: true,
   requiresContactName: true,
@@ -91,9 +100,7 @@ export default function RenoAppParticipantsAdminPage() {
         setItems(payload.items ?? [])
       } catch (loadError) {
         if (active) {
-          setError(
-            loadError instanceof Error ? loadError.message : 'Kunde inte läsa medverkandetyper.'
-          )
+          setError(loadError instanceof Error ? loadError.message : 'Kunde inte läsa medverkandetyper.')
         }
       } finally {
         if (active) setLoading(false)
@@ -111,7 +118,17 @@ export default function RenoAppParticipantsAdminPage() {
     return [...items]
       .filter((item) => {
         if (!normalizedQuery) return true
-        return [item.label, item.key, item.description ?? '', item.roleKind].join(' ').toLowerCase().includes(normalizedQuery)
+        return [
+          item.label,
+          item.key,
+          item.description ?? '',
+          item.roleKind,
+          item.verificationInstructions ?? '',
+          item.verificationUrl ?? '',
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedQuery)
       })
       .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv'))
   }, [items, query])
@@ -130,6 +147,9 @@ export default function RenoAppParticipantsAdminPage() {
       label: item.label,
       description: item.description ?? '',
       roleKind: item.roleKind,
+      verificationInstructions: item.verificationInstructions ?? '',
+      verificationUrl: item.verificationUrl ?? '',
+      insuranceRequired: item.insuranceRequired,
       requiresCompanyName: item.requiresCompanyName,
       requiresOrgNumber: item.requiresOrgNumber,
       requiresContactName: item.requiresContactName,
@@ -199,9 +219,7 @@ export default function RenoAppParticipantsAdminPage() {
 
       setItems((current) => current.filter((candidate) => candidate.id !== item.id))
     } catch (deleteError) {
-      setError(
-        deleteError instanceof Error ? deleteError.message : 'Kunde inte radera medverkandetyp.'
-      )
+      setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera medverkandetyp.')
     } finally {
       setDeletingId(null)
     }
@@ -251,12 +269,13 @@ export default function RenoAppParticipantsAdminPage() {
             <table className="w-full table-fixed border-separate border-spacing-y-2 text-[11px]">
               <thead>
                 <tr className="whitespace-nowrap text-left text-[10px] uppercase text-gray-400">
-                  <th className="w-[22%] px-3 py-1">Term</th>
-                  <th className="w-[16%] px-3 py-1">Kod</th>
-                  <th className="w-[12%] px-3 py-1">Typ</th>
-                  <th className="w-[28%] px-3 py-1">Informationskrav</th>
-                  <th className="w-[8%] px-3 py-1">Aktiv</th>
-                  <th className="w-[14%] px-3 py-1 text-center">Åtgärder</th>
+                  <th className="w-[18%] px-3 py-1">Term</th>
+                  <th className="w-[14%] px-3 py-1">Kod</th>
+                  <th className="w-[10%] px-3 py-1">Typ</th>
+                  <th className="w-[20%] px-3 py-1">Informationskrav</th>
+                  <th className="w-[20%] px-3 py-1">Verifiering</th>
+                  <th className="w-[6%] px-3 py-1">Aktiv</th>
+                  <th className="w-[12%] px-3 py-1 text-center">Åtgärder</th>
                 </tr>
               </thead>
               <tbody>
@@ -268,6 +287,7 @@ export default function RenoAppParticipantsAdminPage() {
                     item.requiresEmail ? 'E-post' : null,
                     item.requiresPhone ? 'Telefon' : null,
                     item.requiresCertification ? 'Behörighet' : null,
+                    item.insuranceRequired ? 'Försäkring' : null,
                   ]
                     .filter(Boolean)
                     .join(', ')
@@ -283,6 +303,25 @@ export default function RenoAppParticipantsAdminPage() {
                         {item.roleKind === 'consultant' ? 'Konsult' : 'Entreprenör'}
                       </td>
                       <td className="border-y border-gray-200 bg-white px-3 py-2">{infoSummary || '-'}</td>
+                      <td className="border-y border-gray-200 bg-white px-3 py-2">
+                        {item.verificationInstructions || item.verificationUrl ? (
+                          <div className="space-y-1">
+                            <div className="truncate">{item.verificationInstructions || '-'}</div>
+                            {item.verificationUrl ? (
+                              <a
+                                href={item.verificationUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block truncate text-[10px] text-emerald-700 underline"
+                              >
+                                {item.verificationUrl}
+                              </a>
+                            ) : null}
+                          </div>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
                       <td className="border-y border-gray-200 bg-white px-3 py-2">{item.isActive ? 'Ja' : 'Nej'}</td>
                       <td className="rounded-r-xl border border-gray-200 bg-white px-3 py-2">
                         <div className="grid grid-cols-2 gap-1 text-[11px]">
@@ -389,11 +428,31 @@ export default function RenoAppParticipantsAdminPage() {
                 <span className="mb-2 block text-sm font-semibold text-stone-800">Beskrivning</span>
                 <textarea
                   value={draft.description}
+                  onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
+                  rows={3}
+                  className="w-full rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                />
+              </label>
+
+              <label className="block md:col-span-2">
+                <span className="mb-2 block text-sm font-semibold text-stone-800">Verifieringsinstruktion</span>
+                <textarea
+                  value={draft.verificationInstructions}
                   onChange={(event) =>
-                    setDraft((current) => ({ ...current, description: event.target.value }))
+                    setDraft((current) => ({ ...current, verificationInstructions: event.target.value }))
                   }
                   rows={3}
                   className="w-full rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                />
+              </label>
+
+              <label className="block md:col-span-2">
+                <span className="mb-2 block text-sm font-semibold text-stone-800">Verifieringslänk</span>
+                <input
+                  value={draft.verificationUrl}
+                  onChange={(event) => setDraft((current) => ({ ...current, verificationUrl: event.target.value }))}
+                  className="w-full rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                  placeholder="https://..."
                 />
               </label>
 
@@ -403,7 +462,8 @@ export default function RenoAppParticipantsAdminPage() {
                 ['requiresContactName', 'Kontaktperson'],
                 ['requiresEmail', 'E-post'],
                 ['requiresPhone', 'Telefon'],
-                ['requiresCertification', 'Behörighet/intyg'],
+                ['requiresCertification', 'Behörighetsnummer/intyg'],
+                ['insuranceRequired', 'Försäkringsbevis krävs'],
               ].map(([field, label]) => (
                 <label
                   key={field}

@@ -30,6 +30,30 @@ export async function POST(request: Request) {
             ])
           )
         : {}
+    const participantEntries = Array.isArray(body.participantEntries)
+      ? body.participantEntries
+          .map((item) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item)) return null
+            const row = item as Record<string, unknown>
+
+            return {
+              participantRoleId:
+                typeof row.participantRoleId === 'string' ? row.participantRoleId : '',
+              companyName: typeof row.companyName === 'string' ? row.companyName : null,
+              orgNumber: typeof row.orgNumber === 'string' ? row.orgNumber : null,
+              contactName: typeof row.contactName === 'string' ? row.contactName : null,
+              email: typeof row.email === 'string' ? row.email : null,
+              phone: typeof row.phone === 'string' ? row.phone : null,
+              certificationReference:
+                typeof row.certificationReference === 'string' ? row.certificationReference : null,
+              hasVerifiedAuthorization:
+                typeof row.hasVerifiedAuthorization === 'boolean' ? row.hasVerifiedAuthorization : false,
+              acceptsResponsibility:
+                typeof row.acceptsResponsibility === 'boolean' ? row.acceptsResponsibility : false,
+            }
+          })
+          .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      : []
 
     const result = await upsertPublicApplication(
       {
@@ -51,6 +75,7 @@ export async function POST(request: Request) {
           typeof body.contractorHasRequiredCertification === 'boolean'
             ? body.contractorHasRequiredCertification
             : false,
+        participantEntries,
         actionTypeKeys,
         questionAnswers,
       } satisfies CreatePublicApplicationInput,

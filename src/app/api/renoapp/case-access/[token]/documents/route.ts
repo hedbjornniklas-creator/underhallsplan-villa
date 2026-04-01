@@ -60,6 +60,11 @@ export async function POST(request: Request, context: RouteContext) {
     const fileEntry = formData.get('file')
     const note = String(formData.get('note') ?? '').trim() || null
     const documentTypeId = String(formData.get('document_type_id') ?? '').trim() || null
+    const participantRoleId = String(formData.get('participant_role_id') ?? '').trim() || null
+    const documentScope =
+      String(formData.get('document_scope') ?? '').trim() === 'participant_insurance'
+        ? 'participant_insurance'
+        : 'general'
 
     if (!(fileEntry instanceof File)) return jsonError('Fil saknas.', 400)
     if (fileEntry.size <= 0) return jsonError('Tom fil kan inte laddas upp.', 400)
@@ -89,6 +94,8 @@ export async function POST(request: Request, context: RouteContext) {
         case_id: access.case.id,
         contact_id: access.contact.id,
         document_type_id: documentTypeId,
+        participant_role_id: participantRoleId,
+        document_scope: documentScope,
         storage_bucket: DOCUMENT_BUCKET,
         file_path: filePath,
         file_name: fileEntry.name || fileName,
@@ -97,7 +104,7 @@ export async function POST(request: Request, context: RouteContext) {
         status: 'uploaded',
         note,
       })
-      .select('id,document_type_id,file_name,status,uploaded_at,note')
+      .select('id,document_type_id,participant_role_id,document_scope,file_name,status,uploaded_at,note')
       .single()
 
     if (insertError) {

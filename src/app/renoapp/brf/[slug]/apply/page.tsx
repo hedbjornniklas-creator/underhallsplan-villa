@@ -29,6 +29,9 @@ type ParticipantRole = {
   label: string
   description: string | null
   roleKind: 'contractor' | 'consultant'
+  verificationInstructions: string | null
+  verificationUrl: string | null
+  insuranceRequired: boolean
   requiresCompanyName: boolean
   requiresOrgNumber: boolean
   requiresContactName: boolean
@@ -37,6 +40,18 @@ type ParticipantRole = {
   requiresCertification: boolean
   isRequired: boolean
   sortOrder: number
+}
+
+type ParticipantEntry = {
+  participantRoleId: string
+  companyName: string
+  orgNumber: string
+  contactName: string
+  email: string
+  phone: string
+  certificationReference: string
+  hasVerifiedAuthorization: boolean
+  acceptsResponsibility: boolean
 }
 
 type ActionType = {
@@ -128,6 +143,7 @@ type DraftResponse = {
     contractorEmail: string
     contractorPhone: string
     contractorHasRequiredCertification: boolean
+    participantEntries: ParticipantEntry[]
     actionTypeKeys: string[]
     questionAnswers: Record<string, string[]>
     checks?: {
@@ -149,6 +165,8 @@ type DraftResponse = {
   documents: Array<{
     id: string
     documentTypeId: string | null
+    participantRoleId: string | null
+    documentScope: 'general' | 'participant_insurance'
     fileName: string | null
     status: string
     uploadedAt: string
@@ -169,6 +187,8 @@ type SubmitResult = {
 type UploadedDocument = {
   id: string
   documentTypeId: string | null
+  participantRoleId: string | null
+  documentScope: 'general' | 'participant_insurance'
   fileName: string | null
   status: string
   uploadedAt: string
@@ -188,6 +208,7 @@ type FormState = {
   contractorEmail: string
   contractorPhone: string
   contractorHasRequiredCertification: boolean
+  participantEntries: ParticipantEntry[]
   questionAnswers: Record<string, string[]>
 }
 
@@ -204,6 +225,7 @@ const INITIAL_FORM: FormState = {
   contractorEmail: '',
   contractorPhone: '',
   contractorHasRequiredCertification: false,
+  participantEntries: [],
   questionAnswers: {},
 }
 
@@ -213,7 +235,7 @@ const STEP_ITEMS = [
   { id: 1, label: 'Lägenhet och kontakt' },
   { id: 2, label: 'Vad vill du renovera?' },
   { id: 3, label: 'Underlag' },
-  { id: 4, label: 'Projekt och entreprenör' },
+  { id: 4, label: 'Entreprenörer & konsulter' },
   { id: 5, label: 'Granska och skicka' },
 ]
 
@@ -518,15 +540,6 @@ function toggleMultiSelectValue(values: string[], optionKey: string) {
     : [...values, optionKey]
 }
 
-function getContractorRequirementText(requirement?: ActionType['contractorRequirement']) {
-  if (requirement === 'authorized_electrician') return 'Kräver behörig elektriker.'
-  if (requirement === 'safe_water') return 'Kräver Säker Vatten-auktoriserad VVS-entreprenör.'
-  if (requirement === 'bkr_or_gvk') return 'Kräver behörig våtrumsentreprenör enligt BKR eller GVK.'
-  if (requirement === 'structural_engineer') return 'Kräver konstruktör eller särskilt sakkunnig.'
-  if (requirement === 'qualified_contractor') return 'Kräver kvalificerad entreprenör.'
-  return null
-}
-
 function describeParticipantInfoRequirements(participantRole: ParticipantRole) {
   return [
     participantRole.requiresCompanyName ? 'företagsnamn' : null,
@@ -569,6 +582,41 @@ const compactDescriptionStyle = {
   overflow: 'hidden',
 }
 
+function emptyParticipantEntry(participantRoleId: string): ParticipantEntry {
+  return {
+    participantRoleId,
+    companyName: '',
+    orgNumber: '',
+    contactName: '',
+    email: '',
+    phone: '',
+    certificationReference: '',
+    hasVerifiedAuthorization: false,
+    acceptsResponsibility: false,
+  }
+}
+
+function normalizeParticipantEntries(entries: ParticipantEntry[]) {
+  return Array.from(
+    new Map(
+      entries.map((entry) => [
+        entry.participantRoleId,
+        {
+          participantRoleId: entry.participantRoleId,
+          companyName: entry.companyName.trim(),
+          orgNumber: entry.orgNumber.trim(),
+          contactName: entry.contactName.trim(),
+          email: entry.email.trim().toLowerCase(),
+          phone: entry.phone.trim(),
+          certificationReference: entry.certificationReference.trim(),
+          hasVerifiedAuthorization: entry.hasVerifiedAuthorization,
+          acceptsResponsibility: entry.acceptsResponsibility,
+        },
+      ])
+    ).values()
+  ).sort((left, right) => left.participantRoleId.localeCompare(right.participantRoleId, 'sv'))
+}
+
 function buildDraftFingerprint(form: FormState) {
   const sortedQuestionAnswers = Object.fromEntries(
     Object.entries(form.questionAnswers)
@@ -592,6 +640,7 @@ function buildDraftFingerprint(form: FormState) {
     contractorEmail: form.contractorEmail.trim().toLowerCase(),
     contractorPhone: form.contractorPhone.trim(),
     contractorHasRequiredCertification: form.contractorHasRequiredCertification,
+    participantEntries: normalizeParticipantEntries(form.participantEntries),
     questionAnswers: sortedQuestionAnswers,
   })
 }
@@ -616,7 +665,7 @@ export default function RenoAppApplyPage() {
   const [savingDraft, setSavingDraft] = useState(false)
   const [autosaving, setAutosaving] = useState(false)
   const [lastAutosavedAt, setLastAutosavedAt] = useState<string | null>(null)
-  const [uploadingDocumentTypeId, setUploadingDocumentTypeId] = useState<string | null>(null)
+  const [uploadingTargetId, setUploadingTargetId] = useState<string | null>(null)
   const lastSavedDraftFingerprintRef = useRef('')
   const autosaveDraftRef = useRef<(fingerprint: string) => void>(() => {})
 
@@ -691,6 +740,7 @@ export default function RenoAppApplyPage() {
           contractorEmail: payload.form.contractorEmail,
           contractorPhone: payload.form.contractorPhone,
           contractorHasRequiredCertification: payload.form.contractorHasRequiredCertification,
+          participantEntries: payload.form.participantEntries ?? [],
           questionAnswers: payload.form.questionAnswers ?? {},
         }
         setForm(nextForm)
@@ -735,12 +785,21 @@ export default function RenoAppApplyPage() {
     () => mergedRequirements.filter(isBeforePhaseRequirement),
     [mergedRequirements]
   )
-  const contractorRequirementTexts = useMemo(
+  const filledParticipantEntryCount = useMemo(
     () =>
-      Array.from(
-        new Set(selectedActions.map((action) => getContractorRequirementText(action.contractorRequirement)).filter(Boolean))
-      ) as string[],
-    [selectedActions]
+      normalizeParticipantEntries(form.participantEntries).filter((entry) =>
+        Boolean(
+          entry.companyName ||
+            entry.orgNumber ||
+            entry.contactName ||
+            entry.email ||
+            entry.phone ||
+            entry.certificationReference ||
+            entry.hasVerifiedAuthorization ||
+            entry.acceptsResponsibility
+        )
+      ).length,
+    [form.participantEntries]
   )
   const autosaveEligible = useMemo(() => {
     const hasName = form.applicantName.trim().length > 0
@@ -771,13 +830,9 @@ export default function RenoAppApplyPage() {
             } övriga underlag.`
           : 'Välj först vad du vill renovera.',
       4:
-        form.contractorName || form.description
-          ? `${form.contractorName ? `Entreprenör: ${form.contractorName}. ` : ''}${
-              form.contractorHasRequiredCertification ? 'Behörighet bekräftad.' : 'Behörighet inte bekräftad ännu.'
-            }`
-          : mergedParticipantRoles.length > 0
-            ? `${mergedParticipantRoles.length} medverkande behöver planeras.`
-            : 'Projektbeskrivning och entreprenör saknas ännu.',
+        mergedParticipantRoles.length > 0
+          ? `${filledParticipantEntryCount} av ${mergedParticipantRoles.length} roller ifyllda.`
+          : 'Inga entreprenörer eller konsulter behövs ännu.',
       5:
         submitResult?.caseNumber
           ? `Ärendenummer ${submitResult.caseNumber}.`
@@ -787,9 +842,7 @@ export default function RenoAppApplyPage() {
       beforePhaseRequirements.length,
       form.applicantEmail,
       form.applicantName,
-      form.contractorHasRequiredCertification,
-      form.contractorName,
-      form.description,
+      filledParticipantEntryCount,
       mergedParticipantRoles.length,
       requirementGroups.beforeRequired.length,
       selectedActions,
@@ -799,6 +852,34 @@ export default function RenoAppApplyPage() {
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  const getParticipantEntry = (participantRoleId: string) =>
+    form.participantEntries.find((entry) => entry.participantRoleId === participantRoleId) ??
+    emptyParticipantEntry(participantRoleId)
+
+  const updateParticipantEntry = (
+    participantRoleId: string,
+    patch: Partial<Omit<ParticipantEntry, 'participantRoleId'>>
+  ) => {
+    setForm((current) => {
+      const existing =
+        current.participantEntries.find((entry) => entry.participantRoleId === participantRoleId) ??
+        emptyParticipantEntry(participantRoleId)
+      const nextEntry = {
+        ...existing,
+        ...patch,
+        participantRoleId,
+      }
+
+      return {
+        ...current,
+        participantEntries: [
+          ...current.participantEntries.filter((entry) => entry.participantRoleId !== participantRoleId),
+          nextEntry,
+        ],
+      }
+    })
   }
 
   const updateQuestionAnswer = (questionKey: string, value: string[]) => {
@@ -814,7 +895,14 @@ export default function RenoAppApplyPage() {
   const clearForm = () => {
     if (!window.confirm('Rensa hela formuläret och börja om?')) return
 
-    setForm(INITIAL_FORM)
+    setForm((current) => ({
+      ...INITIAL_FORM,
+      applicantName: current.applicantName,
+      applicantEmail: current.applicantEmail,
+      applicantPhone: current.applicantPhone,
+      unitNumberInternal: current.unitNumberInternal,
+      unitNumberSkatteverket: current.unitNumberSkatteverket,
+    }))
     setStep(null)
     setError(null)
     setSubmitResult(null)
@@ -835,20 +923,30 @@ export default function RenoAppApplyPage() {
     }))
   }
 
-  const uploadDocument = async (documentTypeId: string, file: File | null) => {
+  const uploadDocument = async (
+    input: {
+      documentTypeId?: string | null
+      participantRoleId?: string | null
+      documentScope?: 'general' | 'participant_insurance'
+    },
+    file: File | null
+  ) => {
     if (!file) return
     if (!activeDraftToken) {
       setError('Spara först ansökan som utkast innan du laddar upp dokument.')
       return
     }
 
-    setUploadingDocumentTypeId(documentTypeId)
+    const uploadKey = input.participantRoleId ?? input.documentTypeId ?? 'upload'
+    setUploadingTargetId(uploadKey)
     setError(null)
 
     try {
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('document_type_id', documentTypeId)
+      if (input.documentTypeId) formData.append('document_type_id', input.documentTypeId)
+      if (input.participantRoleId) formData.append('participant_role_id', input.participantRoleId)
+      formData.append('document_scope', input.documentScope ?? 'general')
 
       const response = await fetch(`/api/renoapp/case-access/${activeDraftToken}/documents`, {
         method: 'POST',
@@ -868,7 +966,7 @@ export default function RenoAppApplyPage() {
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp dokument.')
     } finally {
-      setUploadingDocumentTypeId(null)
+      setUploadingTargetId(null)
     }
   }
 
@@ -910,6 +1008,7 @@ export default function RenoAppApplyPage() {
           contractorEmail: form.contractorEmail,
           contractorPhone: form.contractorPhone,
           contractorHasRequiredCertification: form.contractorHasRequiredCertification,
+          participantEntries: normalizeParticipantEntries(form.participantEntries),
           actionTypeKeys: form.actionTypeKeys,
           questionAnswers: form.questionAnswers,
         }),
@@ -1201,15 +1300,15 @@ export default function RenoAppApplyPage() {
                     <input
                       type="file"
                       accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
-                      disabled={!activeDraftToken || uploadingDocumentTypeId === requirement.documentTypeId}
+                      disabled={!activeDraftToken || uploadingTargetId === requirement.documentTypeId}
                       className="hidden"
                       onChange={(event) => {
                         const file = event.target.files?.[0] ?? null
-                        void uploadDocument(requirement.documentTypeId, file)
+                        void uploadDocument({ documentTypeId: requirement.documentTypeId, documentScope: 'general' }, file)
                         event.currentTarget.value = ''
                       }}
                     />
-                    {uploadingDocumentTypeId === requirement.documentTypeId ? 'Laddar upp...' : 'Ladda upp dokument'}
+                    {uploadingTargetId === requirement.documentTypeId ? 'Laddar upp...' : 'Ladda upp dokument'}
                   </label>
                 </div>
                 {uploadedDocuments.filter((item) => item.documentTypeId === requirement.documentTypeId).length > 0 ? (
@@ -1242,7 +1341,7 @@ export default function RenoAppApplyPage() {
         <div className="grid gap-4">
           {mergedParticipantRoles.length > 0 ? (
             <div className="rounded-3xl border border-stone-200 bg-white p-5">
-              <p className="text-sm font-semibold text-stone-900">Medverkande som behövs</p>
+              <p className="text-sm font-semibold text-stone-900">Entreprenörer och konsulter som behövs</p>
               <p className="mt-2 text-sm leading-7 text-stone-700">
                 Utifrån valda renoveringstyper och dina svar behöver följande entreprenörer eller konsulter normalt finnas med i projektet.
               </p>
@@ -1250,7 +1349,11 @@ export default function RenoAppApplyPage() {
                 {renderParticipantRoleList(mergedParticipantRoles)}
               </div>
             </div>
-          ) : null}
+          ) : (
+            <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
+              Inga entreprenörer eller konsulter behöver anges utifrån dina nuvarande val.
+            </div>
+          )}
 
           <div className="rounded-3xl border border-stone-200 bg-white p-5">
             <label className="block text-sm font-semibold text-stone-900" htmlFor="description">
@@ -1266,58 +1369,203 @@ export default function RenoAppApplyPage() {
             />
           </div>
 
-          <div className="rounded-3xl border border-stone-200 bg-white p-5">
-            <p className="text-sm font-semibold text-stone-900">Entreprenör</p>
-            <p className="mt-2 text-sm leading-7 text-stone-700">
-              Vi fokuserar på vem som ska utföra arbetet och om rätt behörighet finns, i stället för att fråga efter
-              tekniska detaljval i detta steg.
-            </p>
-            {contractorRequirementTexts.length > 0 ? (
-              <ul className="mt-3 space-y-2 text-sm text-stone-700">
-                {contractorRequirementTexts.map((item) => (
-                  <li key={item} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <input
-                value={form.contractorName}
-                onChange={(event) => updateField('contractorName', event.target.value)}
-                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
-                placeholder="Företag eller entreprenör"
-              />
-              <input
-                value={form.contractorOrgNumber}
-                onChange={(event) => updateField('contractorOrgNumber', event.target.value)}
-                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                placeholder="Organisationsnummer"
-              />
-              <input
-                value={form.contractorPhone}
-                onChange={(event) => updateField('contractorPhone', event.target.value)}
-                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                placeholder="Telefon"
-              />
-              <input
-                value={form.contractorEmail}
-                onChange={(event) => updateField('contractorEmail', event.target.value)}
-                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
-                placeholder="E-post"
-                type="email"
-              />
-            </div>
-            <label className="mt-4 flex items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
-              <input
-                checked={form.contractorHasRequiredCertification}
-                onChange={(event) => updateField('contractorHasRequiredCertification', event.target.checked)}
-                type="checkbox"
-                className="mt-1"
-              />
-              <span>Jag bekräftar att entreprenören har den behörighet eller certifiering som arbetet kräver.</span>
-            </label>
-          </div>
+          {mergedParticipantRoles.map((participantRole) => {
+            const entry = getParticipantEntry(participantRole.id)
+            const insuranceDocuments = uploadedDocuments.filter(
+              (item) =>
+                item.participantRoleId === participantRole.id && item.documentScope === 'participant_insurance'
+            )
+
+            return (
+              <div key={participantRole.id} className="rounded-3xl border border-stone-200 bg-white p-5">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-stone-900">
+                      {participantRole.label}
+                      {participantRole.isRequired ? ' (krävs)' : ''}
+                    </p>
+                    {participantRole.description ? (
+                      <p className="mt-2 text-sm leading-7 text-stone-700">{participantRole.description}</p>
+                    ) : null}
+                    {participantRole.verificationInstructions ? (
+                      <p className="mt-2 text-sm leading-7 text-stone-700">
+                        {participantRole.verificationInstructions}
+                      </p>
+                    ) : null}
+                    {participantRole.verificationUrl ? (
+                      <a
+                        href={participantRole.verificationUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex text-sm font-semibold text-emerald-700 underline"
+                      >
+                        Kontrollera behörighet
+                      </a>
+                    ) : null}
+                  </div>
+                  <span className="shrink-0 rounded-full border border-stone-300 bg-stone-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-stone-600">
+                    {participantRole.roleKind === 'consultant' ? 'Konsult' : 'Entreprenör'}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  {participantRole.requiresCompanyName ? (
+                    <input
+                      value={entry.companyName}
+                      onChange={(event) =>
+                        updateParticipantEntry(participantRole.id, { companyName: event.target.value })
+                      }
+                      className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
+                      placeholder="Företagsnamn"
+                    />
+                  ) : null}
+
+                  {participantRole.requiresOrgNumber ? (
+                    <input
+                      value={entry.orgNumber}
+                      onChange={(event) =>
+                        updateParticipantEntry(participantRole.id, { orgNumber: event.target.value })
+                      }
+                      className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                      placeholder="Organisationsnummer"
+                    />
+                  ) : null}
+
+                  {participantRole.requiresContactName ? (
+                    <input
+                      value={entry.contactName}
+                      onChange={(event) =>
+                        updateParticipantEntry(participantRole.id, { contactName: event.target.value })
+                      }
+                      className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                      placeholder="Kontaktperson"
+                    />
+                  ) : null}
+
+                  {participantRole.requiresEmail ? (
+                    <input
+                      value={entry.email}
+                      onChange={(event) => updateParticipantEntry(participantRole.id, { email: event.target.value })}
+                      className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                      placeholder="E-post"
+                      type="email"
+                    />
+                  ) : null}
+
+                  {participantRole.requiresPhone ? (
+                    <input
+                      value={entry.phone}
+                      onChange={(event) => updateParticipantEntry(participantRole.id, { phone: event.target.value })}
+                      className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                      placeholder="Telefon"
+                    />
+                  ) : null}
+
+                  {participantRole.requiresCertification ? (
+                    <input
+                      value={entry.certificationReference}
+                      onChange={(event) =>
+                        updateParticipantEntry(participantRole.id, {
+                          certificationReference: event.target.value,
+                        })
+                      }
+                      className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
+                      placeholder="Behörighetsnummer eller certifieringsreferens"
+                    />
+                  ) : null}
+                </div>
+
+                {participantRole.insuranceRequired ? (
+                  <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                    <p className="text-sm font-semibold text-stone-900">Försäkringsbevis</p>
+                    <p className="mt-2 text-sm leading-7 text-stone-700">
+                      Ladda upp försäkringsbevis för {participantRole.label.toLowerCase()}.
+                    </p>
+                    {!activeDraftToken ? (
+                      <p className="mt-2 text-sm text-amber-800">
+                        Skapa först utkastet i steg 1 innan du laddar upp försäkringsbevis.
+                      </p>
+                    ) : null}
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <label
+                        className={`inline-flex cursor-pointer items-center rounded-full px-4 py-2 text-sm font-semibold transition ${
+                          activeDraftToken
+                            ? 'bg-stone-900 text-white hover:bg-stone-700'
+                            : 'cursor-not-allowed border border-stone-300 bg-stone-100 text-stone-500'
+                        }`}
+                      >
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
+                          disabled={!activeDraftToken || uploadingTargetId === participantRole.id}
+                          className="hidden"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0] ?? null
+                            void uploadDocument(
+                              {
+                                participantRoleId: participantRole.id,
+                                documentScope: 'participant_insurance',
+                              },
+                              file
+                            )
+                            event.currentTarget.value = ''
+                          }}
+                        />
+                        {uploadingTargetId === participantRole.id ? 'Laddar upp...' : 'Ladda upp försäkringsbevis'}
+                      </label>
+                    </div>
+
+                    {insuranceDocuments.length > 0 ? (
+                      <ul className="mt-4 space-y-2">
+                        {insuranceDocuments.map((item) => (
+                          <li
+                            key={item.id}
+                            className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700"
+                          >
+                            <p className="font-medium text-stone-900">{item.fileName ?? 'Försäkringsbevis'}</p>
+                            <p className="mt-1 text-xs uppercase tracking-[0.16em] text-stone-500">
+                              {item.status} · uppladdad {formatDateTime(item.uploadedAt)}
+                            </p>
+                            {item.note ? <p className="mt-1 text-stone-500">{item.note}</p> : null}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="mt-4 grid gap-3">
+                  <label className="flex items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+                    <input
+                      checked={entry.hasVerifiedAuthorization}
+                      onChange={(event) =>
+                        updateParticipantEntry(participantRole.id, {
+                          hasVerifiedAuthorization: event.target.checked,
+                        })
+                      }
+                      type="checkbox"
+                      className="mt-1"
+                    />
+                    <span>Jag har kontrollerat att företaget har rätt behörighet.</span>
+                  </label>
+
+                  <label className="flex items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+                    <input
+                      checked={entry.acceptsResponsibility}
+                      onChange={(event) =>
+                        updateParticipantEntry(participantRole.id, {
+                          acceptsResponsibility: event.target.checked,
+                        })
+                      }
+                      type="checkbox"
+                      className="mt-1"
+                    />
+                    <span>Jag förstår att jag ansvarar för att uppgifterna är korrekta.</span>
+                  </label>
+                </div>
+              </div>
+            )
+          })}
         </div>
       )
     }

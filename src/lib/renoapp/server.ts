@@ -83,6 +83,9 @@ type ParticipantRoleRow = {
   label: string
   description: string | null
   role_kind: 'contractor' | 'consultant'
+  verification_instructions: string | null
+  verification_url: string | null
+  insurance_required: boolean
   requires_company_name: boolean
   requires_org_number: boolean
   requires_contact_name: boolean
@@ -150,6 +153,20 @@ type CaseQuestionAnswerRow = {
   case_id: string
   question_id: string
   option_id: string
+}
+
+type CaseParticipantRow = {
+  id: string
+  case_id: string
+  participant_role_id: string
+  company_name: string | null
+  org_number: string | null
+  contact_name: string | null
+  email: string | null
+  phone: string | null
+  certification_reference: string | null
+  has_verified_authorization: boolean
+  accepts_responsibility: boolean
 }
 
 type TerminologyGroupRow = {
@@ -606,6 +623,9 @@ export type PublicParticipantRole = {
   label: string
   description: string | null
   roleKind: 'contractor' | 'consultant'
+  verificationInstructions: string | null
+  verificationUrl: string | null
+  insuranceRequired: boolean
   requiresCompanyName: boolean
   requiresOrgNumber: boolean
   requiresContactName: boolean
@@ -711,6 +731,17 @@ export type CreatePublicApplicationInput = {
   contractorEmail?: string | null
   contractorPhone?: string | null
   contractorHasRequiredCertification?: boolean
+  participantEntries?: Array<{
+    participantRoleId: string
+    companyName?: string | null
+    orgNumber?: string | null
+    contactName?: string | null
+    email?: string | null
+    phone?: string | null
+    certificationReference?: string | null
+    hasVerifiedAuthorization?: boolean
+    acceptsResponsibility?: boolean
+  }>
   actionTypeKeys: string[]
   questionAnswers?: Record<string, string[]>
   checks?: {
@@ -757,6 +788,17 @@ export type RenoAppPublicApplicationDraft = {
     contractorEmail: string
     contractorPhone: string
     contractorHasRequiredCertification: boolean
+    participantEntries: Array<{
+      participantRoleId: string
+      companyName: string
+      orgNumber: string
+      contactName: string
+      email: string
+      phone: string
+      certificationReference: string
+      hasVerifiedAuthorization: boolean
+      acceptsResponsibility: boolean
+    }>
     actionTypeKeys: string[]
     questionAnswers: Record<string, string[]>
   }
@@ -770,6 +812,8 @@ export type RenoAppPublicApplicationDraft = {
   documents: Array<{
     id: string
     documentTypeId: string | null
+    participantRoleId: string | null
+    documentScope: 'general' | 'participant_insurance'
     fileName: string | null
     status: string
     uploadedAt: string
@@ -831,6 +875,9 @@ export type RenoAppAdminParticipantRole = {
   label: string
   description: string | null
   roleKind: 'contractor' | 'consultant'
+  verificationInstructions: string | null
+  verificationUrl: string | null
+  insuranceRequired: boolean
   requiresCompanyName: boolean
   requiresOrgNumber: boolean
   requiresContactName: boolean
@@ -1428,7 +1475,7 @@ async function listActiveParticipantRoles(admin: SupabaseAdminClient) {
   const { data, error } = await admin
     .from('renoapp_participant_roles')
     .select(
-      'id,key,label,description,role_kind,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
+      'id,key,label,description,role_kind,verification_instructions,verification_url,insurance_required,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
     )
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
@@ -1450,6 +1497,9 @@ function mapParticipantRoleToPublic(
     label: row.label,
     description: row.description ?? null,
     roleKind: row.role_kind,
+    verificationInstructions: row.verification_instructions ?? null,
+    verificationUrl: row.verification_url ?? null,
+    insuranceRequired: row.insurance_required === true,
     requiresCompanyName: row.requires_company_name,
     requiresOrgNumber: row.requires_org_number,
     requiresContactName: row.requires_contact_name,
@@ -1468,6 +1518,9 @@ function mapParticipantRoleToAdmin(row: ParticipantRoleRow): RenoAppAdminPartici
     label: row.label,
     description: row.description ?? null,
     roleKind: row.role_kind,
+    verificationInstructions: row.verification_instructions ?? null,
+    verificationUrl: row.verification_url ?? null,
+    insuranceRequired: row.insurance_required === true,
     requiresCompanyName: row.requires_company_name,
     requiresOrgNumber: row.requires_org_number,
     requiresContactName: row.requires_contact_name,
@@ -1892,6 +1945,23 @@ async function listCaseQuestionAnswers(admin: SupabaseAdminClient, caseIds: stri
   return (data ?? []) as CaseQuestionAnswerRow[]
 }
 
+async function listCaseParticipants(admin: SupabaseAdminClient, caseIds: string[]) {
+  if (caseIds.length === 0) return [] as CaseParticipantRow[]
+
+  const { data, error } = await admin
+    .from('renoapp_case_participants')
+    .select(
+      'id,case_id,participant_role_id,company_name,org_number,contact_name,email,phone,certification_reference,has_verified_authorization,accepts_responsibility'
+    )
+    .in('case_id', caseIds)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa ärendets entreprenörer och konsulter.')
+  }
+
+  return (data ?? []) as CaseParticipantRow[]
+}
+
 export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPublicBrfConfig | null> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const brf = await getPublicBrfBySlug(admin, slug)
@@ -2006,6 +2076,148 @@ export async function createPublicApplication(
   if (!unitNumberInternal && !unitNumberSkatteverket) throw new Error('UNIT_NUMBER_REQUIRED')
   if (!description) throw new Error('DESCRIPTION_REQUIRED')
   if (!actionTypeKey) throw new Error('ACTION_TYPE_REQUIRED')
+  /*
+  /*
+  /*
+  /*
+  const { error: deleteParticipantError } = await admin
+    .from('renoapp_case_participants')
+    .delete()
+    .eq('case_id', caseId)
+
+  if (deleteParticipantError) {
+    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenörer och konsulter.')
+  }
+
+  const participantRowsToInsert = participantEntriesInput
+    .filter((item) =>
+      Boolean(
+        item.companyName ||
+          item.orgNumber ||
+          item.contactName ||
+          item.email ||
+          item.phone ||
+          item.certificationReference ||
+          item.hasVerifiedAuthorization ||
+          item.acceptsResponsibility
+      )
+    )
+    .map((item) => ({
+      case_id: caseId,
+      participant_role_id: item.participantRoleId,
+      company_name: item.companyName || null,
+      org_number: item.orgNumber || null,
+      contact_name: item.contactName || null,
+      email: item.email || null,
+      phone: item.phone || null,
+      certification_reference: item.certificationReference || null,
+      has_verified_authorization: item.hasVerifiedAuthorization,
+      accepts_responsibility: item.acceptsResponsibility,
+    }))
+
+  if (participantRowsToInsert.length > 0) {
+    const { error: insertParticipantError } = await admin
+      .from('renoapp_case_participants')
+      .insert(participantRowsToInsert)
+
+    if (insertParticipantError) {
+      throw new Error(insertParticipantError.message ?? 'Kunde inte spara entreprenörer och konsulter.')
+    }
+  }
+
+  /*
+  const { error: deleteParticipantError } = await admin
+    .from('renoapp_case_participants')
+    .delete()
+    .eq('case_id', caseId)
+
+  if (deleteParticipantError) {
+    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenörer och konsulter.')
+  }
+
+  const participantRowsToInsert = participantEntriesInput
+    .filter((item) =>
+      Boolean(
+        item.companyName ||
+          item.orgNumber ||
+          item.contactName ||
+          item.email ||
+          item.phone ||
+          item.certificationReference ||
+          item.hasVerifiedAuthorization ||
+          item.acceptsResponsibility
+      )
+    )
+    .map((item) => ({
+      case_id: caseId,
+      participant_role_id: item.participantRoleId,
+      company_name: item.companyName || null,
+      org_number: item.orgNumber || null,
+      contact_name: item.contactName || null,
+      email: item.email || null,
+      phone: item.phone || null,
+      certification_reference: item.certificationReference || null,
+      has_verified_authorization: item.hasVerifiedAuthorization,
+      accepts_responsibility: item.acceptsResponsibility,
+    }))
+
+  if (participantRowsToInsert.length > 0) {
+    const { error: insertParticipantError } = await admin
+      .from('renoapp_case_participants')
+      .insert(participantRowsToInsert)
+
+    if (insertParticipantError) {
+      throw new Error(insertParticipantError.message ?? 'Kunde inte spara entreprenörer och konsulter.')
+    }
+  }
+
+  /*
+  const { error: deleteParticipantError } = await admin
+    .from('renoapp_case_participants')
+    .delete()
+    .eq('case_id', caseId)
+
+  if (deleteParticipantError) {
+    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenörer och konsulter.')
+  }
+
+  const participantRowsToInsert = participantEntriesInput
+    .filter((item) =>
+      Boolean(
+        item.companyName ||
+          item.orgNumber ||
+          item.contactName ||
+          item.email ||
+          item.phone ||
+          item.certificationReference ||
+          item.hasVerifiedAuthorization ||
+          item.acceptsResponsibility
+      )
+    )
+    .map((item) => ({
+      case_id: caseId,
+      participant_role_id: item.participantRoleId,
+      company_name: item.companyName || null,
+      org_number: item.orgNumber || null,
+      contact_name: item.contactName || null,
+      email: item.email || null,
+      phone: item.phone || null,
+      certification_reference: item.certificationReference || null,
+      has_verified_authorization: item.hasVerifiedAuthorization,
+      accepts_responsibility: item.acceptsResponsibility,
+    }))
+
+  if (participantRowsToInsert.length > 0) {
+    const { error: insertParticipantError } = await admin
+      .from('renoapp_case_participants')
+      .insert(participantRowsToInsert)
+
+    if (insertParticipantError) {
+      throw new Error(insertParticipantError.message ?? 'Kunde inte spara entreprenörer och konsulter.')
+    }
+  }
+
+  */
   const applicantEmailValue = applicantEmail as string
 
   const { data: actionType, error: actionTypeError } = await admin
@@ -2584,7 +2796,7 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
 
   const caseRow = caseData as Record<string, unknown>
   const brfId = String(caseRow.brf_id ?? '')
-  const [brfResult, contactResult, unitResult, actionTypeRows, actionTypes, documentsResult, answerRows, questionRows, optionRows] = await Promise.all([
+  const [brfResult, contactResult, unitResult, actionTypeRows, actionTypes, documentsResult, answerRows, participantRows, questionRows, optionRows] = await Promise.all([
     admin.from('brf_associations').select('id,name,slug').eq('id', brfId).maybeSingle(),
     caseRow.applicant_contact_id
       ? admin.from('contacts').select('id,name,email,phone').eq('id', String(caseRow.applicant_contact_id)).maybeSingle()
@@ -2600,10 +2812,11 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
     listActiveActionTypes(admin),
     admin
       .from('renovation_case_documents')
-      .select('id,document_type_id,file_name,status,uploaded_at,note')
+      .select('id,document_type_id,participant_role_id,document_scope,file_name,status,uploaded_at,note')
       .eq('case_id', String(caseRow.id ?? ''))
       .order('uploaded_at', { ascending: false }),
     listCaseQuestionAnswers(admin, [String(caseRow.id ?? '')]),
+    listCaseParticipants(admin, [String(caseRow.id ?? '')]),
     admin.from('renoapp_apply_questions').select('id,key').order('sort_order', { ascending: true }),
     admin.from('renoapp_apply_question_options').select('id,question_id,key').order('sort_order', { ascending: true }),
   ])
@@ -2671,6 +2884,17 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
       contractorEmail: (caseRow.contractor_email as string | null | undefined) ?? '',
       contractorPhone: (caseRow.contractor_phone as string | null | undefined) ?? '',
       contractorHasRequiredCertification: Boolean(caseRow.contractor_has_required_certification),
+      participantEntries: (participantRows ?? []).map((row) => ({
+        participantRoleId: row.participant_role_id,
+        companyName: row.company_name ?? '',
+        orgNumber: row.org_number ?? '',
+        contactName: row.contact_name ?? '',
+        email: row.email ?? '',
+        phone: row.phone ?? '',
+        certificationReference: row.certification_reference ?? '',
+        hasVerifiedAuthorization: row.has_verified_authorization === true,
+        acceptsResponsibility: row.accepts_responsibility === true,
+      })),
       actionTypeKeys: actionTypes.filter((item) => actionTypeIdSet.has(item.id)).map((item) => item.key),
       questionAnswers,
     },
@@ -2684,6 +2908,9 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
     documents: ((documentsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
       id: String(row.id ?? ''),
       documentTypeId: (row.document_type_id as string | null | undefined) ?? null,
+      participantRoleId: (row.participant_role_id as string | null | undefined) ?? null,
+      documentScope:
+        ((row.document_scope as 'general' | 'participant_insurance' | null | undefined) ?? 'general'),
       fileName: (row.file_name as string | null | undefined) ?? null,
       status: String(row.status ?? ''),
       uploadedAt: String(row.uploaded_at ?? ''),
@@ -2732,6 +2959,48 @@ export async function upsertPublicApplication(
         : [],
     ])
   ) as Record<string, string[]>
+  const participantEntriesInput = Array.from(
+    new Map(
+      (input.participantEntries ?? [])
+        .map((item) => {
+          const participantRoleId = normalizeText(item.participantRoleId)
+          if (!participantRoleId) return null
+
+          return [
+            participantRoleId,
+            {
+              participantRoleId,
+              companyName: normalizeText(item.companyName) ?? '',
+              orgNumber: normalizeText(item.orgNumber) ?? '',
+              contactName: normalizeText(item.contactName) ?? '',
+              email: normalizeEmail(item.email) ?? '',
+              phone: normalizeText(item.phone) ?? '',
+              certificationReference: normalizeText(item.certificationReference) ?? '',
+              hasVerifiedAuthorization: item.hasVerifiedAuthorization === true,
+              acceptsResponsibility: item.acceptsResponsibility === true,
+            },
+          ] as const
+        })
+        .filter(
+          (
+            item
+          ): item is readonly [
+            string,
+            {
+              participantRoleId: string
+              companyName: string
+              orgNumber: string
+              contactName: string
+              email: string
+              phone: string
+              certificationReference: string
+              hasVerifiedAuthorization: boolean
+              acceptsResponsibility: boolean
+            },
+          ] => Boolean(item)
+        )
+    ).values()
+  )
 
   if (mode === 'submit') {
     if (!applicantName) throw new Error('APPLICANT_NAME_REQUIRED')
@@ -2990,6 +3259,51 @@ export async function upsertPublicApplication(
   }
 
   const applicantEmailValue = applicantEmail as string
+  const { error: deleteParticipantError } = await admin
+    .from('renoapp_case_participants')
+    .delete()
+    .eq('case_id', caseId)
+
+  if (deleteParticipantError) {
+    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenörer och konsulter.')
+  }
+
+  const participantRowsToInsert = participantEntriesInput
+    .filter((item) =>
+      Boolean(
+        item.companyName ||
+          item.orgNumber ||
+          item.contactName ||
+          item.email ||
+          item.phone ||
+          item.certificationReference ||
+          item.hasVerifiedAuthorization ||
+          item.acceptsResponsibility
+      )
+    )
+    .map((item) => ({
+      case_id: caseId,
+      participant_role_id: item.participantRoleId,
+      company_name: item.companyName || null,
+      org_number: item.orgNumber || null,
+      contact_name: item.contactName || null,
+      email: item.email || null,
+      phone: item.phone || null,
+      certification_reference: item.certificationReference || null,
+      has_verified_authorization: item.hasVerifiedAuthorization,
+      accepts_responsibility: item.acceptsResponsibility,
+    }))
+
+  if (participantRowsToInsert.length > 0) {
+    const { error: insertParticipantError } = await admin
+      .from('renoapp_case_participants')
+      .insert(participantRowsToInsert)
+
+    if (insertParticipantError) {
+      throw new Error(insertParticipantError.message ?? 'Kunde inte spara entreprenörer och konsulter.')
+    }
+  }
+
   let token = accessTokenForResult
   if (!token) {
     const createdLink = await createCaseAccessToken(admin, caseId, applicantEmailValue)
@@ -4292,6 +4606,9 @@ export async function saveRenoAppAdminParticipantRole(input: {
   label: string
   description?: string | null
   roleKind?: 'contractor' | 'consultant' | null
+  verificationInstructions?: string | null
+  verificationUrl?: string | null
+  insuranceRequired?: boolean
   requiresCompanyName?: boolean
   requiresOrgNumber?: boolean
   requiresContactName?: boolean
@@ -4308,12 +4625,17 @@ export async function saveRenoAppAdminParticipantRole(input: {
   const key = normalizeMachineKey(label) ?? null
   const description = normalizeText(input.description)
   const roleKind = input.roleKind === 'consultant' ? 'consultant' : 'contractor'
+  const verificationInstructions = normalizeText(input.verificationInstructions)
+  const verificationUrl = normalizeText(input.verificationUrl)
   const sortOrder = Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0 ? Number(input.sortOrder) : 100
   const payload = {
     key,
     label,
     description,
     role_kind: roleKind,
+    verification_instructions: verificationInstructions,
+    verification_url: verificationUrl,
+    insurance_required: input.insuranceRequired === true,
     requires_company_name: input.requiresCompanyName !== false,
     requires_org_number: input.requiresOrgNumber === true,
     requires_contact_name: input.requiresContactName === true,
@@ -4333,7 +4655,7 @@ export async function saveRenoAppAdminParticipantRole(input: {
 
   const { data, error } = await query
     .select(
-      'id,key,label,description,role_kind,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
+      'id,key,label,description,role_kind,verification_instructions,verification_url,insurance_required,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
     )
     .single()
 
@@ -4368,7 +4690,7 @@ export async function listRenoAppAdminParticipantRoleConfig(): Promise<{
     admin
       .from('renoapp_participant_roles')
       .select(
-        'id,key,label,description,role_kind,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
+        'id,key,label,description,role_kind,verification_instructions,verification_url,insurance_required,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
       )
       .order('sort_order', { ascending: true }),
     admin

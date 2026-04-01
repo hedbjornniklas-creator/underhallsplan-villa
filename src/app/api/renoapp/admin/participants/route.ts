@@ -35,6 +35,11 @@ export async function POST(request: Request) {
       label: typeof body.label === 'string' ? body.label : '',
       description: typeof body.description === 'string' ? body.description : null,
       roleKind: body.roleKind === 'consultant' ? 'consultant' : 'contractor',
+      verificationInstructions:
+        typeof body.verificationInstructions === 'string' ? body.verificationInstructions : null,
+      verificationUrl: typeof body.verificationUrl === 'string' ? body.verificationUrl : null,
+      insuranceRequired:
+        typeof body.insuranceRequired === 'boolean' ? body.insuranceRequired : false,
       requiresCompanyName:
         typeof body.requiresCompanyName === 'boolean' ? body.requiresCompanyName : true,
       requiresOrgNumber: typeof body.requiresOrgNumber === 'boolean' ? body.requiresOrgNumber : true,
