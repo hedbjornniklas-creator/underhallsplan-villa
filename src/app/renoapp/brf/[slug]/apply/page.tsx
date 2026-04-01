@@ -607,7 +607,7 @@ export default function RenoAppApplyPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(INITIAL_FORM)
-  const [step, setStep] = useState<number | null>(1)
+  const [step, setStep] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null)
   const [activeDraftToken, setActiveDraftToken] = useState(initialDraftToken)
@@ -815,7 +815,7 @@ export default function RenoAppApplyPage() {
     if (!window.confirm('Rensa hela formuläret och börja om?')) return
 
     setForm(INITIAL_FORM)
-    setStep(1)
+    setStep(null)
     setError(null)
     setSubmitResult(null)
     setDraftInfo(null)
@@ -956,7 +956,7 @@ export default function RenoAppApplyPage() {
   }
 
   useEffect(() => {
-    if (!config || !autosaveEligible || submitting || savingDraft || autosaving) return
+    if (!config || !activeDraftToken || !autosaveEligible || submitting || savingDraft || autosaving) return
     if (draftFingerprint === lastSavedDraftFingerprintRef.current) return
 
     const timeoutId = window.setTimeout(() => {
@@ -964,7 +964,7 @@ export default function RenoAppApplyPage() {
     }, 1200)
 
     return () => window.clearTimeout(timeoutId)
-  }, [autosaveEligible, autosaving, config, draftFingerprint, savingDraft, submitting])
+  }, [activeDraftToken, autosaveEligible, autosaving, config, draftFingerprint, savingDraft, submitting])
 
   const renderStepContent = (stepId: number) => {
     if (stepId === 1) {
@@ -1007,7 +1007,7 @@ export default function RenoAppApplyPage() {
           <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm leading-7 text-stone-700">
             <p className="font-semibold text-stone-900">Spara och fortsätt senare</p>
             <p className="mt-2">
-              När namn, e-post och lägenhet är ifyllt skapas utkastet automatiskt. Därefter autosparas dina ändringar löpande.
+              Fyll i namn, e-post och lägenhet och välj sedan `Spara utkast` för att skapa ansökan. Därefter autosparas dina ändringar löpande.
             </p>
           </div>
         </div>
@@ -1354,19 +1354,13 @@ export default function RenoAppApplyPage() {
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-3 py-4 md:px-6 md:py-10">
       <section className="rounded-[24px] border border-stone-200/80 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.98))] p-4 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:rounded-[32px] md:p-8">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Ansökningsguide</p>
-            <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">{config?.brf.name ?? slug}</h1>
-            <p className="mt-4 max-w-4xl text-base leading-8 text-stone-700">
-              {config?.brf.applyIntroText ??
-                'Guiden hjälper dig att välja rätt renoveringstyper, förstå vilka dokument som behövs och skicka in ett komplett underlag till din BRF.'}
-            </p>
-          </div>
-          <div className="text-right text-xs text-stone-500">
-            <p>BRF-kod</p>
-            <p className="mt-1 font-semibold uppercase tracking-[0.18em] text-stone-700">{config?.brf.slug}</p>
-          </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Ansökningsguide</p>
+          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">{config?.brf.name ?? slug}</h1>
+          <p className="mt-4 max-w-4xl text-base leading-8 text-stone-700">
+            {config?.brf.applyIntroText ??
+              'Guiden hjälper dig att välja rätt renoveringstyper, förstå vilka dokument som behövs och skicka in ett komplett underlag till din BRF.'}
+          </p>
         </div>
 
         {draftInfo ? (
@@ -1445,7 +1439,7 @@ export default function RenoAppApplyPage() {
                 ? 'Autosparar utkast...'
                 : lastAutosavedAt
                   ? `Utkast autosparat ${formatDateTime(lastAutosavedAt)}.`
-                  : 'Utkast skapas automatiskt när kontakt och lägenhet är ifyllt.'}
+                  : 'Fyll i kontakt och lägenhet och välj sedan Spara utkast för att skapa ansökan.'}
             </div>
           ) : null}
 
