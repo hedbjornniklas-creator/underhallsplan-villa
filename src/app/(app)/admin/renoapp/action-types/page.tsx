@@ -9,6 +9,9 @@ type ActionTypeItem = {
   description: string | null
   sortOrder: number
   isActive: boolean
+  requirementCount: number
+  questionCount: number
+  participantRoleCount: number
 }
 
 type DraftActionType = {
@@ -162,6 +165,12 @@ export default function RenoAppActionTypesAdminPage() {
     Record<string, DraftParticipantRoleState>
   >({})
   const [loading, setLoading] = useState(true)
+  const [requirementsLoading, setRequirementsLoading] = useState(false)
+  const [questionsLoading, setQuestionsLoading] = useState(false)
+  const [participantRolesLoading, setParticipantRolesLoading] = useState(false)
+  const [requirementsLoaded, setRequirementsLoaded] = useState(false)
+  const [questionsLoaded, setQuestionsLoaded] = useState(false)
+  const [participantRolesLoaded, setParticipantRolesLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState('')
@@ -191,31 +200,10 @@ export default function RenoAppActionTypesAdminPage() {
       setError(null)
 
       try {
-        const [actionResponse, requirementResponse, questionResponse, participantRoleResponse] =
-          await Promise.all([
-          fetch('/api/renoapp/admin/action-types', { cache: 'no-store' }),
-          fetch('/api/renoapp/admin/requirements', { cache: 'no-store' }),
-          fetch('/api/renoapp/admin/action-type-questions', { cache: 'no-store' }),
-          fetch('/api/renoapp/admin/action-type-participants', { cache: 'no-store' }),
-          ])
+        const actionResponse = await fetch('/api/renoapp/admin/action-types', { cache: 'no-store' })
 
         const actionPayload = (await actionResponse.json().catch(() => ({}))) as {
           items?: ActionTypeItem[]
-          error?: string
-        }
-        const requirementPayload = (await requirementResponse.json().catch(() => ({}))) as {
-          documentTypes?: DocumentTypeItem[]
-          actionTypes?: ActionTypeGroup[]
-          error?: string
-        }
-        const questionPayload = (await questionResponse.json().catch(() => ({}))) as {
-          questions?: QuestionItem[]
-          actionTypes?: ActionTypeQuestionGroup[]
-          error?: string
-        }
-        const participantRolePayload = (await participantRoleResponse.json().catch(() => ({}))) as {
-          participantRoles?: ParticipantRoleItem[]
-          actionTypes?: ActionTypeParticipantRoleGroup[]
           error?: string
         }
 
@@ -223,80 +211,13 @@ export default function RenoAppActionTypesAdminPage() {
           throw new Error(actionPayload.error ?? 'Kunde inte lasa renoveringstyper.')
         }
 
-        if (!requirementResponse.ok) {
-          throw new Error(requirementPayload.error ?? 'Kunde inte lasa dokumentkrav.')
-        }
-
-        if (!questionResponse.ok) {
-          throw new Error(questionPayload.error ?? 'Kunde inte lasa fragekopplingar.')
-        }
-        if (!participantRoleResponse.ok) {
-          throw new Error(participantRolePayload.error ?? 'Kunde inte lasa medverkandekopplingar.')
-        }
-
         if (!active) return
 
         const nextItems = [...(actionPayload.items ?? [])].sort(
           (left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv')
         )
-        const nextDocumentTypes = [...(requirementPayload.documentTypes ?? [])].sort(
-          (left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv')
-        )
-
-        const nextRequirementDrafts: Record<string, DraftRequirementState> = {}
-        const nextQuestionDrafts: Record<string, DraftActionQuestionState> = {}
-        const nextParticipantRoleDrafts: Record<string, DraftParticipantRoleState> = {}
-        for (const actionType of nextItems) {
-          const group = (requirementPayload.actionTypes ?? []).find(
-            (candidate) => candidate.actionType.id === actionType.id
-          )
-          const questionGroup = (questionPayload.actionTypes ?? []).find(
-            (candidate) => candidate.actionType.id === actionType.id
-          )
-          const participantRoleGroup = (participantRolePayload.actionTypes ?? []).find(
-            (candidate) => candidate.actionType.id === actionType.id
-          )
-          for (const documentType of nextDocumentTypes) {
-            const requirement = group?.requirements.find(
-              (item) => item.documentTypeId === documentType.id
-            )
-            nextRequirementDrafts[`${actionType.id}:${documentType.id}`] = {
-              isEnabled: Boolean(requirement),
-              isRequired: requirement?.isRequired ?? true,
-              note: requirement?.note ?? '',
-              sortOrder: String(requirement?.sortOrder ?? documentType.sortOrder ?? 100),
-            }
-          }
-          for (const question of questionPayload.questions ?? []) {
-            const link = questionGroup?.questions.find((item) => item.questionId === question.id)
-            nextQuestionDrafts[`${actionType.id}:${question.id}`] = {
-              isEnabled: Boolean(link),
-              isRequired: link?.isRequired ?? true,
-              sortOrder: String(link?.sortOrder ?? question.sortOrder ?? 100),
-            }
-          }
-          for (const participantRole of participantRolePayload.participantRoles ?? []) {
-            const link = participantRoleGroup?.participantRoles.find(
-              (item) => item.participantRoleId === participantRole.id
-            )
-            nextParticipantRoleDrafts[`${actionType.id}:${participantRole.id}`] = {
-              isEnabled: Boolean(link),
-              isRequired: link?.isRequired ?? true,
-              sortOrder: String(link?.sortOrder ?? participantRole.sortOrder ?? 100),
-            }
-          }
-        }
 
         setItems(nextItems)
-        setDocumentTypes(nextDocumentTypes)
-        setQuestionItems(questionPayload.questions ?? [])
-        setParticipantRoles(participantRolePayload.participantRoles ?? [])
-        setRequirementDrafts(nextRequirementDrafts)
-        setSavedRequirementDrafts(nextRequirementDrafts)
-        setQuestionDrafts(nextQuestionDrafts)
-        setSavedQuestionDrafts(nextQuestionDrafts)
-        setParticipantRoleDrafts(nextParticipantRoleDrafts)
-        setSavedParticipantRoleDrafts(nextParticipantRoleDrafts)
         setDocumentsActionId((current) =>
           current && nextItems.some((item) => item.id === current) ? current : null
         )
@@ -320,6 +241,151 @@ export default function RenoAppActionTypesAdminPage() {
       active = false
     }
   }, [])
+
+  const updateItemCounts = (
+    actionTypeId: string,
+    updater: (current: ActionTypeItem) => Pick<ActionTypeItem, 'requirementCount' | 'questionCount' | 'participantRoleCount'>
+  ) => {
+    setItems((current) =>
+      current.map((item) => (item.id === actionTypeId ? { ...item, ...updater(item) } : item))
+    )
+  }
+
+  const loadRequirementConfig = async () => {
+    if (requirementsLoaded || requirementsLoading) return
+
+    setRequirementsLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/renoapp/admin/requirements', { cache: 'no-store' })
+      const payload = (await response.json().catch(() => ({}))) as {
+        documentTypes?: DocumentTypeItem[]
+        actionTypes?: ActionTypeGroup[]
+        error?: string
+      }
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Kunde inte lasa underlagskopplingar.')
+      }
+
+      const nextDocumentTypes = [...(payload.documentTypes ?? [])].sort(
+        (left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv')
+      )
+      const nextRequirementDrafts: Record<string, DraftRequirementState> = {}
+      for (const actionType of items) {
+        const group = (payload.actionTypes ?? []).find((candidate) => candidate.actionType.id === actionType.id)
+        for (const documentType of nextDocumentTypes) {
+          const requirement = group?.requirements.find((item) => item.documentTypeId === documentType.id)
+          nextRequirementDrafts[`${actionType.id}:${documentType.id}`] = {
+            isEnabled: Boolean(requirement),
+            isRequired: requirement?.isRequired ?? true,
+            note: requirement?.note ?? '',
+            sortOrder: String(requirement?.sortOrder ?? documentType.sortOrder ?? 100),
+          }
+        }
+      }
+
+      setDocumentTypes(nextDocumentTypes)
+      setRequirementDrafts(nextRequirementDrafts)
+      setSavedRequirementDrafts(nextRequirementDrafts)
+      setRequirementsLoaded(true)
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Kunde inte lasa underlagskopplingar.')
+    } finally {
+      setRequirementsLoading(false)
+    }
+  }
+
+  const loadQuestionConfig = async () => {
+    if (questionsLoaded || questionsLoading) return
+
+    setQuestionsLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/renoapp/admin/action-type-questions', { cache: 'no-store' })
+      const payload = (await response.json().catch(() => ({}))) as {
+        questions?: QuestionItem[]
+        actionTypes?: ActionTypeQuestionGroup[]
+        error?: string
+      }
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Kunde inte lasa fragekopplingar.')
+      }
+
+      const nextQuestions = [...(payload.questions ?? [])].sort(
+        (left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv')
+      )
+      const nextQuestionDrafts: Record<string, DraftActionQuestionState> = {}
+      for (const actionType of items) {
+        const group = (payload.actionTypes ?? []).find((candidate) => candidate.actionType.id === actionType.id)
+        for (const question of nextQuestions) {
+          const link = group?.questions.find((item) => item.questionId === question.id)
+          nextQuestionDrafts[`${actionType.id}:${question.id}`] = {
+            isEnabled: Boolean(link),
+            isRequired: link?.isRequired ?? true,
+            sortOrder: String(link?.sortOrder ?? question.sortOrder ?? 100),
+          }
+        }
+      }
+
+      setQuestionItems(nextQuestions)
+      setQuestionDrafts(nextQuestionDrafts)
+      setSavedQuestionDrafts(nextQuestionDrafts)
+      setQuestionsLoaded(true)
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Kunde inte lasa fragekopplingar.')
+    } finally {
+      setQuestionsLoading(false)
+    }
+  }
+
+  const loadParticipantRoleConfig = async () => {
+    if (participantRolesLoaded || participantRolesLoading) return
+
+    setParticipantRolesLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/renoapp/admin/action-type-participants', { cache: 'no-store' })
+      const payload = (await response.json().catch(() => ({}))) as {
+        participantRoles?: ParticipantRoleItem[]
+        actionTypes?: ActionTypeParticipantRoleGroup[]
+        error?: string
+      }
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Kunde inte lasa medverkandekopplingar.')
+      }
+
+      const nextParticipantRoles = [...(payload.participantRoles ?? [])].sort(
+        (left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv')
+      )
+      const nextParticipantRoleDrafts: Record<string, DraftParticipantRoleState> = {}
+      for (const actionType of items) {
+        const group = (payload.actionTypes ?? []).find((candidate) => candidate.actionType.id === actionType.id)
+        for (const participantRole of nextParticipantRoles) {
+          const link = group?.participantRoles.find((item) => item.participantRoleId === participantRole.id)
+          nextParticipantRoleDrafts[`${actionType.id}:${participantRole.id}`] = {
+            isEnabled: Boolean(link),
+            isRequired: link?.isRequired ?? true,
+            sortOrder: String(link?.sortOrder ?? participantRole.sortOrder ?? 100),
+          }
+        }
+      }
+
+      setParticipantRoles(nextParticipantRoles)
+      setParticipantRoleDrafts(nextParticipantRoleDrafts)
+      setSavedParticipantRoleDrafts(nextParticipantRoleDrafts)
+      setParticipantRolesLoaded(true)
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Kunde inte lasa medverkandekopplingar.')
+    } finally {
+      setParticipantRolesLoading(false)
+    }
+  }
 
   const filteredItems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
@@ -388,29 +454,15 @@ export default function RenoAppActionTypesAdminPage() {
 
   const requirementCountByActionId = useMemo(() => {
     return Object.fromEntries(
-      items.map((item) => [
-        item.id,
-        activeDocumentTypes.reduce(
-          (count, documentType) =>
-            requirementDrafts[`${item.id}:${documentType.id}`]?.isEnabled ? count + 1 : count,
-          0
-        ),
-      ])
+      items.map((item) => [item.id, item.requirementCount])
     ) as Record<string, number>
-  }, [activeDocumentTypes, items, requirementDrafts])
+  }, [items])
 
   const questionCountByActionId = useMemo(() => {
     return Object.fromEntries(
-      items.map((item) => [
-        item.id,
-        activeQuestions.reduce(
-          (count, question) =>
-            questionDrafts[`${item.id}:${question.id}`]?.isEnabled ? count + 1 : count,
-          0
-        ),
-      ])
+      items.map((item) => [item.id, item.questionCount])
     ) as Record<string, number>
-  }, [activeQuestions, items, questionDrafts])
+  }, [items])
 
   const sortedItems = useMemo(() => {
     return [...filteredItems].sort((left, right) => {
@@ -508,9 +560,20 @@ export default function RenoAppActionTypesAdminPage() {
 
       const savedItem = payload.item
       setItems((current) =>
-        [...current.filter((item) => item.id !== savedItem.id), savedItem].sort(
-          (left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv')
-        )
+        [
+          ...current.filter((item) => item.id !== savedItem.id),
+          {
+            ...savedItem,
+            requirementCount:
+              current.find((item) => item.id === savedItem.id)?.requirementCount ?? savedItem.requirementCount ?? 0,
+            questionCount:
+              current.find((item) => item.id === savedItem.id)?.questionCount ?? savedItem.questionCount ?? 0,
+            participantRoleCount:
+              current.find((item) => item.id === savedItem.id)?.participantRoleCount ??
+              savedItem.participantRoleCount ??
+              0,
+          },
+        ].sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv'))
       )
       setRequirementDrafts((current) => {
         const next = { ...current }
@@ -658,6 +721,7 @@ export default function RenoAppActionTypesAdminPage() {
     const key = `${actionTypeId}:${documentTypeId}`
     const draft = getRequirementDraft(actionTypeId, documentTypeId)
     if (!draft) return
+    const previousDraft = savedRequirementDrafts[key]
 
     setSavingRequirementKey(key)
     setError(null)
@@ -685,6 +749,13 @@ export default function RenoAppActionTypesAdminPage() {
         ...current,
         [key]: { ...draft },
       }))
+      if ((previousDraft?.isEnabled ?? false) !== draft.isEnabled) {
+        updateItemCounts(actionTypeId, (item) => ({
+          requirementCount: Math.max(0, item.requirementCount + (draft.isEnabled ? 1 : -1)),
+          questionCount: item.questionCount,
+          participantRoleCount: item.participantRoleCount,
+        }))
+      }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara dokumentkrav.')
     } finally {
@@ -696,6 +767,7 @@ export default function RenoAppActionTypesAdminPage() {
     const key = `${actionTypeId}:${questionId}`
     const draft = questionDrafts[key]
     if (!draft) return
+    const previousDraft = savedQuestionDrafts[key]
 
     setSavingQuestionKey(key)
     setError(null)
@@ -722,6 +794,13 @@ export default function RenoAppActionTypesAdminPage() {
         ...current,
         [key]: { ...draft },
       }))
+      if ((previousDraft?.isEnabled ?? false) !== draft.isEnabled) {
+        updateItemCounts(actionTypeId, (item) => ({
+          requirementCount: item.requirementCount,
+          questionCount: Math.max(0, item.questionCount + (draft.isEnabled ? 1 : -1)),
+          participantRoleCount: item.participantRoleCount,
+        }))
+      }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara fragekoppling.')
     } finally {
@@ -733,6 +812,7 @@ export default function RenoAppActionTypesAdminPage() {
     const key = `${actionTypeId}:${participantRoleId}`
     const draft = participantRoleDrafts[key]
     if (!draft) return
+    const previousDraft = savedParticipantRoleDrafts[key]
 
     setSavingParticipantRoleKey(key)
     setError(null)
@@ -759,6 +839,13 @@ export default function RenoAppActionTypesAdminPage() {
         ...current,
         [key]: { ...draft },
       }))
+      if ((previousDraft?.isEnabled ?? false) !== draft.isEnabled) {
+        updateItemCounts(actionTypeId, (item) => ({
+          requirementCount: item.requirementCount,
+          questionCount: item.questionCount,
+          participantRoleCount: Math.max(0, item.participantRoleCount + (draft.isEnabled ? 1 : -1)),
+        }))
+      }
     } catch (saveError) {
       setError(
         saveError instanceof Error ? saveError.message : 'Kunde inte spara medverkandekoppling.'
@@ -963,6 +1050,7 @@ export default function RenoAppActionTypesAdminPage() {
                                 return
                               }
                               setQuestionsActionId(item.id)
+                              void loadQuestionConfig()
                             }}
                             className={`w-full rounded-md border ${
                               questionsOpen
@@ -980,6 +1068,7 @@ export default function RenoAppActionTypesAdminPage() {
                                 return
                               }
                               setDocumentsActionId(item.id)
+                              void loadRequirementConfig()
                             }}
                             className={`w-full rounded-md border ${
                               documentsOpen
@@ -997,6 +1086,7 @@ export default function RenoAppActionTypesAdminPage() {
                                 return
                               }
                               setParticipantRolesActionId(item.id)
+                              void loadParticipantRoleConfig()
                             }}
                             className={`w-full rounded-md border ${
                               participantRolesOpen
@@ -1056,7 +1146,7 @@ export default function RenoAppActionTypesAdminPage() {
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="text-sm text-stone-600">
-                  {documentsChips.length} aktiva underlagstyper
+                  {requirementsLoading ? 'Laddar underlagstyper...' : `${documentsChips.length} aktiva underlagstyper`}
                 </div>
                 <button
                   type="button"
@@ -1068,6 +1158,11 @@ export default function RenoAppActionTypesAdminPage() {
               </div>
             </div>
 
+            {requirementsLoading ? (
+              <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-600">
+                Laddar underlagstyper...
+              </div>
+            ) : (
             <div className="mt-4 flex flex-wrap gap-2">
               {documentsChips.length > 0 ? (
                 documentsChips.map((documentType) => {
@@ -1088,7 +1183,9 @@ export default function RenoAppActionTypesAdminPage() {
                 </span>
               )}
             </div>
+            )}
 
+            {!requirementsLoading ? (
             <div className="mt-5 overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
@@ -1194,6 +1291,7 @@ export default function RenoAppActionTypesAdminPage() {
                 </tbody>
               </table>
             </div>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -1212,7 +1310,7 @@ export default function RenoAppActionTypesAdminPage() {
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="text-sm text-stone-600">
-                  {participantRoleChips.length} aktiva medverkandetyper
+                  {participantRolesLoading ? 'Laddar medverkande...' : `${participantRoleChips.length} aktiva medverkandetyper`}
                 </div>
                 <button
                   type="button"
@@ -1224,6 +1322,11 @@ export default function RenoAppActionTypesAdminPage() {
               </div>
             </div>
 
+            {participantRolesLoading ? (
+              <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-600">
+                Laddar medverkande...
+              </div>
+            ) : (
             <div className="mt-4 flex flex-wrap gap-2">
               {participantRoleChips.length > 0 ? (
                 participantRoleChips.map((participantRole) => {
@@ -1245,7 +1348,9 @@ export default function RenoAppActionTypesAdminPage() {
                 </span>
               )}
             </div>
+            )}
 
+            {!participantRolesLoading ? (
             <div className="mt-5 overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
@@ -1337,6 +1442,7 @@ export default function RenoAppActionTypesAdminPage() {
                 </tbody>
               </table>
             </div>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -1355,7 +1461,7 @@ export default function RenoAppActionTypesAdminPage() {
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="text-sm text-stone-600">
-                  {questionChips.length} aktiva frågor
+                  {questionsLoading ? 'Laddar frågor...' : `${questionChips.length} aktiva frågor`}
                 </div>
                 <button
                   type="button"
@@ -1367,6 +1473,11 @@ export default function RenoAppActionTypesAdminPage() {
               </div>
             </div>
 
+            {questionsLoading ? (
+              <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-600">
+                Laddar frågor...
+              </div>
+            ) : (
             <div className="mt-4 flex flex-wrap gap-2">
               {questionChips.length > 0 ? (
                 questionChips.map((question) => {
@@ -1387,7 +1498,9 @@ export default function RenoAppActionTypesAdminPage() {
                 </span>
               )}
             </div>
+            )}
 
+            {!questionsLoading ? (
             <div className="mt-5 overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
@@ -1476,6 +1589,7 @@ export default function RenoAppActionTypesAdminPage() {
                 </tbody>
               </table>
             </div>
+            ) : null}
           </div>
         </div>
       ) : null}

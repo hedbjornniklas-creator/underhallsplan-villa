@@ -793,6 +793,9 @@ export type RenoAppAdminActionType = {
     | 'structural_engineer'
   sortOrder: number
   isActive: boolean
+  requirementCount: number
+  questionCount: number
+  participantRoleCount: number
 }
 
 export type RenoAppAdminDocumentRequirement = {
@@ -4018,16 +4021,60 @@ export async function listRenoAppAdminActionTypes(): Promise<RenoAppAdminActionT
   await requireRenoAppAdminProfile()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
 
-  const { data, error } = await admin
-    .from('renovation_action_types')
-    .select('id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active')
-    .order('sort_order', { ascending: true })
+  const [actionTypeRows, requirementRows, questionRows, participantRoleRows] = await Promise.all([
+    admin
+      .from('renovation_action_types')
+      .select('id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active')
+      .order('sort_order', { ascending: true }),
+    admin.from('renovation_action_document_requirements').select('action_type_id,document_type_id').is('brf_id', null),
+    admin.from('renoapp_action_type_questions').select('action_type_id,question_id').eq('is_active', true),
+    admin
+      .from('renoapp_action_type_participant_roles')
+      .select('action_type_id,participant_role_id')
+      .eq('is_active', true),
+  ])
 
-  if (error) {
-    throw new Error(error.message ?? 'Kunde inte läsa renoveringstyper.')
+  if (actionTypeRows.error) {
+    throw new Error(actionTypeRows.error.message ?? 'Kunde inte läsa renoveringstyper.')
+  }
+  if (requirementRows.error) {
+    throw new Error(requirementRows.error.message ?? 'Kunde inte läsa underlagskopplingar.')
+  }
+  if (questionRows.error) {
+    throw new Error(questionRows.error.message ?? 'Kunde inte läsa frågekopplingar.')
+  }
+  if (participantRoleRows.error) {
+    throw new Error(participantRoleRows.error.message ?? 'Kunde inte läsa medverkandekopplingar.')
   }
 
-  return ((data ?? []) as ActionTypeRow[]).map((item) => ({
+  const requirementCountByActionTypeId = new Map<string, number>()
+  for (const row of (requirementRows.data ?? []) as Array<{ action_type_id: string | null; document_type_id: string | null }>) {
+    if (!row.action_type_id || !row.document_type_id) continue
+    requirementCountByActionTypeId.set(
+      row.action_type_id,
+      (requirementCountByActionTypeId.get(row.action_type_id) ?? 0) + 1
+    )
+  }
+
+  const questionCountByActionTypeId = new Map<string, number>()
+  for (const row of (questionRows.data ?? []) as Array<{ action_type_id: string | null; question_id: string | null }>) {
+    if (!row.action_type_id || !row.question_id) continue
+    questionCountByActionTypeId.set(
+      row.action_type_id,
+      (questionCountByActionTypeId.get(row.action_type_id) ?? 0) + 1
+    )
+  }
+
+  const participantRoleCountByActionTypeId = new Map<string, number>()
+  for (const row of (participantRoleRows.data ?? []) as Array<{ action_type_id: string | null; participant_role_id: string | null }>) {
+    if (!row.action_type_id || !row.participant_role_id) continue
+    participantRoleCountByActionTypeId.set(
+      row.action_type_id,
+      (participantRoleCountByActionTypeId.get(row.action_type_id) ?? 0) + 1
+    )
+  }
+
+  return ((actionTypeRows.data ?? []) as ActionTypeRow[]).map((item) => ({
     id: item.id,
     categoryId: item.category_id,
     key: item.key,
@@ -4037,6 +4084,9 @@ export async function listRenoAppAdminActionTypes(): Promise<RenoAppAdminActionT
     contractorRequirement: item.contractor_requirement,
     sortOrder: item.sort_order,
     isActive: item.is_active,
+    requirementCount: requirementCountByActionTypeId.get(item.id) ?? 0,
+    questionCount: questionCountByActionTypeId.get(item.id) ?? 0,
+    participantRoleCount: participantRoleCountByActionTypeId.get(item.id) ?? 0,
   }))
 }
 
@@ -4344,6 +4394,9 @@ export async function listRenoAppAdminParticipantRoleConfig(): Promise<{
     contractorRequirement: row.contractor_requirement,
     sortOrder: row.sort_order,
     isActive: row.is_active,
+    requirementCount: 0,
+    questionCount: 0,
+    participantRoleCount: 0,
   }))
 
   return {
@@ -5157,6 +5210,9 @@ export async function saveRenoAppAdminActionType(input: {
     contractorRequirement: row.contractor_requirement,
     sortOrder: row.sort_order,
     isActive: row.is_active,
+    requirementCount: 0,
+    questionCount: 0,
+    participantRoleCount: 0,
   }
 }
 
@@ -5226,6 +5282,9 @@ export async function listRenoAppAdminRequirementConfig(): Promise<{
           actionTypes.find((actionType) => actionType.id === item.id)?.contractor_requirement ?? 'none',
         sortOrder: item.sortOrder,
         isActive: actionTypes.find((actionType) => actionType.id === item.id)?.is_active ?? true,
+        requirementCount: item.requirements.length,
+        questionCount: 0,
+        participantRoleCount: 0,
       },
       requirements: item.requirements.map((requirement) => ({
         id: requirement.id,
