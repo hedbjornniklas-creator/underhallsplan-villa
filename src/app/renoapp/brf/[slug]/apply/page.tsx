@@ -1009,6 +1009,25 @@ export default function RenoAppApplyPage() {
             <p className="mt-2">
               Fyll i namn, e-post och lägenhet och välj sedan `Spara utkast` för att skapa ansökan. Därefter autosparas dina ändringar löpande.
             </p>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              {!activeDraftToken ? (
+                <button
+                  type="button"
+                  onClick={() => void submitApplication('draft')}
+                  disabled={!autosaveEligible || savingDraft}
+                  className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingDraft ? 'Skapar utkast...' : 'Skapa utkast'}
+                </button>
+              ) : (
+                <span className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700">
+                  Utkast skapat
+                </span>
+              )}
+              {!autosaveEligible && !activeDraftToken ? (
+                <span className="text-xs text-stone-500">Fyll först i namn, e-post och lägenhet.</span>
+              ) : null}
+            </div>
           </div>
         </div>
       )
