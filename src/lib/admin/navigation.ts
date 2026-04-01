@@ -75,6 +75,12 @@ export const RENOAPP_ADMIN_TABS = [
     match: (pathname: string) => pathname === '/admin/renoapp/action-types',
   },
   {
+    href: '/admin/renoapp/flow-builder',
+    label: 'Flodesbyggare',
+    description: 'Visuell arbetsyta for att bygga RenoApp-floden utan att andra adminsidor paverkas.',
+    match: (pathname: string) => pathname === '/admin/renoapp/flow-builder',
+  },
+  {
     href: '/admin/renoapp/questions',
     label: 'Frågor',
     description: 'Bygg upp RenoApps frågebank och återanvändbara svarsalternativ.',
