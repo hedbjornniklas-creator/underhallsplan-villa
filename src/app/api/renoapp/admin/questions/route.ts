@@ -69,6 +69,8 @@ export async function POST(request: Request) {
                     ? 'document'
                     : triggerRecord.triggerType === 'participant_role'
                       ? 'participant_role'
+                      : triggerRecord.triggerType === 'review_flag'
+                        ? 'review_flag'
                       : 'question'
                 return {
                   triggerType,
@@ -82,6 +84,10 @@ export async function POST(request: Request) {
                     typeof triggerRecord.participantRoleId === 'string'
                       ? triggerRecord.participantRoleId
                       : null,
+                  reviewFlagId:
+                    typeof triggerRecord.reviewFlagId === 'string'
+                      ? triggerRecord.reviewFlagId
+                      : null,
                   sortOrder:
                     typeof triggerRecord.sortOrder === 'number'
                       ? triggerRecord.sortOrder
@@ -94,10 +100,11 @@ export async function POST(request: Request) {
                 (
                   trigger
                 ): trigger is {
-                  triggerType: 'question' | 'document' | 'participant_role'
+                  triggerType: 'question' | 'document' | 'participant_role' | 'review_flag'
                   questionId: string | null
                   documentTypeId: string | null
                   participantRoleId: string | null
+                  reviewFlagId: string | null
                   sortOrder: number
                   isActive: boolean
                 } => Boolean(trigger)

@@ -86,6 +86,16 @@ type CaseDetail = {
     revokedAt: string | null
     lastUsedAt: string | null
   }>
+  reviewFlags: Array<{
+    id: string
+    code: string
+    label: string
+    description: string | null
+    severity: 'info' | 'warning' | 'high'
+    category: string
+    sourceType: 'answer_rule' | 'missing_document' | 'participant'
+    sourceLabel: string | null
+  }>
 }
 
 type StatusAction = 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected'
@@ -107,6 +117,12 @@ function getActionLabel(status: StatusAction) {
   if (status === 'approved') return 'Godkänn'
   if (status === 'conditional') return 'Villkorat godkännande'
   return 'Avslå'
+}
+
+function reviewFlagTone(severity: 'info' | 'warning' | 'high') {
+  if (severity === 'high') return 'border-rose-200 bg-rose-50 text-rose-900'
+  if (severity === 'warning') return 'border-amber-200 bg-amber-50 text-amber-900'
+  return 'border-sky-200 bg-sky-50 text-sky-900'
 }
 
 export default function RenoAppCaseDetailPage() {
@@ -375,6 +391,34 @@ export default function RenoAppCaseDetailPage() {
         </div>
 
         <div className="grid gap-6">
+          <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+            <h3 className="text-2xl font-semibold text-stone-900">Flaggor och risker</h3>
+            {item.reviewFlags.length === 0 ? (
+              <p className="mt-4 text-sm text-stone-700">Inga flaggor har identifierats i ärendet just nu.</p>
+            ) : (
+              <ul className="mt-4 space-y-3 text-sm">
+                {item.reviewFlags.map((flag) => (
+                  <li
+                    key={flag.id}
+                    className={`rounded-2xl border px-4 py-4 ${reviewFlagTone(flag.severity)}`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-semibold">{flag.label}</p>
+                      <span className="rounded-full border border-current/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]">
+                        {flag.severity}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs uppercase tracking-[0.12em] opacity-80">{flag.category}</p>
+                    {flag.description ? <p className="mt-2 leading-6">{flag.description}</p> : null}
+                    {flag.sourceLabel ? (
+                      <p className="mt-2 text-xs opacity-80">Källa: {flag.sourceLabel}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </article>
+
           <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
             <h3 className="text-2xl font-semibold text-stone-900">Styrelseåtgärd</h3>
             <form onSubmit={handleStatusSubmit} className="mt-6 grid gap-4">

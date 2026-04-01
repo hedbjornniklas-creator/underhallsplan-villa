@@ -87,6 +87,12 @@ export const RENOAPP_ADMIN_TABS = [
     match: (pathname: string) => pathname === '/admin/renoapp/participants',
   },
   {
+    href: '/admin/renoapp/review-flags',
+    label: 'Flaggor',
+    description: 'Definiera risker och saknade delar som ska lyftas till styrelsen.',
+    match: (pathname: string) => pathname === '/admin/renoapp/review-flags',
+  },
+  {
     href: '/admin/renoapp/document-types',
     label: 'Underlagstyper',
     description: 'Hantera den centrala katalogen av underlag i RenoApp.',

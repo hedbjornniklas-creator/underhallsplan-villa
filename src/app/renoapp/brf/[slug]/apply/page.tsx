@@ -85,7 +85,7 @@ type ApplyQuestionOption = {
 
 type ApplyQuestionOptionTrigger = {
   id: string
-  triggerType: 'question' | 'document' | 'participant_role'
+  triggerType: 'question' | 'document' | 'participant_role' | 'review_flag'
   questionId: string | null
   documentTypeId: string | null
   documentKey: string | null
@@ -94,6 +94,15 @@ type ApplyQuestionOptionTrigger = {
   documentPhase: 'before_required' | 'during_execution' | 'after_completion' | null
   participantRoleId: string | null
   participantRole: ParticipantRole | null
+  reviewFlagId: string | null
+  reviewFlag: {
+    id: string
+    key: string
+    label: string
+    description: string | null
+    severity: 'info' | 'warning' | 'high'
+    category: string
+  } | null
   sortOrder: number
 }
 
@@ -540,41 +549,6 @@ function toggleMultiSelectValue(values: string[], optionKey: string) {
     : [...values, optionKey]
 }
 
-function describeParticipantInfoRequirements(participantRole: ParticipantRole) {
-  return [
-    participantRole.requiresCompanyName ? 'företagsnamn' : null,
-    participantRole.requiresOrgNumber ? 'organisationsnummer' : null,
-    participantRole.requiresContactName ? 'kontaktperson' : null,
-    participantRole.requiresEmail ? 'e-post' : null,
-    participantRole.requiresPhone ? 'telefon' : null,
-    participantRole.requiresCertification ? 'behörighet/intyg' : null,
-  ]
-    .filter(Boolean)
-    .join(', ')
-}
-
-function renderParticipantRoleList(items: ParticipantRole[]) {
-  return (
-    <ul className="space-y-2">
-      {items.map((participantRole) => (
-        <li key={participantRole.id} className="rounded-2xl border border-stone-200 bg-white px-4 py-3">
-          <p className="font-medium text-stone-900">
-            {participantRole.label} {participantRole.isRequired ? '(obligatorisk)' : '(vid behov)'}
-          </p>
-          {participantRole.description ? <p className="mt-1">{participantRole.description}</p> : null}
-          <p className="mt-1 text-stone-500">
-            {participantRole.roleKind === 'consultant' ? 'Konsult' : 'Entreprenör'}
-            {describeParticipantInfoRequirements(participantRole)
-              ? ` • Uppgifter: ${describeParticipantInfoRequirements(participantRole)}`
-              : ''}
-          </p>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-
 const compactDescriptionStyle = {
   display: '-webkit-box',
   WebkitLineClamp: 2,
@@ -666,6 +640,11 @@ export default function RenoAppApplyPage() {
   const [autosaving, setAutosaving] = useState(false)
   const [lastAutosavedAt, setLastAutosavedAt] = useState<string | null>(null)
   const [uploadingTargetId, setUploadingTargetId] = useState<string | null>(null)
+  const [openVerificationInstructionIds, setOpenVerificationInstructionIds] = useState<string[]>([])
+  const [actionDescriptionModal, setActionDescriptionModal] = useState<{
+    label: string
+    description: string
+  } | null>(null)
   const lastSavedDraftFingerprintRef = useRef('')
   const autosaveDraftRef = useRef<(fingerprint: string) => void>(() => {})
 
@@ -1147,25 +1126,31 @@ export default function RenoAppApplyPage() {
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {group.actions.map((action) => {
                   const selected = form.actionTypeKeys.includes(action.key)
+                  const hasLongDescription = (action.description?.trim().length ?? 0) > 90
 
                   return (
-                    <button
+                    <div
                       key={action.id}
-                      type="button"
-                      onClick={() => toggleActionType(action.key)}
                       className={`min-h-[64px] rounded-[18px] border px-3 py-2.5 text-left transition md:min-h-[74px] md:rounded-[22px] md:px-4 md:py-3 ${
                         selected
                           ? 'border-emerald-600 bg-emerald-50 shadow-[0_10px_30px_-20px_rgba(5,150,105,0.7)]'
                           : 'border-stone-200 bg-white hover:border-stone-300'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleActionType(action.key)}
+                        className="flex w-full items-start justify-between gap-3 text-left"
+                      >
                         <div className="min-w-0 flex-1">
                           <p className="text-[15px] font-semibold leading-5 text-stone-900 md:text-base md:leading-6">
                             {action.label}
                           </p>
                           {action.description ? (
-                            <p className="mt-1 text-xs leading-5 text-stone-700 md:text-sm md:leading-6" style={compactDescriptionStyle}>
+                            <p
+                              className="mt-1 text-xs leading-5 text-stone-700 md:text-sm md:leading-6"
+                              style={compactDescriptionStyle}
+                            >
                               {action.description}
                             </p>
                           ) : null}
@@ -1179,8 +1164,22 @@ export default function RenoAppApplyPage() {
                         >
                           {selected ? 'x' : '+'}
                         </span>
-                      </div>
-                    </button>
+                      </button>
+                      {action.description && hasLongDescription ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActionDescriptionModal({
+                              label: action.label,
+                              description: action.description ?? '',
+                            })
+                          }
+                          className="mt-1 text-xs font-semibold text-stone-600 underline underline-offset-2 hover:text-stone-900"
+                        >
+                          Visa mer
+                        </button>
+                      ) : null}
+                    </div>
                   )
                 })}
               </div>
@@ -1190,10 +1189,6 @@ export default function RenoAppApplyPage() {
           {selectedActions.length > 0 ? (
             <div className="rounded-2xl border-0 bg-transparent p-0 md:rounded-3xl md:border md:border-stone-200 md:bg-white md:p-5">
               <p className="text-sm font-semibold text-stone-900">Följdfrågor</p>
-              <p className="mt-2 text-sm leading-7 text-stone-700">
-                Besvara bara de frågor som hör till de renoveringstyper du valt. De används för att styra
-                vilket underlag som behöver bifogas i nästa steg.
-              </p>
 
               {visibleQuestions.length === 0 ? (
                 <p className="mt-4 text-sm text-stone-600">
@@ -1257,6 +1252,20 @@ export default function RenoAppApplyPage() {
               )}
             </div>
           ) : null}
+
+          <div className="rounded-3xl border border-stone-200 bg-white p-5">
+            <label className="block text-sm font-semibold text-stone-900" htmlFor="description">
+              Beskriv projektet
+            </label>
+            <textarea
+              id="description"
+              value={form.description}
+              onChange={(event) => updateField('description', event.target.value)}
+              rows={7}
+              className="mt-3 min-h-44 w-full rounded-3xl border border-stone-300 bg-white px-5 py-4 text-sm text-stone-900"
+              placeholder="Beskriv kort vad du vill göra, hur omfattande arbetet är och om du redan har ritningar eller annan dokumentation klar."
+            />
+          </div>
         </div>
       )
     }
@@ -1339,41 +1348,23 @@ export default function RenoAppApplyPage() {
     if (stepId === 4) {
       return (
         <div className="grid gap-4">
-          {mergedParticipantRoles.length > 0 ? (
-            <div className="rounded-3xl border border-stone-200 bg-white p-5">
-              <p className="text-sm font-semibold text-stone-900">Entreprenörer och konsulter som behövs</p>
-              <p className="mt-2 text-sm leading-7 text-stone-700">
-                Utifrån valda renoveringstyper och dina svar behöver följande entreprenörer eller konsulter normalt finnas med i projektet.
-              </p>
-              <div className="mt-4 text-sm text-stone-700">
-                {renderParticipantRoleList(mergedParticipantRoles)}
-              </div>
-            </div>
-          ) : (
+          {mergedParticipantRoles.length === 0 ? (
             <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
               Inga entreprenörer eller konsulter behöver anges utifrån dina nuvarande val.
             </div>
-          )}
-
-          <div className="rounded-3xl border border-stone-200 bg-white p-5">
-            <label className="block text-sm font-semibold text-stone-900" htmlFor="description">
-              Beskriv projektet
-            </label>
-            <textarea
-              id="description"
-              value={form.description}
-              onChange={(event) => updateField('description', event.target.value)}
-              rows={7}
-              className="mt-3 min-h-44 w-full rounded-3xl border border-stone-300 bg-white px-5 py-4 text-sm text-stone-900"
-              placeholder="Beskriv kort vad du vill göra, hur omfattande arbetet är och om du redan har ritningar eller annan dokumentation klar."
-            />
-          </div>
+          ) : null}
 
           {mergedParticipantRoles.map((participantRole) => {
             const entry = getParticipantEntry(participantRole.id)
             const insuranceDocuments = uploadedDocuments.filter(
               (item) =>
                 item.participantRoleId === participantRole.id && item.documentScope === 'participant_insurance'
+            )
+            const hasVerificationContent = Boolean(
+              participantRole.verificationInstructions || participantRole.verificationUrl
+            )
+            const verificationInstructionsOpen = openVerificationInstructionIds.includes(
+              participantRole.id
             )
 
             return (
@@ -1387,20 +1378,41 @@ export default function RenoAppApplyPage() {
                     {participantRole.description ? (
                       <p className="mt-2 text-sm leading-7 text-stone-700">{participantRole.description}</p>
                     ) : null}
-                    {participantRole.verificationInstructions ? (
-                      <p className="mt-2 text-sm leading-7 text-stone-700">
-                        {participantRole.verificationInstructions}
-                      </p>
-                    ) : null}
-                    {participantRole.verificationUrl ? (
-                      <a
-                        href={participantRole.verificationUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-2 inline-flex text-sm font-semibold text-emerald-700 underline"
-                      >
-                        Kontrollera behörighet
-                      </a>
+                    {hasVerificationContent ? (
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpenVerificationInstructionIds((current) =>
+                              current.includes(participantRole.id)
+                                ? current.filter((id) => id !== participantRole.id)
+                                : [...current, participantRole.id]
+                            )
+                          }
+                          className="inline-flex items-center rounded-full border border-stone-300 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-stone-700 transition hover:bg-stone-100"
+                        >
+                          Verifieringsinstruktion
+                        </button>
+                        {verificationInstructionsOpen ? (
+                          <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                            {participantRole.verificationInstructions ? (
+                              <p className="text-sm leading-7 text-stone-700">
+                                {participantRole.verificationInstructions}
+                              </p>
+                            ) : null}
+                            {participantRole.verificationUrl ? (
+                              <a
+                                href={participantRole.verificationUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-3 inline-flex text-sm font-semibold text-emerald-700 underline"
+                              >
+                                Kontrollera behörighet
+                              </a>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                   <span className="shrink-0 rounded-full border border-stone-300 bg-stone-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-stone-600">
@@ -1747,6 +1759,43 @@ export default function RenoAppApplyPage() {
           </div>
         </div>
       </section>
+      {actionDescriptionModal ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-4 sm:items-center"
+          onClick={() => setActionDescriptionModal(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-[28px] bg-white p-5 shadow-[0_30px_80px_-40px_rgba(41,37,36,0.6)] md:p-6"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-lg font-semibold text-stone-900">{actionDescriptionModal.label}</p>
+                <p className="mt-2 text-sm leading-7 text-stone-700">
+                  {actionDescriptionModal.description}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActionDescriptionModal(null)}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-stone-300 text-sm font-semibold text-stone-600 hover:bg-stone-100"
+                aria-label="Stäng beskrivning"
+              >
+                ×
+              </button>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setActionDescriptionModal(null)}
+                className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700"
+              >
+                Stäng
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   )
 }

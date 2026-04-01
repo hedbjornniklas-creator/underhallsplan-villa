@@ -15,13 +15,15 @@ type QuestionOptionItem = {
 
 type QuestionOptionTriggerItem = {
   id: string
-  triggerType: 'question' | 'document' | 'participant_role'
+  triggerType: 'question' | 'document' | 'participant_role' | 'review_flag'
   questionId: string | null
   questionLabel: string | null
   documentTypeId: string | null
   documentTypeLabel: string | null
   participantRoleId: string | null
   participantRoleLabel: string | null
+  reviewFlagId: string | null
+  reviewFlagLabel: string | null
   sortOrder: number
   isActive: boolean
 }
@@ -41,6 +43,17 @@ type ParticipantRoleItem = {
   label: string
   description: string | null
   roleKind: 'contractor' | 'consultant'
+  sortOrder: number
+  isActive: boolean
+}
+
+type ReviewFlagItem = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  severity: 'info' | 'warning' | 'high'
+  category: string
   sortOrder: number
   isActive: boolean
 }
@@ -79,6 +92,7 @@ type DraftOption = {
   triggeredQuestionIds: string[]
   triggeredDocumentTypeIds: string[]
   triggeredParticipantRoleIds: string[]
+  triggeredReviewFlagIds: string[]
 }
 
 type SortKey = 'label' | 'key' | 'responseType' | 'optionCount' | 'isActive'
@@ -162,6 +176,9 @@ function createOptionDrafts(item: QuestionItem): DraftOption[] {
     triggeredParticipantRoleIds: option.triggers
       .filter((trigger) => trigger.triggerType === 'participant_role' && trigger.participantRoleId)
       .map((trigger) => trigger.participantRoleId as string),
+    triggeredReviewFlagIds: option.triggers
+      .filter((trigger) => trigger.triggerType === 'review_flag' && trigger.reviewFlagId)
+      .map((trigger) => trigger.reviewFlagId as string),
   }))
 }
 
@@ -185,6 +202,7 @@ export default function RenoAppQuestionsAdminPage() {
   const [items, setItems] = useState<QuestionItem[]>([])
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeItem[]>([])
   const [participantRoles, setParticipantRoles] = useState<ParticipantRoleItem[]>([])
+  const [reviewFlags, setReviewFlags] = useState<ReviewFlagItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -211,10 +229,11 @@ export default function RenoAppQuestionsAdminPage() {
       setError(null)
 
       try {
-        const [questionsResponse, documentTypesResponse, participantRolesResponse] = await Promise.all([
+        const [questionsResponse, documentTypesResponse, participantRolesResponse, reviewFlagsResponse] = await Promise.all([
           fetch('/api/renoapp/admin/questions', { cache: 'no-store' }),
           fetch('/api/renoapp/admin/document-types', { cache: 'no-store' }),
           fetch('/api/renoapp/admin/participants', { cache: 'no-store' }),
+          fetch('/api/renoapp/admin/review-flags', { cache: 'no-store' }),
         ])
 
         const questionsPayload = (await questionsResponse.json().catch(() => ({}))) as {
@@ -229,6 +248,10 @@ export default function RenoAppQuestionsAdminPage() {
           items?: ParticipantRoleItem[]
           error?: string
         }
+        const reviewFlagsPayload = (await reviewFlagsResponse.json().catch(() => ({}))) as {
+          items?: ReviewFlagItem[]
+          error?: string
+        }
 
         if (!questionsResponse.ok) {
           throw new Error(questionsPayload.error ?? 'Kunde inte lasa fragor.')
@@ -240,11 +263,15 @@ export default function RenoAppQuestionsAdminPage() {
         if (!participantRolesResponse.ok) {
           throw new Error(participantRolesPayload.error ?? 'Kunde inte lasa medverkandetyper.')
         }
+        if (!reviewFlagsResponse.ok) {
+          throw new Error(reviewFlagsPayload.error ?? 'Kunde inte lasa granskningsflaggor.')
+        }
 
         if (!active) return
         setItems(questionsPayload.items ?? [])
         setDocumentTypes(documentTypesPayload.items ?? [])
         setParticipantRoles(participantRolesPayload.items ?? [])
+        setReviewFlags(reviewFlagsPayload.items ?? [])
       } catch (loadError) {
         if (active) {
           setError(loadError instanceof Error ? loadError.message : 'Kunde inte lasa fragor.')
@@ -378,6 +405,18 @@ export default function RenoAppQuestionsAdminPage() {
                 sortOrder:
                   (option.triggeredQuestionIds.length +
                     option.triggeredDocumentTypeIds.length +
+                    index +
+                    1) *
+                  10,
+                isActive: true,
+              })),
+              ...option.triggeredReviewFlagIds.map((reviewFlagId, index) => ({
+                triggerType: 'review_flag' as const,
+                reviewFlagId,
+                sortOrder:
+                  (option.triggeredQuestionIds.length +
+                    option.triggeredDocumentTypeIds.length +
+                    option.triggeredParticipantRoleIds.length +
                     index +
                     1) *
                   10,
@@ -832,6 +871,7 @@ export default function RenoAppQuestionsAdminPage() {
                           triggeredQuestionIds: [],
                           triggeredDocumentTypeIds: [],
                           triggeredParticipantRoleIds: [],
+                          triggeredReviewFlagIds: [],
                         },
                       ])
                     }
@@ -878,11 +918,12 @@ export default function RenoAppQuestionsAdminPage() {
                           </div>
                           <div className="mt-3 text-xs text-gray-600">
                             {option.triggeredQuestionIds.length} följdfrågor,{' '}
-                            {option.triggeredDocumentTypeIds.length} underlag
+                            {option.triggeredDocumentTypeIds.length} underlag,{' '}
+                            {option.triggeredReviewFlagIds.length} flaggor
                           </div>
                         </div>
 
-                        <div className="grid gap-3 md:grid-cols-3">
+                        <div className="grid gap-3 md:grid-cols-4">
                           <label className="space-y-1">
                             <div className="text-xs font-medium text-gray-600">Följdfrågor</div>
                             <div className="max-h-48 space-y-2 overflow-auto rounded-md border border-gray-300 px-3 py-2">
@@ -1000,6 +1041,52 @@ export default function RenoAppQuestionsAdminPage() {
                                         }
                                       />
                                       <span>{participantRole.label}</span>
+                                    </label>
+                                  )
+                                })}
+                            </div>
+                          </label>
+                          <label className="space-y-1">
+                            <div className="text-xs font-medium text-gray-600">Flaggor</div>
+                            <div className="max-h-48 space-y-2 overflow-auto rounded-md border border-gray-300 px-3 py-2">
+                              {reviewFlags
+                                .filter((reviewFlag) => reviewFlag.isActive)
+                                .map((reviewFlag) => {
+                                  const checked = option.triggeredReviewFlagIds.includes(
+                                    reviewFlag.id
+                                  )
+
+                                  return (
+                                    <label
+                                      key={reviewFlag.id}
+                                      className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-1 text-sm hover:bg-gray-50"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={(event) =>
+                                          setOptionDrafts((current) =>
+                                            current.map((item, itemIndex) =>
+                                              itemIndex === index
+                                                ? {
+                                                    ...item,
+                                                    triggeredReviewFlagIds: toggleSelection(
+                                                      item.triggeredReviewFlagIds,
+                                                      reviewFlag.id,
+                                                      event.target.checked
+                                                    ),
+                                                  }
+                                                : item
+                                            )
+                                          )
+                                        }
+                                      />
+                                      <span>
+                                        {reviewFlag.label}
+                                        <span className="ml-1 text-xs text-gray-500">
+                                          ({reviewFlag.severity})
+                                        </span>
+                                      </span>
                                     </label>
                                   )
                                 })}

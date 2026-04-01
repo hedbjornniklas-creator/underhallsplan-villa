@@ -122,10 +122,22 @@ type ApplyQuestionOptionRow = {
 type ApplyOptionTriggerRow = {
   id: string
   option_id: string
-  trigger_type: 'question' | 'document' | 'participant_role'
+  trigger_type: 'question' | 'document' | 'participant_role' | 'review_flag'
   question_id: string | null
   document_type_id: string | null
   participant_role_id: string | null
+  review_flag_id: string | null
+  sort_order: number
+  is_active: boolean
+}
+
+type ReviewFlagRow = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  severity: 'info' | 'warning' | 'high'
+  category: string
   sort_order: number
   is_active: boolean
 }
@@ -675,7 +687,7 @@ export type PublicApplyQuestionOption = {
 
 export type PublicApplyQuestionOptionTrigger = {
   id: string
-  triggerType: 'question' | 'document' | 'participant_role'
+  triggerType: 'question' | 'document' | 'participant_role' | 'review_flag'
   questionId: string | null
   documentTypeId: string | null
   documentKey: string | null
@@ -684,6 +696,15 @@ export type PublicApplyQuestionOptionTrigger = {
   documentPhase: 'before_required' | 'during_execution' | 'after_completion' | null
   participantRoleId: string | null
   participantRole: PublicParticipantRole | null
+  reviewFlagId: string | null
+  reviewFlag: {
+    id: string
+    key: string
+    label: string
+    description: string | null
+    severity: 'info' | 'warning' | 'high'
+    category: string
+  } | null
   sortOrder: number
 }
 
@@ -901,13 +922,15 @@ export type RenoAppAdminQuestionOption = {
 
 export type RenoAppAdminQuestionOptionTrigger = {
   id: string
-  triggerType: 'question' | 'document' | 'participant_role'
+  triggerType: 'question' | 'document' | 'participant_role' | 'review_flag'
   questionId: string | null
   questionLabel: string | null
   documentTypeId: string | null
   documentTypeLabel: string | null
   participantRoleId: string | null
   participantRoleLabel: string | null
+  reviewFlagId: string | null
+  reviewFlagLabel: string | null
   sortOrder: number
   isActive: boolean
 }
@@ -923,6 +946,17 @@ export type RenoAppAdminQuestion = {
   isActive: boolean
   metadata: unknown
   options: RenoAppAdminQuestionOption[]
+}
+
+export type RenoAppAdminReviewFlag = {
+  id: string
+  key: string
+  label: string
+  description: string | null
+  severity: 'info' | 'warning' | 'high'
+  category: string
+  sortOrder: number
+  isActive: boolean
 }
 
 export type RenoAppAdminActionTypeParticipantRole = {
@@ -1290,6 +1324,16 @@ export type RenoAppCaseDetail = {
     revokedAt: string | null
     lastUsedAt: string | null
   }>
+  reviewFlags: Array<{
+    id: string
+    code: string
+    label: string
+    description: string | null
+    severity: 'info' | 'warning' | 'high'
+    category: string
+    sourceType: 'answer_rule' | 'missing_document' | 'participant'
+    sourceLabel: string | null
+  }>
 }
 
 export type UpdateRenoAppCaseStatusInput = {
@@ -1487,6 +1531,20 @@ async function listActiveParticipantRoles(admin: SupabaseAdminClient) {
   return (data ?? []) as ParticipantRoleRow[]
 }
 
+async function listActiveReviewFlags(admin: SupabaseAdminClient) {
+  const { data, error } = await admin
+    .from('renoapp_review_flags')
+    .select('id,key,label,description,severity,category,sort_order,is_active')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta granskningsflaggor.')
+  }
+
+  return (data ?? []) as ReviewFlagRow[]
+}
+
 function mapParticipantRoleToPublic(
   row: ParticipantRoleRow,
   overrides?: Partial<Pick<PublicParticipantRole, 'isRequired' | 'sortOrder'>>
@@ -1527,6 +1585,19 @@ function mapParticipantRoleToAdmin(row: ParticipantRoleRow): RenoAppAdminPartici
     requiresEmail: row.requires_email,
     requiresPhone: row.requires_phone,
     requiresCertification: row.requires_certification,
+    sortOrder: row.sort_order,
+    isActive: row.is_active,
+  }
+}
+
+function mapReviewFlagToAdmin(row: ReviewFlagRow): RenoAppAdminReviewFlag {
+  return {
+    id: row.id,
+    key: row.key,
+    label: row.label,
+    description: row.description ?? null,
+    severity: row.severity,
+    category: row.category,
     sortOrder: row.sort_order,
     isActive: row.is_active,
   }
@@ -1575,7 +1646,7 @@ async function listActiveApplyQuestions(admin: SupabaseAdminClient) {
       .order('sort_order', { ascending: true }),
     admin
       .from('renoapp_apply_option_triggers')
-      .select('id,option_id,trigger_type,question_id,document_type_id,participant_role_id,sort_order,is_active')
+      .select('id,option_id,trigger_type,question_id,document_type_id,participant_role_id,review_flag_id,sort_order,is_active')
       .eq('is_active', true)
       .order('sort_order', { ascending: true }),
   ])
@@ -1603,11 +1674,13 @@ function buildPublicActionTypes(
   questionRows: ApplyQuestionRow[] = [],
   optionRows: ApplyQuestionOptionRow[] = [],
   questionLinks: ActionTypeQuestionRow[] = [],
-  triggerRows: ApplyOptionTriggerRow[] = []
+  triggerRows: ApplyOptionTriggerRow[] = [],
+  reviewFlags: ReviewFlagRow[] = []
 ): PublicActionType[] {
   const categoryById = new Map(categories.map((item) => [item.id, item]))
   const documentById = new Map(documentTypes.map((item) => [item.id, item]))
   const participantRoleById = new Map(participantRoles.map((item) => [item.id, item]))
+  const reviewFlagById = new Map(reviewFlags.map((item) => [item.id, item]))
   const requirementMap = new Map<string, RequirementRow>()
   const questionById = new Map(questionRows.map((item) => [item.id, item]))
 
@@ -1695,6 +1768,9 @@ function buildPublicActionTypes(
                   const participantRole = trigger.participant_role_id
                     ? participantRoleById.get(trigger.participant_role_id)
                     : null
+                  const reviewFlag = trigger.review_flag_id
+                    ? reviewFlagById.get(trigger.review_flag_id)
+                    : null
 
                   return {
                     id: trigger.id,
@@ -1708,6 +1784,17 @@ function buildPublicActionTypes(
                     participantRoleId: trigger.participant_role_id ?? null,
                     participantRole: participantRole
                       ? mapParticipantRoleToPublic(participantRole)
+                      : null,
+                    reviewFlagId: trigger.review_flag_id ?? null,
+                    reviewFlag: reviewFlag
+                      ? {
+                          id: reviewFlag.id,
+                          key: reviewFlag.key,
+                          label: reviewFlag.label,
+                          description: reviewFlag.description ?? null,
+                          severity: reviewFlag.severity,
+                          category: reviewFlag.category,
+                        }
                       : null,
                     sortOrder: trigger.sort_order,
                   } satisfies PublicApplyQuestionOptionTrigger
@@ -1727,10 +1814,12 @@ function buildPublicQuestionBank(
   optionRows: ApplyQuestionOptionRow[],
   documentTypes: DocumentTypeRow[],
   participantRoles: ParticipantRoleRow[],
-  triggerRows: ApplyOptionTriggerRow[]
+  triggerRows: ApplyOptionTriggerRow[],
+  reviewFlags: ReviewFlagRow[] = []
 ): PublicApplyQuestion[] {
   const documentById = new Map(documentTypes.map((item) => [item.id, item]))
   const participantRoleById = new Map(participantRoles.map((item) => [item.id, item]))
+  const reviewFlagById = new Map(reviewFlags.map((item) => [item.id, item]))
 
   return questionRows
     .map((question) => ({
@@ -1758,6 +1847,9 @@ function buildPublicQuestionBank(
               const participantRole = trigger.participant_role_id
                 ? participantRoleById.get(trigger.participant_role_id)
                 : null
+              const reviewFlag = trigger.review_flag_id
+                ? reviewFlagById.get(trigger.review_flag_id)
+                : null
 
               return {
                 id: trigger.id,
@@ -1770,6 +1862,17 @@ function buildPublicQuestionBank(
                 documentPhase: documentType?.default_phase ?? null,
                 participantRoleId: trigger.participant_role_id ?? null,
                 participantRole: participantRole ? mapParticipantRoleToPublic(participantRole) : null,
+                reviewFlagId: trigger.review_flag_id ?? null,
+                reviewFlag: reviewFlag
+                  ? {
+                      id: reviewFlag.id,
+                      key: reviewFlag.key,
+                      label: reviewFlag.label,
+                      description: reviewFlag.description ?? null,
+                      severity: reviewFlag.severity,
+                      category: reviewFlag.category,
+                    }
+                  : null,
                 sortOrder: trigger.sort_order,
               } satisfies PublicApplyQuestionOptionTrigger
             })
@@ -1835,6 +1938,8 @@ function resolveApplicableQuestionsForSelection(params: {
               documentPhase: null,
               participantRoleId: triggerRow.participant_role_id ?? null,
               participantRole: null,
+              reviewFlagId: triggerRow.review_flag_id ?? null,
+              reviewFlag: null,
               sortOrder: triggerRow.sort_order,
             }))
             .sort((left, right) => left.sortOrder - right.sortOrder),
@@ -1962,6 +2067,171 @@ async function listCaseParticipants(admin: SupabaseAdminClient, caseIds: string[
   return (data ?? []) as CaseParticipantRow[]
 }
 
+function mergeReviewFlagSourceLabel(current: string | null, next: string | null) {
+  if (!next) return current
+  if (!current) return next
+  if (current.includes(next)) return current
+  return `${current}; ${next}`
+}
+
+function addCaseReviewFlag(
+  flagMap: Map<string, RenoAppCaseDetail['reviewFlags'][number]>,
+  item: RenoAppCaseDetail['reviewFlags'][number]
+) {
+  const existing = flagMap.get(item.code)
+  if (!existing) {
+    flagMap.set(item.code, item)
+    return
+  }
+
+  const severityRank = { info: 1, warning: 2, high: 3 } as const
+  if (severityRank[item.severity] > severityRank[existing.severity]) {
+    existing.severity = item.severity
+  }
+  if (!existing.description && item.description) {
+    existing.description = item.description
+  }
+  existing.sourceLabel = mergeReviewFlagSourceLabel(existing.sourceLabel, item.sourceLabel)
+}
+
+function buildCaseReviewFlags(params: {
+  selectedActionTypes: ActionTypeRow[]
+  requirements: RequirementRow[]
+  questionConfig: {
+    questions: ApplyQuestionRow[]
+    options: ApplyQuestionOptionRow[]
+    links: ActionTypeQuestionRow[]
+    triggers: ApplyOptionTriggerRow[]
+  }
+  questionAnswerRows: CaseQuestionAnswerRow[]
+  reviewFlags: ReviewFlagRow[]
+  documentTypes: DocumentTypeRow[]
+  documents: Array<{
+    documentTypeId: string | null
+    status: string
+  }>
+}): RenoAppCaseDetail['reviewFlags'] {
+  const {
+    selectedActionTypes,
+    requirements,
+    questionConfig,
+    questionAnswerRows,
+    reviewFlags,
+    documentTypes,
+    documents,
+  } = params
+
+  const selectedActionTypeIds = new Set(selectedActionTypes.map((item) => item.id))
+  const questionById = new Map(questionConfig.questions.map((item) => [item.id, item]))
+  const optionById = new Map(questionConfig.options.map((item) => [item.id, item]))
+  const reviewFlagById = new Map(reviewFlags.map((item) => [item.id, item]))
+  const documentTypeById = new Map(documentTypes.map((item) => [item.id, item]))
+  const actionTypeById = new Map(selectedActionTypes.map((item) => [item.id, item]))
+  const uploadedDocumentTypeIds = new Set(
+    documents
+      .filter((item) => item.documentTypeId && item.status !== 'missing' && item.status !== 'rejected')
+      .map((item) => item.documentTypeId as string)
+  )
+
+  const questionAnswers: Record<string, string[]> = {}
+  for (const answer of questionAnswerRows) {
+    const question = questionById.get(answer.question_id)
+    const option = optionById.get(answer.option_id)
+    if (!question || !option) continue
+    const current = questionAnswers[question.key] ?? []
+    if (!current.includes(option.key)) {
+      current.push(option.key)
+      questionAnswers[question.key] = current
+    }
+  }
+
+  const applicableQuestions = resolveApplicableQuestionsForSelection({
+    selectedActionTypes,
+    questionRows: questionConfig.questions,
+    optionRows: questionConfig.options,
+    questionLinks: questionConfig.links,
+    triggerRows: questionConfig.triggers,
+    questionAnswers,
+  })
+
+  const flagMap = new Map<string, RenoAppCaseDetail['reviewFlags'][number]>()
+
+  for (const question of applicableQuestions) {
+    const selectedOptionKeys = questionAnswers[question.key] ?? []
+    if (selectedOptionKeys.length === 0) continue
+
+    for (const option of question.options) {
+      if (!selectedOptionKeys.includes(option.key)) continue
+
+      for (const trigger of option.triggers) {
+        if (trigger.triggerType === 'review_flag' && trigger.reviewFlagId) {
+          const reviewFlag = reviewFlagById.get(trigger.reviewFlagId)
+          if (!reviewFlag) continue
+
+          addCaseReviewFlag(flagMap, {
+            id: reviewFlag.id,
+            code: reviewFlag.key,
+            label: reviewFlag.label,
+            description: reviewFlag.description ?? null,
+            severity: reviewFlag.severity,
+            category: reviewFlag.category,
+            sourceType: 'answer_rule',
+            sourceLabel: `${question.label}: ${option.label}`,
+          })
+        }
+
+        if (
+          trigger.triggerType === 'document' &&
+          trigger.documentTypeId &&
+          !uploadedDocumentTypeIds.has(trigger.documentTypeId)
+        ) {
+          const documentType = documentTypeById.get(trigger.documentTypeId)
+          addCaseReviewFlag(flagMap, {
+            id: `missing-document-${trigger.documentTypeId}`,
+            code: `missing_document:${trigger.documentTypeId}`,
+            label: `Saknat underlag: ${documentType?.label ?? trigger.documentLabel ?? 'Okänt underlag'}`,
+            description: trigger.documentDescription ?? documentType?.description ?? null,
+            severity: 'warning',
+            category: 'dokument',
+            sourceType: 'missing_document',
+            sourceLabel: `${question.label}: ${option.label}`,
+          })
+        }
+      }
+    }
+  }
+
+  for (const requirement of requirements) {
+    if (!selectedActionTypeIds.has(requirement.action_type_id)) continue
+    if (!requirement.is_required) continue
+    if (requirement.phase !== 'before_required' && requirement.phase !== 'before_conditional') continue
+    if (uploadedDocumentTypeIds.has(requirement.document_type_id)) continue
+
+    const documentType = documentTypeById.get(requirement.document_type_id)
+    const actionType = actionTypeById.get(requirement.action_type_id)
+
+    addCaseReviewFlag(flagMap, {
+      id: `missing-document-${requirement.document_type_id}`,
+      code: `missing_document:${requirement.document_type_id}`,
+      label: `Saknat underlag: ${documentType?.label ?? 'Okänt underlag'}`,
+      description: requirement.note ?? documentType?.description ?? null,
+      severity: 'warning',
+      category: 'dokument',
+      sourceType: 'missing_document',
+      sourceLabel: actionType?.label ?? 'Grundkrav',
+    })
+  }
+
+  return Array.from(flagMap.values()).sort((left, right) => {
+    const severityRank = { high: 0, warning: 1, info: 2 } as const
+    return (
+      severityRank[left.severity] - severityRank[right.severity] ||
+      left.category.localeCompare(right.category, 'sv') ||
+      left.label.localeCompare(right.label, 'sv')
+    )
+  })
+}
+
 export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPublicBrfConfig | null> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const brf = await getPublicBrfBySlug(admin, slug)
@@ -1970,7 +2240,7 @@ export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPubli
     return null
   }
 
-  const [categories, actionTypes, documentTypes, requirements, questionConfig, participantRoles, participantRoleConfig] =
+  const [categories, actionTypes, documentTypes, requirements, questionConfig, participantRoles, participantRoleConfig, reviewFlags] =
     await Promise.all([
     listActiveActionCategories(admin),
     listActiveActionTypes(admin),
@@ -1983,6 +2253,7 @@ export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPubli
       .select('id,action_type_id,participant_role_id,is_required,sort_order,is_active')
       .eq('is_active', true)
       .order('sort_order', { ascending: true }),
+    listActiveReviewFlags(admin),
     ])
 
   if (participantRoleConfig.error) {
@@ -1999,7 +2270,8 @@ export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPubli
     questionConfig.questions,
     questionConfig.options,
     questionConfig.links,
-    questionConfig.triggers
+    questionConfig.triggers,
+    reviewFlags
   )
 
   return {
@@ -2015,7 +2287,8 @@ export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPubli
       questionConfig.options,
       documentTypes,
       participantRoles,
-      questionConfig.triggers
+      questionConfig.triggers,
+      reviewFlags
     ),
   }
 /*
@@ -2462,6 +2735,26 @@ async function loadActiveActionTypesByKeys(admin: SupabaseAdminClient, keys: str
   return (data ?? []) as ActionTypeRow[]
 }
 
+async function loadActiveActionTypesByIds(admin: SupabaseAdminClient, ids: string[]) {
+  const normalizedIds = Array.from(new Set(ids.map((value) => normalizeText(value)).filter((value): value is string => Boolean(value))))
+  if (normalizedIds.length === 0) return [] as ActionTypeRow[]
+
+  const { data, error } = await admin
+    .from('renovation_action_types')
+    .select(
+      'id,category_id,key,label,description,risk_level,contractor_requirement,implies_structure,implies_plumbing,implies_ventilation,implies_electrical,implies_wet_room,implies_surface_only,sort_order,is_active'
+    )
+    .in('id', normalizedIds)
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa åtgärdstyper.')
+  }
+
+  return (data ?? []) as ActionTypeRow[]
+}
+
 function buildPublicCaseTitle(actionTypes: ActionTypeRow[]) {
   if (actionTypes.length === 0) return 'Renoveringsansökan'
   if (actionTypes.length === 1) return `Renovering: ${actionTypes[0].label}`
@@ -2709,7 +3002,7 @@ export async function getRenoAppPublicGuideConfig(slug: string): Promise<RenoApp
     return null
   }
 
-  const [categories, actionTypes, documentTypes, requirements, questionConfig, participantRoles, participantRoleConfig] =
+  const [categories, actionTypes, documentTypes, requirements, questionConfig, participantRoles, participantRoleConfig, reviewFlags] =
     await Promise.all([
     listActiveActionCategories(admin),
     listActiveActionTypes(admin),
@@ -2722,6 +3015,7 @@ export async function getRenoAppPublicGuideConfig(slug: string): Promise<RenoApp
       .select('id,action_type_id,participant_role_id,is_required,sort_order,is_active')
       .eq('is_active', true)
       .order('sort_order', { ascending: true }),
+    listActiveReviewFlags(admin),
     ])
 
   if (participantRoleConfig.error) {
@@ -2745,14 +3039,16 @@ export async function getRenoAppPublicGuideConfig(slug: string): Promise<RenoApp
       questionConfig.questions,
       questionConfig.options,
       questionConfig.links,
-      questionConfig.triggers
+      questionConfig.triggers,
+      reviewFlags
     ),
     questionBank: buildPublicQuestionBank(
       questionConfig.questions,
       questionConfig.options,
       documentTypes,
       participantRoles,
-      questionConfig.triggers
+      questionConfig.triggers,
+      reviewFlags
     ),
   }
 }
@@ -4675,6 +4971,80 @@ export async function deleteRenoAppAdminParticipantRole(id: string): Promise<voi
   }
 }
 
+export async function listRenoAppAdminReviewFlags(): Promise<RenoAppAdminReviewFlag[]> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const { data, error } = await admin
+    .from('renoapp_review_flags')
+    .select('id,key,label,description,severity,category,sort_order,is_active')
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa granskningsflaggor.')
+  }
+
+  return ((data ?? []) as ReviewFlagRow[]).map(mapReviewFlagToAdmin)
+}
+
+export async function saveRenoAppAdminReviewFlag(input: {
+  id?: string | null
+  key: string
+  label: string
+  description?: string | null
+  severity?: 'info' | 'warning' | 'high' | null
+  category?: string | null
+  sortOrder?: number | null
+  isActive?: boolean
+}): Promise<RenoAppAdminReviewFlag> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const label = normalizeText(input.label)
+  const key = normalizeMachineKey(input.key) ?? normalizeMachineKey(label) ?? null
+  const description = normalizeText(input.description)
+  const severity = input.severity === 'info' || input.severity === 'high' ? input.severity : 'warning'
+  const category = normalizeText(input.category) ?? 'general'
+  const sortOrder = Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0 ? Number(input.sortOrder) : 100
+  const isActive = input.isActive !== false
+
+  assertRequiredText(key, 'REVIEW_FLAG_KEY_REQUIRED')
+  assertRequiredText(label, 'REVIEW_FLAG_LABEL_REQUIRED')
+
+  const payload = {
+    key,
+    label,
+    description,
+    severity,
+    category,
+    sort_order: sortOrder,
+    is_active: isActive,
+  }
+
+  const query = input.id
+    ? admin.from('renoapp_review_flags').update(payload).eq('id', input.id)
+    : admin.from('renoapp_review_flags').insert(payload)
+
+  const { data, error } = await query
+    .select('id,key,label,description,severity,category,sort_order,is_active')
+    .single()
+
+  if (error || !data) {
+    throw new Error(error?.message ?? 'Kunde inte spara granskningsflagga.')
+  }
+
+  return mapReviewFlagToAdmin(data as ReviewFlagRow)
+}
+
+export async function deleteRenoAppAdminReviewFlag(id: string): Promise<void> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const { error } = await admin.from('renoapp_review_flags').delete().eq('id', id)
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte radera granskningsflagga.')
+  }
+}
+
 export async function listRenoAppAdminParticipantRoleConfig(): Promise<{
   participantRoles: RenoAppAdminParticipantRole[]
   actionTypes: RenoAppAdminActionTypeParticipantRoleGroup[]
@@ -4805,7 +5175,7 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
   await requireRenoAppAdminProfile()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
 
-  const [questionRows, optionRows, triggerRows, documentRows, participantRoleRows] = await Promise.all([
+  const [questionRows, optionRows, triggerRows, documentRows, participantRoleRows, reviewFlagRows] = await Promise.all([
     admin
       .from('renoapp_apply_questions')
       .select('id,key,label,help_text,response_type,sort_order,is_locked,is_active,metadata')
@@ -4816,7 +5186,7 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
       .order('sort_order', { ascending: true }),
     admin
       .from('renoapp_apply_option_triggers')
-      .select('id,option_id,trigger_type,question_id,document_type_id,participant_role_id,sort_order,is_active')
+      .select('id,option_id,trigger_type,question_id,document_type_id,participant_role_id,review_flag_id,sort_order,is_active')
       .order('sort_order', { ascending: true }),
     admin
       .from('renovation_document_types')
@@ -4828,6 +5198,10 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
         'id,key,label,description,role_kind,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
       )
       .order('sort_order', { ascending: true }),
+    admin
+      .from('renoapp_review_flags')
+      .select('id,key,label,description,severity,category,sort_order,is_active')
+      .order('sort_order', { ascending: true }),
   ])
 
   if (questionRows.error) throw new Error(questionRows.error.message ?? 'Kunde inte lasa fragor.')
@@ -4837,6 +5211,9 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
   if (participantRoleRows.error) {
     throw new Error(participantRoleRows.error.message ?? 'Kunde inte lasa medverkandetyper.')
   }
+  if (reviewFlagRows.error) {
+    throw new Error(reviewFlagRows.error.message ?? 'Kunde inte lasa granskningsflaggor.')
+  }
 
   const options = (optionRows.data ?? []) as ApplyQuestionOptionRow[]
   const triggers = (triggerRows.data ?? []) as ApplyOptionTriggerRow[]
@@ -4844,6 +5221,9 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
   const documentById = new Map(((documentRows.data ?? []) as DocumentTypeRow[]).map((item) => [item.id, item]))
   const participantRoleById = new Map(
     ((participantRoleRows.data ?? []) as ParticipantRoleRow[]).map((item) => [item.id, item])
+  )
+  const reviewFlagById = new Map(
+    ((reviewFlagRows.data ?? []) as ReviewFlagRow[]).map((item) => [item.id, item])
   )
   const questionById = new Map(questions.map((item) => [item.id, item]))
 
@@ -4884,6 +5264,10 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
             participantRoleLabel: trigger.participant_role_id
               ? repairLikelyMojibakeText(participantRoleById.get(trigger.participant_role_id)?.label ?? null)
               : null,
+            reviewFlagId: trigger.review_flag_id ?? null,
+            reviewFlagLabel: trigger.review_flag_id
+              ? repairLikelyMojibakeText(reviewFlagById.get(trigger.review_flag_id)?.label ?? null)
+              : null,
             sortOrder: trigger.sort_order,
             isActive: trigger.is_active,
           })),
@@ -4912,10 +5296,11 @@ export async function saveRenoAppAdminQuestion(input: {
     isActive?: boolean
     metadata?: unknown
     triggers?: Array<{
-      triggerType: 'question' | 'document' | 'participant_role'
+      triggerType: 'question' | 'document' | 'participant_role' | 'review_flag'
       questionId?: string | null
       documentTypeId?: string | null
       participantRoleId?: string | null
+      reviewFlagId?: string | null
       sortOrder?: number | null
       isActive?: boolean
     }>
@@ -5054,6 +5439,10 @@ export async function saveRenoAppAdminQuestion(input: {
           triggerType === 'participant_role' && triggerInput.participantRoleId
             ? triggerInput.participantRoleId
             : null
+        const targetReviewFlagId =
+          triggerType === 'review_flag' && triggerInput.reviewFlagId
+            ? triggerInput.reviewFlagId
+            : null
         const triggerSortOrder =
           Number.isFinite(triggerInput.sortOrder) && Number(triggerInput.sortOrder) > 0
             ? Number(triggerInput.sortOrder)
@@ -5062,6 +5451,7 @@ export async function saveRenoAppAdminQuestion(input: {
         if (triggerType === 'question' && !targetQuestionId) return null
         if (triggerType === 'document' && !targetDocumentTypeId) return null
         if (triggerType === 'participant_role' && !targetParticipantRoleId) return null
+        if (triggerType === 'review_flag' && !targetReviewFlagId) return null
 
         return {
           option_id: savedOptionId,
@@ -5069,6 +5459,7 @@ export async function saveRenoAppAdminQuestion(input: {
           question_id: targetQuestionId,
           document_type_id: targetDocumentTypeId,
           participant_role_id: targetParticipantRoleId,
+          review_flag_id: targetReviewFlagId,
           sort_order: triggerSortOrder,
           is_active: triggerInput.isActive !== false,
         }
@@ -5078,10 +5469,11 @@ export async function saveRenoAppAdminQuestion(input: {
           item
         ): item is {
           option_id: string
-          trigger_type: 'question' | 'document' | 'participant_role'
+          trigger_type: 'question' | 'document' | 'participant_role' | 'review_flag'
           question_id: string | null
           document_type_id: string | null
           participant_role_id: string | null
+          review_flag_id: string | null
           sort_order: number
           is_active: boolean
         } => Boolean(item)
@@ -5985,7 +6377,20 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
     throw new Error('CASE_NOT_FOUND')
   }
 
-  const [brfResult, contactResult, unitResult, checksResult, docsResult, decisionsResult, linksResult, actionResult] =
+  const [
+    brfResult,
+    contactResult,
+    unitResult,
+    checksResult,
+    docsResult,
+    decisionsResult,
+    linksResult,
+    actionResult,
+    caseActionTypesResult,
+    caseQuestionAnswersResult,
+    questionConfig,
+    reviewFlagRows,
+  ] =
     await Promise.all([
       admin.from('brf_associations').select('id,name,slug').eq('id', caseRow.brf_id).maybeSingle(),
       caseRow.applicant_contact_id
@@ -6023,6 +6428,10 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
       caseRow.action_type_id
         ? admin.from('renovation_action_types').select('id,key,label').eq('id', caseRow.action_type_id).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
+      listCaseActionTypes(admin, [caseId]),
+      listCaseQuestionAnswers(admin, [caseId]),
+      listActiveApplyQuestions(admin),
+      listActiveReviewFlags(admin),
     ])
 
   if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte läsa BRF.')
@@ -6048,6 +6457,14 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
   }
 
   const currentContactRows = (currentContactsResult.data ?? []) as Array<Record<string, unknown>>
+  const caseActionTypeIds = Array.from(
+    new Set([
+      ...((caseActionTypesResult ?? []) as CaseActionTypeRow[]).map((row) => row.action_type_id),
+      ...(caseRow.action_type_id ? [caseRow.action_type_id] : []),
+    ])
+  )
+  const selectedActionTypes = await loadActiveActionTypesByIds(admin, caseActionTypeIds)
+  const selectedActionTypeIds = new Set(selectedActionTypes.map((item) => item.id))
   const currentContactIds = Array.from(
     new Set(currentContactRows.map((row) => String(row.contact_id ?? '')).filter(Boolean))
   )
@@ -6066,7 +6483,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
     documentTypeIds.length > 0
       ? admin.from('renovation_document_types').select('id,label').in('id', documentTypeIds)
       : Promise.resolve({ data: [], error: null }),
-    caseRow.action_type_id ? listRequirements(admin, caseRow.brf_id) : Promise.resolve([] as RequirementRow[]),
+    selectedActionTypeIds.size > 0 ? listRequirements(admin, caseRow.brf_id) : Promise.resolve([] as RequirementRow[]),
   ])
 
   if (currentContactsLookup.error) {
@@ -6093,9 +6510,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
     ])
   )
 
-  const requiredDocumentTypes = caseRow.action_type_id
-    ? await listActiveDocumentTypes(admin)
-    : []
+  const requiredDocumentTypes = selectedActionTypeIds.size > 0 ? await listActiveDocumentTypes(admin) : []
   const requiredDocumentTypeMap = new Map(requiredDocumentTypes.map((item) => [item.id, item]))
   const requirementMap = new Map<string, RequirementRow>()
   for (const requirement of requirements) {
@@ -6103,9 +6518,9 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
     requirementMap.set(key, requirement)
   }
 
-  const requirementItems: PublicRequirement[] = caseRow.action_type_id
+  const requirementItems: PublicRequirement[] = selectedActionTypeIds.size > 0
     ? Array.from(requirementMap.values())
-        .filter((item) => item.action_type_id === caseRow.action_type_id)
+        .filter((item) => selectedActionTypeIds.has(item.action_type_id))
         .map((item) => {
           const documentType = requiredDocumentTypeMap.get(item.document_type_id)
           return {
@@ -6121,6 +6536,19 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
         })
         .sort((left, right) => left.sortOrder - right.sortOrder)
     : []
+
+  const reviewFlags = buildCaseReviewFlags({
+    selectedActionTypes,
+    requirements,
+    questionConfig,
+    questionAnswerRows: caseQuestionAnswersResult ?? [],
+    reviewFlags: reviewFlagRows,
+    documentTypes: requiredDocumentTypes,
+    documents: ((docsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+      documentTypeId: (row.document_type_id as string | null | undefined) ?? null,
+      status: String(row.status ?? ''),
+    })),
+  })
 
   return {
     id: caseRow.id,
@@ -6200,6 +6628,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
       revokedAt: (row.revoked_at as string | null | undefined) ?? null,
       lastUsedAt: (row.last_used_at as string | null | undefined) ?? null,
     })),
+    reviewFlags,
   }
 }
 
