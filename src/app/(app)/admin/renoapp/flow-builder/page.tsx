@@ -1067,8 +1067,8 @@ export default function RenoAppFlowBuilderPage() {
         </div>
       </section>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="rounded-[28px] border border-stone-200 bg-white/95 p-5 shadow-sm">
+      <div className="mt-6 space-y-6">
+        <section className="rounded-[28px] border border-stone-200 bg-white/95 p-5 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="text-lg font-semibold text-stone-900">Renoveringstyper</h3>
@@ -1095,7 +1095,7 @@ export default function RenoAppFlowBuilderPage() {
               Laddar floden...
             </div>
           ) : (
-            <div className="mt-4 space-y-2">
+            <div className="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
               {visibleActionTypes.map((item) => {
                 const active = item.id === selectedActionTypeId
                 return (
@@ -1137,12 +1137,12 @@ export default function RenoAppFlowBuilderPage() {
               ) : null}
             </div>
           )}
-        </aside>
+        </section>
 
         <section className="rounded-[28px] border border-stone-200 bg-white/95 p-5 shadow-sm">
           {!selectedAction ? (
             <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-6 py-10 text-center text-sm text-stone-600">
-              Valj en renoveringstyp till vanster for att visa dess flode.
+              Valj en renoveringstyp ovan for att visa dess flode.
             </div>
           ) : (
             <>

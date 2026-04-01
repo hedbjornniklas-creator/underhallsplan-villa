@@ -76,8 +76,8 @@ export const RENOAPP_ADMIN_TABS = [
   },
   {
     href: '/admin/renoapp/flow-builder',
-    label: 'Flodesbyggare',
-    description: 'Visuell arbetsyta for att bygga RenoApp-floden utan att andra adminsidor paverkas.',
+    label: 'Flödesbyggare',
+    description: 'Visuell arbetsyta för att bygga RenoApp-flöden utan att andra adminsidor påverkas.',
     match: (pathname: string) => pathname === '/admin/renoapp/flow-builder',
   },
   {
