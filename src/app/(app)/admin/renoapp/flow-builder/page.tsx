@@ -907,7 +907,7 @@ export default function RenoAppFlowBuilderPage() {
     const expanded = isExpanded(nodeId)
 
     return (
-      <div className="rounded-[22px] border border-stone-200 bg-white p-4 shadow-sm">
+      <div className="rounded-[20px] border border-stone-200 bg-white/90 p-4">
         <button
           type="button"
           onClick={() => toggleExpanded(nodeId)}
@@ -938,12 +938,12 @@ export default function RenoAppFlowBuilderPage() {
         </button>
 
         {expanded ? (
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 space-y-3 border-t border-stone-200 pt-4">
             {requirement.documentDescription ? (
               <p className="text-sm leading-6 text-stone-600">{requirement.documentDescription}</p>
             ) : null}
             {requirement.note ? (
-              <div className="rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-700">
+              <div className="text-sm text-stone-600">
                 Notering: {requirement.note}
               </div>
             ) : null}
@@ -984,7 +984,7 @@ export default function RenoAppFlowBuilderPage() {
     const expanded = isExpanded(nodeId)
 
     return (
-      <div className="rounded-[22px] border border-stone-200 bg-white p-4 shadow-sm">
+      <div className="rounded-[20px] border border-stone-200 bg-white/90 p-4">
         <button
           type="button"
           onClick={() => toggleExpanded(nodeId)}
@@ -1010,7 +1010,7 @@ export default function RenoAppFlowBuilderPage() {
         </button>
 
         {expanded ? (
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 space-y-3 border-t border-stone-200 pt-4">
             {participantRole.participantRoleDescription ? (
               <p className="text-sm leading-6 text-stone-600">{participantRole.participantRoleDescription}</p>
             ) : null}
@@ -1047,7 +1047,7 @@ export default function RenoAppFlowBuilderPage() {
     const expanded = isExpanded(nodeId)
 
     return (
-      <div className={cn('rounded-[22px] border p-4 shadow-sm', toneForFlag(reviewFlag.severity))}>
+      <div className={cn('rounded-[20px] border p-4', toneForFlag(reviewFlag.severity))}>
         <button
           type="button"
           onClick={() => toggleExpanded(nodeId)}
@@ -1070,7 +1070,7 @@ export default function RenoAppFlowBuilderPage() {
         </button>
 
         {expanded ? (
-          <div className="mt-4 space-y-2 text-sm leading-6">
+          <div className="mt-4 space-y-2 border-t border-current/20 pt-4 text-sm leading-6">
             {reviewFlag.description ? <p>{reviewFlag.description}</p> : null}
             <Link
               href="/admin/renoapp/review-flags"
@@ -1112,7 +1112,7 @@ export default function RenoAppFlowBuilderPage() {
 
     return (
       <div className={cn(depth > 0 && 'pt-2')}>
-        <div className="rounded-[24px] border border-stone-200 bg-white p-4 shadow-sm">
+        <div className={cn('rounded-[20px] border border-stone-200 p-4', depth === 0 ? 'bg-white/95' : 'bg-stone-50/50')}>
           <button
             type="button"
             onClick={() => toggleExpanded(nodeId)}
@@ -1145,7 +1145,7 @@ export default function RenoAppFlowBuilderPage() {
           </button>
 
           {expanded ? (
-            <div className="mt-4 space-y-4">
+            <div className="mt-4 space-y-4 border-t border-stone-200 pt-4">
               {question.helpText ? <p className="text-sm leading-6 text-stone-600">{question.helpText}</p> : null}
               <div className="flex flex-wrap gap-2">
                 <Link
@@ -1185,7 +1185,7 @@ export default function RenoAppFlowBuilderPage() {
                       .map((trigger) => trigger.reviewFlagId as string)
 
                     return (
-                      <div key={option.id} className="rounded-2xl border border-stone-200 bg-stone-50/80 p-4">
+                      <div key={option.id} className="border-t border-stone-200 pt-4 first:border-t-0 first:pt-0">
                         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                           <div>
                             <div className="text-base font-semibold text-stone-900">{option.label}</div>
@@ -1260,7 +1260,7 @@ export default function RenoAppFlowBuilderPage() {
                             })}
                           </div>
                         ) : (
-                          <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-3 text-sm text-stone-600">
+                          <div className="mt-4 rounded-xl border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">
                             Inga noder kopplade till detta svar än.
                           </div>
                         )}
@@ -1315,7 +1315,7 @@ export default function RenoAppFlowBuilderPage() {
       </section>
 
       <div className="mt-6 space-y-6">
-        <section className="rounded-[28px] border border-stone-200 bg-white/95 p-5 shadow-sm">
+        <section className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="text-lg font-semibold text-stone-900">Renoveringstyper</h3>
@@ -1392,8 +1392,8 @@ export default function RenoAppFlowBuilderPage() {
               Välj en renoveringstyp ovan för att visa dess flöde.
             </div>
           ) : (
-            <div className="space-y-6">
-              <div className="rounded-[28px] border border-stone-900 bg-[linear-gradient(145deg,rgba(28,25,23,0.98),rgba(68,64,60,0.96))] p-6 text-white shadow-[0_30px_90px_-50px_rgba(28,25,23,0.75)]">
+            <div className="space-y-5">
+              <div className="rounded-[24px] border border-stone-900 bg-[linear-gradient(145deg,rgba(28,25,23,0.98),rgba(68,64,60,0.96))] p-6 text-white">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center gap-2">
@@ -1663,8 +1663,8 @@ export default function RenoAppFlowBuilderPage() {
                   </section>
                 </div>
               </div>)}
-                <div className="mt-6 rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="border-t border-stone-200 pt-5">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                     <div>
                       <h3 className="text-lg font-semibold text-stone-900">Direkta barn till renoveringstypen</h3>
                       <p className="mt-1 text-sm text-stone-600">
@@ -1696,7 +1696,7 @@ export default function RenoAppFlowBuilderPage() {
                     </div>
                   </div>
 
-                  <div className="mt-5 flex flex-wrap gap-3">
+                  <div className="mt-4 flex flex-wrap gap-3">
                     {rootChildren.length > 0 ? (
                       rootChildren.map((node) => {
                         if (node.kind === 'question') {
