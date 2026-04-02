@@ -312,6 +312,7 @@ export default function RenoAppFlowBuilderPage() {
   const [linkModal, setLinkModal] = useState<LinkModalState>(null)
   const [createModal, setCreateModal] = useState<CreateModalState>(null)
   const [nodeModal, setNodeModal] = useState<NodeModalState>(null)
+  const [expandedTreeNodeIds, setExpandedTreeNodeIds] = useState<string[]>([])
 
   const loadData = async () => {
     setLoading(true)
@@ -424,6 +425,10 @@ export default function RenoAppFlowBuilderPage() {
     void loadData()
   }, [])
 
+  useEffect(() => {
+    setExpandedTreeNodeIds([])
+  }, [selectedActionTypeId])
+
   const visibleActionTypes = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
     return actionTypes.filter((item) => {
@@ -511,6 +516,14 @@ export default function RenoAppFlowBuilderPage() {
       (left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id, 'sv')
     )
   }, [rootParticipants, rootQuestions, rootRequirements])
+
+  const isTreeExpanded = (nodeId: string) => expandedTreeNodeIds.includes(nodeId)
+
+  const toggleTreeNode = (nodeId: string) => {
+    setExpandedTreeNodeIds((current) =>
+      current.includes(nodeId) ? current.filter((item) => item !== nodeId) : [...current, nodeId]
+    )
+  }
 
   const nextSortOrderFor = (values: number[]) => {
     if (values.length === 0) return '10'
@@ -1130,14 +1143,19 @@ export default function RenoAppFlowBuilderPage() {
       )
     }
 
-    const expanded = true
+    const expanded = isTreeExpanded(nodeId)
+    const totalTriggerCount = question.options.reduce(
+      (sum, option) => sum + option.triggers.filter((trigger) => trigger.isActive).length,
+      0
+    )
 
     return (
       <div className={cn(depth > 0 && 'pt-2')}>
         <div className={cn('rounded-[20px] border border-stone-200 p-4', depth === 0 ? 'bg-white/95' : 'bg-stone-50/50')}>
           <button
             type="button"
-            onClick={() => setNodeModal({ kind: 'question', question, rootLink, nodeId })}
+            onClick={() => toggleTreeNode(nodeId)}
+            aria-expanded={expanded}
             className="flex w-full items-start justify-between gap-3 text-left"
           >
             <div className="space-y-2">
@@ -1159,6 +1177,12 @@ export default function RenoAppFlowBuilderPage() {
                 {!expanded && question.helpText ? (
                   <p className="mt-1 line-clamp-2 max-w-3xl text-sm leading-6 text-stone-600">{question.helpText}</p>
                 ) : null}
+                {!expanded ? (
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-stone-500">
+                    <span>{question.options.length} svar</span>
+                    <span>{totalTriggerCount} kopplingar</span>
+                  </div>
+                ) : null}
               </div>
             </div>
             <span className="rounded-full border border-stone-300 bg-stone-50 px-2.5 py-1 text-[11px] font-semibold text-stone-700">
@@ -1168,7 +1192,9 @@ export default function RenoAppFlowBuilderPage() {
 
           {expanded ? (
             <div className="mt-4 space-y-4 border-t border-stone-200 pt-4">
-              {null}
+              {question.helpText ? (
+                <p className="max-w-3xl text-sm leading-6 text-stone-600">{question.helpText}</p>
+              ) : null}
 
               {question.options.length > 0 ? (
                 [...question.options]
