@@ -1168,25 +1168,7 @@ export default function RenoAppFlowBuilderPage() {
 
           {expanded ? (
             <div className="mt-4 space-y-4 border-t border-stone-200 pt-4">
-              {question.helpText ? <p className="text-sm leading-6 text-stone-600">{question.helpText}</p> : null}
-              <div className="flex flex-wrap gap-2">
-                <Link
-                  href="/admin/renoapp/questions"
-                  className="rounded-xl border border-stone-300 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-stone-100"
-                >
-                  Öppna i Frågor
-                </Link>
-                {depth === 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => void removeRootQuestion(question.id)}
-                    disabled={savingKey === `remove-question:${question.id}`}
-                    className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60"
-                  >
-                    {savingKey === `remove-question:${question.id}` ? 'Tar bort...' : 'Ta bort'}
-                  </button>
-                ) : null}
-              </div>
+              {null}
 
               {question.options.length > 0 ? (
                 [...question.options]
@@ -1210,7 +1192,7 @@ export default function RenoAppFlowBuilderPage() {
                       <div key={option.id} className="border-t border-stone-200 pt-4 first:border-t-0 first:pt-0">
                         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                           <div>
-                            <div className="text-base font-semibold text-stone-900">{option.label}</div>
+                            <div className="text-sm font-semibold text-stone-900">{option.label}</div>
                             {option.description ? (
                               <div className="mt-1 text-sm leading-6 text-stone-600">{option.description}</div>
                             ) : null}
@@ -1221,7 +1203,8 @@ export default function RenoAppFlowBuilderPage() {
                         </div>
 
                         {activeTriggers.length > 0 ? (
-                          <div className="mt-4 flex flex-wrap gap-3">
+                          <div className="mt-3 ml-3 border-l border-stone-200 pl-3">
+                            <div className="flex flex-wrap gap-3">
                             {childQuestionIds.map((childQuestionId) => (
                               <div key={`question:${option.id}:${childQuestionId}`} className="min-w-[280px] flex-1 basis-[320px]">
                                 {renderQuestionTree(childQuestionId, depth + 1, [...ancestry, questionId])}
@@ -1280,19 +1263,16 @@ export default function RenoAppFlowBuilderPage() {
                                 </div>
                               )
                             })}
+                            </div>
                           </div>
                         ) : (
-                          <div className="mt-4 rounded-xl border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-                            Inga noder kopplade till detta svar än.
-                          </div>
+                          <div className="mt-3 text-sm text-stone-500">Inga noder kopplade till detta svar än.</div>
                         )}
                       </div>
                     )
                   })
               ) : (
-                <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-                  Frågan har inga svarsalternativ än. Öppna den i Frågor för att skapa logik och grenar.
-                </div>
+                <div className="text-sm text-stone-500">Frågan har inga svarsalternativ än.</div>
               )}
             </div>
           ) : null}
@@ -1454,27 +1434,6 @@ export default function RenoAppFlowBuilderPage() {
                       className="rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
                     >
                       Redigera renoveringstyp
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openLinkQuestionModal(selectedAction.id)}
-                      className="rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/25"
-                    >
-                      Lägg till fråga
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openLinkDocumentModal(selectedAction.id)}
-                      className="rounded-xl border border-sky-400/30 bg-sky-500/15 px-4 py-2 text-sm font-semibold text-sky-100 transition hover:bg-sky-500/25"
-                    >
-                      Lägg till underlag
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openLinkParticipantModal(selectedAction.id)}
-                      className="rounded-xl border border-amber-400/30 bg-amber-500/15 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/25"
-                    >
-                      Lägg till medverkandetyp
                     </button>
                   </div>
                 </div>
