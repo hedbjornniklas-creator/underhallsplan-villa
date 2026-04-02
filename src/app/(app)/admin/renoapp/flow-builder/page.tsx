@@ -212,6 +212,32 @@ type CreateModalState =
     }
   | null
 
+type NodeModalState =
+  | {
+      kind: 'question'
+      question: QuestionItem
+      rootLink?: ActionQuestionItem
+      nodeId: string
+    }
+  | {
+      kind: 'document'
+      requirement: RequirementItem
+      documentType: DocumentTypeItem | null
+      nodeId: string
+    }
+  | {
+      kind: 'participant'
+      participantRole: ActionParticipantRoleItem
+      role: ParticipantRoleItem | null
+      nodeId: string
+    }
+  | {
+      kind: 'flag'
+      reviewFlag: ReviewFlagItem
+      nodeId: string
+    }
+  | null
+
 const EMPTY_ACTION_DRAFT: ActionDraft = {
   key: '',
   label: '',
@@ -285,7 +311,7 @@ export default function RenoAppFlowBuilderPage() {
   const [actionDraft, setActionDraft] = useState<ActionDraft | null>(null)
   const [linkModal, setLinkModal] = useState<LinkModalState>(null)
   const [createModal, setCreateModal] = useState<CreateModalState>(null)
-  const [expandedNodeIds, setExpandedNodeIds] = useState<string[]>([])
+  const [nodeModal, setNodeModal] = useState<NodeModalState>(null)
 
   const loadData = async () => {
     setLoading(true)
@@ -485,10 +511,6 @@ export default function RenoAppFlowBuilderPage() {
       (left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id, 'sv')
     )
   }, [rootParticipants, rootQuestions, rootRequirements])
-
-  const isExpanded = (id: string) => expandedNodeIds.includes(id)
-  const toggleExpanded = (id: string) =>
-    setExpandedNodeIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))
 
   const nextSortOrderFor = (values: number[]) => {
     if (values.length === 0) return '10'
@@ -904,13 +926,13 @@ export default function RenoAppFlowBuilderPage() {
     compact?: boolean
   }) => {
     const documentType = documentTypeMap.get(requirement.documentTypeId)
-    const expanded = isExpanded(nodeId)
+    const expanded = false
 
     return (
       <div className="rounded-[20px] border border-stone-200 bg-white/90 p-4">
         <button
           type="button"
-          onClick={() => toggleExpanded(nodeId)}
+          onClick={() => setNodeModal({ kind: 'document', requirement, documentType: documentType ?? null, nodeId })}
           className="flex w-full items-start justify-between gap-3 text-left"
         >
           <div className="space-y-2">
@@ -933,7 +955,7 @@ export default function RenoAppFlowBuilderPage() {
             ) : null}
           </div>
           <span className="rounded-full border border-stone-300 bg-stone-50 px-2.5 py-1 text-[11px] font-semibold text-stone-700">
-            {expanded ? 'Minimera' : 'Öppna'}
+            Öppna
           </span>
         </button>
 
@@ -981,13 +1003,13 @@ export default function RenoAppFlowBuilderPage() {
     compact?: boolean
   }) => {
     const role = participantRoleMap.get(participantRole.participantRoleId)
-    const expanded = isExpanded(nodeId)
+    const expanded = false
 
     return (
       <div className="rounded-[20px] border border-stone-200 bg-white/90 p-4">
         <button
           type="button"
-          onClick={() => toggleExpanded(nodeId)}
+          onClick={() => setNodeModal({ kind: 'participant', participantRole, role: role ?? null, nodeId })}
           className="flex w-full items-start justify-between gap-3 text-left"
         >
           <div className="space-y-2">
@@ -1005,7 +1027,7 @@ export default function RenoAppFlowBuilderPage() {
             ) : null}
           </div>
           <span className="rounded-full border border-stone-300 bg-stone-50 px-2.5 py-1 text-[11px] font-semibold text-stone-700">
-            {expanded ? 'Minimera' : 'Öppna'}
+            Öppna
           </span>
         </button>
 
@@ -1044,13 +1066,13 @@ export default function RenoAppFlowBuilderPage() {
   }
 
   const renderFlagNode = (nodeId: string, reviewFlag: ReviewFlagItem) => {
-    const expanded = isExpanded(nodeId)
+    const expanded = false
 
     return (
       <div className={cn('rounded-[20px] border p-4', toneForFlag(reviewFlag.severity))}>
         <button
           type="button"
-          onClick={() => toggleExpanded(nodeId)}
+          onClick={() => setNodeModal({ kind: 'flag', reviewFlag, nodeId })}
           className="flex w-full items-start justify-between gap-3 text-left"
         >
           <div className="space-y-2">
@@ -1065,7 +1087,7 @@ export default function RenoAppFlowBuilderPage() {
             <div className="text-base font-semibold">{reviewFlag.label}</div>
           </div>
           <span className="rounded-full border border-current/30 bg-white/70 px-2.5 py-1 text-[11px] font-semibold">
-            {expanded ? 'Minimera' : 'Öppna'}
+            Öppna
           </span>
         </button>
 
@@ -1108,14 +1130,14 @@ export default function RenoAppFlowBuilderPage() {
       )
     }
 
-    const expanded = isExpanded(nodeId)
+    const expanded = true
 
     return (
       <div className={cn(depth > 0 && 'pt-2')}>
         <div className={cn('rounded-[20px] border border-stone-200 p-4', depth === 0 ? 'bg-white/95' : 'bg-stone-50/50')}>
           <button
             type="button"
-            onClick={() => toggleExpanded(nodeId)}
+            onClick={() => setNodeModal({ kind: 'question', question, rootLink, nodeId })}
             className="flex w-full items-start justify-between gap-3 text-left"
           >
             <div className="space-y-2">
@@ -1140,7 +1162,7 @@ export default function RenoAppFlowBuilderPage() {
               </div>
             </div>
             <span className="rounded-full border border-stone-300 bg-stone-50 px-2.5 py-1 text-[11px] font-semibold text-stone-700">
-              {expanded ? 'Minimera' : 'Öppna'}
+              Öppna
             </span>
           </button>
 
@@ -1387,6 +1409,10 @@ export default function RenoAppFlowBuilderPage() {
         </section>
 
         <section className="rounded-[28px] border border-stone-200 bg-white/95 p-5 shadow-sm">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900 lg:hidden">
+            Flödesbyggaren är anpassad för dator. Öppna sidan i en större webbläsare för att arbeta i trädet.
+          </div>
+          <div className="hidden lg:block">
           {!selectedAction ? (
             <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-6 py-10 text-center text-sm text-stone-600">
               Välj en renoveringstyp ovan för att visa dess flöde.
@@ -1728,8 +1754,221 @@ export default function RenoAppFlowBuilderPage() {
                 </div>
             </div>
           )}
+          </div>
         </section>
       </div>
+
+      {nodeModal ? (
+        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-auto bg-black/40 p-4">
+          <div className="w-full max-w-4xl rounded-[28px] border border-stone-200 bg-white p-6 shadow-xl">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h3 className="text-2xl font-semibold text-stone-900">
+                  {nodeModal.kind === 'question'
+                    ? nodeModal.question.label
+                    : nodeModal.kind === 'document'
+                      ? nodeModal.requirement.documentLabel
+                      : nodeModal.kind === 'participant'
+                        ? nodeModal.participantRole.participantRoleLabel
+                        : nodeModal.reviewFlag.label}
+                </h3>
+                <p className="mt-1 text-sm text-stone-600">
+                  {nodeModal.kind === 'question'
+                    ? 'Frågan visas i trädet, medan detaljer och genvägar öppnas här.'
+                    : nodeModal.kind === 'document'
+                      ? 'Underlaget är kopplat i flödet. Här ser du fas, krav och genvägar.'
+                      : nodeModal.kind === 'participant'
+                        ? 'Medverkandetypen är kopplad i flödet. Här ser du krav och verifieringsuppgifter.'
+                        : 'Flaggan används som intern signal till styrelsen och påverkar inte om ansökan kan skickas in.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNodeModal(null)}
+                className="rounded-xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+              >
+                Stäng
+              </button>
+            </div>
+
+            {nodeModal.kind === 'question' ? (
+              <div className="mt-5 space-y-5">
+                <div className="flex flex-wrap gap-2">
+                  <span className="rounded-full border border-stone-300 bg-stone-100 px-3 py-1 text-xs font-semibold text-stone-700">
+                    {labelForResponseType(nodeModal.question.responseType)}
+                  </span>
+                  {nodeModal.rootLink ? (
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+                      {nodeModal.rootLink.isRequired ? 'Obligatorisk på rotnivå' : 'Valfri på rotnivå'}
+                    </span>
+                  ) : null}
+                  <span className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-semibold text-stone-700">
+                    {nodeModal.question.options.length} svarsalternativ
+                  </span>
+                </div>
+
+                {nodeModal.question.helpText ? (
+                  <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm leading-7 text-stone-700">
+                    {nodeModal.question.helpText}
+                  </div>
+                ) : null}
+
+                <div className="rounded-2xl border border-stone-200">
+                  <div className="border-b border-stone-200 px-4 py-3 text-sm font-semibold text-stone-900">Svar och kopplingar</div>
+                  <div className="divide-y divide-stone-200">
+                    {nodeModal.question.options.length > 0 ? (
+                      [...nodeModal.question.options]
+                        .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv'))
+                        .map((option) => {
+                          const activeTriggers = option.triggers.filter((trigger) => trigger.isActive)
+                          return (
+                            <div key={option.id} className="px-4 py-4">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="font-semibold text-stone-900">{option.label}</div>
+                                <div className="rounded-full border border-stone-300 bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-700">
+                                  {activeTriggers.length} kopplingar
+                                </div>
+                              </div>
+                              {option.description ? (
+                                <p className="mt-2 text-sm leading-6 text-stone-600">{option.description}</p>
+                              ) : null}
+                            </div>
+                          )
+                        })
+                    ) : (
+                      <div className="px-4 py-4 text-sm text-stone-600">Frågan har inga svarsalternativ än.</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href="/admin/renoapp/questions"
+                    className="rounded-xl border border-stone-300 px-3 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                  >
+                    Öppna i Frågor
+                  </Link>
+                  {nodeModal.nodeId.startsWith('root-question:') ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void removeRootQuestion(nodeModal.question.id)
+                        setNodeModal(null)
+                      }}
+                      className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+                    >
+                      Ta bort från rotnivån
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {nodeModal.kind === 'document' ? (
+              <div className="mt-5 space-y-5">
+                <div className="flex flex-wrap gap-2">
+                  {nodeModal.documentType ? (
+                    <span className="rounded-full border border-stone-300 bg-stone-100 px-3 py-1 text-xs font-semibold text-stone-700">
+                      {labelForPhase(nodeModal.documentType.defaultPhase)}
+                    </span>
+                  ) : null}
+                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+                    {nodeModal.requirement.isRequired ? 'Obligatoriskt' : 'Valfritt'}
+                  </span>
+                </div>
+                {nodeModal.requirement.documentDescription ? (
+                  <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm leading-7 text-stone-700">
+                    {nodeModal.requirement.documentDescription}
+                  </div>
+                ) : null}
+                {nodeModal.requirement.note ? (
+                  <div className="text-sm text-stone-600">Notering: {nodeModal.requirement.note}</div>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href="/admin/renoapp/document-types"
+                    className="rounded-xl border border-stone-300 px-3 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                  >
+                    Öppna i Underlagstyper
+                  </Link>
+                  {nodeModal.nodeId.startsWith('root-document:') ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void removeRootRequirement(nodeModal.requirement.documentTypeId)
+                        setNodeModal(null)
+                      }}
+                      className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+                    >
+                      Ta bort från rotnivån
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {nodeModal.kind === 'participant' ? (
+              <div className="mt-5 space-y-5">
+                <div className="flex flex-wrap gap-2">
+                  <span className="rounded-full border border-stone-300 bg-stone-100 px-3 py-1 text-xs font-semibold text-stone-700">
+                    {nodeModal.participantRole.roleKind === 'consultant' ? 'Konsult' : 'Entreprenör'}
+                  </span>
+                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+                    {nodeModal.participantRole.isRequired ? 'Obligatorisk' : 'Valfri'}
+                  </span>
+                </div>
+                {nodeModal.participantRole.participantRoleDescription ? (
+                  <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm leading-7 text-stone-700">
+                    {nodeModal.participantRole.participantRoleDescription}
+                  </div>
+                ) : null}
+                {nodeModal.role?.verificationInstructions ? (
+                  <div className="text-sm text-stone-600">Verifieringsinstruktion finns på rollen.</div>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href="/admin/renoapp/participants"
+                    className="rounded-xl border border-stone-300 px-3 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                  >
+                    Öppna i Medverkande
+                  </Link>
+                  {nodeModal.nodeId.startsWith('root-participant:') ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void removeRootParticipant(nodeModal.participantRole.participantRoleId)
+                        setNodeModal(null)
+                      }}
+                      className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+                    >
+                      Ta bort från rotnivån
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {nodeModal.kind === 'flag' ? (
+              <div className="mt-5 space-y-5">
+                <div className={cn('inline-flex rounded-full border px-3 py-1 text-xs font-semibold', toneForFlag(nodeModal.reviewFlag.severity))}>
+                  {nodeModal.reviewFlag.severity}
+                </div>
+                {nodeModal.reviewFlag.description ? (
+                  <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm leading-7 text-stone-700">
+                    {nodeModal.reviewFlag.description}
+                  </div>
+                ) : null}
+                <Link
+                  href="/admin/renoapp/review-flags"
+                  className="inline-flex rounded-xl border border-stone-300 px-3 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                >
+                  Öppna i Flaggor
+                </Link>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {actionDraft ? (
         <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-auto bg-black/40 p-4">
