@@ -942,7 +942,6 @@ export type RenoAppAdminQuestion = {
   helpText: string | null
   responseType: 'single_select' | 'multi_select' | 'boolean'
   sortOrder: number
-  isLocked: boolean
   isActive: boolean
   metadata: unknown
   options: RenoAppAdminQuestionOption[]
@@ -5234,7 +5233,6 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
     helpText: repairLikelyMojibakeText(item.help_text ?? null),
     responseType: item.response_type,
     sortOrder: item.sort_order,
-    isLocked: item.is_locked,
     isActive: item.is_active,
     metadata: repairLikelyMojibakeValue(item.metadata ?? {}),
     options: options
@@ -5283,7 +5281,6 @@ export async function saveRenoAppAdminQuestion(input: {
     helpText?: string | null
     responseType?: 'single_select' | 'multi_select' | 'boolean'
     sortOrder?: number | null
-    isLocked?: boolean
     isActive?: boolean
     metadata?: unknown
   }
@@ -5309,33 +5306,15 @@ export async function saveRenoAppAdminQuestion(input: {
   await requireRenoAppAdminProfile()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
 
-  const existingQuestion = input.question.id
-    ? await admin
-        .from('renoapp_apply_questions')
-        .select('id,key,is_locked')
-        .eq('id', input.question.id)
-        .maybeSingle()
-    : null
-
-  if (existingQuestion?.error) {
-    throw new Error(existingQuestion.error.message ?? 'Kunde inte lasa fraga.')
-  }
-
-  const existingQuestionRow = (existingQuestion?.data ?? null) as Pick<
-    ApplyQuestionRow,
-    'id' | 'key' | 'is_locked'
-  > | null
-
   const label = normalizeTerminologyText(input.question.label)
   const computedKey = normalizeMachineKey(input.question.key) ?? normalizeMachineKey(label) ?? null
-  const key = existingQuestionRow?.is_locked ? existingQuestionRow.key : computedKey
+  const key = computedKey
   const helpText = normalizeTerminologyText(input.question.helpText)
   const responseType = normalizeQuestionResponseType(input.question.responseType)
   const sortOrder =
     Number.isFinite(input.question.sortOrder) && Number(input.question.sortOrder) > 0
       ? Number(input.question.sortOrder)
       : 100
-  const isLocked = existingQuestionRow?.is_locked ?? input.question.isLocked === true
   const isActive = input.question.isActive !== false
   const metadata = normalizeJsonValue(input.question.metadata ?? {})
 
@@ -5348,7 +5327,6 @@ export async function saveRenoAppAdminQuestion(input: {
     help_text: helpText,
     response_type: responseType,
     sort_order: sortOrder,
-    is_locked: isLocked,
     is_active: isActive,
     metadata,
   }

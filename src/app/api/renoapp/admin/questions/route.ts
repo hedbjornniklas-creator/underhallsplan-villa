@@ -46,7 +46,6 @@ export async function POST(request: Request) {
           typeof body.question?.sortOrder === 'number'
             ? body.question.sortOrder
             : Number(body.question?.sortOrder ?? 100),
-        isLocked: typeof body.question?.isLocked === 'boolean' ? body.question.isLocked : false,
         isActive: typeof body.question?.isActive === 'boolean' ? body.question.isActive : true,
         metadata: body.question?.metadata ?? {},
       },

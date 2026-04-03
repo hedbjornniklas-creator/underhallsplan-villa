@@ -65,7 +65,6 @@ type QuestionItem = {
   helpText: string | null
   responseType: 'single_select' | 'multi_select' | 'boolean'
   sortOrder: number
-  isLocked: boolean
   isActive: boolean
   metadata: unknown
   options: QuestionOptionItem[]
@@ -78,7 +77,6 @@ type DraftQuestion = {
   helpText: string
   responseType: QuestionItem['responseType']
   sortOrder: string
-  isLocked: boolean
   isActive: boolean
 }
 
@@ -104,7 +102,6 @@ const EMPTY_QUESTION: DraftQuestion = {
   helpText: '',
   responseType: 'single_select',
   sortOrder: '100',
-  isLocked: false,
   isActive: true,
 }
 
@@ -142,7 +139,6 @@ function createDraftFromQuestion(item: QuestionItem): DraftQuestion {
     helpText: item.helpText ?? '',
     responseType: item.responseType,
     sortOrder: String(item.sortOrder),
-    isLocked: item.isLocked,
     isActive: item.isActive,
   }
 }
@@ -154,7 +150,6 @@ function createDuplicateDraftFromQuestion(item: QuestionItem): DraftQuestion {
     helpText: item.helpText ?? '',
     responseType: item.responseType,
     sortOrder: String(item.sortOrder + 10),
-    isLocked: false,
     isActive: item.isActive,
   }
 }
@@ -374,7 +369,6 @@ export default function RenoAppQuestionsAdminPage() {
             helpText: draft.helpText,
             responseType: draft.responseType,
             sortOrder: Number(draft.sortOrder || '100'),
-            isLocked: draft.isLocked,
             isActive: draft.isActive,
             metadata: {},
           },
@@ -811,16 +805,6 @@ export default function RenoAppQuestionsAdminPage() {
             </div>
 
             <div className="mt-4 grid gap-2 md:grid-cols-2">
-              <label className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={questionDraft.isLocked}
-                  onChange={(event) =>
-                    setQuestionDraft((current) => ({ ...current, isLocked: event.target.checked }))
-                  }
-                />
-                Låst
-              </label>
               <label className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm">
                 <input
                   type="checkbox"

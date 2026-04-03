@@ -86,7 +86,6 @@ type QuestionItem = {
   helpText: string | null
   responseType: 'single_select' | 'multi_select' | 'boolean'
   sortOrder: number
-  isLocked: boolean
   isActive: boolean
   metadata: unknown
   options: QuestionOptionItem[]
@@ -176,7 +175,6 @@ type QuestionDraft = {
   helpText: string
   responseType: QuestionItem['responseType']
   sortOrder: string
-  isLocked: boolean
   isActive: boolean
 }
 
@@ -259,7 +257,6 @@ const EMPTY_QUESTION_DRAFT: QuestionDraft = {
   helpText: '',
   responseType: 'single_select',
   sortOrder: '100',
-  isLocked: false,
   isActive: true,
 }
 
@@ -398,7 +395,6 @@ function questionToRequestPayload(question: QuestionItem) {
       helpText: question.helpText,
       responseType: question.responseType,
       sortOrder: question.sortOrder,
-      isLocked: question.isLocked,
       isActive: question.isActive,
       metadata: question.metadata ?? {},
     },
@@ -430,7 +426,6 @@ function createDuplicateQuestionDraft(question: QuestionItem): QuestionDraft {
     helpText: question.helpText ?? '',
     responseType: question.responseType,
     sortOrder: String(question.sortOrder + 10),
-    isLocked: false,
     isActive: question.isActive,
   }
 }
@@ -834,7 +829,6 @@ export default function RenoAppFlowBuilderPage() {
             helpText: question.helpText ?? '',
             responseType: question.responseType,
             sortOrder: String(question.sortOrder),
-            isLocked: question.isLocked,
             isActive: question.isActive,
           }
         : EMPTY_QUESTION_DRAFT
@@ -1137,7 +1131,6 @@ export default function RenoAppFlowBuilderPage() {
           helpText: questionDraft.helpText || null,
           responseType: questionDraft.responseType,
           sortOrder: Number(questionDraft.sortOrder || 100),
-          isLocked: questionDraft.isLocked,
           isActive: questionDraft.isActive,
         })
         if (activeNode.ref.type === 'rootQuestion') {
@@ -1409,7 +1402,6 @@ export default function RenoAppFlowBuilderPage() {
               key: '',
               label: `${question.label} (kopia)`,
               sortOrder: question.sortOrder + 10,
-              isLocked: false,
             },
             options: question.options.map((option) => ({
               ...option,
@@ -1673,7 +1665,6 @@ export default function RenoAppFlowBuilderPage() {
                 helpText: questionDraft.helpText || null,
                 responseType: questionDraft.responseType,
                 sortOrder: Number(questionDraft.sortOrder || 100),
-                isLocked: questionDraft.isLocked,
                 isActive: questionDraft.isActive,
                 metadata: {},
               },
@@ -1980,10 +1971,6 @@ export default function RenoAppFlowBuilderPage() {
                         <input value={questionDraft.sortOrder} onChange={(event) => setQuestionDraft((current) => ({ ...current, sortOrder: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" />
                       </ModalField>
                       <label className="inline-flex items-center gap-2 text-sm text-stone-700">
-                        <input type="checkbox" checked={questionDraft.isLocked} onChange={(event) => setQuestionDraft((current) => ({ ...current, isLocked: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
-                        Låst för vanlig redigering
-                      </label>
-                      <label className="inline-flex items-center gap-2 text-sm text-stone-700">
                         <input type="checkbox" checked={questionDraft.isActive} onChange={(event) => setQuestionDraft((current) => ({ ...current, isActive: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
                         Aktiv fråga
                       </label>
@@ -2235,7 +2222,6 @@ export default function RenoAppFlowBuilderPage() {
                         <ModalField label="Hjälptext"><textarea value={questionDraft.helpText} onChange={(event) => setQuestionDraft((current) => ({ ...current, helpText: event.target.value }))} rows={3} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" /></ModalField>
                         <ModalField label="Svarstyp"><select value={questionDraft.responseType} onChange={(event) => setQuestionDraft((current) => ({ ...current, responseType: event.target.value as QuestionDraft['responseType'] }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="single_select">Ett val</option><option value="multi_select">Flera val</option><option value="boolean">Ja/nej</option></select></ModalField>
                         <ModalField label="Sortering"><input value={questionDraft.sortOrder} onChange={(event) => setQuestionDraft((current) => ({ ...current, sortOrder: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
-                        <label className="inline-flex items-center gap-2 text-sm text-stone-700"><input type="checkbox" checked={questionDraft.isLocked} onChange={(event) => setQuestionDraft((current) => ({ ...current, isLocked: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />Låst för vanlig redigering</label>
                         <label className="inline-flex items-center gap-2 text-sm text-stone-700"><input type="checkbox" checked={questionDraft.isActive} onChange={(event) => setQuestionDraft((current) => ({ ...current, isActive: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />Aktiv fråga</label>
                       </> : null}
                       {addType === 'option' ? <>
