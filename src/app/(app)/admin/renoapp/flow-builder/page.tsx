@@ -423,6 +423,18 @@ function questionToRequestPayload(question: QuestionItem) {
   }
 }
 
+function createDuplicateQuestionDraft(question: QuestionItem): QuestionDraft {
+  return {
+    key: '',
+    label: `${question.label} (kopia)`,
+    helpText: question.helpText ?? '',
+    responseType: question.responseType,
+    sortOrder: String(question.sortOrder + 10),
+    isLocked: false,
+    isActive: question.isActive,
+  }
+}
+
 function FlowNodeCard({
   node,
   expanded,
@@ -538,6 +550,8 @@ export default function RenoAppFlowBuilderPage() {
   const [addType, setAddType] = useState<AddType | null>(null)
   const [addMode, setAddMode] = useState<'existing' | 'new'>('existing')
   const [existingTargetId, setExistingTargetId] = useState('')
+  const [addPreviewQuestionId, setAddPreviewQuestionId] = useState<string | null>(null)
+  const [duplicateQuestionSourceId, setDuplicateQuestionSourceId] = useState<string | null>(null)
 
   const [actionTypeDraft, setActionTypeDraft] = useState<ActionTypeDraft>(EMPTY_ACTION_TYPE_DRAFT)
   const [questionDraft, setQuestionDraft] = useState<QuestionDraft>(EMPTY_QUESTION_DRAFT)
@@ -798,6 +812,8 @@ export default function RenoAppFlowBuilderPage() {
     setAddType(null)
     setAddMode('existing')
     setExistingTargetId('')
+    setAddPreviewQuestionId(null)
+    setDuplicateQuestionSourceId(null)
     const ref = node.ref
 
     const question =
@@ -973,6 +989,8 @@ export default function RenoAppFlowBuilderPage() {
     setModalSaving(false)
     setAddType(null)
     setExistingTargetId('')
+    setAddPreviewQuestionId(null)
+    setDuplicateQuestionSourceId(null)
   }
 
   const toggleNode = (id: string) => setExpandedNodeIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
@@ -1052,6 +1070,11 @@ export default function RenoAppFlowBuilderPage() {
     if (addType === 'participant') return participantRoles.map((item) => ({ id: item.id, label: item.label }))
     return reviewFlags.map((item) => ({ id: item.id, label: item.label }))
   }, [addType, documentTypes, participantRoles, questionItems, reviewFlags])
+
+  const addPreviewQuestion = useMemo(
+    () => (addPreviewQuestionId ? questionItems.find((item) => item.id === addPreviewQuestionId) ?? null : null),
+    [addPreviewQuestionId, questionItems]
+  )
 
   const persistQuestionWithOptions = async (question: QuestionItem) => {
     const response = await fetch('/api/renoapp/admin/questions', {
@@ -1638,6 +1661,7 @@ export default function RenoAppFlowBuilderPage() {
         if (addType === 'option') {
           targetId = ''
         } else if (addType === 'question') {
+          const duplicateSource = duplicateQuestionSourceId ? questionMap.get(duplicateQuestionSourceId) : null
           const response = await fetch('/api/renoapp/admin/questions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1653,9 +1677,28 @@ export default function RenoAppFlowBuilderPage() {
                 isActive: questionDraft.isActive,
                 metadata: {},
               },
-              options: [
-                { id: null, key: 'alternativ-1', label: 'Alternativ 1', description: null, sortOrder: 10, isActive: true, metadata: {}, triggers: [] },
-              ],
+              options: duplicateSource
+                ? duplicateSource.options.map((option) => ({
+                    id: null,
+                    key: option.key || slugifyKey(option.label),
+                    label: option.label,
+                    description: option.description,
+                    sortOrder: option.sortOrder,
+                    isActive: option.isActive,
+                    metadata: option.metadata ?? {},
+                    triggers: option.triggers.map((trigger) => ({
+                      triggerType: trigger.triggerType,
+                      questionId: trigger.questionId,
+                      documentTypeId: trigger.documentTypeId,
+                      participantRoleId: trigger.participantRoleId,
+                      reviewFlagId: trigger.reviewFlagId,
+                      sortOrder: trigger.sortOrder,
+                      isActive: trigger.isActive,
+                    })),
+                  }))
+                : [
+                    { id: null, key: 'alternativ-1', label: 'Alternativ 1', description: null, sortOrder: 10, isActive: true, metadata: {}, triggers: [] },
+                  ],
             }),
           })
           const payload = await readJson<{ item?: QuestionItem; error?: string }>(response)
@@ -2121,22 +2164,72 @@ export default function RenoAppFlowBuilderPage() {
                 <div className="space-y-4">
                   <div className="flex flex-wrap gap-2">
                     {addableTypes.map((type) => (
-                      <button key={type} type="button" onClick={() => { setAddType(type); setExistingTargetId(''); setAddMode(type === 'option' ? 'new' : 'existing') }} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', addType === type ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>
+                      <button key={type} type="button" onClick={() => { setAddType(type); setExistingTargetId(''); setAddMode(type === 'option' ? 'new' : 'existing'); setAddPreviewQuestionId(null); setDuplicateQuestionSourceId(null) }} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', addType === type ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>
                         {type === 'question' ? 'Fråga' : type === 'option' ? 'Svarsalternativ' : type === 'document' ? 'Underlag' : type === 'participant' ? 'Medverkande' : 'Flagga'}
                       </button>
                     ))}
                   </div>
                   {addType !== 'option' ? <div className="flex gap-2">
-                    <button type="button" onClick={() => { setAddMode('existing'); setExistingTargetId('') }} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', addMode === 'existing' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Lägg till befintlig</button>
-                    <button type="button" onClick={() => setAddMode('new')} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', addMode === 'new' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Skapa ny</button>
+                    <button type="button" onClick={() => { setAddMode('existing'); setExistingTargetId(''); setAddPreviewQuestionId(null); setDuplicateQuestionSourceId(null) }} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', addMode === 'existing' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Lägg till befintlig</button>
+                    <button type="button" onClick={() => { setAddMode('new'); setDuplicateQuestionSourceId(null) }} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', addMode === 'new' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Skapa ny</button>
                   </div> : null}
-                  {addMode === 'existing' && addType !== 'option' ? (
+                  {addMode === 'existing' && addType === 'question' ? (
+                    <div className="space-y-4">
+                      <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl border border-stone-200 bg-stone-50 p-3">
+                        {questionItems.map((item) => (
+                          <div key={item.id} className={cn('rounded-lg border px-3 py-3', existingTargetId === item.id ? 'border-stone-900 bg-white' : 'border-stone-200 bg-white')}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-semibold text-stone-900">{item.label}</div>
+                                <div className="mt-1 text-xs text-stone-500">{item.key}</div>
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                  <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-semibold text-stone-700">{labelForResponseType(item.responseType)}</span>
+                                  <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-semibold text-stone-700">{item.options.length} svar</span>
+                                </div>
+                              </div>
+                              <div className="flex shrink-0 gap-2">
+                                <button type="button" onClick={() => { setExistingTargetId(item.id); setAddPreviewQuestionId(item.id) }} className="rounded-md border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-800 hover:bg-stone-100">Välj</button>
+                                <button type="button" onClick={() => setAddPreviewQuestionId(item.id)} className="rounded-md border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-800 hover:bg-stone-100">Öppna</button>
+                                <button type="button" onClick={() => { setDuplicateQuestionSourceId(item.id); setQuestionDraft(createDuplicateQuestionDraft(item)); setAddMode('new') }} className="rounded-md border border-sky-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-50">Duplicera</button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {addPreviewQuestion ? (
+                        <div className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Förhandsvisning</div>
+                            <div className="mt-1 text-lg font-semibold text-stone-900">{addPreviewQuestion.label}</div>
+                            {addPreviewQuestion.helpText ? <p className="mt-2 text-sm text-stone-600">{addPreviewQuestion.helpText}</p> : null}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-xs font-semibold text-stone-700">{labelForResponseType(addPreviewQuestion.responseType)}</span>
+                            <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-xs font-semibold text-stone-700">{addPreviewQuestion.options.length} svarsalternativ</span>
+                          </div>
+                          <div className="space-y-2">
+                            {addPreviewQuestion.options
+                              .slice()
+                              .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv'))
+                              .map((option) => (
+                                <div key={option.id} className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-700">
+                                  <div className="font-semibold text-stone-900">{option.label}</div>
+                                  {option.description ? <div className="mt-1 text-stone-600">{option.description}</div> : null}
+                                  <div className="mt-1 text-xs text-stone-500">{option.triggers.filter((trigger) => trigger.isActive).length} kopplingar</div>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : addMode === 'existing' && addType !== 'option' ? (
                     <ModalField label="Välj objekt">
                       <select value={existingTargetId} onChange={(event) => setExistingTargetId(event.target.value)} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="">Välj...</option>{existingAddOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
                     </ModalField>
                   ) : (
                     <div className="grid gap-4 md:grid-cols-2">
                       {addType === 'question' ? <>
+                        {duplicateQuestionSourceId ? <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 md:col-span-2">Du skapar nu en kopia av en befintlig fråga. Justera innehållet och spara för att lägga in kopian i flödet.</div> : null}
                         <ModalField label="Visningsnamn"><input value={questionDraft.label} onChange={(event) => setQuestionDraft((current) => ({ ...current, label: event.target.value, key: current.key || slugifyKey(event.target.value) }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
                         <ModalField label="Intern nyckel"><input value={questionDraft.key} onChange={(event) => setQuestionDraft((current) => ({ ...current, key: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
                         <ModalField label="Hjälptext"><textarea value={questionDraft.helpText} onChange={(event) => setQuestionDraft((current) => ({ ...current, helpText: event.target.value }))} rows={3} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" /></ModalField>
