@@ -22,6 +22,7 @@ type RequirementItem = {
   documentLabel: string
   sortOrder: number
   isRequired: boolean
+  note: string | null
 }
 
 type ActionTypeGroup = {
@@ -230,6 +231,17 @@ type ReviewFlagDraft = {
 
 type RequirementLinkDraft = {
   isRequired: boolean
+  note: string
+  sortOrder: string
+}
+
+type QuestionLinkDraft = {
+  isRequired: boolean
+  sortOrder: string
+}
+
+type ParticipantLinkDraft = {
+  isRequired: boolean
   sortOrder: string
 }
 
@@ -298,6 +310,17 @@ const EMPTY_REVIEW_FLAG_DRAFT: ReviewFlagDraft = {
 
 const EMPTY_REQUIREMENT_LINK_DRAFT: RequirementLinkDraft = {
   isRequired: true,
+  note: '',
+  sortOrder: '100',
+}
+
+const EMPTY_QUESTION_LINK_DRAFT: QuestionLinkDraft = {
+  isRequired: true,
+  sortOrder: '100',
+}
+
+const EMPTY_PARTICIPANT_LINK_DRAFT: ParticipantLinkDraft = {
+  isRequired: true,
   sortOrder: '100',
 }
 
@@ -328,18 +351,18 @@ function labelForResponseType(value: QuestionItem['responseType']) {
 function labelForPhase(value: DocumentTypeItem['defaultPhase']) {
   if (value === 'during_execution') return 'Under'
   if (value === 'after_completion') return 'Efter'
-  return 'FÃ¶re'
+  return 'Före'
 }
 
 function labelForSeverity(value: ReviewFlagItem['severity']) {
-  if (value === 'high') return 'HÃ¶g risk'
+  if (value === 'high') return 'Hög risk'
   if (value === 'warning') return 'Varning'
   return 'Info'
 }
 
 function labelForNodeKind(value: FlowNode['kind']) {
   if (value === 'root') return 'Renoveringstyp'
-  if (value === 'question') return 'FrÃ¥ga'
+  if (value === 'question') return 'Fråga'
   if (value === 'option') return 'Svar'
   if (value === 'document') return 'Underlag'
   if (value === 'participant') return 'Medverkande'
@@ -414,27 +437,27 @@ function FlowNodeCard({
   const expandable = node.children.length > 0
 
   return (
-    <div className={cn('w-[174px] rounded-md border px-3 py-2 shadow-sm', toneClasses(node.tone))}>
+    <div className={cn('w-[158px] rounded-md border px-2.5 py-2 shadow-sm', toneClasses(node.tone))}>
       <div className="flex items-start justify-between gap-2">
         <button type="button" onClick={onOpen} className="min-w-0 text-left">
           <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">{labelForNodeKind(node.kind)}</div>
-          <div className="mt-1 text-sm font-semibold leading-5">{node.title}</div>
+          <div className="mt-1 text-[13px] font-semibold leading-4">{node.title}</div>
         </button>
         <div className="flex items-center gap-1">
-          <button type="button" onClick={onOpen} className="rounded border border-current/15 bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold">
-            Ã–ppna
+          <button type="button" onClick={onOpen} className="rounded border border-current/15 bg-white/80 px-1.5 py-0.5 text-[9px] font-semibold">
+            Öppna
           </button>
           {expandable ? (
-            <button type="button" onClick={onToggle} className="rounded border border-current/15 bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold" aria-expanded={expanded}>
-              {expanded ? 'âˆ’' : '+'}
+            <button type="button" onClick={onToggle} className="rounded border border-current/15 bg-white/80 px-1.5 py-0.5 text-[9px] font-semibold" aria-expanded={expanded}>
+              {expanded ? '-' : '+'}
             </button>
           ) : null}
         </div>
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-1.5">
+      <div className="mt-2 flex flex-wrap gap-1">
         {node.badges.map((badge) => (
-          <span key={badge} className="rounded-full border border-current/15 bg-white/80 px-2 py-0.5 text-[10px] font-semibold">
+          <span key={badge} className="rounded-full border border-current/15 bg-white/80 px-1.5 py-0.5 text-[9px] font-semibold">
             {badge}
           </span>
         ))}
@@ -457,15 +480,15 @@ function HorizontalBranch({
   const expanded = expandedNodeIds.includes(node.id)
 
   return (
-    <div className="flex items-start gap-5">
+    <div className="flex items-start gap-3">
       <FlowNodeCard node={node} expanded={expanded} onToggle={() => onToggle(node.id)} onOpen={() => onOpen(node)} />
       {node.children.length > 0 && expanded ? (
-        <div className="mt-6 flex min-w-0 items-start">
-          <div className="mr-4 mt-6 h-px w-6 bg-stone-300" />
-          <div className="relative space-y-5 border-l border-stone-300 pl-5">
+        <div className="mt-5 flex min-w-0 items-start">
+          <div className="mr-3 mt-5 h-px w-5 bg-stone-300" />
+          <div className="relative space-y-3 border-l border-stone-300 pl-4">
             {node.children.map((child) => (
               <div key={child.id} className="relative">
-                <div className="absolute left-[-20px] top-6 h-px w-5 bg-stone-300" />
+                <div className="absolute left-[-16px] top-5 h-px w-4 bg-stone-300" />
                 <HorizontalBranch node={child} expandedNodeIds={expandedNodeIds} onToggle={onToggle} onOpen={onOpen} />
               </div>
             ))}
@@ -523,6 +546,8 @@ export default function RenoAppFlowBuilderPage() {
   const [participantDraft, setParticipantDraft] = useState<ParticipantDraft>(EMPTY_PARTICIPANT_DRAFT)
   const [reviewFlagDraft, setReviewFlagDraft] = useState<ReviewFlagDraft>(EMPTY_REVIEW_FLAG_DRAFT)
   const [requirementLinkDraft, setRequirementLinkDraft] = useState<RequirementLinkDraft>(EMPTY_REQUIREMENT_LINK_DRAFT)
+  const [questionLinkDraft, setQuestionLinkDraft] = useState<QuestionLinkDraft>(EMPTY_QUESTION_LINK_DRAFT)
+  const [participantLinkDraft, setParticipantLinkDraft] = useState<ParticipantLinkDraft>(EMPTY_PARTICIPANT_LINK_DRAFT)
 
   const loadData = async (preferredActionTypeId?: string | null) => {
     setLoading(true)
@@ -569,14 +594,14 @@ export default function RenoAppFlowBuilderPage() {
         readJson<{ actionTypes?: ActionTypeParticipantRoleGroup[]; error?: string }>(participantConfigResponse),
       ])
 
-      if (!actionTypesResponse.ok) throw new Error(actionTypesPayload.error ?? 'Kunde inte lÃ¤sa renoveringstyper.')
-      if (!questionsResponse.ok) throw new Error(questionsPayload.error ?? 'Kunde inte lÃ¤sa frÃ¥gor.')
-      if (!documentTypesResponse.ok) throw new Error(documentTypesPayload.error ?? 'Kunde inte lÃ¤sa underlagstyper.')
-      if (!participantRolesResponse.ok) throw new Error(participantRolesPayload.error ?? 'Kunde inte lÃ¤sa medverkande.')
-      if (!reviewFlagsResponse.ok) throw new Error(reviewFlagsPayload.error ?? 'Kunde inte lÃ¤sa flaggor.')
-      if (!requirementsResponse.ok) throw new Error(requirementsPayload.error ?? 'Kunde inte lÃ¤sa dokumentkopplingar.')
-      if (!questionConfigResponse.ok) throw new Error(questionConfigPayload.error ?? 'Kunde inte lÃ¤sa frÃ¥gekopplingar.')
-      if (!participantConfigResponse.ok) throw new Error(participantConfigPayload.error ?? 'Kunde inte lÃ¤sa medverkandekopplingar.')
+      if (!actionTypesResponse.ok) throw new Error(actionTypesPayload.error ?? 'Kunde inte läsa renoveringstyper.')
+      if (!questionsResponse.ok) throw new Error(questionsPayload.error ?? 'Kunde inte läsa frågor.')
+      if (!documentTypesResponse.ok) throw new Error(documentTypesPayload.error ?? 'Kunde inte läsa underlagstyper.')
+      if (!participantRolesResponse.ok) throw new Error(participantRolesPayload.error ?? 'Kunde inte läsa medverkande.')
+      if (!reviewFlagsResponse.ok) throw new Error(reviewFlagsPayload.error ?? 'Kunde inte läsa flaggor.')
+      if (!requirementsResponse.ok) throw new Error(requirementsPayload.error ?? 'Kunde inte läsa dokumentkopplingar.')
+      if (!questionConfigResponse.ok) throw new Error(questionConfigPayload.error ?? 'Kunde inte läsa frågekopplingar.')
+      if (!participantConfigResponse.ok) throw new Error(participantConfigPayload.error ?? 'Kunde inte läsa medverkandekopplingar.')
 
       const nextActionTypes = [...(actionTypesPayload.items ?? [])].sort(
         (left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv')
@@ -597,7 +622,7 @@ export default function RenoAppFlowBuilderPage() {
         return nextActionTypes[0]?.id ?? null
       })
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Kunde inte lÃ¤sa flÃ¶desvisaren.')
+      setError(loadError instanceof Error ? loadError.message : 'Kunde inte läsa flödesvisaren.')
     } finally {
       setLoading(false)
     }
@@ -648,7 +673,7 @@ export default function RenoAppFlowBuilderPage() {
     const buildQuestionNode = (questionId: string, ancestry: string[], rootLink?: ActionQuestionItem): FlowNode => {
       const question = questionMap.get(questionId)
       if (!question) {
-        return { id: `missing:${questionId}`, kind: 'status', title: 'FrÃ¥gan saknas', badges: ['Fel'], tone: 'rose', children: [], ref: { type: 'status' } }
+        return { id: `missing:${questionId}`, kind: 'status', title: 'Frågan saknas', badges: ['Fel'], tone: 'rose', children: [], ref: { type: 'status' } }
       }
       if (ancestry.includes(questionId)) {
         return { id: `cycle:${questionId}:${ancestry.join('>')}`, kind: 'status', title: 'Cirkelskydd', badges: ['Stopp'], tone: 'amber', children: [], ref: { type: 'status' } }
@@ -658,7 +683,7 @@ export default function RenoAppFlowBuilderPage() {
         id: `question:${ancestry.join('>') || 'root'}:${question.id}`,
         kind: 'question',
         title: question.label,
-        badges: [ancestry.length === 0 ? 'StartfrÃ¥ga' : 'FÃ¶ljdfrÃ¥ga', labelForResponseType(question.responseType), ...(rootLink ? [rootLink.isRequired ? 'Obligatorisk' : 'Valfri'] : [])],
+        badges: [ancestry.length === 0 ? 'Startfråga' : 'Följdfråga', labelForResponseType(question.responseType), ...(rootLink ? [rootLink.isRequired ? 'Obligatorisk' : 'Valfri'] : [])],
         tone: 'stone',
         ref: ancestry.length === 0 && rootLink ? ({ type: 'rootQuestion', actionTypeId: selectedActionTypeId ?? '', questionId: question.id } as const) : ({ type: 'question', questionId: question.id } as const),
         children: [...question.options]
@@ -712,7 +737,7 @@ export default function RenoAppFlowBuilderPage() {
                       id: `participant:${option.id}:${trigger.participantRoleId}`,
                       kind: 'participant' as const,
                       title: role?.label ?? 'Medverkande saknas',
-                      badges: [role?.roleKind === 'consultant' ? 'Konsult' : 'EntreprenÃ¶r'],
+                      badges: [role?.roleKind === 'consultant' ? 'Konsult' : 'Entreprenör'],
                       tone: (role?.roleKind === 'consultant' ? 'amber' : role ? 'emerald' : 'rose') as FlowNodeTone,
                       children: [],
                       ref: {
@@ -754,11 +779,11 @@ export default function RenoAppFlowBuilderPage() {
       ...rootQuestions.map((item) => buildQuestionNode(item.questionId, [], item)),
       ...rootRequirements.map((item) => {
         const doc = documentTypeMap.get(item.documentTypeId)
-        return { id: `root-document:${item.documentTypeId}`, kind: 'document' as const, title: item.documentLabel, badges: [doc ? labelForPhase(doc.defaultPhase) : 'OkÃ¤nd fas', item.isRequired ? 'Obligatoriskt' : 'Valfritt'], tone: 'sky' as const, children: [], ref: { type: 'rootRequirement' as const, actionTypeId: selectedActionTypeId, documentTypeId: item.documentTypeId } }
+        return { id: `root-document:${item.documentTypeId}`, kind: 'document' as const, title: item.documentLabel, badges: [doc ? labelForPhase(doc.defaultPhase) : 'Okänd fas', item.isRequired ? 'Obligatoriskt' : 'Valfritt'], tone: 'sky' as const, children: [], ref: { type: 'rootRequirement' as const, actionTypeId: selectedActionTypeId, documentTypeId: item.documentTypeId } }
       }),
       ...rootParticipants.map((item) => {
         const role = participantRoleMap.get(item.participantRoleId)
-        return { id: `root-participant:${item.participantRoleId}`, kind: 'participant' as const, title: item.participantRoleLabel, badges: [role?.roleKind === 'consultant' ? 'Konsult' : 'EntreprenÃ¶r', item.isRequired ? 'Obligatorisk' : 'Valfri'], tone: (role?.roleKind === 'consultant' ? 'amber' : 'emerald') as FlowNodeTone, children: [], ref: { type: 'rootParticipant' as const, actionTypeId: selectedActionTypeId, participantRoleId: item.participantRoleId } }
+        return { id: `root-participant:${item.participantRoleId}`, kind: 'participant' as const, title: item.participantRoleLabel, badges: [role?.roleKind === 'consultant' ? 'Konsult' : 'Entreprenör', item.isRequired ? 'Obligatorisk' : 'Valfri'], tone: (role?.roleKind === 'consultant' ? 'amber' : 'emerald') as FlowNodeTone, children: [], ref: { type: 'rootParticipant' as const, actionTypeId: selectedActionTypeId, participantRoleId: item.participantRoleId } }
       }),
     ]
   }, [documentTypeMap, participantRoleMap, questionMap, reviewFlagMap, rootParticipants, rootQuestions, rootRequirements, selectedActionTypeId])
@@ -847,9 +872,24 @@ export default function RenoAppFlowBuilderPage() {
       requirementLink
         ? {
             isRequired: requirementLink.isRequired,
+            note: requirementLink.note ?? '',
             sortOrder: String(requirementLink.sortOrder),
           }
         : EMPTY_REQUIREMENT_LINK_DRAFT
+    )
+
+    const questionLink =
+      ref.type === 'rootQuestion'
+        ? rootQuestions.find((item) => item.questionId === ref.questionId)
+        : null
+
+    setQuestionLinkDraft(
+      questionLink
+        ? {
+            isRequired: questionLink.isRequired,
+            sortOrder: String(questionLink.sortOrder),
+          }
+        : EMPTY_QUESTION_LINK_DRAFT
     )
 
     const participant =
@@ -880,6 +920,20 @@ export default function RenoAppFlowBuilderPage() {
             isActive: participant.isActive,
           }
         : EMPTY_PARTICIPANT_DRAFT
+    )
+
+    const participantLink =
+      ref.type === 'rootParticipant'
+        ? rootParticipants.find((item) => item.participantRoleId === ref.participantRoleId)
+        : null
+
+    setParticipantLinkDraft(
+      participantLink
+        ? {
+            isRequired: participantLink.isRequired,
+            sortOrder: String(participantLink.sortOrder),
+          }
+        : EMPTY_PARTICIPANT_LINK_DRAFT
     )
 
     const reviewFlag = ref.type === 'optionReviewFlagTrigger' ? reviewFlagMap.get(ref.targetReviewFlagId) : null
@@ -973,6 +1027,24 @@ export default function RenoAppFlowBuilderPage() {
 
   const canDeleteOption = activeNode?.ref.type === 'option'
 
+  const canDuplicateNode = Boolean(
+    activeNode &&
+      activeNode.ref.type !== 'status'
+  )
+
+  const canDeleteObject = Boolean(
+    activeNode &&
+      (activeNode.ref.type === 'actionType' ||
+        activeNode.ref.type === 'rootQuestion' ||
+        activeNode.ref.type === 'question' ||
+        activeNode.ref.type === 'optionQuestionTrigger' ||
+        activeNode.ref.type === 'rootRequirement' ||
+        activeNode.ref.type === 'optionDocumentTrigger' ||
+        activeNode.ref.type === 'rootParticipant' ||
+        activeNode.ref.type === 'optionParticipantTrigger' ||
+        activeNode.ref.type === 'optionReviewFlagTrigger')
+  )
+
   const existingAddOptions = useMemo(() => {
     if (!addType) return []
     if (addType === 'question') return questionItems.map((item) => ({ id: item.id, label: item.label }))
@@ -988,7 +1060,7 @@ export default function RenoAppFlowBuilderPage() {
       body: JSON.stringify(questionToRequestPayload(question)),
     })
     const payload = await readJson<{ error?: string }>(response)
-    if (!response.ok) throw new Error(payload.error ?? 'Kunde inte spara frÃ¥gan.')
+    if (!response.ok) throw new Error(payload.error ?? 'Kunde inte spara frågan.')
   }
 
   const updateOptionTriggers = async (
@@ -997,7 +1069,7 @@ export default function RenoAppFlowBuilderPage() {
     updater: (triggers: QuestionOptionTriggerItem[]) => QuestionOptionTriggerItem[]
   ) => {
     const question = questionMap.get(questionId)
-    if (!question) throw new Error('FrÃ¥gan kunde inte hittas.')
+    if (!question) throw new Error('Frågan kunde inte hittas.')
     const nextQuestion: QuestionItem = {
       ...question,
       options: question.options.map((option) => (option.id === optionId ? { ...option, triggers: updater(option.triggers) } : option)),
@@ -1034,7 +1106,7 @@ export default function RenoAppFlowBuilderPage() {
               ? activeNode.ref.questionId
               : activeNode.ref.targetQuestionId
         const currentQuestion = questionMap.get(questionId)
-        if (!currentQuestion) throw new Error('FrÃ¥gan kunde inte hittas.')
+        if (!currentQuestion) throw new Error('Frågan kunde inte hittas.')
         await persistQuestionWithOptions({
           ...currentQuestion,
           key: questionDraft.key || slugifyKey(questionDraft.label),
@@ -1045,6 +1117,21 @@ export default function RenoAppFlowBuilderPage() {
           isLocked: questionDraft.isLocked,
           isActive: questionDraft.isActive,
         })
+        if (activeNode.ref.type === 'rootQuestion') {
+          const relationResponse = await fetch('/api/renoapp/admin/action-type-questions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              actionTypeId: activeNode.ref.actionTypeId,
+              questionId: activeNode.ref.questionId,
+              isEnabled: true,
+              isRequired: questionLinkDraft.isRequired,
+              sortOrder: Number(questionLinkDraft.sortOrder || 100),
+            }),
+          })
+          const relationPayload = await readJson<{ error?: string }>(relationResponse)
+          if (!relationResponse.ok) throw new Error(relationPayload.error ?? 'Kunde inte spara frågekopplingen.')
+        }
       } else if (activeNode.ref.type === 'option') {
         const ref = activeNode.ref
         const question = questionMap.get(ref.questionId)
@@ -1091,7 +1178,7 @@ export default function RenoAppFlowBuilderPage() {
               documentTypeId: activeNode.ref.documentTypeId,
               isEnabled: true,
               isRequired: requirementLinkDraft.isRequired,
-              note: null,
+              note: requirementLinkDraft.note || null,
               sortOrder: Number(requirementLinkDraft.sortOrder || 100),
             }),
           })
@@ -1123,6 +1210,21 @@ export default function RenoAppFlowBuilderPage() {
         })
         const payload = await readJson<{ error?: string }>(response)
         if (!response.ok) throw new Error(payload.error ?? 'Kunde inte spara medverkandetypen.')
+        if (activeNode.ref.type === 'rootParticipant') {
+          const relationResponse = await fetch('/api/renoapp/admin/action-type-participants', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              actionTypeId: activeNode.ref.actionTypeId,
+              participantRoleId: activeNode.ref.participantRoleId,
+              isEnabled: true,
+              isRequired: participantLinkDraft.isRequired,
+              sortOrder: Number(participantLinkDraft.sortOrder || 100),
+            }),
+          })
+          const relationPayload = await readJson<{ error?: string }>(relationResponse)
+          if (!relationResponse.ok) throw new Error(relationPayload.error ?? 'Kunde inte spara medverkandekopplingen.')
+        }
       } else if (activeNode.ref.type === 'optionReviewFlagTrigger') {
         const response = await fetch('/api/renoapp/admin/review-flags', {
           method: 'POST',
@@ -1166,7 +1268,7 @@ export default function RenoAppFlowBuilderPage() {
           body: JSON.stringify({ actionTypeId: ref.actionTypeId, questionId: ref.questionId, isEnabled: false, isRequired: link?.isRequired ?? true, sortOrder: link?.sortOrder ?? 100 }),
         })
         const payload = await readJson<{ error?: string }>(response)
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte ta bort frÃ¥gekopplingen.')
+        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte ta bort frågekopplingen.')
       } else if (ref.type === 'rootRequirement') {
         const link = rootRequirements.find((item) => item.documentTypeId === ref.documentTypeId)
         const response = await fetch('/api/renoapp/admin/requirements', {
@@ -1226,6 +1328,304 @@ export default function RenoAppFlowBuilderPage() {
     }
   }
 
+  const duplicateActiveNode = async () => {
+    if (!activeNode) return
+    setModalSaving(true)
+    setModalError(null)
+
+    try {
+      const ref = activeNode.ref
+      if (ref.type === 'option') {
+        const question = questionMap.get(ref.questionId)
+        const option = question?.options.find((item) => item.id === ref.optionId)
+        if (!question || !option) throw new Error('Svarsalternativet kunde inte hittas.')
+        await persistQuestionWithOptions({
+          ...question,
+          options: [
+            ...question.options,
+            {
+              ...option,
+              id: `new-${Date.now()}`,
+              key: '',
+              label: `${option.label} (kopia)`,
+              sortOrder: Math.max(0, ...question.options.map((item) => item.sortOrder)) + 10,
+              triggers: option.triggers.map((trigger, index) => ({
+                ...trigger,
+                id: `new-trigger-${Date.now()}-${index}`,
+              })),
+            },
+          ],
+        })
+      } else if (ref.type === 'actionType' && selectedAction) {
+        const response = await fetch('/api/renoapp/admin/action-types', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: null,
+            key: '',
+            label: `${selectedAction.label} (kopia)`,
+            description: selectedAction.description ?? null,
+            sortOrder: selectedAction.sortOrder + 10,
+            isActive: selectedAction.isActive,
+          }),
+        })
+        const payload = await readJson<{ error?: string }>(response)
+        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte duplicera renoveringstypen.')
+      } else if (ref.type === 'rootQuestion' || ref.type === 'question' || ref.type === 'optionQuestionTrigger') {
+        const questionId =
+          ref.type === 'rootQuestion' ? ref.questionId : ref.type === 'question' ? ref.questionId : ref.targetQuestionId
+        const question = questionMap.get(questionId)
+        if (!question) throw new Error('Frågan kunde inte hittas.')
+        const response = await fetch('/api/renoapp/admin/questions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: {
+              ...question,
+              id: null,
+              key: '',
+              label: `${question.label} (kopia)`,
+              sortOrder: question.sortOrder + 10,
+              isLocked: false,
+            },
+            options: question.options.map((option) => ({
+              ...option,
+              id: null,
+              key: '',
+              sortOrder: option.sortOrder,
+              triggers: option.triggers.map((trigger) => ({
+                ...trigger,
+                id: null,
+              })),
+            })),
+          }),
+        })
+        const payload = await readJson<{ item?: QuestionItem; error?: string }>(response)
+        if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte duplicera frågan.')
+        if (ref.type === 'rootQuestion') {
+          const linkResponse = await fetch('/api/renoapp/admin/action-type-questions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              actionTypeId: ref.actionTypeId,
+              questionId: payload.item.id,
+              isEnabled: true,
+              isRequired: questionLinkDraft.isRequired,
+              sortOrder: Number(questionLinkDraft.sortOrder || 100) + 10,
+            }),
+          })
+          const linkPayload = await readJson<{ error?: string }>(linkResponse)
+          if (!linkResponse.ok) throw new Error(linkPayload.error ?? 'Kunde inte koppla den duplicerade frågan.')
+        } else if (ref.type === 'optionQuestionTrigger') {
+          await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => [
+            ...triggers,
+            {
+              id: `new-${Date.now()}`,
+              triggerType: 'question',
+              questionId: payload.item!.id,
+              documentTypeId: null,
+              participantRoleId: null,
+              reviewFlagId: null,
+              sortOrder: Math.max(0, ...triggers.map((item) => item.sortOrder)) + 10,
+              isActive: true,
+            },
+          ])
+        }
+      } else if (ref.type === 'rootRequirement' || ref.type === 'optionDocumentTrigger') {
+        const documentTypeId = ref.type === 'rootRequirement' ? ref.documentTypeId : ref.targetDocumentTypeId
+        const documentType = documentTypeMap.get(documentTypeId)
+        if (!documentType) throw new Error('Underlaget kunde inte hittas.')
+        const response = await fetch('/api/renoapp/admin/document-types', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...documentType,
+            id: null,
+            key: '',
+            label: `${documentType.label} (kopia)`,
+            sortOrder: documentType.sortOrder + 10,
+          }),
+        })
+        const payload = await readJson<{ item?: DocumentTypeItem; error?: string }>(response)
+        if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte duplicera underlaget.')
+        if (ref.type === 'rootRequirement') {
+          const linkResponse = await fetch('/api/renoapp/admin/requirements', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              actionTypeId: ref.actionTypeId,
+              documentTypeId: payload.item.id,
+              isEnabled: true,
+              isRequired: requirementLinkDraft.isRequired,
+              note: requirementLinkDraft.note || null,
+              sortOrder: Number(requirementLinkDraft.sortOrder || 100) + 10,
+            }),
+          })
+          const linkPayload = await readJson<{ error?: string }>(linkResponse)
+          if (!linkResponse.ok) throw new Error(linkPayload.error ?? 'Kunde inte koppla det duplicerade underlaget.')
+        } else {
+          await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => [
+            ...triggers,
+            {
+              id: `new-${Date.now()}`,
+              triggerType: 'document',
+              questionId: null,
+              documentTypeId: payload.item!.id,
+              participantRoleId: null,
+              reviewFlagId: null,
+              sortOrder: Math.max(0, ...triggers.map((item) => item.sortOrder)) + 10,
+              isActive: true,
+            },
+          ])
+        }
+      } else if (ref.type === 'rootParticipant' || ref.type === 'optionParticipantTrigger') {
+        const participantRoleId = ref.type === 'rootParticipant' ? ref.participantRoleId : ref.targetParticipantRoleId
+        const participant = participantRoleMap.get(participantRoleId)
+        if (!participant) throw new Error('Medverkandetypen kunde inte hittas.')
+        const response = await fetch('/api/renoapp/admin/participants', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...participant,
+            id: null,
+            key: '',
+            label: `${participant.label} (kopia)`,
+            sortOrder: participant.sortOrder + 10,
+          }),
+        })
+        const payload = await readJson<{ item?: ParticipantRoleItem; error?: string }>(response)
+        if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte duplicera medverkandetypen.')
+        if (ref.type === 'rootParticipant') {
+          const linkResponse = await fetch('/api/renoapp/admin/action-type-participants', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              actionTypeId: ref.actionTypeId,
+              participantRoleId: payload.item.id,
+              isEnabled: true,
+              isRequired: participantLinkDraft.isRequired,
+              sortOrder: Number(participantLinkDraft.sortOrder || 100) + 10,
+            }),
+          })
+          const linkPayload = await readJson<{ error?: string }>(linkResponse)
+          if (!linkResponse.ok) throw new Error(linkPayload.error ?? 'Kunde inte koppla den duplicerade medverkandetypen.')
+        } else {
+          await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => [
+            ...triggers,
+            {
+              id: `new-${Date.now()}`,
+              triggerType: 'participant_role',
+              questionId: null,
+              documentTypeId: null,
+              participantRoleId: payload.item!.id,
+              reviewFlagId: null,
+              sortOrder: Math.max(0, ...triggers.map((item) => item.sortOrder)) + 10,
+              isActive: true,
+            },
+          ])
+        }
+      } else if (ref.type === 'optionReviewFlagTrigger') {
+        const flag = reviewFlagMap.get(ref.targetReviewFlagId)
+        if (!flag) throw new Error('Flaggan kunde inte hittas.')
+        const response = await fetch('/api/renoapp/admin/review-flags', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...flag,
+            id: null,
+            key: '',
+            label: `${flag.label} (kopia)`,
+            sortOrder: flag.sortOrder + 10,
+          }),
+        })
+        const payload = await readJson<{ item?: ReviewFlagItem; error?: string }>(response)
+        if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte duplicera flaggan.')
+        await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => [
+          ...triggers,
+          {
+            id: `new-${Date.now()}`,
+            triggerType: 'review_flag',
+            questionId: null,
+            documentTypeId: null,
+            participantRoleId: null,
+            reviewFlagId: payload.item!.id,
+            sortOrder: Math.max(0, ...triggers.map((item) => item.sortOrder)) + 10,
+            isActive: true,
+          },
+        ])
+      }
+
+      await loadData(selectedActionTypeId)
+      closeModal()
+    } catch (duplicateError) {
+      setModalError(duplicateError instanceof Error ? duplicateError.message : 'Kunde inte duplicera objektet.')
+    } finally {
+      setModalSaving(false)
+    }
+  }
+
+  const deleteActiveObject = async () => {
+    if (!activeNode) return
+    setModalSaving(true)
+    setModalError(null)
+
+    try {
+      const ref = activeNode.ref
+      if (ref.type === 'actionType') {
+        const response = await fetch('/api/renoapp/admin/action-types', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: ref.actionTypeId }),
+        })
+        const payload = await readJson<{ error?: string }>(response)
+        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte radera renoveringstypen.')
+      } else if (ref.type === 'rootQuestion' || ref.type === 'question' || ref.type === 'optionQuestionTrigger') {
+        const questionId =
+          ref.type === 'rootQuestion' ? ref.questionId : ref.type === 'question' ? ref.questionId : ref.targetQuestionId
+        const response = await fetch('/api/renoapp/admin/questions', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: questionId }),
+        })
+        const payload = await readJson<{ error?: string }>(response)
+        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte radera frågan.')
+      } else if (ref.type === 'rootRequirement' || ref.type === 'optionDocumentTrigger') {
+        const documentTypeId = ref.type === 'rootRequirement' ? ref.documentTypeId : ref.targetDocumentTypeId
+        const response = await fetch('/api/renoapp/admin/document-types', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: documentTypeId }),
+        })
+        const payload = await readJson<{ error?: string }>(response)
+        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte radera underlaget.')
+      } else if (ref.type === 'rootParticipant' || ref.type === 'optionParticipantTrigger') {
+        const participantRoleId = ref.type === 'rootParticipant' ? ref.participantRoleId : ref.targetParticipantRoleId
+        const response = await fetch('/api/renoapp/admin/participants', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: participantRoleId }),
+        })
+        const payload = await readJson<{ error?: string }>(response)
+        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte radera medverkandetypen.')
+      } else if (ref.type === 'optionReviewFlagTrigger') {
+        const response = await fetch('/api/renoapp/admin/review-flags', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: ref.targetReviewFlagId }),
+        })
+        const payload = await readJson<{ error?: string }>(response)
+        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte radera flaggan.')
+      }
+
+      await loadData(selectedActionTypeId)
+      closeModal()
+    } catch (deleteError) {
+      setModalError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera objektet.')
+    } finally {
+      setModalSaving(false)
+    }
+  }
+
   const saveAdd = async () => {
     if (!activeNode || !addType) return
     setModalSaving(true)
@@ -1259,7 +1659,7 @@ export default function RenoAppFlowBuilderPage() {
             }),
           })
           const payload = await readJson<{ item?: QuestionItem; error?: string }>(response)
-          if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte skapa frÃ¥gan.')
+          if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte skapa frågan.')
           targetId = payload.item.id
         } else if (addType === 'document') {
           const response = await fetch('/api/renoapp/admin/document-types', {
@@ -1308,7 +1708,7 @@ export default function RenoAppFlowBuilderPage() {
         }
       }
 
-      if (addType !== 'option' && !targetId) throw new Error('VÃ¤lj fÃ¶rst vad som ska lÃ¤ggas till.')
+      if (addType !== 'option' && !targetId) throw new Error('Välj först vad som ska läggas till.')
 
       if (activeNode.ref.type === 'actionType') {
         if (addType === 'question') {
@@ -1318,7 +1718,7 @@ export default function RenoAppFlowBuilderPage() {
             body: JSON.stringify({ actionTypeId: activeNode.ref.actionTypeId, questionId: targetId, isEnabled: true, isRequired: true, sortOrder: (rootQuestions.at(-1)?.sortOrder ?? 0) + 10 }),
           })
           const payload = await readJson<{ error?: string }>(response)
-          if (!response.ok) throw new Error(payload.error ?? 'Kunde inte koppla frÃ¥gan.')
+          if (!response.ok) throw new Error(payload.error ?? 'Kunde inte koppla frågan.')
         } else if (addType === 'document') {
           const response = await fetch('/api/renoapp/admin/requirements', {
             method: 'POST',
@@ -1391,26 +1791,26 @@ export default function RenoAppFlowBuilderPage() {
       await loadData(selectedActionTypeId)
       closeModal()
     } catch (addError) {
-      setModalError(addError instanceof Error ? addError.message : 'Kunde inte lÃ¤gga till kopplingen.')
+      setModalError(addError instanceof Error ? addError.message : 'Kunde inte lägga till kopplingen.')
     } finally {
       setModalSaving(false)
     }
   }
 
   return (
-    <main className="mx-auto w-full max-w-[1800px] px-4 pb-8 pt-4 md:px-6">
+    <main className="mx-auto w-full max-w-[1900px] px-4 pb-6 pt-3 md:px-5">
       {error ? <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
 
       <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 lg:hidden">
-        FlÃ¶desvisaren Ã¤r byggd fÃ¶r stÃ¶rre skÃ¤rmar.
+        Flödesvisaren är byggd för större skärmar.
       </div>
 
-      <div className="hidden space-y-4 lg:block">
-        <div className="overflow-x-auto border-b border-stone-200 pb-3">
-          <div className="flex min-w-max items-center gap-2">
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="SÃ¶k renoveringstyp..." className="mr-3 w-64 rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900" />
+      <div className="hidden space-y-3 lg:block">
+        <div className="overflow-x-auto border-b border-stone-200 pb-2">
+          <div className="flex min-w-max items-center gap-1.5">
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Sök renoveringstyp..." className="mr-2 w-56 rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900" />
             {visibleActionTypes.map((item) => (
-              <button key={item.id} type="button" onClick={() => setSelectedActionTypeId(item.id)} className={cn('rounded-md border px-3 py-2 text-sm font-semibold transition', item.id === selectedActionTypeId ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>
+              <button key={item.id} type="button" onClick={() => setSelectedActionTypeId(item.id)} className={cn('rounded-md border px-2.5 py-2 text-sm font-semibold transition', item.id === selectedActionTypeId ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>
                 {item.label}
               </button>
             ))}
@@ -1418,10 +1818,10 @@ export default function RenoAppFlowBuilderPage() {
         </div>
 
         {!selectedAction ? (
-          <div className="rounded-md border border-dashed border-stone-300 bg-stone-50 px-6 py-10 text-center text-sm text-stone-600">VÃ¤lj en renoveringstyp ovan.</div>
+          <div className="rounded-md border border-dashed border-stone-300 bg-stone-50 px-6 py-10 text-center text-sm text-stone-600">Välj en renoveringstyp ovan.</div>
         ) : (
           <>
-            <div className="flex items-center justify-between border-b border-stone-200 pb-3 text-sm">
+            <div className="flex items-center justify-between border-b border-stone-200 pb-2 text-sm">
               <div className="flex items-center gap-6">
                 <div>
                   <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">Namn</div>
@@ -1433,30 +1833,30 @@ export default function RenoAppFlowBuilderPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setExpandedNodeIds(allExpandableNodeIds)} className="rounded-md border border-stone-300 bg-white px-3 py-2 font-semibold text-stone-800 hover:bg-stone-100">Expandera alla</button>
-                <button type="button" onClick={() => setExpandedNodeIds([])} className="rounded-md border border-stone-300 bg-white px-3 py-2 font-semibold text-stone-800 hover:bg-stone-100">Ã…terstÃ¤ll vy</button>
+                <button type="button" onClick={() => setExpandedNodeIds(allExpandableNodeIds)} className="rounded-md border border-stone-300 bg-white px-2.5 py-2 font-semibold text-stone-800 hover:bg-stone-100">Expandera alla</button>
+                <button type="button" onClick={() => setExpandedNodeIds([])} className="rounded-md border border-stone-300 bg-white px-2.5 py-2 font-semibold text-stone-800 hover:bg-stone-100">Återställ vy</button>
               </div>
             </div>
 
-            <div className="overflow-x-auto rounded-md border border-stone-200 bg-slate-100 px-6 py-6">
+            <div className="overflow-x-auto rounded-md border border-stone-200 bg-slate-100 px-4 py-4">
               <div className="min-w-max">
-                <div className="flex items-start gap-6">
+                <div className="flex items-start gap-4">
                   <FlowNodeCard
-                    node={{ id: `action-type:${selectedAction.id}`, kind: 'root', title: selectedAction.label, badges: [`${rootQuestions.length} frÃ¥gor`, `${rootRequirements.length} underlag`, `${rootParticipants.length} medverkande`], tone: 'stone', children: flowRootChildren, ref: { type: 'actionType' as const, actionTypeId: selectedAction.id } }}
+                    node={{ id: `action-type:${selectedAction.id}`, kind: 'root', title: selectedAction.label, badges: [`${rootQuestions.length} frågor`, `${rootRequirements.length} underlag`, `${rootParticipants.length} medverkande`], tone: 'stone', children: flowRootChildren, ref: { type: 'actionType' as const, actionTypeId: selectedAction.id } }}
                     expanded
                     onToggle={() => setExpandedNodeIds((current) => (current.length === 0 ? allExpandableNodeIds : []))}
-                    onOpen={() => openNodeModal({ id: `action-type:${selectedAction.id}`, kind: 'root', title: selectedAction.label, badges: [`${rootQuestions.length} frÃ¥gor`, `${rootRequirements.length} underlag`, `${rootParticipants.length} medverkande`], tone: 'stone', children: flowRootChildren, ref: { type: 'actionType' as const, actionTypeId: selectedAction.id } })}
+                    onOpen={() => openNodeModal({ id: `action-type:${selectedAction.id}`, kind: 'root', title: selectedAction.label, badges: [`${rootQuestions.length} frågor`, `${rootRequirements.length} underlag`, `${rootParticipants.length} medverkande`], tone: 'stone', children: flowRootChildren, ref: { type: 'actionType' as const, actionTypeId: selectedAction.id } })}
                   />
 
-                  <div className="mt-8 h-px w-8 bg-stone-300" />
+                  <div className="mt-6 h-px w-6 bg-stone-300" />
 
-                  <div className="space-y-5">
+                  <div className="space-y-3">
                     {loading ? (
-                      <div className="rounded-md border border-stone-300 bg-white px-4 py-3 text-sm text-stone-600">Laddar flÃ¶de...</div>
+                      <div className="rounded-md border border-stone-300 bg-white px-4 py-3 text-sm text-stone-600">Laddar flöde...</div>
                     ) : flowRootChildren.length > 0 ? (
                       flowRootChildren.map((node) => <HorizontalBranch key={node.id} node={node} expandedNodeIds={expandedNodeIds} onToggle={toggleNode} onOpen={openNodeModal} />)
                     ) : (
-                      <div className="rounded-md border border-dashed border-stone-300 bg-white px-4 py-3 text-sm text-stone-600">Inga frÃ¥gor, underlag eller medverkande Ã¤r kopplade Ã¤nnu.</div>
+                      <div className="rounded-md border border-dashed border-stone-300 bg-white px-4 py-3 text-sm text-stone-600">Inga frågor, underlag eller medverkande är kopplade ännu.</div>
                     )}
                   </div>
                 </div>
@@ -1475,7 +1875,7 @@ export default function RenoAppFlowBuilderPage() {
                 <h2 className="mt-1 text-2xl font-semibold text-stone-900">{activeNode.title}</h2>
                 <div className="mt-2 flex flex-wrap gap-1.5">{activeNode.badges.map((badge) => <span key={badge} className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-xs font-semibold text-stone-700">{badge}</span>)}</div>
               </div>
-              <button type="button" onClick={closeModal} className="rounded-md border border-stone-300 px-3 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-100">StÃ¤ng</button>
+              <button type="button" onClick={closeModal} className="rounded-md border border-stone-300 px-3 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-100">Stäng</button>
             </div>
 
             <div className="space-y-6 px-6 py-5">
@@ -1483,13 +1883,15 @@ export default function RenoAppFlowBuilderPage() {
 
               <div className="flex flex-wrap gap-2">
                 {canEditNode ? <button type="button" onClick={() => setModalMode('edit')} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', modalMode === 'edit' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Redigera</button> : null}
-                {addableTypes.length > 0 ? <button type="button" onClick={() => setModalMode('add')} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', modalMode === 'add' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>LÃ¤gg till</button> : null}
-                <button type="button" onClick={() => setModalMode('summary')} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', modalMode === 'summary' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Ã–versikt</button>
+                {addableTypes.length > 0 ? <button type="button" onClick={() => setModalMode('add')} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', modalMode === 'add' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Lägg till</button> : null}
+                <button type="button" onClick={() => setModalMode('summary')} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', modalMode === 'summary' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Översikt</button>
+                {canDuplicateNode ? <button type="button" onClick={() => { if (window.confirm('Skapa en kopia av detta objekt?')) void duplicateActiveNode() }} className="rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50">Duplicera</button> : null}
                 {canDeleteOption ? <button type="button" onClick={() => { if (window.confirm('Radera detta svarsalternativ?')) void deleteOptionNode() }} className="rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Radera svar</button> : null}
-                {canRemoveConnection ? <button type="button" onClick={() => { if (window.confirm('Ta bort denna koppling frÃ¥n flÃ¶det?')) void removeConnection() }} className="rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Ta bort koppling</button> : null}
+                {canDeleteObject ? <button type="button" onClick={() => { if (window.confirm('Radera objektet helt? Detta påverkar alla kopplingar som använder det.')) void deleteActiveObject() }} className="rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Radera objekt</button> : null}
+                {canRemoveConnection ? <button type="button" onClick={() => { if (window.confirm('Ta bort denna koppling från flödet?')) void removeConnection() }} className="rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Ta bort koppling</button> : null}
               </div>
 
-              {modalMode === 'summary' ? <div className="space-y-3 rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700"><p>Klicka pÃ¥ <span className="font-semibold">Redigera</span> fÃ¶r att Ã¤ndra noden eller pÃ¥ <span className="font-semibold">LÃ¤gg till</span> fÃ¶r att skapa nÃ¤sta steg.</p><p className="text-xs text-stone-500">Nya frÃ¥gor skapas med en standardoption och kan sedan byggas ut vidare i <Link href="/admin/renoapp/questions" className="font-semibold underline">FrÃ¥gor</Link>.</p></div> : null}
+              {modalMode === 'summary' ? <div className="space-y-3 rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700"><p>Klicka på <span className="font-semibold">Redigera</span> för att ändra noden eller på <span className="font-semibold">Lägg till</span> för att skapa nästa steg.</p><p className="text-xs text-stone-500">Du kan också duplicera objektet här eller ta bort själva kopplingen utan att radera katalogobjektet.</p><p className="text-xs text-stone-500">Nya frågor skapas med en standardoption och kan sedan byggas ut vidare i <Link href="/admin/renoapp/questions" className="font-semibold underline">Frågor</Link>.</p></div> : null}
 
               {modalMode === 'edit' && canEditNode ? (
                 <div className="space-y-4">
@@ -1521,7 +1923,7 @@ export default function RenoAppFlowBuilderPage() {
                       <ModalField label="Intern nyckel">
                         <input value={questionDraft.key} onChange={(event) => setQuestionDraft((current) => ({ ...current, key: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" />
                       </ModalField>
-                      <ModalField label="HjÃ¤lptext">
+                      <ModalField label="Hjälptext">
                         <textarea value={questionDraft.helpText} onChange={(event) => setQuestionDraft((current) => ({ ...current, helpText: event.target.value }))} rows={3} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" />
                       </ModalField>
                       <ModalField label="Svarstyp">
@@ -1536,12 +1938,23 @@ export default function RenoAppFlowBuilderPage() {
                       </ModalField>
                       <label className="inline-flex items-center gap-2 text-sm text-stone-700">
                         <input type="checkbox" checked={questionDraft.isLocked} onChange={(event) => setQuestionDraft((current) => ({ ...current, isLocked: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
-                        LÃ¥st fÃ¶r vanlig redigering
+                        Låst för vanlig redigering
                       </label>
                       <label className="inline-flex items-center gap-2 text-sm text-stone-700">
                         <input type="checkbox" checked={questionDraft.isActive} onChange={(event) => setQuestionDraft((current) => ({ ...current, isActive: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
-                        Aktiv frÃ¥ga
+                        Aktiv fråga
                       </label>
+                      {activeNode?.ref.type === 'rootQuestion' ? (
+                        <div className="grid gap-4 rounded-xl border border-stone-200 bg-stone-50 p-4 md:col-span-2 md:grid-cols-2">
+                          <label className="inline-flex items-center gap-2 text-sm text-stone-700">
+                            <input type="checkbox" checked={questionLinkDraft.isRequired} onChange={(event) => setQuestionLinkDraft((current) => ({ ...current, isRequired: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
+                            Obligatorisk i denna renoveringstyp
+                          </label>
+                          <ModalField label="Kopplingens sortering">
+                            <input value={questionLinkDraft.sortOrder} onChange={(event) => setQuestionLinkDraft((current) => ({ ...current, sortOrder: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" />
+                          </ModalField>
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                   {activeNode?.ref.type === 'option' ? (
@@ -1576,7 +1989,7 @@ export default function RenoAppFlowBuilderPage() {
                         <textarea value={documentDraft.description} onChange={(event) => setDocumentDraft((current) => ({ ...current, description: event.target.value }))} rows={3} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" />
                       </ModalField>
                       <ModalField label="Fas">
-                        <select value={documentDraft.defaultPhase} onChange={(event) => setDocumentDraft((current) => ({ ...current, defaultPhase: event.target.value as DocumentDraft['defaultPhase'] }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="before_required">FÃ¶re</option><option value="during_execution">Under</option><option value="after_completion">Efter</option></select>
+                        <select value={documentDraft.defaultPhase} onChange={(event) => setDocumentDraft((current) => ({ ...current, defaultPhase: event.target.value as DocumentDraft['defaultPhase'] }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="before_required">Före</option><option value="during_execution">Under</option><option value="after_completion">Efter</option></select>
                       </ModalField>
                       <ModalField label="Sortering">
                         <input value={documentDraft.sortOrder} onChange={(event) => setDocumentDraft((current) => ({ ...current, sortOrder: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" />
@@ -1594,6 +2007,9 @@ export default function RenoAppFlowBuilderPage() {
                           <ModalField label="Kopplingens sortering">
                             <input value={requirementLinkDraft.sortOrder} onChange={(event) => setRequirementLinkDraft((current) => ({ ...current, sortOrder: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" />
                           </ModalField>
+                          <ModalField label="Intern anteckning">
+                            <textarea value={requirementLinkDraft.note} onChange={(event) => setRequirementLinkDraft((current) => ({ ...current, note: event.target.value }))} rows={3} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" />
+                          </ModalField>
                         </>
                       ) : null}
                     </div>
@@ -1610,12 +2026,12 @@ export default function RenoAppFlowBuilderPage() {
                         <textarea value={participantDraft.description} onChange={(event) => setParticipantDraft((current) => ({ ...current, description: event.target.value }))} rows={3} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" />
                       </ModalField>
                       <ModalField label="Typ">
-                        <select value={participantDraft.roleKind} onChange={(event) => setParticipantDraft((current) => ({ ...current, roleKind: event.target.value as ParticipantDraft['roleKind'] }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="contractor">EntreprenÃ¶r</option><option value="consultant">Konsult</option></select>
+                        <select value={participantDraft.roleKind} onChange={(event) => setParticipantDraft((current) => ({ ...current, roleKind: event.target.value as ParticipantDraft['roleKind'] }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="contractor">Entreprenör</option><option value="consultant">Konsult</option></select>
                       </ModalField>
                       <ModalField label="Verifieringsinstruktion">
                         <textarea value={participantDraft.verificationInstructions} onChange={(event) => setParticipantDraft((current) => ({ ...current, verificationInstructions: event.target.value }))} rows={4} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" />
                       </ModalField>
-                      <ModalField label="VerifieringslÃ¤nk">
+                      <ModalField label="Verifieringslänk">
                         <input value={participantDraft.verificationUrl} onChange={(event) => setParticipantDraft((current) => ({ ...current, verificationUrl: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" />
                       </ModalField>
                       <ModalField label="Sortering">
@@ -1624,37 +2040,48 @@ export default function RenoAppFlowBuilderPage() {
                       <div className="grid gap-2 rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700 md:col-span-2 md:grid-cols-2">
                         <label className="inline-flex items-center gap-2">
                           <input type="checkbox" checked={participantDraft.insuranceRequired} onChange={(event) => setParticipantDraft((current) => ({ ...current, insuranceRequired: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
-                          FÃ¶rsÃ¤kringsbevis krÃ¤vs
+                          Försäkringsbevis krävs
                         </label>
                         <label className="inline-flex items-center gap-2">
                           <input type="checkbox" checked={participantDraft.requiresCompanyName} onChange={(event) => setParticipantDraft((current) => ({ ...current, requiresCompanyName: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
-                          KrÃ¤ver fÃ¶retagsnamn
+                          Kräver företagsnamn
                         </label>
                         <label className="inline-flex items-center gap-2">
                           <input type="checkbox" checked={participantDraft.requiresOrgNumber} onChange={(event) => setParticipantDraft((current) => ({ ...current, requiresOrgNumber: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
-                          KrÃ¤ver org.nr
+                          Kräver org.nr
                         </label>
                         <label className="inline-flex items-center gap-2">
                           <input type="checkbox" checked={participantDraft.requiresContactName} onChange={(event) => setParticipantDraft((current) => ({ ...current, requiresContactName: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
-                          KrÃ¤ver kontaktperson
+                          Kräver kontaktperson
                         </label>
                         <label className="inline-flex items-center gap-2">
                           <input type="checkbox" checked={participantDraft.requiresEmail} onChange={(event) => setParticipantDraft((current) => ({ ...current, requiresEmail: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
-                          KrÃ¤ver e-post
+                          Kräver e-post
                         </label>
                         <label className="inline-flex items-center gap-2">
                           <input type="checkbox" checked={participantDraft.requiresPhone} onChange={(event) => setParticipantDraft((current) => ({ ...current, requiresPhone: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
-                          KrÃ¤ver telefon
+                          Kräver telefon
                         </label>
                         <label className="inline-flex items-center gap-2">
                           <input type="checkbox" checked={participantDraft.requiresCertification} onChange={(event) => setParticipantDraft((current) => ({ ...current, requiresCertification: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
-                          KrÃ¤ver certifiering
+                          Kräver certifiering
                         </label>
                         <label className="inline-flex items-center gap-2">
                           <input type="checkbox" checked={participantDraft.isActive} onChange={(event) => setParticipantDraft((current) => ({ ...current, isActive: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
                           Aktiv medverkandetyp
                         </label>
                       </div>
+                      {activeNode?.ref.type === 'rootParticipant' ? (
+                        <div className="grid gap-4 rounded-xl border border-stone-200 bg-stone-50 p-4 md:col-span-2 md:grid-cols-2">
+                          <label className="inline-flex items-center gap-2 text-sm text-stone-700">
+                            <input type="checkbox" checked={participantLinkDraft.isRequired} onChange={(event) => setParticipantLinkDraft((current) => ({ ...current, isRequired: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
+                            Obligatorisk i denna renoveringstyp
+                          </label>
+                          <ModalField label="Kopplingens sortering">
+                            <input value={participantLinkDraft.sortOrder} onChange={(event) => setParticipantLinkDraft((current) => ({ ...current, sortOrder: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" />
+                          </ModalField>
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                   {activeNode?.ref.type === 'optionReviewFlagTrigger' ? (
@@ -1666,7 +2093,7 @@ export default function RenoAppFlowBuilderPage() {
                         <input value={reviewFlagDraft.key} onChange={(event) => setReviewFlagDraft((current) => ({ ...current, key: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" />
                       </ModalField>
                       <ModalField label="Allvar">
-                        <select value={reviewFlagDraft.severity} onChange={(event) => setReviewFlagDraft((current) => ({ ...current, severity: event.target.value as ReviewFlagDraft['severity'] }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="info">Info</option><option value="warning">Varning</option><option value="high">HÃ¶g risk</option></select>
+                        <select value={reviewFlagDraft.severity} onChange={(event) => setReviewFlagDraft((current) => ({ ...current, severity: event.target.value as ReviewFlagDraft['severity'] }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="info">Info</option><option value="warning">Varning</option><option value="high">Hög risk</option></select>
                       </ModalField>
                       <ModalField label="Kategori">
                         <input value={reviewFlagDraft.category} onChange={(event) => setReviewFlagDraft((current) => ({ ...current, category: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" />
@@ -1695,17 +2122,17 @@ export default function RenoAppFlowBuilderPage() {
                   <div className="flex flex-wrap gap-2">
                     {addableTypes.map((type) => (
                       <button key={type} type="button" onClick={() => { setAddType(type); setExistingTargetId(''); setAddMode(type === 'option' ? 'new' : 'existing') }} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', addType === type ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>
-                        {type === 'question' ? 'FrÃ¥ga' : type === 'option' ? 'Svarsalternativ' : type === 'document' ? 'Underlag' : type === 'participant' ? 'Medverkande' : 'Flagga'}
+                        {type === 'question' ? 'Fråga' : type === 'option' ? 'Svarsalternativ' : type === 'document' ? 'Underlag' : type === 'participant' ? 'Medverkande' : 'Flagga'}
                       </button>
                     ))}
                   </div>
                   {addType !== 'option' ? <div className="flex gap-2">
-                    <button type="button" onClick={() => { setAddMode('existing'); setExistingTargetId('') }} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', addMode === 'existing' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>LÃ¤gg till befintlig</button>
+                    <button type="button" onClick={() => { setAddMode('existing'); setExistingTargetId('') }} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', addMode === 'existing' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Lägg till befintlig</button>
                     <button type="button" onClick={() => setAddMode('new')} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', addMode === 'new' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Skapa ny</button>
                   </div> : null}
                   {addMode === 'existing' && addType !== 'option' ? (
-                    <ModalField label="VÃ¤lj objekt">
-                      <select value={existingTargetId} onChange={(event) => setExistingTargetId(event.target.value)} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="">VÃ¤lj...</option>{existingAddOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
+                    <ModalField label="Välj objekt">
+                      <select value={existingTargetId} onChange={(event) => setExistingTargetId(event.target.value)} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="">Välj...</option>{existingAddOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
                     </ModalField>
                   ) : (
                     <div className="grid gap-4 md:grid-cols-2">
@@ -1729,7 +2156,7 @@ export default function RenoAppFlowBuilderPage() {
                         <ModalField label="Visningsnamn"><input value={documentDraft.label} onChange={(event) => setDocumentDraft((current) => ({ ...current, label: event.target.value, key: current.key || slugifyKey(event.target.value) }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
                         <ModalField label="Intern nyckel"><input value={documentDraft.key} onChange={(event) => setDocumentDraft((current) => ({ ...current, key: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
                         <ModalField label="Beskrivning"><textarea value={documentDraft.description} onChange={(event) => setDocumentDraft((current) => ({ ...current, description: event.target.value }))} rows={3} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" /></ModalField>
-                        <ModalField label="Fas"><select value={documentDraft.defaultPhase} onChange={(event) => setDocumentDraft((current) => ({ ...current, defaultPhase: event.target.value as DocumentDraft['defaultPhase'] }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="before_required">FÃ¶re</option><option value="during_execution">Under</option><option value="after_completion">Efter</option></select></ModalField>
+                        <ModalField label="Fas"><select value={documentDraft.defaultPhase} onChange={(event) => setDocumentDraft((current) => ({ ...current, defaultPhase: event.target.value as DocumentDraft['defaultPhase'] }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="before_required">Före</option><option value="during_execution">Under</option><option value="after_completion">Efter</option></select></ModalField>
                         <ModalField label="Sortering"><input value={documentDraft.sortOrder} onChange={(event) => setDocumentDraft((current) => ({ ...current, sortOrder: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
                         <label className="inline-flex items-center gap-2 text-sm text-stone-700 md:col-span-2"><input type="checkbox" checked={documentDraft.isActive} onChange={(event) => setDocumentDraft((current) => ({ ...current, isActive: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />Aktiv underlagstyp</label>
                       </> : null}
@@ -1737,7 +2164,7 @@ export default function RenoAppFlowBuilderPage() {
                         <ModalField label="Visningsnamn"><input value={participantDraft.label} onChange={(event) => setParticipantDraft((current) => ({ ...current, label: event.target.value, key: current.key || slugifyKey(event.target.value) }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
                         <ModalField label="Intern nyckel"><input value={participantDraft.key} onChange={(event) => setParticipantDraft((current) => ({ ...current, key: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
                         <ModalField label="Beskrivning"><textarea value={participantDraft.description} onChange={(event) => setParticipantDraft((current) => ({ ...current, description: event.target.value }))} rows={3} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" /></ModalField>
-                        <ModalField label="Typ"><select value={participantDraft.roleKind} onChange={(event) => setParticipantDraft((current) => ({ ...current, roleKind: event.target.value as ParticipantDraft['roleKind'] }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="contractor">EntreprenÃ¶r</option><option value="consultant">Konsult</option></select></ModalField>
+                        <ModalField label="Typ"><select value={participantDraft.roleKind} onChange={(event) => setParticipantDraft((current) => ({ ...current, roleKind: event.target.value as ParticipantDraft['roleKind'] }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="contractor">Entreprenör</option><option value="consultant">Konsult</option></select></ModalField>
                         <ModalField label="Verifieringsinstruktion"><textarea value={participantDraft.verificationInstructions} onChange={(event) => setParticipantDraft((current) => ({ ...current, verificationInstructions: event.target.value }))} rows={4} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" /></ModalField>
                         <ModalField label="Verifieringslänk"><input value={participantDraft.verificationUrl} onChange={(event) => setParticipantDraft((current) => ({ ...current, verificationUrl: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" /></ModalField>
                         <ModalField label="Sortering"><input value={participantDraft.sortOrder} onChange={(event) => setParticipantDraft((current) => ({ ...current, sortOrder: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
@@ -1753,7 +2180,7 @@ export default function RenoAppFlowBuilderPage() {
                       {addType === 'flag' ? <>
                         <ModalField label="Visningsnamn"><input value={reviewFlagDraft.label} onChange={(event) => setReviewFlagDraft((current) => ({ ...current, label: event.target.value, key: current.key || slugifyKey(event.target.value) }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
                         <ModalField label="Intern nyckel"><input value={reviewFlagDraft.key} onChange={(event) => setReviewFlagDraft((current) => ({ ...current, key: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
-                        <ModalField label="Allvar"><select value={reviewFlagDraft.severity} onChange={(event) => setReviewFlagDraft((current) => ({ ...current, severity: event.target.value as ReviewFlagDraft['severity'] }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="info">Info</option><option value="warning">Varning</option><option value="high">HÃ¶g risk</option></select></ModalField>
+                        <ModalField label="Allvar"><select value={reviewFlagDraft.severity} onChange={(event) => setReviewFlagDraft((current) => ({ ...current, severity: event.target.value as ReviewFlagDraft['severity'] }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="info">Info</option><option value="warning">Varning</option><option value="high">Hög risk</option></select></ModalField>
                         <ModalField label="Kategori"><input value={reviewFlagDraft.category} onChange={(event) => setReviewFlagDraft((current) => ({ ...current, category: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
                         <ModalField label="Sortering"><input value={reviewFlagDraft.sortOrder} onChange={(event) => setReviewFlagDraft((current) => ({ ...current, sortOrder: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
                         <ModalField label="Beskrivning"><textarea value={reviewFlagDraft.description} onChange={(event) => setReviewFlagDraft((current) => ({ ...current, description: event.target.value }))} rows={3} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" /></ModalField>
