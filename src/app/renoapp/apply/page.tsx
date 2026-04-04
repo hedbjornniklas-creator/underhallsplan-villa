@@ -160,12 +160,6 @@ export default function RenoAppResidentApplyEntryPage() {
                 >
                   Fortsätt till ansökan
                 </button>
-                <Link
-                  href="/renoapp"
-                  className="inline-flex items-center justify-center border border-stone-300 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
-                >
-                  Till RenoApp-start
-                </Link>
               </div>
             </form>
           </article>
@@ -197,17 +191,19 @@ export default function RenoAppResidentApplyEntryPage() {
             ) : filteredItems.length === 0 ? (
               <p className="mt-6 text-sm text-stone-600">Ingen BRF matchade din sökning.</p>
             ) : (
-              <div className="mt-6 grid gap-3">
+              <div className="mt-6 overflow-hidden border border-stone-200">
                 {filteredItems.map((item) => (
                   <button
                     key={item.id}
                     type="button"
                     onClick={() => goToApply(item.slug)}
-                    className="border border-stone-200 bg-stone-50 px-4 py-4 text-left transition hover:border-stone-300 hover:bg-white"
+                    className="flex w-full items-start justify-between gap-4 border-b border-stone-200 bg-white px-4 py-3 text-left transition last:border-b-0 hover:bg-stone-50"
                   >
-                    <p className="font-semibold text-stone-900">{item.name}</p>
-                    <p className="mt-1 text-sm text-stone-600">Kod: {item.slug}</p>
-                    {item.address ? <p className="mt-1 text-sm text-stone-600">{item.address}</p> : null}
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-stone-900">{item.name}</p>
+                      <p className="mt-1 text-sm text-stone-600">{item.address ?? item.slug}</p>
+                    </div>
+                    <span className="shrink-0 text-sm font-medium text-stone-500">Öppna</span>
                   </button>
                 ))}
               </div>
