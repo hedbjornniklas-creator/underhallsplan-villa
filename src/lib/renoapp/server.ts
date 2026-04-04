@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import { cookies } from 'next/headers'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
@@ -1111,11 +1112,13 @@ export type RenoAppViewerContext = {
     slug: string | null
     role: 'board' | 'admin'
   }>
+  activeBrfId: string | null
   accessibleBrfIds: string[] | null
 }
 
 export type RenoAppDashboardSummary = {
   accessibleBrfs: RenoAppViewerContext['brfs']
+  activeBrfId: string | null
   stats: {
     openCases: number
     needInfoCases: number
@@ -3884,12 +3887,21 @@ export async function requireRenoAppViewerContext(): Promise<RenoAppViewerContex
     throw new Error('RENOAPP_MEMBERSHIP_REQUIRED')
   }
 
+  const cookieStore = (await cookies()) as {
+    get?: (name: string) => { value?: string } | undefined
+  }
+  const requestedBrfId = cookieStore.get?.('renoapp_active_brf_id')?.value ?? null
+  const fallbackBrfId = brfs[0]?.id ?? null
+  const activeBrfId =
+    requestedBrfId && brfs.some((item) => item.id === requestedBrfId) ? requestedBrfId : fallbackBrfId
+
   return {
     userId: user.id,
     profile,
     isInternalAdmin: profile.is_admin,
     brfs,
-    accessibleBrfIds: brfs.length > 0 ? brfs.map((item) => item.id) : null,
+    activeBrfId,
+    accessibleBrfIds: activeBrfId ? [activeBrfId] : brfs.length > 0 ? brfs.map((item) => item.id) : null,
   }
 }
 
@@ -4205,6 +4217,7 @@ export async function getRenoAppDashboardSummary(): Promise<RenoAppDashboardSumm
 
   return {
     accessibleBrfs: context.brfs,
+    activeBrfId: context.activeBrfId,
     stats: {
       openCases: cases.filter((item) => ['submitted', 'review', 'conditional'].includes(item.status)).length,
       needInfoCases: cases.filter((item) => item.status === 'need_info').length,

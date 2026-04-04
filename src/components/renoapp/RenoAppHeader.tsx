@@ -4,25 +4,97 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Power } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+
+type RenoAppHeaderContext = {
+  accessibleBrfs: Array<{
+    id: string
+    name: string | null
+    slug: string | null
+    role: 'board' | 'admin'
+  }>
+  activeBrfId: string | null
+}
 
 export default function RenoAppHeader() {
   const pathname = usePathname()
   const router = useRouter()
   const isAppPortal = pathname === '/renoapp/app' || pathname.startsWith('/renoapp/app/')
+  const [brfContext, setBrfContext] = useState<RenoAppHeaderContext | null>(null)
+  const [loadingBrfContext, setLoadingBrfContext] = useState(false)
 
   const appNavItems = [
     { href: '/renoapp/app', label: 'Översikt' },
     { href: '/renoapp/app/cases', label: 'Ärenden' },
-    { href: '/renoapp/app/units', label: 'Lägenheter' },
     { href: '/renoapp/app/users', label: 'Användare' },
     { href: '/renoapp/app/brf', label: 'BRF' },
   ]
+
+  useEffect(() => {
+    let active = true
+
+    const loadContext = async () => {
+      if (!isAppPortal) {
+        setBrfContext(null)
+        return
+      }
+
+      setLoadingBrfContext(true)
+      try {
+        const response = await fetch('/api/renoapp/app/context', { cache: 'no-store' })
+        const payload = (await response.json().catch(() => ({}))) as RenoAppHeaderContext & { error?: string }
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Kunde inte läsa RenoApp-kontext.')
+        }
+
+        if (active) {
+          setBrfContext({
+            accessibleBrfs: payload.accessibleBrfs ?? [],
+            activeBrfId: payload.activeBrfId ?? null,
+          })
+        }
+      } catch {
+        if (active) {
+          setBrfContext(null)
+        }
+      } finally {
+        if (active) {
+          setLoadingBrfContext(false)
+        }
+      }
+    }
+
+    void loadContext()
+
+    return () => {
+      active = false
+    }
+  }, [isAppPortal, pathname])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.replace('/renoapp/login')
   }
+
+  const handleBrfChange = async (value: string) => {
+    try {
+      await fetch('/api/renoapp/app/active-brf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brfId: value }),
+      })
+    } finally {
+      setBrfContext((current) => (current ? { ...current, activeBrfId: value } : current))
+      window.location.reload()
+    }
+  }
+
+  const activeBrf =
+    brfContext?.accessibleBrfs.find((item) => item.id === brfContext.activeBrfId) ??
+    brfContext?.accessibleBrfs[0] ??
+    null
 
   return (
     <header className="border-b border-stone-200/80 bg-white/75 backdrop-blur">
@@ -40,6 +112,34 @@ export default function RenoAppHeader() {
 
         {isAppPortal ? (
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {brfContext?.accessibleBrfs.length ? (
+              brfContext.accessibleBrfs.length > 1 ? (
+                <label className="flex items-center gap-2 rounded-full border border-stone-300 bg-white/85 px-3 py-2 text-sm text-stone-700">
+                  <span className="font-semibold text-stone-800">Förening</span>
+                  <select
+                    value={brfContext.activeBrfId ?? brfContext.accessibleBrfs[0]?.id ?? ''}
+                    onChange={(event) => void handleBrfChange(event.target.value)}
+                    className="bg-transparent pr-6 font-medium text-stone-900 outline-none"
+                  >
+                    {brfContext.accessibleBrfs.map((brf) => (
+                      <option key={brf.id} value={brf.id}>
+                        {brf.name ?? brf.slug ?? 'Namnlös BRF'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="rounded-full border border-stone-300 bg-white/85 px-4 py-2 text-sm text-stone-700">
+                  <span className="font-semibold text-stone-800">Förening:</span>{' '}
+                  <span className="font-medium text-stone-900">{activeBrf?.name ?? activeBrf?.slug ?? '-'}</span>
+                </div>
+              )
+            ) : loadingBrfContext ? (
+              <div className="rounded-full border border-stone-300 bg-white/85 px-4 py-2 text-sm text-stone-600">
+                Laddar förening...
+              </div>
+            ) : null}
+
             <nav className="flex flex-wrap items-center gap-2">
               {appNavItems.map((item) => {
                 const isActive =
