@@ -1,29 +1,5 @@
 import Link from 'next/link'
 
-const PRIMARY_ACTIONS = [
-  {
-    title: 'Skicka ansökan',
-    description: 'För boende och lägenhetsinnehavare som ska vidare till sin BRF:s ansökan.',
-    href: '/renoapp/apply',
-    label: 'Skicka ansökan',
-    tone: 'border-amber-300 bg-[linear-gradient(145deg,rgba(255,251,235,0.96),rgba(255,255,255,0.92))]',
-  },
-  {
-    title: 'BRF-login',
-    description: 'För styrelse och BRF-användare som redan arbetar i RenoApp.',
-    href: '/renoapp/login',
-    label: 'Logga in',
-    tone: 'border-stone-300 bg-white/92',
-  },
-  {
-    title: 'Anslut BRF',
-    description: 'För föreningar som vill ansöka om att börja använda RenoApp.',
-    href: '/renoapp/request-access',
-    label: 'Ansök om anslutning',
-    tone: 'border-emerald-300 bg-[linear-gradient(145deg,rgba(236,253,245,0.96),rgba(255,255,255,0.92))]',
-  },
-] as const
-
 const FAQ_ITEMS = [
   {
     question: 'Behöver boende skapa konto för att skicka in en ansökan?',
@@ -44,100 +20,94 @@ const FAQ_ITEMS = [
 
 export default function RenoAppLandingPage() {
   return (
-    <main className="bg-[linear-gradient(180deg,#f8f3ea_0%,#f7f7f5_48%,#edf4f2_100%)]">
-      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-8 sm:px-6 md:px-10 lg:px-12">
-        <section className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
-          <div className="rounded-[30px] border border-stone-200/80 bg-white/82 p-6 shadow-[0_24px_70px_-44px_rgba(41,37,36,0.42)] sm:p-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">RenoApp</p>
-            <h1 className="mt-4 max-w-4xl text-4xl font-semibold tracking-tight text-stone-900 sm:text-5xl lg:text-6xl">
-              Renoveringsärenden för BRF, styrelse och boende.
-            </h1>
-            <p className="mt-4 max-w-2xl text-base leading-8 text-stone-700 sm:text-lg">
-              Välj rätt väg direkt. Ansökan är för boende, login är för styrelse, och BRF-anslutning
-              är för föreningar som vill komma igång med RenoApp.
-            </p>
-          </div>
+    <main>
+      <div className="mx-auto flex min-h-[calc(100vh-73px)] w-full max-w-[1800px] flex-col px-6 py-8 sm:px-8 lg:px-10">
+        <section className="border-b border-stone-200 pb-8">
+          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-stone-500">RenoApp</p>
+          <h1 className="mt-5 max-w-[14ch] text-5xl font-semibold tracking-tight text-stone-950 sm:text-6xl xl:text-7xl">
+            Renoveringsärenden för BRF, styrelse och boende
+          </h1>
+          <p className="mt-6 max-w-[48rem] text-lg leading-8 text-stone-700 sm:text-xl sm:leading-9">
+            Välj rätt väg direkt. Ansökan är för boende, login är för styrelse och BRF-användare,
+            och anslutning är för föreningar som vill börja arbeta i RenoApp.
+          </p>
+        </section>
 
-          <div className="grid gap-4">
-            {PRIMARY_ACTIONS.map((action) => (
-              <article
-                key={action.title}
-                className={`rounded-[28px] border p-6 shadow-[0_24px_70px_-44px_rgba(41,37,36,0.42)] sm:p-7 ${action.tone}`}
-              >
-                <h2 className="text-2xl font-semibold tracking-tight text-stone-900">{action.title}</h2>
-                <p className="mt-3 text-sm leading-7 text-stone-700 sm:text-base">{action.description}</p>
-                <Link
-                  href={action.href}
-                  className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700 sm:w-auto"
-                >
-                  {action.label}
-                </Link>
-              </article>
-            ))}
+        <section className="flex flex-1 flex-col md:min-h-[560px] md:flex-row">
+          <Link
+            href="/renoapp/apply"
+            className="group flex flex-1 flex-col justify-center border-b border-stone-200 px-2 py-14 transition duration-300 ease-out hover:bg-stone-950/[0.025] md:border-b-0 md:border-r md:border-stone-200 md:px-12 md:py-20 lg:px-16 xl:px-20"
+          >
+            <div className="mx-auto w-full max-w-[36rem] origin-center transition duration-300 ease-out group-hover:scale-[1.02]">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
+                För boende och lägenhetsinnehavare
+              </p>
+              <h2 className="mt-5 max-w-[10ch] text-5xl font-semibold tracking-tight text-stone-950 sm:text-6xl xl:text-7xl">
+                Skicka ansökan
+              </h2>
+              <p className="mt-6 max-w-[34rem] text-lg leading-8 text-stone-700 sm:text-xl sm:leading-9">
+                Gå vidare till din BRF:s ansökan, fyll i projektet och komplettera underlag i samma flöde.
+              </p>
+              <div className="mt-12 text-base font-semibold text-stone-950 sm:text-lg">
+                Till ansökan <span aria-hidden="true">→</span>
+              </div>
+            </div>
+          </Link>
+
+          <div className="flex flex-1 flex-col">
+            <Link
+              href="/renoapp/login"
+              className="group flex flex-1 flex-col justify-center border-b border-stone-200 px-2 py-14 transition duration-300 ease-out hover:bg-stone-950/[0.025] md:px-12 md:py-16 lg:px-16 xl:px-20"
+            >
+              <div className="mx-auto w-full max-w-[32rem] origin-center transition duration-300 ease-out group-hover:scale-[1.02]">
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
+                  För styrelse och BRF-användare
+                </p>
+                <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
+                  BRF-login
+                </h2>
+                <p className="mt-5 max-w-[30rem] text-base leading-8 text-stone-700 sm:text-lg">
+                  Öppna ärenden, dokument och beslut för föreningens pågående renoveringsärenden.
+                </p>
+                <div className="mt-10 text-base font-semibold text-stone-950">
+                  Logga in <span aria-hidden="true">→</span>
+                </div>
+              </div>
+            </Link>
+
+            <Link
+              href="/renoapp/request-access"
+              className="group flex flex-1 flex-col justify-center px-2 py-14 transition duration-300 ease-out hover:bg-stone-950/[0.025] md:px-12 md:py-16 lg:px-16 xl:px-20"
+            >
+              <div className="mx-auto w-full max-w-[32rem] origin-center transition duration-300 ease-out group-hover:scale-[1.02]">
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
+                  För föreningar som vill ansluta sig
+                </p>
+                <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
+                  Anslut BRF
+                </h2>
+                <p className="mt-5 max-w-[30rem] text-base leading-8 text-stone-700 sm:text-lg">
+                  Ansök om att börja använda RenoApp och kom igång med ett gemensamt flöde för ansökan, granskning och beslut.
+                </p>
+                <div className="mt-10 text-base font-semibold text-stone-950">
+                  Ansök om anslutning <span aria-hidden="true">→</span>
+                </div>
+              </div>
+            </Link>
           </div>
         </section>
 
-        <section className="grid gap-6 py-8 lg:grid-cols-2">
-          <article className="rounded-[30px] border border-stone-200/80 bg-white/88 p-6 shadow-[0_24px_70px_-44px_rgba(41,37,36,0.42)] sm:p-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">För boende</p>
-            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-stone-900">
-              När du ska skicka en ansökan
-            </h2>
-            <ul className="mt-5 space-y-3 text-sm leading-7 text-stone-700 sm:text-base">
-              <li>Du använder länken du har fått från din BRF eller styrelse.</li>
-              <li>Du fyller i åtgärd, kontaktuppgifter och relevant underlag.</li>
-              <li>Om något saknas kan du komplettera via säker länk utan att börja om.</li>
-            </ul>
-            <div className="mt-6">
-              <Link
-                href="/renoapp/apply"
-                className="inline-flex items-center justify-center rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700"
-              >
-                Till boendeansökan
-              </Link>
-            </div>
-          </article>
-
-          <article className="rounded-[30px] border border-stone-200/80 bg-white/88 p-6 shadow-[0_24px_70px_-44px_rgba(41,37,36,0.42)] sm:p-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">För styrelse</p>
-            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-stone-900">
-              När du arbetar i RenoApp
-            </h2>
-            <ul className="mt-5 space-y-3 text-sm leading-7 text-stone-700 sm:text-base">
-              <li>Logga in för att öppna ärenden, dokument och beslut.</li>
-              <li>Begär kompletteringar när underlag saknas.</li>
-              <li>Fatta beslut och följ status för varje renoveringsärende.</li>
-            </ul>
-
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="/renoapp/login"
-                className="inline-flex items-center justify-center rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700"
-              >
-                BRF-login
-              </Link>
-              <Link
-                href="/renoapp/request-access"
-                className="inline-flex items-center justify-center rounded-full border border-emerald-300 bg-emerald-50 px-5 py-3 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100"
-              >
-                Anslut BRF
-              </Link>
-            </div>
-          </article>
-        </section>
-
-        <section className="rounded-[32px] border border-stone-200/80 bg-white/86 p-6 shadow-[0_24px_70px_-44px_rgba(41,37,36,0.42)] sm:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Vanliga frågor</p>
-          <div className="mt-6 grid gap-4">
+        <section className="border-t border-stone-200 pt-8">
+          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">Vanliga frågor</p>
+          <div className="mt-6 border-t border-stone-200">
             {FAQ_ITEMS.map((item) => (
-              <details
-                key={item.question}
-                className="rounded-[22px] border border-stone-200 bg-stone-50/80 px-4 py-4 sm:px-5"
-              >
-                <summary className="cursor-pointer list-none text-base font-semibold leading-7 text-stone-900">
+              <details key={item.question} className="border-b border-stone-200 py-5">
+                <summary className="cursor-pointer list-none text-lg font-semibold text-stone-950">
                   {item.question}
                 </summary>
-                <p className="mt-3 text-sm leading-7 text-stone-700 sm:text-base">{item.answer}</p>
+                <p className="mt-3 max-w-[54rem] text-base leading-8 text-stone-700">
+                  {item.answer}
+                </p>
               </details>
             ))}
           </div>
