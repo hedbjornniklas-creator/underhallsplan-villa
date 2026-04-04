@@ -23,10 +23,10 @@ export default function RenoAppLandingPage() {
     <main>
       <div className="mx-auto flex min-h-[calc(100vh-73px)] w-full max-w-[1800px] flex-col px-6 py-8 sm:px-8 lg:px-10">
         <section className="border-b border-stone-200 pb-8">
-          <h1 className="max-w-[12ch] text-5xl font-semibold tracking-tight text-stone-950 sm:text-6xl xl:text-7xl">
+          <h1 className="max-w-[18ch] text-3xl font-semibold tracking-tight text-stone-950 sm:text-4xl xl:text-5xl">
             Renoveringsärenden för BRF
           </h1>
-          <p className="mt-6 max-w-[48rem] text-lg leading-8 text-stone-700 sm:text-xl sm:leading-9">
+          <p className="mt-4 max-w-[42rem] text-base leading-7 text-stone-700 sm:text-lg sm:leading-8">
             Ansökan är för boende, login är för styrelse och BRF-användare, och anslutning är för
             föreningar som vill börja använda RenoApp.
           </p>
