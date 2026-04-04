@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
@@ -36,18 +37,21 @@ export default function HomePage() {
   return (
     <main className="min-h-screen bg-[#f7f5f0] text-stone-950">
       <div className="mx-auto flex min-h-screen w-full max-w-[1800px] flex-col px-6 py-6 sm:px-8 lg:px-10">
-        <header className="grid grid-cols-[1fr_auto_1fr] items-center border-b border-stone-200 pb-5">
-          <div />
-          <div className="justify-self-center text-center text-[0.82rem] font-semibold uppercase tracking-[0.42em] text-stone-900">
-            HUSHUB
-          </div>
-          <div className="justify-self-end">
-            <Link
-              href="/login"
-              className="text-sm font-medium text-stone-700 transition hover:text-stone-950"
-            >
-              Logga in
-            </Link>
+        <header className="grid grid-cols-1 items-center border-b border-stone-200 pb-5">
+          <div className="justify-self-center text-center">
+            <div className="flex items-center justify-center gap-3">
+              <Image
+                src="/landing/Hushub-check.png"
+                alt="Hushub"
+                width={44}
+                height={44}
+                className="h-9 w-9 object-contain"
+                priority
+              />
+              <div className="text-[0.82rem] font-semibold uppercase tracking-[0.42em] text-stone-900">
+                HUSHUB
+              </div>
+            </div>
           </div>
         </header>
 
