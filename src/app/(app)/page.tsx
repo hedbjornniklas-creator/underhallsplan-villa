@@ -41,7 +41,7 @@ export default function HomePage() {
           <div className="justify-self-center text-center">
             <div className="flex items-center justify-center gap-3">
               <Image
-                src="/landing/Hushub-check.png"
+                src="/landing/Hushub-check2.png"
                 alt="Hushub"
                 width={44}
                 height={44}
@@ -80,11 +80,11 @@ export default function HomePage() {
           <button
             type="button"
             onClick={() => void handleDashboardEntry()}
-            className="group flex flex-1 flex-col justify-center px-2 py-14 text-left transition duration-300 ease-out hover:bg-stone-950/[0.025] md:px-12 md:py-20 lg:px-16 xl:px-20"
+            className="group flex flex-1 cursor-pointer flex-col justify-center px-2 py-14 text-left transition duration-300 ease-out hover:bg-stone-950/[0.025] md:px-12 md:py-20 lg:px-16 xl:px-20"
           >
             <div className="mx-auto w-full max-w-[36rem] origin-center transition duration-300 ease-out group-hover:scale-[1.02]">
               <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
-                För fastighetsägare och förvaltning
+                För fastighetsägare och besiktningsmän
               </p>
               <h2 className="mt-5 max-w-[11ch] text-5xl font-semibold tracking-tight text-stone-950 sm:text-6xl xl:text-7xl">
                 Din fastighet, full kontroll
