@@ -97,18 +97,9 @@ export default function RenoAppRequestAccessPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Anslut BRF</p>
           <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">Ansök om att ansluta RenoApp</h1>
           <p className="mt-4 text-base leading-8 text-stone-700">
-            BRF kan inte registrera sig fritt i MVP. Skicka en intresseanmälan så granskar admin förfrågan och skickar
+            Skicka en intresseanmälan så granskar RenoApp-teamet förfrågan och skickar
             sedan en invite till styrelsen vid godkännande.
           </p>
-          <div className="mt-8 rounded-3xl border border-stone-200 bg-stone-50 p-6">
-            <p className="text-sm font-semibold text-stone-900">Det här händer sedan</p>
-            <ol className="mt-3 space-y-2 text-sm leading-7 text-stone-700">
-              <li>1. Förfrågan registreras som pending.</li>
-              <li>2. Admin granskar uppgifterna.</li>
-              <li>3. Vid godkännande skapas BRF och invite skickas till styrelsen.</li>
-              <li>4. Styrelsen aktiverar sitt konto via säker länk.</li>
-            </ol>
-          </div>
         </section>
 
         <section className="rounded-[32px] border border-stone-200/80 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.92))] p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
@@ -137,7 +128,7 @@ export default function RenoAppRequestAccessPage() {
             {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div> : null}
             {success ? (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                <p>Intresseanmälan skickades. Admin behöver godkänna BRF innan någon invite kan skickas.</p>
+                <p>Intresseanmälan skickades. RenoApp-teamet behöver godkänna BRF innan någon invite kan skickas.</p>
                 {submitResult?.receipt.emailSent ? (
                   <p className="mt-1">Bekräftelsemejl skickades till kontaktadressen.</p>
                 ) : submitResult?.receipt.emailError ? (

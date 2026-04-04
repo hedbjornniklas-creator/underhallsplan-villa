@@ -113,59 +113,56 @@ export default function RenoAppResidentApplyEntryPage() {
   }
 
   return (
-    <main className="bg-[linear-gradient(180deg,#f8f3ea_0%,#f7f7f5_48%,#edf4f2_100%)]">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 py-8 sm:px-6 md:px-10">
-        <section className="rounded-[30px] border border-stone-200/80 bg-white/88 p-6 shadow-[0_24px_70px_-44px_rgba(41,37,36,0.42)] sm:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">För boende</p>
-          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900 sm:text-5xl">
-            Skicka renoveringsansökan
+    <main>
+      <div className="mx-auto flex min-h-[calc(100vh-73px)] w-full max-w-[1800px] flex-col px-6 py-8 sm:px-8 lg:px-10">
+        <section className="border-b border-stone-200 pb-8">
+          <h1 className="max-w-[14ch] text-3xl font-semibold tracking-tight text-stone-950 sm:text-4xl xl:text-5xl">
+            Skapa renoveringsansökan
           </h1>
-          <p className="mt-4 max-w-3xl text-base leading-8 text-stone-700 sm:text-lg">
+          <p className="mt-4 max-w-[44rem] text-base leading-7 text-stone-700 sm:text-lg sm:leading-8">
             Välj din BRF i listan eller klistra in länken du fått från styrelsen för att komma till rätt
             ansökningssida.
           </p>
         </section>
 
-        <section className="mt-6 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-          <article className="rounded-[28px] border border-stone-200/80 bg-white/86 p-6 shadow-[0_24px_70px_-44px_rgba(41,37,36,0.42)]">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">
+        <section className="mt-8 grid flex-1 gap-0 border border-stone-200 md:grid-cols-2">
+          <article className="border-b border-stone-200 px-6 py-8 md:border-b md:border-r md:px-10 lg:px-12">
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
               Har du redan länken?
             </p>
 
-            <form onSubmit={handleSubmit} className="mt-5 grid gap-4">
+            <form onSubmit={handleSubmit} className="mt-6 grid gap-4">
               <label className="block">
                 <span className="mb-2 block text-sm font-semibold text-stone-800">BRF-länk eller BRF-kod</span>
                 <input
                   value={value}
                   onChange={(event) => setValue(event.target.value)}
-                  className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-stone-500"
+                  className="w-full border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-stone-500"
                   placeholder="Till exempel hushub.se/renoapp/brf/min-brf/apply eller min-brf"
                 />
               </label>
 
               {resolvedSlug ? (
                 <p className="text-sm text-stone-600">
-                  Du skickas vidare till:{' '}
+                  Du skickas vidare till{' '}
                   <span className="font-medium text-stone-900">/renoapp/brf/{resolvedSlug}/apply</span>
                 </p>
               ) : null}
 
               {error ? (
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-                  {error}
-                </div>
+                <div className="border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>
               ) : null}
 
-              <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="flex flex-wrap gap-3 pt-2">
                 <button
                   type="submit"
-                  className="inline-flex items-center justify-center rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700"
+                  className="inline-flex items-center justify-center border border-stone-950 bg-stone-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-800"
                 >
                   Fortsätt till ansökan
                 </button>
                 <Link
                   href="/renoapp"
-                  className="inline-flex items-center justify-center rounded-full border border-stone-300 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                  className="inline-flex items-center justify-center border border-stone-300 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
                 >
                   Till RenoApp-start
                 </Link>
@@ -173,37 +170,40 @@ export default function RenoAppResidentApplyEntryPage() {
             </form>
           </article>
 
-          <article className="rounded-[28px] border border-stone-200/80 bg-white/86 p-6 shadow-[0_24px_70px_-44px_rgba(41,37,36,0.42)]">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <article className="border-b border-stone-200 px-6 py-8 md:border-b md:px-10 lg:px-12">
+            <div className="flex flex-col gap-4">
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Välj din BRF</p>
-                <p className="mt-2 text-sm leading-7 text-stone-700">
-                  Sök på BRF-namn, slug eller adress och öppna rätt ansökan direkt.
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
+                  Välj din BRF
+                </p>
+                <p className="mt-3 max-w-[32rem] text-base leading-7 text-stone-700">
+                  Sök på BRF-namn, kod eller adress och öppna rätt ansökan direkt.
                 </p>
               </div>
-              <label className="block sm:w-72">
+
+              <label className="block max-w-md">
                 <span className="mb-2 block text-sm font-semibold text-stone-800">Sök BRF</span>
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-stone-500"
+                  className="w-full border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-stone-500"
                   placeholder="Sök på namn eller adress"
                 />
               </label>
             </div>
 
             {loading ? (
-              <p className="mt-5 text-sm text-stone-600">Laddar BRF-lista...</p>
+              <p className="mt-6 text-sm text-stone-600">Laddar BRF-lista...</p>
             ) : filteredItems.length === 0 ? (
-              <p className="mt-5 text-sm text-stone-600">Ingen BRF matchade din sökning.</p>
+              <p className="mt-6 text-sm text-stone-600">Ingen BRF matchade din sökning.</p>
             ) : (
-              <div className="mt-5 grid gap-3">
+              <div className="mt-6 grid gap-3">
                 {filteredItems.map((item) => (
                   <button
                     key={item.id}
                     type="button"
                     onClick={() => goToApply(item.slug)}
-                    className="rounded-[22px] border border-stone-200 bg-stone-50/80 px-4 py-4 text-left transition hover:border-stone-300 hover:bg-white"
+                    className="border border-stone-200 bg-stone-50 px-4 py-4 text-left transition hover:border-stone-300 hover:bg-white"
                   >
                     <p className="font-semibold text-stone-900">{item.name}</p>
                     <p className="mt-1 text-sm text-stone-600">Kod: {item.slug}</p>
@@ -213,12 +213,12 @@ export default function RenoAppResidentApplyEntryPage() {
               </div>
             )}
           </article>
-        </section>
 
-        <section className="mt-6 grid gap-4 lg:grid-cols-2">
-          <article className="rounded-[28px] border border-stone-200/80 bg-white/86 p-6 shadow-[0_24px_70px_-44px_rgba(41,37,36,0.42)]">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Det här behöver du</p>
-            <ul className="mt-4 space-y-3 text-sm leading-7 text-stone-700 sm:text-base">
+          <article className="border-b border-stone-200 px-6 py-8 md:border-b-0 md:border-r md:px-10 lg:px-12">
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
+              Det här behöver du
+            </p>
+            <ul className="mt-5 space-y-3 text-base leading-7 text-stone-700">
               <li>Kontaktuppgifter till dig som söker.</li>
               <li>Rätt BRF eller BRF-länk från styrelsen.</li>
               <li>En kort beskrivning av åtgärden du vill göra.</li>
@@ -226,16 +226,18 @@ export default function RenoAppResidentApplyEntryPage() {
             </ul>
           </article>
 
-          <article className="rounded-[28px] border border-stone-200/80 bg-white/86 p-6 shadow-[0_24px_70px_-44px_rgba(41,37,36,0.42)]">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Om du inte hittar din BRF</p>
-            <p className="mt-4 text-sm leading-7 text-stone-700 sm:text-base">
+          <article className="px-6 py-8 md:px-10 lg:px-12">
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
+              Om du inte hittar din BRF
+            </p>
+            <p className="mt-5 max-w-[32rem] text-base leading-7 text-stone-700">
               Kontakta din BRF eller styrelse och be om rätt RenoApp-länk. Om föreningen ännu inte använder
               RenoApp kan den ansöka om anslutning.
             </p>
-            <div className="mt-5">
+            <div className="mt-8">
               <Link
                 href="/renoapp/request-access"
-                className="inline-flex items-center justify-center rounded-full border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100"
+                className="inline-flex items-center justify-center border border-stone-300 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
               >
                 Min BRF använder inte RenoApp än
               </Link>

@@ -37,17 +37,17 @@ export default function RenoAppLandingPage() {
             href="/renoapp/apply"
             className="group border-b border-stone-200 px-2 py-12 transition duration-300 ease-out hover:bg-stone-950/[0.025] md:px-12 lg:px-16 xl:px-20"
           >
-            <div className="mx-auto w-full max-w-[36rem] origin-center transition duration-300 ease-out group-hover:scale-[1.02]">
+            <div className="mx-auto w-full max-w-[32rem] origin-center transition duration-300 ease-out group-hover:scale-[1.02]">
               <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
                 För boende och lägenhetsinnehavare
               </p>
-              <h2 className="mt-5 max-w-[10ch] text-5xl font-semibold tracking-tight text-stone-950 sm:text-6xl xl:text-7xl">
-                Skicka ansökan
+              <h2 className="mt-4 max-w-[14ch] text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
+                Skapa renoveringsansökan
               </h2>
-              <p className="mt-6 max-w-[34rem] text-lg leading-8 text-stone-700 sm:text-xl sm:leading-9">
+              <p className="mt-5 max-w-[30rem] text-base leading-8 text-stone-700 sm:text-lg">
                 Gå vidare till din BRF:s ansökan, fyll i projektet och komplettera underlag i samma flöde.
               </p>
-              <div className="mt-12 text-base font-semibold text-stone-950 sm:text-lg">
+              <div className="mt-10 text-base font-semibold text-stone-950">
                 Till ansökan <span aria-hidden="true">→</span>
               </div>
             </div>
@@ -62,7 +62,7 @@ export default function RenoAppLandingPage() {
                 För styrelse och BRF-användare
               </p>
               <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
-                BRF-login
+                Styrelse-login
               </h2>
               <p className="mt-5 max-w-[30rem] text-base leading-8 text-stone-700 sm:text-lg">
                 Öppna ärenden, dokument och beslut för föreningens pågående renoveringsärenden.
