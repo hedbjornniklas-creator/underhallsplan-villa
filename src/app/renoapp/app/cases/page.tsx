@@ -69,14 +69,7 @@ export default function RenoAppCasesPage() {
 
   return (
     <div className="grid gap-6">
-      <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Ärenden</p>
-        <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">RenoApp-ärenden</h2>
-        <p className="mt-4 max-w-3xl text-base leading-8 text-stone-700">
-          Tabellen läser nu från `renovation_cases` tillsammans med BRF, åtgärdstyp och sökande kontakt.
-        </p>
-        {error ? <p className="mt-4 text-sm text-rose-700">{error}</p> : null}
-      </section>
+      {error ? <p className="text-sm text-rose-700">{error}</p> : null}
 
       <section className="overflow-hidden rounded-[32px] border border-stone-200/80 bg-white/90 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
         <div className="hidden grid-cols-[1.2fr_1fr_1fr_0.9fr_1fr_1fr] gap-px bg-stone-200 text-xs font-semibold uppercase tracking-[0.14em] text-stone-500 md:grid">

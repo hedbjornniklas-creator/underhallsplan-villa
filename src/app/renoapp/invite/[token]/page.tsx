@@ -12,6 +12,7 @@ import {
 } from '@/lib/renoapp/brfTerms'
 
 type InvitePreview = {
+  mode: 'brf_onboarding' | 'member_invite'
   state: 'open' | 'expired' | 'revoked' | 'accepted'
   invite: {
     email: string
@@ -195,6 +196,15 @@ function InputField({
   )
 }
 
+function SummaryCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">{label}</p>
+      <p className="mt-1 text-sm text-stone-700">{value}</p>
+    </div>
+  )
+}
+
 export default function RenoAppInvitePage() {
   const router = useRouter()
   const params = useParams<{ token: string }>()
@@ -232,6 +242,7 @@ export default function RenoAppInvitePage() {
           setInviteUserName(toInviteUserName(data))
           setAdditionalUsers([])
           setTermsAccepted(false)
+          setPassword('')
         }
       } catch (fetchError) {
         if (active) {
@@ -286,10 +297,11 @@ export default function RenoAppInvitePage() {
 
   const handleAccept = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!termsAccepted) {
+    if (payload?.mode === 'brf_onboarding' && !termsAccepted) {
       setActionError(`Du måste godkänna villkoren (version ${RENOAPP_BRF_TERMS_VERSION}) för att fortsätta.`)
       return
     }
+
     setSubmitting(true)
     setActionError(null)
     setRequiresManualLogin(false)
@@ -313,10 +325,15 @@ export default function RenoAppInvitePage() {
         createdUser?: boolean
         signInEmail?: string
         error?: string
+        mode?: InvitePreview['mode']
       }
 
       if (!response.ok) {
-        const message = result.error ?? 'Kunde inte slutföra BRF-anslutningen.'
+        const message =
+          result.error ??
+          (payload?.mode === 'member_invite'
+            ? 'Kunde inte acceptera inbjudan.'
+            : 'Kunde inte slutföra BRF-anslutningen.')
         if (response.status === 409 && message.includes('Logga in först')) {
           setRequiresManualLogin(true)
         }
@@ -337,7 +354,11 @@ export default function RenoAppInvitePage() {
       router.replace('/renoapp/app')
     } catch (submitError) {
       setActionError(
-        submitError instanceof Error ? submitError.message : 'Kunde inte slutföra BRF-anslutningen.'
+        submitError instanceof Error
+          ? submitError.message
+          : payload?.mode === 'member_invite'
+            ? 'Kunde inte acceptera inbjudan.'
+            : 'Kunde inte slutföra BRF-anslutningen.'
       )
     } finally {
       setSubmitting(false)
@@ -345,7 +366,7 @@ export default function RenoAppInvitePage() {
   }
 
   if (loading) {
-    return <main className="mx-auto min-h-screen max-w-6xl px-6 py-14 md:px-10">Laddar anslutning...</main>
+    return <main className="mx-auto min-h-screen max-w-6xl px-6 py-14 md:px-10">Laddar inbjudan...</main>
   }
 
   if (error || !payload) {
@@ -360,34 +381,27 @@ export default function RenoAppInvitePage() {
 
   const requiresExistingLogin = payload.currentUser.email !== null && !payload.currentUser.matchesInvite
   const needsPassword = !payload.currentUser.matchesInvite
+  const isOnboardingInvite = payload.mode === 'brf_onboarding'
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-8 md:px-6 md:py-10">
       <div className="grid gap-5">
         <section className="rounded-[28px] border border-stone-200/80 bg-white/94 p-5 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">RenoApp</p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900 md:text-3xl">Slutför BRF-anslutning</h1>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900 md:text-3xl">
+            {isOnboardingInvite ? 'Slutför BRF-anslutning' : 'Välkommen till styrelseportalen'}
+          </h1>
           <p className="mt-2 text-sm leading-7 text-stone-600">
-            Slutför uppgifterna för {payload.brf.name} och lägg till de första användarna innan BRF:en börjar arbeta i RenoApp.
+            {isOnboardingInvite
+              ? `Slutför uppgifterna för ${payload.brf.name} och lägg till de första användarna innan BRF:en börjar arbeta i RenoApp.`
+              : `Du har blivit inbjuden till styrelseportalen för ${payload.brf.name}. Acceptera inbjudan för att få tillgång till BRF:ens arbetsyta i RenoApp.`}
           </p>
 
           <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">BRF</p>
-              <p className="mt-1 text-sm text-stone-700">{payload.brf.name}</p>
-            </div>
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">E-post</p>
-              <p className="mt-1 break-all text-sm text-stone-700">{payload.invite.email}</p>
-            </div>
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Roll</p>
-              <p className="mt-1 text-sm text-stone-700">Styrelsemedlem</p>
-            </div>
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Giltig till</p>
-              <p className="mt-1 text-sm text-stone-700">{formatDateTime(payload.invite.expiresAt)}</p>
-            </div>
+            <SummaryCard label="BRF" value={payload.brf.name} />
+            <SummaryCard label="E-post" value={payload.invite.email} />
+            <SummaryCard label="Roll" value="Styrelsemedlem" />
+            <SummaryCard label="Giltig till" value={formatDateTime(payload.invite.expiresAt)} />
           </div>
         </section>
 
@@ -396,9 +410,9 @@ export default function RenoAppInvitePage() {
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-800">
               <p className="font-semibold">Inviten har redan accepterats.</p>
               <p className="mt-1">
-                {payload.brf.onboardingCompletedAt
+                {isOnboardingInvite
                   ? 'BRF-anslutningen är redan slutförd. Fortsätt till arbetsytan för att börja använda RenoApp.'
-                  : 'Kontot är redan kopplat till BRF:en. Om uppgifterna inte blev klara tidigare behöver anslutningen kompletteras från admin.'}
+                  : 'Kontot är redan kopplat till BRF:en. Fortsätt till RenoApp för att börja arbeta.'}
               </p>
               <div className="mt-4">
                 <Link
@@ -411,7 +425,7 @@ export default function RenoAppInvitePage() {
             </div>
           ) : payload.state === 'expired' || payload.state === 'revoked' ? (
             <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800">
-              Den här inviten är inte längre aktiv. Kontakta HusHub om du behöver en ny länk.
+              Den här inviten är inte längre aktiv. Kontakta RenoApp-teamet om du behöver en ny länk.
             </div>
           ) : requiresExistingLogin ? (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
@@ -422,13 +436,17 @@ export default function RenoAppInvitePage() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Steg 1</p>
                 <h2 className="mt-2 text-2xl font-semibold text-stone-900">
-                  {needsPassword ? 'Aktivera kontot' : 'Kontot är klart'}
+                  {needsPassword ? 'Aktivera kontot' : isOnboardingInvite ? 'Kontot är klart' : 'Bekräfta inbjudan'}
                 </h2>
                 {needsPassword ? (
-                  <div className="mt-4 grid gap-4">
-                    <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
-                      Kontot skapas för <strong>{payload.invite.email}</strong>.
-                    </div>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <InputField
+                      label="Namn"
+                      required
+                      value={inviteUserName}
+                      onChange={setInviteUserName}
+                      placeholder="Ditt namn"
+                    />
                     <InputField
                       label="Lösenord"
                       required
@@ -437,313 +455,258 @@ export default function RenoAppInvitePage() {
                       placeholder="Välj lösenord"
                       type="password"
                     />
-                    <p className="text-xs text-stone-500">Minst 8 tecken.</p>
+                    <p className="text-xs text-stone-500 md:col-span-2">Minst 8 tecken.</p>
                   </div>
                 ) : (
                   <div className="mt-4 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700">
-                    Du är inloggad med rätt e-postadress. Fyll nu i BRF-uppgifterna nedan för att slutföra anslutningen.
+                    {isOnboardingInvite
+                      ? 'Du är inloggad med rätt e-postadress. Fyll nu i BRF-uppgifterna nedan för att slutföra anslutningen.'
+                      : 'Du är inloggad med rätt e-postadress och kan nu acceptera inbjudan.'}
                   </div>
                 )}
               </div>
 
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Steg 2</p>
-                <h2 className="mt-2 text-2xl font-semibold text-stone-900">Obligatoriska BRF-uppgifter</h2>
-                <p className="mt-2 text-sm leading-7 text-stone-600">
-                  De här uppgifterna behövs innan BRF:en kan börja arbeta i RenoApp.
-                </p>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <InputField
-                  label="BRF-namn"
-                  required
-                  value={form.name}
-                  onChange={(value) => updateField('name', value)}
-                  placeholder="BRF-namn *"
-                />
-                <InputField
-                  label="Organisationsnummer"
-                  required
-                  value={form.orgNumber}
-                  onChange={(value) => updateField('orgNumber', value)}
-                  placeholder="Organisationsnummer *"
-                />
-                <InputField
-                  label="Fastighetsbeteckning"
-                  required
-                  value={form.propertyDesignation}
-                  onChange={(value) => updateField('propertyDesignation', value)}
-                  className="md:col-span-2"
-                  placeholder="Fastighetsbeteckning *"
-                />
-                <InputField
-                  label="Gatuadress"
-                  required
-                  value={form.address}
-                  onChange={(value) => updateField('address', value)}
-                  className="md:col-span-2"
-                  placeholder="Gatuadress *"
-                />
-                <InputField
-                  label="Adressrad 2"
-                  value={form.addressLine2}
-                  onChange={(value) => updateField('addressLine2', value)}
-                  className="md:col-span-2"
-                  placeholder="C/o eller adressrad 2"
-                />
-                <InputField
-                  label="Postnummer"
-                  required
-                  value={form.postalCode}
-                  onChange={(value) => updateField('postalCode', value)}
-                  inputMode="numeric"
-                  placeholder="Postnummer *"
-                />
-                <InputField
-                  label="Ort"
-                  required
-                  value={form.city}
-                  onChange={(value) => updateField('city', value)}
-                  placeholder="Ort *"
-                />
-                <InputField
-                  label="Fakturaadress"
-                  required
-                  value={form.invoiceAddress}
-                  onChange={(value) => updateField('invoiceAddress', value)}
-                  className="md:col-span-2"
-                  placeholder="Fakturaadress *"
-                />
-                <InputField
-                  label="Faktura-e-post"
-                  required
-                  value={form.invoiceEmail}
-                  onChange={(value) => updateField('invoiceEmail', value)}
-                  placeholder="Faktura-e-post *"
-                  type="email"
-                />
-                <InputField
-                  label="Kontaktperson namn"
-                  required
-                  value={form.primaryContactName}
-                  onChange={(value) => updateField('primaryContactName', value)}
-                  placeholder="Kontaktperson namn *"
-                />
-                <InputField
-                  label="Kontaktperson telefon"
-                  required
-                  value={form.primaryContactPhone}
-                  onChange={(value) => updateField('primaryContactPhone', value)}
-                  placeholder="Kontaktperson telefon *"
-                />
-                <InputField
-                  label="Kontaktperson e-post"
-                  required
-                  value={form.primaryContactEmail}
-                  onChange={(value) => updateField('primaryContactEmail', value)}
-                  className="md:col-span-2"
-                  placeholder="Kontaktperson e-post *"
-                  type="email"
-                />
-              </div>
-
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Steg 3</p>
-                <h2 className="mt-2 text-2xl font-semibold text-stone-900">Första användare</h2>
-                <p className="mt-2 text-sm leading-7 text-stone-600">
-                  Personen som öppnat länken aktiveras direkt. Du kan samtidigt lägga till upp till tre extra
-                  användare som får egna invite-länkar.
-                </p>
-
-                <div className="mt-5 grid gap-4 md:grid-cols-2">
-                  <div className="md:col-span-2">
-                    <FieldLabel label="Hur boende får tillgång till ansökan" required />
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <label className="rounded-2xl border border-stone-200 bg-white px-4 py-4 text-sm text-stone-700">
-                        <div className="flex items-start gap-3">
-                          <input
-                            checked={form.publicApplyMode === 'listed'}
-                            onChange={() => updateField('publicApplyMode', 'listed')}
-                            type="radio"
-                            name="publicApplyMode"
-                            className="mt-1"
-                          />
-                          <div>
-                            <p className="font-semibold text-stone-900">Synlig i öppen BRF-lista</p>
-                            <p className="mt-1 leading-6 text-stone-600">
-                              Boende kan hitta BRF:en direkt på RenoApps ansökningssida utan att först få en separat länk.
-                            </p>
-                          </div>
-                        </div>
-                      </label>
-                      <label className="rounded-2xl border border-stone-200 bg-white px-4 py-4 text-sm text-stone-700">
-                        <div className="flex items-start gap-3">
-                          <input
-                            checked={form.publicApplyMode === 'direct_link'}
-                            onChange={() => updateField('publicApplyMode', 'direct_link')}
-                            type="radio"
-                            name="publicApplyMode"
-                            className="mt-1"
-                          />
-                          <div>
-                            <p className="font-semibold text-stone-900">Endast via länk från styrelsen</p>
-                            <p className="mt-1 leading-6 text-stone-600">
-                              BRF:en visas inte i den öppna listan. Boende behöver få rätt ansökningslänk direkt från styrelsen.
-                            </p>
-                          </div>
-                        </div>
-                      </label>
-                    </div>
+              {isOnboardingInvite ? (
+                <>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Steg 2</p>
+                    <h2 className="mt-2 text-2xl font-semibold text-stone-900">Obligatoriska BRF-uppgifter</h2>
+                    <p className="mt-2 text-sm leading-7 text-stone-600">
+                      De här uppgifterna behövs innan BRF:en kan börja arbeta i RenoApp.
+                    </p>
                   </div>
-                  <InputField
-                    label="Första användare namn"
-                    required
-                    value={inviteUserName}
-                    onChange={setInviteUserName}
-                    placeholder="Första användare namn *"
-                  />
-                  <InputField
-                    label="Första användare e-post"
-                    required
-                    value={payload.invite.email}
-                    readOnly
-                    placeholder="Första användare e-post *"
-                    type="email"
-                  />
-                </div>
 
-                <div className="mt-5 grid gap-4">
-                  {additionalUsers.map((user, index) => (
-                    <div
-                      key={`additional-user-${index}`}
-                      className="grid gap-4 rounded-2xl border border-stone-200 bg-white px-4 py-4 md:grid-cols-[1fr_1fr_auto]"
-                    >
-                      <InputField
-                        label={`Extra användare ${index + 1} namn`}
-                        value={user.name}
-                        onChange={(value) => updateAdditionalUser(index, 'name', value)}
-                        placeholder="Namn"
-                      />
-                      <InputField
-                        label={`Extra användare ${index + 1} e-post`}
-                        value={user.email}
-                        onChange={(value) => updateAdditionalUser(index, 'email', value)}
-                        placeholder="namn@exempel.se"
-                        type="email"
-                      />
-                      <div className="flex items-end">
-                        <button
-                          type="button"
-                          onClick={() => removeAdditionalUser(index)}
-                          className="w-full rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
-                        >
-                          Ta bort
-                        </button>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <InputField label="BRF-namn" required value={form.name} onChange={(value) => updateField('name', value)} />
+                    <InputField
+                      label="Organisationsnummer"
+                      required
+                      value={form.orgNumber}
+                      onChange={(value) => updateField('orgNumber', value)}
+                    />
+                    <InputField
+                      label="Fastighetsbeteckning"
+                      required
+                      value={form.propertyDesignation}
+                      onChange={(value) => updateField('propertyDesignation', value)}
+                      className="md:col-span-2"
+                    />
+                    <InputField
+                      label="Gatuadress"
+                      required
+                      value={form.address}
+                      onChange={(value) => updateField('address', value)}
+                      className="md:col-span-2"
+                    />
+                    <InputField
+                      label="Adressrad 2"
+                      value={form.addressLine2}
+                      onChange={(value) => updateField('addressLine2', value)}
+                      className="md:col-span-2"
+                    />
+                    <InputField
+                      label="Postnummer"
+                      required
+                      value={form.postalCode}
+                      onChange={(value) => updateField('postalCode', value)}
+                      inputMode="numeric"
+                    />
+                    <InputField label="Ort" required value={form.city} onChange={(value) => updateField('city', value)} />
+                    <InputField
+                      label="Fakturaadress"
+                      required
+                      value={form.invoiceAddress}
+                      onChange={(value) => updateField('invoiceAddress', value)}
+                      className="md:col-span-2"
+                    />
+                    <InputField
+                      label="Faktura-e-post"
+                      required
+                      value={form.invoiceEmail}
+                      onChange={(value) => updateField('invoiceEmail', value)}
+                      type="email"
+                    />
+                    <InputField
+                      label="Kontaktperson namn"
+                      required
+                      value={form.primaryContactName}
+                      onChange={(value) => updateField('primaryContactName', value)}
+                    />
+                    <InputField
+                      label="Kontaktperson telefon"
+                      required
+                      value={form.primaryContactPhone}
+                      onChange={(value) => updateField('primaryContactPhone', value)}
+                    />
+                    <InputField
+                      label="Kontaktperson e-post"
+                      required
+                      value={form.primaryContactEmail}
+                      onChange={(value) => updateField('primaryContactEmail', value)}
+                      className="md:col-span-2"
+                      type="email"
+                    />
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Steg 3</p>
+                    <h2 className="mt-2 text-2xl font-semibold text-stone-900">Första användare</h2>
+                    <p className="mt-2 text-sm leading-7 text-stone-600">
+                      Personen som öppnat länken aktiveras direkt. Du kan samtidigt lägga till upp till tre extra användare som får egna invite-länkar.
+                    </p>
+
+                    <div className="mt-5 grid gap-4 md:grid-cols-2">
+                      <div className="md:col-span-2">
+                        <FieldLabel label="Hur boende får tillgång till ansökan" required />
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <label className="rounded-2xl border border-stone-200 bg-white px-4 py-4 text-sm text-stone-700">
+                            <div className="flex items-start gap-3">
+                              <input
+                                checked={form.publicApplyMode === 'listed'}
+                                onChange={() => updateField('publicApplyMode', 'listed')}
+                                type="radio"
+                                name="publicApplyMode"
+                                className="mt-1"
+                              />
+                              <div>
+                                <p className="font-semibold text-stone-900">Synlig i öppen BRF-lista</p>
+                                <p className="mt-1 leading-6 text-stone-600">
+                                  Boende kan hitta BRF:en direkt på RenoApps ansökningssida utan att först få en separat länk.
+                                </p>
+                              </div>
+                            </div>
+                          </label>
+                          <label className="rounded-2xl border border-stone-200 bg-white px-4 py-4 text-sm text-stone-700">
+                            <div className="flex items-start gap-3">
+                              <input
+                                checked={form.publicApplyMode === 'direct_link'}
+                                onChange={() => updateField('publicApplyMode', 'direct_link')}
+                                type="radio"
+                                name="publicApplyMode"
+                                className="mt-1"
+                              />
+                              <div>
+                                <p className="font-semibold text-stone-900">Endast via länk från styrelsen</p>
+                                <p className="mt-1 leading-6 text-stone-600">
+                                  BRF:en visas inte i den öppna listan. Boende behöver få rätt ansökningslänk direkt från styrelsen.
+                                </p>
+                              </div>
+                            </div>
+                          </label>
+                        </div>
                       </div>
+                      <InputField label="Första användare namn" required value={inviteUserName} onChange={setInviteUserName} />
+                      <InputField label="Första användare e-post" required value={payload.invite.email} readOnly type="email" />
                     </div>
-                  ))}
-                </div>
 
-                <div className="mt-5 flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={addAdditionalUser}
-                    disabled={additionalUsers.length >= MAX_ADDITIONAL_USERS}
-                    className="rounded-full border border-stone-300 px-4 py-2.5 text-sm font-semibold text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Lägg till användare
-                  </button>
-                  <p className="text-xs text-stone-500">
-                    {additionalUsers.length >= MAX_ADDITIONAL_USERS
-                      ? 'Max tre extra användare i detta steg.'
-                      : 'Extra användare får egna invite-länkar efter att BRF-anslutningen skickats in.'}
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Valfritt</p>
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <InputField
-                    label="Allmän BRF-e-post"
-                    value={form.generalEmail}
-                    onChange={(value) => updateField('generalEmail', value)}
-                    placeholder="Allmän BRF-e-post"
-                    type="email"
-                  />
-                  <InputField
-                    label="BRF-telefon"
-                    value={form.brfPhone}
-                    onChange={(value) => updateField('brfPhone', value)}
-                    placeholder="BRF-telefon"
-                  />
-                  <InputField
-                    label="Fakturareferens"
-                    value={form.invoiceReference}
-                    onChange={(value) => updateField('invoiceReference', value)}
-                    placeholder="Fakturareferens"
-                  />
-                  <InputField
-                    label="Antal lägenheter"
-                    value={form.unitCount}
-                    onChange={(value) => updateField('unitCount', value)}
-                    inputMode="numeric"
-                    placeholder="Antal lägenheter"
-                  />
-                  <InputField
-                    label="Teknisk förvaltare eller extern kontakt"
-                    value={form.technicalContact}
-                    onChange={(value) => updateField('technicalContact', value)}
-                    placeholder="Teknisk förvaltare eller extern kontakt"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Steg 4</p>
-                <h2 className="mt-2 text-2xl font-semibold text-stone-900">Godkänn villkoren</h2>
-                <p className="mt-2 text-sm leading-7 text-stone-600">
-                  BRF-anslutningen slutförs först när villkoren för RenoApp har godkänts av föreningen.
-                </p>
-
-                <div className="mt-4 rounded-2xl border border-stone-200 bg-white px-5 py-5">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-semibold text-stone-900">{RENOAPP_BRF_TERMS_TITLE}</p>
-                      <p className="mt-1 text-sm text-stone-600">Version {RENOAPP_BRF_TERMS_VERSION}</p>
+                    <div className="mt-5 grid gap-4">
+                      {additionalUsers.map((user, index) => (
+                        <div
+                          key={`additional-user-${index}`}
+                          className="grid gap-4 rounded-2xl border border-stone-200 bg-white px-4 py-4 md:grid-cols-[1fr_1fr_auto]"
+                        >
+                          <InputField
+                            label={`Extra användare ${index + 1} namn`}
+                            value={user.name}
+                            onChange={(value) => updateAdditionalUser(index, 'name', value)}
+                          />
+                          <InputField
+                            label={`Extra användare ${index + 1} e-post`}
+                            value={user.email}
+                            onChange={(value) => updateAdditionalUser(index, 'email', value)}
+                            type="email"
+                          />
+                          <div className="flex items-end">
+                            <button
+                              type="button"
+                              onClick={() => removeAdditionalUser(index)}
+                              className="w-full rounded-full border border-stone-300 px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                            >
+                              Ta bort
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <a
-                      href={RENOAPP_BRF_TERMS_DOWNLOAD_URL}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
-                    >
-                      Öppna villkor
-                    </a>
+
+                    <div className="mt-5 flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={addAdditionalUser}
+                        disabled={additionalUsers.length >= MAX_ADDITIONAL_USERS}
+                        className="rounded-full border border-stone-300 px-4 py-2.5 text-sm font-semibold text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Lägg till användare
+                      </button>
+                      <p className="text-xs text-stone-500">
+                        {additionalUsers.length >= MAX_ADDITIONAL_USERS
+                          ? 'Max tre extra användare i detta steg.'
+                          : 'Extra användare får egna invite-länkar efter att BRF-anslutningen skickats in.'}
+                      </p>
+                    </div>
                   </div>
 
-                  <ul className="mt-4 space-y-2 text-sm leading-7 text-stone-700">
-                    {RENOAPP_BRF_TERMS_SUMMARY.map((item) => (
-                      <li key={item} className="pl-4 -indent-4">
-                        • {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Valfritt</p>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <InputField label="Allmän BRF-e-post" value={form.generalEmail} onChange={(value) => updateField('generalEmail', value)} type="email" />
+                      <InputField label="BRF-telefon" value={form.brfPhone} onChange={(value) => updateField('brfPhone', value)} />
+                      <InputField label="Fakturareferens" value={form.invoiceReference} onChange={(value) => updateField('invoiceReference', value)} />
+                      <InputField label="Antal lägenheter" value={form.unitCount} onChange={(value) => updateField('unitCount', value)} inputMode="numeric" />
+                      <InputField
+                        label="Teknisk förvaltare eller extern kontakt"
+                        value={form.technicalContact}
+                        onChange={(value) => updateField('technicalContact', value)}
+                      />
+                    </div>
+                  </div>
 
-                <label className="mt-4 flex items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-800">
-                  <input
-                    checked={termsAccepted}
-                    onChange={(event) => setTermsAccepted(event.target.checked)}
-                    type="checkbox"
-                    className="mt-1"
-                  />
-                  <span>
-                    Jag har läst och godkänner BRF-villkoren för RenoApp (version {RENOAPP_BRF_TERMS_VERSION}).
-                  </span>
-                </label>
-              </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Steg 4</p>
+                    <h2 className="mt-2 text-2xl font-semibold text-stone-900">Godkänn villkoren</h2>
+                    <p className="mt-2 text-sm leading-7 text-stone-600">
+                      BRF-anslutningen slutförs först när villkoren för RenoApp har godkänts av föreningen.
+                    </p>
+
+                    <div className="mt-4 rounded-2xl border border-stone-200 bg-white px-5 py-5">
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-semibold text-stone-900">{RENOAPP_BRF_TERMS_TITLE}</p>
+                          <p className="mt-1 text-sm text-stone-600">Version {RENOAPP_BRF_TERMS_VERSION}</p>
+                        </div>
+                        <a
+                          href={RENOAPP_BRF_TERMS_DOWNLOAD_URL}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                        >
+                          Öppna villkor
+                        </a>
+                      </div>
+
+                      <ul className="mt-4 space-y-2 text-sm leading-7 text-stone-700">
+                        {RENOAPP_BRF_TERMS_SUMMARY.map((item) => (
+                          <li key={item} className="pl-4 -indent-4">
+                            • {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <label className="mt-4 flex items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-800">
+                      <input
+                        checked={termsAccepted}
+                        onChange={(event) => setTermsAccepted(event.target.checked)}
+                        type="checkbox"
+                        className="mt-1"
+                      />
+                      <span>
+                        Jag har läst och godkänner BRF-villkoren för RenoApp (version {RENOAPP_BRF_TERMS_VERSION}).
+                      </span>
+                    </label>
+                  </div>
+                </>
+              ) : null}
 
               {actionError ? (
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
@@ -754,10 +717,16 @@ export default function RenoAppInvitePage() {
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="submit"
-                  disabled={submitting || !termsAccepted}
+                  disabled={submitting || (isOnboardingInvite && !termsAccepted)}
                   className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {submitting ? 'Slutför...' : 'Slutför BRF-anslutning'}
+                  {submitting
+                    ? isOnboardingInvite
+                      ? 'Slutför...'
+                      : 'Accepterar...'
+                    : isOnboardingInvite
+                      ? 'Slutför BRF-anslutning'
+                      : 'Acceptera inbjudan till styrelseportalen'}
                 </button>
                 {requiresManualLogin ? (
                   <Link

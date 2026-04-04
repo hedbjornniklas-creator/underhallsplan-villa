@@ -218,6 +218,7 @@ export type ReviewBrfRequestResult = {
 }
 
 export type RenoAppInvitePreview = {
+  mode: 'brf_onboarding' | 'member_invite'
   state: 'open' | 'expired' | 'revoked' | 'accepted'
   invite: {
     email: string
@@ -292,6 +293,7 @@ export type AcceptBrfInviteResult = {
   createdUser: boolean
   signInEmail: string
   additionalInvitesCreated: number
+  mode: 'brf_onboarding' | 'member_invite'
 }
 
 function normalizeText(value: unknown) {
@@ -1268,6 +1270,7 @@ export async function getBrfInviteByToken(token: string): Promise<RenoAppInviteP
         : 'open'
 
   return {
+    mode: brfData.onboarding_completed_at ? 'member_invite' : 'brf_onboarding',
     state,
     invite: {
       email: invite.email,
@@ -1355,16 +1358,28 @@ export async function acceptBrfInvite(
 
   const inviteEmail = normalizeEmail(invite.email)
   assertValidEmail(inviteEmail, 'INVITE_EMAIL_INVALID')
-  const completion = prepareBrfCompletionInput(input)
   const inviteUserName = normalizeText(input.inviteUserName) ?? normalizeText(invite.full_name)
   if (!inviteUserName) throw new Error('INVITE_USER_NAME_REQUIRED')
-  const additionalUsers = prepareAdditionalInviteUsers(input.additionalUsers, inviteEmail as string)
   const acceptedAt = new Date().toISOString()
 
   const userClient = createSupabaseServerClient()
   const {
     data: { user },
   } = await userClient.auth.getUser()
+
+  const { data: brfStateData, error: brfStateError } = await admin
+    .from('brf_associations')
+    .select('onboarding_completed_at,name')
+    .eq('id', invite.brf_id)
+    .maybeSingle()
+
+  if (brfStateError || !brfStateData) {
+    throw new Error(brfStateError?.message ?? 'Kunde inte läsa BRF-status för inviten.')
+  }
+
+  const resolvedInviteMode: AcceptBrfInviteResult['mode'] = brfStateData.onboarding_completed_at
+    ? 'member_invite'
+    : 'brf_onboarding'
 
   const persistBrfCompletion = async (acceptedByProfileId: string) => {
     const { error: updateBrfError } = await admin
@@ -1402,6 +1417,102 @@ export async function acceptBrfInvite(
     }
   }
 
+  const markInviteAccepted = async () => {
+    const { error: updateInviteError } = await admin
+      .from('brf_member_invites')
+      .update({ accepted_at: acceptedAt })
+      .eq('id', invite.id)
+
+    if (updateInviteError) {
+      throw new Error(updateInviteError.message ?? 'Kunde inte markera invite som accepterad.')
+    }
+  }
+
+  const acceptMemberInviteForUser = async (profileId: string, email: string | null, fullName: string) => {
+    await ensureProfile(admin, {
+      userId: profileId,
+      email,
+      fullName,
+    })
+    await ensureBrfMember(admin, {
+      brfId: invite.brf_id,
+      profileId,
+      role: 'board',
+    })
+    await markInviteAccepted()
+  }
+
+  if (resolvedInviteMode === 'member_invite') {
+    if (user) {
+      const currentUserEmail = normalizeEmail(user.email ?? null)
+      if (currentUserEmail !== inviteEmail) {
+        throw new Error('INVITE_EMAIL_MISMATCH')
+      }
+
+      await acceptMemberInviteForUser(
+        user.id,
+        currentUserEmail,
+        normalizeText(typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : inviteUserName) ??
+          inviteUserName
+      )
+
+      return {
+        accepted: true,
+        signedInViaExistingSession: true,
+        createdUser: false,
+        signInEmail: invite.email,
+        additionalInvitesCreated: 0,
+        mode: resolvedInviteMode,
+      }
+    }
+
+    const fullName = inviteUserName
+    const password = String(input.password ?? '')
+
+    if (!fullName) throw new Error('FULL_NAME_REQUIRED')
+    if (password.length < MIN_PASSWORD_LENGTH) throw new Error('PASSWORD_TOO_SHORT')
+
+    const createUserResult = await admin.auth.admin.createUser({
+      email: invite.email,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: fullName,
+      },
+    })
+
+    if (createUserResult.error) {
+      const message = createUserResult.error.message ?? 'Kunde inte skapa användare.'
+      if (message.toLowerCase().includes('already') || message.toLowerCase().includes('registered')) {
+        throw new Error('EXISTING_USER_LOGIN_REQUIRED')
+      }
+      throw new Error(message)
+    }
+
+    const createdUser = createUserResult.data.user
+    if (!createdUser) {
+      throw new Error('Kunde inte skapa användare.')
+    }
+
+    await acceptMemberInviteForUser(
+      createdUser.id,
+      normalizeEmail(createdUser.email ?? invite.email),
+      fullName
+    )
+
+    return {
+      accepted: true,
+      signedInViaExistingSession: false,
+      createdUser: true,
+      signInEmail: invite.email,
+      additionalInvitesCreated: 0,
+      mode: resolvedInviteMode,
+    }
+  }
+
+  const completion = prepareBrfCompletionInput(input)
+  const additionalUsers = prepareAdditionalInviteUsers(input.additionalUsers, inviteEmail as string)
+
   if (user) {
     const currentUserEmail = normalizeEmail(user.email ?? null)
     if (currentUserEmail !== inviteEmail) {
@@ -1423,15 +1534,7 @@ export async function acceptBrfInvite(
       role: 'board',
     })
     await persistBrfCompletion(user.id)
-
-    const { error: updateInviteError } = await admin
-      .from('brf_member_invites')
-      .update({ accepted_at: acceptedAt })
-      .eq('id', invite.id)
-
-    if (updateInviteError) {
-      throw new Error(updateInviteError.message ?? 'Kunde inte markera invite som accepterad.')
-    }
+    await markInviteAccepted()
 
     for (const additionalUser of additionalUsers) {
       await createInviteRecord(admin, {
@@ -1451,6 +1554,7 @@ export async function acceptBrfInvite(
       createdUser: false,
       signInEmail: invite.email,
       additionalInvitesCreated: additionalUsers.length,
+      mode: resolvedInviteMode,
     }
   }
 
@@ -1493,15 +1597,7 @@ export async function acceptBrfInvite(
     role: 'board',
   })
   await persistBrfCompletion(createdUser.id)
-
-  const { error: updateInviteError } = await admin
-    .from('brf_member_invites')
-    .update({ accepted_at: acceptedAt })
-    .eq('id', invite.id)
-
-  if (updateInviteError) {
-    throw new Error(updateInviteError.message ?? 'Kunde inte markera invite som accepterad.')
-  }
+  await markInviteAccepted()
 
   for (const additionalUser of additionalUsers) {
     await createInviteRecord(admin, {
@@ -1521,5 +1617,6 @@ export async function acceptBrfInvite(
     createdUser: true,
     signInEmail: invite.email,
     additionalInvitesCreated: additionalUsers.length,
+    mode: resolvedInviteMode,
   }
 }
