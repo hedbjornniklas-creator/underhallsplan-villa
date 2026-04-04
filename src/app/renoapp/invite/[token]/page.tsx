@@ -4,6 +4,12 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
+import {
+  RENOAPP_BRF_TERMS_DOWNLOAD_URL,
+  RENOAPP_BRF_TERMS_SUMMARY,
+  RENOAPP_BRF_TERMS_TITLE,
+  RENOAPP_BRF_TERMS_VERSION,
+} from '@/lib/renoapp/brfTerms'
 
 type InvitePreview = {
   state: 'open' | 'expired' | 'revoked' | 'accepted'
@@ -200,6 +206,7 @@ export default function RenoAppInvitePage() {
   const [inviteUserName, setInviteUserName] = useState('')
   const [additionalUsers, setAdditionalUsers] = useState<UserState[]>([])
   const [password, setPassword] = useState('')
+  const [termsAccepted, setTermsAccepted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [requiresManualLogin, setRequiresManualLogin] = useState(false)
@@ -224,6 +231,7 @@ export default function RenoAppInvitePage() {
           setForm(toFormState(data))
           setInviteUserName(toInviteUserName(data))
           setAdditionalUsers([])
+          setTermsAccepted(false)
         }
       } catch (fetchError) {
         if (active) {
@@ -278,6 +286,10 @@ export default function RenoAppInvitePage() {
 
   const handleAccept = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (!termsAccepted) {
+      setActionError(`Du måste godkänna villkoren (version ${RENOAPP_BRF_TERMS_VERSION}) för att fortsätta.`)
+      return
+    }
     setSubmitting(true)
     setActionError(null)
     setRequiresManualLogin(false)
@@ -291,6 +303,8 @@ export default function RenoAppInvitePage() {
           inviteUserName,
           additionalUsers,
           password,
+          termsAccepted,
+          termsVersion: RENOAPP_BRF_TERMS_VERSION,
           publicApplyMode: form.publicApplyMode,
         }),
       })
@@ -686,6 +700,51 @@ export default function RenoAppInvitePage() {
                 </div>
               </div>
 
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Steg 4</p>
+                <h2 className="mt-2 text-2xl font-semibold text-stone-900">Godkänn villkoren</h2>
+                <p className="mt-2 text-sm leading-7 text-stone-600">
+                  BRF-anslutningen slutförs först när villkoren för RenoApp har godkänts av föreningen.
+                </p>
+
+                <div className="mt-4 rounded-2xl border border-stone-200 bg-white px-5 py-5">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-stone-900">{RENOAPP_BRF_TERMS_TITLE}</p>
+                      <p className="mt-1 text-sm text-stone-600">Version {RENOAPP_BRF_TERMS_VERSION}</p>
+                    </div>
+                    <a
+                      href={RENOAPP_BRF_TERMS_DOWNLOAD_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                    >
+                      Öppna villkor
+                    </a>
+                  </div>
+
+                  <ul className="mt-4 space-y-2 text-sm leading-7 text-stone-700">
+                    {RENOAPP_BRF_TERMS_SUMMARY.map((item) => (
+                      <li key={item} className="pl-4 -indent-4">
+                        • {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <label className="mt-4 flex items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-800">
+                  <input
+                    checked={termsAccepted}
+                    onChange={(event) => setTermsAccepted(event.target.checked)}
+                    type="checkbox"
+                    className="mt-1"
+                  />
+                  <span>
+                    Jag har läst och godkänner BRF-villkoren för RenoApp (version {RENOAPP_BRF_TERMS_VERSION}).
+                  </span>
+                </label>
+              </div>
+
               {actionError ? (
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
                   {actionError}
@@ -695,7 +754,7 @@ export default function RenoAppInvitePage() {
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || !termsAccepted}
                   className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {submitting ? 'Slutför...' : 'Slutför BRF-anslutning'}

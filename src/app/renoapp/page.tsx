@@ -8,8 +8,7 @@ const FAQ_ITEMS = [
   },
   {
     question: 'Kan en BRF registrera sig fritt?',
-    answer:
-      'Nej. BRF skapas av admin eller via en godkänd intresseanmälan. Styrelsen får sedan en invite.',
+    answer: 'Nej. BRF skapas av admin eller via en godkänd intresseanmälan. Styrelsen får sedan en invite.',
   },
   {
     question: 'Vad använder styrelsen RenoApp till?',
@@ -22,11 +21,11 @@ export default function RenoAppLandingPage() {
   return (
     <main>
       <div className="mx-auto flex min-h-[calc(100vh-73px)] w-full max-w-[1800px] flex-col px-6 py-8 sm:px-8 lg:px-10">
-        <section className="border-b border-stone-200 pb-8">
-          <h1 className="max-w-[18ch] text-3xl font-semibold tracking-tight text-stone-950 sm:text-4xl xl:text-5xl">
+        <section className="border-b border-stone-200 pb-8 text-center">
+          <h1 className="mx-auto max-w-[18ch] text-3xl font-semibold tracking-tight text-stone-950 sm:text-4xl xl:text-5xl">
             Renoveringsärenden för BRF
           </h1>
-          <p className="mt-4 max-w-[42rem] text-base leading-7 text-stone-700 sm:text-lg sm:leading-8">
+          <p className="mx-auto mt-4 max-w-[42rem] text-base leading-7 text-stone-700 sm:text-lg sm:leading-8">
             Ansökan är för boende, login är för styrelse och BRF-användare, och anslutning är för
             föreningar som vill börja använda RenoApp.
           </p>
@@ -85,7 +84,8 @@ export default function RenoAppLandingPage() {
                 Anslut BRF
               </h2>
               <p className="mt-5 max-w-[30rem] text-base leading-8 text-stone-700 sm:text-lg">
-                Ansök om att börja använda RenoApp och kom igång med ett gemensamt flöde för ansökan, granskning och beslut.
+                Ansök om att börja använda RenoApp och kom igång med ett gemensamt flöde för ansökan,
+                granskning och beslut.
               </p>
               <div className="mt-10 text-base font-semibold text-stone-950">
                 Ansök om anslutning <span aria-hidden="true">→</span>
@@ -95,16 +95,16 @@ export default function RenoAppLandingPage() {
         </section>
 
         <section className="border-t border-stone-200 pt-8">
-          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">Vanliga frågor</p>
+          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
+            Vanliga frågor
+          </p>
           <div className="mt-6 border-t border-stone-200">
             {FAQ_ITEMS.map((item) => (
               <details key={item.question} className="border-b border-stone-200 py-5">
                 <summary className="cursor-pointer list-none text-lg font-semibold text-stone-950">
                   {item.question}
                 </summary>
-                <p className="mt-3 max-w-[54rem] text-base leading-8 text-stone-700">
-                  {item.answer}
-                </p>
+                <p className="mt-3 max-w-[54rem] text-base leading-8 text-stone-700">{item.answer}</p>
               </details>
             ))}
           </div>

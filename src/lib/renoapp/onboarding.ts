@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
+import { RENOAPP_BRF_TERMS_VERSION } from '@/lib/renoapp/brfTerms'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ORG_NUMBER_REGEX = /^\d{6}-\d{4}$/
@@ -260,6 +261,8 @@ export type RenoAppInvitePreview = {
 export type AcceptBrfInviteInput = {
   origin?: string | null
   password?: string | null
+  termsAccepted?: boolean | null
+  termsVersion?: string | null
   inviteUserName?: string | null
   name?: string | null
   orgNumber?: string | null
@@ -1338,19 +1341,32 @@ export async function acceptBrfInvite(
   if (invite.revoked_at) throw new Error('INVITE_REVOKED')
   if (new Date(invite.expires_at).getTime() < Date.now()) throw new Error('INVITE_EXPIRED')
 
+  if (input.termsAccepted !== true) {
+    throw new Error('TERMS_NOT_ACCEPTED')
+  }
+
+  const termsVersion = normalizeText(input.termsVersion)
+  if (!termsVersion) {
+    throw new Error('TERMS_VERSION_REQUIRED')
+  }
+  if (termsVersion !== RENOAPP_BRF_TERMS_VERSION) {
+    throw new Error('TERMS_VERSION_MISMATCH')
+  }
+
   const inviteEmail = normalizeEmail(invite.email)
   assertValidEmail(inviteEmail, 'INVITE_EMAIL_INVALID')
   const completion = prepareBrfCompletionInput(input)
   const inviteUserName = normalizeText(input.inviteUserName) ?? normalizeText(invite.full_name)
   if (!inviteUserName) throw new Error('INVITE_USER_NAME_REQUIRED')
   const additionalUsers = prepareAdditionalInviteUsers(input.additionalUsers, inviteEmail as string)
+  const acceptedAt = new Date().toISOString()
 
   const userClient = createSupabaseServerClient()
   const {
     data: { user },
   } = await userClient.auth.getUser()
 
-  const persistBrfCompletion = async () => {
+  const persistBrfCompletion = async (acceptedByProfileId: string) => {
     const { error: updateBrfError } = await admin
       .from('brf_associations')
       .update({
@@ -1374,7 +1390,10 @@ export async function acceptBrfInvite(
         onboarding_comment: completion.onboardingComment,
         is_public_apply_enabled: true,
         is_public_apply_listed: completion.publicApplyMode === 'listed',
-        onboarding_completed_at: new Date().toISOString(),
+        onboarding_completed_at: acceptedAt,
+        onboarding_terms_version: termsVersion,
+        onboarding_terms_accepted_at: acceptedAt,
+        onboarding_terms_accepted_by: acceptedByProfileId,
       })
       .eq('id', invite.brf_id)
 
@@ -1403,11 +1422,11 @@ export async function acceptBrfInvite(
       profileId: user.id,
       role: 'board',
     })
-    await persistBrfCompletion()
+    await persistBrfCompletion(user.id)
 
     const { error: updateInviteError } = await admin
       .from('brf_member_invites')
-      .update({ accepted_at: new Date().toISOString() })
+      .update({ accepted_at: acceptedAt })
       .eq('id', invite.id)
 
     if (updateInviteError) {
@@ -1473,11 +1492,11 @@ export async function acceptBrfInvite(
     profileId: createdUser.id,
     role: 'board',
   })
-  await persistBrfCompletion()
+  await persistBrfCompletion(createdUser.id)
 
   const { error: updateInviteError } = await admin
     .from('brf_member_invites')
-    .update({ accepted_at: new Date().toISOString() })
+    .update({ accepted_at: acceptedAt })
     .eq('id', invite.id)
 
   if (updateInviteError) {

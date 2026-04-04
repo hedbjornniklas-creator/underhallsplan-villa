@@ -23,6 +23,8 @@ export async function POST(request: Request, context: RouteContext) {
     const result = await acceptBrfInvite(token, {
       origin,
       password: typeof body.password === 'string' ? body.password : null,
+      termsAccepted: body.termsAccepted === true,
+      termsVersion: typeof body.termsVersion === 'string' ? body.termsVersion : null,
       inviteUserName: typeof body.inviteUserName === 'string' ? body.inviteUserName : null,
       name: typeof body.name === 'string' ? body.name : null,
       orgNumber: typeof body.orgNumber === 'string' ? body.orgNumber : null,
@@ -63,6 +65,11 @@ export async function POST(request: Request, context: RouteContext) {
     if (message === 'INVITE_ALREADY_ACCEPTED') return jsonError('Inviten har redan accepterats.', 409)
     if (message === 'INVITE_REVOKED') return jsonError('Inviten har återkallats.', 409)
     if (message === 'INVITE_EXPIRED') return jsonError('Inviten har gått ut.', 409)
+    if (message === 'TERMS_NOT_ACCEPTED') return jsonError('Du måste godkänna BRF-villkoren för att fortsätta.', 400)
+    if (message === 'TERMS_VERSION_REQUIRED') return jsonError('Villkorsversion saknas.', 400)
+    if (message === 'TERMS_VERSION_MISMATCH') {
+      return jsonError('Villkoren har uppdaterats. Ladda om sidan och godkänn den senaste versionen.', 409)
+    }
     if (message === 'BRF_NAME_REQUIRED') return jsonError('Ange BRF-namn.', 400)
     if (message === 'FULL_NAME_REQUIRED') return jsonError('Ange huvudkontaktens namn.', 400)
     if (message === 'INVITE_USER_NAME_REQUIRED') return jsonError('Ange namn för första användaren.', 400)
