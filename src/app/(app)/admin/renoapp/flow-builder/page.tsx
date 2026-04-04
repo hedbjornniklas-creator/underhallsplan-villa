@@ -548,6 +548,7 @@ export default function RenoAppFlowBuilderPage() {
   const [duplicateQuestionSourceId, setDuplicateQuestionSourceId] = useState<string | null>(null)
 
   const [actionTypeDraft, setActionTypeDraft] = useState<ActionTypeDraft>(EMPTY_ACTION_TYPE_DRAFT)
+  const [actionTypeKeyDirty, setActionTypeKeyDirty] = useState(false)
   const [questionDraft, setQuestionDraft] = useState<QuestionDraft>(EMPTY_QUESTION_DRAFT)
   const [optionDraft, setOptionDraft] = useState<OptionDraft>(EMPTY_OPTION_DRAFT)
   const [documentDraft, setDocumentDraft] = useState<DocumentDraft>(EMPTY_DOCUMENT_DRAFT)
@@ -973,6 +974,7 @@ export default function RenoAppFlowBuilderPage() {
           }
         : EMPTY_ACTION_TYPE_DRAFT
     )
+    setActionTypeKeyDirty(Boolean(ref.type === 'actionType' && selectedAction && ref.actionTypeId === selectedAction.id))
   }
 
   const openCreateActionTypeModal = () => {
@@ -988,6 +990,7 @@ export default function RenoAppFlowBuilderPage() {
       },
       'edit'
     )
+    setActionTypeKeyDirty(false)
   }
 
   const closeModal = () => {
@@ -999,6 +1002,7 @@ export default function RenoAppFlowBuilderPage() {
     setExistingTargetId('')
     setAddPreviewQuestionId(null)
     setDuplicateQuestionSourceId(null)
+    setActionTypeKeyDirty(false)
   }
 
   const toggleNode = (id: string) => setExpandedNodeIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
@@ -2046,10 +2050,27 @@ export default function RenoAppFlowBuilderPage() {
                   {activeNode?.ref.type === 'actionType' ? (
                     <div className="grid gap-4 md:grid-cols-2">
                       <ModalField label="Visningsnamn">
-                        <input value={actionTypeDraft.label} onChange={(event) => setActionTypeDraft((current) => ({ ...current, label: event.target.value, key: current.key || slugifyKey(event.target.value) }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" />
+                        <input
+                          value={actionTypeDraft.label}
+                          onChange={(event) =>
+                            setActionTypeDraft((current) => ({
+                              ...current,
+                              label: event.target.value,
+                              key: !current.id && !actionTypeKeyDirty ? slugifyKey(event.target.value) : current.key,
+                            }))
+                          }
+                          className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"
+                        />
                       </ModalField>
                       <ModalField label="Intern nyckel">
-                        <input value={actionTypeDraft.key} onChange={(event) => setActionTypeDraft((current) => ({ ...current, key: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" />
+                        <input
+                          value={actionTypeDraft.key}
+                          onChange={(event) => {
+                            setActionTypeKeyDirty(true)
+                            setActionTypeDraft((current) => ({ ...current, key: event.target.value }))
+                          }}
+                          className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"
+                        />
                       </ModalField>
                       <ModalField label="Beskrivning">
                         <textarea value={actionTypeDraft.description} onChange={(event) => setActionTypeDraft((current) => ({ ...current, description: event.target.value }))} rows={3} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" />
