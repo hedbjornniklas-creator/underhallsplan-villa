@@ -1,6 +1,5 @@
 ﻿'use client'
 
-import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 
@@ -963,7 +962,7 @@ export default function RenoAppFlowBuilderPage() {
     )
 
     setActionTypeDraft(
-      ref.type === 'actionType' && selectedAction
+      ref.type === 'actionType' && selectedAction && ref.actionTypeId === selectedAction.id
         ? {
             id: selectedAction.id,
             key: selectedAction.key,
@@ -973,6 +972,21 @@ export default function RenoAppFlowBuilderPage() {
             isActive: selectedAction.isActive,
           }
         : EMPTY_ACTION_TYPE_DRAFT
+    )
+  }
+
+  const openCreateActionTypeModal = () => {
+    openNodeModal(
+      {
+        id: 'action-type:new',
+        kind: 'root',
+        title: 'Ny renoveringstyp',
+        badges: [],
+        tone: 'stone',
+        children: [],
+        ref: { type: 'actionType', actionTypeId: '' },
+      },
+      'edit'
     )
   }
 
@@ -997,6 +1011,16 @@ export default function RenoAppFlowBuilderPage() {
         : activeNode?.ref.type === 'optionQuestionTrigger'
           ? activeNode.ref.targetQuestionId
           : null
+
+  const activeQuestionSummary = useMemo(() => {
+    if (!activeNode) return null
+    if (activeNode.ref.type === 'rootQuestion') return questionMap.get(activeNode.ref.questionId) ?? null
+    if (activeNode.ref.type === 'question') return questionMap.get(activeNode.ref.questionId) ?? null
+    if (activeNode.ref.type === 'optionQuestionTrigger') return questionMap.get(activeNode.ref.targetQuestionId) ?? null
+    return null
+  }, [activeNode, questionMap])
+
+  const isCreatingActionType = activeNode?.ref.type === 'actionType' && !actionTypeDraft.id
 
   const canEditNode = Boolean(
     activeNode &&
@@ -1041,7 +1065,8 @@ export default function RenoAppFlowBuilderPage() {
 
   const canDuplicateNode = Boolean(
     activeNode &&
-      activeNode.ref.type !== 'status'
+      activeNode.ref.type !== 'status' &&
+      !isCreatingActionType
   )
 
   const canDeleteObject = Boolean(
@@ -1054,7 +1079,8 @@ export default function RenoAppFlowBuilderPage() {
         activeNode.ref.type === 'optionDocumentTrigger' ||
         activeNode.ref.type === 'rootParticipant' ||
         activeNode.ref.type === 'optionParticipantTrigger' ||
-        activeNode.ref.type === 'optionReviewFlagTrigger')
+        activeNode.ref.type === 'optionReviewFlagTrigger') &&
+      !isCreatingActionType
   )
 
   const existingAddOptions = useMemo(() => {
@@ -1848,6 +1874,15 @@ export default function RenoAppFlowBuilderPage() {
                 {item.label}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={openCreateActionTypeModal}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-dashed border-stone-300 bg-white text-xl font-semibold text-stone-700 transition hover:border-stone-900 hover:text-stone-900"
+              aria-label="Skapa ny renoveringstyp"
+              title="Skapa ny renoveringstyp"
+            >
+              +
+            </button>
           </div>
         </div>
 
@@ -1919,13 +1954,92 @@ export default function RenoAppFlowBuilderPage() {
                 {canEditNode ? <button type="button" onClick={() => setModalMode('edit')} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', modalMode === 'edit' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Redigera</button> : null}
                 {addableTypes.length > 0 ? <button type="button" onClick={() => setModalMode('add')} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', modalMode === 'add' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Lägg till</button> : null}
                 <button type="button" onClick={() => setModalMode('summary')} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', modalMode === 'summary' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Översikt</button>
-                {canDuplicateNode ? <button type="button" onClick={() => { if (window.confirm('Skapa en kopia av detta objekt?')) void duplicateActiveNode() }} className="rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50">Duplicera</button> : null}
+                {canDuplicateNode ? <button type="button" onClick={() => { if (window.confirm('Skapa en fristående kopia av detta objekt?')) void duplicateActiveNode() }} className="rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50">Skapa kopia</button> : null}
                 {canDeleteOption ? <button type="button" onClick={() => { if (window.confirm('Radera detta svarsalternativ?')) void deleteOptionNode() }} className="rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Radera svar</button> : null}
-                {canDeleteObject ? <button type="button" onClick={() => { if (window.confirm('Radera objektet helt? Detta påverkar alla kopplingar som använder det.')) void deleteActiveObject() }} className="rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Radera objekt</button> : null}
-                {canRemoveConnection ? <button type="button" onClick={() => { if (window.confirm('Ta bort denna koppling från flödet?')) void removeConnection() }} className="rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Ta bort koppling</button> : null}
+                {canDeleteObject ? <button type="button" onClick={() => { if (window.confirm('Radera objektet överallt? Detta påverkar alla flöden och kopplingar som använder det.')) void deleteActiveObject() }} className="rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Radera överallt</button> : null}
+                {canRemoveConnection ? <button type="button" onClick={() => { if (window.confirm('Ta bort denna koppling från det här flödet? Själva objektet finns kvar i systemet.')) void removeConnection() }} className="rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Ta bort från flödet</button> : null}
               </div>
 
-              {modalMode === 'summary' ? <div className="space-y-3 rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700"><p>Klicka på <span className="font-semibold">Redigera</span> för att ändra noden eller på <span className="font-semibold">Lägg till</span> för att skapa nästa steg.</p><p className="text-xs text-stone-500">Du kan också duplicera objektet här eller ta bort själva kopplingen utan att radera katalogobjektet.</p><p className="text-xs text-stone-500">Nya frågor skapas med en standardoption och kan sedan byggas ut vidare i <Link href="/admin/renoapp/questions" className="font-semibold underline">Frågor</Link>.</p></div> : null}
+              {modalMode === 'summary' ? (
+                activeQuestionSummary ? (
+                  <div className="space-y-4 rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
+                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Intern nyckel</div>
+                        <div className="mt-1 font-medium text-stone-900">{activeQuestionSummary.key}</div>
+                      </div>
+                      <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
+                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Svarstyp</div>
+                        <div className="mt-1 font-medium text-stone-900">{labelForResponseType(activeQuestionSummary.responseType)}</div>
+                      </div>
+                      <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
+                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Sortering</div>
+                        <div className="mt-1 font-medium text-stone-900">{activeQuestionSummary.sortOrder}</div>
+                      </div>
+                      <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
+                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Status</div>
+                        <div className="mt-1 font-medium text-stone-900">{activeQuestionSummary.isActive ? 'Aktiv fråga' : 'Inaktiv fråga'}</div>
+                      </div>
+                    </div>
+
+                    {activeNode?.ref.type === 'rootQuestion' ? (
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Koppling till renoveringstyp</div>
+                          <div className="mt-1 font-medium text-stone-900">{questionLinkDraft.isRequired ? 'Obligatorisk' : 'Valfri'}</div>
+                        </div>
+                        <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Kopplingens sortering</div>
+                          <div className="mt-1 font-medium text-stone-900">{questionLinkDraft.sortOrder}</div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Hjälptext</div>
+                      <div className="mt-1 whitespace-pre-wrap text-stone-800">
+                        {activeQuestionSummary.helpText?.trim() ? activeQuestionSummary.helpText : 'Ingen hjälpttext angiven.'}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Svarsalternativ</div>
+                      {activeQuestionSummary.options.length > 0 ? (
+                        activeQuestionSummary.options
+                          .slice()
+                          .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv'))
+                          .map((option) => {
+                            const activeTriggerCount = option.triggers.filter((trigger) => trigger.isActive).length
+                            return (
+                              <div key={option.id} className="rounded-lg border border-stone-200 bg-white px-4 py-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="font-semibold text-stone-900">{option.label}</div>
+                                    <div className="mt-1 text-xs text-stone-500">{option.key}</div>
+                                  </div>
+                                  <div className="flex flex-wrap justify-end gap-1">
+                                    <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-semibold text-stone-700">{option.sortOrder}</span>
+                                    <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-semibold text-stone-700">{activeTriggerCount} kopplingar</span>
+                                    <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-semibold text-stone-700">{option.isActive ? 'Aktiv' : 'Inaktiv'}</span>
+                                  </div>
+                                </div>
+                                {option.description?.trim() ? <div className="mt-2 text-sm text-stone-700">{option.description}</div> : null}
+                              </div>
+                            )
+                          })
+                      ) : (
+                        <div className="rounded-lg border border-dashed border-stone-300 bg-white px-4 py-3 text-stone-600">Inga svarsalternativ finns ännu.</div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3 rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
+                    <p>Här ser du en snabb översikt av den valda noden.</p>
+                    <p className="text-xs text-stone-500">Använd <span className="font-semibold">Redigera</span> för att ändra innehåll eller <span className="font-semibold">Lägg till</span> för att bygga vidare i flödet.</p>
+                    <p className="text-xs text-stone-500"><span className="font-semibold">Skapa kopia</span> gör en ny fristående variant. <span className="font-semibold">Ta bort från flödet</span> tar bara bort länken här. <span className="font-semibold">Radera överallt</span> tar bort själva objektet ur systemet.</p>
+                  </div>
+                )
+              ) : null}
 
               {modalMode === 'edit' && canEditNode ? (
                 <div className="space-y-4">
@@ -2177,7 +2291,7 @@ export default function RenoAppFlowBuilderPage() {
                               <div className="flex shrink-0 gap-2">
                                 <button type="button" onClick={() => { setExistingTargetId(item.id); setAddPreviewQuestionId(item.id) }} className="rounded-md border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-800 hover:bg-stone-100">Välj</button>
                                 <button type="button" onClick={() => setAddPreviewQuestionId(item.id)} className="rounded-md border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-800 hover:bg-stone-100">Öppna</button>
-                                <button type="button" onClick={() => { setDuplicateQuestionSourceId(item.id); setQuestionDraft(createDuplicateQuestionDraft(item)); setAddMode('new') }} className="rounded-md border border-sky-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-50">Duplicera</button>
+                                <button type="button" onClick={() => { setDuplicateQuestionSourceId(item.id); setQuestionDraft(createDuplicateQuestionDraft(item)); setAddMode('new') }} className="rounded-md border border-sky-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-50">Skapa kopia</button>
                               </div>
                             </div>
                           </div>

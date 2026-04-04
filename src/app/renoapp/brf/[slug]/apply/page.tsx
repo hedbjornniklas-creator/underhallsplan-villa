@@ -803,11 +803,13 @@ export default function RenoAppApplyPage() {
               .join(', ')
           : 'Inga renoveringar valda ännu.',
       3:
-        beforePhaseRequirements.length > 0
+        selectedActions.length === 0
+          ? 'Välj först vad du vill renovera.'
+          : beforePhaseRequirements.length > 0
           ? `${requirementGroups.beforeRequired.length} obligatoriska underlag, ${
               beforePhaseRequirements.length - requirementGroups.beforeRequired.length
             } övriga underlag.`
-          : 'Välj först vad du vill renovera.',
+          : 'Inga underlag behöver bifogas utifrån dina nuvarande val.',
       4:
         mergedParticipantRoles.length > 0
           ? `${filledParticipantEntryCount} av ${mergedParticipantRoles.length} roller ifyllda.`
@@ -1279,14 +1281,18 @@ export default function RenoAppApplyPage() {
               du ändå spara utkastet och komplettera senare.
             </p>
           </div>
-          {!activeDraftToken ? (
+          {!activeDraftToken && beforePhaseRequirements.length > 0 ? (
             <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
               Fyll först i lägenhet och kontakt så att utkastet kan skapas innan du laddar upp dokument.
             </div>
           ) : null}
-          {beforePhaseRequirements.length === 0 ? (
+          {selectedActions.length === 0 ? (
             <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
               Välj först minst en renoveringstyp i steg 2.
+            </div>
+          ) : beforePhaseRequirements.length === 0 ? (
+            <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
+              Inga underlag behöver bifogas utifrån dina nuvarande val.
             </div>
           ) : (
             beforePhaseRequirements.map((requirement) => (
