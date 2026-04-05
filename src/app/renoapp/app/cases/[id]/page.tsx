@@ -267,16 +267,16 @@ export default function RenoAppCaseDetailPage() {
         </div>
 
         <div className="border-t border-stone-200/80 px-10 py-8">
-          <div className="grid gap-6 md:grid-cols-3">
-            <div className="grid gap-1 md:border-r md:border-stone-200/80 md:pr-6">
+          <div className="grid gap-6 md:grid-cols-[1fr_1fr_1.15fr]">
+            <div className="grid gap-1 md:border-r md:border-stone-200/80 md:pr-8">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Ansökningsdatum</p>
               <p className="text-[0.95rem] leading-none text-stone-500">{formatDateTime(item.submittedAt).split(' ')[0]}</p>
             </div>
-            <div className="grid gap-1 md:border-r md:border-stone-200/80 md:px-6">
+            <div className="grid gap-1 md:border-r md:border-stone-200/80 md:pr-8">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Uppdaterad</p>
               <p className="text-[0.95rem] leading-none text-stone-500">{formatDateTime(item.updatedAt).split(' ')[0]}</p>
             </div>
-            <div className="grid gap-1 md:pl-6">
+            <div className="grid gap-1">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Status</p>
               <p className="text-[0.95rem] leading-none text-stone-800">{item.status}</p>
             </div>
@@ -284,8 +284,8 @@ export default function RenoAppCaseDetailPage() {
         </div>
 
         <div className="border-t border-stone-200/80 px-10 py-8">
-          <div className="grid gap-8 lg:grid-cols-[1.7fr_1fr]">
-            <div className="grid gap-8 md:grid-cols-[1fr_auto_1fr] md:items-start">
+          <div className="grid gap-8 lg:grid-cols-[1fr_1fr_1.15fr]">
+            <div className="grid gap-8 md:col-span-2 md:grid-cols-[1fr_auto_1fr] md:items-start">
               <div className="grid gap-2">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Sökande</p>
                 <div className="grid gap-2 text-[1.1rem] leading-7 text-stone-700">
@@ -306,9 +306,9 @@ export default function RenoAppCaseDetailPage() {
               </div>
             </div>
 
-            <div className="grid content-start gap-3 border-stone-200/80 lg:border-l lg:pl-8">
+            <div className="grid content-start gap-3 border-stone-200/80 lg:-mt-[5.25rem] lg:border-l lg:pl-8">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Beskrivning</p>
-              <p className="min-h-[8.5rem] max-w-xl whitespace-pre-wrap text-[1.1rem] leading-8 text-stone-700">
+              <p className="min-h-[13.75rem] max-w-xl whitespace-pre-wrap text-[1.1rem] leading-8 text-stone-700">
                 {item.description ?? 'Ingen beskrivning registrerad.'}
               </p>
               {item.blockedAt ? (
