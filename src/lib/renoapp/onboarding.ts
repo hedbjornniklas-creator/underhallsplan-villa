@@ -1344,18 +1344,6 @@ export async function acceptBrfInvite(
   if (invite.revoked_at) throw new Error('INVITE_REVOKED')
   if (new Date(invite.expires_at).getTime() < Date.now()) throw new Error('INVITE_EXPIRED')
 
-  if (input.termsAccepted !== true) {
-    throw new Error('TERMS_NOT_ACCEPTED')
-  }
-
-  const termsVersion = normalizeText(input.termsVersion)
-  if (!termsVersion) {
-    throw new Error('TERMS_VERSION_REQUIRED')
-  }
-  if (termsVersion !== RENOAPP_BRF_TERMS_VERSION) {
-    throw new Error('TERMS_VERSION_MISMATCH')
-  }
-
   const inviteEmail = normalizeEmail(invite.email)
   assertValidEmail(inviteEmail, 'INVITE_EMAIL_INVALID')
   const inviteUserName = normalizeText(input.inviteUserName) ?? normalizeText(invite.full_name)
@@ -1380,6 +1368,19 @@ export async function acceptBrfInvite(
   const resolvedInviteMode: AcceptBrfInviteResult['mode'] = brfStateData.onboarding_completed_at
     ? 'member_invite'
     : 'brf_onboarding'
+
+  const termsVersion = normalizeText(input.termsVersion)
+  if (resolvedInviteMode === 'brf_onboarding') {
+    if (input.termsAccepted !== true) {
+      throw new Error('TERMS_NOT_ACCEPTED')
+    }
+    if (!termsVersion) {
+      throw new Error('TERMS_VERSION_REQUIRED')
+    }
+    if (termsVersion !== RENOAPP_BRF_TERMS_VERSION) {
+      throw new Error('TERMS_VERSION_MISMATCH')
+    }
+  }
 
   const persistBrfCompletion = async (acceptedByProfileId: string) => {
     const { error: updateBrfError } = await admin

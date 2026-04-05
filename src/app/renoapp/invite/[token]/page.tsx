@@ -218,6 +218,7 @@ export default function RenoAppInvitePage() {
   const [password, setPassword] = useState('')
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [requiresManualLogin, setRequiresManualLogin] = useState(false)
 
@@ -293,6 +294,16 @@ export default function RenoAppInvitePage() {
 
   const removeAdditionalUser = (index: number) => {
     setAdditionalUsers((current) => current.filter((_, currentIndex) => currentIndex !== index))
+  }
+
+  const handleSignOut = async () => {
+    setSigningOut(true)
+    try {
+      await supabase.auth.signOut()
+      window.location.reload()
+    } finally {
+      setSigningOut(false)
+    }
   }
 
   const handleAccept = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -387,7 +398,19 @@ export default function RenoAppInvitePage() {
     <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-8 md:px-6 md:py-10">
       <div className="grid gap-5">
         <section className="rounded-[28px] border border-stone-200/80 bg-white/94 p-5 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:p-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">RenoApp</p>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">RenoApp</p>
+            {payload.currentUser.email ? (
+              <button
+                type="button"
+                onClick={handleSignOut}
+                disabled={signingOut}
+                className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {signingOut ? 'Loggar ut...' : 'Logga ut'}
+              </button>
+            ) : null}
+          </div>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900 md:text-3xl">
             {isOnboardingInvite ? 'Slutför BRF-anslutning' : 'Välkommen till styrelseportalen'}
           </h1>
@@ -429,12 +452,21 @@ export default function RenoAppInvitePage() {
             </div>
           ) : requiresExistingLogin ? (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  disabled={signingOut}
+                  className="rounded-full border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {signingOut ? 'Loggar ut...' : 'Logga ut'}
+                </button>
+              </div>
               Du är inloggad med {payload.currentUser.email}. Logga ut och öppna inviten igen med {payload.invite.email}.
             </div>
           ) : (
             <form onSubmit={handleAccept} className="grid gap-6">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Steg 1</p>
                 <h2 className="mt-2 text-2xl font-semibold text-stone-900">
                   {needsPassword ? 'Aktivera kontot' : isOnboardingInvite ? 'Kontot är klart' : 'Bekräfta inbjudan'}
                 </h2>
