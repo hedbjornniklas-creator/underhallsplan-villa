@@ -338,6 +338,7 @@ type QueryBuilder<T = Record<string, unknown>> = {
   eq: (column: string, value: unknown) => QueryBuilder<T>
   is: (column: string, value: unknown) => QueryBuilder<T>
   in: (column: string, values: unknown[]) => QueryBuilder<T>
+  like: (column: string, pattern: string) => QueryBuilder<T>
   order: (
     column: string,
     options?: {
@@ -1414,28 +1415,45 @@ function allowedActionsFromScope(scope: CaseAccessLinkRow['scope']) {
 }
 
 async function createUniqueCaseNumber(admin: SupabaseAdminClient) {
-  const year = new Date().getFullYear()
+  const stockholmParts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Europe/Stockholm',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
 
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const suffix = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0')
-    const caseNumber = `RA-${year}-${suffix}`
+  const year = stockholmParts.find((part) => part.type === 'year')?.value ?? String(new Date().getFullYear())
+  const month = stockholmParts.find((part) => part.type === 'month')?.value ?? '01'
+  const day = stockholmParts.find((part) => part.type === 'day')?.value ?? '01'
+  const prefix = `RA-${year}-${month}${day}-`
 
-    const { data, error } = await admin
-      .from('renovation_cases')
-      .select('id')
-      .eq('case_number', caseNumber)
-      .maybeSingle()
+  const { data, error } = await admin
+    .from('renovation_cases')
+    .select('case_number')
+    .like('case_number', `${prefix}%`)
+    .order('case_number', { ascending: false })
+    .limit(100)
 
-    if (error) {
-      throw new Error(error.message ?? 'Kunde inte generera ärendenummer.')
-    }
-
-    if (!data) {
-      return caseNumber
-    }
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte generera ?rendenummer.')
   }
 
-  throw new Error('Kunde inte generera unikt ärendenummer.')
+  const existingNumbers = ((data ?? []) as Array<{ case_number?: string | null }>)
+    .map((item) => String(item.case_number ?? ''))
+    .filter((value) => value.startsWith(prefix))
+
+  const highestSequence = existingNumbers.reduce((max, value) => {
+    const suffix = value.slice(prefix.length)
+    const parsed = Number.parseInt(suffix, 10)
+    return Number.isFinite(parsed) ? Math.max(max, parsed) : max
+  }, 0)
+
+  const nextSequence = highestSequence + 1
+  if (nextSequence > 99) {
+    throw new Error('Kunde inte generera ?rendenummer f?r dagen.')
+  }
+
+  return `${prefix}${String(nextSequence).padStart(2, '0')}`
 }
 
 async function getPublicBrfBySlug(admin: SupabaseAdminClient, slug: string) {

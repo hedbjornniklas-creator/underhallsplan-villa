@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 type CaseItem = {
   id: string
@@ -26,10 +26,19 @@ type CaseItem = {
   }
 }
 
+type SortKey = 'submitted_desc' | 'submitted_asc' | 'case_number' | 'status'
+
+function formatDate(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleDateString('sv-SE')
+}
+
 export default function RenoAppCasesPage() {
   const [items, setItems] = useState<CaseItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [sortBy, setSortBy] = useState<SortKey>('submitted_desc')
 
   useEffect(() => {
     let active = true
@@ -67,13 +76,54 @@ export default function RenoAppCasesPage() {
     }
   }, [])
 
+  const sortedItems = useMemo(() => {
+    const next = [...items]
+
+    next.sort((left, right) => {
+      if (sortBy === 'submitted_asc') {
+        return new Date(left.submittedAt).getTime() - new Date(right.submittedAt).getTime()
+      }
+
+      if (sortBy === 'case_number') {
+        return left.caseNumber.localeCompare(right.caseNumber, 'sv')
+      }
+
+      if (sortBy === 'status') {
+        return left.status.localeCompare(right.status, 'sv') || right.submittedAt.localeCompare(left.submittedAt)
+      }
+
+      return new Date(right.submittedAt).getTime() - new Date(left.submittedAt).getTime()
+    })
+
+    return next
+  }, [items, sortBy])
+
   return (
     <div className="grid gap-6">
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
 
       <section className="overflow-hidden rounded-[32px] border border-stone-200/80 bg-white/90 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-        <div className="hidden grid-cols-[1.2fr_1fr_1fr_0.9fr_1fr_1fr] gap-px bg-stone-200 text-xs font-semibold uppercase tracking-[0.14em] text-stone-500 md:grid">
-          {['Ärendenummer', 'BRF', 'Åtgärd', 'Status', 'Risk', 'Sökande'].map((column) => (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200/80 bg-stone-50/80 px-4 py-3">
+          <p className="text-sm font-medium text-stone-600">
+            {loading ? 'Laddar ärenden...' : `${sortedItems.length} ärenden`}
+          </p>
+          <label className="flex items-center gap-2 text-sm text-stone-700">
+            <span className="font-medium">Sortera</span>
+            <select
+              value={sortBy}
+              onChange={(event) => setSortBy(event.target.value as SortKey)}
+              className="rounded-full border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none"
+            >
+              <option value="submitted_desc">Ansökningsdatum, nyast först</option>
+              <option value="submitted_asc">Ansökningsdatum, äldst först</option>
+              <option value="case_number">Ärendenummer</option>
+              <option value="status">Status</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="hidden grid-cols-[1.2fr_1fr_1fr_1fr] gap-px bg-stone-200 text-xs font-semibold uppercase tracking-[0.14em] text-stone-500 md:grid">
+          {['Ärendenummer', 'Åtgärd', 'Ansökningsdatum', 'Sökande'].map((column) => (
             <div key={column} className="bg-stone-50 px-4 py-3">
               {column}
             </div>
@@ -82,28 +132,20 @@ export default function RenoAppCasesPage() {
 
         {loading ? (
           <div className="px-4 py-10 text-sm text-stone-600">Laddar RenoApp-ärenden...</div>
-        ) : items.length === 0 ? (
+        ) : sortedItems.length === 0 ? (
           <div className="px-4 py-10 text-sm text-stone-600">Inga RenoApp-ärenden hittades ännu.</div>
         ) : (
           <div className="divide-y divide-stone-200">
-            {items.map((item) => (
+            {sortedItems.map((item) => (
               <Link
                 key={item.id}
                 href={`/renoapp/app/cases/${item.id}`}
-                className="grid gap-2 px-4 py-4 text-sm text-stone-700 transition hover:bg-stone-50/80 md:grid-cols-[1.2fr_1fr_1fr_0.9fr_1fr_1fr] md:items-center"
+                className="grid gap-2 px-4 py-4 text-sm text-stone-700 transition hover:bg-stone-50/80 md:grid-cols-[1.2fr_1fr_1fr_1fr] md:items-center"
               >
-                <div>
-                  <p className="font-semibold text-stone-900">{item.caseNumber}</p>
-                  <p className="mt-1 text-xs text-stone-500">{item.title}</p>
-                </div>
-                <div>{item.brf.name ?? '-'}</div>
+                <div className="font-semibold text-stone-900">{item.caseNumber}</div>
                 <div>{item.actionType?.label ?? '-'}</div>
-                <div>{item.status}</div>
-                <div>{item.riskLevel ?? '-'}</div>
-                <div>
-                  <p>{item.applicant.name ?? '-'}</p>
-                  <p className="text-xs text-stone-500">{item.applicant.email ?? '-'}</p>
-                </div>
+                <div>{formatDate(item.submittedAt)}</div>
+                <div>{item.applicant.name ?? '-'}</div>
               </Link>
             ))}
           </div>
