@@ -107,10 +107,6 @@ function formatDateTime(value: string | null) {
   return date.toLocaleString('sv-SE')
 }
 
-function formatListLabel(value: string) {
-  return value.replaceAll('_', ' ')
-}
-
 function getActionLabel(status: StatusAction) {
   if (status === 'review') return 'Sätt till review'
   if (status === 'need_info') return 'Begär komplettering'
@@ -263,36 +259,58 @@ export default function RenoAppCaseDetailPage() {
         </span>
       </div>
 
-      <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+      <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] lg:p-7">
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">{item.brf.name ?? 'BRF'}</p>
-        <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">{item.caseNumber}</h2>
-        <p className="mt-3 text-lg text-stone-800">{item.title}</p>
-        <p className="mt-6 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Beskrivning</p>
-        <p className="mt-4 max-w-3xl whitespace-pre-wrap text-sm leading-8 text-stone-700">
-          {item.description ?? 'Ingen beskrivning registrerad.'}
-        </p>
+        <h2 className="mt-3 text-4xl font-semibold tracking-tight text-stone-900">{item.caseNumber}</h2>
+        <p className="mt-2 text-lg text-stone-800">{item.title}</p>
 
-        <div className="mt-8 grid gap-4 lg:grid-cols-3">
-          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
-            <p className="text-sm font-semibold text-stone-900">Åtgärd</p>
-            <p className="mt-2 text-sm text-stone-700">{item.actionType.label ?? 'Ej angiven'}</p>
+        <div className="mt-6 border-t border-stone-200 pt-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Beskrivning</p>
+          <p className="mt-2 max-w-3xl whitespace-pre-wrap text-sm leading-7 text-stone-700">
+            {item.description ?? 'Ingen beskrivning registrerad.'}
+          </p>
+        </div>
+
+        <div className="mt-5 border-t border-stone-200 pt-5">
+          <div className="grid gap-x-8 gap-y-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Åtgärd</p>
+              <p className="text-sm text-stone-800">{item.actionType.label ?? 'Ej angiven'}</p>
+            </div>
+            <div className="grid gap-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Inskickad</p>
+              <p className="text-sm text-stone-800">{formatDateTime(item.submittedAt)}</p>
+            </div>
+            <div className="grid gap-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Senast uppdaterad</p>
+              <p className="text-sm text-stone-800">{formatDateTime(item.updatedAt)}</p>
+            </div>
+            <div className="grid gap-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Status</p>
+              <p className="text-sm text-stone-800">{item.status}</p>
+            </div>
           </div>
-          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
-            <p className="text-sm font-semibold text-stone-900">Risknivå</p>
-            <p className="mt-2 text-sm text-stone-700">{item.riskLevel ?? '-'}</p>
-          </div>
-          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
-            <p className="text-sm font-semibold text-stone-900">Inskickad</p>
-            <p className="mt-2 text-sm text-stone-700">{formatDateTime(item.submittedAt)}</p>
-          </div>
-          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
-            <p className="text-sm font-semibold text-stone-900">Senast uppdaterad</p>
-            <p className="mt-2 text-sm text-stone-700">{formatDateTime(item.updatedAt)}</p>
+        </div>
+
+        <div className="mt-5 border-t border-stone-200 pt-5">
+          <div className="grid gap-x-8 gap-y-4 md:grid-cols-2">
+            <div className="grid gap-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Sökande</p>
+              <p className="text-sm text-stone-800">{item.applicant.name ?? 'Okänd kontakt'}</p>
+              <p className="text-sm text-stone-600">{item.applicant.email ?? '-'}</p>
+              <p className="text-sm text-stone-600">{item.applicant.phone ?? '-'}</p>
+            </div>
+            <div className="grid gap-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Lägenhet</p>
+              <p className="text-sm text-stone-800">Internt nr: {item.unit.unitNumberInternal ?? '-'}</p>
+              <p className="text-sm text-stone-600">Skatteverket: {item.unit.unitNumberSkatteverket ?? '-'}</p>
+              <p className="text-sm text-stone-600">Status: {item.unit.status ?? '-'}</p>
+            </div>
           </div>
         </div>
 
         {item.blockedAt ? (
-          <div className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
+          <div className="mt-5 rounded-3xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
             <p className="font-semibold">Ärendet är spärrat</p>
             <p className="mt-2">Tidpunkt: {formatDateTime(item.blockedAt)}</p>
             <p className="mt-1">Orsak: {item.blockedReason ?? 'Ingen orsak angiven.'}</p>
@@ -302,51 +320,6 @@ export default function RenoAppCaseDetailPage() {
 
       <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="grid gap-6">
-          <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-            <h3 className="text-2xl font-semibold text-stone-900">Sökande och lägenhet</h3>
-            <div className="mt-6 grid gap-4 lg:grid-cols-2">
-              <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
-                <p className="text-sm font-semibold text-stone-900">Sökande</p>
-                <p className="mt-3 text-sm leading-7 text-stone-700">
-                  {item.applicant.name ?? 'Okänd kontakt'}
-                  <br />
-                  {item.applicant.email ?? '-'}
-                  <br />
-                  {item.applicant.phone ?? '-'}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
-                <p className="text-sm font-semibold text-stone-900">Lägenhet</p>
-                <p className="mt-3 text-sm leading-7 text-stone-700">
-                  Internt nr: {item.unit.unitNumberInternal ?? '-'}
-                  <br />
-                  Skatteverket: {item.unit.unitNumberSkatteverket ?? '-'}
-                  <br />
-                  Status: {item.unit.status ?? '-'}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 rounded-3xl border border-stone-200 bg-white/70 p-6">
-              <p className="text-sm font-semibold text-stone-900">Aktuella kontaktkopplingar</p>
-              {item.currentContacts.length === 0 ? (
-                <p className="mt-3 text-sm text-stone-700">Inga aktuella kontakter är kopplade till lägenheten ännu.</p>
-              ) : (
-                <ul className="mt-3 space-y-2 text-sm text-stone-700">
-                  {item.currentContacts.map((contact) => (
-                    <li key={contact.id} className="rounded-2xl border border-stone-200 bg-white px-4 py-3">
-                      <p className="font-medium text-stone-900">{contact.name ?? 'Okänd kontakt'}</p>
-                      <p>{contact.email ?? '-'}</p>
-                      <p className="text-xs uppercase tracking-[0.12em] text-stone-500">
-                        {formatListLabel(contact.relationshipType)} · {formatListLabel(contact.verificationStatus)}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </article>
-
           <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
             <h3 className="text-2xl font-semibold text-stone-900">Dokument och krav</h3>
             <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -360,8 +333,7 @@ export default function RenoAppCaseDetailPage() {
                       <li key={document.id} className="rounded-2xl border border-stone-200 bg-white px-4 py-3">
                         <p className="font-medium text-stone-900">{document.fileName ?? 'Dokument'}</p>
                         <p className="text-xs text-stone-500">
-                          {document.documentTypeLabel ?? 'Ingen typ vald'} · {document.status} ·{' '}
-                          {formatDateTime(document.uploadedAt)}
+                          {document.documentTypeLabel ?? 'Ingen typ vald'} · {document.status} · {formatDateTime(document.uploadedAt)}
                         </p>
                         {document.note ? <p className="mt-1">{document.note}</p> : null}
                       </li>
@@ -399,10 +371,7 @@ export default function RenoAppCaseDetailPage() {
             ) : (
               <ul className="mt-4 space-y-3 text-sm">
                 {item.reviewFlags.map((flag) => (
-                  <li
-                    key={flag.id}
-                    className={`rounded-2xl border px-4 py-4 ${reviewFlagTone(flag.severity)}`}
-                  >
+                  <li key={flag.id} className={`rounded-2xl border px-4 py-4 ${reviewFlagTone(flag.severity)}`}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="font-semibold">{flag.label}</p>
                       <span className="rounded-full border border-current/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]">
@@ -411,9 +380,7 @@ export default function RenoAppCaseDetailPage() {
                     </div>
                     <p className="mt-1 text-xs uppercase tracking-[0.12em] opacity-80">{flag.category}</p>
                     {flag.description ? <p className="mt-2 leading-6">{flag.description}</p> : null}
-                    {flag.sourceLabel ? (
-                      <p className="mt-2 text-xs opacity-80">Källa: {flag.sourceLabel}</p>
-                    ) : null}
+                    {flag.sourceLabel ? <p className="mt-2 text-xs opacity-80">Källa: {flag.sourceLabel}</p> : null}
                   </li>
                 ))}
               </ul>
