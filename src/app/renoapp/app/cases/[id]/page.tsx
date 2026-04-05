@@ -259,58 +259,54 @@ export default function RenoAppCaseDetailPage() {
         </span>
       </div>
 
-      <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] lg:p-7">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">{item.brf.name ?? 'BRF'}</p>
-        <h2 className="mt-3 text-4xl font-semibold tracking-tight text-stone-900">{item.caseNumber}</h2>
-        <p className="mt-2 text-lg text-stone-800">{item.title}</p>
+      <section className="px-1 py-2 lg:px-2">
+        <div className="grid gap-x-10 gap-y-6 md:grid-cols-2">
+          <div className="grid gap-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Sökande</p>
+            <p className="text-sm text-stone-800">{item.applicant.name ?? 'Okänd kontakt'}</p>
+            <p className="text-sm text-stone-600">{item.applicant.email ?? '-'}</p>
+            <p className="text-sm text-stone-600">{item.applicant.phone ?? '-'}</p>
+          </div>
+          <div className="grid gap-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Lägenhet</p>
+            <p className="text-sm text-stone-800">Internt nr: {item.unit.unitNumberInternal ?? '-'}</p>
+            <p className="text-sm text-stone-600">Skatteverket: {item.unit.unitNumberSkatteverket ?? '-'}</p>
+          </div>
+        </div>
 
-        <div className="mt-6 border-t border-stone-200 pt-5">
+        <div className="mt-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-stone-800">
+            <span className="font-semibold text-stone-900">Ärendenummer</span>
+            <span>{item.caseNumber}</span>
+            <span className="text-stone-500">avseende</span>
+            <span>{item.title}</span>
+          </div>
+
+          <div className="grid gap-x-8 gap-y-3 text-sm text-stone-700 sm:grid-cols-3">
+            <div className="grid gap-1">
+              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Inskickad</span>
+              <span>{formatDateTime(item.submittedAt)}</span>
+            </div>
+            <div className="grid gap-1">
+              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Senast uppdaterad</span>
+              <span>{formatDateTime(item.updatedAt)}</span>
+            </div>
+            <div className="grid gap-1">
+              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Status</span>
+              <span>{item.status}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Beskrivning</p>
           <p className="mt-2 max-w-3xl whitespace-pre-wrap text-sm leading-7 text-stone-700">
             {item.description ?? 'Ingen beskrivning registrerad.'}
           </p>
         </div>
 
-        <div className="mt-5 border-t border-stone-200 pt-5">
-          <div className="grid gap-x-8 gap-y-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className="grid gap-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Åtgärd</p>
-              <p className="text-sm text-stone-800">{item.actionType.label ?? 'Ej angiven'}</p>
-            </div>
-            <div className="grid gap-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Inskickad</p>
-              <p className="text-sm text-stone-800">{formatDateTime(item.submittedAt)}</p>
-            </div>
-            <div className="grid gap-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Senast uppdaterad</p>
-              <p className="text-sm text-stone-800">{formatDateTime(item.updatedAt)}</p>
-            </div>
-            <div className="grid gap-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Status</p>
-              <p className="text-sm text-stone-800">{item.status}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-5 border-t border-stone-200 pt-5">
-          <div className="grid gap-x-8 gap-y-4 md:grid-cols-2">
-            <div className="grid gap-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Sökande</p>
-              <p className="text-sm text-stone-800">{item.applicant.name ?? 'Okänd kontakt'}</p>
-              <p className="text-sm text-stone-600">{item.applicant.email ?? '-'}</p>
-              <p className="text-sm text-stone-600">{item.applicant.phone ?? '-'}</p>
-            </div>
-            <div className="grid gap-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Lägenhet</p>
-              <p className="text-sm text-stone-800">Internt nr: {item.unit.unitNumberInternal ?? '-'}</p>
-              <p className="text-sm text-stone-600">Skatteverket: {item.unit.unitNumberSkatteverket ?? '-'}</p>
-              <p className="text-sm text-stone-600">Status: {item.unit.status ?? '-'}</p>
-            </div>
-          </div>
-        </div>
-
         {item.blockedAt ? (
-          <div className="mt-5 rounded-3xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
+          <div className="mt-6 text-sm text-amber-900">
             <p className="font-semibold">Ärendet är spärrat</p>
             <p className="mt-2">Tidpunkt: {formatDateTime(item.blockedAt)}</p>
             <p className="mt-1">Orsak: {item.blockedReason ?? 'Ingen orsak angiven.'}</p>
