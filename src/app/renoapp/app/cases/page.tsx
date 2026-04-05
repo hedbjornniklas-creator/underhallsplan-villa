@@ -122,8 +122,8 @@ export default function RenoAppCasesPage() {
           </label>
         </div>
 
-        <div className="hidden grid-cols-[1.2fr_1fr_1fr_1fr] gap-px bg-stone-200 text-xs font-semibold uppercase tracking-[0.14em] text-stone-500 md:grid">
-          {['Ärendenummer', 'Åtgärd', 'Ansökningsdatum', 'Sökande'].map((column) => (
+        <div className="hidden grid-cols-[1.2fr_1fr_0.9fr_1fr_1fr] gap-px bg-stone-200 text-xs font-semibold uppercase tracking-[0.14em] text-stone-500 md:grid">
+          {['Ärendenummer', 'Åtgärd', 'Status', 'Ansökningsdatum', 'Sökande'].map((column) => (
             <div key={column} className="bg-stone-50 px-4 py-3">
               {column}
             </div>
@@ -140,10 +140,11 @@ export default function RenoAppCasesPage() {
               <Link
                 key={item.id}
                 href={`/renoapp/app/cases/${item.id}`}
-                className="grid gap-2 px-4 py-4 text-sm text-stone-700 transition hover:bg-stone-50/80 md:grid-cols-[1.2fr_1fr_1fr_1fr] md:items-center"
+                className="grid gap-2 px-4 py-4 text-sm text-stone-700 transition hover:bg-stone-50/80 md:grid-cols-[1.2fr_1fr_0.9fr_1fr_1fr] md:items-center"
               >
                 <div className="font-semibold text-stone-900">{item.caseNumber}</div>
                 <div>{item.actionType?.label ?? '-'}</div>
+                <div>{item.status}</div>
                 <div>{formatDate(item.submittedAt)}</div>
                 <div>{item.applicant.name ?? '-'}</div>
               </Link>

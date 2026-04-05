@@ -267,11 +267,12 @@ export default function RenoAppCaseDetailPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">{item.brf.name ?? 'BRF'}</p>
         <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">{item.caseNumber}</h2>
         <p className="mt-3 text-lg text-stone-800">{item.title}</p>
+        <p className="mt-6 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Beskrivning</p>
         <p className="mt-4 max-w-3xl whitespace-pre-wrap text-sm leading-8 text-stone-700">
           {item.description ?? 'Ingen beskrivning registrerad.'}
         </p>
 
-        <div className="mt-8 grid gap-4 lg:grid-cols-4">
+        <div className="mt-8 grid gap-4 lg:grid-cols-3">
           <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
             <p className="text-sm font-semibold text-stone-900">Åtgärd</p>
             <p className="mt-2 text-sm text-stone-700">{item.actionType.label ?? 'Ej angiven'}</p>
