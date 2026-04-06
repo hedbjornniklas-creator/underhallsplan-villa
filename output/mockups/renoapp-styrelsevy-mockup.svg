@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1130" viewBox="0 0 1600 1130" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="1130" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4EFE6"/>
+      <stop offset="1" stop-color="#EFE7DB"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="20" width="1600" height="1090" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#A89B87" flood-opacity="0.18"/>
+    </filter>
+    <style>
+      .ui { font-family: "Segoe UI", Arial, sans-serif; }
+      .title { font-size: 24px; font-weight: 700; fill: #1F2937; }
+      .subtitle { font-size: 18px; font-weight: 500; fill: #4B5563; }
+      .h2 { font-size: 19px; font-weight: 700; fill: #111827; }
+      .kicker { font-size: 11px; font-weight: 700; letter-spacing: 0.22em; fill: #6B7280; text-transform: uppercase; }
+      .metaValue { font-size: 19px; font-weight: 500; fill: #374151; }
+      .body { font-size: 15px; font-weight: 500; fill: #334155; }
+      .bodyStrong { font-size: 15px; font-weight: 600; fill: #111827; }
+      .small { font-size: 12px; font-weight: 500; fill: #64748B; }
+      .chip { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; fill: #0F172A; }
+      .muted { fill: #6B7280; }
+      .line { stroke: #E7E5E4; stroke-width: 1; }
+      .card { fill: #FFFFFF; stroke: #E7E5E4; stroke-width: 1; }
+      .subcard { fill: #FAFAF9; stroke: #E7E5E4; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1130" fill="url(#bg)"/>
+  <text class="ui bodyStrong" x="48" y="42">Tillbaka till &#228;renden</text>
+
+  <g filter="url(#shadow)">
+    <rect class="card" x="40" y="64" rx="34" ry="34" width="1520" height="360"/>
+  </g>
+
+  <text class="ui small" x="88" y="116">STYRELSEVY / RENOAPP</text>
+  <text class="ui title" x="88" y="152">&#196;rende RA-2026-819431</text>
+  <text class="ui subtitle" x="370" y="152">Renovering: V&#229;trum, Ytskiktsrenovering</text>
+  <rect x="1362" y="116" width="130" height="34" rx="17" fill="#EEF6FF"/>
+  <text class="ui chip" x="1390" y="138" fill="#1D4ED8">GRANSKNING</text>
+
+  <line class="line" x1="40" y1="188" x2="1560" y2="188"/>
+  <line class="line" x1="40" y1="286" x2="1560" y2="286"/>
+  <line class="line" x1="544" y1="230" x2="544" y2="376"/>
+  <line class="line" x1="1048" y1="230" x2="1048" y2="376"/>
+
+  <text class="ui kicker" x="88" y="236">Ans&#246;kningsdatum</text>
+  <text class="ui metaValue" x="88" y="261">2026-04-01</text>
+
+  <text class="ui kicker" x="592" y="236">Uppdaterad</text>
+  <text class="ui metaValue" x="592" y="261">2026-04-03</text>
+
+  <text class="ui kicker" x="1096" y="236">Status</text>
+  <text class="ui metaValue" x="1096" y="261">Beh&#246;ver kompletteras</text>
+
+  <text class="ui kicker" x="88" y="334">S&#246;kande</text>
+  <text class="ui bodyStrong" x="88" y="372">Niklas Test 2</text>
+  <text class="ui body" x="88" y="404">jn@hedbjorn.se</text>
+
+  <text class="ui kicker" x="592" y="334">L&#228;genhet</text>
+  <text class="ui bodyStrong" x="592" y="372">Internt nr: 16</text>
+  <text class="ui body" x="592" y="404">Skatteverket: 1601</text>
+
+  <text class="ui kicker" x="1096" y="334">Beskrivning</text>
+  <text class="ui body" x="1096" y="372">Badrumsrenovering med ny ytskiktsl&#246;sning,</text>
+  <text class="ui body" x="1096" y="398">fukts&#228;kring och justering av VVS-anslutningar.</text>
+
+  <g filter="url(#shadow)">
+    <rect class="card" x="40" y="452" rx="30" ry="30" width="960" height="620"/>
+  </g>
+  <text class="ui h2" x="84" y="500">Dokument och beslutsunderlag</text>
+  <text class="ui small" x="84" y="524">Det som redan kommit in, det som saknas och vad styrelsen beh&#246;ver ta st&#228;llning till.</text>
+
+  <rect class="subcard" x="72" y="550" rx="22" ry="22" width="420" height="488"/>
+  <rect class="subcard" x="508" y="550" rx="22" ry="22" width="460" height="488"/>
+
+  <text class="ui kicker" x="104" y="588">Inkomna dokument</text>
+  <rect x="104" y="610" width="356" height="88" rx="18" fill="#FFFFFF" stroke="#E7E5E4"/>
+  <text class="ui bodyStrong" x="126" y="640">Planritning - badrum.pdf</text>
+  <text class="ui small" x="126" y="664">Typ: Ritning &#8226; Status: mottagen &#8226; Uppladdad 2026-04-02</text>
+
+  <rect x="104" y="716" width="356" height="88" rx="18" fill="#FFFFFF" stroke="#E7E5E4"/>
+  <text class="ui bodyStrong" x="126" y="746">Intyg beh&#246;rig entrepren&#246;r.pdf</text>
+  <text class="ui small" x="126" y="770">Typ: Intyg &#8226; Status: mottagen &#8226; Uppladdad 2026-04-02</text>
+
+  <rect x="104" y="822" width="356" height="88" rx="18" fill="#FFFFFF" stroke="#E7E5E4"/>
+  <text class="ui bodyStrong" x="126" y="852">Produktblad golvbrunn.pdf</text>
+  <text class="ui small" x="126" y="876">Typ: Produktblad &#8226; Status: granskas &#8226; Uppladdad 2026-04-03</text>
+
+  <text class="ui kicker" x="540" y="588">Dokumentkrav</text>
+  <line class="line" x1="540" y1="620" x2="936" y2="620"/>
+  <text class="ui bodyStrong" x="540" y="652">1. V&#229;trumsintyg</text>
+  <text class="ui small" x="540" y="674">Obligatoriskt f&#246;re godk&#228;nnande. Saknas i nul&#228;get.</text>
+
+  <line class="line" x1="540" y1="706" x2="936" y2="706"/>
+  <text class="ui bodyStrong" x="540" y="738">2. Ritning / teknisk beskrivning</text>
+  <text class="ui small" x="540" y="760">Inkommet. Beh&#246;ver st&#228;mmas av mot VVS-p&#229;verkan.</text>
+
+  <line class="line" x1="540" y1="792" x2="936" y2="792"/>
+  <text class="ui bodyStrong" x="540" y="824">3. Entrepren&#246;rsuppgifter</text>
+  <text class="ui small" x="540" y="846">Delvis inkommet. Beh&#246;righet b&#246;r verifieras innan beslut.</text>
+
+  <line class="line" x1="540" y1="878" x2="936" y2="878"/>
+  <text class="ui bodyStrong" x="540" y="910">4. Eventuella villkor</text>
+  <text class="ui small" x="540" y="932">Kan anv&#228;ndas om beslut ges som villkorat godk&#228;nnande.</text>
+
+  <g filter="url(#shadow)">
+    <rect class="card" x="1032" y="452" rx="30" ry="30" width="528" height="170"/>
+  </g>
+  <text class="ui h2" x="1068" y="498">Flaggor och risker</text>
+  <rect x="1068" y="520" width="456" height="34" rx="17" fill="#FFF1F2"/>
+  <text class="ui chip" x="1088" y="542" fill="#BE123C">H&#214;G &#8226; V&#229;trum p&#229;verkar VVS</text>
+  <rect x="1068" y="566" width="456" height="34" rx="17" fill="#FFFBEB"/>
+  <text class="ui chip" x="1088" y="588" fill="#A16207">VARNING &#8226; Saknat v&#229;trumsintyg</text>
+
+  <g filter="url(#shadow)">
+    <rect class="card" x="1032" y="640" rx="30" ry="30" width="528" height="182"/>
+  </g>
+  <text class="ui h2" x="1068" y="686">Teknisk p&#229;verkan</text>
+  <rect x="1068" y="708" width="140" height="32" rx="16" fill="#F5F5F4" stroke="#E7E5E4"/>
+  <text class="ui chip" x="1094" y="729">V&#229;trum: Ja</text>
+  <rect x="1218" y="708" width="122" height="32" rx="16" fill="#F5F5F4" stroke="#E7E5E4"/>
+  <text class="ui chip" x="1248" y="729">VVS: Ja</text>
+  <rect x="1350" y="708" width="132" height="32" rx="16" fill="#F5F5F4" stroke="#E7E5E4"/>
+  <text class="ui chip" x="1376" y="729">El: Nej</text>
+  <rect x="1068" y="752" width="182" height="32" rx="16" fill="#F5F5F4" stroke="#E7E5E4"/>
+  <text class="ui chip" x="1096" y="773">Stomme: Nej</text>
+  <rect x="1260" y="752" width="204" height="32" rx="16" fill="#F5F5F4" stroke="#E7E5E4"/>
+  <text class="ui chip" x="1288" y="773">Ytskikt endast: Nej</text>
+
+  <g filter="url(#shadow)">
+    <rect class="card" x="1032" y="840" rx="30" ry="30" width="528" height="232"/>
+  </g>
+  <text class="ui h2" x="1068" y="886">Styrelse&#229;tg&#228;rd</text>
+  <text class="ui small" x="1068" y="910">Rekommenderad arbetsyta f&#246;r status, motivering, villkor och historik.</text>
+
+  <rect x="1068" y="936" width="170" height="40" rx="20" fill="#111827"/>
+  <text class="ui chip" x="1097" y="961" fill="#FFFFFF">Beg&#228;r komplettering</text>
+
+  <rect x="1250" y="936" width="110" height="40" rx="20" fill="#F5F5F4" stroke="#D6D3D1"/>
+  <text class="ui chip" x="1276" y="961">Godk&#228;nn</text>
+
+  <rect x="1372" y="936" width="152" height="40" rx="20" fill="#F5F5F4" stroke="#D6D3D1"/>
+  <text class="ui chip" x="1400" y="961">Villkorat beslut</text>
+
+  <line class="line" x1="1068" y1="996" x2="1524" y2="996"/>
+  <text class="ui kicker" x="1068" y="1022">Senaste beslut</text>
+  <text class="ui bodyStrong" x="1068" y="1050">2026-04-03 &#8226; Beh&#246;ver kompletteras</text>
+  <text class="ui small" x="1068" y="1070">Motivering: saknat v&#229;trumsintyg och behov av f&#246;rtydligande kring VVS.</text>
+</svg>

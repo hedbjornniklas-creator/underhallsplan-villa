@@ -112,6 +112,20 @@ export async function POST(request: Request, context: RouteContext) {
       throw new Error(insertError.message ?? 'Kunde inte spara dokumentrad.')
     }
 
+    await admin.from('renovation_case_messages').insert({
+      case_id: access.case.id,
+      type: 'document_uploaded',
+      author_role: 'applicant',
+      author_contact_id: access.contact.id,
+      message: fileEntry.name || fileName,
+      metadata: {
+        documentId: insertedDocument.id,
+        documentTypeId,
+        participantRoleId,
+        documentScope,
+      },
+    })
+
     return NextResponse.json({ ok: true, document: insertedDocument }, { status: 201 })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'

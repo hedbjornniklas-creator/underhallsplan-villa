@@ -96,6 +96,13 @@ type CaseDetail = {
     sourceType: 'answer_rule' | 'missing_document' | 'participant'
     sourceLabel: string | null
   }>
+  messages: Array<{
+    id: string
+    type: 'request_for_info' | 'applicant_reply' | 'document_uploaded' | 'decision' | 'status_change'
+    authorRole: 'board' | 'applicant' | 'system'
+    message: string | null
+    createdAt: string
+  }>
 }
 
 type StatusAction = 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected'
@@ -119,6 +126,31 @@ function reviewFlagTone(severity: 'info' | 'warning' | 'high') {
   if (severity === 'high') return 'border-rose-200 bg-rose-50 text-rose-900'
   if (severity === 'warning') return 'border-amber-200 bg-amber-50 text-amber-900'
   return 'border-sky-200 bg-sky-50 text-sky-900'
+}
+
+function formatStatusLabel(status: string) {
+  if (status === 'draft') return 'Utkast'
+  if (status === 'submitted') return 'Inskickad'
+  if (status === 'need_info') return 'Komplettering krävs'
+  if (status === 'review') return 'Under granskning'
+  if (status === 'approved') return 'Godkänd'
+  if (status === 'conditional') return 'Villkorad'
+  if (status === 'rejected') return 'Avslagen'
+  return status
+}
+
+function getMessageTitle(type: CaseDetail['messages'][number]['type']) {
+  if (type === 'request_for_info') return 'Styrelsen begär komplettering'
+  if (type === 'applicant_reply') return 'Medlemmen skickade komplettering'
+  if (type === 'document_uploaded') return 'Dokument uppladdat'
+  if (type === 'decision') return 'Beslut registrerat'
+  return 'Status uppdaterad'
+}
+
+function getMessageAuthorLabel(role: CaseDetail['messages'][number]['authorRole']) {
+  if (role === 'board') return 'Styrelsen'
+  if (role === 'applicant') return 'Sökande'
+  return 'Systemet'
 }
 
 export default function RenoAppCaseDetailPage() {
@@ -247,6 +279,7 @@ export default function RenoAppCaseDetailPage() {
     ['Påverkar våtrum', item.checks?.affectsWetRoom ?? false],
     ['Endast ytskikt', item.checks?.affectsSurfaceOnly ?? false],
   ] as const
+  const isDraftCase = item.status === 'draft'
 
   return (
     <div className="grid gap-6">
@@ -278,7 +311,7 @@ export default function RenoAppCaseDetailPage() {
             </div>
             <div className="grid gap-1 md:pl-8">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Status</p>
-              <p className="text-[0.95rem] leading-none text-stone-800">{item.status}</p>
+              <p className="text-[0.95rem] leading-none text-stone-800">{formatStatusLabel(item.status)}</p>
             </div>
 
             <div className="md:col-span-3 -mx-10 border-t border-stone-200/80" />
@@ -388,6 +421,11 @@ export default function RenoAppCaseDetailPage() {
 
           <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
             <h3 className="text-2xl font-semibold text-stone-900">Styrelseåtgärd</h3>
+            {isDraftCase ? (
+              <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+                Ärendet är fortfarande ett utkast. Styrelsen kan inte agera förrän medlemmen har skickat in ansökan.
+              </div>
+            ) : (
             <form onSubmit={handleStatusSubmit} className="mt-6 grid gap-4">
               <label className="grid gap-2 text-sm text-stone-700">
                 <span>Ny status</span>
@@ -405,13 +443,17 @@ export default function RenoAppCaseDetailPage() {
               </label>
 
               <label className="grid gap-2 text-sm text-stone-700">
-                <span>Motivering</span>
+                <span>{selectedStatus === 'need_info' ? 'Begäran om komplettering' : 'Motivering'}</span>
                 <textarea
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
                   rows={4}
                   className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                  placeholder="Obligatoriskt vid avslag, valfritt i övriga fall."
+                  placeholder={
+                    selectedStatus === 'need_info'
+                      ? 'Skriv vad medlemmen behöver komplettera. Texten skickas i mejlet och sparas i ärendet.'
+                      : 'Obligatoriskt vid avslag, valfritt i övriga fall.'
+                  }
                 />
               </label>
 
@@ -437,6 +479,29 @@ export default function RenoAppCaseDetailPage() {
                 {submitting ? 'Sparar...' : getActionLabel(selectedStatus)}
               </button>
             </form>
+            )}
+          </article>
+
+          <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+            <h3 className="text-2xl font-semibold text-stone-900">Ärendehistorik</h3>
+            {item.messages.length === 0 ? (
+              <p className="mt-4 text-sm text-stone-700">Ingen kommunikation har registrerats ännu.</p>
+            ) : (
+              <ul className="mt-4 space-y-2 text-sm text-stone-700">
+                {item.messages.map((message) => (
+                  <li key={message.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium text-stone-900">{getMessageTitle(message.type)}</p>
+                      <p className="text-xs text-stone-500">{formatDateTime(message.createdAt)}</p>
+                    </div>
+                    <p className="mt-1 text-xs uppercase tracking-[0.12em] text-stone-500">
+                      {getMessageAuthorLabel(message.authorRole)}
+                    </p>
+                    {message.message ? <p className="mt-2 whitespace-pre-wrap">{message.message}</p> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
           </article>
 
           <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">

@@ -181,6 +181,13 @@ type DraftResponse = {
     uploadedAt: string
     note: string | null
   }>
+  messages: Array<{
+    id: string
+    type: 'request_for_info' | 'applicant_reply' | 'document_uploaded' | 'decision' | 'status_change'
+    authorRole: 'board' | 'applicant' | 'system'
+    message: string | null
+    createdAt: string
+  }>
 }
 
 type SubmitResult = {
@@ -238,8 +245,6 @@ const INITIAL_FORM: FormState = {
   questionAnswers: {},
 }
 
-const SIMPLE_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
 const STEP_ITEMS = [
   { id: 1, label: 'Lägenhet och kontakt' },
   { id: 2, label: 'Vad vill du renovera?' },
@@ -253,6 +258,31 @@ function formatDateTime(value: string | null) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString('sv-SE')
+}
+
+function formatCaseStatus(status: string) {
+  if (status === 'draft') return 'Utkast'
+  if (status === 'submitted') return 'Inskickad'
+  if (status === 'need_info') return 'Komplettering krävs'
+  if (status === 'review') return 'Under granskning'
+  if (status === 'approved') return 'Godkänd'
+  if (status === 'conditional') return 'Villkorad'
+  if (status === 'rejected') return 'Avslagen'
+  return status
+}
+
+function getMessageTitle(type: DraftResponse['messages'][number]['type']) {
+  if (type === 'request_for_info') return 'Styrelsen begär komplettering'
+  if (type === 'applicant_reply') return 'Du skickade komplettering'
+  if (type === 'document_uploaded') return 'Dokument uppladdat'
+  if (type === 'decision') return 'Beslut registrerat'
+  return 'Status uppdaterad'
+}
+
+function getMessageAuthorLabel(role: DraftResponse['messages'][number]['authorRole']) {
+  if (role === 'board') return 'Styrelsen'
+  if (role === 'applicant') return 'Du'
+  return 'Systemet'
 }
 
 function pickHigherPriorityPhase(
@@ -635,6 +665,7 @@ export default function RenoAppApplyPage() {
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null)
   const [activeDraftToken, setActiveDraftToken] = useState(initialDraftToken)
   const [draftInfo, setDraftInfo] = useState<DraftResponse | null>(null)
+  const [replyMessage, setReplyMessage] = useState('')
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([])
   const [savingDraft, setSavingDraft] = useState(false)
   const [autosaving, setAutosaving] = useState(false)
@@ -689,6 +720,7 @@ export default function RenoAppApplyPage() {
       if (!activeDraftToken) {
         setDraftInfo(null)
         setUploadedDocuments([])
+        setReplyMessage('')
         return
       }
 
@@ -706,6 +738,7 @@ export default function RenoAppApplyPage() {
 
         setDraftInfo(payload)
         setUploadedDocuments(payload.documents ?? [])
+        setReplyMessage('')
         const nextForm = {
           applicantName: payload.form.applicantName,
           applicantEmail: payload.form.applicantEmail,
@@ -742,6 +775,7 @@ export default function RenoAppApplyPage() {
     () => config?.actionTypes.filter((action) => form.actionTypeKeys.includes(action.key)) ?? [],
     [config, form.actionTypeKeys]
   )
+  const isNeedInfoCase = draftInfo?.case.status === 'need_info'
 
   const baseRequirements = useMemo(() => mergeRequirements(selectedActions), [selectedActions])
   const baseQuestions = useMemo(() => mergeQuestions(selectedActions), [selectedActions])
@@ -780,15 +814,11 @@ export default function RenoAppApplyPage() {
       ).length,
     [form.participantEntries]
   )
-  const autosaveEligible = useMemo(() => {
-    const hasName = form.applicantName.trim().length > 0
-    const hasValidEmail = SIMPLE_EMAIL_REGEX.test(form.applicantEmail.trim())
-    const hasUnit =
-      form.unitNumberInternal.trim().length > 0 || form.unitNumberSkatteverket.trim().length > 0
-
-    return hasName && hasValidEmail && hasUnit
-  }, [form.applicantEmail, form.applicantName, form.unitNumberInternal, form.unitNumberSkatteverket])
   const draftFingerprint = useMemo(() => buildDraftFingerprint(form), [form])
+  const autosaveEligible = useMemo(
+    () => draftFingerprint !== buildDraftFingerprint(INITIAL_FORM) || Boolean(activeDraftToken),
+    [activeDraftToken, draftFingerprint]
+  )
   const stepSummaries = useMemo<Record<number, string>>(
     () => ({
       1:
@@ -888,6 +918,7 @@ export default function RenoAppApplyPage() {
     setError(null)
     setSubmitResult(null)
     setDraftInfo(null)
+    setReplyMessage('')
     setUploadedDocuments([])
     setActiveDraftToken('')
     setLastAutosavedAt(null)
@@ -943,7 +974,25 @@ export default function RenoAppApplyPage() {
         throw new Error(payload.error ?? 'Kunde inte ladda upp dokument.')
       }
 
-      setUploadedDocuments((current) => [payload.document as UploadedDocument, ...current])
+      const uploadedDocument = payload.document as UploadedDocument
+      setUploadedDocuments((current) => [uploadedDocument, ...current])
+      setDraftInfo((current) =>
+        current
+          ? {
+              ...current,
+              messages: [
+                {
+                  id: `upload-${uploadedDocument.id}`,
+                  type: 'document_uploaded',
+                  authorRole: 'applicant',
+                  message: uploadedDocument.fileName ?? 'Dokument',
+                  createdAt: uploadedDocument.uploadedAt,
+                },
+                ...current.messages,
+              ],
+            }
+          : current
+      )
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp dokument.')
     } finally {
@@ -984,6 +1033,7 @@ export default function RenoAppApplyPage() {
           unitNumberInternal: form.unitNumberInternal,
           unitNumberSkatteverket: form.unitNumberSkatteverket,
           description: form.description,
+          replyMessage: mode === 'submit' ? replyMessage : null,
           contractorName: form.contractorName,
           contractorOrgNumber: form.contractorOrgNumber,
           contractorEmail: form.contractorEmail,
@@ -1020,6 +1070,33 @@ export default function RenoAppApplyPage() {
       }
 
       if (mode === 'submit') {
+        const now = new Date().toISOString()
+        setReplyMessage('')
+        setDraftInfo((current) =>
+          current
+            ? {
+                ...current,
+                case: {
+                  ...current.case,
+                  status: current.case.status === 'need_info' ? 'review' : 'submitted',
+                  updatedAt: now,
+                },
+                messages:
+                  current.case.status === 'need_info'
+                    ? [
+                        {
+                          id: `reply-${now}`,
+                          type: 'applicant_reply',
+                          authorRole: 'applicant',
+                          message: replyMessage.trim() || 'Komplettering inskickad.',
+                          createdAt: now,
+                        },
+                        ...current.messages,
+                      ]
+                    : current.messages,
+              }
+            : current
+        )
         setStep(5)
       }
     } catch (submitError) {
@@ -1087,14 +1164,14 @@ export default function RenoAppApplyPage() {
           <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm leading-7 text-stone-700">
             <p className="font-semibold text-stone-900">Spara och fortsätt senare</p>
             <p className="mt-2">
-              Fyll i namn, e-post och lägenhet och välj sedan `Spara utkast` för att skapa ansökan. Därefter autosparas dina ändringar löpande.
+              Du kan skapa ett utkast direkt och fortsätta från samma länk senare. När ett utkast finns autosparas dina ändringar löpande.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               {!activeDraftToken ? (
                 <button
                   type="button"
                   onClick={() => void submitApplication('draft')}
-                  disabled={!autosaveEligible || savingDraft}
+                  disabled={savingDraft}
                   className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {savingDraft ? 'Skapar utkast...' : 'Skapa utkast'}
@@ -1104,9 +1181,7 @@ export default function RenoAppApplyPage() {
                   Utkast skapat
                 </span>
               )}
-              {!autosaveEligible && !activeDraftToken ? (
-                <span className="text-xs text-stone-500">Fyll först i namn, e-post och lägenhet.</span>
-              ) : null}
+              {!activeDraftToken ? <span className="text-xs text-stone-500">Du kan fylla i resten senare.</span> : null}
             </div>
           </div>
         </div>
@@ -1607,13 +1682,29 @@ export default function RenoAppApplyPage() {
           </div>
         </div>
 
+        {isNeedInfoCase ? (
+          <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5">
+            <p className="text-sm font-semibold text-amber-950">Svar till styrelsen</p>
+            <p className="mt-2 text-sm leading-7 text-amber-900">
+              Beskriv vad du har kompletterat eller förtydligat. Du kan också bara ladda upp dokument och skicka in igen.
+            </p>
+            <textarea
+              value={replyMessage}
+              onChange={(event) => setReplyMessage(event.target.value)}
+              rows={5}
+              className="mt-4 w-full rounded-3xl border border-amber-200 bg-white px-5 py-4 text-sm text-stone-900"
+              placeholder="Skriv ditt svar till styrelsen här."
+            />
+          </div>
+        ) : null}
+
         {submitResult ? (
           <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950">
             <p className="font-semibold">{submitResult.status === 'draft' ? 'Utkast sparat' : 'Ansökan registrerad'}</p>
             <p className="mt-2">Ärendenummer: {submitResult.caseNumber}</p>
             <p className="mt-2 break-all">
-              {submitResult.status === 'draft' ? 'Fortsätt senare via:' : 'Öppna ärendet via:'}{' '}
-              {submitResult.status === 'draft' ? submitResult.resumeUrl : submitResult.accessUrl}
+              {submitResult.status === 'draft' ? 'Fortsätt senare via:' : 'Öppna samma ansökningssida via:'}{' '}
+              {submitResult.resumeUrl}
             </p>
             {submitResult.emailError ? <p className="mt-2 text-amber-900">{submitResult.emailError}</p> : null}
           </div>
@@ -1650,10 +1741,33 @@ export default function RenoAppApplyPage() {
 
         {draftInfo ? (
           <div className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-            <p className="font-semibold">Du arbetar i ett sparat utkast.</p>
-            <p className="mt-2">
-              Ärendenummer {draftInfo.case.caseNumber} uppdaterades senast {formatDateTime(draftInfo.case.updatedAt)}.
+            <p className="font-semibold">
+              {isNeedInfoCase ? 'Styrelsen har begärt komplettering i ditt ärende.' : 'Du arbetar i ett sparat ärende.'}
             </p>
+            <p className="mt-2">
+              Ärendenummer {draftInfo.case.caseNumber} har status {formatCaseStatus(draftInfo.case.status)} och uppdaterades senast{' '}
+              {formatDateTime(draftInfo.case.updatedAt)}.
+            </p>
+          </div>
+        ) : null}
+
+        {draftInfo?.messages.length ? (
+          <div className="mt-6 rounded-3xl border border-stone-200 bg-white/90 p-5">
+            <p className="text-sm font-semibold text-stone-900">Kommunikation i ärendet</p>
+            <div className="mt-4 space-y-2">
+              {draftInfo.messages.map((message) => (
+                <div key={message.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-medium text-stone-900">{getMessageTitle(message.type)}</p>
+                    <p className="text-xs text-stone-500">{formatDateTime(message.createdAt)}</p>
+                  </div>
+                  <p className="mt-1 text-xs uppercase tracking-[0.14em] text-stone-500">
+                    {getMessageAuthorLabel(message.authorRole)}
+                  </p>
+                  {message.message ? <p className="mt-2 whitespace-pre-wrap">{message.message}</p> : null}
+                </div>
+              ))}
+            </div>
           </div>
         ) : null}
 
@@ -1724,7 +1838,7 @@ export default function RenoAppApplyPage() {
                 ? 'Autosparar utkast...'
                 : lastAutosavedAt
                   ? `Utkast autosparat ${formatDateTime(lastAutosavedAt)}.`
-                  : 'Fyll i kontakt och lägenhet och välj sedan Spara utkast för att skapa ansökan.'}
+                  : 'Välj Spara utkast när du vill skapa ansökan. Därefter autosparas ändringarna.'}
             </div>
           ) : null}
 
@@ -1744,7 +1858,7 @@ export default function RenoAppApplyPage() {
                 disabled={submitting}
                 className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {submitting ? 'Skickar...' : 'Skicka ansökan'}
+                {submitting ? 'Skickar...' : isNeedInfoCase ? 'Skicka komplettering' : 'Skicka ansökan'}
               </button>
             )}
             <button

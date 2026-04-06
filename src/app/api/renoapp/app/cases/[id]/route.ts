@@ -37,6 +37,7 @@ export async function GET(_request: Request, context: RouteContext) {
 export async function POST(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params
+    const origin = new URL(request.url).origin
     const body = (await request.json().catch(() => ({}))) as {
       status?: 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected'
       reason?: string | null
@@ -51,6 +52,7 @@ export async function POST(request: Request, context: RouteContext) {
       status: body.status,
       reason: body.reason ?? null,
       conditions: body.conditions ?? null,
+      requestOrigin: origin,
     })
 
     return NextResponse.json({ item })
@@ -61,8 +63,16 @@ export async function POST(request: Request, context: RouteContext) {
     if (message === 'PROFILE_NOT_FOUND') return jsonError('Ingen profil hittades för användaren.', 403)
     if (message === 'CASE_NOT_FOUND') return jsonError('RenoApp-ärendet hittades inte.', 404)
     if (message === 'INVALID_CASE_STATUS') return jsonError('Ogiltig status för RenoApp-ärendet.', 400)
+    if (message === 'DRAFT_CASE_LOCKED') {
+      return jsonError('Utkast är låsta för styrelsen tills medlemmen skickat in dem.', 409)
+    }
+    if (message === 'NEED_INFO_MESSAGE_REQUIRED') {
+      return jsonError('Skriv vad medlemmen behöver komplettera.', 400)
+    }
     if (message === 'DECISION_REASON_REQUIRED') return jsonError('Motivering krävs för avslag.', 400)
-    if (message === 'DECISION_CONDITIONS_REQUIRED') return jsonError('Villkor krävs för villkorat beslut.', 400)
+    if (message === 'DECISION_CONDITIONS_REQUIRED') {
+      return jsonError('Villkor krävs för villkorat beslut.', 400)
+    }
     return jsonError(message || 'Kunde inte uppdatera RenoApp-ärendet.', 500)
   }
 }

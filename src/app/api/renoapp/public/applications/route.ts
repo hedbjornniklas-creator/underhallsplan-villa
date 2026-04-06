@@ -67,6 +67,7 @@ export async function POST(request: Request) {
         unitNumberSkatteverket:
           typeof body.unitNumberSkatteverket === 'string' ? body.unitNumberSkatteverket : null,
         description: String(body.description ?? ''),
+        replyMessage: typeof body.replyMessage === 'string' ? body.replyMessage : null,
         contractorName: typeof body.contractorName === 'string' ? body.contractorName : null,
         contractorOrgNumber: typeof body.contractorOrgNumber === 'string' ? body.contractorOrgNumber : null,
         contractorEmail: typeof body.contractorEmail === 'string' ? body.contractorEmail : null,
