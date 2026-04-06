@@ -3540,12 +3540,13 @@ export async function upsertPublicApplication(
   const derivedChecks = deriveChecksFromActionTypes(selectedActionTypes)
   const riskLevel = computeRiskLevelFromActionTypes(selectedActionTypes)
   const title = buildPublicCaseTitle(selectedActionTypes)
+  const existingStatus = String(existingCase?.status ?? '')
   const nextStatus =
     mode === 'draft'
-      ? 'draft'
-      : String(existingCase?.status ?? '') === 'need_info'
-        ? 'review'
-        : 'submitted'
+      ? existingStatus && existingStatus !== 'draft'
+        ? existingStatus
+        : 'draft'
+      : 'review'
 
   let caseId = existingCase ? String(existingCase.id ?? '') : ''
   let caseNumber = existingCase ? String(existingCase.case_number ?? '') : ''
