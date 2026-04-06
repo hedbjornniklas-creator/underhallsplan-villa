@@ -382,13 +382,9 @@ export default function RenoAppCaseDetailPage() {
       </section>
 
       <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-        <h3 className="text-2xl font-semibold text-stone-900">Styrelseåtgärd</h3>
-        {isDraftCase ? (
-          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
-            Ärendet är fortfarande ett utkast. Styrelsen kan inte agera förrän medlemmen har skickat in ansökan.
-          </div>
-        ) : (
-          <form onSubmit={handleStatusSubmit} className="mt-6 grid gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <h3 className="text-2xl font-semibold text-stone-900">Styrelseåtgärd</h3>
+          {!isDraftCase ? (
             <div className="flex flex-wrap gap-2">
               {(
                 ['need_info', 'approved', 'conditional', 'rejected'] as StatusAction[]
@@ -407,7 +403,14 @@ export default function RenoAppCaseDetailPage() {
                 </button>
               ))}
             </div>
-
+          ) : null}
+        </div>
+        {isDraftCase ? (
+          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+            Ärendet är fortfarande ett utkast. Styrelsen kan inte agera förrän medlemmen har skickat in ansökan.
+          </div>
+        ) : (
+          <form onSubmit={handleStatusSubmit} className="mt-6 grid gap-4">
             <label className="grid gap-2 text-sm text-stone-700">
               <span>{selectedStatus === 'need_info' ? 'Begäran om komplettering' : 'Motivering'}</span>
               <textarea
