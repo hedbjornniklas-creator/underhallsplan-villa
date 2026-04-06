@@ -306,7 +306,7 @@ export default function RenoAppCaseDetailPage() {
               </div>
             </div>
 
-            <div className="grid content-start gap-3 border-stone-200/80 lg:-mt-[5.25rem] lg:border-l lg:pl-8">
+            <div className="grid content-start gap-3 border-stone-200/80 lg:border-l lg:pl-8">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Beskrivning</p>
               <p className="min-h-[13.75rem] max-w-xl whitespace-pre-wrap text-[1.1rem] leading-8 text-stone-700">
                 {item.description ?? 'Ingen beskrivning registrerad.'}
