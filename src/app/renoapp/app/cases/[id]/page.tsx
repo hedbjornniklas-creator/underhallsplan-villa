@@ -153,6 +153,33 @@ function getMessageAuthorLabel(role: CaseDetail['messages'][number]['authorRole'
   return 'Systemet'
 }
 
+function getBoardActionSubmitLabel(status: StatusAction) {
+  if (status === 'review') return 'Sätt under granskning'
+  if (status === 'need_info') return 'Begär komplettering'
+  if (status === 'approved') return 'Godkänn'
+  if (status === 'conditional') return 'Godkänn med villkor'
+  return 'Registrera avslag'
+}
+
+function getBoardStatusLabel(status: string) {
+  if (status === 'draft') return 'Utkast'
+  if (status === 'submitted') return 'Under granskning'
+  if (status === 'need_info') return 'Väntar återkoppling'
+  if (status === 'review') return 'Under granskning'
+  if (status === 'approved') return 'Godkänd'
+  if (status === 'conditional') return 'Godkänd med villkor'
+  if (status === 'rejected') return 'Avslag'
+  return status
+}
+
+function getBoardStatusOptionLabel(status: StatusAction) {
+  if (status === 'review') return 'Under granskning'
+  if (status === 'need_info') return 'Väntar återkoppling'
+  if (status === 'approved') return 'Godkänd'
+  if (status === 'conditional') return 'Godkänd med villkor'
+  return 'Avslag'
+}
+
 export default function RenoAppCaseDetailPage() {
   const params = useParams<{ id: string }>()
   const caseId = typeof params?.id === 'string' ? params.id : ''
@@ -311,7 +338,7 @@ export default function RenoAppCaseDetailPage() {
             </div>
             <div className="grid gap-1 md:pl-8">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Status</p>
-              <p className="text-[0.95rem] leading-none text-stone-800">{formatStatusLabel(item.status)}</p>
+              <p className="text-[0.95rem] leading-none text-stone-800">{getBoardStatusLabel(item.status)}</p>
             </div>
 
             <div className="md:col-span-3 -mx-10 border-t border-stone-200/80" />
@@ -429,17 +456,24 @@ export default function RenoAppCaseDetailPage() {
             <form onSubmit={handleStatusSubmit} className="mt-6 grid gap-4">
               <label className="grid gap-2 text-sm text-stone-700">
                 <span>Ny status</span>
-                <select
-                  value={selectedStatus}
-                  onChange={(event) => setSelectedStatus(event.target.value as StatusAction)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                >
-                  <option value="review">Review</option>
-                  <option value="need_info">Need info</option>
-                  <option value="approved">Approved</option>
-                  <option value="conditional">Conditional</option>
-                  <option value="rejected">Rejected</option>
-                </select>
+                <div className="flex flex-wrap gap-2">
+                  {(
+                    ['review', 'need_info', 'approved', 'conditional', 'rejected'] as StatusAction[]
+                  ).map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() => setSelectedStatus(status)}
+                      className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                        selectedStatus === status
+                          ? 'border-stone-900 bg-stone-900 text-white'
+                          : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
+                      }`}
+                    >
+                      {getBoardStatusOptionLabel(status)}
+                    </button>
+                  ))}
+                </div>
               </label>
 
               <label className="grid gap-2 text-sm text-stone-700">
@@ -476,7 +510,7 @@ export default function RenoAppCaseDetailPage() {
                 disabled={submitting}
                 className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {submitting ? 'Sparar...' : getActionLabel(selectedStatus)}
+                {submitting ? 'Sparar...' : getBoardActionSubmitLabel(selectedStatus)}
               </button>
             </form>
             )}

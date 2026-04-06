@@ -1861,14 +1861,16 @@ export default function RenoAppApplyPage() {
                 {submitting ? 'Skickar...' : isNeedInfoCase ? 'Skicka komplettering' : 'Skicka ansökan'}
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => void submitApplication('draft')}
-              disabled={savingDraft}
-              className="rounded-full border border-stone-300 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {savingDraft ? 'Sparar...' : 'Spara och fortsätt senare'}
-            </button>
+            {!activeDraftToken ? (
+              <button
+                type="button"
+                onClick={() => void submitApplication('draft')}
+                disabled={savingDraft}
+                className="rounded-full border border-stone-300 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingDraft ? 'Sparar...' : 'Spara och fortsätt senare'}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={clearForm}
