@@ -317,7 +317,7 @@ export default function RenoAppCaseDetailPage() {
       </div>
 
       <section className="rounded-[32px] border border-stone-200/80 bg-white/85 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-        <div className="px-8 py-5">
+        <div className="px-8 py-3">
           <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
             <h1 className="text-sm font-semibold text-stone-900">
               Ärende {item.caseNumber}
@@ -326,35 +326,35 @@ export default function RenoAppCaseDetailPage() {
           </div>
         </div>
 
-        <div className="border-t border-stone-200/80 px-8 py-5">
-          <div className="grid gap-y-5 md:grid-cols-3">
-            <div className="grid gap-1 md:border-r md:border-stone-200/80 md:pr-6">
+        <div className="border-t border-stone-200/80 px-8 py-3">
+          <div className="grid gap-y-3 md:grid-cols-3">
+            <div className="grid gap-0.5 md:border-r md:border-stone-200/80 md:pr-6">
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">{'Ans\u00f6kningsdatum'}</p>
               <p className="text-sm text-stone-500">{formatDateTime(item.submittedAt).split(' ')[0]}</p>
             </div>
-            <div className="grid gap-1 md:border-r md:border-stone-200/80 md:px-6">
+            <div className="grid gap-0.5 md:border-r md:border-stone-200/80 md:px-6">
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Uppdaterad</p>
               <p className="text-sm text-stone-500">{formatDateTime(item.updatedAt).split(' ')[0]}</p>
             </div>
-            <div className="grid gap-1 md:pl-6">
+            <div className="grid gap-0.5 md:pl-6">
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Status</p>
               <p className="text-sm text-stone-800">{getBoardStatusLabel(item.status)}</p>
             </div>
 
             <div className="md:col-span-3 -mx-8 border-t border-stone-200/80" />
 
-            <div className="grid gap-1 md:border-r md:border-stone-200/80 md:pr-6">
+            <div className="grid gap-0.5 md:border-r md:border-stone-200/80 md:pr-6">
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">{'S\u00f6kande'}</p>
-              <div className="grid gap-1 text-sm leading-6 text-stone-700">
+              <div className="grid gap-0.5 text-sm leading-5 text-stone-700">
                 <p className="text-stone-800">{item.applicant.name ?? 'Ok\u00e4nd kontakt'}</p>
                 <p>{item.applicant.email ?? '-'}</p>
                 <p>{item.applicant.phone ?? '-'}</p>
               </div>
             </div>
 
-            <div className="grid gap-1 md:border-r md:border-stone-200/80 md:px-6">
+            <div className="grid gap-0.5 md:border-r md:border-stone-200/80 md:px-6">
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">{'L\u00e4genhet'}</p>
-              <div className="grid gap-1 text-sm leading-6 text-stone-700">
+              <div className="grid gap-0.5 text-sm leading-5 text-stone-700">
                 <p className="text-stone-800">Internt nr: {item.unit.unitNumberInternal ?? '-'}</p>
                 <p>Skatteverket: {item.unit.unitNumberSkatteverket ?? '-'}</p>
               </div>
@@ -364,9 +364,9 @@ export default function RenoAppCaseDetailPage() {
 
             <div className="md:col-span-3 -mx-8 border-t border-stone-200/80" />
 
-            <div className="grid content-start gap-1 md:col-span-3">
+            <div className="grid content-start gap-0.5 md:col-span-3">
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Beskrivning</p>
-              <p className="whitespace-pre-wrap text-sm leading-6 text-stone-700">
+              <p className="whitespace-pre-wrap text-sm leading-5 text-stone-700">
                 {item.description ?? 'Ingen beskrivning registrerad.'}
               </p>
               {item.blockedAt ? (
@@ -380,6 +380,76 @@ export default function RenoAppCaseDetailPage() {
           </div>
         </div>
       </section>
+
+      <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+        <h3 className="text-2xl font-semibold text-stone-900">Styrelseåtgärd</h3>
+        {isDraftCase ? (
+          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+            Ärendet är fortfarande ett utkast. Styrelsen kan inte agera förrän medlemmen har skickat in ansökan.
+          </div>
+        ) : (
+          <form onSubmit={handleStatusSubmit} className="mt-6 grid gap-4">
+            <label className="grid gap-2 text-sm text-stone-700">
+              <span>Ny status</span>
+              <div className="flex flex-wrap gap-2">
+                {(
+                  ['review', 'need_info', 'approved', 'conditional', 'rejected'] as StatusAction[]
+                ).map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setSelectedStatus(status)}
+                    className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                      selectedStatus === status
+                        ? 'border-stone-900 bg-stone-900 text-white'
+                        : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
+                    }`}
+                  >
+                    {getBoardStatusOptionLabel(status)}
+                  </button>
+                ))}
+              </div>
+            </label>
+
+            <label className="grid gap-2 text-sm text-stone-700">
+              <span>{selectedStatus === 'need_info' ? 'Begäran om komplettering' : 'Motivering'}</span>
+              <textarea
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                rows={4}
+                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                placeholder={
+                  selectedStatus === 'need_info'
+                    ? 'Skriv vad medlemmen behöver komplettera. Texten skickas i mejlet och sparas i ärendet.'
+                    : 'Obligatoriskt vid avslag, valfritt i övriga fall.'
+                }
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm text-stone-700">
+              <span>Villkor</span>
+              <textarea
+                value={conditions}
+                onChange={(event) => setConditions(event.target.value)}
+                rows={4}
+                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                placeholder="Obligatoriskt vid villkorat beslut."
+              />
+            </label>
+
+            {actionError ? <p className="text-sm text-rose-700">{actionError}</p> : null}
+            {actionSuccess ? <p className="text-sm text-emerald-700">{actionSuccess}</p> : null}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {submitting ? 'Sparar...' : getBoardActionSubmitLabel(selectedStatus)}
+            </button>
+          </form>
+        )}
+      </article>
 
       <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="grid gap-6">
@@ -447,76 +517,6 @@ export default function RenoAppCaseDetailPage() {
                   </li>
                 ))}
               </ul>
-            )}
-          </article>
-
-          <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-            <h3 className="text-2xl font-semibold text-stone-900">Styrelseåtgärd</h3>
-            {isDraftCase ? (
-              <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
-                Ärendet är fortfarande ett utkast. Styrelsen kan inte agera förrän medlemmen har skickat in ansökan.
-              </div>
-            ) : (
-            <form onSubmit={handleStatusSubmit} className="mt-6 grid gap-4">
-              <label className="grid gap-2 text-sm text-stone-700">
-                <span>Ny status</span>
-                <div className="flex flex-wrap gap-2">
-                  {(
-                    ['review', 'need_info', 'approved', 'conditional', 'rejected'] as StatusAction[]
-                  ).map((status) => (
-                    <button
-                      key={status}
-                      type="button"
-                      onClick={() => setSelectedStatus(status)}
-                      className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                        selectedStatus === status
-                          ? 'border-stone-900 bg-stone-900 text-white'
-                          : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
-                      }`}
-                    >
-                      {getBoardStatusOptionLabel(status)}
-                    </button>
-                  ))}
-                </div>
-              </label>
-
-              <label className="grid gap-2 text-sm text-stone-700">
-                <span>{selectedStatus === 'need_info' ? 'Begäran om komplettering' : 'Motivering'}</span>
-                <textarea
-                  value={reason}
-                  onChange={(event) => setReason(event.target.value)}
-                  rows={4}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                  placeholder={
-                    selectedStatus === 'need_info'
-                      ? 'Skriv vad medlemmen behöver komplettera. Texten skickas i mejlet och sparas i ärendet.'
-                      : 'Obligatoriskt vid avslag, valfritt i övriga fall.'
-                  }
-                />
-              </label>
-
-              <label className="grid gap-2 text-sm text-stone-700">
-                <span>Villkor</span>
-                <textarea
-                  value={conditions}
-                  onChange={(event) => setConditions(event.target.value)}
-                  rows={4}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                  placeholder="Obligatoriskt vid villkorat beslut."
-                />
-              </label>
-
-              {actionError ? <p className="text-sm text-rose-700">{actionError}</p> : null}
-              {actionSuccess ? <p className="text-sm text-emerald-700">{actionSuccess}</p> : null}
-
-              <button
-                type="submit"
-                disabled={submitting}
-                className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {submitting ? 'Sparar...' : getBoardActionSubmitLabel(selectedStatus)}
-              </button>
-            </form>
             )}
           </article>
 
