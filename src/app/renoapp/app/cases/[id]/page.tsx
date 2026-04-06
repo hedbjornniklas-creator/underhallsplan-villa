@@ -190,7 +190,7 @@ export default function RenoAppCaseDetailPage() {
   const [submitting, setSubmitting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
-  const [selectedStatus, setSelectedStatus] = useState<StatusAction>('review')
+  const [selectedStatus, setSelectedStatus] = useState<StatusAction>('need_info')
   const [reason, setReason] = useState('')
   const [conditions, setConditions] = useState('')
 
@@ -389,27 +389,24 @@ export default function RenoAppCaseDetailPage() {
           </div>
         ) : (
           <form onSubmit={handleStatusSubmit} className="mt-6 grid gap-4">
-            <label className="grid gap-2 text-sm text-stone-700">
-              <span>Ny status</span>
-              <div className="flex flex-wrap gap-2">
-                {(
-                  ['review', 'need_info', 'approved', 'conditional', 'rejected'] as StatusAction[]
-                ).map((status) => (
-                  <button
-                    key={status}
-                    type="button"
-                    onClick={() => setSelectedStatus(status)}
-                    className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                      selectedStatus === status
-                        ? 'border-stone-900 bg-stone-900 text-white'
-                        : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
-                    }`}
-                  >
-                    {getBoardStatusOptionLabel(status)}
-                  </button>
-                ))}
-              </div>
-            </label>
+            <div className="flex flex-wrap gap-2">
+              {(
+                ['need_info', 'approved', 'conditional', 'rejected'] as StatusAction[]
+              ).map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setSelectedStatus(status)}
+                  className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                    selectedStatus === status
+                      ? 'border-stone-400 bg-stone-200 text-stone-900'
+                      : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  {getBoardStatusOptionLabel(status)}
+                </button>
+              ))}
+            </div>
 
             <label className="grid gap-2 text-sm text-stone-700">
               <span>{selectedStatus === 'need_info' ? 'Begäran om komplettering' : 'Motivering'}</span>
@@ -443,7 +440,7 @@ export default function RenoAppCaseDetailPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-full border border-stone-400 bg-stone-200 px-4 py-2 text-sm font-semibold text-stone-900 transition hover:bg-stone-300 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? 'Sparar...' : getBoardActionSubmitLabel(selectedStatus)}
             </button>
