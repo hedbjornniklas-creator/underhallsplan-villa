@@ -6811,7 +6811,7 @@ export async function updateRenoAppCaseStatus(
 
   const { data: caseData, error: caseError } = await admin
     .from('renovation_cases')
-    .select('id,brf_id,status,case_number,applicant_contact_id')
+    .select('id,brf_id,status,case_number,title,applicant_contact_id')
     .eq('id', caseId)
     .maybeSingle()
 
@@ -6888,6 +6888,8 @@ export async function updateRenoAppCaseStatus(
 
       if (mailFrom && applicantEmail) {
         try {
+          const caseTitle = String(caseData.title ?? '').trim()
+
           await sendAssignmentEmail({
             to: applicantEmail,
             from: mailFrom,
@@ -6897,12 +6899,14 @@ export async function updateRenoAppCaseStatus(
               origin: input.requestOrigin,
               preheader: `Ditt ärende ${String(caseData.case_number ?? '')} behöver kompletteras`,
               bodyHtml: `
+                <div style="height:16px;"></div>
                 <p>Hej ${escapeHtml(applicantName)},</p>
                 <p>Styrelsen behöver komplettering i ditt ärende för <strong>${escapeHtml(brfName)}</strong>.</p>
                 <p>Ärendenummer: <strong>${escapeHtml(String(caseData.case_number ?? ''))}</strong></p>
+                ${caseTitle ? `<p>Renovering: <strong>${escapeHtml(caseTitle)}</strong></p>` : ''}
                 <p><strong>Begäran om komplettering:</strong></p>
                 <p>${escapeHtml(reason ?? '')}</p>
-                <p>Öppna samma ansökningssida här:</p>
+                <p>Öppna din ansökningssida här:</p>
                 <p><a href="${resumeUrl}">${resumeUrl}</a></p>
               `,
             }),
@@ -6910,11 +6914,12 @@ export async function updateRenoAppCaseStatus(
               `Hej ${applicantName},`,
               `Styrelsen behöver komplettering i ditt ärende för ${brfName}.`,
               `Ärendenummer: ${String(caseData.case_number ?? '')}`,
+              ...(caseTitle ? [`Renovering: ${caseTitle}`] : []),
               ``,
               `Begäran om komplettering:`,
               reason ?? '',
               ``,
-              `Öppna samma ansökningssida här: ${resumeUrl}`,
+              `Öppna din ansökningssida här: ${resumeUrl}`,
             ].join('\n'),
           })
         } catch {

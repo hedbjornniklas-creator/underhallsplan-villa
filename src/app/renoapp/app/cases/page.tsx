@@ -34,6 +34,25 @@ function formatDate(value: string) {
   return date.toLocaleDateString('sv-SE')
 }
 
+function getStatusLabel(status: string) {
+  if (status === 'draft') return 'Utkast'
+  if (status === 'submitted' || status === 'review') return 'Under granskning'
+  if (status === 'need_info') return 'Begär komplettering'
+  if (status === 'approved') return 'Godkänd'
+  if (status === 'conditional') return 'Godkänd med villkor'
+  if (status === 'rejected') return 'Avslag'
+  return status || '-'
+}
+
+function getActionLabel(item: CaseItem) {
+  const title = item.title.trim()
+  if (title) {
+    return title.startsWith('Renovering: ') ? title.slice('Renovering: '.length) : title
+  }
+
+  return item.actionType?.label ?? '-'
+}
+
 export default function RenoAppCasesPage() {
   const [items, setItems] = useState<CaseItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -89,7 +108,7 @@ export default function RenoAppCasesPage() {
       }
 
       if (sortBy === 'status') {
-        return left.status.localeCompare(right.status, 'sv') || right.submittedAt.localeCompare(left.submittedAt)
+        return getStatusLabel(left.status).localeCompare(getStatusLabel(right.status), 'sv') || right.submittedAt.localeCompare(left.submittedAt)
       }
 
       return new Date(right.submittedAt).getTime() - new Date(left.submittedAt).getTime()
@@ -143,8 +162,8 @@ export default function RenoAppCasesPage() {
                 className="grid gap-2 px-4 py-4 text-sm text-stone-700 transition hover:bg-stone-50/80 md:grid-cols-[1.2fr_1fr_0.9fr_1fr_1fr] md:items-center"
               >
                 <div className="font-semibold text-stone-900">{item.caseNumber}</div>
-                <div>{item.actionType?.label ?? '-'}</div>
-                <div>{item.status}</div>
+                <div>{getActionLabel(item)}</div>
+                <div>{getStatusLabel(item.status)}</div>
                 <div>{formatDate(item.submittedAt)}</div>
                 <div>{item.applicant.name ?? '-'}</div>
               </Link>

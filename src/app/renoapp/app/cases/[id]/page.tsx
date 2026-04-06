@@ -164,7 +164,7 @@ function getBoardActionSubmitLabel(status: StatusAction) {
 function getBoardStatusLabel(status: string) {
   if (status === 'draft') return 'Utkast'
   if (status === 'submitted') return 'Under granskning'
-  if (status === 'need_info') return 'Väntar återkoppling'
+  if (status === 'need_info') return 'Begär komplettering'
   if (status === 'review') return 'Under granskning'
   if (status === 'approved') return 'Godkänd'
   if (status === 'conditional') return 'Godkänd med villkor'
@@ -174,7 +174,7 @@ function getBoardStatusLabel(status: string) {
 
 function getBoardStatusOptionLabel(status: StatusAction) {
   if (status === 'review') return 'Under granskning'
-  if (status === 'need_info') return 'Väntar återkoppling'
+  if (status === 'need_info') return 'Begär komplettering'
   if (status === 'approved') return 'Godkänd'
   if (status === 'conditional') return 'Godkänd med villkor'
   return 'Avslag'
@@ -317,58 +317,62 @@ export default function RenoAppCaseDetailPage() {
       </div>
 
       <section className="rounded-[32px] border border-stone-200/80 bg-white/85 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-        <div className="px-10 py-8">
-          <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
-            <h1 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-stone-900">
+        <div className="px-8 py-5">
+          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+            <h1 className="text-sm font-semibold text-stone-900">
               Ärende {item.caseNumber}
             </h1>
-            <p className="text-[1.05rem] font-normal tracking-[-0.03em] text-stone-600">{item.title}</p>
+            <p className="text-sm text-stone-600">{item.title}</p>
           </div>
         </div>
 
-        <div className="border-t border-stone-200/80 px-10 py-8">
-          <div className="grid gap-y-8 md:grid-cols-3">
-            <div className="grid gap-1 md:border-r md:border-stone-200/80 md:pr-8">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">{'Ans\u00f6kningsdatum'}</p>
-              <p className="text-[0.95rem] leading-none text-stone-500">{formatDateTime(item.submittedAt).split(' ')[0]}</p>
+        <div className="border-t border-stone-200/80 px-8 py-5">
+          <div className="grid gap-y-5 md:grid-cols-3">
+            <div className="grid gap-1 md:border-r md:border-stone-200/80 md:pr-6">
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">{'Ans\u00f6kningsdatum'}</p>
+              <p className="text-sm text-stone-500">{formatDateTime(item.submittedAt).split(' ')[0]}</p>
             </div>
-            <div className="grid gap-1 md:border-r md:border-stone-200/80 md:px-8">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Uppdaterad</p>
-              <p className="text-[0.95rem] leading-none text-stone-500">{formatDateTime(item.updatedAt).split(' ')[0]}</p>
+            <div className="grid gap-1 md:border-r md:border-stone-200/80 md:px-6">
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Uppdaterad</p>
+              <p className="text-sm text-stone-500">{formatDateTime(item.updatedAt).split(' ')[0]}</p>
             </div>
-            <div className="grid gap-1 md:pl-8">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Status</p>
-              <p className="text-[0.95rem] leading-none text-stone-800">{getBoardStatusLabel(item.status)}</p>
+            <div className="grid gap-1 md:pl-6">
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Status</p>
+              <p className="text-sm text-stone-800">{getBoardStatusLabel(item.status)}</p>
             </div>
 
-            <div className="md:col-span-3 -mx-10 border-t border-stone-200/80" />
+            <div className="md:col-span-3 -mx-8 border-t border-stone-200/80" />
 
-            <div className="grid gap-2 md:border-r md:border-stone-200/80 md:pr-8">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">{'S\u00f6kande'}</p>
-              <div className="grid gap-2 text-[1.1rem] leading-7 text-stone-700">
+            <div className="grid gap-1 md:border-r md:border-stone-200/80 md:pr-6">
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">{'S\u00f6kande'}</p>
+              <div className="grid gap-1 text-sm leading-6 text-stone-700">
                 <p className="text-stone-800">{item.applicant.name ?? 'Ok\u00e4nd kontakt'}</p>
                 <p>{item.applicant.email ?? '-'}</p>
                 <p>{item.applicant.phone ?? '-'}</p>
               </div>
             </div>
 
-            <div className="grid gap-2 md:border-r md:border-stone-200/80 md:px-8">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">{'L\u00e4genhet'}</p>
-              <div className="grid gap-2 text-[1.1rem] leading-7 text-stone-700">
+            <div className="grid gap-1 md:border-r md:border-stone-200/80 md:px-6">
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">{'L\u00e4genhet'}</p>
+              <div className="grid gap-1 text-sm leading-6 text-stone-700">
                 <p className="text-stone-800">Internt nr: {item.unit.unitNumberInternal ?? '-'}</p>
                 <p>Skatteverket: {item.unit.unitNumberSkatteverket ?? '-'}</p>
               </div>
             </div>
 
-            <div className="grid content-start gap-3 md:pl-8">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Beskrivning</p>
-              <p className="max-w-xl whitespace-pre-wrap text-[1.1rem] leading-8 text-stone-700">
+            <div className="hidden md:block md:border-r md:border-stone-200/80" />
+
+            <div className="md:col-span-3 -mx-8 border-t border-stone-200/80" />
+
+            <div className="grid content-start gap-1 md:col-span-3">
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Beskrivning</p>
+              <p className="whitespace-pre-wrap text-sm leading-6 text-stone-700">
                 {item.description ?? 'Ingen beskrivning registrerad.'}
               </p>
               {item.blockedAt ? (
-                <div className="pt-2 text-sm text-amber-900">
+                <div className="pt-1 text-sm leading-6 text-amber-900">
                   <p className="font-semibold">{'\u00c4rendet \u00e4r sp\u00e4rrat'}</p>
-                  <p className="mt-2">Tidpunkt: {formatDateTime(item.blockedAt)}</p>
+                  <p>Tidpunkt: {formatDateTime(item.blockedAt)}</p>
                   <p className="mt-1">Orsak: {item.blockedReason ?? 'Ingen orsak angiven.'}</p>
                 </div>
               ) : null}
