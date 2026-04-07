@@ -63,9 +63,11 @@ type CaseDetail = {
   }>
   underlag: Array<{
     id: string
+    category: 'document' | 'participant'
     label: string
     checked: boolean
     documentId: string | null
+    summary: string[]
   }>
   requirements: Array<{
     id: string
@@ -106,6 +108,7 @@ type CaseDetail = {
     id: string
     type: 'request_for_info' | 'applicant_reply' | 'document_uploaded' | 'decision' | 'status_change'
     authorRole: 'board' | 'applicant' | 'system'
+    authorName: string | null
     message: string | null
     createdAt: string
   }>
@@ -199,6 +202,7 @@ export default function RenoAppCaseDetailPage() {
   const [selectedStatus, setSelectedStatus] = useState<StatusAction>('need_info')
   const [reason, setReason] = useState('')
   const [conditions, setConditions] = useState('')
+  const [historyExpanded, setHistoryExpanded] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -313,6 +317,8 @@ export default function RenoAppCaseDetailPage() {
     ['Endast ytskikt', item.checks?.affectsSurfaceOnly ?? false],
   ] as const
   const isDraftCase = item.status === 'draft'
+  const documentUnderlag = item.underlag.filter((row) => row.category === 'document')
+  const participantUnderlag = item.underlag.filter((row) => row.category === 'participant')
 
   return (
     <div className="grid gap-6">
@@ -464,54 +470,107 @@ export default function RenoAppCaseDetailPage() {
             {item.underlag.length === 0 ? (
               <p className="mt-4 text-sm text-stone-700">Inga underlag eller dokumentkrav finns registrerade ännu.</p>
             ) : (
-              <ul className="mt-6 divide-y divide-stone-200 rounded-3xl border border-stone-200 bg-stone-50">
-                {item.underlag.map((row) => (
-                  <li key={row.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm text-stone-700">
-                    <input
-                      type="checkbox"
-                      checked={row.checked}
-                      readOnly
-                      className="h-4 w-4 rounded border-stone-300 text-stone-500 accent-stone-500"
-                    />
-                    <span className="min-w-0 flex-1 text-stone-900">{row.label}</span>
-                    {row.documentId ? (
-                      <a
-                        href={`/api/renoapp/app/cases/${item.id}/documents/${row.documentId}`}
-                        className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline"
-                      >
-                        Ladda ner
-                      </a>
-                    ) : (
-                      <span className="text-xs text-stone-400">Saknas</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <div className="mt-6 grid gap-6">
+                <div>
+                  <p className="text-sm font-semibold text-stone-900">Underlag</p>
+                  <ul className="mt-3 divide-y divide-stone-200 rounded-3xl border border-stone-200 bg-stone-50">
+                    {documentUnderlag.map((row) => (
+                      <li key={row.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm text-stone-700">
+                        <input
+                          type="checkbox"
+                          checked={row.checked}
+                          readOnly
+                          className="h-4 w-4 rounded border-stone-300 text-stone-500 accent-stone-500"
+                        />
+                        <span className="min-w-0 flex-1 text-stone-900">{row.label}</span>
+                        {row.documentId ? (
+                          <a
+                            href={`/api/renoapp/app/cases/${item.id}/documents/${row.documentId}`}
+                            className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline"
+                          >
+                            Ladda ner
+                          </a>
+                        ) : (
+                          <span className="text-xs text-stone-400">Saknas</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-stone-900">Entreprenörer och konsulter</p>
+                  {participantUnderlag.length === 0 ? (
+                    <p className="mt-3 text-sm text-stone-700">Inga entreprenörer eller konsulter efterfrågas i ärendet.</p>
+                  ) : (
+                    <div className="mt-3 grid gap-3">
+                      {participantUnderlag.map((row) => (
+                        <div key={row.id} className="rounded-3xl border border-stone-200 bg-stone-50 px-4 py-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="checkbox"
+                                checked={row.checked}
+                                readOnly
+                                className="h-4 w-4 rounded border-stone-300 text-stone-500 accent-stone-500"
+                              />
+                              <p className="text-sm font-semibold text-stone-900">{row.label}</p>
+                            </div>
+                            {row.documentId ? (
+                              <a
+                                href={`/api/renoapp/app/cases/${item.id}/documents/${row.documentId}`}
+                                className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline"
+                              >
+                                Ladda ner försäkringsbevis
+                              </a>
+                            ) : null}
+                          </div>
+                          <ul className="mt-3 grid gap-1 text-sm text-stone-700">
+                            {row.summary.map((line) => (
+                              <li key={line}>{line}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </article>
         </div>
 
         <div className="grid gap-6">
           <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-            <h3 className="text-2xl font-semibold text-stone-900">Ärendehistorik</h3>
-            {item.messages.length === 0 ? (
-              <p className="mt-4 text-sm text-stone-700">Ingen kommunikation har registrerats ännu.</p>
-            ) : (
-              <ul className="mt-4 space-y-2 text-sm text-stone-700">
-                {item.messages.map((message) => (
-                  <li key={message.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="font-medium text-stone-900">{getMessageTitle(message.type)}</p>
-                      <p className="text-xs text-stone-500">{formatDateTime(message.createdAt)}</p>
-                    </div>
-                    <p className="mt-1 text-xs uppercase tracking-[0.12em] text-stone-500">
-                      {getMessageAuthorLabel(message.authorRole)}
-                    </p>
-                    {message.message ? <p className="mt-2 whitespace-pre-wrap">{message.message}</p> : null}
-                  </li>
-                ))}
-              </ul>
-            )}
+            <button
+              type="button"
+              onClick={() => setHistoryExpanded((current) => !current)}
+              className="flex w-full items-center justify-between text-left"
+            >
+              <h3 className="text-2xl font-semibold text-stone-900">Ärendehistorik</h3>
+              <span className="text-sm font-semibold text-stone-600">{historyExpanded ? 'Visa mindre' : 'Visa mer'}</span>
+            </button>
+            {historyExpanded ? (
+              item.messages.length === 0 ? (
+                <p className="mt-4 text-sm text-stone-700">Ingen kommunikation har registrerats ännu.</p>
+              ) : (
+                <ul className="mt-4 space-y-2 text-sm text-stone-700">
+                  {item.messages.map((message) => (
+                    <li key={message.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium text-stone-900">{getMessageTitle(message.type)}</p>
+                        <p className="text-xs text-stone-500">{formatDateTime(message.createdAt)}</p>
+                      </div>
+                      <p className="mt-1 text-xs uppercase tracking-[0.12em] text-stone-500">
+                        {getMessageAuthorLabel(message.authorRole)}
+                        {message.authorName ? `: ${message.authorName}` : ''}
+                      </p>
+                      {message.message ? <p className="mt-2 whitespace-pre-wrap">{message.message}</p> : null}
+                    </li>
+                  ))}
+                </ul>
+              )
+            ) : null}
           </article>
 
           <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">

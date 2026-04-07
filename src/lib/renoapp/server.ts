@@ -805,6 +805,7 @@ export type RenoAppCaseMessage = {
   id: string
   type: 'request_for_info' | 'applicant_reply' | 'document_uploaded' | 'decision' | 'status_change'
   authorRole: 'board' | 'applicant' | 'system'
+  authorName: string | null
   message: string | null
   createdAt: string
 }
@@ -1336,9 +1337,11 @@ export type RenoAppCaseDetail = {
   }>
   underlag: Array<{
     id: string
+    category: 'document' | 'participant'
     label: string
     checked: boolean
     documentId: string | null
+    summary: string[]
   }>
   requirements: PublicRequirement[]
   decisions: Array<{
@@ -1450,6 +1453,7 @@ function mapCaseMessage(row: CaseMessageRow): RenoAppCaseMessage {
     id: row.id,
     type: row.type,
     authorRole: row.author_role,
+    authorName: null,
     message: row.message,
     createdAt: row.created_at,
   }
@@ -1466,7 +1470,45 @@ async function listCaseMessages(admin: SupabaseAdminClient, caseId: string) {
     throw new Error(error.message ?? 'Kunde inte läsa ärendemeddelanden.')
   }
 
-  return ((data ?? []) as CaseMessageRow[]).map(mapCaseMessage)
+  const rows = (data ?? []) as CaseMessageRow[]
+  const profileIds = Array.from(new Set(rows.map((row) => row.author_profile_id).filter(Boolean))) as string[]
+  const contactIds = Array.from(new Set(rows.map((row) => row.author_contact_id).filter(Boolean))) as string[]
+
+  const [profilesResult, contactsResult] = await Promise.all([
+    profileIds.length > 0
+      ? admin.from('profiles').select('id,full_name').in('id', profileIds)
+      : Promise.resolve({ data: [], error: null }),
+    contactIds.length > 0
+      ? admin.from('contacts').select('id,name').in('id', contactIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (profilesResult.error) {
+    throw new Error(profilesResult.error.message ?? 'Kunde inte läsa användarnamn för ärendehistorik.')
+  }
+  if (contactsResult.error) {
+    throw new Error(contactsResult.error.message ?? 'Kunde inte läsa kontaktnamn för ärendehistorik.')
+  }
+
+  const profileNameById = new Map(
+    ((profilesResult.data ?? []) as Array<Record<string, unknown>>).map((row) => [
+      String(row.id ?? ''),
+      (row.full_name as string | null | undefined) ?? null,
+    ])
+  )
+  const contactNameById = new Map(
+    ((contactsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => [
+      String(row.id ?? ''),
+      (row.name as string | null | undefined) ?? null,
+    ])
+  )
+
+  return rows.map((row) => ({
+    ...mapCaseMessage(row),
+    authorName:
+      (row.author_profile_id ? profileNameById.get(row.author_profile_id) ?? null : null) ??
+      (row.author_contact_id ? contactNameById.get(row.author_contact_id) ?? null : null),
+  }))
 }
 
 async function insertCaseMessage(input: {
@@ -2422,18 +2464,22 @@ function buildCaseUnderlagItems(params: {
 
   const addItem = (
     key: string,
+    category: 'document' | 'participant',
     label: string,
     sortOrder: number,
     checked: boolean,
-    documentId: string | null = null
+    documentId: string | null = null,
+    summary: string[] = []
   ) => {
     const existing = itemMap.get(key)
     if (!existing) {
       itemMap.set(key, {
         id: key,
+        category,
         label,
         checked,
         documentId,
+        summary,
         sortOrder,
       })
       return
@@ -2442,6 +2488,7 @@ function buildCaseUnderlagItems(params: {
     existing.label = existing.label || label
     existing.checked = existing.checked || checked
     existing.documentId = existing.documentId ?? documentId
+    existing.summary = existing.summary.length > 0 ? existing.summary : summary
     existing.sortOrder = Math.min(existing.sortOrder, sortOrder)
   }
 
@@ -2451,10 +2498,12 @@ function buildCaseUnderlagItems(params: {
     const document = latestDocumentByTypeId.get(requirement.document_type_id)
     addItem(
       `document:${requirement.document_type_id}`,
+      'document',
       documentType?.label ?? 'Okänt underlag',
       requirement.sort_order,
       Boolean(document),
-      document?.id ?? null
+      document?.id ?? null,
+      []
     )
   }
 
@@ -2471,10 +2520,12 @@ function buildCaseUnderlagItems(params: {
           const document = latestDocumentByTypeId.get(trigger.documentTypeId)
           addItem(
             `document:${trigger.documentTypeId}`,
+            'document',
             trigger.documentLabel ?? documentType?.label ?? 'Okänt underlag',
             1000 + question.sortOrder * 10 + trigger.sortOrder,
             Boolean(document),
-            document?.id ?? null
+            document?.id ?? null,
+            []
           )
         }
 
@@ -2503,23 +2554,18 @@ function buildCaseUnderlagItems(params: {
             String(participant?.company_name ?? participant?.contact_name ?? '')
               .trim()
           )
-          addItem(
-            `participant:${participantRole.id}`,
-            participantRole.label,
-            2000 + question.sortOrder * 10 + trigger.sortOrder,
-            hasName
-          )
-
-          if (participantRole.insuranceRequired) {
-            const insuranceDocument = latestParticipantInsuranceByRoleId.get(participantRole.id)
-            addItem(
-              `participant-insurance:${participantRole.id}`,
-              `${participantRole.label}: försäkringsbevis`,
-              2100 + question.sortOrder * 10 + trigger.sortOrder,
-              Boolean(insuranceDocument),
-              insuranceDocument?.id ?? null
-            )
-          }
+          const insuranceDocument = participantRole.insuranceRequired
+            ? latestParticipantInsuranceByRoleId.get(participantRole.id) ?? null
+            : null
+          const summary = [
+            hasName ? 'Namn finns' : 'Namn saknas',
+            participant?.has_verified_authorization ? 'Verifierad av sökande' : 'Verifiering saknas',
+            participant?.accepts_responsibility ? 'Sanningsförsäkran finns' : 'Sanningsförsäkran saknas',
+            ...(participantRole.insuranceRequired
+              ? [insuranceDocument ? 'Försäkringsbevis finns' : 'Försäkringsbevis saknas']
+              : []),
+          ]
+          addItem(`participant:${participantRole.id}`, 'participant', participantRole.label, 2000 + question.sortOrder * 10 + trigger.sortOrder, hasName, insuranceDocument?.id ?? null, summary)
         }
       }
     }
@@ -2536,18 +2582,17 @@ function buildCaseUnderlagItems(params: {
         .trim()
     )
 
-    addItem(`participant:${role.id}`, role.label, 3000 + link.sort_order, hasName)
+    const insuranceDocument = role.insurance_required === true ? latestParticipantInsuranceByRoleId.get(role.id) ?? null : null
+    const summary = [
+      hasName ? 'Namn finns' : 'Namn saknas',
+      participant?.has_verified_authorization ? 'Verifierad av sökande' : 'Verifiering saknas',
+      participant?.accepts_responsibility ? 'Sanningsförsäkran finns' : 'Sanningsförsäkran saknas',
+      ...(role.insurance_required === true
+        ? [insuranceDocument ? 'Försäkringsbevis finns' : 'Försäkringsbevis saknas']
+        : []),
+    ]
 
-    if (role.insurance_required === true) {
-      const insuranceDocument = latestParticipantInsuranceByRoleId.get(role.id)
-      addItem(
-        `participant-insurance:${role.id}`,
-        `${role.label}: försäkringsbevis`,
-        3100 + link.sort_order,
-        Boolean(insuranceDocument),
-        insuranceDocument?.id ?? null
-      )
-    }
+    addItem(`participant:${role.id}`, 'participant', role.label, 3000 + link.sort_order, hasName, insuranceDocument?.id ?? null, summary)
   }
 
   return Array.from(itemMap.values())
