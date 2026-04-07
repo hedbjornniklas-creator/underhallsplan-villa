@@ -2554,9 +2554,16 @@ function buildCaseUnderlagItems(params: {
             String(participant?.company_name ?? participant?.contact_name ?? '')
               .trim()
           )
+          const hasVerification = participant?.has_verified_authorization === true
+          const hasTruthConfirmation = participant?.accepts_responsibility === true
           const insuranceDocument = participantRole.insuranceRequired
             ? latestParticipantInsuranceByRoleId.get(participantRole.id) ?? null
             : null
+          const isComplete =
+            hasName &&
+            hasVerification &&
+            hasTruthConfirmation &&
+            (!participantRole.insuranceRequired || Boolean(insuranceDocument))
           const summary = [
             hasName ? 'Namn finns' : 'Namn saknas',
             participant?.has_verified_authorization ? 'Verifierad av sökande' : 'Verifiering saknas',
@@ -2565,7 +2572,7 @@ function buildCaseUnderlagItems(params: {
               ? [insuranceDocument ? 'Försäkringsbevis finns' : 'Försäkringsbevis saknas']
               : []),
           ]
-          addItem(`participant:${participantRole.id}`, 'participant', participantRole.label, 2000 + question.sortOrder * 10 + trigger.sortOrder, hasName, insuranceDocument?.id ?? null, summary)
+          addItem(`participant:${participantRole.id}`, 'participant', participantRole.label, 2000 + question.sortOrder * 10 + trigger.sortOrder, isComplete, insuranceDocument?.id ?? null, summary)
         }
       }
     }
@@ -2581,8 +2588,14 @@ function buildCaseUnderlagItems(params: {
       String(participant?.company_name ?? participant?.contact_name ?? '')
         .trim()
     )
-
+    const hasVerification = participant?.has_verified_authorization === true
+    const hasTruthConfirmation = participant?.accepts_responsibility === true
     const insuranceDocument = role.insurance_required === true ? latestParticipantInsuranceByRoleId.get(role.id) ?? null : null
+    const isComplete =
+      hasName &&
+      hasVerification &&
+      hasTruthConfirmation &&
+      (role.insurance_required !== true || Boolean(insuranceDocument))
     const summary = [
       hasName ? 'Namn finns' : 'Namn saknas',
       participant?.has_verified_authorization ? 'Verifierad av sökande' : 'Verifiering saknas',
@@ -2592,7 +2605,7 @@ function buildCaseUnderlagItems(params: {
         : []),
     ]
 
-    addItem(`participant:${role.id}`, 'participant', role.label, 3000 + link.sort_order, hasName, insuranceDocument?.id ?? null, summary)
+    addItem(`participant:${role.id}`, 'participant', role.label, 3000 + link.sort_order, isComplete, insuranceDocument?.id ?? null, summary)
   }
 
   return Array.from(itemMap.values())
