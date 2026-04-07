@@ -180,6 +180,10 @@ function getBoardStatusOptionLabel(status: StatusAction) {
   return 'Avslag'
 }
 
+function isAcceptedDocumentStatus(status: string) {
+  return status !== 'missing' && status !== 'rejected'
+}
+
 export default function RenoAppCaseDetailPage() {
   const params = useParams<{ id: string }>()
   const caseId = typeof params?.id === 'string' ? params.id : ''
@@ -307,6 +311,25 @@ export default function RenoAppCaseDetailPage() {
     ['Endast ytskikt', item.checks?.affectsSurfaceOnly ?? false],
   ] as const
   const isDraftCase = item.status === 'draft'
+  const documentByTypeId = new Map(
+    item.documents
+      .filter((document) => document.documentTypeId && isAcceptedDocumentStatus(document.status))
+      .map((document) => [document.documentTypeId as string, document] as const)
+  )
+  const underlagRows =
+    item.requirements.length > 0
+      ? item.requirements.map((requirement) => ({
+          id: requirement.id,
+          label: requirement.documentLabel,
+          document: requirement.documentTypeId ? documentByTypeId.get(requirement.documentTypeId) ?? null : null,
+        }))
+      : item.documents
+          .filter((document) => isAcceptedDocumentStatus(document.status))
+          .map((document) => ({
+            id: document.id,
+            label: document.documentTypeLabel ?? document.fileName ?? 'Dokument',
+            document,
+          }))
 
   return (
     <div className="grid gap-6">
@@ -454,72 +477,38 @@ export default function RenoAppCaseDetailPage() {
       <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="grid gap-6">
           <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-            <h3 className="text-2xl font-semibold text-stone-900">Dokument och krav</h3>
-            <div className="mt-6 grid gap-6 lg:grid-cols-2">
-              <div className="rounded-3xl border border-stone-200 bg-stone-50 p-6">
-                <p className="text-sm font-semibold text-stone-900">Inkomna dokument</p>
-                {item.documents.length === 0 ? (
-                  <p className="mt-3 text-sm text-stone-700">Inga dokument har laddats upp ännu.</p>
-                ) : (
-                  <ul className="mt-3 space-y-2 text-sm text-stone-700">
-                    {item.documents.map((document) => (
-                      <li key={document.id} className="rounded-2xl border border-stone-200 bg-white px-4 py-3">
-                        <p className="font-medium text-stone-900">{document.fileName ?? 'Dokument'}</p>
-                        <p className="text-xs text-stone-500">
-                          {document.documentTypeLabel ?? 'Ingen typ vald'} · {document.status} · {formatDateTime(document.uploadedAt)}
-                        </p>
-                        {document.note ? <p className="mt-1">{document.note}</p> : null}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <div className="rounded-3xl border border-stone-200 bg-stone-50 p-6">
-                <p className="text-sm font-semibold text-stone-900">Dokumentkrav</p>
-                {item.requirements.length === 0 ? (
-                  <p className="mt-3 text-sm text-stone-700">Inga dokumentkrav är konfigurerade för åtgärden ännu.</p>
-                ) : (
-                  <ul className="mt-3 space-y-2 text-sm text-stone-700">
-                    {item.requirements.map((requirement) => (
-                      <li key={requirement.id} className="rounded-2xl border border-stone-200 bg-white px-4 py-3">
-                        <p className="font-medium text-stone-900">
-                          {requirement.documentLabel} {requirement.isRequired ? '(obligatorisk)' : '(valfri)'}
-                        </p>
-                        {requirement.documentDescription ? <p className="mt-1">{requirement.documentDescription}</p> : null}
-                        {requirement.note ? <p className="mt-1 text-xs text-stone-500">{requirement.note}</p> : null}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          </article>
-        </div>
-
-        <div className="grid gap-6">
-          <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-            <h3 className="text-2xl font-semibold text-stone-900">Flaggor och risker</h3>
-            {item.reviewFlags.length === 0 ? (
-              <p className="mt-4 text-sm text-stone-700">Inga flaggor har identifierats i ärendet just nu.</p>
+            <h3 className="text-2xl font-semibold text-stone-900">Underlag</h3>
+            {underlagRows.length === 0 ? (
+              <p className="mt-4 text-sm text-stone-700">Inga underlag eller dokumentkrav finns registrerade ännu.</p>
             ) : (
-              <ul className="mt-4 space-y-3 text-sm">
-                {item.reviewFlags.map((flag) => (
-                  <li key={flag.id} className={`rounded-2xl border px-4 py-4 ${reviewFlagTone(flag.severity)}`}>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="font-semibold">{flag.label}</p>
-                      <span className="rounded-full border border-current/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]">
-                        {flag.severity}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs uppercase tracking-[0.12em] opacity-80">{flag.category}</p>
-                    {flag.description ? <p className="mt-2 leading-6">{flag.description}</p> : null}
-                    {flag.sourceLabel ? <p className="mt-2 text-xs opacity-80">Källa: {flag.sourceLabel}</p> : null}
+              <ul className="mt-6 divide-y divide-stone-200 rounded-3xl border border-stone-200 bg-stone-50">
+                {underlagRows.map((row) => (
+                  <li key={row.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm text-stone-700">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(row.document)}
+                      readOnly
+                      className="h-4 w-4 rounded border-stone-300 text-stone-500 accent-stone-500"
+                    />
+                    <span className="min-w-0 flex-1 text-stone-900">{row.label}</span>
+                    {row.document ? (
+                      <a
+                        href={`/api/renoapp/app/cases/${item.id}/documents/${row.document.id}`}
+                        className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline"
+                      >
+                        Ladda ner
+                      </a>
+                    ) : (
+                      <span className="text-xs text-stone-400">Saknas</span>
+                    )}
                   </li>
                 ))}
               </ul>
             )}
           </article>
+        </div>
 
+        <div className="grid gap-6">
           <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
             <h3 className="text-2xl font-semibold text-stone-900">Ärendehistorik</h3>
             {item.messages.length === 0 ? (
