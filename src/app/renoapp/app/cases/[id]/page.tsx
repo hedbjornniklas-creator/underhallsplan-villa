@@ -468,9 +468,9 @@ export default function RenoAppCaseDetailPage() {
         )}
       </article>
 
-      <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+      <section className="grid items-start gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="grid gap-6">
-          <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+          <article className="self-start rounded-[32px] border border-stone-200/80 bg-white/85 p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
             <h3 className="text-2xl font-semibold text-stone-900">Underlag</h3>
             {item.underlag.length === 0 ? (
               <p className="mt-4 text-sm text-stone-700">Inga underlag eller dokumentkrav finns registrerade ännu.</p>
@@ -480,23 +480,30 @@ export default function RenoAppCaseDetailPage() {
                   <p className="text-sm font-semibold text-stone-900">Underlag</p>
                   <ul className="mt-3 divide-y divide-stone-200 rounded-3xl border border-stone-200 bg-stone-50">
                     {documentUnderlag.map((row) => (
-                      <li key={row.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm text-stone-700">
+                      <li
+                        key={row.id}
+                        className={`flex flex-wrap items-center gap-3 px-4 py-3 text-sm ${
+                          row.checked
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                            : 'border-rose-200 bg-rose-50 text-rose-900'
+                        }`}
+                      >
                         <input
                           type="checkbox"
                           checked={row.checked}
                           readOnly
                           className="h-4 w-4 rounded border-stone-300 text-stone-500 accent-stone-500"
                         />
-                        <span className="min-w-0 flex-1 text-stone-900">{row.label}</span>
+                        <span className="min-w-0 flex-1 font-medium">{row.label}</span>
                         {row.documentId ? (
                           <a
                             href={`/api/renoapp/app/cases/${item.id}/documents/${row.documentId}`}
-                            className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline"
+                            className="text-sm font-semibold underline-offset-4 hover:underline"
                           >
                             Ladda ner
                           </a>
                         ) : (
-                          <span className="text-xs text-stone-400">Saknas</span>
+                          <span className="text-xs opacity-70">Saknas</span>
                         )}
                       </li>
                     ))}
@@ -510,7 +517,14 @@ export default function RenoAppCaseDetailPage() {
                   ) : (
                     <div className="mt-3 grid gap-3">
                       {participantUnderlag.map((row) => (
-                        <div key={row.id} className="rounded-3xl border border-stone-200 bg-stone-50 px-4 py-3">
+                        <div
+                          key={row.id}
+                          className={`rounded-3xl border px-4 py-3 ${
+                            row.checked
+                              ? 'border-emerald-200 bg-emerald-50'
+                              : 'border-rose-200 bg-rose-50'
+                          }`}
+                        >
                           <div className="flex items-center gap-3">
                             <input
                               type="checkbox"
@@ -518,9 +532,9 @@ export default function RenoAppCaseDetailPage() {
                               readOnly
                               className="h-4 w-4 rounded border-stone-300 text-stone-500 accent-stone-500"
                             />
-                            <p className="text-sm font-semibold text-stone-900">{row.label}</p>
+                            <p className={`text-sm font-semibold ${row.checked ? 'text-emerald-950' : 'text-rose-950'}`}>{row.label}</p>
                           </div>
-                          <ul className="mt-3 grid gap-1 pl-7 text-sm text-stone-700">
+                          <ul className={`mt-3 grid gap-1 pl-7 text-sm ${row.checked ? 'text-emerald-900' : 'text-rose-900'}`}>
                             {row.summary.map((line) => (
                               <li key={line} className="flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-3">
@@ -584,18 +598,6 @@ export default function RenoAppCaseDetailPage() {
                 </ul>
               )
             ) : null}
-          </article>
-
-          <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-            <h3 className="text-2xl font-semibold text-stone-900">Tekniska checks</h3>
-            <ul className="mt-6 space-y-2 text-sm text-stone-700">
-              {checkItems.map(([label, value]) => (
-                <li key={label} className="flex items-center justify-between rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
-                  <span>{label}</span>
-                  <span className="font-semibold text-stone-900">{value ? 'Ja' : 'Nej'}</span>
-                </li>
-              ))}
-            </ul>
           </article>
 
         </div>
