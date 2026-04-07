@@ -1334,6 +1334,12 @@ export type RenoAppCaseDetail = {
     uploadedAt: string
     note: string | null
   }>
+  underlag: Array<{
+    id: string
+    label: string
+    checked: boolean
+    documentId: string | null
+  }>
   requirements: PublicRequirement[]
   decisions: Array<{
     id: string
@@ -2326,6 +2332,227 @@ function buildCaseReviewFlags(params: {
       left.label.localeCompare(right.label, 'sv')
     )
   })
+}
+
+function buildCaseUnderlagItems(params: {
+  selectedActionTypes: ActionTypeRow[]
+  requirements: RequirementRow[]
+  questionConfig: {
+    questions: ApplyQuestionRow[]
+    options: ApplyQuestionOptionRow[]
+    links: ActionTypeQuestionRow[]
+    triggers: ApplyOptionTriggerRow[]
+  }
+  questionAnswerRows: CaseQuestionAnswerRow[]
+  documentTypes: DocumentTypeRow[]
+  documents: Array<{
+    id: string
+    documentTypeId: string | null
+    participantRoleId: string | null
+    documentScope: 'general' | 'participant_insurance'
+    status: string
+  }>
+  participantRows: CaseParticipantRow[]
+  participantRoles: ParticipantRoleRow[]
+  actionTypeParticipantRoles: ActionTypeParticipantRoleRow[]
+}): RenoAppCaseDetail['underlag'] {
+  const {
+    selectedActionTypes,
+    requirements,
+    questionConfig,
+    questionAnswerRows,
+    documentTypes,
+    documents,
+    participantRows,
+    participantRoles,
+    actionTypeParticipantRoles,
+  } = params
+
+  const isAcceptedDocument = (status: string) => status !== 'missing' && status !== 'rejected'
+  const selectedActionTypeIds = new Set(selectedActionTypes.map((item) => item.id))
+  const documentTypeById = new Map(documentTypes.map((item) => [item.id, item]))
+  const participantRoleById = new Map(participantRoles.map((item) => [item.id, item]))
+  const questionById = new Map(questionConfig.questions.map((item) => [item.id, item]))
+  const optionById = new Map(questionConfig.options.map((item) => [item.id, item]))
+  const acceptedDocuments = documents.filter((item) => isAcceptedDocument(item.status))
+  const latestDocumentByTypeId = new Map<string, (typeof acceptedDocuments)[number]>()
+  const latestParticipantInsuranceByRoleId = new Map<string, (typeof acceptedDocuments)[number]>()
+  const participantByRoleId = new Map(participantRows.map((item) => [item.participant_role_id, item] as const))
+
+  for (const document of acceptedDocuments) {
+    if (document.documentTypeId && !latestDocumentByTypeId.has(document.documentTypeId)) {
+      latestDocumentByTypeId.set(document.documentTypeId, document)
+    }
+    if (
+      document.documentScope === 'participant_insurance' &&
+      document.participantRoleId &&
+      !latestParticipantInsuranceByRoleId.has(document.participantRoleId)
+    ) {
+      latestParticipantInsuranceByRoleId.set(document.participantRoleId, document)
+    }
+  }
+
+  const questionAnswers: Record<string, string[]> = {}
+  for (const answer of questionAnswerRows) {
+    const question = questionById.get(answer.question_id)
+    const option = optionById.get(answer.option_id)
+    if (!question || !option) continue
+    const current = questionAnswers[question.key] ?? []
+    if (!current.includes(option.key)) {
+      current.push(option.key)
+      questionAnswers[question.key] = current
+    }
+  }
+
+  const applicableQuestions = resolveApplicableQuestionsForSelection({
+    selectedActionTypes,
+    questionRows: questionConfig.questions,
+    optionRows: questionConfig.options,
+    questionLinks: questionConfig.links,
+    triggerRows: questionConfig.triggers,
+    questionAnswers,
+  })
+
+  const itemMap = new Map<
+    string,
+    RenoAppCaseDetail['underlag'][number] & {
+      sortOrder: number
+    }
+  >()
+
+  const addItem = (
+    key: string,
+    label: string,
+    sortOrder: number,
+    checked: boolean,
+    documentId: string | null = null
+  ) => {
+    const existing = itemMap.get(key)
+    if (!existing) {
+      itemMap.set(key, {
+        id: key,
+        label,
+        checked,
+        documentId,
+        sortOrder,
+      })
+      return
+    }
+
+    existing.label = existing.label || label
+    existing.checked = existing.checked || checked
+    existing.documentId = existing.documentId ?? documentId
+    existing.sortOrder = Math.min(existing.sortOrder, sortOrder)
+  }
+
+  for (const requirement of requirements) {
+    if (!selectedActionTypeIds.has(requirement.action_type_id)) continue
+    const documentType = documentTypeById.get(requirement.document_type_id)
+    const document = latestDocumentByTypeId.get(requirement.document_type_id)
+    addItem(
+      `document:${requirement.document_type_id}`,
+      documentType?.label ?? 'Okänt underlag',
+      requirement.sort_order,
+      Boolean(document),
+      document?.id ?? null
+    )
+  }
+
+  for (const question of applicableQuestions) {
+    const selectedOptionKeys = questionAnswers[question.key] ?? []
+    if (selectedOptionKeys.length === 0) continue
+
+    for (const option of question.options) {
+      if (!selectedOptionKeys.includes(option.key)) continue
+
+      for (const trigger of option.triggers) {
+        if (trigger.triggerType === 'document' && trigger.documentTypeId) {
+          const documentType = documentTypeById.get(trigger.documentTypeId)
+          const document = latestDocumentByTypeId.get(trigger.documentTypeId)
+          addItem(
+            `document:${trigger.documentTypeId}`,
+            trigger.documentLabel ?? documentType?.label ?? 'Okänt underlag',
+            1000 + question.sortOrder * 10 + trigger.sortOrder,
+            Boolean(document),
+            document?.id ?? null
+          )
+        }
+
+        if (trigger.triggerType === 'participant_role' && trigger.participantRoleId) {
+          const participantRole = trigger.participantRole
+            ? {
+                id: trigger.participantRole.id,
+                label: trigger.participantRole.label,
+                insuranceRequired: trigger.participantRole.insuranceRequired,
+                sortOrder: trigger.participantRole.sortOrder,
+              }
+            : (() => {
+                const role = participantRoleById.get(trigger.participantRoleId)
+                if (!role) return null
+                return {
+                  id: role.id,
+                  label: role.label,
+                  insuranceRequired: role.insurance_required === true,
+                  sortOrder: role.sort_order,
+                }
+              })()
+          if (!participantRole) continue
+
+          const participant = participantByRoleId.get(participantRole.id)
+          const hasName = Boolean(
+            String(participant?.company_name ?? participant?.contact_name ?? '')
+              .trim()
+          )
+          addItem(
+            `participant:${participantRole.id}`,
+            participantRole.label,
+            2000 + question.sortOrder * 10 + trigger.sortOrder,
+            hasName
+          )
+
+          if (participantRole.insuranceRequired) {
+            const insuranceDocument = latestParticipantInsuranceByRoleId.get(participantRole.id)
+            addItem(
+              `participant-insurance:${participantRole.id}`,
+              `${participantRole.label}: försäkringsbevis`,
+              2100 + question.sortOrder * 10 + trigger.sortOrder,
+              Boolean(insuranceDocument),
+              insuranceDocument?.id ?? null
+            )
+          }
+        }
+      }
+    }
+  }
+
+  for (const link of actionTypeParticipantRoles) {
+    if (!selectedActionTypeIds.has(link.action_type_id) || !link.is_active || !link.is_required) continue
+    const role = participantRoleById.get(link.participant_role_id)
+    if (!role) continue
+
+    const participant = participantByRoleId.get(role.id)
+    const hasName = Boolean(
+      String(participant?.company_name ?? participant?.contact_name ?? '')
+        .trim()
+    )
+
+    addItem(`participant:${role.id}`, role.label, 3000 + link.sort_order, hasName)
+
+    if (role.insurance_required === true) {
+      const insuranceDocument = latestParticipantInsuranceByRoleId.get(role.id)
+      addItem(
+        `participant-insurance:${role.id}`,
+        `${role.label}: försäkringsbevis`,
+        3100 + link.sort_order,
+        Boolean(insuranceDocument),
+        insuranceDocument?.id ?? null
+      )
+    }
+  }
+
+  return Array.from(itemMap.values())
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv'))
+    .map(({ sortOrder: _sortOrder, ...item }) => item)
 }
 
 export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPublicBrfConfig | null> {
@@ -6534,6 +6761,9 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
     caseActionTypesResult,
     caseQuestionAnswersResult,
     questionConfig,
+    participantRows,
+    participantRoleRows,
+    participantRoleConfig,
     reviewFlagRows,
     messages,
   ] =
@@ -6558,7 +6788,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
         .maybeSingle(),
       admin
         .from('renovation_case_documents')
-        .select('id,document_type_id,file_name,status,uploaded_at,note')
+        .select('id,document_type_id,participant_role_id,document_scope,file_name,status,uploaded_at,note')
         .eq('case_id', caseId)
         .order('uploaded_at', { ascending: false }),
       admin
@@ -6577,6 +6807,13 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
       listCaseActionTypes(admin, [caseId]),
       listCaseQuestionAnswers(admin, [caseId]),
       listActiveApplyQuestions(admin),
+      listCaseParticipants(admin, [caseId]),
+      listActiveParticipantRoles(admin),
+      admin
+        .from('renoapp_action_type_participant_roles')
+        .select('id,action_type_id,participant_role_id,is_required,sort_order,is_active')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true }),
       listActiveReviewFlags(admin),
       listCaseMessages(admin, caseId),
     ])
@@ -6589,6 +6826,9 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
   if (decisionsResult.error) throw new Error(decisionsResult.error.message ?? 'Kunde inte läsa beslut.')
   if (linksResult.error) throw new Error(linksResult.error.message ?? 'Kunde inte läsa access links.')
   if (actionResult.error) throw new Error(actionResult.error.message ?? 'Kunde inte läsa åtgärdstyp.')
+  if (participantRoleConfig.error) {
+    throw new Error(participantRoleConfig.error.message ?? 'Kunde inte läsa deltagarroller för åtgärdstyp.')
+  }
 
   const currentContactsResult =
     caseRow.unit_id
@@ -6696,6 +6936,23 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
       status: String(row.status ?? ''),
     })),
   })
+  const underlag = buildCaseUnderlagItems({
+    selectedActionTypes,
+    requirements,
+    questionConfig,
+    questionAnswerRows: caseQuestionAnswersResult ?? [],
+    documentTypes: requiredDocumentTypes,
+    documents: ((docsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+      id: String(row.id ?? ''),
+      documentTypeId: (row.document_type_id as string | null | undefined) ?? null,
+      participantRoleId: (row.participant_role_id as string | null | undefined) ?? null,
+      documentScope: ((row.document_scope as 'general' | 'participant_insurance' | null | undefined) ?? 'general'),
+      status: String(row.status ?? ''),
+    })),
+    participantRows: participantRows ?? [],
+    participantRoles: participantRoleRows,
+    actionTypeParticipantRoles: (participantRoleConfig.data ?? []) as ActionTypeParticipantRoleRow[],
+  })
 
   return {
     id: caseRow.id,
@@ -6759,6 +7016,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
       uploadedAt: String(row.uploaded_at ?? ''),
       note: (row.note as string | null | undefined) ?? null,
     })),
+    underlag,
     requirements: requirementItems,
     decisions: ((decisionsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
       id: String(row.id ?? ''),

@@ -61,6 +61,12 @@ type CaseDetail = {
     uploadedAt: string
     note: string | null
   }>
+  underlag: Array<{
+    id: string
+    label: string
+    checked: boolean
+    documentId: string | null
+  }>
   requirements: Array<{
     id: string
     documentTypeId: string
@@ -178,10 +184,6 @@ function getBoardStatusOptionLabel(status: StatusAction) {
   if (status === 'approved') return 'Godkänd'
   if (status === 'conditional') return 'Godkänd med villkor'
   return 'Avslag'
-}
-
-function isAcceptedDocumentStatus(status: string) {
-  return status !== 'missing' && status !== 'rejected'
 }
 
 export default function RenoAppCaseDetailPage() {
@@ -311,25 +313,6 @@ export default function RenoAppCaseDetailPage() {
     ['Endast ytskikt', item.checks?.affectsSurfaceOnly ?? false],
   ] as const
   const isDraftCase = item.status === 'draft'
-  const documentByTypeId = new Map(
-    item.documents
-      .filter((document) => document.documentTypeId && isAcceptedDocumentStatus(document.status))
-      .map((document) => [document.documentTypeId as string, document] as const)
-  )
-  const underlagRows =
-    item.requirements.length > 0
-      ? item.requirements.map((requirement) => ({
-          id: requirement.id,
-          label: requirement.documentLabel,
-          document: requirement.documentTypeId ? documentByTypeId.get(requirement.documentTypeId) ?? null : null,
-        }))
-      : item.documents
-          .filter((document) => isAcceptedDocumentStatus(document.status))
-          .map((document) => ({
-            id: document.id,
-            label: document.documentTypeLabel ?? document.fileName ?? 'Dokument',
-            document,
-          }))
 
   return (
     <div className="grid gap-6">
@@ -478,22 +461,22 @@ export default function RenoAppCaseDetailPage() {
         <div className="grid gap-6">
           <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
             <h3 className="text-2xl font-semibold text-stone-900">Underlag</h3>
-            {underlagRows.length === 0 ? (
+            {item.underlag.length === 0 ? (
               <p className="mt-4 text-sm text-stone-700">Inga underlag eller dokumentkrav finns registrerade ännu.</p>
             ) : (
               <ul className="mt-6 divide-y divide-stone-200 rounded-3xl border border-stone-200 bg-stone-50">
-                {underlagRows.map((row) => (
+                {item.underlag.map((row) => (
                   <li key={row.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm text-stone-700">
                     <input
                       type="checkbox"
-                      checked={Boolean(row.document)}
+                      checked={row.checked}
                       readOnly
                       className="h-4 w-4 rounded border-stone-300 text-stone-500 accent-stone-500"
                     />
                     <span className="min-w-0 flex-1 text-stone-900">{row.label}</span>
-                    {row.document ? (
+                    {row.documentId ? (
                       <a
-                        href={`/api/renoapp/app/cases/${item.id}/documents/${row.document.id}`}
+                        href={`/api/renoapp/app/cases/${item.id}/documents/${row.documentId}`}
                         className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline"
                       >
                         Ladda ner
