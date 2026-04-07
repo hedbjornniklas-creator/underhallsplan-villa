@@ -189,6 +189,11 @@ function getBoardStatusOptionLabel(status: StatusAction) {
   return 'Avslag'
 }
 
+function isChecklistSummaryChecked(line: string) {
+  const normalized = line.trim().toLowerCase()
+  return normalized.endsWith('finns')
+}
+
 export default function RenoAppCaseDetailPage() {
   const params = useParams<{ id: string }>()
   const caseId = typeof params?.id === 'string' ? params.id : ''
@@ -525,9 +530,17 @@ export default function RenoAppCaseDetailPage() {
                               </a>
                             ) : null}
                           </div>
-                          <ul className="mt-3 grid gap-1 text-sm text-stone-700">
+                          <ul className="mt-3 grid gap-1 pl-7 text-sm text-stone-700">
                             {row.summary.map((line) => (
-                              <li key={line}>{line}</li>
+                              <li key={line} className="flex items-center gap-3">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecklistSummaryChecked(line)}
+                                  readOnly
+                                  className="h-4 w-4 rounded border-stone-300 text-stone-500 accent-stone-500"
+                                />
+                                <span>{line}</span>
+                              </li>
                             ))}
                           </ul>
                         </div>
