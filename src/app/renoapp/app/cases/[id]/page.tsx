@@ -511,35 +511,35 @@ export default function RenoAppCaseDetailPage() {
                     <div className="mt-3 grid gap-3">
                       {participantUnderlag.map((row) => (
                         <div key={row.id} className="rounded-3xl border border-stone-200 bg-stone-50 px-4 py-3">
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex items-center gap-3">
-                              <input
-                                type="checkbox"
-                                checked={row.checked}
-                                readOnly
-                                className="h-4 w-4 rounded border-stone-300 text-stone-500 accent-stone-500"
-                              />
-                              <p className="text-sm font-semibold text-stone-900">{row.label}</p>
-                            </div>
-                            {row.documentId ? (
-                              <a
-                                href={`/api/renoapp/app/cases/${item.id}/documents/${row.documentId}`}
-                                className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline"
-                              >
-                                Ladda ner försäkringsbevis
-                              </a>
-                            ) : null}
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={row.checked}
+                              readOnly
+                              className="h-4 w-4 rounded border-stone-300 text-stone-500 accent-stone-500"
+                            />
+                            <p className="text-sm font-semibold text-stone-900">{row.label}</p>
                           </div>
                           <ul className="mt-3 grid gap-1 pl-7 text-sm text-stone-700">
                             {row.summary.map((line) => (
-                              <li key={line} className="flex items-center gap-3">
-                                <input
-                                  type="checkbox"
-                                  checked={isChecklistSummaryChecked(line)}
-                                  readOnly
-                                  className="h-4 w-4 rounded border-stone-300 text-stone-500 accent-stone-500"
-                                />
-                                <span>{line}</span>
+                              <li key={line} className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-3">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecklistSummaryChecked(line)}
+                                    readOnly
+                                    className="h-4 w-4 rounded border-stone-300 text-stone-500 accent-stone-500"
+                                  />
+                                  <span>{line}</span>
+                                </div>
+                                {line === 'Försäkringsbevis finns' && row.documentId ? (
+                                  <a
+                                    href={`/api/renoapp/app/cases/${item.id}/documents/${row.documentId}`}
+                                    className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline"
+                                  >
+                                    Ladda ner försäkringsbevis
+                                  </a>
+                                ) : null}
                               </li>
                             ))}
                           </ul>
@@ -598,42 +598,6 @@ export default function RenoAppCaseDetailPage() {
             </ul>
           </article>
 
-          <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-            <h3 className="text-2xl font-semibold text-stone-900">Access links</h3>
-            {item.accessLinks.length === 0 ? (
-              <p className="mt-4 text-sm text-stone-700">Inga access links finns ännu.</p>
-            ) : (
-              <ul className="mt-4 space-y-2 text-sm text-stone-700">
-                {item.accessLinks.map((link) => (
-                  <li key={link.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
-                    <p className="font-medium text-stone-900">{link.email}</p>
-                    <p className="mt-1 text-xs uppercase tracking-[0.12em] text-stone-500">{link.scope}</p>
-                    <p className="mt-2 text-xs text-stone-500">Giltig till {formatDateTime(link.expiresAt)}</p>
-                    <p className="text-xs text-stone-500">Senast använd {formatDateTime(link.lastUsedAt)}</p>
-                    {link.revokedAt ? <p className="text-xs text-rose-700">Återkallad {formatDateTime(link.revokedAt)}</p> : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </article>
-
-          <article className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-            <h3 className="text-2xl font-semibold text-stone-900">Beslutshistorik</h3>
-            {item.decisions.length === 0 ? (
-              <p className="mt-4 text-sm text-stone-700">Inga beslut har registrerats ännu.</p>
-            ) : (
-              <ul className="mt-4 space-y-2 text-sm text-stone-700">
-                {item.decisions.map((decision) => (
-                  <li key={decision.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
-                    <p className="font-medium text-stone-900">{decision.decision}</p>
-                    <p className="mt-1 text-xs text-stone-500">{formatDateTime(decision.decidedAt)}</p>
-                    {decision.reason ? <p className="mt-2">{decision.reason}</p> : null}
-                    {decision.conditions ? <p className="mt-2 text-xs text-stone-500">Villkor: {decision.conditions}</p> : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </article>
         </div>
       </section>
     </div>
