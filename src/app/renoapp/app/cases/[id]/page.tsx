@@ -605,7 +605,11 @@ export default function RenoAppCaseDetailPage() {
                               {expandedParticipantIds[row.id] ? 'Dölj' : 'Visa'}
                             </button>
                           </div>
-                          <ul className={`mt-3 grid gap-1 pl-7 text-sm ${row.checked ? 'text-emerald-900' : 'text-rose-900'}`}>
+                          <ul
+                            className={`pl-7 text-sm ${
+                              expandedParticipantIds[row.id] ? 'mt-3 grid gap-1' : 'hidden'
+                            } ${row.checked ? 'text-emerald-900' : 'text-rose-900'}`}
+                          >
                             {row.summary.map((line) => (
                               <li key={line} className="flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-3">
