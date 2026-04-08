@@ -26,7 +26,10 @@ type CaseItem = {
   }
 }
 
-type SortKey = 'submitted_desc' | 'submitted_asc' | 'case_number' | 'status'
+type SortField = 'submittedAt' | 'caseNumber' | 'title' | 'status' | 'applicant'
+type SortDirection = 'asc' | 'desc'
+
+const COLLATOR = new Intl.Collator('sv', { sensitivity: 'base', numeric: true })
 
 function formatDate(value: string) {
   const date = new Date(value)
@@ -53,11 +56,18 @@ function getActionLabel(item: CaseItem) {
   return item.actionType?.label ?? '-'
 }
 
+function getSortIndicator(active: boolean, direction: SortDirection) {
+  if (!active) return '↕'
+  return direction === 'asc' ? '↑' : '↓'
+}
+
 export default function RenoAppCasesPage() {
   const [items, setItems] = useState<CaseItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [sortBy, setSortBy] = useState<SortKey>('submitted_desc')
+  const [search, setSearch] = useState('')
+  const [sortField, setSortField] = useState<SortField>('submittedAt')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
 
   useEffect(() => {
     let active = true
@@ -95,80 +105,203 @@ export default function RenoAppCasesPage() {
     }
   }, [])
 
-  const sortedItems = useMemo(() => {
-    const next = [...items]
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'))
+      return
+    }
 
-    next.sort((left, right) => {
-      if (sortBy === 'submitted_asc') {
-        return new Date(left.submittedAt).getTime() - new Date(right.submittedAt).getTime()
-      }
+    setSortField(field)
+    if (field === 'submittedAt') {
+      setSortDirection('desc')
+      return
+    }
+    setSortDirection('asc')
+  }
 
-      if (sortBy === 'case_number') {
-        return left.caseNumber.localeCompare(right.caseNumber, 'sv')
-      }
+  const filteredAndSorted = useMemo(() => {
+    const query = search.trim().toLowerCase()
 
-      if (sortBy === 'status') {
-        return getStatusLabel(left.status).localeCompare(getStatusLabel(right.status), 'sv') || right.submittedAt.localeCompare(left.submittedAt)
-      }
+    const filtered = items.filter((item) => {
+      if (!query) return true
 
-      return new Date(right.submittedAt).getTime() - new Date(left.submittedAt).getTime()
+      const searchable = [
+        item.caseNumber,
+        getActionLabel(item),
+        getStatusLabel(item.status),
+        formatDate(item.submittedAt),
+        item.applicant.name ?? '',
+        item.applicant.email ?? '',
+      ]
+        .join(' ')
+        .toLowerCase()
+
+      return searchable.includes(query)
     })
 
-    return next
-  }, [items, sortBy])
+    return [...filtered].sort((left, right) => {
+      let comparison = 0
+
+      if (sortField === 'submittedAt') {
+        comparison = new Date(left.submittedAt).getTime() - new Date(right.submittedAt).getTime()
+      } else if (sortField === 'caseNumber') {
+        comparison = COLLATOR.compare(left.caseNumber, right.caseNumber)
+      } else if (sortField === 'title') {
+        comparison = COLLATOR.compare(getActionLabel(left), getActionLabel(right))
+      } else if (sortField === 'status') {
+        comparison = COLLATOR.compare(getStatusLabel(left.status), getStatusLabel(right.status))
+      } else if (sortField === 'applicant') {
+        comparison = COLLATOR.compare(left.applicant.name ?? '', right.applicant.name ?? '')
+      }
+
+      if (comparison === 0) {
+        comparison = new Date(right.submittedAt).getTime() - new Date(left.submittedAt).getTime()
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison
+    })
+  }, [items, search, sortField, sortDirection])
+
+  const hasActiveFilters = search.trim().length > 0 || sortField !== 'submittedAt' || sortDirection !== 'desc'
+
+  const resetView = () => {
+    setSearch('')
+    setSortField('submittedAt')
+    setSortDirection('desc')
+  }
 
   return (
     <div className="grid gap-6">
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
 
-      <section className="overflow-hidden rounded-[32px] border border-stone-200/80 bg-white/90 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200/80 bg-stone-50/80 px-4 py-3">
-          <p className="text-sm font-medium text-stone-600">
-            {loading ? 'Laddar ärenden...' : `${sortedItems.length} ärenden`}
-          </p>
-          <label className="flex items-center gap-2 text-sm text-stone-700">
-            <span className="font-medium">Sortera</span>
-            <select
-              value={sortBy}
-              onChange={(event) => setSortBy(event.target.value as SortKey)}
-              className="rounded-full border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none"
-            >
-              <option value="submitted_desc">Ansökningsdatum, nyast först</option>
-              <option value="submitted_asc">Ansökningsdatum, äldst först</option>
-              <option value="case_number">Ärendenummer</option>
-              <option value="status">Status</option>
-            </select>
-          </label>
-        </div>
-
-        <div className="hidden grid-cols-[1.2fr_1fr_0.9fr_1fr_1fr] gap-px bg-stone-200 text-xs font-semibold uppercase tracking-[0.14em] text-stone-500 md:grid">
-          {['Ärendenummer', 'Åtgärd', 'Status', 'Ansökningsdatum', 'Sökande'].map((column) => (
-            <div key={column} className="bg-stone-50 px-4 py-3">
-              {column}
-            </div>
-          ))}
-        </div>
-
-        {loading ? (
-          <div className="px-4 py-10 text-sm text-stone-600">Laddar RenoApp-ärenden...</div>
-        ) : sortedItems.length === 0 ? (
-          <div className="px-4 py-10 text-sm text-stone-600">Inga RenoApp-ärenden hittades ännu.</div>
-        ) : (
-          <div className="divide-y divide-stone-200">
-            {sortedItems.map((item) => (
-              <Link
-                key={item.id}
-                href={`/renoapp/app/cases/${item.id}`}
-                className="grid gap-2 px-4 py-4 text-sm text-stone-700 transition hover:bg-stone-50/80 md:grid-cols-[1.2fr_1fr_0.9fr_1fr_1fr] md:items-center"
-              >
-                <div className="font-semibold text-stone-900">{item.caseNumber}</div>
-                <div>{getActionLabel(item)}</div>
-                <div>{getStatusLabel(item.status)}</div>
-                <div>{formatDate(item.submittedAt)}</div>
-                <div>{item.applicant.name ?? '-'}</div>
-              </Link>
-            ))}
+      <section className="rounded-[32px] border border-stone-200/80 bg-white/90 p-3 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="min-w-[240px] flex-1">
+            <input
+              type="text"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Sök på ärendenummer, åtgärd, status eller sökande"
+              className="w-full rounded-full border border-stone-300 bg-white px-4 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:border-stone-500 focus:outline-none focus:ring-1 focus:ring-stone-400"
+            />
           </div>
+          {hasActiveFilters ? (
+            <button
+              type="button"
+              onClick={resetView}
+              className="rounded-full border border-stone-300 bg-white px-4 py-2.5 text-sm font-medium text-stone-700 transition hover:bg-stone-50"
+            >
+              Rensa
+            </button>
+          ) : null}
+          <p className="ml-auto text-sm text-stone-600">{loading ? 'Laddar ärenden...' : `${filteredAndSorted.length} ärenden`}</p>
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-[32px] border border-stone-200/80 bg-white/90 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+        {loading ? (
+          <div className="px-5 py-10 text-sm text-stone-600">Laddar RenoApp-ärenden...</div>
+        ) : filteredAndSorted.length === 0 ? (
+          <div className="px-5 py-10 text-sm text-stone-600">Inga RenoApp-ärenden hittades i denna vy.</div>
+        ) : (
+          <>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-full table-fixed text-left text-sm text-stone-800">
+                <colgroup>
+                  <col className="w-[23%]" />
+                  <col className="w-[26%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[13%]" />
+                </colgroup>
+                <thead className="border-b border-stone-200/80 bg-stone-50/80 text-xs uppercase tracking-[0.14em] text-stone-500">
+                  <tr>
+                    <th className="px-5 py-4">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('caseNumber')}
+                        className="inline-flex items-center gap-1 font-semibold hover:text-stone-800"
+                      >
+                        Ärendenummer
+                        <span>{getSortIndicator(sortField === 'caseNumber', sortDirection)}</span>
+                      </button>
+                    </th>
+                    <th className="border-l border-stone-200/80 px-5 py-4">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('title')}
+                        className="inline-flex items-center gap-1 font-semibold hover:text-stone-800"
+                      >
+                        Åtgärd
+                        <span>{getSortIndicator(sortField === 'title', sortDirection)}</span>
+                      </button>
+                    </th>
+                    <th className="border-l border-stone-200/80 px-5 py-4">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('status')}
+                        className="inline-flex items-center gap-1 font-semibold hover:text-stone-800"
+                      >
+                        Status
+                        <span>{getSortIndicator(sortField === 'status', sortDirection)}</span>
+                      </button>
+                    </th>
+                    <th className="border-l border-stone-200/80 px-5 py-4">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('submittedAt')}
+                        className="inline-flex items-center gap-1 font-semibold hover:text-stone-800"
+                      >
+                        Ansökningsdatum
+                        <span>{getSortIndicator(sortField === 'submittedAt', sortDirection)}</span>
+                      </button>
+                    </th>
+                    <th className="border-l border-stone-200/80 px-5 py-4">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('applicant')}
+                        className="inline-flex items-center gap-1 font-semibold hover:text-stone-800"
+                      >
+                        Sökande
+                        <span>{getSortIndicator(sortField === 'applicant', sortDirection)}</span>
+                      </button>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-200/80">
+                  {filteredAndSorted.map((item) => (
+                    <tr key={item.id} className="transition hover:bg-stone-50/80">
+                      <td className="px-5 py-4 align-middle">
+                        <Link href={`/renoapp/app/cases/${item.id}`} className="font-semibold text-stone-900">
+                          {item.caseNumber}
+                        </Link>
+                      </td>
+                      <td className="px-5 py-4 align-middle">{getActionLabel(item)}</td>
+                      <td className="px-5 py-4 align-middle">{getStatusLabel(item.status)}</td>
+                      <td className="px-5 py-4 align-middle">{formatDate(item.submittedAt)}</td>
+                      <td className="px-5 py-4 align-middle">{item.applicant.name ?? '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="divide-y divide-stone-200/80 md:hidden">
+              {filteredAndSorted.map((item) => (
+                <Link
+                  key={item.id}
+                  href={`/renoapp/app/cases/${item.id}`}
+                  className="grid gap-2 px-5 py-4 text-sm text-stone-700 transition hover:bg-stone-50/80"
+                >
+                  <div className="font-semibold text-stone-900">{item.caseNumber}</div>
+                  <div>{getActionLabel(item)}</div>
+                  <div>{getStatusLabel(item.status)}</div>
+                  <div>Ansökningsdatum: {formatDate(item.submittedAt)}</div>
+                  <div>Sökande: {item.applicant.name ?? '-'}</div>
+                </Link>
+              ))}
+            </div>
+          </>
         )}
       </section>
     </div>
