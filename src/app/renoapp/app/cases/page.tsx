@@ -47,7 +47,7 @@ const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'Alla' },
   { key: 'draft', label: 'Utkast' },
   { key: 'review', label: 'Under granskning' },
-  { key: 'need_info', label: 'Begär komplettering' },
+  { key: 'need_info', label: 'Komplettering begärd' },
   { key: 'approved', label: 'Godkänd' },
   { key: 'conditional', label: 'Godkänd med villkor' },
   { key: 'rejected', label: 'Avslag' },
@@ -62,7 +62,7 @@ function formatDate(value: string) {
 function getStatusLabel(status: string) {
   if (status === 'draft') return 'Utkast'
   if (status === 'submitted' || status === 'review') return 'Under granskning'
-  if (status === 'need_info') return 'Begär komplettering'
+  if (status === 'need_info') return 'Komplettering begärd'
   if (status === 'approved') return 'Godkänd'
   if (status === 'conditional') return 'Godkänd med villkor'
   if (status === 'rejected') return 'Avslag'

@@ -4999,7 +4999,8 @@ export async function listRenoAppUsers(): Promise<RenoAppUserListItem[]> {
 
   const membersResult =
     initialMembersResult.error &&
-    initialMembersResult.error.message?.includes('renoapp_email_general_enabled')
+    (initialMembersResult.error.message?.includes('renoapp_email_general_enabled') ||
+      initialMembersResult.error.message?.includes('renoapp_email_case_events_enabled'))
       ? await admin
           .from('brf_members')
           .select('brf_id,profile_id,role,accepted_at,is_active')
@@ -5120,7 +5121,10 @@ export async function updateRenoAppUserMemberEmailPreferences(input: {
     .eq('profile_id', input.profileId)
 
   if (updateError) {
-    if (updateError.message?.includes('renoapp_email_general_enabled')) {
+    if (
+      updateError.message?.includes('renoapp_email_general_enabled') ||
+      updateError.message?.includes('renoapp_email_case_events_enabled')
+    ) {
       throw new Error('EMAIL_PREFERENCES_MIGRATION_REQUIRED')
     }
     throw new Error(updateError.message ?? 'Kunde inte spara e-postinstÃ¤llningar.')

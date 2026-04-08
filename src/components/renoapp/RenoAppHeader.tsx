@@ -99,16 +99,21 @@ export default function RenoAppHeader() {
   return (
     <header className="border-b border-stone-200/80 bg-white/75 backdrop-blur">
       <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-2 md:px-10 lg:px-12">
-        <Link href="/renoapp" className="flex items-center gap-2">
-          <Image
-            src="/landing/Renoapp.png"
-            alt="RenoApp"
-            width={156}
-            height={36}
-            className="h-8 w-auto object-contain"
-            priority
-          />
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link href="https://hushub.se" className="flex items-center gap-2">
+            <Image
+              src="/landing/Renoapp.png"
+              alt="RenoApp"
+              width={156}
+              height={36}
+              className="h-8 w-auto object-contain"
+              priority
+            />
+          </Link>
+          <Link href="https://hushub.se" className="text-sm font-medium text-stone-600 transition hover:text-stone-900">
+            Till HusHub
+          </Link>
+        </div>
 
         {isAppPortal ? (
           <div className="flex flex-wrap items-center justify-end gap-2">
