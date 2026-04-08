@@ -11,42 +11,13 @@ type PublicBrfListItem = {
   address: string | null
 }
 
-function normalizeSlug(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/^\/+|\/+$/g, '')
-    .replace(/^renoapp\/brf\//, '')
-    .replace(/\/apply$/, '')
-}
-
-function extractSlug(value: string) {
-  const trimmed = value.trim()
-  if (!trimmed) return ''
-
-  try {
-    const parsed = new URL(trimmed)
-    const match = parsed.pathname.match(/\/renoapp\/brf\/([^/]+)\/apply\/?$/)
-    if (match?.[1]) {
-      return normalizeSlug(match[1])
-    }
-  } catch {
-    return normalizeSlug(trimmed)
-  }
-
-  return normalizeSlug(trimmed)
-}
-
 export default function RenoAppResidentApplyEntryPage() {
   const router = useRouter()
-  const [value, setValue] = useState('')
   const [search, setSearch] = useState('')
   const [items, setItems] = useState<PublicBrfListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isBrfPickerOpen, setIsBrfPickerOpen] = useState(false)
-
-  const resolvedSlug = useMemo(() => extractSlug(value), [value])
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase()
     if (!query) return items
@@ -100,19 +71,6 @@ export default function RenoAppResidentApplyEntryPage() {
     router.push(`/renoapp/brf/${slug}/apply`)
   }
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const slug = extractSlug(value)
-
-    if (!slug) {
-      setError('Ange BRF-länk eller BRF-kod för att fortsätta.')
-      return
-    }
-
-    setError(null)
-    goToApply(slug)
-  }
-
   const openBrfPicker = () => {
     setSearch('')
     setIsBrfPickerOpen(true)
@@ -156,40 +114,14 @@ export default function RenoAppResidentApplyEntryPage() {
 
           <article className="border-b border-stone-200 px-6 py-8 md:border-b md:px-10 lg:px-12">
             <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
-              Har du redan länken?
+              Så fungerar ansökan
             </p>
-
-            <form onSubmit={handleSubmit} className="mt-6 grid gap-4">
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-stone-800">BRF-länk eller BRF-kod</span>
-                <input
-                  value={value}
-                  onChange={(event) => setValue(event.target.value)}
-                  className="w-full border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-stone-500"
-                  placeholder="Till exempel hushub.se/renoapp/brf/min-brf/apply eller min-brf"
-                />
-              </label>
-
-              {resolvedSlug ? (
-                <p className="text-sm text-stone-600">
-                  Du skickas vidare till{' '}
-                  <span className="font-medium text-stone-900">/renoapp/brf/{resolvedSlug}/apply</span>
-                </p>
-              ) : null}
-
-              {error ? (
-                <div className="border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>
-              ) : null}
-
-              <div className="flex flex-wrap gap-3 pt-2">
-                <button
-                  type="submit"
-                  className="inline-flex items-center justify-center border border-stone-950 bg-stone-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-800"
-                >
-                  Fortsätt till ansökan
-                </button>
-              </div>
-            </form>
+            <ul className="mt-5 space-y-3 text-base leading-7 text-stone-700">
+              <li>Välj din BRF och öppna rätt ansökningssida.</li>
+              <li>Fyll i det du har just nu och skicka in ansökan när du är redo.</li>
+              <li>Du kan skicka in även om allt inte är klart från början.</li>
+              <li>Om styrelsen begär komplettering fortsätter du via samma länk.</li>
+            </ul>
           </article>
 
           <article className="border-b border-stone-200 px-6 py-8 md:border-b-0 md:border-r md:px-10 lg:px-12">

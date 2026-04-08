@@ -5421,7 +5421,7 @@ export async function sendRenoAppPublicApplyLink(input: {
 
   if (mailFrom) {
     try {
-      const subject = `RenoApp: ansÃ¶kningslÃ¤nk fÃ¶r ${String(brfData.name ?? 'er BRF')}`
+      const subject = `RenoApp: ansökningslänk för ${String(brfData.name ?? 'er BRF')}`
       await sendAssignmentEmail({
         to: email,
         from: mailFrom,
@@ -5430,21 +5430,22 @@ export async function sendRenoAppPublicApplyLink(input: {
           origin,
           preheader: subject,
           bodyHtml: `
+            <div style="height:16px;"></div>
             <p>Hej ${escapeHtml(fullNameValue)},</p>
-            <p>HÃ¤r Ã¤r din ansÃ¶kningslÃ¤nk till <strong>${escapeHtml(String(brfData.name ?? 'er BRF'))}</strong>.</p>
-            <p>Ã–ppna ansÃ¶kan hÃ¤r:</p>
+            <p>Här är din ansökningslänk till <strong>${escapeHtml(String(brfData.name ?? 'er BRF'))}</strong>.</p>
+            <p>Öppna ansökan här:</p>
             <p><a href="${applyUrl}">${applyUrl}</a></p>
-            <p>Du kan bÃ¶rja fylla i ansÃ¶kan direkt och fortsÃ¤tta senare via samma lÃ¤nk.</p>
+            <p>Du kan börja fylla i ansökan direkt och fortsätta senare via samma länk.</p>
           `,
         }),
         text: [
           `Hej ${fullNameValue},`,
-          `HÃ¤r Ã¤r din ansÃ¶kningslÃ¤nk till ${String(brfData.name ?? 'er BRF')}.`,
-          `Ã–ppna ansÃ¶kan hÃ¤r: ${applyUrl}`,
-          'Du kan bÃ¶rja fylla i ansÃ¶kan direkt och fortsÃ¤tta senare via samma lÃ¤nk.',
+          `Här är din ansökningslänk till ${String(brfData.name ?? 'er BRF')}.`,
+          `Öppna ansökan här: ${applyUrl}`,
+          'Du kan börja fylla i ansökan direkt och fortsätta senare via samma länk.',
           '',
-          'Med vÃ¤nlig hÃ¤lsning,',
-          'RenoApp-teamet pÃ¥ HusHub',
+          'Med vänlig hälsning,',
+          'RenoApp-teamet på HusHub',
         ].join('\n'),
       })
       emailSent = true
@@ -5452,7 +5453,7 @@ export async function sendRenoAppPublicApplyLink(input: {
       emailError = error instanceof Error ? error.message : 'Mejlutskick misslyckades.'
     }
   } else {
-    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. AnsÃ¶kningslÃ¤nken kunde inte skickas.'
+    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Ansökningslänken kunde inte skickas.'
   }
 
   return {
