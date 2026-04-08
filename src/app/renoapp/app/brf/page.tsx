@@ -157,13 +157,10 @@ function TextAreaField({
 export default function RenoAppBrfPage() {
   const [items, setItems] = useState<BrfItem[]>([])
   const [formsById, setFormsById] = useState<Record<string, BrfFormState>>({})
-  const [applyLinkFormByBrf, setApplyLinkFormByBrf] = useState<Record<string, { fullName: string; email: string }>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [savingBrfId, setSavingBrfId] = useState<string | null>(null)
   const [successBrfId, setSuccessBrfId] = useState<string | null>(null)
-  const [sendingApplyLinkBrfId, setSendingApplyLinkBrfId] = useState<string | null>(null)
-  const [applyLinkSuccessBrfId, setApplyLinkSuccessBrfId] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -259,56 +256,6 @@ export default function RenoAppBrfPage() {
     }
   }
 
-  const updateApplyLinkField = (brfId: string, field: 'fullName' | 'email', value: string) => {
-    setApplyLinkFormByBrf((current) => ({
-      ...current,
-      [brfId]: {
-        fullName: current[brfId]?.fullName ?? '',
-        email: current[brfId]?.email ?? '',
-        [field]: value,
-      },
-    }))
-  }
-
-  const handleSendApplyLink = async (brfId: string) => {
-    const fullName = applyLinkFormByBrf[brfId]?.fullName ?? ''
-    const email = applyLinkFormByBrf[brfId]?.email ?? ''
-
-    setSendingApplyLinkBrfId(brfId)
-    setApplyLinkSuccessBrfId(null)
-    setError(null)
-
-    try {
-      const response = await fetch('/api/renoapp/app/brf/apply-link', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brfId, fullName, email }),
-      })
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string
-        delivery?: { emailSent?: boolean; emailError?: string | null }
-      }
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? 'Kunde inte skicka ansökningslänken.')
-      }
-
-      setApplyLinkFormByBrf((current) => ({
-        ...current,
-        [brfId]: { fullName: '', email: '' },
-      }))
-      setApplyLinkSuccessBrfId(brfId)
-
-      if (payload.delivery?.emailError && !payload.delivery.emailSent) {
-        setError(payload.delivery.emailError)
-      }
-    } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : 'Kunde inte skicka ansökningslänken.')
-    } finally {
-      setSendingApplyLinkBrfId(null)
-    }
-  }
-
   return (
     <div className="grid gap-6">
       <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
@@ -346,10 +293,6 @@ export default function RenoAppBrfPage() {
                     <p className="mt-2 text-sm text-stone-600">
                       Onboarding slutförd: {formatDateTime(item.onboardingCompletedAt)}
                     </p>
-                  </div>
-                  <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
-                    <p className="font-semibold text-stone-900">Ansökningslänk</p>
-                    <p className="mt-1 break-all">/renoapp/brf/{item.slug}/apply</p>
                   </div>
                 </div>
 
@@ -507,43 +450,6 @@ export default function RenoAppBrfPage() {
                     </div>
                   </label>
 
-                  <div className="rounded-2xl border border-stone-200 bg-white p-4">
-                    <p className="text-sm font-semibold text-stone-900">Skicka ansökningslänk till boende</p>
-                    <p className="mt-1 text-sm leading-6 text-stone-600">
-                      Skicka en direktlänk till BRF:ens ansökningssida via mejl.
-                    </p>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      <InputField
-                        label="Namn"
-                        value={applyLinkFormByBrf[item.id]?.fullName ?? ''}
-                        onChange={(value) => updateApplyLinkField(item.id, 'fullName', value)}
-                        placeholder="Namn"
-                      />
-                      <InputField
-                        label="E-post"
-                        value={applyLinkFormByBrf[item.id]?.email ?? ''}
-                        onChange={(value) => updateApplyLinkField(item.id, 'email', value)}
-                        placeholder="namn@exempel.se"
-                        type="email"
-                      />
-                    </div>
-                    <div className="mt-4 flex flex-wrap items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => void handleSendApplyLink(item.id)}
-                        disabled={!form.isPublicApplyEnabled || sendingApplyLinkBrfId === item.id}
-                        className="rounded-full border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-900 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {sendingApplyLinkBrfId === item.id ? 'Skickar...' : 'Skicka ansökningslänk'}
-                      </button>
-                      {applyLinkSuccessBrfId === item.id ? (
-                        <p className="text-sm text-emerald-700">Ansökningslänken är skickad.</p>
-                      ) : null}
-                      {!form.isPublicApplyEnabled ? (
-                        <p className="text-sm text-stone-600">Aktivera publik ansökan först.</p>
-                      ) : null}
-                    </div>
-                  </div>
                 </div>
 
                 <div className="mt-6 flex flex-wrap items-center gap-3">

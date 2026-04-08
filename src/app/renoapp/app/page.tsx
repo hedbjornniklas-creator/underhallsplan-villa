@@ -17,10 +17,21 @@ type DashboardResponse = {
   }
 }
 
+type BrfApplyItem = {
+  id: string
+  name: string
+  slug: string
+  isPublicApplyEnabled: boolean
+}
+
 export default function RenoAppAppHomePage() {
   const [payload, setPayload] = useState<DashboardResponse | null>(null)
+  const [brfItems, setBrfItems] = useState<BrfApplyItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [applyLinkForm, setApplyLinkForm] = useState({ brfId: '', fullName: '', email: '' })
+  const [sendingApplyLink, setSendingApplyLink] = useState(false)
+  const [applyLinkSuccess, setApplyLinkSuccess] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -30,15 +41,31 @@ export default function RenoAppAppHomePage() {
       setError(null)
 
       try {
-        const response = await fetch('/api/renoapp/app/context', { cache: 'no-store' })
-        const data = (await response.json().catch(() => ({}))) as DashboardResponse & { error?: string }
+        const [contextResponse, brfResponse] = await Promise.all([
+          fetch('/api/renoapp/app/context', { cache: 'no-store' }),
+          fetch('/api/renoapp/app/brf', { cache: 'no-store' }),
+        ])
+        const data = (await contextResponse.json().catch(() => ({}))) as DashboardResponse & { error?: string }
+        const brfPayload = (await brfResponse.json().catch(() => ({}))) as {
+          items?: BrfApplyItem[]
+          error?: string
+        }
 
-        if (!response.ok) {
+        if (!contextResponse.ok) {
           throw new Error(data.error ?? 'Kunde inte läsa RenoApp-kontext.')
+        }
+        if (!brfResponse.ok) {
+          throw new Error(brfPayload.error ?? 'Kunde inte läsa BRF-information.')
         }
 
         if (active) {
+          const nextBrfs = (brfPayload.items ?? []).filter((item) => item.isPublicApplyEnabled)
           setPayload(data)
+          setBrfItems(nextBrfs)
+          setApplyLinkForm((current) => ({
+            ...current,
+            brfId: current.brfId || nextBrfs[0]?.id || '',
+          }))
         }
       } catch (fetchError) {
         if (active) {
@@ -57,6 +84,39 @@ export default function RenoAppAppHomePage() {
       active = false
     }
   }, [])
+
+  const handleSendApplyLink = async () => {
+    setSendingApplyLink(true)
+    setApplyLinkSuccess(null)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/renoapp/app/brf/apply-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(applyLinkForm),
+      })
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string
+        delivery?: { emailSent?: boolean; emailError?: string | null }
+      }
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Kunde inte skicka ansökningslänken.')
+      }
+
+      setApplyLinkForm((current) => ({ ...current, fullName: '', email: '' }))
+      setApplyLinkSuccess('Ansökningslänken är skickad.')
+
+      if (payload.delivery?.emailError && !payload.delivery.emailSent) {
+        setError(payload.delivery.emailError)
+      }
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : 'Kunde inte skicka ansökningslänken.')
+    } finally {
+      setSendingApplyLink(false)
+    }
+  }
 
   const cards = [
     {
@@ -85,20 +145,79 @@ export default function RenoAppAppHomePage() {
           Laddar RenoApp-sammanfattning...
         </section>
       ) : (
-        <section className="grid gap-5 lg:grid-cols-3">
-          {cards.map((card) => (
-            <article
-              key={card.title}
-              className="rounded-[28px] border border-stone-200/80 bg-white/85 p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]"
-            >
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">
-                {card.title}
-              </p>
-              <p className="mt-4 text-5xl font-semibold tracking-tight text-stone-900">{card.value}</p>
-              <p className="mt-3 text-sm leading-7 text-stone-700">{card.description}</p>
-            </article>
-          ))}
-        </section>
+        <div className="grid gap-6">
+          <section className="grid gap-5 lg:grid-cols-3">
+            {cards.map((card) => (
+              <article
+                key={card.title}
+                className="rounded-[28px] border border-stone-200/80 bg-white/85 p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]"
+              >
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">
+                  {card.title}
+                </p>
+                <p className="mt-4 text-5xl font-semibold tracking-tight text-stone-900">{card.value}</p>
+                <p className="mt-3 text-sm leading-7 text-stone-700">{card.description}</p>
+              </article>
+            ))}
+          </section>
+
+          <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+            <h2 className="text-2xl font-semibold text-stone-900">Skicka ansökningslänk</h2>
+            <p className="mt-2 text-sm leading-7 text-stone-700">
+              Skicka BRF:ens ansökningssida till en boende via mejl.
+            </p>
+            <div className="mt-5 grid gap-4 md:grid-cols-3">
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold text-stone-800">BRF</span>
+                <select
+                  value={applyLinkForm.brfId}
+                  onChange={(event) => setApplyLinkForm((current) => ({ ...current, brfId: event.target.value }))}
+                  className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                >
+                  <option value="">Välj BRF</option>
+                  {brfItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold text-stone-800">Namn</span>
+                <input
+                  value={applyLinkForm.fullName}
+                  onChange={(event) => setApplyLinkForm((current) => ({ ...current, fullName: event.target.value }))}
+                  className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                  placeholder="Namn"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold text-stone-800">E-post</span>
+                <input
+                  value={applyLinkForm.email}
+                  onChange={(event) => setApplyLinkForm((current) => ({ ...current, email: event.target.value }))}
+                  className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                  placeholder="namn@exempel.se"
+                  type="email"
+                />
+              </label>
+            </div>
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void handleSendApplyLink()}
+                disabled={!applyLinkForm.brfId || sendingApplyLink}
+                className="rounded-full border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-900 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {sendingApplyLink ? 'Skickar...' : 'Skicka ansökningslänk'}
+              </button>
+              {applyLinkSuccess ? <p className="text-sm text-emerald-700">{applyLinkSuccess}</p> : null}
+              {brfItems.length === 0 ? (
+                <p className="text-sm text-stone-600">Ingen BRF med aktiv publik ansökan finns tillgänglig.</p>
+              ) : null}
+            </div>
+          </section>
+        </div>
       )}
     </div>
   )
