@@ -1163,6 +1163,8 @@ export type RenoAppUserListItem = {
     email: string | null
     role: 'board' | 'admin'
     acceptedAt: string | null
+    receivesGeneralInfoEmails: boolean
+    receivesCaseEventEmails: boolean
   }>
   pendingInvites: Array<{
     id: string
@@ -1171,6 +1173,11 @@ export type RenoAppUserListItem = {
     expiresAt: string
     createdAt: string
   }>
+}
+
+type RenoAppNotificationRecipient = {
+  email: string
+  fullName: string | null
 }
 
 export type CreateRenoAppUserInviteResult = {
@@ -4090,9 +4097,12 @@ export async function upsertPublicApplication(
 
   const accessUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/case/${token}`)
   const resumeUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/brf/${brf.slug}/apply?draft=${token}`)
-  const applicantDisplayName = applicantName ?? 'hej'
+  const caseAdminUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/app/cases/${caseId}`)
+  const applicantDisplayName = contact?.name ?? applicantName ?? 'Okänd sökande'
+  const caseTitle = title.trim()
+  const isCompletionSubmit = mode === 'submit' && String(existingCase?.status ?? '') === 'need_info'
 
-  if (mode === 'submit' && String(existingCase?.status ?? '') === 'need_info') {
+  if (isCompletionSubmit) {
     await insertCaseMessage({
       admin,
       caseId,
@@ -4104,6 +4114,60 @@ export async function upsertPublicApplication(
         nextStatus,
       },
     })
+  }
+
+  if (mode === 'submit') {
+    if (isCompletionSubmit) {
+      await sendRenoAppCaseEventNotification({
+        admin,
+        brfId: brf.id,
+        requestOrigin,
+        replyTo: brf.email ?? null,
+        subject: `RenoApp: komplettering klar ${caseNumber}`,
+        preheader: `Komplettering klar för ${caseNumber}`,
+        bodyHtml: `
+          <p>En medlem har skickat in begärd komplettering i RenoApp.</p>
+          <p>Ärendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
+          ${caseTitle ? `<p>Renovering: <strong>${escapeHtml(caseTitle)}</strong></p>` : ''}
+          <p>Sökande: <strong>${escapeHtml(applicantDisplayName)}</strong></p>
+          <p>Öppna ärendet här:</p>
+          <p><a href="${caseAdminUrl}">${caseAdminUrl}</a></p>
+        `,
+        text: [
+          'En medlem har skickat in begärd komplettering i RenoApp.',
+          `Ärendenummer: ${caseNumber}`,
+          ...(caseTitle ? [`Renovering: ${caseTitle}`] : []),
+          `Sökande: ${applicantDisplayName}`,
+          '',
+          `Öppna ärendet här: ${caseAdminUrl}`,
+        ].join('\n'),
+      })
+    } else {
+      await sendRenoAppCaseEventNotification({
+        admin,
+        brfId: brf.id,
+        requestOrigin,
+        replyTo: brf.email ?? null,
+        subject: `RenoApp: ny ansökan ${caseNumber}`,
+        preheader: `Ny ansökan inkommen ${caseNumber}`,
+        bodyHtml: `
+          <p>En ny ansökan har kommit in i RenoApp.</p>
+          <p>Ärendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
+          ${caseTitle ? `<p>Renovering: <strong>${escapeHtml(caseTitle)}</strong></p>` : ''}
+          <p>Sökande: <strong>${escapeHtml(applicantDisplayName)}</strong></p>
+          <p>Öppna ärendet här:</p>
+          <p><a href="${caseAdminUrl}">${caseAdminUrl}</a></p>
+        `,
+        text: [
+          'En ny ansökan har kommit in i RenoApp.',
+          `Ärendenummer: ${caseNumber}`,
+          ...(caseTitle ? [`Renovering: ${caseTitle}`] : []),
+          `Sökande: ${applicantDisplayName}`,
+          '',
+          `Öppna ärendet här: ${caseAdminUrl}`,
+        ].join('\n'),
+      })
+    }
   }
 
   const mailFrom = getMailFromAddress()
@@ -4928,7 +4992,9 @@ export async function listRenoAppUsers(): Promise<RenoAppUserListItem[]> {
     admin.from('brf_associations').select('id,name,slug').in('id', brfIds),
     admin
       .from('brf_members')
-      .select('brf_id,profile_id,role,accepted_at,is_active')
+      .select(
+        'brf_id,profile_id,role,accepted_at,is_active,renoapp_email_general_enabled,renoapp_email_case_events_enabled'
+      )
       .in('brf_id', brfIds)
       .eq('is_active', true),
     admin
@@ -4988,6 +5054,8 @@ export async function listRenoAppUsers(): Promise<RenoAppUserListItem[]> {
       email: profile.email,
       role: String(row.role ?? 'board') as 'board' | 'admin',
       acceptedAt: (row.accepted_at as string | null | undefined) ?? null,
+      receivesGeneralInfoEmails: row.renoapp_email_general_enabled === true,
+      receivesCaseEventEmails: row.renoapp_email_case_events_enabled === true,
     })
     membersByBrfId.set(brfId, bucket)
   }
@@ -5011,6 +5079,134 @@ export async function listRenoAppUsers(): Promise<RenoAppUserListItem[]> {
     members: membersByBrfId.get(brfId) ?? [],
     pendingInvites: invitesByBrfId.get(brfId) ?? [],
   }))
+}
+
+export async function updateRenoAppUserMemberEmailPreferences(input: {
+  brfId: string
+  profileId: string
+  receivesGeneralInfoEmails: boolean
+  receivesCaseEventEmails: boolean
+}) {
+  const context = await requireRenoAppViewerContext()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  if (context.accessibleBrfIds && !context.accessibleBrfIds.includes(input.brfId)) {
+    throw new Error('BRF_NOT_FOUND')
+  }
+
+  const { data: memberData, error: memberError } = await admin
+    .from('brf_members')
+    .select('id,is_active')
+    .eq('brf_id', input.brfId)
+    .eq('profile_id', input.profileId)
+    .maybeSingle()
+
+  if (memberError) {
+    throw new Error(memberError.message ?? 'Kunde inte läsa BRF-användare.')
+  }
+  if (!memberData || !(memberData as Record<string, unknown>).is_active) {
+    throw new Error('MEMBER_NOT_FOUND')
+  }
+
+  const { error: updateError } = await admin
+    .from('brf_members')
+    .update({
+      renoapp_email_general_enabled: input.receivesGeneralInfoEmails,
+      renoapp_email_case_events_enabled: input.receivesCaseEventEmails,
+    })
+    .eq('brf_id', input.brfId)
+    .eq('profile_id', input.profileId)
+
+  if (updateError) {
+    throw new Error(updateError.message ?? 'Kunde inte spara e-postinställningar.')
+  }
+
+  return { saved: true as const }
+}
+
+async function listRenoAppNotificationRecipients(input: {
+  admin: SupabaseAdminClient
+  brfId: string
+  preference: 'general' | 'case_events'
+}): Promise<RenoAppNotificationRecipient[]> {
+  const preferenceColumn =
+    input.preference === 'general' ? 'renoapp_email_general_enabled' : 'renoapp_email_case_events_enabled'
+
+  const { data: memberRows, error: memberError } = await input.admin
+    .from('brf_members')
+    .select(`profile_id,${preferenceColumn}`)
+    .eq('brf_id', input.brfId)
+    .eq('is_active', true)
+    .eq(preferenceColumn, true)
+
+  if (memberError) {
+    throw new Error(memberError.message ?? 'Kunde inte läsa BRF-användare för notifiering.')
+  }
+
+  const profileIds = Array.from(
+    new Set(((memberRows ?? []) as Array<Record<string, unknown>>).map((row) => String(row.profile_id ?? '')).filter(Boolean))
+  )
+
+  if (profileIds.length === 0) {
+    return []
+  }
+
+  const { data: profileRows, error: profileError } = await input.admin
+    .from('profiles')
+    .select('id,full_name,email')
+    .in('id', profileIds)
+
+  if (profileError) {
+    throw new Error(profileError.message ?? 'Kunde inte läsa profiler för notifiering.')
+  }
+
+  return ((profileRows ?? []) as Array<Record<string, unknown>>)
+    .map((row) => ({
+      email: normalizeEmail(row.email),
+      fullName: (row.full_name as string | null | undefined) ?? null,
+    }))
+    .filter((item): item is RenoAppNotificationRecipient => Boolean(item.email))
+}
+
+async function sendRenoAppCaseEventNotification(input: {
+  admin: SupabaseAdminClient
+  brfId: string
+  requestOrigin: string
+  subject: string
+  preheader: string
+  bodyHtml: string
+  text: string
+  replyTo?: string | null
+}) {
+  const mailFrom = getMailFromAddress()
+  if (!mailFrom) {
+    return
+  }
+
+  const recipients = await listRenoAppNotificationRecipients({
+    admin: input.admin,
+    brfId: input.brfId,
+    preference: 'case_events',
+  })
+
+  for (const recipient of recipients) {
+    try {
+      await sendAssignmentEmail({
+        to: recipient.email,
+        from: mailFrom,
+        replyTo: input.replyTo ?? null,
+        subject: input.subject,
+        html: buildRenoAppEmailHtml({
+          origin: input.requestOrigin,
+          preheader: input.preheader,
+          bodyHtml: input.bodyHtml,
+        }),
+        text: input.text,
+      })
+    } catch {
+      // Ignore single-recipient mail errors so the case flow itself is not blocked.
+    }
+  }
 }
 
 export async function listEditableRenoAppBrfs(): Promise<RenoAppEditableBrf[]> {

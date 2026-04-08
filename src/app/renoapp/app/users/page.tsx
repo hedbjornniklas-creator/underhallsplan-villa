@@ -14,6 +14,8 @@ type UserGroup = {
     email: string | null
     role: 'board' | 'admin'
     acceptedAt: string | null
+    receivesGeneralInfoEmails: boolean
+    receivesCaseEventEmails: boolean
   }>
   pendingInvites: Array<{
     id: string
@@ -43,6 +45,7 @@ export default function RenoAppUsersPage() {
   const [submittingBrfId, setSubmittingBrfId] = useState<string | null>(null)
   const [revokingInviteId, setRevokingInviteId] = useState<string | null>(null)
   const [removingMemberKey, setRemovingMemberKey] = useState<string | null>(null)
+  const [savingMailSettingsKey, setSavingMailSettingsKey] = useState<string | null>(null)
 
   const refreshUsers = async () => {
     const response = await fetch('/api/renoapp/app/users', { cache: 'no-store' })
@@ -187,6 +190,59 @@ export default function RenoAppUsersPage() {
     }
   }
 
+  const handleUpdateMailSetting = async (
+    brfId: string,
+    profileId: string,
+    field: 'receivesGeneralInfoEmails' | 'receivesCaseEventEmails',
+    checked: boolean
+  ) => {
+    const memberKey = `${brfId}:${profileId}`
+    const previousItems = items
+
+    setSavingMailSettingsKey(memberKey)
+    setError(null)
+    setItems((current) =>
+      current.map((group) =>
+        group.brf.id !== brfId
+          ? group
+          : {
+              ...group,
+              members: group.members.map((member) =>
+                member.profileId !== profileId ? member : { ...member, [field]: checked }
+              ),
+            }
+      )
+    )
+
+    try {
+      const group = previousItems.find((item) => item.brf.id === brfId)
+      const member = group?.members.find((item) => item.profileId === profileId)
+
+      const response = await fetch('/api/renoapp/app/users/member', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brfId,
+          profileId,
+          receivesGeneralInfoEmails:
+            field === 'receivesGeneralInfoEmails' ? checked : (member?.receivesGeneralInfoEmails ?? false),
+          receivesCaseEventEmails:
+            field === 'receivesCaseEventEmails' ? checked : (member?.receivesCaseEventEmails ?? false),
+        }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as { error?: string }
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Kunde inte spara e-postinställningar.')
+      }
+    } catch (updateError) {
+      setItems(previousItems)
+      setError(updateError instanceof Error ? updateError.message : 'Kunde inte spara e-postinställningar.')
+    } finally {
+      setSavingMailSettingsKey(null)
+    }
+  }
+
   return (
     <div className="grid gap-6">
       <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
@@ -247,6 +303,42 @@ export default function RenoAppUsersPage() {
                           <p className="text-xs uppercase tracking-[0.12em] text-stone-500">
                             {formatRole(member.role)} · accepterad {formatDateTime(member.acceptedAt)}
                           </p>
+                          <div className="mt-3 grid gap-2 rounded-2xl border border-stone-200 bg-stone-50 px-3 py-3">
+                            <label className="flex items-center gap-3 text-sm text-stone-700">
+                              <input
+                                type="checkbox"
+                                checked={member.receivesGeneralInfoEmails}
+                                onChange={(event) =>
+                                  void handleUpdateMailSetting(
+                                    group.brf.id,
+                                    member.profileId,
+                                    'receivesGeneralInfoEmails',
+                                    event.target.checked
+                                  )
+                                }
+                                disabled={savingMailSettingsKey === `${group.brf.id}:${member.profileId}`}
+                                className="h-4 w-4 rounded border-stone-300 text-stone-700 focus:ring-stone-400"
+                              />
+                              <span>AllmÃ¤n information frÃ¥n RenoApp</span>
+                            </label>
+                            <label className="flex items-center gap-3 text-sm text-stone-700">
+                              <input
+                                type="checkbox"
+                                checked={member.receivesCaseEventEmails}
+                                onChange={(event) =>
+                                  void handleUpdateMailSetting(
+                                    group.brf.id,
+                                    member.profileId,
+                                    'receivesCaseEventEmails',
+                                    event.target.checked
+                                  )
+                                }
+                                disabled={savingMailSettingsKey === `${group.brf.id}:${member.profileId}`}
+                                className="h-4 w-4 rounded border-stone-300 text-stone-700 focus:ring-stone-400"
+                              />
+                              <span>HÃ¤ndelser i Ã¤renden</span>
+                            </label>
+                          </div>
                           <div className="mt-3">
                             <button
                               type="button"
