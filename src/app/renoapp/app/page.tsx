@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
 type DashboardResponse = {
@@ -11,9 +12,9 @@ type DashboardResponse = {
   }>
   activeBrfId: string | null
   stats: {
-    openCases: number
+    newCases: number
     needInfoCases: number
-    preliminaryUnits: number
+    handledCases: number
   }
 }
 
@@ -119,12 +120,12 @@ export default function RenoAppAppHomePage() {
 
   const cards = [
     {
-      eyebrow: 'Pågående handläggning',
-      title: 'Aktiva ärenden',
-      value: payload?.stats.openCases ?? 0,
-      description: 'Ärenden som fortfarande är under handläggning och ännu inte är avslutade.',
-      detail: 'Omfattar under granskning och godkänd med villkor.',
-      tone: 'border-stone-200/80 bg-white/85',
+      eyebrow: 'Nya ärenden',
+      title: 'Nya ärenden',
+      value: payload?.stats.newCases ?? 0,
+      description: 'Nya inkomna ärenden som ännu inte har hanterats av styrelsen.',
+      detail: 'Öppna ärendelistan för att börja handläggningen.',
+      tone: 'border-stone-200/80 bg-white/85 hover:bg-stone-50/90',
     },
     {
       eyebrow: 'Väntar på medlem',
@@ -132,15 +133,15 @@ export default function RenoAppAppHomePage() {
       value: payload?.stats.needInfoCases ?? 0,
       description: 'Ärenden där styrelsen har bett medlemmen att skicka in mer underlag.',
       detail: 'Bra att följa upp löpande så att handläggningen inte stannar upp.',
-      tone: 'border-amber-200/80 bg-amber-50/70',
+      tone: 'border-amber-200/80 bg-amber-50/70 hover:bg-amber-50/90',
     },
     {
-      eyebrow: 'Behöver kontroll',
-      title: 'Preliminära lägenheter',
-      value: payload?.stats.preliminaryUnits ?? 0,
-      description: 'Lägenheter som har skapats preliminärt och kan behöva ses över i registret.',
-      detail: 'Kontrollera att rätt lägenhet är kopplad innan fler ärenden byggs på samma post.',
-      tone: 'border-sky-200/80 bg-sky-50/70',
+      eyebrow: 'Hanterade ärenden',
+      title: 'Antal hanterade ärenden',
+      value: payload?.stats.handledCases ?? 0,
+      description: 'Summering av ärenden där styrelsen redan har gjort en åtgärd i appen.',
+      detail: 'Omfattar begärd komplettering, godkända, villkorade och avslagna ärenden.',
+      tone: 'border-sky-200/80 bg-sky-50/70 hover:bg-sky-50/90',
     },
   ]
 
@@ -156,9 +157,10 @@ export default function RenoAppAppHomePage() {
         <div className="grid gap-6">
           <section className="grid gap-5 lg:grid-cols-3">
             {cards.map((card) => (
-              <article
+              <Link
                 key={card.title}
-                className={`rounded-[28px] border p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] ${card.tone}`}
+                href="/renoapp/app/cases"
+                className={`rounded-[28px] border p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] transition ${card.tone}`}
               >
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
                   {card.eyebrow}
@@ -170,7 +172,7 @@ export default function RenoAppAppHomePage() {
                 </div>
                 <p className="mt-5 text-sm leading-7 text-stone-800">{card.description}</p>
                 <p className="mt-2 text-xs leading-6 text-stone-600">{card.detail}</p>
-              </article>
+              </Link>
             ))}
           </section>
 

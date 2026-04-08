@@ -1,4 +1,4 @@
-import crypto from 'node:crypto'
+﻿import crypto from 'node:crypto'
 import { cookies } from 'next/headers'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
@@ -1145,9 +1145,9 @@ export type RenoAppDashboardSummary = {
   accessibleBrfs: RenoAppViewerContext['brfs']
   activeBrfId: string | null
   stats: {
-    openCases: number
+    newCases: number
     needInfoCases: number
-    preliminaryUnits: number
+    handledCases: number
   }
 }
 
@@ -1442,12 +1442,12 @@ function requiresQualifiedContractor(actionTypes: ActionTypeRow[]) {
 }
 
 function getContractorRequirementLabel(requirement: ActionTypeRow['contractor_requirement']) {
-  if (requirement === 'authorized_electrician') return 'Behörig elektriker'
-  if (requirement === 'safe_water') return 'Säker Vatten-auktoriserad VVS-entreprenör'
-  if (requirement === 'bkr_or_gvk') return 'Behörig våtrumsentreprenör enligt BKR eller GVK'
-  if (requirement === 'structural_engineer') return 'Konstruktör eller särskilt sakkunnig'
-  if (requirement === 'qualified_contractor') return 'Kvalificerad entreprenör'
-  return 'Ingen särskild entreprenör krävs'
+  if (requirement === 'authorized_electrician') return 'BehÃ¶rig elektriker'
+  if (requirement === 'safe_water') return 'SÃ¤ker Vatten-auktoriserad VVS-entreprenÃ¶r'
+  if (requirement === 'bkr_or_gvk') return 'BehÃ¶rig vÃ¥trumsentreprenÃ¶r enligt BKR eller GVK'
+  if (requirement === 'structural_engineer') return 'KonstruktÃ¶r eller sÃ¤rskilt sakkunnig'
+  if (requirement === 'qualified_contractor') return 'Kvalificerad entreprenÃ¶r'
+  return 'Ingen sÃ¤rskild entreprenÃ¶r krÃ¤vs'
 }
 
 function buildContractorRequirementSummary(actionTypes: ActionTypeRow[]) {
@@ -1484,7 +1484,7 @@ async function listCaseMessages(admin: SupabaseAdminClient, caseId: string) {
     .order('created_at', { ascending: false })
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte läsa ärendemeddelanden.')
+    throw new Error(error.message ?? 'Kunde inte lÃ¤sa Ã¤rendemeddelanden.')
   }
 
   const rows = (data ?? []) as CaseMessageRow[]
@@ -1501,10 +1501,10 @@ async function listCaseMessages(admin: SupabaseAdminClient, caseId: string) {
   ])
 
   if (profilesResult.error) {
-    throw new Error(profilesResult.error.message ?? 'Kunde inte läsa användarnamn för ärendehistorik.')
+    throw new Error(profilesResult.error.message ?? 'Kunde inte lÃ¤sa anvÃ¤ndarnamn fÃ¶r Ã¤rendehistorik.')
   }
   if (contactsResult.error) {
-    throw new Error(contactsResult.error.message ?? 'Kunde inte läsa kontaktnamn för ärendehistorik.')
+    throw new Error(contactsResult.error.message ?? 'Kunde inte lÃ¤sa kontaktnamn fÃ¶r Ã¤rendehistorik.')
   }
 
   const profileNameById = new Map(
@@ -1551,7 +1551,7 @@ async function insertCaseMessage(input: {
   })
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte spara ärendemeddelande.')
+    throw new Error(error.message ?? 'Kunde inte spara Ã¤rendemeddelande.')
   }
 }
 
@@ -1605,7 +1605,7 @@ async function getPublicBrfBySlug(admin: SupabaseAdminClient, slug: string) {
     .maybeSingle()
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte hämta BRF.')
+    throw new Error(error.message ?? 'Kunde inte hÃ¤mta BRF.')
   }
 
   return (data ?? null) as BrfAssociationRow | null
@@ -1621,7 +1621,7 @@ export async function listRenoAppPublicBrfs(): Promise<RenoAppPublicBrfListItem[
     .order('name', { ascending: true })
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte hämta publika BRF:er.')
+    throw new Error(error.message ?? 'Kunde inte hÃ¤mta publika BRF:er.')
   }
 
   return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
@@ -1642,7 +1642,7 @@ async function listActiveActionTypes(admin: SupabaseAdminClient) {
     .order('sort_order', { ascending: true })
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte hämta åtgärdstyper.')
+    throw new Error(error.message ?? 'Kunde inte hÃ¤mta Ã¥tgÃ¤rdstyper.')
   }
 
   return (data ?? []) as ActionTypeRow[]
@@ -1656,7 +1656,7 @@ async function listActiveActionCategories(admin: SupabaseAdminClient) {
     .order('sort_order', { ascending: true })
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte hämta åtgärdskategorier.')
+    throw new Error(error.message ?? 'Kunde inte hÃ¤mta Ã¥tgÃ¤rdskategorier.')
   }
 
   return (data ?? []) as ActionCategoryRow[]
@@ -1670,7 +1670,7 @@ async function listActiveDocumentTypes(admin: SupabaseAdminClient) {
     .order('sort_order', { ascending: true })
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte hämta dokumenttyper.')
+    throw new Error(error.message ?? 'Kunde inte hÃ¤mta dokumenttyper.')
   }
 
   return (data ?? []) as DocumentTypeRow[]
@@ -1686,7 +1686,7 @@ async function listActiveParticipantRoles(admin: SupabaseAdminClient) {
     .order('sort_order', { ascending: true })
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte hämta medverkandetyper.')
+    throw new Error(error.message ?? 'Kunde inte hÃ¤mta medverkandetyper.')
   }
 
   return (data ?? []) as ParticipantRoleRow[]
@@ -1700,7 +1700,7 @@ async function listActiveReviewFlags(admin: SupabaseAdminClient) {
     .order('sort_order', { ascending: true })
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte hämta granskningsflaggor.')
+    throw new Error(error.message ?? 'Kunde inte hÃ¤mta granskningsflaggor.')
   }
 
   return (data ?? []) as ReviewFlagRow[]
@@ -1772,7 +1772,7 @@ async function listRequirements(admin: SupabaseAdminClient, brfId: string) {
     .order('sort_order', { ascending: true })
 
   if (globalQuery.error) {
-    throw new Error(globalQuery.error.message ?? 'Kunde inte hämta globala dokumentkrav.')
+    throw new Error(globalQuery.error.message ?? 'Kunde inte hÃ¤mta globala dokumentkrav.')
   }
 
   const localQuery = await admin
@@ -1782,7 +1782,7 @@ async function listRequirements(admin: SupabaseAdminClient, brfId: string) {
     .order('sort_order', { ascending: true })
 
   if (localQuery.error) {
-    throw new Error(localQuery.error.message ?? 'Kunde inte hämta BRF-specifika dokumentkrav.')
+    throw new Error(localQuery.error.message ?? 'Kunde inte hÃ¤mta BRF-specifika dokumentkrav.')
   }
 
   return [...((globalQuery.data ?? []) as RequirementRow[]), ...((localQuery.data ?? []) as RequirementRow[])]
@@ -1812,10 +1812,10 @@ async function listActiveApplyQuestions(admin: SupabaseAdminClient) {
       .order('sort_order', { ascending: true }),
   ])
 
-  if (questionRows.error) throw new Error(questionRows.error.message ?? 'Kunde inte hämta frågor.')
-  if (optionRows.error) throw new Error(optionRows.error.message ?? 'Kunde inte hämta svarsalternativ.')
-  if (linkRows.error) throw new Error(linkRows.error.message ?? 'Kunde inte hämta frågekopplingar.')
-  if (triggerRows.error) throw new Error(triggerRows.error.message ?? 'Kunde inte hämta frågetriggers.')
+  if (questionRows.error) throw new Error(questionRows.error.message ?? 'Kunde inte hÃ¤mta frÃ¥gor.')
+  if (optionRows.error) throw new Error(optionRows.error.message ?? 'Kunde inte hÃ¤mta svarsalternativ.')
+  if (linkRows.error) throw new Error(linkRows.error.message ?? 'Kunde inte hÃ¤mta frÃ¥gekopplingar.')
+  if (triggerRows.error) throw new Error(triggerRows.error.message ?? 'Kunde inte hÃ¤mta frÃ¥getriggers.')
 
   return {
     questions: (questionRows.data ?? []) as ApplyQuestionRow[],
@@ -1857,7 +1857,7 @@ function buildPublicActionTypes(
       return {
         id: category?.id ?? '',
         slug: category?.slug ?? 'ovrigt',
-        label: category?.label ?? 'Övrigt',
+        label: category?.label ?? 'Ã–vrigt',
         description: category?.description ?? null,
         sortOrder: category?.sort_order ?? 999,
       }
@@ -1877,7 +1877,7 @@ function buildPublicActionTypes(
           id: requirement.id,
           documentTypeId: requirement.document_type_id,
           documentKey: documentType?.key ?? 'unknown',
-          documentLabel: documentType?.label ?? 'Okänd dokumenttyp',
+          documentLabel: documentType?.label ?? 'OkÃ¤nd dokumenttyp',
           documentDescription: documentType?.description ?? null,
           isRequired: requirement.is_required,
           phase: requirement.phase,
@@ -2190,7 +2190,7 @@ async function listCaseActionTypes(admin: SupabaseAdminClient, caseIds: string[]
     .in('case_id', caseIds)
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte läsa ärendets åtgärdstyper.')
+    throw new Error(error.message ?? 'Kunde inte lÃ¤sa Ã¤rendets Ã¥tgÃ¤rdstyper.')
   }
 
   return (data ?? []) as CaseActionTypeRow[]
@@ -2205,7 +2205,7 @@ async function listCaseQuestionAnswers(admin: SupabaseAdminClient, caseIds: stri
     .in('case_id', caseIds)
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte läsa ärendets frågesvar.')
+    throw new Error(error.message ?? 'Kunde inte lÃ¤sa Ã¤rendets frÃ¥gesvar.')
   }
 
   return (data ?? []) as CaseQuestionAnswerRow[]
@@ -2222,7 +2222,7 @@ async function listCaseParticipants(admin: SupabaseAdminClient, caseIds: string[
     .in('case_id', caseIds)
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte läsa ärendets entreprenörer och konsulter.')
+    throw new Error(error.message ?? 'Kunde inte lÃ¤sa Ã¤rendets entreprenÃ¶rer och konsulter.')
   }
 
   return (data ?? []) as CaseParticipantRow[]
@@ -2350,7 +2350,7 @@ function buildCaseReviewFlags(params: {
           addCaseReviewFlag(flagMap, {
             id: `missing-document-${trigger.documentTypeId}`,
             code: `missing_document:${trigger.documentTypeId}`,
-            label: `Saknat underlag: ${documentType?.label ?? trigger.documentLabel ?? 'Okänt underlag'}`,
+            label: `Saknat underlag: ${documentType?.label ?? trigger.documentLabel ?? 'OkÃ¤nt underlag'}`,
             description: trigger.documentDescription ?? documentType?.description ?? null,
             severity: 'warning',
             category: 'dokument',
@@ -2374,7 +2374,7 @@ function buildCaseReviewFlags(params: {
     addCaseReviewFlag(flagMap, {
       id: `missing-document-${requirement.document_type_id}`,
       code: `missing_document:${requirement.document_type_id}`,
-      label: `Saknat underlag: ${documentType?.label ?? 'Okänt underlag'}`,
+      label: `Saknat underlag: ${documentType?.label ?? 'OkÃ¤nt underlag'}`,
       description: requirement.note ?? documentType?.description ?? null,
       severity: 'warning',
       category: 'dokument',
@@ -2519,7 +2519,7 @@ function buildCaseUnderlagItems(params: {
     addItem(
       `document:${requirement.document_type_id}`,
       'document',
-      documentType?.label ?? 'Okänt underlag',
+      documentType?.label ?? 'OkÃ¤nt underlag',
       requirement.sort_order,
       Boolean(document),
       document?.id ?? null,
@@ -2541,7 +2541,7 @@ function buildCaseUnderlagItems(params: {
           addItem(
             `document:${trigger.documentTypeId}`,
             'document',
-            trigger.documentLabel ?? documentType?.label ?? 'Okänt underlag',
+            trigger.documentLabel ?? documentType?.label ?? 'OkÃ¤nt underlag',
             1000 + question.sortOrder * 10 + trigger.sortOrder,
             Boolean(document),
             document?.id ?? null,
@@ -2586,10 +2586,10 @@ function buildCaseUnderlagItems(params: {
             (!participantRole.insuranceRequired || Boolean(insuranceDocument))
           const summary = [
             hasName ? 'Namn finns' : 'Namn saknas',
-            participant?.has_verified_authorization ? 'Verifierad av sökande' : 'Verifiering saknas',
-            participant?.accepts_responsibility ? 'Sanningsförsäkran finns' : 'Sanningsförsäkran saknas',
+            participant?.has_verified_authorization ? 'Verifierad av sÃ¶kande' : 'Verifiering saknas',
+            participant?.accepts_responsibility ? 'SanningsfÃ¶rsÃ¤kran finns' : 'SanningsfÃ¶rsÃ¤kran saknas',
             ...(participantRole.insuranceRequired
-              ? [insuranceDocument ? 'Försäkringsbevis finns' : 'Försäkringsbevis saknas']
+              ? [insuranceDocument ? 'FÃ¶rsÃ¤kringsbevis finns' : 'FÃ¶rsÃ¤kringsbevis saknas']
               : []),
           ]
           addItem(
@@ -2638,10 +2638,10 @@ function buildCaseUnderlagItems(params: {
       (role.insurance_required !== true || Boolean(insuranceDocument))
     const summary = [
       hasName ? 'Namn finns' : 'Namn saknas',
-      participant?.has_verified_authorization ? 'Verifierad av sökande' : 'Verifiering saknas',
-      participant?.accepts_responsibility ? 'Sanningsförsäkran finns' : 'Sanningsförsäkran saknas',
+      participant?.has_verified_authorization ? 'Verifierad av sÃ¶kande' : 'Verifiering saknas',
+      participant?.accepts_responsibility ? 'SanningsfÃ¶rsÃ¤kran finns' : 'SanningsfÃ¶rsÃ¤kran saknas',
       ...(role.insurance_required === true
-        ? [insuranceDocument ? 'Försäkringsbevis finns' : 'Försäkringsbevis saknas']
+        ? [insuranceDocument ? 'FÃ¶rsÃ¤kringsbevis finns' : 'FÃ¶rsÃ¤kringsbevis saknas']
         : []),
     ]
 
@@ -2698,7 +2698,7 @@ export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPubli
     ])
 
   if (participantRoleConfig.error) {
-    throw new Error(participantRoleConfig.error.message ?? 'Kunde inte läsa medverkandekopplingar.')
+    throw new Error(participantRoleConfig.error.message ?? 'Kunde inte lÃ¤sa medverkandekopplingar.')
   }
 
   const publicActionTypes = buildPublicActionTypes(
@@ -2754,7 +2754,7 @@ export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPubli
             id: requirement.id,
             documentTypeId: requirement.document_type_id,
             documentKey: documentType?.key ?? 'unknown',
-            documentLabel: documentType?.label ?? 'Okänd dokumenttyp',
+            documentLabel: documentType?.label ?? 'OkÃ¤nd dokumenttyp',
             documentDescription: documentType?.description ?? null,
             isRequired: requirement.is_required,
             note: requirement.note,
@@ -2800,7 +2800,7 @@ export async function createPublicApplication(
     .eq('case_id', caseId)
 
   if (deleteParticipantError) {
-    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenörer och konsulter.')
+    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenÃ¶rer och konsulter.')
   }
 
   const participantRowsToInsert = participantEntriesInput
@@ -2835,7 +2835,7 @@ export async function createPublicApplication(
       .insert(participantRowsToInsert)
 
     if (insertParticipantError) {
-      throw new Error(insertParticipantError.message ?? 'Kunde inte spara entreprenörer och konsulter.')
+      throw new Error(insertParticipantError.message ?? 'Kunde inte spara entreprenÃ¶rer och konsulter.')
     }
   }
 
@@ -2846,7 +2846,7 @@ export async function createPublicApplication(
     .eq('case_id', caseId)
 
   if (deleteParticipantError) {
-    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenörer och konsulter.')
+    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenÃ¶rer och konsulter.')
   }
 
   const participantRowsToInsert = participantEntriesInput
@@ -2881,7 +2881,7 @@ export async function createPublicApplication(
       .insert(participantRowsToInsert)
 
     if (insertParticipantError) {
-      throw new Error(insertParticipantError.message ?? 'Kunde inte spara entreprenörer och konsulter.')
+      throw new Error(insertParticipantError.message ?? 'Kunde inte spara entreprenÃ¶rer och konsulter.')
     }
   }
 
@@ -2892,7 +2892,7 @@ export async function createPublicApplication(
     .eq('case_id', caseId)
 
   if (deleteParticipantError) {
-    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenörer och konsulter.')
+    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenÃ¶rer och konsulter.')
   }
 
   const participantRowsToInsert = participantEntriesInput
@@ -2927,7 +2927,7 @@ export async function createPublicApplication(
       .insert(participantRowsToInsert)
 
     if (insertParticipantError) {
-      throw new Error(insertParticipantError.message ?? 'Kunde inte spara entreprenörer och konsulter.')
+      throw new Error(insertParticipantError.message ?? 'Kunde inte spara entreprenÃ¶rer och konsulter.')
     }
   }
 
@@ -2942,7 +2942,7 @@ export async function createPublicApplication(
     .maybeSingle()
 
   if (actionTypeError) {
-    throw new Error(actionTypeError.message ?? 'Kunde inte hämta åtgärdstyp.')
+    throw new Error(actionTypeError.message ?? 'Kunde inte hÃ¤mta Ã¥tgÃ¤rdstyp.')
   }
 
   if (!actionType) {
@@ -3024,7 +3024,7 @@ export async function createPublicApplication(
       .single()
 
     if (error) {
-      throw new Error(error.message ?? 'Kunde inte skapa lägenhet.')
+      throw new Error(error.message ?? 'Kunde inte skapa lÃ¤genhet.')
     }
 
     unit = data as UnitRow
@@ -3049,7 +3049,7 @@ export async function createPublicApplication(
     })
 
     if (error) {
-      throw new Error(error.message ?? 'Kunde inte koppla kontakt till lägenhet.')
+      throw new Error(error.message ?? 'Kunde inte koppla kontakt till lÃ¤genhet.')
     }
   }
 
@@ -3075,7 +3075,7 @@ export async function createPublicApplication(
     .single()
 
   if (caseError || !insertedCase) {
-    throw new Error(caseError?.message ?? 'Kunde inte skapa ärende.')
+    throw new Error(caseError?.message ?? 'Kunde inte skapa Ã¤rende.')
   }
 
   const { error: checksError } = await admin.from('renovation_case_checks').insert({
@@ -3089,7 +3089,7 @@ export async function createPublicApplication(
   })
 
   if (checksError) {
-    throw new Error(checksError.message ?? 'Kunde inte spara teknisk påverkan.')
+    throw new Error(checksError.message ?? 'Kunde inte spara teknisk pÃ¥verkan.')
   }
 
   const plainToken = makeToken()
@@ -3106,7 +3106,7 @@ export async function createPublicApplication(
   })
 
   if (accessError) {
-    throw new Error(accessError.message ?? 'Kunde inte skapa åtkomstlänk.')
+    throw new Error(accessError.message ?? 'Kunde inte skapa Ã¥tkomstlÃ¤nk.')
   }
 
   const accessUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/case/${plainToken}`)
@@ -3121,22 +3121,22 @@ export async function createPublicApplication(
         to: applicantEmailValue,
         from: mailFrom,
         replyTo: brf.email ?? null,
-        subject: `RenoApp: ditt ärende ${caseNumber}`,
+        subject: `RenoApp: ditt Ã¤rende ${caseNumber}`,
         html: [
           `<p>Hej ${applicantName},</p>`,
-          `<p>Vi har tagit emot din renoveringsansökan för <strong>${brf.name}</strong>.</p>`,
-          `<p>Ärendenummer: <strong>${caseNumber}</strong></p>`,
-          `<p>Öppna och komplettera ditt ärende via länken nedan:</p>`,
+          `<p>Vi har tagit emot din renoveringsansÃ¶kan fÃ¶r <strong>${brf.name}</strong>.</p>`,
+          `<p>Ã„rendenummer: <strong>${caseNumber}</strong></p>`,
+          `<p>Ã–ppna och komplettera ditt Ã¤rende via lÃ¤nken nedan:</p>`,
           `<p><a href="${resumeUrl}">${resumeUrl}</a></p>`,
-          `<p>Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>`,
+          `<p>LÃ¤nken gÃ¤ller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>`,
         ].join(''),
         text: [
           `Hej ${applicantName},`,
           ``,
-          `Vi har tagit emot din renoveringsansökan för ${brf.name}.`,
-          `Ärendenummer: ${caseNumber}`,
-          `Öppna och komplettera ditt ärende här: ${resumeUrl}`,
-          `Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
+          `Vi har tagit emot din renoveringsansÃ¶kan fÃ¶r ${brf.name}.`,
+          `Ã„rendenummer: ${caseNumber}`,
+          `Ã–ppna och komplettera ditt Ã¤rende hÃ¤r: ${resumeUrl}`,
+          `LÃ¤nken gÃ¤ller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
         ].join('\n'),
       })
       emailSent = true
@@ -3144,9 +3144,9 @@ export async function createPublicApplication(
       emailError = error instanceof Error ? error.message : 'Mejlutskick misslyckades.'
     }
   } else if (!applicantEmailValue) {
-    emailError = 'Ingen e-postadress är angiven. Ansökan sparades men inget mejl kunde skickas.'
+    emailError = 'Ingen e-postadress Ã¤r angiven. AnsÃ¶kan sparades men inget mejl kunde skickas.'
   } else {
-    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Åtkomstlänken skapades men inget mejl skickades.'
+    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Ã…tkomstlÃ¤nken skapades men inget mejl skickades.'
   }
 
   return {
@@ -3174,7 +3174,7 @@ async function loadActiveActionTypesByKeys(admin: SupabaseAdminClient, keys: str
     .order('sort_order', { ascending: true })
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte läsa åtgärdstyper.')
+    throw new Error(error.message ?? 'Kunde inte lÃ¤sa Ã¥tgÃ¤rdstyper.')
   }
 
   return (data ?? []) as ActionTypeRow[]
@@ -3194,14 +3194,14 @@ async function loadActiveActionTypesByIds(admin: SupabaseAdminClient, ids: strin
     .order('sort_order', { ascending: true })
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte läsa åtgärdstyper.')
+    throw new Error(error.message ?? 'Kunde inte lÃ¤sa Ã¥tgÃ¤rdstyper.')
   }
 
   return (data ?? []) as ActionTypeRow[]
 }
 
 function buildPublicCaseTitle(actionTypes: ActionTypeRow[]) {
-  if (actionTypes.length === 0) return 'Renoveringsansökan'
+  if (actionTypes.length === 0) return 'RenoveringsansÃ¶kan'
   if (actionTypes.length === 1) return `Renovering: ${actionTypes[0].label}`
   return `Renovering: ${actionTypes.map((item) => item.label).join(', ')}`
 }
@@ -3255,7 +3255,7 @@ async function ensureUnitForPublicApplication(input: {
       .single()
 
     if (error) {
-      throw new Error(error.message ?? 'Kunde inte skapa lägenhet.')
+      throw new Error(error.message ?? 'Kunde inte skapa lÃ¤genhet.')
     }
 
     unit = data as UnitRow
@@ -3291,7 +3291,7 @@ async function ensureCurrentUnitContact(input: {
     })
 
     if (error) {
-      throw new Error(error.message ?? 'Kunde inte koppla kontakt till lägenhet.')
+      throw new Error(error.message ?? 'Kunde inte koppla kontakt till lÃ¤genhet.')
     }
   }
 }
@@ -3404,7 +3404,7 @@ async function upsertPublicApplicationContact(input: {
 async function replaceCaseActionTypes(admin: SupabaseAdminClient, caseId: string, actionTypeIds: string[]) {
   const { error: deleteError } = await admin.from('renovation_case_action_types').delete().eq('case_id', caseId)
   if (deleteError) {
-    throw new Error(deleteError.message ?? 'Kunde inte uppdatera ärendets åtgärdstyper.')
+    throw new Error(deleteError.message ?? 'Kunde inte uppdatera Ã¤rendets Ã¥tgÃ¤rdstyper.')
   }
 
   if (actionTypeIds.length === 0) return
@@ -3417,7 +3417,7 @@ async function replaceCaseActionTypes(admin: SupabaseAdminClient, caseId: string
   )
 
   if (insertError) {
-    throw new Error(insertError.message ?? 'Kunde inte spara ärendets åtgärdstyper.')
+    throw new Error(insertError.message ?? 'Kunde inte spara Ã¤rendets Ã¥tgÃ¤rdstyper.')
   }
 }
 
@@ -3436,7 +3436,7 @@ async function createCaseAccessToken(admin: SupabaseAdminClient, caseId: string,
   })
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte skapa åtkomstlänk.')
+    throw new Error(error.message ?? 'Kunde inte skapa Ã¥tkomstlÃ¤nk.')
   }
 
   return { token: plainToken, expiresAt }
@@ -3453,7 +3453,7 @@ async function findReusableCaseAccessToken(admin: SupabaseAdminClient, caseId: s
     .maybeSingle()
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte läsa åtkomstlänk.')
+    throw new Error(error.message ?? 'Kunde inte lÃ¤sa Ã¥tkomstlÃ¤nk.')
   }
 
   if (!data) return null
@@ -3509,7 +3509,7 @@ export async function getRenoAppPublicGuideConfig(slug: string): Promise<RenoApp
     ])
 
   if (participantRoleConfig.error) {
-    throw new Error(participantRoleConfig.error.message ?? 'Kunde inte läsa medverkandekopplingar.')
+    throw new Error(participantRoleConfig.error.message ?? 'Kunde inte lÃ¤sa medverkandekopplingar.')
   }
 
   return {
@@ -3554,7 +3554,7 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
     .maybeSingle()
 
   if (accessError) {
-    throw new Error(accessError.message ?? 'Kunde inte läsa utkastslänk.')
+    throw new Error(accessError.message ?? 'Kunde inte lÃ¤sa utkastslÃ¤nk.')
   }
   if (!accessData) {
     return null
@@ -3578,7 +3578,7 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
     .maybeSingle()
 
   if (caseError) {
-    throw new Error(caseError.message ?? 'Kunde inte läsa utkast.')
+    throw new Error(caseError.message ?? 'Kunde inte lÃ¤sa utkast.')
   }
   if (!caseData) {
     return null
@@ -3612,12 +3612,12 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
     listCaseMessages(admin, String(caseRow.id ?? '')),
   ])
 
-  if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte läsa BRF.')
-  if (contactResult.error) throw new Error(contactResult.error.message ?? 'Kunde inte läsa kontakt.')
-  if (unitResult.error) throw new Error(unitResult.error.message ?? 'Kunde inte läsa lägenhet.')
+  if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte lÃ¤sa BRF.')
+  if (contactResult.error) throw new Error(contactResult.error.message ?? 'Kunde inte lÃ¤sa kontakt.')
+  if (unitResult.error) throw new Error(unitResult.error.message ?? 'Kunde inte lÃ¤sa lÃ¤genhet.')
 
   if (documentsResult.error) throw new Error(documentsResult.error.message ?? 'Kunde inte lasa dokument.')
-  if (questionRows.error) throw new Error(questionRows.error.message ?? 'Kunde inte lasa frågor.')
+  if (questionRows.error) throw new Error(questionRows.error.message ?? 'Kunde inte lasa frÃ¥gor.')
   if (optionRows.error) throw new Error(optionRows.error.message ?? 'Kunde inte lasa svarsalternativ.')
 
   const actionTypeIdSet = new Set(
@@ -3831,7 +3831,7 @@ export async function upsertPublicApplication(
       .maybeSingle()
 
     if (existingLinkError) {
-      throw new Error(existingLinkError.message ?? 'Kunde inte läsa utkastslänk.')
+      throw new Error(existingLinkError.message ?? 'Kunde inte lÃ¤sa utkastslÃ¤nk.')
     }
 
     if (existingLink?.revoked_at) {
@@ -3851,7 +3851,7 @@ export async function upsertPublicApplication(
       .maybeSingle()
 
     if (caseError) {
-      throw new Error(caseError.message ?? 'Kunde inte läsa utkastärende.')
+      throw new Error(caseError.message ?? 'Kunde inte lÃ¤sa utkastÃ¤rende.')
     }
 
     existingCase = (caseData ?? null) as Record<string, unknown> | null
@@ -3928,7 +3928,7 @@ export async function upsertPublicApplication(
       .single()
 
     if (insertCaseError || !insertedCase) {
-      throw new Error(insertCaseError?.message ?? 'Kunde inte skapa ärende.')
+      throw new Error(insertCaseError?.message ?? 'Kunde inte skapa Ã¤rende.')
     }
 
     caseId = String(insertedCase.id ?? '')
@@ -3945,7 +3945,7 @@ export async function upsertPublicApplication(
     })
 
     if (checksError) {
-      throw new Error(checksError.message ?? 'Kunde inte spara teknisk påverkan.')
+      throw new Error(checksError.message ?? 'Kunde inte spara teknisk pÃ¥verkan.')
     }
   } else {
     const { error: updateCaseError } = await admin
@@ -3968,7 +3968,7 @@ export async function upsertPublicApplication(
       .eq('id', caseId)
 
     if (updateCaseError) {
-      throw new Error(updateCaseError.message ?? 'Kunde inte uppdatera ärendet.')
+      throw new Error(updateCaseError.message ?? 'Kunde inte uppdatera Ã¤rendet.')
     }
 
     const { error: checksError } = await admin
@@ -3984,7 +3984,7 @@ export async function upsertPublicApplication(
       .eq('case_id', caseId)
 
     if (checksError) {
-      throw new Error(checksError.message ?? 'Kunde inte uppdatera teknisk påverkan.')
+      throw new Error(checksError.message ?? 'Kunde inte uppdatera teknisk pÃ¥verkan.')
     }
   }
 
@@ -4007,7 +4007,7 @@ export async function upsertPublicApplication(
     .eq('case_id', caseId)
 
   if (deleteAnswerError) {
-    throw new Error(deleteAnswerError.message ?? 'Kunde inte uppdatera frågesvar.')
+    throw new Error(deleteAnswerError.message ?? 'Kunde inte uppdatera frÃ¥gesvar.')
   }
 
   const answerRowsToInsert = applicableQuestions.flatMap((question) => {
@@ -4031,7 +4031,7 @@ export async function upsertPublicApplication(
       .insert(answerRowsToInsert)
 
     if (insertAnswerError) {
-      throw new Error(insertAnswerError.message ?? 'Kunde inte spara frågesvar.')
+      throw new Error(insertAnswerError.message ?? 'Kunde inte spara frÃ¥gesvar.')
     }
   }
 
@@ -4042,7 +4042,7 @@ export async function upsertPublicApplication(
     .eq('case_id', caseId)
 
   if (deleteParticipantError) {
-    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenörer och konsulter.')
+    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenÃ¶rer och konsulter.')
   }
 
   const participantRowsToInsert = participantEntriesInput
@@ -4077,7 +4077,7 @@ export async function upsertPublicApplication(
       .insert(participantRowsToInsert)
 
     if (insertParticipantError) {
-      throw new Error(insertParticipantError.message ?? 'Kunde inte spara entreprenörer och konsulter.')
+      throw new Error(insertParticipantError.message ?? 'Kunde inte spara entreprenÃ¶rer och konsulter.')
     }
   }
 
@@ -4098,7 +4098,7 @@ export async function upsertPublicApplication(
   const accessUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/case/${token}`)
   const resumeUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/brf/${brf.slug}/apply?draft=${token}`)
   const caseAdminUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/app/cases/${caseId}`)
-  const applicantDisplayName = contact?.name ?? applicantName ?? 'Okänd sökande'
+  const applicantDisplayName = contact?.name ?? applicantName ?? 'OkÃ¤nd sÃ¶kande'
   const caseTitle = title.trim()
   const isCompletionSubmit = mode === 'submit' && String(existingCase?.status ?? '') === 'need_info'
 
@@ -4124,22 +4124,22 @@ export async function upsertPublicApplication(
         requestOrigin,
         replyTo: brf.email ?? null,
         subject: `RenoApp: komplettering klar ${caseNumber}`,
-        preheader: `Komplettering klar för ${caseNumber}`,
+        preheader: `Komplettering klar fÃ¶r ${caseNumber}`,
         bodyHtml: `
-          <p>En medlem har skickat in begärd komplettering i RenoApp.</p>
-          <p>Ärendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
+          <p>En medlem har skickat in begÃ¤rd komplettering i RenoApp.</p>
+          <p>Ã„rendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
           ${caseTitle ? `<p>Renovering: <strong>${escapeHtml(caseTitle)}</strong></p>` : ''}
-          <p>Sökande: <strong>${escapeHtml(applicantDisplayName)}</strong></p>
-          <p>Öppna ärendet här:</p>
+          <p>SÃ¶kande: <strong>${escapeHtml(applicantDisplayName)}</strong></p>
+          <p>Ã–ppna Ã¤rendet hÃ¤r:</p>
           <p><a href="${caseAdminUrl}">${caseAdminUrl}</a></p>
         `,
         text: [
-          'En medlem har skickat in begärd komplettering i RenoApp.',
-          `Ärendenummer: ${caseNumber}`,
+          'En medlem har skickat in begÃ¤rd komplettering i RenoApp.',
+          `Ã„rendenummer: ${caseNumber}`,
           ...(caseTitle ? [`Renovering: ${caseTitle}`] : []),
-          `Sökande: ${applicantDisplayName}`,
+          `SÃ¶kande: ${applicantDisplayName}`,
           '',
-          `Öppna ärendet här: ${caseAdminUrl}`,
+          `Ã–ppna Ã¤rendet hÃ¤r: ${caseAdminUrl}`,
         ].join('\n'),
       })
     } else {
@@ -4148,23 +4148,23 @@ export async function upsertPublicApplication(
         brfId: brf.id,
         requestOrigin,
         replyTo: brf.email ?? null,
-        subject: `RenoApp: ny ansökan ${caseNumber}`,
-        preheader: `Ny ansökan inkommen ${caseNumber}`,
+        subject: `RenoApp: ny ansÃ¶kan ${caseNumber}`,
+        preheader: `Ny ansÃ¶kan inkommen ${caseNumber}`,
         bodyHtml: `
-          <p>En ny ansökan har kommit in i RenoApp.</p>
-          <p>Ärendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
+          <p>En ny ansÃ¶kan har kommit in i RenoApp.</p>
+          <p>Ã„rendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
           ${caseTitle ? `<p>Renovering: <strong>${escapeHtml(caseTitle)}</strong></p>` : ''}
-          <p>Sökande: <strong>${escapeHtml(applicantDisplayName)}</strong></p>
-          <p>Öppna ärendet här:</p>
+          <p>SÃ¶kande: <strong>${escapeHtml(applicantDisplayName)}</strong></p>
+          <p>Ã–ppna Ã¤rendet hÃ¤r:</p>
           <p><a href="${caseAdminUrl}">${caseAdminUrl}</a></p>
         `,
         text: [
-          'En ny ansökan har kommit in i RenoApp.',
-          `Ärendenummer: ${caseNumber}`,
+          'En ny ansÃ¶kan har kommit in i RenoApp.',
+          `Ã„rendenummer: ${caseNumber}`,
           ...(caseTitle ? [`Renovering: ${caseTitle}`] : []),
-          `Sökande: ${applicantDisplayName}`,
+          `SÃ¶kande: ${applicantDisplayName}`,
           '',
-          `Öppna ärendet här: ${caseAdminUrl}`,
+          `Ã–ppna Ã¤rendet hÃ¤r: ${caseAdminUrl}`,
         ].join('\n'),
       })
     }
@@ -4182,28 +4182,28 @@ export async function upsertPublicApplication(
             to: applicantEmailValue,
             from: mailFrom,
             replyTo: brf.email ?? null,
-            subject: `RenoApp: fortsätt din ansökan för ${brf.name}`,
+            subject: `RenoApp: fortsÃ¤tt din ansÃ¶kan fÃ¶r ${brf.name}`,
             html: buildRenoAppEmailHtml({
               origin: requestOrigin,
-              preheader: `Fortsätt din ansökan för ${brf.name}`,
+              preheader: `FortsÃ¤tt din ansÃ¶kan fÃ¶r ${brf.name}`,
               bodyHtml: `
               <p>Hej ${escapeHtml(applicantDisplayName)},</p>
-              <p>Vi har sparat ditt utkast för <strong>${escapeHtml(brf.name)}</strong>.</p>
+              <p>Vi har sparat ditt utkast fÃ¶r <strong>${escapeHtml(brf.name)}</strong>.</p>
               ${
                 contractorRequirementSummary.length > 0
-                  ? `<p>Kom ihåg att följande entreprenörskrav gäller: ${escapeHtml(
+                  ? `<p>Kom ihÃ¥g att fÃ¶ljande entreprenÃ¶rskrav gÃ¤ller: ${escapeHtml(
                       contractorRequirementSummary.map((item) => item.label).join(', ')
                     )}.</p>`
                   : ''
               }
-              <p>Öppna länken nedan för att fortsätta senare:</p>
+              <p>Ã–ppna lÃ¤nken nedan fÃ¶r att fortsÃ¤tta senare:</p>
                 <p><a href="${resumeUrl}">${resumeUrl}</a></p>
               `,
             }),
             text: [
               `Hej ${applicantDisplayName},`,
-              `Vi har sparat ditt utkast för ${brf.name}.`,
-              `Fortsätt här: ${resumeUrl}`,
+              `Vi har sparat ditt utkast fÃ¶r ${brf.name}.`,
+              `FortsÃ¤tt hÃ¤r: ${resumeUrl}`,
             ].join('\n'),
           })
           emailSent = true
@@ -4213,30 +4213,30 @@ export async function upsertPublicApplication(
           to: applicantEmailValue,
           from: mailFrom,
           replyTo: brf.email ?? null,
-          subject: `RenoApp: din ansökan ${caseNumber}`,
+          subject: `RenoApp: din ansÃ¶kan ${caseNumber}`,
           html: buildRenoAppEmailHtml({
             origin: requestOrigin,
-            preheader: `Din ansökan ${caseNumber}`,
+            preheader: `Din ansÃ¶kan ${caseNumber}`,
             bodyHtml: `
               <p>Hej ${escapeHtml(applicantDisplayName)},</p>
-              <p>Vi har tagit emot din renoveringsansökan för <strong>${escapeHtml(brf.name)}</strong>.</p>
-              <p>Ärendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
+              <p>Vi har tagit emot din renoveringsansÃ¶kan fÃ¶r <strong>${escapeHtml(brf.name)}</strong>.</p>
+              <p>Ã„rendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
               ${
                 contractorRequirementSummary.length > 0
-                  ? `<p>Ansökan gäller arbete där följande entreprenörskrav normalt gäller: ${escapeHtml(
+                  ? `<p>AnsÃ¶kan gÃ¤ller arbete dÃ¤r fÃ¶ljande entreprenÃ¶rskrav normalt gÃ¤ller: ${escapeHtml(
                       contractorRequirementSummary.map((item) => item.label).join(', ')
                     )}.</p>`
                   : ''
               }
-              <p>Öppna och komplettera ditt ärende via länken nedan:</p>
+              <p>Ã–ppna och komplettera ditt Ã¤rende via lÃ¤nken nedan:</p>
               <p><a href="${resumeUrl}">${resumeUrl}</a></p>
             `,
           }),
           text: [
             `Hej ${applicantDisplayName},`,
-            `Vi har tagit emot din renoveringsansökan för ${brf.name}.`,
-            `Ärendenummer: ${caseNumber}`,
-            `Öppna ärendet här: ${resumeUrl}`,
+            `Vi har tagit emot din renoveringsansÃ¶kan fÃ¶r ${brf.name}.`,
+            `Ã„rendenummer: ${caseNumber}`,
+            `Ã–ppna Ã¤rendet hÃ¤r: ${resumeUrl}`,
           ].join('\n'),
         })
         emailSent = true
@@ -4245,11 +4245,11 @@ export async function upsertPublicApplication(
       emailError = mailError instanceof Error ? mailError.message : 'Mejlutskick misslyckades.'
     }
   } else if (!applicantEmailValue) {
-    emailError = 'Ingen e-postadress är angiven. Ansökan sparades men inget mejl kunde skickas.'
+    emailError = 'Ingen e-postadress Ã¤r angiven. AnsÃ¶kan sparades men inget mejl kunde skickas.'
   } else if (mode === 'draft' && isNewDraft) {
-    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Utkastet sparades men ingen fortsätt-länk skickades.'
+    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Utkastet sparades men ingen fortsÃ¤tt-lÃ¤nk skickades.'
   } else if (mode === 'submit') {
-    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Ärendet skapades men inget mejl skickades.'
+    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Ã„rendet skapades men inget mejl skickades.'
   }
 
   return {
@@ -4274,7 +4274,7 @@ export async function getCaseAccessByToken(token: string): Promise<RenoAppCaseAc
     .maybeSingle()
 
   if (accessError) {
-    throw new Error(accessError.message ?? 'Kunde inte läsa åtkomstlänk.')
+    throw new Error(accessError.message ?? 'Kunde inte lÃ¤sa Ã¥tkomstlÃ¤nk.')
   }
 
   if (!accessData) {
@@ -4297,7 +4297,7 @@ export async function getCaseAccessByToken(token: string): Promise<RenoAppCaseAc
     .maybeSingle()
 
   if (caseError || !caseData) {
-    throw new Error(caseError?.message ?? 'Kunde inte hämta ärende.')
+    throw new Error(caseError?.message ?? 'Kunde inte hÃ¤mta Ã¤rende.')
   }
 
   const caseRow = caseData as CaseRow
@@ -4324,11 +4324,11 @@ export async function getCaseAccessByToken(token: string): Promise<RenoAppCaseAc
       .order('uploaded_at', { ascending: false }),
   ])
 
-  if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte hämta BRF.')
-  if (contactResult.error) throw new Error(contactResult.error.message ?? 'Kunde inte hämta kontakt.')
-  if (unitResult.error) throw new Error(unitResult.error.message ?? 'Kunde inte hämta lägenhet.')
-  if (actionResult.error) throw new Error(actionResult.error.message ?? 'Kunde inte hämta åtgärdstyp.')
-  if (documentsResult.error) throw new Error(documentsResult.error.message ?? 'Kunde inte hämta dokument.')
+  if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte hÃ¤mta BRF.')
+  if (contactResult.error) throw new Error(contactResult.error.message ?? 'Kunde inte hÃ¤mta kontakt.')
+  if (unitResult.error) throw new Error(unitResult.error.message ?? 'Kunde inte hÃ¤mta lÃ¤genhet.')
+  if (actionResult.error) throw new Error(actionResult.error.message ?? 'Kunde inte hÃ¤mta Ã¥tgÃ¤rdstyp.')
+  if (documentsResult.error) throw new Error(documentsResult.error.message ?? 'Kunde inte hÃ¤mta dokument.')
 
   const [activeDocumentTypes, caseRequirements] = caseRow.action_type_id
     ? await Promise.all([listActiveDocumentTypes(admin), listRequirements(admin, caseRow.brf_id)])
@@ -4431,7 +4431,7 @@ export async function requireRenoAppViewerContext(): Promise<RenoAppViewerContex
     .eq('is_active', true)
 
   if (memberError) {
-    throw new Error(memberError.message ?? 'Kunde inte läsa RenoApp-medlemskap.')
+    throw new Error(memberError.message ?? 'Kunde inte lÃ¤sa RenoApp-medlemskap.')
   }
 
   const brfs = ((memberRows ?? []) as BrfMemberRow[]).map((row) => {
@@ -4514,7 +4514,7 @@ function terminologyTextLooksBroken(value: string | null) {
     /[\u00c2\u00c3\u00e2]/.test(value) ||
     value.includes('\u00ef\u00bf\u00bd') ||
     value.includes('f\u00c2') ||
-    value.includes('ï¿½')
+    value.includes('Ã¯Â¿Â½')
   )
 }
 
@@ -4742,7 +4742,7 @@ function buildRenoAppEmailHtml(input: {
           </div>
           <div style="font-size:16px;line-height:1.75;color:#292524;">
             ${input.bodyHtml}
-            <p style="margin:24px 0 0;">Med vänlig hälsning,<br />RenoApp-teamet på HusHub</p>
+            <p style="margin:24px 0 0;">Med vÃ¤nlig hÃ¤lsning,<br />RenoApp-teamet pÃ¥ HusHub</p>
           </div>
         </div>
       </div>
@@ -4758,31 +4758,22 @@ export async function getRenoAppDashboardSummary(): Promise<RenoAppDashboardSumm
     admin.from('renovation_cases').select('id,status'),
     context.accessibleBrfIds
   )
-  const unitsQuery = applyBrfScope(
-    admin.from('brf_units').select('id,status'),
-    context.accessibleBrfIds
-  )
-
-  const [casesResult, unitsResult] = await Promise.all([casesQuery, unitsQuery])
+  const [casesResult] = await Promise.all([casesQuery])
 
   if (casesResult.error) {
-    throw new Error(casesResult.error.message ?? 'Kunde inte hämta RenoApp-ärenden.')
+    throw new Error(casesResult.error.message ?? 'Kunde inte hÃ¤mta RenoApp-Ã¤renden.')
   }
 
-  if (unitsResult.error) {
-    throw new Error(unitsResult.error.message ?? 'Kunde inte hämta RenoApp-lägenheter.')
-  }
 
   const cases = (casesResult.data ?? []) as Array<{ status: string }>
-  const units = (unitsResult.data ?? []) as Array<{ status: string }>
 
   return {
     accessibleBrfs: context.brfs,
     activeBrfId: context.activeBrfId,
     stats: {
-      openCases: cases.filter((item) => ['submitted', 'review', 'conditional'].includes(item.status)).length,
+      newCases: cases.filter((item) => ['submitted', 'review'].includes(item.status)).length,
       needInfoCases: cases.filter((item) => item.status === 'need_info').length,
-      preliminaryUnits: units.filter((item) => item.status === 'preliminary').length,
+      handledCases: cases.filter((item) => ['need_info', 'approved', 'conditional', 'rejected'].includes(item.status)).length,
     },
   }
 }
@@ -4803,7 +4794,7 @@ export async function listRenoAppCases(): Promise<RenoAppCaseListItem[]> {
   const { data, error } = await casesQuery
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte hämta RenoApp-ärenden.')
+    throw new Error(error.message ?? 'Kunde inte hÃ¤mta RenoApp-Ã¤renden.')
   }
 
   const rows = (data ?? []) as Array<Record<string, unknown>>
@@ -4823,9 +4814,9 @@ export async function listRenoAppCases(): Promise<RenoAppCaseListItem[]> {
       : Promise.resolve({ data: [], error: null }),
   ])
 
-  if (brfsResult.error) throw new Error(brfsResult.error.message ?? 'Kunde inte hämta BRF-data.')
-  if (actionTypesResult.error) throw new Error(actionTypesResult.error.message ?? 'Kunde inte hämta åtgärdstyper.')
-  if (contactsResult.error) throw new Error(contactsResult.error.message ?? 'Kunde inte hämta kontakter.')
+  if (brfsResult.error) throw new Error(brfsResult.error.message ?? 'Kunde inte hÃ¤mta BRF-data.')
+  if (actionTypesResult.error) throw new Error(actionTypesResult.error.message ?? 'Kunde inte hÃ¤mta Ã¥tgÃ¤rdstyper.')
+  if (contactsResult.error) throw new Error(contactsResult.error.message ?? 'Kunde inte hÃ¤mta kontakter.')
 
   const brfMap = new Map(
     ((brfsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => [
@@ -4892,7 +4883,7 @@ export async function listRenoAppUnits(): Promise<RenoAppUnitListItem[]> {
   const { data, error } = await unitsQuery
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte hämta RenoApp-lägenheter.')
+    throw new Error(error.message ?? 'Kunde inte hÃ¤mta RenoApp-lÃ¤genheter.')
   }
 
   const rows = (data ?? []) as Array<Record<string, unknown>>
@@ -4912,8 +4903,8 @@ export async function listRenoAppUnits(): Promise<RenoAppUnitListItem[]> {
       : Promise.resolve({ data: [], error: null }),
   ])
 
-  if (brfsResult.error) throw new Error(brfsResult.error.message ?? 'Kunde inte hämta BRF-data.')
-  if (unitContactsResult.error) throw new Error(unitContactsResult.error.message ?? 'Kunde inte hämta kontaktkopplingar.')
+  if (brfsResult.error) throw new Error(brfsResult.error.message ?? 'Kunde inte hÃ¤mta BRF-data.')
+  if (unitContactsResult.error) throw new Error(unitContactsResult.error.message ?? 'Kunde inte hÃ¤mta kontaktkopplingar.')
 
   const unitContactRows = (unitContactsResult.data ?? []) as Array<Record<string, unknown>>
   const contactIds = Array.from(new Set(unitContactRows.map((row) => String(row.contact_id ?? '')).filter(Boolean)))
@@ -4923,7 +4914,7 @@ export async function listRenoAppUnits(): Promise<RenoAppUnitListItem[]> {
       ? await admin.from('contacts').select('id,name,email').in('id', contactIds)
       : { data: [], error: null }
 
-  if (contactsResult.error) throw new Error(contactsResult.error.message ?? 'Kunde inte hämta kontakter.')
+  if (contactsResult.error) throw new Error(contactsResult.error.message ?? 'Kunde inte hÃ¤mta kontakter.')
 
   const brfMap = new Map(
     ((brfsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => [
@@ -5006,9 +4997,9 @@ export async function listRenoAppUsers(): Promise<RenoAppUserListItem[]> {
       .order('created_at', { ascending: false }),
   ])
 
-  if (brfsResult.error) throw new Error(brfsResult.error.message ?? 'Kunde inte hämta BRF-data.')
-  if (membersResult.error) throw new Error(membersResult.error.message ?? 'Kunde inte hämta RenoApp-användare.')
-  if (invitesResult.error) throw new Error(invitesResult.error.message ?? 'Kunde inte hämta väntande invites.')
+  if (brfsResult.error) throw new Error(brfsResult.error.message ?? 'Kunde inte hÃ¤mta BRF-data.')
+  if (membersResult.error) throw new Error(membersResult.error.message ?? 'Kunde inte hÃ¤mta RenoApp-anvÃ¤ndare.')
+  if (invitesResult.error) throw new Error(invitesResult.error.message ?? 'Kunde inte hÃ¤mta vÃ¤ntande invites.')
 
   const memberRows = (membersResult.data ?? []) as Array<Record<string, unknown>>
   const profileIds = Array.from(new Set(memberRows.map((row) => String(row.profile_id ?? '')).filter(Boolean)))
@@ -5018,7 +5009,7 @@ export async function listRenoAppUsers(): Promise<RenoAppUserListItem[]> {
       : { data: [], error: null }
 
   if (profilesResult.error) {
-    throw new Error(profilesResult.error.message ?? 'Kunde inte hämta användarprofiler.')
+    throw new Error(profilesResult.error.message ?? 'Kunde inte hÃ¤mta anvÃ¤ndarprofiler.')
   }
 
   const brfMap = new Map(
@@ -5102,7 +5093,7 @@ export async function updateRenoAppUserMemberEmailPreferences(input: {
     .maybeSingle()
 
   if (memberError) {
-    throw new Error(memberError.message ?? 'Kunde inte läsa BRF-användare.')
+    throw new Error(memberError.message ?? 'Kunde inte lÃ¤sa BRF-anvÃ¤ndare.')
   }
   if (!memberData || !(memberData as Record<string, unknown>).is_active) {
     throw new Error('MEMBER_NOT_FOUND')
@@ -5118,7 +5109,7 @@ export async function updateRenoAppUserMemberEmailPreferences(input: {
     .eq('profile_id', input.profileId)
 
   if (updateError) {
-    throw new Error(updateError.message ?? 'Kunde inte spara e-postinställningar.')
+    throw new Error(updateError.message ?? 'Kunde inte spara e-postinstÃ¤llningar.')
   }
 
   return { saved: true as const }
@@ -5140,7 +5131,7 @@ async function listRenoAppNotificationRecipients(input: {
     .eq(preferenceColumn, true)
 
   if (memberError) {
-    throw new Error(memberError.message ?? 'Kunde inte läsa BRF-användare för notifiering.')
+    throw new Error(memberError.message ?? 'Kunde inte lÃ¤sa BRF-anvÃ¤ndare fÃ¶r notifiering.')
   }
 
   const profileIds = Array.from(
@@ -5157,7 +5148,7 @@ async function listRenoAppNotificationRecipients(input: {
     .in('id', profileIds)
 
   if (profileError) {
-    throw new Error(profileError.message ?? 'Kunde inte läsa profiler för notifiering.')
+    throw new Error(profileError.message ?? 'Kunde inte lÃ¤sa profiler fÃ¶r notifiering.')
   }
 
   return ((profileRows ?? []) as Array<Record<string, unknown>>)
@@ -5226,7 +5217,7 @@ export async function listEditableRenoAppBrfs(): Promise<RenoAppEditableBrf[]> {
   const { data, error } = await query
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte läsa BRF-data.')
+    throw new Error(error.message ?? 'Kunde inte lÃ¤sa BRF-data.')
   }
 
   return ((data ?? []) as BrfAssociationRow[]).map(mapEditableBrfRow)
@@ -5289,7 +5280,7 @@ export async function updateEditableRenoAppBrf(input: UpdateRenoAppBrfInput): Pr
   const { data: existingBrf, error: existingBrfError } = await scopedQuery.maybeSingle()
 
   if (existingBrfError) {
-    throw new Error(existingBrfError.message ?? 'Kunde inte läsa BRF.')
+    throw new Error(existingBrfError.message ?? 'Kunde inte lÃ¤sa BRF.')
   }
   if (!existingBrf) {
     throw new Error('BRF_NOT_FOUND')
@@ -5373,7 +5364,7 @@ export async function sendRenoAppPublicApplyLink(input: {
   const { data: brfData, error: brfError } = await scopedQuery.maybeSingle()
 
   if (brfError) {
-    throw new Error(brfError.message ?? 'Kunde inte läsa BRF.')
+    throw new Error(brfError.message ?? 'Kunde inte lÃ¤sa BRF.')
   }
   if (!brfData) {
     throw new Error('BRF_NOT_FOUND')
@@ -5416,7 +5407,7 @@ export async function sendRenoAppPublicApplyLink(input: {
 
   if (mailFrom) {
     try {
-      const subject = `RenoApp: ansökningslänk för ${String(brfData.name ?? 'er BRF')}`
+      const subject = `RenoApp: ansÃ¶kningslÃ¤nk fÃ¶r ${String(brfData.name ?? 'er BRF')}`
       await sendAssignmentEmail({
         to: email,
         from: mailFrom,
@@ -5426,20 +5417,20 @@ export async function sendRenoAppPublicApplyLink(input: {
           preheader: subject,
           bodyHtml: `
             <p>Hej ${escapeHtml(fullNameValue)},</p>
-            <p>Här är din ansökningslänk till <strong>${escapeHtml(String(brfData.name ?? 'er BRF'))}</strong>.</p>
-            <p>Öppna ansökan här:</p>
+            <p>HÃ¤r Ã¤r din ansÃ¶kningslÃ¤nk till <strong>${escapeHtml(String(brfData.name ?? 'er BRF'))}</strong>.</p>
+            <p>Ã–ppna ansÃ¶kan hÃ¤r:</p>
             <p><a href="${applyUrl}">${applyUrl}</a></p>
-            <p>Du kan börja fylla i ansökan direkt och fortsätta senare via samma länk.</p>
+            <p>Du kan bÃ¶rja fylla i ansÃ¶kan direkt och fortsÃ¤tta senare via samma lÃ¤nk.</p>
           `,
         }),
         text: [
           `Hej ${fullNameValue},`,
-          `Här är din ansökningslänk till ${String(brfData.name ?? 'er BRF')}.`,
-          `Öppna ansökan här: ${applyUrl}`,
-          'Du kan börja fylla i ansökan direkt och fortsätta senare via samma länk.',
+          `HÃ¤r Ã¤r din ansÃ¶kningslÃ¤nk till ${String(brfData.name ?? 'er BRF')}.`,
+          `Ã–ppna ansÃ¶kan hÃ¤r: ${applyUrl}`,
+          'Du kan bÃ¶rja fylla i ansÃ¶kan direkt och fortsÃ¤tta senare via samma lÃ¤nk.',
           '',
-          'Med vänlig hälsning,',
-          'RenoApp-teamet på HusHub',
+          'Med vÃ¤nlig hÃ¤lsning,',
+          'RenoApp-teamet pÃ¥ HusHub',
         ].join('\n'),
       })
       emailSent = true
@@ -5447,7 +5438,7 @@ export async function sendRenoAppPublicApplyLink(input: {
       emailError = error instanceof Error ? error.message : 'Mejlutskick misslyckades.'
     }
   } else {
-    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Ansökningslänken kunde inte skickas.'
+    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. AnsÃ¶kningslÃ¤nken kunde inte skickas.'
   }
 
   return {
@@ -5479,16 +5470,16 @@ export async function listRenoAppAdminActionTypes(): Promise<RenoAppAdminActionT
   ])
 
   if (actionTypeRows.error) {
-    throw new Error(actionTypeRows.error.message ?? 'Kunde inte läsa renoveringstyper.')
+    throw new Error(actionTypeRows.error.message ?? 'Kunde inte lÃ¤sa renoveringstyper.')
   }
   if (requirementRows.error) {
-    throw new Error(requirementRows.error.message ?? 'Kunde inte läsa underlagskopplingar.')
+    throw new Error(requirementRows.error.message ?? 'Kunde inte lÃ¤sa underlagskopplingar.')
   }
   if (questionRows.error) {
-    throw new Error(questionRows.error.message ?? 'Kunde inte läsa frågekopplingar.')
+    throw new Error(questionRows.error.message ?? 'Kunde inte lÃ¤sa frÃ¥gekopplingar.')
   }
   if (participantRoleRows.error) {
-    throw new Error(participantRoleRows.error.message ?? 'Kunde inte läsa medverkandekopplingar.')
+    throw new Error(participantRoleRows.error.message ?? 'Kunde inte lÃ¤sa medverkandekopplingar.')
   }
 
   const requirementCountByActionTypeId = new Map<string, number>()
@@ -5544,7 +5535,7 @@ export async function listRenoAppAdminDocumentTypes(): Promise<RenoAppAdminDocum
     .order('sort_order', { ascending: true })
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte läsa dokumenttyper.')
+    throw new Error(error.message ?? 'Kunde inte lÃ¤sa dokumenttyper.')
   }
 
   return ((data ?? []) as DocumentTypeRow[]).map((item) => ({
@@ -5815,7 +5806,7 @@ export async function listRenoAppAdminReviewFlags(): Promise<RenoAppAdminReviewF
     .order('sort_order', { ascending: true })
 
   if (error) {
-    throw new Error(error.message ?? 'Kunde inte läsa granskningsflaggor.')
+    throw new Error(error.message ?? 'Kunde inte lÃ¤sa granskningsflaggor.')
   }
 
   return ((data ?? []) as ReviewFlagRow[]).map(mapReviewFlagToAdmin)
@@ -5904,9 +5895,9 @@ export async function listRenoAppAdminParticipantRoleConfig(): Promise<{
       .order('sort_order', { ascending: true }),
   ])
 
-  if (actionTypeRows.error) throw new Error(actionTypeRows.error.message ?? 'Kunde inte läsa renoveringstyper.')
-  if (participantRoleRows.error) throw new Error(participantRoleRows.error.message ?? 'Kunde inte läsa medverkandetyper.')
-  if (linkRows.error) throw new Error(linkRows.error.message ?? 'Kunde inte läsa medverkandekopplingar.')
+  if (actionTypeRows.error) throw new Error(actionTypeRows.error.message ?? 'Kunde inte lÃ¤sa renoveringstyper.')
+  if (participantRoleRows.error) throw new Error(participantRoleRows.error.message ?? 'Kunde inte lÃ¤sa medverkandetyper.')
+  if (linkRows.error) throw new Error(linkRows.error.message ?? 'Kunde inte lÃ¤sa medverkandekopplingar.')
 
   const participantRoles = ((participantRoleRows.data ?? []) as ParticipantRoleRow[]).map(mapParticipantRoleToAdmin)
   const participantRoleMap = new Map(participantRoles.map((item) => [item.id, item]))
@@ -5973,7 +5964,7 @@ export async function saveRenoAppAdminActionTypeParticipantRole(input: {
     .maybeSingle()
 
   if (existingLinkError) {
-    throw new Error(existingLinkError.message ?? 'Kunde inte läsa medverkandekoppling.')
+    throw new Error(existingLinkError.message ?? 'Kunde inte lÃ¤sa medverkandekoppling.')
   }
 
   if (!input.isEnabled) {
@@ -6777,9 +6768,9 @@ export async function listRenoAppAdminRequirementConfig(): Promise<{
       .order('sort_order', { ascending: true }),
   ])
 
-  if (actionTypeRows.error) throw new Error(actionTypeRows.error.message ?? 'Kunde inte läsa renoveringstyper.')
-  if (documentTypeRows.error) throw new Error(documentTypeRows.error.message ?? 'Kunde inte läsa dokumenttyper.')
-  if (requirementRows.error) throw new Error(requirementRows.error.message ?? 'Kunde inte läsa dokumentkrav.')
+  if (actionTypeRows.error) throw new Error(actionTypeRows.error.message ?? 'Kunde inte lÃ¤sa renoveringstyper.')
+  if (documentTypeRows.error) throw new Error(documentTypeRows.error.message ?? 'Kunde inte lÃ¤sa dokumenttyper.')
+  if (requirementRows.error) throw new Error(requirementRows.error.message ?? 'Kunde inte lÃ¤sa dokumentkrav.')
 
   const actionTypes = (actionTypeRows.data ?? []) as ActionTypeRow[]
   const documentTypes = (documentTypeRows.data ?? []) as DocumentTypeRow[]
@@ -6852,7 +6843,7 @@ export async function saveRenoAppAdminRequirement(input: {
     .single()
 
   if (documentTypeError || !documentTypeRow) {
-    throw new Error(documentTypeError?.message ?? 'Kunde inte läsa underlagstyp.')
+    throw new Error(documentTypeError?.message ?? 'Kunde inte lÃ¤sa underlagstyp.')
   }
 
   const defaultPhase =
@@ -6867,7 +6858,7 @@ export async function saveRenoAppAdminRequirement(input: {
     .maybeSingle()
 
   if (existingRequirementError) {
-    throw new Error(existingRequirementError.message ?? 'Kunde inte läsa dokumentkrav.')
+    throw new Error(existingRequirementError.message ?? 'Kunde inte lÃ¤sa dokumentkrav.')
   }
 
   if (!input.isEnabled) {
@@ -6942,7 +6933,7 @@ export async function createRenoAppUserInvite(input: {
     .maybeSingle()
 
   if (brfError) {
-    throw new Error(brfError.message ?? 'Kunde inte läsa BRF.')
+    throw new Error(brfError.message ?? 'Kunde inte lÃ¤sa BRF.')
   }
   if (!brfData) {
     throw new Error('BRF_NOT_FOUND')
@@ -6955,7 +6946,7 @@ export async function createRenoAppUserInvite(input: {
     .eq('is_active', true)
 
   if (existingMemberError) {
-    throw new Error(existingMemberError.message ?? 'Kunde inte läsa användare.')
+    throw new Error(existingMemberError.message ?? 'Kunde inte lÃ¤sa anvÃ¤ndare.')
   }
 
   const profileIds = Array.from(
@@ -6967,7 +6958,7 @@ export async function createRenoAppUserInvite(input: {
       : { data: [], error: null }
 
   if (profilesResult.error) {
-    throw new Error(profilesResult.error.message ?? 'Kunde inte läsa användarprofiler.')
+    throw new Error(profilesResult.error.message ?? 'Kunde inte lÃ¤sa anvÃ¤ndarprofiler.')
   }
 
   const activeEmails = new Set(
@@ -6989,7 +6980,7 @@ export async function createRenoAppUserInvite(input: {
     .maybeSingle()
 
   if (existingInviteError) {
-    throw new Error(existingInviteError.message ?? 'Kunde inte läsa befintliga invites.')
+    throw new Error(existingInviteError.message ?? 'Kunde inte lÃ¤sa befintliga invites.')
   }
   if (existingInvite) {
     throw new Error('EMAIL_ALREADY_INVITED')
@@ -7024,7 +7015,7 @@ export async function createRenoAppUserInvite(input: {
 
   if (mailFrom) {
     try {
-      const subject = `Inbjudan till RenoApp för ${String(brfData.name ?? 'er BRF')}`
+      const subject = `Inbjudan till RenoApp fÃ¶r ${String(brfData.name ?? 'er BRF')}`
       await sendAssignmentEmail({
         to: email as string,
         from: mailFrom,
@@ -7034,20 +7025,20 @@ export async function createRenoAppUserInvite(input: {
           preheader: subject,
           bodyHtml: `
             <p>Hej ${escapeHtml(fullName as string)},</p>
-            <p>Du har blivit inbjuden till RenoApp för <strong>${escapeHtml(String(brfData.name ?? 'er BRF'))}</strong>.</p>
-            <p>Öppna länken nedan för att aktivera ditt konto:</p>
+            <p>Du har blivit inbjuden till RenoApp fÃ¶r <strong>${escapeHtml(String(brfData.name ?? 'er BRF'))}</strong>.</p>
+            <p>Ã–ppna lÃ¤nken nedan fÃ¶r att aktivera ditt konto:</p>
             <p><a href="${inviteUrl}">${inviteUrl}</a></p>
-            <p>Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>
+            <p>LÃ¤nken gÃ¤ller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>
           `,
         }),
         text: [
           `Hej ${fullName},`,
-          `Du har blivit inbjuden till RenoApp för ${String(brfData.name ?? 'er BRF')}.`,
-          `Öppna länken för att aktivera ditt konto: ${inviteUrl}`,
-          `Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
+          `Du har blivit inbjuden till RenoApp fÃ¶r ${String(brfData.name ?? 'er BRF')}.`,
+          `Ã–ppna lÃ¤nken fÃ¶r att aktivera ditt konto: ${inviteUrl}`,
+          `LÃ¤nken gÃ¤ller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
           '',
-          'Med vänlig hälsning,',
-          'RenoApp-teamet på HusHub',
+          'Med vÃ¤nlig hÃ¤lsning,',
+          'RenoApp-teamet pÃ¥ HusHub',
         ].join('\n'),
       })
       emailSent = true
@@ -7082,7 +7073,7 @@ export async function revokeRenoAppUserInvite(inviteId: string) {
     .maybeSingle()
 
   if (inviteError) {
-    throw new Error(inviteError.message ?? 'Kunde inte läsa invite.')
+    throw new Error(inviteError.message ?? 'Kunde inte lÃ¤sa invite.')
   }
   if (!inviteData) {
     throw new Error('INVITE_NOT_FOUND')
@@ -7105,7 +7096,7 @@ export async function revokeRenoAppUserInvite(inviteId: string) {
     .eq('id', inviteId)
 
   if (updateError) {
-    throw new Error(updateError.message ?? 'Kunde inte återkalla invite.')
+    throw new Error(updateError.message ?? 'Kunde inte Ã¥terkalla invite.')
   }
 
   return { revoked: true as const }
@@ -7131,7 +7122,7 @@ export async function removeRenoAppUserMember(input: { brfId: string; profileId:
     .maybeSingle()
 
   if (memberError) {
-    throw new Error(memberError.message ?? 'Kunde inte läsa BRF-användare.')
+    throw new Error(memberError.message ?? 'Kunde inte lÃ¤sa BRF-anvÃ¤ndare.')
   }
   if (!memberData || !(memberData as Record<string, unknown>).is_active) {
     throw new Error('MEMBER_NOT_FOUND')
@@ -7144,7 +7135,7 @@ export async function removeRenoAppUserMember(input: { brfId: string; profileId:
     .eq('is_active', true)
 
   if (activeMembersError) {
-    throw new Error(activeMembersError.message ?? 'Kunde inte läsa aktiva BRF-användare.')
+    throw new Error(activeMembersError.message ?? 'Kunde inte lÃ¤sa aktiva BRF-anvÃ¤ndare.')
   }
 
   const activeCount = ((activeMembers ?? []) as Array<Record<string, unknown>>).length
@@ -7159,7 +7150,7 @@ export async function removeRenoAppUserMember(input: { brfId: string; profileId:
     .eq('profile_id', input.profileId)
 
   if (updateError) {
-    throw new Error(updateError.message ?? 'Kunde inte ta bort användaren.')
+    throw new Error(updateError.message ?? 'Kunde inte ta bort anvÃ¤ndaren.')
   }
 
   return { removed: true as const }
@@ -7178,7 +7169,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
     .maybeSingle()
 
   if (caseError) {
-    throw new Error(caseError.message ?? 'Kunde inte läsa RenoApp-ärende.')
+    throw new Error(caseError.message ?? 'Kunde inte lÃ¤sa RenoApp-Ã¤rende.')
   }
 
   if (!caseData) {
@@ -7259,16 +7250,16 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
       listCaseMessages(admin, caseId),
     ])
 
-  if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte läsa BRF.')
-  if (contactResult.error) throw new Error(contactResult.error.message ?? 'Kunde inte läsa kontakt.')
-  if (unitResult.error) throw new Error(unitResult.error.message ?? 'Kunde inte läsa lägenhet.')
-  if (checksResult.error) throw new Error(checksResult.error.message ?? 'Kunde inte läsa ärendechecks.')
-  if (docsResult.error) throw new Error(docsResult.error.message ?? 'Kunde inte läsa dokument.')
-  if (decisionsResult.error) throw new Error(decisionsResult.error.message ?? 'Kunde inte läsa beslut.')
-  if (linksResult.error) throw new Error(linksResult.error.message ?? 'Kunde inte läsa access links.')
-  if (actionResult.error) throw new Error(actionResult.error.message ?? 'Kunde inte läsa åtgärdstyp.')
+  if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte lÃ¤sa BRF.')
+  if (contactResult.error) throw new Error(contactResult.error.message ?? 'Kunde inte lÃ¤sa kontakt.')
+  if (unitResult.error) throw new Error(unitResult.error.message ?? 'Kunde inte lÃ¤sa lÃ¤genhet.')
+  if (checksResult.error) throw new Error(checksResult.error.message ?? 'Kunde inte lÃ¤sa Ã¤rendechecks.')
+  if (docsResult.error) throw new Error(docsResult.error.message ?? 'Kunde inte lÃ¤sa dokument.')
+  if (decisionsResult.error) throw new Error(decisionsResult.error.message ?? 'Kunde inte lÃ¤sa beslut.')
+  if (linksResult.error) throw new Error(linksResult.error.message ?? 'Kunde inte lÃ¤sa access links.')
+  if (actionResult.error) throw new Error(actionResult.error.message ?? 'Kunde inte lÃ¤sa Ã¥tgÃ¤rdstyp.')
   if (participantRoleConfig.error) {
-    throw new Error(participantRoleConfig.error.message ?? 'Kunde inte läsa deltagarroller för åtgärdstyp.')
+    throw new Error(participantRoleConfig.error.message ?? 'Kunde inte lÃ¤sa deltagarroller fÃ¶r Ã¥tgÃ¤rdstyp.')
   }
 
   const currentContactsResult =
@@ -7281,7 +7272,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
       : { data: [], error: null }
 
   if (currentContactsResult.error) {
-    throw new Error(currentContactsResult.error.message ?? 'Kunde inte läsa kontaktkopplingar.')
+    throw new Error(currentContactsResult.error.message ?? 'Kunde inte lÃ¤sa kontaktkopplingar.')
   }
 
   const currentContactRows = (currentContactsResult.data ?? []) as Array<Record<string, unknown>>
@@ -7315,10 +7306,10 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
   ])
 
   if (currentContactsLookup.error) {
-    throw new Error(currentContactsLookup.error.message ?? 'Kunde inte läsa kontaktdata.')
+    throw new Error(currentContactsLookup.error.message ?? 'Kunde inte lÃ¤sa kontaktdata.')
   }
   if (documentTypesLookup.error) {
-    throw new Error(documentTypesLookup.error.message ?? 'Kunde inte läsa dokumenttyper.')
+    throw new Error(documentTypesLookup.error.message ?? 'Kunde inte lÃ¤sa dokumenttyper.')
   }
 
   const contactMap = new Map(
@@ -7355,7 +7346,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
             id: item.id,
             documentTypeId: item.document_type_id,
             documentKey: documentType?.key ?? 'unknown',
-            documentLabel: documentType?.label ?? 'Okänd dokumenttyp',
+            documentLabel: documentType?.label ?? 'OkÃ¤nd dokumenttyp',
             documentDescription: documentType?.description ?? null,
             isRequired: item.is_required,
             note: item.note,
@@ -7515,7 +7506,7 @@ export async function updateRenoAppCaseStatus(
     .maybeSingle()
 
   if (caseError) {
-    throw new Error(caseError.message ?? 'Kunde inte läsa RenoApp-ärende.')
+    throw new Error(caseError.message ?? 'Kunde inte lÃ¤sa RenoApp-Ã¤rende.')
   }
 
   if (!caseData) {
@@ -7535,7 +7526,7 @@ export async function updateRenoAppCaseStatus(
   const { error: updateError } = await admin.from('renovation_cases').update({ status: input.status }).eq('id', caseId)
 
   if (updateError) {
-    throw new Error(updateError.message ?? 'Kunde inte uppdatera RenoApp-ärende.')
+    throw new Error(updateError.message ?? 'Kunde inte uppdatera RenoApp-Ã¤rende.')
   }
 
   if (input.status === 'need_info') {
@@ -7564,10 +7555,10 @@ export async function updateRenoAppCaseStatus(
     ])
 
     if (brfResult.error) {
-      throw new Error(brfResult.error.message ?? 'Kunde inte läsa BRF.')
+      throw new Error(brfResult.error.message ?? 'Kunde inte lÃ¤sa BRF.')
     }
     if (contactResult.error) {
-      throw new Error(contactResult.error.message ?? 'Kunde inte läsa kontakt.')
+      throw new Error(contactResult.error.message ?? 'Kunde inte lÃ¤sa kontakt.')
     }
 
     const applicantEmail = (contactResult.data?.email as string | null | undefined) ?? null
@@ -7593,36 +7584,36 @@ export async function updateRenoAppCaseStatus(
             to: applicantEmail,
             from: mailFrom,
             replyTo: (brfResult.data?.email as string | null | undefined) ?? null,
-            subject: `RenoApp: ditt ärende ${String(caseData.case_number ?? '')} behöver kompletteras`,
+            subject: `RenoApp: ditt Ã¤rende ${String(caseData.case_number ?? '')} behÃ¶ver kompletteras`,
             html: buildRenoAppEmailHtml({
               origin: input.requestOrigin,
-              preheader: `Ditt ärende ${String(caseData.case_number ?? '')} behöver kompletteras`,
+              preheader: `Ditt Ã¤rende ${String(caseData.case_number ?? '')} behÃ¶ver kompletteras`,
               bodyHtml: `
                 <div style="height:16px;"></div>
                 <p>Hej ${escapeHtml(applicantName)},</p>
-                <p>Styrelsen behöver komplettering i ditt ärende för <strong>${escapeHtml(brfName)}</strong>.</p>
-                <p>Ärendenummer: <strong>${escapeHtml(String(caseData.case_number ?? ''))}</strong></p>
+                <p>Styrelsen behÃ¶ver komplettering i ditt Ã¤rende fÃ¶r <strong>${escapeHtml(brfName)}</strong>.</p>
+                <p>Ã„rendenummer: <strong>${escapeHtml(String(caseData.case_number ?? ''))}</strong></p>
                 ${caseTitle ? `<p>Renovering: <strong>${escapeHtml(caseTitle)}</strong></p>` : ''}
-                <p><strong>Begäran om komplettering:</strong></p>
+                <p><strong>BegÃ¤ran om komplettering:</strong></p>
                 <p>${escapeHtml(reason ?? '')}</p>
-                <p>Öppna din ansökningssida här:</p>
+                <p>Ã–ppna din ansÃ¶kningssida hÃ¤r:</p>
                 <p><a href="${resumeUrl}">${resumeUrl}</a></p>
               `,
             }),
             text: [
               `Hej ${applicantName},`,
-              `Styrelsen behöver komplettering i ditt ärende för ${brfName}.`,
-              `Ärendenummer: ${String(caseData.case_number ?? '')}`,
+              `Styrelsen behÃ¶ver komplettering i ditt Ã¤rende fÃ¶r ${brfName}.`,
+              `Ã„rendenummer: ${String(caseData.case_number ?? '')}`,
               ...(caseTitle ? [`Renovering: ${caseTitle}`] : []),
               ``,
-              `Begäran om komplettering:`,
+              `BegÃ¤ran om komplettering:`,
               reason ?? '',
               ``,
-              `Öppna din ansökningssida här: ${resumeUrl}`,
+              `Ã–ppna din ansÃ¶kningssida hÃ¤r: ${resumeUrl}`,
             ].join('\n'),
           })
         } catch {
-          // Status och ärendehistorik ska sparas även om mejlet inte går iväg.
+          // Status och Ã¤rendehistorik ska sparas Ã¤ven om mejlet inte gÃ¥r ivÃ¤g.
         }
       }
     }
@@ -7666,7 +7657,7 @@ export async function updateRenoAppCaseStatus(
       type: 'status_change',
       authorRole: 'board',
       authorProfileId: context.profile.id,
-      message: 'Ärendet åter sattes till granskning.',
+      message: 'Ã„rendet Ã¥ter sattes till granskning.',
       metadata: {
         previousStatus: currentStatus,
         nextStatus: input.status,
