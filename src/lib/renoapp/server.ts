@@ -1342,6 +1342,16 @@ export type RenoAppCaseDetail = {
     checked: boolean
     documentId: string | null
     summary: string[]
+    details: {
+      companyName: string | null
+      contactName: string | null
+      orgNumber: string | null
+      email: string | null
+      phone: string | null
+      certificationReference: string | null
+      hasVerifiedAuthorization: boolean
+      acceptsResponsibility: boolean
+    } | null
   }>
   requirements: PublicRequirement[]
   decisions: Array<{
@@ -2469,7 +2479,8 @@ function buildCaseUnderlagItems(params: {
     sortOrder: number,
     checked: boolean,
     documentId: string | null = null,
-    summary: string[] = []
+    summary: string[] = [],
+    details: RenoAppCaseDetail['underlag'][number]['details'] = null
   ) => {
     const existing = itemMap.get(key)
     if (!existing) {
@@ -2480,6 +2491,7 @@ function buildCaseUnderlagItems(params: {
         checked,
         documentId,
         summary,
+        details,
         sortOrder,
       })
       return
@@ -2489,6 +2501,7 @@ function buildCaseUnderlagItems(params: {
     existing.checked = existing.checked || checked
     existing.documentId = existing.documentId ?? documentId
     existing.summary = existing.summary.length > 0 ? existing.summary : summary
+    existing.details = existing.details ?? details
     existing.sortOrder = Math.min(existing.sortOrder, sortOrder)
   }
 
@@ -2572,7 +2585,27 @@ function buildCaseUnderlagItems(params: {
               ? [insuranceDocument ? 'Försäkringsbevis finns' : 'Försäkringsbevis saknas']
               : []),
           ]
-          addItem(`participant:${participantRole.id}`, 'participant', participantRole.label, 2000 + question.sortOrder * 10 + trigger.sortOrder, isComplete, insuranceDocument?.id ?? null, summary)
+          addItem(
+            `participant:${participantRole.id}`,
+            'participant',
+            participantRole.label,
+            2000 + question.sortOrder * 10 + trigger.sortOrder,
+            isComplete,
+            insuranceDocument?.id ?? null,
+            summary,
+            participant
+              ? {
+                  companyName: participant.company_name ?? null,
+                  contactName: participant.contact_name ?? null,
+                  orgNumber: participant.org_number ?? null,
+                  email: participant.email ?? null,
+                  phone: participant.phone ?? null,
+                  certificationReference: participant.certification_reference ?? null,
+                  hasVerifiedAuthorization: participant.has_verified_authorization === true,
+                  acceptsResponsibility: participant.accepts_responsibility === true,
+                }
+              : null
+          )
         }
       }
     }
@@ -2605,7 +2638,27 @@ function buildCaseUnderlagItems(params: {
         : []),
     ]
 
-    addItem(`participant:${role.id}`, 'participant', role.label, 3000 + link.sort_order, isComplete, insuranceDocument?.id ?? null, summary)
+    addItem(
+      `participant:${role.id}`,
+      'participant',
+      role.label,
+      3000 + link.sort_order,
+      isComplete,
+      insuranceDocument?.id ?? null,
+      summary,
+      participant
+        ? {
+            companyName: participant.company_name ?? null,
+            contactName: participant.contact_name ?? null,
+            orgNumber: participant.org_number ?? null,
+            email: participant.email ?? null,
+            phone: participant.phone ?? null,
+            certificationReference: participant.certification_reference ?? null,
+            hasVerifiedAuthorization: participant.has_verified_authorization === true,
+            acceptsResponsibility: participant.accepts_responsibility === true,
+          }
+        : null
+    )
   }
 
   return Array.from(itemMap.values())

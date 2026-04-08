@@ -68,6 +68,16 @@ type CaseDetail = {
     checked: boolean
     documentId: string | null
     summary: string[]
+    details: {
+      companyName: string | null
+      contactName: string | null
+      orgNumber: string | null
+      email: string | null
+      phone: string | null
+      certificationReference: string | null
+      hasVerifiedAuthorization: boolean
+      acceptsResponsibility: boolean
+    } | null
   }>
   requirements: Array<{
     id: string
@@ -208,6 +218,8 @@ export default function RenoAppCaseDetailPage() {
   const [reason, setReason] = useState('')
   const [conditions, setConditions] = useState('')
   const [historyExpanded, setHistoryExpanded] = useState(false)
+  const [downloadingAll, setDownloadingAll] = useState(false)
+  const [expandedParticipantIds, setExpandedParticipantIds] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     let active = true
@@ -324,6 +336,44 @@ export default function RenoAppCaseDetailPage() {
   const isDraftCase = item.status === 'draft'
   const documentUnderlag = item.underlag.filter((row) => row.category === 'document')
   const participantUnderlag = item.underlag.filter((row) => row.category === 'participant')
+  const downloadAllUrls = Array.from(
+    new Set(
+      item.underlag
+        .map((row) => row.documentId)
+        .filter((documentId): documentId is string => Boolean(documentId))
+        .map((documentId) => `/api/renoapp/app/cases/${item.id}/documents/${documentId}`)
+    )
+  )
+
+  const handleDownloadAllFiles = async () => {
+    if (downloadAllUrls.length === 0) return
+    setDownloadingAll(true)
+
+    try {
+      for (const [index, url] of downloadAllUrls.entries()) {
+        window.setTimeout(() => {
+          const frame = document.createElement('iframe')
+          frame.style.display = 'none'
+          frame.src = url
+          document.body.appendChild(frame)
+          window.setTimeout(() => {
+            frame.remove()
+          }, 15000)
+        }, index * 400)
+      }
+    } finally {
+      window.setTimeout(() => {
+        setDownloadingAll(false)
+      }, downloadAllUrls.length * 400 + 500)
+    }
+  }
+
+  const toggleParticipantDetails = (participantId: string) => {
+    setExpandedParticipantIds((current) => ({
+      ...current,
+      [participantId]: !current[participantId],
+    }))
+  }
 
   return (
     <div className="grid gap-6">
@@ -477,7 +527,19 @@ export default function RenoAppCaseDetailPage() {
             ) : (
               <div className="mt-6 grid gap-6">
                 <div>
-                  <p className="text-sm font-semibold text-stone-900">Underlag</p>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-stone-900">Underlag</p>
+                    {downloadAllUrls.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={handleDownloadAllFiles}
+                        disabled={downloadingAll}
+                        className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {downloadingAll ? 'Laddar ner filer...' : 'Ladda ner alla filer'}
+                      </button>
+                    ) : null}
+                  </div>
                   <ul className="mt-3 divide-y divide-stone-200 rounded-3xl border border-stone-200 bg-stone-50">
                     {documentUnderlag.map((row) => (
                       <li
@@ -525,14 +587,23 @@ export default function RenoAppCaseDetailPage() {
                               : 'border-rose-200 bg-rose-50'
                           }`}
                         >
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              checked={row.checked}
-                              readOnly
-                              className="h-4 w-4 rounded border-stone-300 text-stone-500 accent-stone-500"
-                            />
-                            <p className={`text-sm font-semibold ${row.checked ? 'text-emerald-950' : 'text-rose-950'}`}>{row.label}</p>
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="checkbox"
+                                checked={row.checked}
+                                readOnly
+                                className="h-4 w-4 rounded border-stone-300 text-stone-500 accent-stone-500"
+                              />
+                              <p className={`text-sm font-semibold ${row.checked ? 'text-emerald-950' : 'text-rose-950'}`}>{row.label}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleParticipantDetails(row.id)}
+                              className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline"
+                            >
+                              {expandedParticipantIds[row.id] ? 'Dölj' : 'Visa'}
+                            </button>
                           </div>
                           <ul className={`mt-3 grid gap-1 pl-7 text-sm ${row.checked ? 'text-emerald-900' : 'text-rose-900'}`}>
                             {row.summary.map((line) => (
@@ -557,6 +628,20 @@ export default function RenoAppCaseDetailPage() {
                               </li>
                             ))}
                           </ul>
+                          {expandedParticipantIds[row.id] ? (
+                            <div className="mt-4 grid gap-2 border-t border-stone-200/80 pt-4 text-sm text-stone-700">
+                              <div className="grid gap-1 sm:grid-cols-2 sm:gap-x-6">
+                                <p><span className="font-semibold text-stone-900">Företag:</span> {row.details?.companyName ?? '-'}</p>
+                                <p><span className="font-semibold text-stone-900">Kontaktperson:</span> {row.details?.contactName ?? '-'}</p>
+                                <p><span className="font-semibold text-stone-900">Organisationsnummer:</span> {row.details?.orgNumber ?? '-'}</p>
+                                <p><span className="font-semibold text-stone-900">E-post:</span> {row.details?.email ?? '-'}</p>
+                                <p><span className="font-semibold text-stone-900">Telefon:</span> {row.details?.phone ?? '-'}</p>
+                                <p><span className="font-semibold text-stone-900">Certifiering:</span> {row.details?.certificationReference ?? '-'}</p>
+                                <p><span className="font-semibold text-stone-900">Verifierad av sökande:</span> {row.details?.hasVerifiedAuthorization ? 'Ja' : 'Nej'}</p>
+                                <p><span className="font-semibold text-stone-900">Sanningsförsäkran:</span> {row.details?.acceptsResponsibility ? 'Ja' : 'Nej'}</p>
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                       ))}
                     </div>
