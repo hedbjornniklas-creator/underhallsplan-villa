@@ -52,6 +52,9 @@ export async function POST(request: Request, context: RouteContext) {
     if (access.state !== 'open') {
       return jsonError('Länken är inte längre aktiv.', 409)
     }
+    if (access.case.status === 'approved' || access.case.status === 'rejected') {
+      return jsonError('Ärendet är låst för ändringar efter beslut.', 409)
+    }
     if (!access.access.allowedActions.includes('upload_documents')) {
       return jsonError('Länken saknar rätt att ladda upp dokument.', 403)
     }

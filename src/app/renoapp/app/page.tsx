@@ -119,19 +119,28 @@ export default function RenoAppAppHomePage() {
 
   const cards = [
     {
-      title: 'Öppna ärenden',
+      eyebrow: 'Pågående handläggning',
+      title: 'Aktiva ärenden',
       value: payload?.stats.openCases ?? 0,
-      description: 'Submitted, review och conditional.',
+      description: 'Ärenden som fortfarande är under handläggning och ännu inte är avslutade.',
+      detail: 'Omfattar under granskning och godkänd med villkor.',
+      tone: 'border-stone-200/80 bg-white/85',
     },
     {
-      title: 'Väntar på komplettering',
+      eyebrow: 'Väntar på medlem',
+      title: 'Begärd komplettering',
       value: payload?.stats.needInfoCases ?? 0,
-      description: 'Ärenden med status need_info.',
+      description: 'Ärenden där styrelsen har bett medlemmen att skicka in mer underlag.',
+      detail: 'Bra att följa upp löpande så att handläggningen inte stannar upp.',
+      tone: 'border-amber-200/80 bg-amber-50/70',
     },
     {
+      eyebrow: 'Behöver kontroll',
       title: 'Preliminära lägenheter',
       value: payload?.stats.preliminaryUnits ?? 0,
-      description: 'BRF-lägenheter med status preliminary.',
+      description: 'Lägenheter som har skapats preliminärt och kan behöva ses över i registret.',
+      detail: 'Kontrollera att rätt lägenhet är kopplad innan fler ärenden byggs på samma post.',
+      tone: 'border-sky-200/80 bg-sky-50/70',
     },
   ]
 
@@ -149,13 +158,18 @@ export default function RenoAppAppHomePage() {
             {cards.map((card) => (
               <article
                 key={card.title}
-                className="rounded-[28px] border border-stone-200/80 bg-white/85 p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]"
+                className={`rounded-[28px] border p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] ${card.tone}`}
               >
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">
-                  {card.title}
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                  {card.eyebrow}
                 </p>
-                <p className="mt-4 text-5xl font-semibold tracking-tight text-stone-900">{card.value}</p>
-                <p className="mt-3 text-sm leading-7 text-stone-700">{card.description}</p>
+                <h2 className="mt-3 text-xl font-semibold text-stone-900">{card.title}</h2>
+                <div className="mt-6 flex items-end justify-between gap-4">
+                  <p className="text-6xl font-semibold leading-none tracking-tight text-stone-900">{card.value}</p>
+                  <div className="h-12 w-px bg-stone-200/80" />
+                </div>
+                <p className="mt-5 text-sm leading-7 text-stone-800">{card.description}</p>
+                <p className="mt-2 text-xs leading-6 text-stone-600">{card.detail}</p>
               </article>
             ))}
           </section>

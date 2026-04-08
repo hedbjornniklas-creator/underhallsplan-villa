@@ -3853,6 +3853,11 @@ export async function upsertPublicApplication(
     }
   }
 
+  const lockedStatuses = new Set(['approved', 'rejected'])
+  if (existingCase && lockedStatuses.has(String(existingCase.status ?? ''))) {
+    throw new Error('CASE_LOCKED')
+  }
+
   const contact = await upsertPublicApplicationContact({
     admin,
     existingContactId: (existingCase?.applicant_contact_id as string | null | undefined) ?? null,

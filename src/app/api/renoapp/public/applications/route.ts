@@ -92,6 +92,9 @@ export async function POST(request: Request) {
     if (message === 'DRAFT_LINK_INVALID') {
       return jsonError('Utkastslanken ar inte langre giltig.', 409)
     }
+    if (message === 'CASE_LOCKED') {
+      return jsonError('Ärendet är låst för ändringar efter beslut.', 409)
+    }
     if (message === 'APPLICANT_NAME_REQUIRED') return jsonError('Ange namn.', 400)
     if (message === 'APPLICANT_EMAIL_INVALID') return jsonError('Ange en giltig e-postadress.', 400)
     if (message === 'UNIT_NUMBER_REQUIRED') return jsonError('Ange lagenhetsnummer.', 400)
