@@ -5131,6 +5131,113 @@ export async function updateEditableRenoAppBrf(input: UpdateRenoAppBrfInput): Pr
   return mapEditableBrfRow(updatedBrf as BrfAssociationRow)
 }
 
+export async function sendRenoAppPublicApplyLink(input: {
+  brfId: string
+  fullName: string
+  email: string
+  origin: string
+}): Promise<{
+  delivery: {
+    email: string
+    fullName: string
+    applyUrl: string
+    emailSent: boolean
+    emailError: string | null
+  }
+}> {
+  const context = await requireRenoAppViewerContext()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  if (!input.brfId) {
+    throw new Error('BRF_NOT_FOUND')
+  }
+
+  const fullName = normalizeText(input.fullName)
+  const email = normalizeEmail(input.email)
+  const origin = String(input.origin ?? '').trim()
+
+  assertRequiredText(fullName, 'FULL_NAME_REQUIRED')
+  if (!email) {
+    throw new Error('EMAIL_INVALID')
+  }
+  const fullNameValue = fullName ?? ''
+
+  const scopedQuery = applyBrfAssociationScope(
+    admin
+      .from('brf_associations')
+      .select('id,name,slug,is_public_apply_enabled')
+      .eq('id', input.brfId),
+    context.accessibleBrfIds
+  )
+  const { data: brfData, error: brfError } = await scopedQuery.maybeSingle()
+
+  if (brfError) {
+    throw new Error(brfError.message ?? 'Kunde inte läsa BRF.')
+  }
+  if (!brfData) {
+    throw new Error('BRF_NOT_FOUND')
+  }
+  if (brfData.is_public_apply_enabled !== true) {
+    throw new Error('PUBLIC_APPLY_DISABLED')
+  }
+
+  const slug = String(brfData.slug ?? '').trim()
+  if (!slug) {
+    throw new Error('BRF_NOT_FOUND')
+  }
+
+  const applyUrl = buildAbsoluteUrl(origin, `/renoapp/brf/${slug}/apply`)
+  const mailFrom = getMailFromAddress()
+  let emailSent = false
+  let emailError: string | null = null
+
+  if (mailFrom) {
+    try {
+      const subject = `RenoApp: ansökningslänk för ${String(brfData.name ?? 'er BRF')}`
+      await sendAssignmentEmail({
+        to: email,
+        from: mailFrom,
+        subject,
+        html: buildRenoAppEmailHtml({
+          origin,
+          preheader: subject,
+          bodyHtml: `
+            <p>Hej ${escapeHtml(fullNameValue)},</p>
+            <p>Här är din ansökningslänk till <strong>${escapeHtml(String(brfData.name ?? 'er BRF'))}</strong>.</p>
+            <p>Öppna ansökan här:</p>
+            <p><a href="${applyUrl}">${applyUrl}</a></p>
+            <p>Du kan börja fylla i ansökan direkt och fortsätta senare via länken som sparas när utkastet skapas.</p>
+          `,
+        }),
+        text: [
+          `Hej ${fullNameValue},`,
+          `Här är din ansökningslänk till ${String(brfData.name ?? 'er BRF')}.`,
+          `Öppna ansökan här: ${applyUrl}`,
+          'Du kan börja fylla i ansökan direkt och fortsätta senare via länken som sparas när utkastet skapas.',
+          '',
+          'Med vänlig hälsning,',
+          'RenoApp-teamet på HusHub',
+        ].join('\n'),
+      })
+      emailSent = true
+    } catch (error) {
+      emailError = error instanceof Error ? error.message : 'Mejlutskick misslyckades.'
+    }
+  } else {
+    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Ansökningslänken kunde inte skickas.'
+  }
+
+  return {
+    delivery: {
+      email,
+      fullName: fullNameValue,
+      applyUrl,
+      emailSent,
+      emailError,
+    },
+  }
+}
+
 export async function listRenoAppAdminActionTypes(): Promise<RenoAppAdminActionType[]> {
   await requireRenoAppAdminProfile()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
