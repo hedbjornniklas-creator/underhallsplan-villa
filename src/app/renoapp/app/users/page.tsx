@@ -271,10 +271,7 @@ export default function RenoAppUsersPage() {
             >
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">
-                    {group.brf.slug ?? 'BRF'}
-                  </p>
-                  <h3 className="mt-2 text-2xl font-semibold text-stone-900">{group.brf.name ?? 'Namnlös BRF'}</h3>
+                  <h3 className="text-2xl font-semibold text-stone-900">{group.brf.name ?? 'Namnlös BRF'}</h3>
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">
                   <span className="rounded-full border border-stone-200 px-3 py-2">
@@ -304,6 +301,9 @@ export default function RenoAppUsersPage() {
                             {formatRole(member.role)} · accepterad {formatDateTime(member.acceptedAt)}
                           </p>
                           <div className="mt-3 grid gap-2 rounded-2xl border border-stone-200 bg-stone-50 px-3 py-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                              Mejlutskick
+                            </p>
                             <label className="flex items-center gap-3 text-sm text-stone-700">
                               <input
                                 type="checkbox"
