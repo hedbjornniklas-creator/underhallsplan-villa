@@ -5165,7 +5165,7 @@ export async function sendRenoAppPublicApplyLink(input: {
   const scopedQuery = applyBrfAssociationScope(
     admin
       .from('brf_associations')
-      .select('id,name,slug,is_public_apply_enabled')
+      .select('id,name,slug,is_public_apply_enabled,is_public_apply_listed')
       .eq('id', input.brfId),
     context.accessibleBrfIds
   )
@@ -5177,16 +5177,38 @@ export async function sendRenoAppPublicApplyLink(input: {
   if (!brfData) {
     throw new Error('BRF_NOT_FOUND')
   }
-  if (brfData.is_public_apply_enabled !== true) {
-    throw new Error('PUBLIC_APPLY_DISABLED')
-  }
-
   const slug = String(brfData.slug ?? '').trim()
   if (!slug) {
     throw new Error('BRF_NOT_FOUND')
   }
-
-  const applyUrl = buildAbsoluteUrl(origin, `/renoapp/brf/${slug}/apply`)
+  const useDirectLink = brfData.is_public_apply_listed === true
+  const applyUrl = useDirectLink
+    ? buildAbsoluteUrl(origin, `/renoapp/brf/${slug}/apply`)
+    : (
+        await upsertPublicApplication(
+          {
+            brfSlug: slug,
+            draftToken: null,
+            mode: 'draft',
+            applicantName: fullNameValue,
+            applicantEmail: email,
+            applicantPhone: null,
+            unitNumberInternal: null,
+            unitNumberSkatteverket: null,
+            description: '',
+            replyMessage: null,
+            contractorName: null,
+            contractorOrgNumber: null,
+            contractorEmail: null,
+            contractorPhone: null,
+            contractorHasRequiredCertification: false,
+            participantEntries: [],
+            actionTypeKeys: [],
+            questionAnswers: {},
+          },
+          origin
+        )
+      ).resumeUrl
   const mailFrom = getMailFromAddress()
   let emailSent = false
   let emailError: string | null = null
@@ -5206,14 +5228,14 @@ export async function sendRenoAppPublicApplyLink(input: {
             <p>Här är din ansökningslänk till <strong>${escapeHtml(String(brfData.name ?? 'er BRF'))}</strong>.</p>
             <p>Öppna ansökan här:</p>
             <p><a href="${applyUrl}">${applyUrl}</a></p>
-            <p>Du kan börja fylla i ansökan direkt och fortsätta senare via länken som sparas när utkastet skapas.</p>
+            <p>Du kan börja fylla i ansökan direkt och fortsätta senare via samma länk.</p>
           `,
         }),
         text: [
           `Hej ${fullNameValue},`,
           `Här är din ansökningslänk till ${String(brfData.name ?? 'er BRF')}.`,
           `Öppna ansökan här: ${applyUrl}`,
-          'Du kan börja fylla i ansökan direkt och fortsätta senare via länken som sparas när utkastet skapas.',
+          'Du kan börja fylla i ansökan direkt och fortsätta senare via samma länk.',
           '',
           'Med vänlig hälsning,',
           'RenoApp-teamet på HusHub',

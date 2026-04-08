@@ -29,7 +29,7 @@ export default function RenoAppAppHomePage() {
   const [brfItems, setBrfItems] = useState<BrfApplyItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [applyLinkForm, setApplyLinkForm] = useState({ brfId: '', fullName: '', email: '' })
+  const [applyLinkForm, setApplyLinkForm] = useState({ fullName: '', email: '' })
   const [sendingApplyLink, setSendingApplyLink] = useState(false)
   const [applyLinkSuccess, setApplyLinkSuccess] = useState<string | null>(null)
 
@@ -62,10 +62,6 @@ export default function RenoAppAppHomePage() {
           const nextBrfs = (brfPayload.items ?? []).filter((item) => item.isPublicApplyEnabled)
           setPayload(data)
           setBrfItems(nextBrfs)
-          setApplyLinkForm((current) => ({
-            ...current,
-            brfId: current.brfId || nextBrfs[0]?.id || '',
-          }))
         }
       } catch (fetchError) {
         if (active) {
@@ -94,22 +90,25 @@ export default function RenoAppAppHomePage() {
       const response = await fetch('/api/renoapp/app/brf/apply-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(applyLinkForm),
+        body: JSON.stringify({
+          brfId: payload?.activeBrfId ?? brfItems[0]?.id ?? '',
+          ...applyLinkForm,
+        }),
       })
-      const payload = (await response.json().catch(() => ({}))) as {
+      const result = (await response.json().catch(() => ({}))) as {
         error?: string
         delivery?: { emailSent?: boolean; emailError?: string | null }
       }
 
       if (!response.ok) {
-        throw new Error(payload.error ?? 'Kunde inte skicka ansökningslänken.')
+        throw new Error(result.error ?? 'Kunde inte skicka ansökningslänken.')
       }
 
       setApplyLinkForm((current) => ({ ...current, fullName: '', email: '' }))
       setApplyLinkSuccess('Ansökningslänken är skickad.')
 
-      if (payload.delivery?.emailError && !payload.delivery.emailSent) {
-        setError(payload.delivery.emailError)
+      if (result.delivery?.emailError && !result.delivery.emailSent) {
+        setError(result.delivery.emailError)
       }
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : 'Kunde inte skicka ansökningslänken.')
@@ -166,22 +165,7 @@ export default function RenoAppAppHomePage() {
             <p className="mt-2 text-sm leading-7 text-stone-700">
               Skicka BRF:ens ansökningssida till en boende via mejl.
             </p>
-            <div className="mt-5 grid gap-4 md:grid-cols-3">
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-stone-800">BRF</span>
-                <select
-                  value={applyLinkForm.brfId}
-                  onChange={(event) => setApplyLinkForm((current) => ({ ...current, brfId: event.target.value }))}
-                  className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                >
-                  <option value="">Välj BRF</option>
-                  {brfItems.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
               <label className="block">
                 <span className="mb-2 block text-sm font-semibold text-stone-800">Namn</span>
                 <input
@@ -206,11 +190,14 @@ export default function RenoAppAppHomePage() {
               <button
                 type="button"
                 onClick={() => void handleSendApplyLink()}
-                disabled={!applyLinkForm.brfId || sendingApplyLink}
+                disabled={!(payload?.activeBrfId ?? brfItems[0]?.id) || sendingApplyLink}
                 className="rounded-full border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-900 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {sendingApplyLink ? 'Skickar...' : 'Skicka ansökningslänk'}
               </button>
+              <p className="text-sm text-stone-600">
+                BRF: {brfItems.find((item) => item.id === (payload?.activeBrfId ?? brfItems[0]?.id))?.name ?? '-'}
+              </p>
               {applyLinkSuccess ? <p className="text-sm text-emerald-700">{applyLinkSuccess}</p> : null}
               {brfItems.length === 0 ? (
                 <p className="text-sm text-stone-600">Ingen BRF med aktiv publik ansökan finns tillgänglig.</p>

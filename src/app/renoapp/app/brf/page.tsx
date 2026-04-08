@@ -73,7 +73,7 @@ function toFormState(item: BrfItem): BrfFormState {
     unitCount: item.unitCount ? String(item.unitCount) : '',
     technicalContact: item.technicalContact ?? '',
     applyIntroText: item.applyIntroText ?? '',
-    isPublicApplyEnabled: item.isPublicApplyEnabled,
+    isPublicApplyEnabled: true,
     isPublicApplyListed: item.isPublicApplyListed,
   }
 }
@@ -208,17 +208,6 @@ export default function RenoAppBrfPage() {
       [brfId]: {
         ...current[brfId],
         [field]: value,
-      },
-    }))
-  }
-
-  const handleTogglePublicApply = (brfId: string, checked: boolean) => {
-    setFormsById((current) => ({
-      ...current,
-      [brfId]: {
-        ...current[brfId],
-        isPublicApplyEnabled: checked,
-        isPublicApplyListed: checked ? current[brfId].isPublicApplyListed : false,
       },
     }))
   }
@@ -422,30 +411,14 @@ export default function RenoAppBrfPage() {
                   <label className="flex items-start gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-4 text-sm text-stone-700">
                     <input
                       type="checkbox"
-                      checked={form.isPublicApplyEnabled}
-                      onChange={(event) => handleTogglePublicApply(item.id, event.target.checked)}
-                      className="mt-1"
-                    />
-                    <div>
-                      <p className="font-semibold text-stone-900">Publik ansökan aktiv</p>
-                      <p className="mt-1 leading-6 text-stone-600">
-                        När detta är aktivt kan boende skicka in ansökningar till BRF:en via RenoApp.
-                      </p>
-                    </div>
-                  </label>
-
-                  <label className="flex items-start gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-4 text-sm text-stone-700">
-                    <input
-                      type="checkbox"
                       checked={form.isPublicApplyListed}
                       onChange={(event) => updateField(item.id, 'isPublicApplyListed', event.target.checked)}
-                      disabled={!form.isPublicApplyEnabled}
                       className="mt-1"
                     />
                     <div>
                       <p className="font-semibold text-stone-900">Synlig i öppen BRF-lista</p>
                       <p className="mt-1 leading-6 text-stone-600">
-                        När detta är aktivt visas BRF:en i den öppna listan på <span className="font-medium">/renoapp/apply</span>.
+                        När detta är aktivt visas BRF:en i den öppna listan på <span className="font-medium">/renoapp/apply</span>. Om det är avstängt skickas ansökningslänkar i stället ut med en personlig draft-länk.
                       </p>
                     </div>
                   </label>
