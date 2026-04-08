@@ -100,17 +100,17 @@ function getStatusSortRank(status: CaseItem['status']) {
 function getStatusRowClass(status: CaseItem['status']) {
   switch (getStatusBucket(status)) {
     case 'draft':
-      return 'bg-[#F9FAFB] text-black hover:bg-[#F3F4F6] focus-visible:bg-[#F3F4F6]'
+      return 'bg-[#FCFCFD] text-black hover:bg-[#F8FAFC] focus-visible:bg-[#F8FAFC]'
     case 'review':
-      return 'bg-[#DBEAFE] text-black hover:bg-[#BFDBFE] focus-visible:bg-[#BFDBFE]'
+      return 'bg-[#F4F8FF] text-black hover:bg-[#EAF2FF] focus-visible:bg-[#EAF2FF]'
     case 'need_info':
-      return 'bg-[#FEF3C7] text-black hover:bg-[#FDE68A] focus-visible:bg-[#FDE68A]'
+      return 'bg-[#FFF9E8] text-black hover:bg-[#FFF4D6] focus-visible:bg-[#FFF4D6]'
     case 'approved':
-      return 'bg-[#DCFCE7] text-black hover:bg-[#BBF7D0] focus-visible:bg-[#BBF7D0]'
+      return 'bg-[#F1FCF4] text-black hover:bg-[#E3F8E8] focus-visible:bg-[#E3F8E8]'
     case 'conditional':
-      return 'bg-[#FFEDD5] text-black hover:bg-[#FED7AA] focus-visible:bg-[#FED7AA]'
+      return 'bg-[#FFF5EB] text-black hover:bg-[#FEEBDD] focus-visible:bg-[#FEEBDD]'
     case 'rejected':
-      return 'bg-[#FEE2E2] text-black hover:bg-[#FECACA] focus-visible:bg-[#FECACA]'
+      return 'bg-[#FFF1F1] text-black hover:bg-[#FEE5E5] focus-visible:bg-[#FEE5E5]'
     default:
       return 'bg-white text-black hover:bg-stone-50 focus-visible:bg-stone-50'
   }
@@ -127,44 +127,44 @@ function getStatusTabStyle(key: StatusFilter): StatusTabStyle {
   switch (key) {
     case 'draft':
       return {
-        inactive: 'border-gray-300 bg-[#F9FAFB] text-[#111827] hover:bg-[#F3F4F6]',
+        inactive: 'border-gray-300 bg-[#FCFCFD] text-[#111827] hover:bg-[#F8FAFC]',
         active: 'border-gray-400 bg-[#FFFFFF] text-[#111827]',
         countInactive: 'bg-gray-200 text-[#111827]',
         countActive: 'bg-gray-200 text-[#111827]',
       }
     case 'review':
       return {
-        inactive: 'border-[#93C5FD] bg-[#DBEAFE] text-[#1E3A8A] hover:bg-[#BFDBFE]',
-        active: 'border-[#2563EB] bg-[#2563EB] text-[#FFFFFF]',
-        countInactive: 'bg-[#BFDBFE] text-[#1E3A8A]',
+        inactive: 'border-[#BFDBFE] bg-[#F4F8FF] text-[#3159A6] hover:bg-[#EAF2FF]',
+        active: 'border-[#5B7FD6] bg-[#5B7FD6] text-[#FFFFFF]',
+        countInactive: 'bg-[#E3EEFF] text-[#3159A6]',
         countActive: 'bg-white/20 text-white',
       }
     case 'need_info':
       return {
-        inactive: 'border-[#FDE68A] bg-[#FEF3C7] text-[#92400E] hover:bg-[#FDE68A]',
-        active: 'border-[#FACC15] bg-[#FACC15] text-[#111827]',
-        countInactive: 'bg-[#FDE68A] text-[#92400E]',
-        countActive: 'bg-[#EAB308] text-[#111827]',
+        inactive: 'border-[#FDE7A8] bg-[#FFF9E8] text-[#9A5A12] hover:bg-[#FFF4D6]',
+        active: 'border-[#E4B84A] bg-[#E4B84A] text-[#111827]',
+        countInactive: 'bg-[#FFF0C2] text-[#9A5A12]',
+        countActive: 'bg-[#D7A93B] text-[#111827]',
       }
     case 'approved':
       return {
-        inactive: 'border-[#86EFAC] bg-[#DCFCE7] text-[#14532D] hover:bg-[#BBF7D0]',
-        active: 'border-[#15803D] bg-[#15803D] text-[#FFFFFF]',
-        countInactive: 'bg-[#BBF7D0] text-[#14532D]',
+        inactive: 'border-[#B7E8C1] bg-[#F1FCF4] text-[#24623A] hover:bg-[#E3F8E8]',
+        active: 'border-[#4EA86A] bg-[#4EA86A] text-[#FFFFFF]',
+        countInactive: 'bg-[#DEF4E4] text-[#24623A]',
         countActive: 'bg-white/20 text-white',
       }
     case 'conditional':
       return {
-        inactive: 'border-[#FDBA74] bg-[#FFEDD5] text-[#9A3412] hover:bg-[#FED7AA]',
-        active: 'border-[#C2410C] bg-[#C2410C] text-[#FFFFFF]',
-        countInactive: 'bg-[#FED7AA] text-[#9A3412]',
+        inactive: 'border-[#F7C79C] bg-[#FFF5EB] text-[#9E4C20] hover:bg-[#FEEBDD]',
+        active: 'border-[#D17A45] bg-[#D17A45] text-[#FFFFFF]',
+        countInactive: 'bg-[#FCE4D1] text-[#9E4C20]',
         countActive: 'bg-white/20 text-white',
       }
     case 'rejected':
       return {
-        inactive: 'border-[#FCA5A5] bg-[#FEE2E2] text-[#7F1D1D] hover:bg-[#FECACA]',
-        active: 'border-[#DC2626] bg-[#DC2626] text-[#FFFFFF]',
-        countInactive: 'bg-[#FECACA] text-[#7F1D1D]',
+        inactive: 'border-[#F2B8B8] bg-[#FFF1F1] text-[#8E3A3A] hover:bg-[#FEE5E5]',
+        active: 'border-[#D46A6A] bg-[#D46A6A] text-[#FFFFFF]',
+        countInactive: 'bg-[#F9DCDC] text-[#8E3A3A]',
         countActive: 'bg-white/20 text-white',
       }
     default:

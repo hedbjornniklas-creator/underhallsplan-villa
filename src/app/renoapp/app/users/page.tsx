@@ -179,12 +179,12 @@ export default function RenoAppUsersPage() {
       const payload = (await response.json().catch(() => ({}))) as { error?: string }
 
       if (!response.ok) {
-        throw new Error(payload.error ?? 'Kunde inte ta bort anvÃ¤ndaren.')
+        throw new Error(payload.error ?? 'Kunde inte ta bort användaren.')
       }
 
       await refreshUsers()
     } catch (removeError) {
-      setError(removeError instanceof Error ? removeError.message : 'Kunde inte ta bort anvÃ¤ndaren.')
+      setError(removeError instanceof Error ? removeError.message : 'Kunde inte ta bort användaren.')
     } finally {
       setRemovingMemberKey(null)
     }
@@ -319,7 +319,7 @@ export default function RenoAppUsersPage() {
                                 disabled={savingMailSettingsKey === `${group.brf.id}:${member.profileId}`}
                                 className="h-4 w-4 rounded border-stone-300 text-stone-700 focus:ring-stone-400"
                               />
-                              <span>AllmÃ¤n information frÃ¥n RenoApp</span>
+                              <span>Allmän information från RenoApp</span>
                             </label>
                             <label className="flex items-center gap-3 text-sm text-stone-700">
                               <input
@@ -336,7 +336,7 @@ export default function RenoAppUsersPage() {
                                 disabled={savingMailSettingsKey === `${group.brf.id}:${member.profileId}`}
                                 className="h-4 w-4 rounded border-stone-300 text-stone-700 focus:ring-stone-400"
                               />
-                              <span>HÃ¤ndelser i Ã¤renden</span>
+                              <span>Händelser i ärenden</span>
                             </label>
                           </div>
                           <div className="mt-3">
@@ -348,7 +348,7 @@ export default function RenoAppUsersPage() {
                             >
                               {removingMemberKey === `${group.brf.id}:${member.profileId}`
                                 ? 'Tar bort...'
-                                : 'Ta bort anvandare'}
+                                : 'Ta bort användare'}
                             </button>
                           </div>
                         </li>
