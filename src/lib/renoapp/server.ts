@@ -4979,7 +4979,7 @@ export async function listRenoAppUsers(): Promise<RenoAppUserListItem[]> {
     return []
   }
 
-  const [brfsResult, membersResult, invitesResult] = await Promise.all([
+  const [brfsResult, initialMembersResult, invitesResult] = await Promise.all([
     admin.from('brf_associations').select('id,name,slug').in('id', brfIds),
     admin
       .from('brf_members')
@@ -4996,6 +4996,16 @@ export async function listRenoAppUsers(): Promise<RenoAppUserListItem[]> {
       .is('revoked_at', null)
       .order('created_at', { ascending: false }),
   ])
+
+  const membersResult =
+    initialMembersResult.error &&
+    initialMembersResult.error.message?.includes('renoapp_email_general_enabled')
+      ? await admin
+          .from('brf_members')
+          .select('brf_id,profile_id,role,accepted_at,is_active')
+          .in('brf_id', brfIds)
+          .eq('is_active', true)
+      : initialMembersResult
 
   if (brfsResult.error) throw new Error(brfsResult.error.message ?? 'Kunde inte hÃ¤mta BRF-data.')
   if (membersResult.error) throw new Error(membersResult.error.message ?? 'Kunde inte hÃ¤mta RenoApp-anvÃ¤ndare.')
@@ -5046,7 +5056,8 @@ export async function listRenoAppUsers(): Promise<RenoAppUserListItem[]> {
       role: String(row.role ?? 'board') as 'board' | 'admin',
       acceptedAt: (row.accepted_at as string | null | undefined) ?? null,
       receivesGeneralInfoEmails: row.renoapp_email_general_enabled === true,
-      receivesCaseEventEmails: row.renoapp_email_case_events_enabled === true,
+      receivesCaseEventEmails:
+        row.renoapp_email_case_events_enabled === undefined ? true : row.renoapp_email_case_events_enabled === true,
     })
     membersByBrfId.set(brfId, bucket)
   }
@@ -5109,6 +5120,9 @@ export async function updateRenoAppUserMemberEmailPreferences(input: {
     .eq('profile_id', input.profileId)
 
   if (updateError) {
+    if (updateError.message?.includes('renoapp_email_general_enabled')) {
+      throw new Error('EMAIL_PREFERENCES_MIGRATION_REQUIRED')
+    }
     throw new Error(updateError.message ?? 'Kunde inte spara e-postinstÃ¤llningar.')
   }
 

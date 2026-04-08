@@ -54,6 +54,9 @@ export async function PATCH(request: Request) {
     if (message === 'PROFILE_NOT_FOUND') return jsonError('Ingen profil hittades för användaren.', 403)
     if (message === 'BRF_NOT_FOUND') return jsonError('BRF hittades inte.', 404)
     if (message === 'MEMBER_NOT_FOUND') return jsonError('Användaren hittades inte.', 404)
+    if (message === 'EMAIL_PREFERENCES_MIGRATION_REQUIRED') {
+      return jsonError('E-postinställningarna kan inte sparas ännu. Kör RenoApp-migreringen för medlemsmejl först.', 409)
+    }
     return jsonError(message || 'Kunde inte spara e-postinställningar.', 500)
   }
 }
