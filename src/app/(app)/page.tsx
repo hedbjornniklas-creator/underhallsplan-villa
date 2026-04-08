@@ -61,6 +61,15 @@ export default function HomePage() {
             className="group flex flex-1 flex-col justify-center border-b border-stone-200 px-2 py-14 transition duration-300 ease-out hover:bg-stone-950/[0.025] md:border-b-0 md:border-r md:border-stone-200 md:px-12 md:py-20 lg:px-16 xl:px-20"
           >
             <div className="mx-auto w-full max-w-[36rem] origin-center transition duration-300 ease-out group-hover:scale-[1.02]">
+              <div className="mb-8">
+                <Image
+                  src="/landing/Renoapp.png"
+                  alt="RenoApp"
+                  width={180}
+                  height={52}
+                  className="h-10 w-auto object-contain"
+                />
+              </div>
               <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
                 För BRF – ansökan, granskning och beslut
               </p>
@@ -83,6 +92,15 @@ export default function HomePage() {
             className="group flex flex-1 cursor-pointer flex-col justify-center px-2 py-14 text-left transition duration-300 ease-out hover:bg-stone-950/[0.025] md:px-12 md:py-20 lg:px-16 xl:px-20"
           >
             <div className="mx-auto w-full max-w-[36rem] origin-center transition duration-300 ease-out group-hover:scale-[1.02]">
+              <div className="mb-8">
+                <Image
+                  src="/landing/Hushub-check2.png"
+                  alt="Hushub"
+                  width={180}
+                  height={52}
+                  className="h-10 w-auto object-contain"
+                />
+              </div>
               <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
                 För fastighetsägare och besiktningsmän
               </p>
