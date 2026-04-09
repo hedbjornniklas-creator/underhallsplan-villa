@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
-import { requireModuleAccess } from '@/lib/access/server'
+import { requireProductAccess } from '@/lib/access/server'
 
 export default async function SettingsLayout({ children }: { children: ReactNode }) {
   try {
-    await requireModuleAccess({ productKey: 'dashboard', moduleKey: 'admin' })
+    await requireProductAccess('dashboard')
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
       redirect('/login')

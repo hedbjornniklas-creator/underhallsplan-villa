@@ -70,6 +70,14 @@
   - added `src/hooks/usePlatformAccess.ts`
   - sidebar `Admin` link now follows `hushub_admin` access instead of legacy `is_admin`
   - `/admin` client pages now rely on server guards instead of separate client-side admin checks
+- Changed Dashboard settings access to follow general Dashboard product access instead of separate Dashboard admin access:
+  - `src/app/(app)/settings/layout.tsx`
+  - `src/components/Sidebar.tsx`
+  - `src/app/api/access/current/route.ts`
+  - `src/hooks/usePlatformAccess.ts`
+- Changed Dashboard personal settings (`/ob/settings`) to behave as a module-specific own-profile page without sidebar:
+  - `src/components/DashboardLayoutShell.tsx`
+  - `src/components/Sidebar.tsx`
 - Added normalized access management inside `/admin`:
   - new module route at `src/app/(app)/admin/access/page.tsx`
   - new server-side access admin service at `src/lib/access/admin.ts`

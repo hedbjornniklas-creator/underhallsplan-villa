@@ -10,12 +10,10 @@ type ProductAccessItem = {
 
 type AccessPayload = {
   products?: ProductAccessItem[]
-  hasDashboardAdmin?: boolean
 }
 
 export function usePlatformAccess() {
   const [products, setProducts] = useState<ProductAccessItem[]>([])
-  const [hasDashboardAdmin, setHasDashboardAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -32,12 +30,10 @@ export function usePlatformAccess() {
 
         if (active) {
           setProducts(payload.products ?? [])
-          setHasDashboardAdmin(Boolean(payload.hasDashboardAdmin))
         }
       } catch {
         if (active) {
           setProducts([])
-          setHasDashboardAdmin(false)
         }
       } finally {
         if (active) {
@@ -59,7 +55,6 @@ export function usePlatformAccess() {
     loading,
     products,
     productKeys,
-    hasDashboardAdmin,
     hasHushubAdmin: productKeys.includes('hushub_admin'),
     hasDashboard: productKeys.includes('dashboard'),
     hasRenoApp: productKeys.includes('renoapp'),

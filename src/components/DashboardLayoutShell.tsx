@@ -22,6 +22,8 @@ export default function DashboardLayoutShell({ children }: { children: React.Rea
     segments[2] === 'ob' &&
     segments.length >= 4
 
+  const hideSidebarForObSettings = segments[0] === 'ob' && segments[1] === 'settings'
+
   const isLandingPage = pathname === '/'
 
   if (isEmbed || isLandingPage) {
@@ -30,7 +32,7 @@ export default function DashboardLayoutShell({ children }: { children: React.Rea
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      {!hideSidebarForObDetail && <Sidebar />}
+      {!hideSidebarForObDetail && !hideSidebarForObSettings && <Sidebar />}
 
       <div className="flex min-h-0 flex-1 flex-col">
         <Topbar />

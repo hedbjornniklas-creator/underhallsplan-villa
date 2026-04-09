@@ -7,14 +7,14 @@ import { usePlatformAccess } from '@/hooks/usePlatformAccess'
 
 export default function Sidebar() {
   const pathname = usePathname()
-  const { hasDashboardAdmin, hasHushubAdmin } = usePlatformAccess()
+  const { hasDashboard, hasHushubAdmin } = usePlatformAccess()
 
   const nav = [
     { href: '/', label: 'MENU', icon: Home },
     { href: '/properties', label: 'Fastigheter', icon: Building2 },
     { href: '/inspections', label: 'Besiktningar', icon: ClipboardList },
     ...(hasHushubAdmin ? [{ href: '/admin', label: 'Admin', icon: Shield }] : []),
-    ...(hasDashboardAdmin ? [{ href: '/settings', label: 'Settings', icon: SettingsIcon }] : []),
+    ...(hasDashboard ? [{ href: '/ob/settings', label: 'Settings', icon: SettingsIcon }] : []),
   ]
 
   return (
