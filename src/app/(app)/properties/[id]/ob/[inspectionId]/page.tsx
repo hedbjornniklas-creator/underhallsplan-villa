@@ -444,7 +444,7 @@ export default function InspectionDetailPage() {
 
   if (loading) {
     return (
-      <Protected hideSidebar>
+      <Protected>
         <main className="p-6">
           <p className="text-sm text-gray-500">Laddar besiktning...</p>
         </main>
@@ -454,7 +454,7 @@ export default function InspectionDetailPage() {
 
   if (error || !inspection || !property) {
     return (
-      <Protected hideSidebar>
+      <Protected>
         <main className="p-6">
           <p className="mb-4 text-sm text-red-600">{error || 'Besiktningen kunde inte hittas.'}</p>
           <button
@@ -469,7 +469,7 @@ export default function InspectionDetailPage() {
   }
 
   return (
-    <Protected hideSidebar>
+    <Protected>
       <main className="relative min-h-full overflow-hidden p-4 md:p-6">
         <div
           className="pointer-events-none absolute inset-0"

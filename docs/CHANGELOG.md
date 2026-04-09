@@ -28,6 +28,14 @@
   - a legacy-admin badge in the user list
   - a clearer empty state in the user history tab
   - cleaner Swedish copy in the table, dialogs, loading states, and error messages
+  - later refined the `/admin/access` list toward a denser one-row-per-user admin table:
+    - removed the top hero and product count cards
+    - removed the outer card around the user list
+    - moved filters into a compact single row next to `Användare`
+    - moved `Status` to the first column
+    - removed `E-post` and `Åtgärder` columns
+    - switched product indicators to compact `RA` / `DB` / `HHA` badges
+    - made the user name the primary entry point for the user dialog
 
 ### Documentation
 - Added `docs/ACCESS_MODEL.md` with the target long-term access model for:
@@ -78,6 +86,14 @@
 - Changed Dashboard personal settings (`/ob/settings`) to behave as a module-specific own-profile page without sidebar:
   - `src/components/DashboardLayoutShell.tsx`
   - `src/components/Sidebar.tsx`
+- Removed the sidebar entirely from the app shells:
+  - `src/app/(app)/layout.tsx`
+  - `src/components/DashboardLayoutShell.tsx`
+  - `src/components/Shell.tsx`
+- Removed the now-unused sidebar implementation and client access helper:
+  - deleted `src/components/Sidebar.tsx`
+  - deleted `src/hooks/usePlatformAccess.ts`
+  - deleted `src/app/api/access/current/route.ts`
 - Added normalized access management inside `/admin`:
   - new module route at `src/app/(app)/admin/access/page.tsx`
   - new server-side access admin service at `src/lib/access/admin.ts`

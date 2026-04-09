@@ -13,7 +13,7 @@ export default function InspectionDeliveryV2Page() {
   const inspectionId = params?.inspectionId as string
 
   return (
-    <Protected hideSidebar>
+    <Protected>
       <main className="relative min-h-full overflow-hidden p-4 md:p-6">
         <div
           className="pointer-events-none absolute inset-0"
@@ -77,4 +77,3 @@ export default function InspectionDeliveryV2Page() {
     </Protected>
   )
 }
-

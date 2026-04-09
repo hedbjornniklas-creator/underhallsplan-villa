@@ -1,6 +1,4 @@
 'use client'
-
-import Link from 'next/link'
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import Protected from '@/components/Protected'
 
@@ -115,10 +113,35 @@ function toIso(value: string) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }
 
-function summarizeDashboardLabels(labels: string[]) {
-  if (labels.length === 0) return 'Ingen Dashboard-access'
-  if (labels.length === 1) return labels[0]
-  return `${labels[0]} +${labels.length - 1} till`
+function Saucer({
+  active,
+  label,
+  className = '',
+}: {
+  active: boolean
+  label?: string
+  className?: string
+}) {
+  return (
+    <span
+      className={[
+        'inline-flex items-center justify-center rounded-full border text-[11px] font-semibold uppercase tracking-[0.16em] transition',
+        label ? 'min-w-[42px] px-2.5 py-1' : 'h-7 w-7',
+        active
+          ? 'border-emerald-400 bg-emerald-500 text-white shadow-[0_10px_24px_-14px_rgba(16,185,129,0.95)]'
+          : 'border-stone-300 bg-white text-stone-400',
+        className,
+      ].join(' ')}
+    >
+      {label ? (
+        label
+      ) : (
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+          <path d="M12 4c-4.8 0-8.7 2.1-8.7 4.7S7.2 13.4 12 13.4s8.7-2.1 8.7-4.7S16.8 4 12 4Zm-4.3 10.4a2 2 0 0 0-1.7.9l-.7 1.1c-.4.6 0 1.4.8 1.4h11.8c.7 0 1.2-.8.8-1.4l-.7-1.1a2 2 0 0 0-1.7-.9H7.7Z" />
+        </svg>
+      )}
+    </span>
+  )
 }
 
 function Modal({
@@ -308,15 +331,6 @@ export default function AccessManagementClient() {
     setHushubNote(hushub[0]?.grantedReason ?? '')
     setHushubExpiresAt(toInputDateTime(hushub[0]?.expiresAt ?? null))
   }, [dialog, activeUser, byKey])
-
-  const counts = useMemo(
-    () => ({
-      renoapp: users.filter((user) => user.summary.renoapp.active).length,
-      dashboard: users.filter((user) => user.summary.dashboard.active).length,
-      hushub_admin: users.filter((user) => user.summary.hushub_admin.active).length,
-    }),
-    [users]
-  )
 
   const postAssignment = async (payload: {
     profileId: string
@@ -532,24 +546,9 @@ export default function AccessManagementClient() {
   return (
     <Protected>
       <main className="mx-auto w-full max-w-7xl px-4 py-8 md:px-6 md:py-10">
-        <section className="rounded-[32px] border border-stone-200/80 bg-[linear-gradient(160deg,rgba(255,251,245,0.95),rgba(247,242,235,0.92))] p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">HusHub Admin</p>
-              <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">Användare och access</h1>
-              <p className="mt-4 max-w-3xl text-base leading-8 text-stone-700">
-                Produktöversikt för RenoApp, Dashboard och HusHub Admin. Klicka på ett produktfält för att öppna rätt
-                behörighetsdialog för användaren.
-              </p>
-            </div>
-            <Link
-              href="/admin"
-              className="inline-flex w-fit rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
-            >
-              Till admin
-            </Link>
-          </div>
-        </section>
+        <header>
+          <h1 className="text-2xl font-semibold tracking-tight text-stone-900">Användare och access</h1>
+        </header>
 
         {error ? (
           <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
@@ -557,189 +556,120 @@ export default function AccessManagementClient() {
           </div>
         ) : null}
 
-        <section className="mt-6 grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
-            <div className="font-semibold text-stone-900">RenoApp</div>
-            <div className="mt-1">{counts.renoapp} användare med access</div>
-          </div>
-          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
-            <div className="font-semibold text-stone-900">Dashboard</div>
-            <div className="mt-1">{counts.dashboard} användare med access</div>
-          </div>
-          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
-            <div className="font-semibold text-stone-900">HusHub Admin</div>
-            <div className="mt-1">{counts.hushub_admin} användare med access</div>
-          </div>
-        </section>
+        <section className="mt-8">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+            <h2 className="mr-auto text-xl font-semibold text-stone-900">Användare</h2>
 
-        <section className="mt-6 rounded-[28px] border border-stone-200/80 bg-white/92 p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.38)]">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Användare</p>
-              <h2 className="mt-3 text-2xl font-semibold text-stone-900">Produktaccess per användare</h2>
-            </div>
-            <div className="grid gap-3 md:grid-cols-3 xl:min-w-[820px]">
-              <label className="text-sm font-semibold text-stone-800">
-                Sök
-                <input
-                  className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm font-normal text-stone-900"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Namn eller e-post"
-                />
-              </label>
-              <label className="text-sm font-semibold text-stone-800">
-                Status
-                <select
-                  className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm font-normal text-stone-900"
-                  value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-                >
-                  <option value="all">Alla</option>
-                  <option value="active">Med access</option>
-                  <option value="inactive">Utan access</option>
-                </select>
-              </label>
-              <label className="text-sm font-semibold text-stone-800">
-                Produkt
-                <select
-                  className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm font-normal text-stone-900"
-                  value={productFilter}
-                  onChange={(event) => setProductFilter(event.target.value as ProductFilter)}
-                >
-                  <option value="all">Alla produkter</option>
-                  <option value="renoapp">RenoApp</option>
-                  <option value="dashboard">Dashboard</option>
-                  <option value="hushub_admin">HusHub Admin</option>
-                </select>
-              </label>
-            </div>
+            <label className="flex items-center gap-2 text-sm font-semibold text-stone-800">
+              <span>Sök</span>
+              <input
+                className="w-[220px] rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-normal text-stone-900"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Namn eller e-post"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm font-semibold text-stone-800">
+              <span>Status</span>
+              <select
+                className="w-[150px] rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-normal text-stone-900"
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+              >
+                <option value="all">Alla</option>
+                <option value="active">Med access</option>
+                <option value="inactive">Utan access</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-sm font-semibold text-stone-800">
+              <span>Produkt</span>
+              <select
+                className="w-[170px] rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-normal text-stone-900"
+                value={productFilter}
+                onChange={(event) => setProductFilter(event.target.value as ProductFilter)}
+              >
+                <option value="all">Alla produkter</option>
+                <option value="renoapp">RenoApp</option>
+                <option value="dashboard">Dashboard</option>
+                <option value="hushub_admin">HusHub Admin</option>
+              </select>
+            </label>
           </div>
 
           {loading ? (
-            <div className="mt-6 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-600">
+            <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-600">
               Läser användare och tilldelningar...
             </div>
           ) : filteredUsers.length === 0 ? (
-            <div className="mt-6 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-600">
+            <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-600">
               Inga användare matchar filtren.
             </div>
           ) : (
-            <div className="mt-6 overflow-x-auto">
-              <table className="min-w-full border-separate border-spacing-y-3">
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full border-collapse">
                 <thead>
-                  <tr className="text-left text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
-                    <th className="px-4 py-2">Namn</th>
-                    <th className="px-4 py-2">E-post</th>
-                    <th className="px-4 py-2">Status</th>
-                    <th className="px-4 py-2">RenoApp</th>
-                    <th className="px-4 py-2">Dashboard</th>
-                    <th className="px-4 py-2">HusHub Admin</th>
-                    <th className="px-4 py-2">Åtgärder</th>
+                  <tr className="border-b border-stone-200 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">
+                    <th className="px-3 py-3">Status</th>
+                    <th className="px-3 py-3">Namn</th>
+                    <th className="px-3 py-3">RA</th>
+                    <th className="px-3 py-3">DB</th>
+                    <th className="px-3 py-3">HHA</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredUsers.map((user) => (
-                    <tr key={user.id} className="bg-stone-50 align-top shadow-[0_18px_50px_-42px_rgba(41,37,36,0.45)]">
-                      <td className="rounded-l-[24px] border-y border-l border-stone-200 px-4 py-4">
+                    <tr key={user.id} className="border-b border-stone-200/80 text-sm text-stone-800">
+                      <td className="w-16 px-3 py-3 align-middle">
                         <button
                           type="button"
                           onClick={() => setDialog({ kind: 'user', userId: user.id })}
-                          className="text-left transition hover:text-stone-600"
+                          className="inline-flex"
+                          aria-label={user.accessStatus === 'active' ? 'Med access' : 'Ingen access'}
+                          title={user.accessStatus === 'active' ? 'Med access' : 'Ingen access'}
                         >
-                          <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-stone-900">
-                            <span>{userName(user)}</span>
-                            {user.legacyAdmin ? (
-                              <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-amber-800">
-                                Legacy admin
-                              </span>
-                            ) : null}
-                          </div>
-                          {user.orgName ? <div className="mt-1 text-xs text-stone-500">{user.orgName}</div> : null}
+                          <Saucer active={user.accessStatus === 'active'} />
                         </button>
                       </td>
-                      <td className="border-y border-stone-200 px-4 py-4 text-sm text-stone-700">
-                        {user.email ?? <span className="text-stone-400">Saknas</span>}
-                      </td>
-                      <td className="border-y border-stone-200 px-4 py-4">
-                        <span
-                          className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
-                            user.accessStatus === 'active'
-                              ? 'border border-emerald-300 bg-emerald-50 text-emerald-800'
-                              : 'border border-stone-200 bg-white text-stone-500'
-                          }`}
+                      <td className="px-3 py-3 align-middle">
+                        <button
+                          type="button"
+                          onClick={() => setDialog({ kind: 'user', userId: user.id })}
+                          className="truncate text-left font-semibold text-stone-900 transition hover:text-stone-600"
                         >
-                          {user.accessStatus === 'active' ? 'Med access' : 'Ingen access'}
-                        </span>
+                          {userName(user)}
+                        </button>
                       </td>
-                      <td className="border-y border-stone-200 px-4 py-4">
+                      <td className="w-20 px-3 py-3 align-middle">
                         <button
                           type="button"
                           onClick={() => setDialog({ kind: 'renoapp', userId: user.id })}
-                          className={`w-full min-w-[148px] rounded-2xl border px-4 py-3 text-left transition ${
-                            user.summary.renoapp.active
-                              ? 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
-                              : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
-                          }`}
+                          className="inline-flex"
+                          aria-label={user.summary.renoapp.active ? 'RenoApp aktiv' : 'RenoApp inaktiv'}
+                          title={user.summary.renoapp.active ? 'RenoApp aktiv' : 'RenoApp inaktiv'}
                         >
-                          <div className="text-sm font-semibold">RenoApp</div>
-                          <div className="mt-1 text-xs uppercase tracking-[0.16em]">
-                            {user.summary.renoapp.active ? 'Aktiv' : 'Inaktiv'}
-                          </div>
-                          <div className="mt-2 text-xs text-stone-600">
-                            {user.summary.renoapp.active
-                              ? `${user.summary.renoapp.count} BRF-tilldelningar`
-                              : 'Ingen RenoApp-access ännu'}
-                          </div>
+                          <Saucer active={user.summary.renoapp.active} label="RA" />
                         </button>
                       </td>
-                      <td className="border-y border-stone-200 px-4 py-4">
+                      <td className="w-20 px-3 py-3 align-middle">
                         <button
                           type="button"
                           onClick={() => setDialog({ kind: 'dashboard', userId: user.id })}
-                          className={`w-full min-w-[148px] rounded-2xl border px-4 py-3 text-left transition ${
-                            user.summary.dashboard.active
-                              ? 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
-                              : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
-                          }`}
+                          className="inline-flex"
+                          aria-label={user.summary.dashboard.active ? 'Dashboard aktiv' : 'Dashboard inaktiv'}
+                          title={user.summary.dashboard.active ? 'Dashboard aktiv' : 'Dashboard inaktiv'}
                         >
-                          <div className="text-sm font-semibold">Dashboard</div>
-                          <div className="mt-1 text-xs uppercase tracking-[0.16em]">
-                            {user.summary.dashboard.active ? 'Aktiv' : 'Inaktiv'}
-                          </div>
-                          <div className="mt-2 text-xs text-stone-600">
-                            {user.summary.dashboard.active
-                              ? summarizeDashboardLabels(user.summary.dashboard.labels)
-                              : 'Ingen Dashboard-access ännu'}
-                          </div>
+                          <Saucer active={user.summary.dashboard.active} label="DB" />
                         </button>
                       </td>
-                      <td className="border-y border-stone-200 px-4 py-4">
+                      <td className="w-20 px-3 py-3 align-middle">
                         <button
                           type="button"
                           onClick={() => setDialog({ kind: 'hushub_admin', userId: user.id })}
-                          className={`w-full min-w-[148px] rounded-2xl border px-4 py-3 text-left transition ${
-                            user.summary.hushub_admin.active
-                              ? 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
-                              : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
-                          }`}
+                          className="inline-flex"
+                          aria-label={user.summary.hushub_admin.active ? 'HusHub Admin aktiv' : 'HusHub Admin inaktiv'}
+                          title={user.summary.hushub_admin.active ? 'HusHub Admin aktiv' : 'HusHub Admin inaktiv'}
                         >
-                          <div className="text-sm font-semibold">HusHub Admin</div>
-                          <div className="mt-1 text-xs uppercase tracking-[0.16em]">
-                            {user.summary.hushub_admin.active ? 'Aktiv' : 'Inaktiv'}
-                          </div>
-                          <div className="mt-2 text-xs text-stone-600">
-                            {user.summary.hushub_admin.active ? 'Systembehörighet aktiv' : 'Avstängd'}
-                          </div>
-                        </button>
-                      </td>
-                      <td className="rounded-r-[24px] border-y border-r border-stone-200 px-4 py-4">
-                        <button
-                          type="button"
-                          onClick={() => setDialog({ kind: 'user', userId: user.id })}
-                          className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
-                        >
-                          Användaruppgifter
+                          <Saucer active={user.summary.hushub_admin.active} label="HHA" className="min-w-[52px]" />
                         </button>
                       </td>
                     </tr>

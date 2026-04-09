@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
 import Topbar from '@/components/Topbar'
 
 export default function DashboardLayoutShell({ children }: { children: React.ReactNode }) {
@@ -15,15 +14,6 @@ export default function DashboardLayoutShell({ children }: { children: React.Rea
     setIsEmbed(v === '1' || v === 'true')
   }, [pathname])
 
-  const segments = pathname.split('/').filter(Boolean)
-
-  const hideSidebarForObDetail =
-    segments[0] === 'properties' &&
-    segments[2] === 'ob' &&
-    segments.length >= 4
-
-  const hideSidebarForObSettings = segments[0] === 'ob' && segments[1] === 'settings'
-
   const isLandingPage = pathname === '/'
 
   if (isEmbed || isLandingPage) {
@@ -32,8 +22,6 @@ export default function DashboardLayoutShell({ children }: { children: React.Rea
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      {!hideSidebarForObDetail && !hideSidebarForObSettings && <Sidebar />}
-
       <div className="flex min-h-0 flex-1 flex-col">
         <Topbar />
         <main className="min-h-0 flex-1 overflow-auto">{children}</main>
