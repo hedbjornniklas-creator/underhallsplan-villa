@@ -237,12 +237,27 @@ This page should manage:
 - activation/deactivation
 
 Minimum capabilities:
-- view all users
+- view all users in a scalable table or dense list
 - see which products each user can access
 - grant/remove RenoApp access
 - grant/remove Dashboard access
 - grant/remove `hushub_admin` access
-- assign scoped roles
+- assign scoped RenoApp roles
+
+Current agreed UI simplification:
+- RenoApp:
+  - keep role plus BRF scope management
+- Dashboard:
+  - manage module access only in the UI
+  - use `inspector` as the effective role in the first implementation
+  - do not expose a Dashboard role picker in the first implementation
+  - personal settings should belong to the normal Dashboard user experience, not a separate admin permission
+- `hushub_admin`:
+  - present as a single global on or off entitlement in the UI
+  - do not expose module-level admin choices in the first implementation
+
+Reference:
+- see `docs/ADMIN_ACCESS_UI_SPEC.md` for the page structure, dialogs, state model, and product-specific interaction rules
 
 Acceptance criteria:
 - admin UI uses the normalized access model

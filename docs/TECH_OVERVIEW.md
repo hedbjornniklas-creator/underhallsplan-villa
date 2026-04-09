@@ -3,6 +3,7 @@ Underhållsplan Villa – Tech Overview (v2.2)
 Access model
 - See `docs/ACCESS_MODEL.md` for the target long-term model for shared identity, separate product access, module access, scoped roles, and future login expansion.
 - See `docs/ACCESS_IMPLEMENTATION_PLAN.md` for the recommended implementation order, route mapping, and coding rules for future expansion.
+- See `docs/ADMIN_ACCESS_UI_SPEC.md` for the implementation-ready admin UI specification for `/admin/access`.
 
 Update 2026-02-15 (dashboard and module routing)
 - This section supersedes older route notes below where they conflict.

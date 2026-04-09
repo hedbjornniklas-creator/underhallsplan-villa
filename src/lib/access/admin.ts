@@ -146,6 +146,12 @@ export type SavePlatformAssignmentInput = {
   expiresAt?: string | null
 }
 
+export type UpdateAccessManagementUserProfileInput = {
+  profileId: string
+  fullName?: string | null
+  orgName?: string | null
+}
+
 const PLATFORM_SCHEMA_MARKERS = [
   'platform_access_assignments',
   'platform_products',
@@ -453,5 +459,19 @@ export async function deactivatePlatformAssignment(assignmentId: string) {
 
   if (error) {
     throw new Error(error.message ?? 'Kunde inte inaktivera assignment.')
+  }
+}
+
+export async function updateAccessManagementUserProfile(input: UpdateAccessManagementUserProfileInput) {
+  const admin = getAdminClient()
+  const payload = {
+    full_name: (input.fullName ?? '').trim() || null,
+    org_name: (input.orgName ?? '').trim() || null,
+  }
+
+  const { error } = await admin.from('profiles').update(payload).eq('id', input.profileId)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte uppdatera användaren.')
   }
 }

@@ -2,6 +2,33 @@
 
 ## 2026-04-08
 
+### Access admin planning
+- Added `docs/ADMIN_ACCESS_UI_SPEC.md` with an implementation-ready redesign spec for `/admin/access`
+- Updated `docs/ACCESS_IMPLEMENTATION_PLAN.md` to reflect the current agreed product behavior for the admin UI:
+  - RenoApp stays role + BRF scope based
+  - Dashboard is module-driven with `inspector` as the effective first implementation role
+  - `hushub_admin` is treated as a single on/off entitlement in the UI
+- Linked the new admin UI spec from `docs/TECH_OVERVIEW.md`
+
+### Access admin UI
+- Started the `/admin/access` rebuild toward the new scalable list view:
+  - replaced the long card-based access view in `src/app/(app)/admin/access/AccessManagementClient.tsx`
+  - added a compact user table with per-product access cells for RenoApp, Dashboard, and HusHub Admin
+  - added product-specific dialogs:
+    - RenoApp uses BRF + role rows
+    - Dashboard uses module toggles with implicit `inspector`
+    - HusHub Admin uses a single on/off dialog
+  - added a separate user dialog with editable basic profile fields and a first history overview
+- Added profile update support to the access admin API:
+  - `src/app/api/admin/access-management/route.ts`
+  - `src/lib/access/admin.ts`
+- Hardened the new Dashboard dialog to recognize and migrate older module-less or `dashboard_admin` assignments into the new module-based UI flow
+- Polished the new list view with:
+  - compact Dashboard summaries instead of long module strings
+  - a legacy-admin badge in the user list
+  - a clearer empty state in the user history tab
+  - cleaner Swedish copy in the table, dialogs, loading states, and error messages
+
 ### Documentation
 - Added `docs/ACCESS_MODEL.md` with the target long-term access model for:
   - shared identity

@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/access/server'
-import { listAccessManagementData, savePlatformAssignment } from '@/lib/access/admin'
+import {
+  listAccessManagementData,
+  savePlatformAssignment,
+  updateAccessManagementUserProfile,
+} from '@/lib/access/admin'
 
 export async function GET() {
   try {
@@ -71,6 +75,47 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Kunde inte spara assignment.' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    await requireModuleAccess({ productKey: 'hushub_admin', moduleKey: 'access_management' })
+    const body = (await request.json().catch(() => ({}))) as {
+      profileId?: string
+      fullName?: string | null
+      orgName?: string | null
+    }
+
+    if (!body.profileId) {
+      return NextResponse.json({ error: 'Användare saknas.' }, { status: 400 })
+    }
+
+    await updateAccessManagementUserProfile({
+      profileId: body.profileId,
+      fullName: body.fullName ?? null,
+      orgName: body.orgName ?? null,
+    })
+
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 })
+    }
+    if (error instanceof Error && error.message === 'MODULE_ACCESS_REQUIRED') {
+      return NextResponse.json({ error: 'Åtkomst nekad.' }, { status: 403 })
+    }
+    if (error instanceof Error && error.message === 'ACCESS_SCHEMA_REQUIRED') {
+      return NextResponse.json(
+        { error: 'Accessmodellen är inte migrerad än. Kör platform_access-migreringen först.' },
+        { status: 409 }
+      )
+    }
+
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Kunde inte uppdatera användaren.' },
       { status: 500 }
     )
   }
