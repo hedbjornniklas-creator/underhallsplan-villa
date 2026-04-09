@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import Protected from '@/components/Protected'
-import { useProfile } from '@/hooks/useProfile'
 import { supabase } from '@/lib/supabaseClient'
 
 type RoomType = {
@@ -34,8 +33,6 @@ type InteriorOption = {
 }
 
 export default function InsidaSettingsPage() {
-  const { isAdmin, loading } = useProfile()
-
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([])
   const [groups, setGroups] = useState<InteriorGroup[]>([])
   const [options, setOptions] = useState<InteriorOption[]>([])
@@ -49,9 +46,8 @@ export default function InsidaSettingsPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (loading || !isAdmin) return
     loadAll()
-  }, [loading, isAdmin])
+  }, [])
 
   const loadAll = async () => {
     setError(null)
@@ -298,22 +294,6 @@ export default function InsidaSettingsPage() {
   }, [options, selectedGroup, qOptions])
 
   // ----------------- GUARDS -----------------
-  if (loading) {
-    return (
-      <Protected>
-        <div className="p-6">Laddar…</div>
-      </Protected>
-    )
-  }
-
-  if (!isAdmin) {
-    return (
-      <Protected>
-        <div className="p-6 text-rose-700">Åtkomst nekad.</div>
-      </Protected>
-    )
-  }
-
   return (
     <Protected>
       <div className="p-4 md:p-6 space-y-5">

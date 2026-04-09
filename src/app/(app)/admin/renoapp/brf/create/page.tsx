@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import Protected from '@/components/Protected'
-import { useProfile } from '@/hooks/useProfile'
 
 type CreateResult = {
   brf: {
@@ -21,7 +20,6 @@ type CreateResult = {
 }
 
 export default function RenoAppAdminCreateBrfPage() {
-  const { isAdmin, loading } = useProfile()
   const [name, setName] = useState('')
   const [orgNumber, setOrgNumber] = useState('')
   const [address, setAddress] = useState('')
@@ -77,72 +75,65 @@ export default function RenoAppAdminCreateBrfPage() {
           </p>
         </section>
 
-        {loading ? (
-          <div className="mt-6 rounded-3xl border border-stone-200 bg-white/85 p-6 text-sm text-stone-600">
-            Laddar behörighet...
-          </div>
-        ) : !isAdmin ? (
-          <div className="mt-6 rounded-3xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800">
-            Adminbehörighet krävs.
-          </div>
-        ) : (
-          <section className="mt-6 rounded-[32px] border border-stone-200/80 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.92))] p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-            <form className="grid gap-4" onSubmit={handleSubmit}>
-              <input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                placeholder="BRF-namn"
-              />
-              <input
-                value={orgNumber}
-                onChange={(event) => setOrgNumber(event.target.value)}
-                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                placeholder="Organisationsnummer"
-              />
-              <input
-                value={address}
-                onChange={(event) => setAddress(event.target.value)}
-                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                placeholder="Adress"
-              />
-              <input
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                placeholder="E-postadress för styrelsemedlem"
-                type="email"
-              />
+        <section className="mt-6 rounded-[32px] border border-stone-200/80 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.92))] p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+          <form className="grid gap-4" onSubmit={handleSubmit}>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+              placeholder="BRF-namn"
+            />
+            <input
+              value={orgNumber}
+              onChange={(event) => setOrgNumber(event.target.value)}
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+              placeholder="Organisationsnummer"
+            />
+            <input
+              value={address}
+              onChange={(event) => setAddress(event.target.value)}
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+              placeholder="Adress"
+            />
+            <input
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+              placeholder="E-postadress för styrelsemedlem"
+              type="email"
+            />
 
-              {error ? (
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-                  {error}
-                </div>
-              ) : null}
-              {result ? (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                  <p className="font-semibold">{result.brf.name} skapades.</p>
-                  <p className="mt-1">Slug: {result.brf.slug}</p>
-                  <p className="mt-1 break-all">Länk: {result.invite.inviteUrl}</p>
-                  <p className="mt-1">
-                    {result.invite.emailSent ? 'Det kombinerade invite-mejlet skickades.' : 'Invite skapad utan mejlutskick.'}
-                  </p>
-                  {result.invite.emailError ? <p className="mt-1 text-amber-900">{result.invite.emailError}</p> : null}
-                </div>
-              ) : null}
-
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {submitting ? 'Skapar...' : 'Skapa BRF'}
-                </button>
+            {error ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                {error}
               </div>
-            </form>
-          </section>
-        )}
+            ) : null}
+
+            {result ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                <p className="font-semibold">{result.brf.name} skapades.</p>
+                <p className="mt-1">Slug: {result.brf.slug}</p>
+                <p className="mt-1 break-all">Länk: {result.invite.inviteUrl}</p>
+                <p className="mt-1">
+                  {result.invite.emailSent
+                    ? 'Det kombinerade invite-mejlet skickades.'
+                    : 'Invite skapad utan mejlutskick.'}
+                </p>
+                {result.invite.emailError ? <p className="mt-1 text-amber-900">{result.invite.emailError}</p> : null}
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitting ? 'Skapar...' : 'Skapa BRF'}
+              </button>
+            </div>
+          </form>
+        </section>
       </main>
     </Protected>
   )

@@ -1,7 +1,6 @@
 'use client'
 
 import Protected from '@/components/Protected'
-import { useProfile } from '@/hooks/useProfile'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
@@ -38,8 +37,6 @@ const FIELD_TYPES = ['select', 'boolean', 'text'] as const
 type FieldType = (typeof FIELD_TYPES)[number]
 
 export default function ObUtsidaSettingsPage() {
-  const { isAdmin, loading } = useProfile()
-
   const [items, setItems] = useState<ExteriorItem[]>([])
   const [groups, setGroups] = useState<ExteriorGroup[]>([])
   const [options, setOptions] = useState<ExteriorOption[]>([])
@@ -57,9 +54,8 @@ export default function ObUtsidaSettingsPage() {
   // LOAD
   // -----------------------------
   useEffect(() => {
-    if (loading || !isAdmin) return
     loadItems()
-  }, [loading, isAdmin])
+  }, [])
 
   const loadItems = async () => {
     const { data, error } = await supabase
@@ -324,22 +320,6 @@ export default function ObUtsidaSettingsPage() {
   // -----------------------------
   // GUARDS
   // -----------------------------
-  if (loading) {
-    return (
-      <Protected>
-        <div className="p-6">Laddar…</div>
-      </Protected>
-    )
-  }
-
-  if (!isAdmin) {
-    return (
-      <Protected>
-        <div className="p-6 text-rose-700">Åtkomst nekad.</div>
-      </Protected>
-    )
-  }
-
   const selectedItem = items.find(i => i.id === selectedItemId) || null
   const selectedGroup = groups.find(g => g.id === selectedGroupId) || null
 

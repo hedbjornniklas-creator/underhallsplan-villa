@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import Protected from '@/components/Protected'
-import { useProfile } from '@/hooks/useProfile'
 
 type RequestItem = {
   id: string
@@ -61,7 +60,6 @@ function formatDateTime(value: string | null) {
 }
 
 export default function RenoAppAdminBrfRequestsPage() {
-  const { isAdmin, loading } = useProfile()
   const [items, setItems] = useState<RequestItem[]>([])
   const [pageLoading, setPageLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -114,16 +112,12 @@ export default function RenoAppAdminBrfRequestsPage() {
       }
     }
 
-    if (isAdmin) {
-      void loadItems()
-    } else if (!loading) {
-      setPageLoading(false)
-    }
+    void loadItems()
 
     return () => {
       active = false
     }
-  }, [isAdmin, loading])
+  }, [])
 
   const updateDraft = (id: string, reviewNote: string) => {
     setDrafts((current) => ({
@@ -184,13 +178,9 @@ export default function RenoAppAdminBrfRequestsPage() {
           </p>
         </section>
 
-        {loading || pageLoading ? (
+        {pageLoading ? (
           <div className="mt-6 rounded-3xl border border-stone-200 bg-white/85 p-6 text-sm text-stone-600">
             Laddar intresseanmälningar...
-          </div>
-        ) : !isAdmin ? (
-          <div className="mt-6 rounded-3xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800">
-            Adminbehörighet krävs.
           </div>
         ) : (
           <>

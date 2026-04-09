@@ -31,7 +31,7 @@ export default function HomePage() {
 
   const handleDashboardEntry = async () => {
     const { data } = await supabase.auth.getSession()
-    router.push(data.session ? '/dashboard-v1' : '/login')
+    router.push(data.session ? '/app' : '/login')
   }
 
   return (

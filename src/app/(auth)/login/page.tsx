@@ -39,7 +39,7 @@ export default function LoginPage() {
     }
 
     supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
-      if (data.session) router.replace('/dashboard-v1')
+      if (data.session) router.replace('/app')
     })
 
     const { data } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
@@ -47,7 +47,7 @@ export default function LoginPage() {
         router.replace('/auth/reset-password')
         return
       }
-      if (session) router.replace('/dashboard-v1')
+      if (session) router.replace('/app')
     })
 
     return () => data.subscription.unsubscribe()

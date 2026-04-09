@@ -1,9 +1,8 @@
 import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
-import DashboardLayoutShell from '@/components/DashboardLayoutShell'
 import { requireProductAccess } from '@/lib/access/server'
 
-export default async function DashboardLayout({ children }: { children: ReactNode }) {
+export default async function PropertiesLayout({ children }: { children: ReactNode }) {
   try {
     await requireProductAccess('dashboard')
   } catch (error) {
@@ -17,13 +16,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-rose-500">Åtkomst</p>
           <h1 className="mt-4 text-3xl font-semibold tracking-tight">Åtkomst nekad</h1>
           <p className="mt-4 max-w-2xl text-sm leading-7">
-            Dashboard kräver egen behörighet. RenoApp-access eller en giltig session räcker inte i sig för
-            att öppna de här sidorna.
+            Fastighetsytorna tillhör Dashboard och kräver egen Dashboard-behörighet.
           </p>
         </section>
       </main>
     )
   }
 
-  return <DashboardLayoutShell>{children}</DashboardLayoutShell>
+  return <>{children}</>
 }

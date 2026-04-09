@@ -35,7 +35,7 @@ export default function RenoAppLoginPage() {
     }
 
     supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
-      if (data.session) router.replace('/renoapp/app')
+      if (data.session) router.replace('/app')
     })
 
     const { data } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
@@ -45,7 +45,7 @@ export default function RenoAppLoginPage() {
       }
 
       if (session) {
-        router.replace('/renoapp/app')
+        router.replace('/app')
       }
     })
 

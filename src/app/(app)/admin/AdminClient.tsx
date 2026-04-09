@@ -4,7 +4,6 @@ import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 import type { Database } from '@/types/supabase'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useProfile } from '@/hooks/useProfile'
 import { useRouter, useSearchParams } from 'next/navigation'
 import ForutsattningarSettingsPage from '@/app/(app)/settings/forutsattningar/page'
 import {
@@ -169,7 +168,6 @@ type ControlPointOutcomeDraft = {
 }
 
 export default function AdminClient() {
-  const { isAdmin, loading } = useProfile()
   const router = useRouter()
   const search = useSearchParams()
 
@@ -272,7 +270,6 @@ export default function AdminClient() {
   const [certificationDraft, setCertificationDraft] = useState<CertificationDraft | null>(null)
 
   useEffect(() => {
-    if (loading || !isAdmin) return
     loadDocs()
     loadComps()
     loadControlPoints()
@@ -281,7 +278,7 @@ export default function AdminClient() {
     loadExteriorItems()
     loadAddonServices()
     loadCertifications()
-  }, [loading, isAdmin])
+  }, [])
 
   useEffect(() => {
     if (!controlPoints.length) {
@@ -1472,19 +1469,6 @@ export default function AdminClient() {
     setCertificationsAll(prev => prev.filter(r => r.id !== id))
     if (certificationDraft?.id === id) closeCertificationModal()
   }
-
-  if (loading)
-    return (
-      <Protected>
-        <div className="p-6">Laddar...</div>
-      </Protected>
-    )
-  if (!isAdmin)
-    return (
-      <Protected>
-        <div className="p-6 text-rose-700">Åtkomst nekad (endast admin).</div>
-      </Protected>
-    )
 
   const activeAdminSection =
     BESIKTAPP_ADMIN_TABS.find(section => section.key === tab) ?? BESIKTAPP_ADMIN_TABS[0]

@@ -1,7 +1,6 @@
 'use client'
 
 import Protected from '@/components/Protected'
-import { useProfile } from '@/hooks/useProfile'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
@@ -24,15 +23,13 @@ type DocRow = {
 }
 
 export default function HandlingarSettingsPage() {
-  const { isAdmin, loading } = useProfile()
   const [rows, setRows] = useState<DocRow[]>([])
   const [q, setQ] = useState('')
 
   // Ladda handlingstyper
   useEffect(() => {
-    if (loading || !isAdmin) return
     loadRows()
-  }, [loading, isAdmin])
+  }, [])
 
   const loadRows = async () => {
     const { data, error } = await supabase
@@ -117,22 +114,6 @@ export default function HandlingarSettingsPage() {
       (r.result_label ?? '').toLowerCase().includes(s)
     )
   }, [rows, q])
-
-  if (loading) {
-    return (
-      <Protected>
-        <div className="p-6">Laddar…</div>
-      </Protected>
-    )
-  }
-
-  if (!isAdmin) {
-    return (
-      <Protected>
-        <div className="p-6 text-rose-700">Åtkomst nekad.</div>
-      </Protected>
-    )
-  }
 
   return (
     <Protected>

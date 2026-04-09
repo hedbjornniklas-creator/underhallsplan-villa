@@ -1,7 +1,6 @@
 'use client'
 
 import Protected from '@/components/Protected'
-import { useProfile } from '@/hooks/useProfile'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
@@ -70,8 +69,6 @@ const appliesToLabel = (value?: InspectionSide[] | null) => {
 }
 
 export default function ForutsattningarSettingsPage() {
-  const { isAdmin, loading } = useProfile()
-
   const [items, setItems] = useState<SettingsOverviewItem[]>([])
   const [groups, setGroups] = useState<SettingsOverviewGroup[]>([])
   const [options, setOptions] = useState<SettingsOverviewOption[]>([])
@@ -92,9 +89,8 @@ export default function ForutsattningarSettingsPage() {
   // LOAD
   // -----------------------------
   useEffect(() => {
-    if (loading || !isAdmin) return
     loadItems()
-  }, [loading, isAdmin])
+  }, [])
 
   const loadItems = async () => {
     const { data, error } = await supabase
@@ -450,22 +446,6 @@ export default function ForutsattningarSettingsPage() {
   // -----------------------------
   // GUARDS
   // -----------------------------
-  if (loading) {
-    return (
-      <Protected>
-        <div className="p-6">Laddar...</div>
-      </Protected>
-    )
-  }
-
-  if (!isAdmin) {
-    return (
-      <Protected>
-        <div className="p-6 text-rose-700">Åtkomst nekad.</div>
-      </Protected>
-    )
-  }
-
   return (
     <Protected>
       <div className="p-4 md:p-6 space-y-5">

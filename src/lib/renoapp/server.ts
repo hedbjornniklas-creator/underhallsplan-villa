@@ -1,5 +1,6 @@
 ﻿import crypto from 'node:crypto'
 import { cookies } from 'next/headers'
+import { getCurrentUserPlatformAccessContext, type PlatformAccessAssignment } from '@/lib/access/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
@@ -1399,6 +1400,93 @@ export type UpdateRenoAppCaseStatusInput = {
 function parseBrfAssociationValue(value: BrfMemberRow['brf_associations']) {
   if (Array.isArray(value)) return value[0] ?? null
   return value ?? null
+}
+
+function mapRenoAppRoleFromAssignment(roleKey: PlatformAccessAssignment['roleKey']): 'board' | 'admin' {
+  return roleKey === 'renoapp_admin' ? 'admin' : 'board'
+}
+
+async function loadNormalizedRenoAppBrfs(
+  admin: SupabaseAdminClient,
+  assignments: PlatformAccessAssignment[]
+): Promise<RenoAppViewerContext['brfs']> {
+  const scopedAssignments = assignments.filter(
+    (assignment) =>
+      assignment.productKey === 'renoapp' &&
+      (assignment.moduleKey === null || assignment.moduleKey === 'board_portal') &&
+      assignment.scopeType === 'brf' &&
+      Boolean(assignment.scopeId)
+  )
+
+  if (scopedAssignments.length === 0) {
+    return []
+  }
+
+  const roleByBrfId = new Map<string, 'board' | 'admin'>()
+  for (const assignment of scopedAssignments) {
+    const brfId = assignment.scopeId
+    if (!brfId) continue
+
+    const nextRole = mapRenoAppRoleFromAssignment(assignment.roleKey)
+    const currentRole = roleByBrfId.get(brfId)
+    if (currentRole === 'admin') continue
+    roleByBrfId.set(brfId, nextRole)
+  }
+
+  const brfIds = Array.from(roleByBrfId.keys())
+  const brfResult =
+    brfIds.length > 0
+      ? await admin.from('brf_associations').select('id,name,slug').in('id', brfIds)
+      : { data: [], error: null }
+
+  if (brfResult.error) {
+    throw new Error(brfResult.error.message ?? 'Kunde inte lasa RenoApp-BRF:er via platform_access_assignments.')
+  }
+
+  const brfMap = new Map(
+    ((brfResult.data ?? []) as Array<Record<string, unknown>>).map((row) => [
+      String(row.id ?? ''),
+      {
+        name: typeof row.name === 'string' ? row.name : null,
+        slug: typeof row.slug === 'string' ? row.slug : null,
+      },
+    ])
+  )
+
+  return brfIds.map((brfId) => {
+    const brf = brfMap.get(brfId)
+    return {
+      id: brfId,
+      name: brf?.name ?? null,
+      slug: brf?.slug ?? null,
+      role: roleByBrfId.get(brfId) ?? 'board',
+    }
+  })
+}
+
+async function loadLegacyRenoAppBrfs(
+  admin: SupabaseAdminClient,
+  profileId: string
+): Promise<RenoAppViewerContext['brfs']> {
+  const { data: memberRows, error: memberError } = await admin
+    .from('brf_members')
+    .select('brf_id,role,is_active,brf_associations(name,slug)')
+    .eq('profile_id', profileId)
+    .eq('is_active', true)
+
+  if (memberError) {
+    throw new Error(memberError.message ?? 'Kunde inte lasa RenoApp-medlemskap.')
+  }
+
+  return ((memberRows ?? []) as BrfMemberRow[]).map((row) => {
+    const brf = parseBrfAssociationValue(row.brf_associations)
+    return {
+      id: row.brf_id,
+      name: brf?.name ?? null,
+      slug: brf?.slug ?? null,
+      role: row.role,
+    }
+  })
 }
 
 function computeRiskLevelFromActionTypes(actionTypes: ActionTypeRow[]) {
@@ -4402,49 +4490,25 @@ export async function getCaseAccessByToken(token: string): Promise<RenoAppCaseAc
 }
 
 export async function requireRenoAppViewerContext(): Promise<RenoAppViewerContext> {
-  const userClient = createSupabaseServerClient()
-  const {
-    data: { user },
-    error: userError,
-  } = await userClient.auth.getUser()
-
-  if (userError || !user) {
-    throw new Error('UNAUTHORIZED')
-  }
-
+  const accessContext = await getCurrentUserPlatformAccessContext()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
-  const { data: profileData, error: profileError } = await admin
-    .from('profiles')
-    .select('id,full_name,email,is_admin')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (profileError || !profileData) {
-    throw new Error(profileError?.message ?? 'PROFILE_NOT_FOUND')
+  const normalizedRenoAppAssignments = accessContext.assignments.filter(
+    (assignment) =>
+      assignment.productKey === 'renoapp' &&
+      (assignment.moduleKey === null || assignment.moduleKey === 'board_portal')
+  )
+  const profile: ProfileLite = {
+    id: accessContext.identity.profileId,
+    full_name: accessContext.identity.fullName,
+    email: accessContext.identity.email,
+    is_admin: accessContext.identity.isLegacyAdmin,
   }
+  const brfs =
+    normalizedRenoAppAssignments.length > 0
+      ? await loadNormalizedRenoAppBrfs(admin, normalizedRenoAppAssignments)
+      : await loadLegacyRenoAppBrfs(admin, accessContext.identity.profileId)
 
-  const profile = profileData as ProfileLite
-  const { data: memberRows, error: memberError } = await admin
-    .from('brf_members')
-    .select('brf_id,role,is_active,brf_associations(name,slug)')
-    .eq('profile_id', user.id)
-    .eq('is_active', true)
-
-  if (memberError) {
-    throw new Error(memberError.message ?? 'Kunde inte lÃ¤sa RenoApp-medlemskap.')
-  }
-
-  const brfs = ((memberRows ?? []) as BrfMemberRow[]).map((row) => {
-    const brf = parseBrfAssociationValue(row.brf_associations)
-    return {
-      id: row.brf_id,
-      name: brf?.name ?? null,
-      slug: brf?.slug ?? null,
-      role: row.role,
-    }
-  })
-
-  if (brfs.length === 0 && !profile.is_admin) {
+  if (brfs.length === 0 && !accessContext.identity.isLegacyAdmin) {
     throw new Error('RENOAPP_MEMBERSHIP_REQUIRED')
   }
 
@@ -4457,9 +4521,9 @@ export async function requireRenoAppViewerContext(): Promise<RenoAppViewerContex
     requestedBrfId && brfs.some((item) => item.id === requestedBrfId) ? requestedBrfId : fallbackBrfId
 
   return {
-    userId: user.id,
+    userId: accessContext.identity.userId,
     profile,
-    isInternalAdmin: profile.is_admin,
+    isInternalAdmin: accessContext.identity.isLegacyAdmin,
     brfs,
     activeBrfId,
     accessibleBrfIds: activeBrfId ? [activeBrfId] : brfs.length > 0 ? brfs.map((item) => item.id) : null,

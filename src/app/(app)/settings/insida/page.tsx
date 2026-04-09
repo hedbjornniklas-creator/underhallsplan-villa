@@ -1,7 +1,6 @@
 'use client'
 
 import Protected from '@/components/Protected'
-import { useProfile } from '@/hooks/useProfile'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
@@ -19,14 +18,12 @@ type Row = {
 }
 
 export default function InsidaSettingsPage() {
-  const { isAdmin, loading } = useProfile()
   const [rows, setRows] = useState<Row[]>([])
   const [q, setQ] = useState('')
 
   useEffect(() => {
-    if (loading || !isAdmin) return
     loadRows()
-  }, [loading, isAdmin])
+  }, [])
 
   const loadRows = async () => {
     const { data, error } = await supabase
@@ -107,22 +104,6 @@ export default function InsidaSettingsPage() {
       (r.category ?? '').toLowerCase().includes(s)
     )
   }, [rows, q])
-
-  if (loading) {
-    return (
-      <Protected>
-        <div className="p-6">Laddar…</div>
-      </Protected>
-    )
-  }
-
-  if (!isAdmin) {
-    return (
-      <Protected>
-        <div className="p-6 text-rose-700">Åtkomst nekad.</div>
-      </Protected>
-    )
-  }
 
   return (
     <Protected>

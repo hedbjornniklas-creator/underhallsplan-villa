@@ -1,5 +1,59 @@
 ﻿# Changelog
 
+## 2026-04-08
+
+### Documentation
+- Added `docs/ACCESS_MODEL.md` with the target long-term access model for:
+  - shared identity
+  - separate product access
+  - separate module access
+  - scoped roles
+  - future login and product expansion
+- Added `docs/ACCESS_IMPLEMENTATION_PLAN.md` with:
+  - implementation order
+  - route-to-product mapping
+  - `/admin` as its own access domain
+  - coding rules for future products, modules, and logins
+- Linked the new access model from `docs/TECH_OVERVIEW.md`
+
+### Access foundation
+- Added normalized access foundation migration:
+  - `docs/db/2026-04-08_02_platform_access_foundation.sql`
+- Added shared server-side access layer:
+  - `src/lib/access/model.ts`
+  - `src/lib/access/server.ts`
+- Put `/admin` behind its own product access (`hushub_admin`)
+- Put Dashboard route group and key Dashboard areas behind explicit Dashboard access:
+  - `src/app/(dashboard)/layout.tsx`
+  - `src/app/(app)/properties/layout.tsx`
+  - `src/app/(app)/settings/layout.tsx`
+- Put RenoApp board portal behind explicit `renoapp/board_portal` access:
+  - `src/app/renoapp/app/layout.tsx`
+- Updated RenoApp viewer context to read normalized `platform_access_assignments` with BRF scope first,
+  with fallback to legacy `brf_members` until migration rollout is complete:
+  - `src/lib/renoapp/server.ts`
+- Added access-aware entry flow foundation:
+  - new chooser route at `src/app/app/page.tsx`
+  - `/login` and `/renoapp/login` now send authenticated users to `/app`
+  - `src/lib/access/server.ts` can now resolve accessible products and default entry destination
+- Updated `hushub.se` dashboard entry button to use `/app` for authenticated users instead of jumping directly to Dashboard:
+  - `src/app/(app)/page.tsx`
+- Reduced direct `profiles.is_admin` coupling in admin UI:
+  - added `src/app/api/access/current/route.ts`
+  - added `src/hooks/usePlatformAccess.ts`
+  - sidebar `Admin` link now follows `hushub_admin` access instead of legacy `is_admin`
+  - `/admin` client pages now rely on server guards instead of separate client-side admin checks
+- Added normalized access management inside `/admin`:
+  - new module route at `src/app/(app)/admin/access/page.tsx`
+  - new server-side access admin service at `src/lib/access/admin.ts`
+  - new APIs:
+    - `src/app/api/admin/access-management/route.ts`
+    - `src/app/api/admin/access-management/[assignmentId]/route.ts`
+  - supports listing users, products, modules, roles, scopes and creating/deactivating assignments
+- Removed the last temporary `isAdmin = true` transition checks from RenoApp admin pages:
+  - `src/app/(app)/admin/renoapp/brf/create/page.tsx`
+  - `src/app/(app)/admin/renoapp/brf-requests/page.tsx`
+
 ## 2026-02-18
 
 ### Major changes
@@ -113,3 +167,4 @@
 
 
 
+- Settings ligger nu bakom `dashboard/admin` i det nya accesslagret, settings-sidorna förlitar sig på serverguards i stället för klientkoll på `isAdmin`, och Sidebar visar `Settings` via normaliserad Dashboard-admin-access.
