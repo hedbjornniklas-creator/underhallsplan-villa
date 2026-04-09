@@ -152,7 +152,7 @@ const PLATFORM_ENTRY_CONFIG: Record<PlatformProductKey, PlatformEntryProduct> = 
   renoapp: {
     key: 'renoapp',
     label: 'RenoApp',
-    description: 'Ansokningar, styrelsegranskning och beslut for BRF.',
+    description: 'Ansökningar, styrelsegranskning och beslut för BRF.',
     href: '/renoapp/app',
   },
   dashboard: {

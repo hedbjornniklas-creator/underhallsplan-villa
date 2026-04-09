@@ -5,6 +5,12 @@ import Protected from '@/components/Protected'
 
 const ADMIN_APPS = [
   {
+    href: '/admin/access',
+    title: 'Accesshantering',
+    description:
+      'Hantera användare, produkter, moduler, roller och scopes för RenoApp, Dashboard och HusHub Admin.',
+  },
+  {
     href: '/admin/besiktapp',
     title: 'BesiktApp admin',
     description:

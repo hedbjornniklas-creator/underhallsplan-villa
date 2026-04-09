@@ -76,6 +76,7 @@ export default function RenoAppHeader() {
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.replace('/renoapp/login')
+    router.refresh()
   }
 
   const handleBrfChange = async (value: string) => {

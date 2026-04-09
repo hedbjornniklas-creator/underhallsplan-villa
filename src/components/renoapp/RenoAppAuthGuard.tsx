@@ -16,6 +16,11 @@ export default function RenoAppAuthGuard({ children }: RenoAppAuthGuardProps) {
   useEffect(() => {
     let mounted = true
 
+    const redirectToLogin = () => {
+      router.replace('/renoapp/login')
+      router.refresh()
+    }
+
     const checkSession = async () => {
       const {
         data: { session },
@@ -24,7 +29,7 @@ export default function RenoAppAuthGuard({ children }: RenoAppAuthGuardProps) {
       if (!mounted) return
 
       if (!session) {
-        router.replace('/renoapp/login')
+        redirectToLogin()
         return
       }
 
@@ -35,7 +40,7 @@ export default function RenoAppAuthGuard({ children }: RenoAppAuthGuardProps) {
 
     const { data } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       if (!session) {
-        router.replace('/renoapp/login')
+        redirectToLogin()
         return
       }
 
@@ -44,8 +49,23 @@ export default function RenoAppAuthGuard({ children }: RenoAppAuthGuardProps) {
       }
     })
 
+    const handlePageShow = () => {
+      void checkSession()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void checkSession()
+      }
+    }
+
+    window.addEventListener('pageshow', handlePageShow)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
     return () => {
       mounted = false
+      window.removeEventListener('pageshow', handlePageShow)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       data.subscription.unsubscribe()
     }
   }, [router])

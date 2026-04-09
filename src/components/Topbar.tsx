@@ -43,6 +43,7 @@ export default function Topbar() {
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.replace('/login')
+    router.refresh()
   }
 
   return (
