@@ -1145,6 +1145,7 @@ export type RenoAppViewerContext = {
 export type RenoAppDashboardSummary = {
   accessibleBrfs: RenoAppViewerContext['brfs']
   activeBrfId: string | null
+  viewerName: string | null
   stats: {
     newCases: number
     needInfoCases: number
@@ -4834,6 +4835,7 @@ export async function getRenoAppDashboardSummary(): Promise<RenoAppDashboardSumm
   return {
     accessibleBrfs: context.brfs,
     activeBrfId: context.activeBrfId,
+    viewerName: context.profile.full_name ?? null,
     stats: {
       newCases: cases.filter((item) => ['submitted', 'review'].includes(item.status)).length,
       needInfoCases: cases.filter((item) => item.status === 'need_info').length,

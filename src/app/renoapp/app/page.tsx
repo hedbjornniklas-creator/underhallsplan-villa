@@ -11,6 +11,7 @@ type DashboardResponse = {
     role: 'board' | 'admin'
   }>
   activeBrfId: string | null
+  viewerName: string | null
   stats: {
     newCases: number
     needInfoCases: number
@@ -147,6 +148,12 @@ export default function RenoAppAppHomePage() {
 
   return (
     <div className="grid gap-6">
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight text-stone-900 sm:text-4xl">
+          Välkommen till styrelseportalen{payload?.viewerName ? `, ${payload.viewerName}` : ''}
+        </h1>
+      </div>
+
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
 
       {loading ? (
