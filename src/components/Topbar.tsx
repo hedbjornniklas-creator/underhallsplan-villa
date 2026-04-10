@@ -38,11 +38,14 @@ export default function Topbar() {
   const hasUser = isLoggedIn
   const normalizedPath = (pathname || '').toLowerCase()
   const isAdminContext = normalizedPath.startsWith('/admin')
+  const isDashboardLanding = normalizedPath === '/dashboard-v1'
+  const isObHome = normalizedPath === '/ob'
   const isObContext = normalizedPath.includes('/ob')
-  const logoHref = isAdminContext ? '/admin' : isObContext ? '/ob' : '/'
-  const logoSrc = isAdminContext ? '/landing/Hushub-check2.png' : '/report-assets/BesiktApp.png'
-  const logoAlt = isAdminContext ? 'HusHub' : 'BesiktApp'
-  const srLabel = isAdminContext ? 'HusHub Admin' : 'BesiktApp'
+
+  const logoHref = isAdminContext ? '/admin' : isDashboardLanding ? '/' : isObHome ? '/dashboard-v1' : isObContext ? '/ob' : '/'
+  const logoSrc = isAdminContext || isDashboardLanding ? '/landing/Hushub-check2.png' : '/report-assets/BesiktApp.png'
+  const logoAlt = isAdminContext || isDashboardLanding ? 'HusHub' : 'BesiktApp'
+  const srLabel = isAdminContext ? 'HusHub Admin' : isDashboardLanding ? 'HusHub' : 'BesiktApp'
 
   const handleLogout = async () => {
     await supabase.auth.signOut()

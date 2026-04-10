@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Underhållsplan Villa',
+  title: 'HusHub',
   description: 'Digitalt verktyg för besiktningsmän och underhållsplaner',
   icons: {
     icon: '/landing/Hushub_favicon.png',
