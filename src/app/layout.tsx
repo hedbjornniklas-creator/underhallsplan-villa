@@ -1,9 +1,14 @@
-// src/app/layout.tsx
+import type { Metadata } from 'next'
 import './globals.css'
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'Underhållsplan Villa',
   description: 'Digitalt verktyg för besiktningsmän och underhållsplaner',
+  icons: {
+    icon: '/landing/Hushub_favicon.png',
+    shortcut: '/landing/Hushub_favicon.png',
+    apple: '/landing/Hushub_favicon.png',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
