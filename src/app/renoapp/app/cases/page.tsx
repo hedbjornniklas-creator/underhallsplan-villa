@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 
 type CaseItem = {
@@ -192,6 +193,7 @@ function getSortIndicator(active: boolean, direction: SortDirection) {
 }
 
 export default function RenoAppCasesPage() {
+  const router = useRouter()
   const [items, setItems] = useState<CaseItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -390,6 +392,10 @@ export default function RenoAppCasesPage() {
 
   return (
     <div className="grid gap-6">
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight text-stone-900 sm:text-4xl">Ärendehantering</h1>
+      </div>
+
       <section className="rounded-[32px] border border-stone-200/80 bg-white/90 p-3 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
         <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-0.5">
           <div className="w-[320px] shrink-0">
@@ -523,7 +529,18 @@ export default function RenoAppCasesPage() {
               </thead>
               <tbody>
                 {pagedRows.map((item) => (
-                  <tr key={item.id} className={`${getStatusRowClass(item.status)} border-b border-stone-200`}>
+                  <tr
+                    key={item.id}
+                    tabIndex={0}
+                    onClick={() => router.push(`/renoapp/app/cases/${item.id}`)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        router.push(`/renoapp/app/cases/${item.id}`)
+                      }
+                    }}
+                    className={`${getStatusRowClass(item.status)} cursor-pointer border-b border-stone-200 focus:outline-none focus:ring-2 focus:ring-stone-400 focus:ring-inset`}
+                  >
                     <td className="px-4 py-3">
                       <Link href={`/renoapp/app/cases/${item.id}`} className="font-semibold text-stone-900">
                         {item.caseNumber}
