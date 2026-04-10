@@ -1380,12 +1380,10 @@ export default function RenoAppApplyPage() {
     if (stepId === 3) {
       return (
         <div className="grid gap-4">
-          <div className="rounded-3xl border border-stone-200 bg-white p-5">
-            <p className="text-sm leading-7 text-stone-700">
-              Här ser du vad som normalt behöver bifogas utifrån de renoveringstyper du valt. Om något saknas nu kan
-              du ändå spara utkastet och komplettera senare.
-            </p>
-          </div>
+          <p className="max-w-4xl text-sm leading-7 text-stone-700">
+            Här ser du vad som normalt behöver bifogas utifrån de renoveringstyper du valt. Om något saknas nu kan du
+            ändå spara utkastet och komplettera senare.
+          </p>
           {!activeDraftToken && beforePhaseRequirements.length > 0 ? (
             <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
               Fyll först i lägenhet och kontakt så att utkastet kan skapas innan du laddar upp dokument.
@@ -1400,53 +1398,56 @@ export default function RenoAppApplyPage() {
               Inga underlag behöver bifogas utifrån dina nuvarande val.
             </div>
           ) : (
-            beforePhaseRequirements.map((requirement) => (
-              <div key={requirement.documentTypeId} className="rounded-3xl border border-stone-200 bg-white p-5">
-                <p className="font-semibold text-stone-900">
-                  {requirement.documentLabel} {requirement.isRequired ? '(obligatorisk)' : '(bra att ha)'}
-                </p>
-                {requirement.documentDescription ? (
-                  <p className="mt-2 text-sm leading-7 text-stone-700">{requirement.documentDescription}</p>
-                ) : null}
-                {requirement.note ? <p className="mt-2 text-sm text-stone-500">{requirement.note}</p> : null}
-                <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <label
-                    className={`inline-flex cursor-pointer items-center rounded-full px-4 py-2 text-sm font-semibold transition ${
-                      activeDraftToken
-                        ? 'bg-stone-900 text-white hover:bg-stone-700'
-                        : 'cursor-not-allowed border border-stone-300 bg-stone-100 text-stone-500'
-                    }`}
+            <div className="overflow-hidden rounded-3xl border border-stone-200 bg-white">
+              {beforePhaseRequirements.map((requirement, index) => {
+                const requirementDocuments = uploadedDocuments.filter(
+                  (item) => item.documentTypeId === requirement.documentTypeId
+                )
+
+                return (
+                  <div
+                    key={requirement.documentTypeId}
+                    className={`${index > 0 ? 'border-t border-stone-200' : ''} px-5 py-5`}
                   >
-                    <input
-                      type="file"
-                      multiple
-                      accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
-                      disabled={!activeDraftToken || uploadingTargetId === requirement.documentTypeId}
-                      className="hidden"
-                      onChange={(event) => {
-                        void uploadDocuments(
-                          { documentTypeId: requirement.documentTypeId, documentScope: 'general' },
-                          event.target.files
-                        )
-                        event.currentTarget.value = ''
-                      }}
-                    />
-                    {uploadingTargetId === requirement.documentTypeId
-                      ? 'Laddar upp...'
-                      : 'Ladda upp ett eller flera dokument'}
-                  </label>
-                  <p className="text-sm text-stone-500">Du kan lägga till fler dokument senare om det behövs.</p>
-                </div>
-                {uploadedDocuments.filter((item) => item.documentTypeId === requirement.documentTypeId).length > 0 ? (
-                  <ul className="mt-4 space-y-2">
-                    {uploadedDocuments
-                      .filter((item) => item.documentTypeId === requirement.documentTypeId)
-                      .map((item) => (
-                        <li
-                          key={item.id}
-                          className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700"
-                        >
-                          <div className="flex items-start justify-between gap-3">
+                    <p className="font-semibold text-stone-900">
+                      {requirement.documentLabel} {requirement.isRequired ? '(obligatorisk)' : '(bra att ha)'}
+                    </p>
+                    {requirement.documentDescription ? (
+                      <p className="mt-2 text-sm leading-7 text-stone-700">{requirement.documentDescription}</p>
+                    ) : null}
+                    {requirement.note ? <p className="mt-2 text-sm text-stone-500">{requirement.note}</p> : null}
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <label
+                        className={`inline-flex cursor-pointer items-center rounded-full px-4 py-2 text-sm font-semibold transition ${
+                          activeDraftToken
+                            ? 'bg-stone-900 text-white hover:bg-stone-700'
+                            : 'cursor-not-allowed border border-stone-300 bg-stone-100 text-stone-500'
+                        }`}
+                      >
+                        <input
+                          type="file"
+                          multiple
+                          accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
+                          disabled={!activeDraftToken || uploadingTargetId === requirement.documentTypeId}
+                          className="hidden"
+                          onChange={(event) => {
+                            void uploadDocuments(
+                              { documentTypeId: requirement.documentTypeId, documentScope: 'general' },
+                              event.target.files
+                            )
+                            event.currentTarget.value = ''
+                          }}
+                        />
+                        {uploadingTargetId === requirement.documentTypeId
+                          ? 'Laddar upp...'
+                          : 'Ladda upp ett eller flera dokument'}
+                      </label>
+                    </div>
+                    <p className="mt-2 text-sm text-stone-500">Du kan lägga till fler dokument senare om det behövs.</p>
+                    {requirementDocuments.length > 0 ? (
+                      <ul className="mt-4 divide-y divide-stone-200 border-t border-stone-200">
+                        {requirementDocuments.map((item) => (
+                          <li key={item.id} className="flex items-start justify-between gap-3 py-3 text-sm text-stone-700">
                             <div>
                               <p className="font-medium text-stone-900">{item.fileName ?? 'Dokument'}</p>
                               <p className="mt-1 text-xs uppercase tracking-[0.16em] text-stone-500">
@@ -1462,13 +1463,14 @@ export default function RenoAppApplyPage() {
                             >
                               {deletingDocumentId === item.id ? 'Raderar...' : 'Radera'}
                             </button>
-                          </div>
-                        </li>
-                      ))}
-                  </ul>
-                ) : null}
-              </div>
-            ))
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
           )}
         </div>
       )
