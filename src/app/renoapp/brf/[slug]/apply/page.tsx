@@ -279,12 +279,6 @@ function getMessageTitle(type: DraftResponse['messages'][number]['type']) {
   return 'Status uppdaterad'
 }
 
-function getMessageAuthorLabel(role: DraftResponse['messages'][number]['authorRole']) {
-  if (role === 'board') return 'Styrelsen'
-  if (role === 'applicant') return 'Du'
-  return 'Systemet'
-}
-
 function pickHigherPriorityPhase(
   left?: Requirement['phase'],
   right?: Requirement['phase']
@@ -672,6 +666,7 @@ export default function RenoAppApplyPage() {
   const [lastAutosavedAt, setLastAutosavedAt] = useState<string | null>(null)
   const [uploadingTargetId, setUploadingTargetId] = useState<string | null>(null)
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null)
+  const [showCaseMessages, setShowCaseMessages] = useState(false)
   const [openVerificationInstructionIds, setOpenVerificationInstructionIds] = useState<string[]>([])
   const [actionDescriptionModal, setActionDescriptionModal] = useState<{
     label: string
@@ -1449,7 +1444,7 @@ export default function RenoAppApplyPage() {
                         {requirementDocuments.map((item) => (
                           <li key={item.id} className="flex items-start justify-between gap-3 py-3 text-sm text-stone-700">
                             <div>
-                              <p className="font-medium text-stone-900">{item.fileName ?? 'Dokument'}</p>
+                              <p className="font-medium text-sky-700">{item.fileName ?? 'Dokument'}</p>
                               <p className="mt-1 text-xs uppercase tracking-[0.16em] text-stone-500">
                                 {item.status} · uppladdad {formatDateTime(item.uploadedAt)}
                               </p>
@@ -1670,7 +1665,7 @@ export default function RenoAppApplyPage() {
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div>
-                                <p className="font-medium text-stone-900">{item.fileName ?? 'Försäkringsbevis'}</p>
+                                <p className="font-medium text-sky-700">{item.fileName ?? 'Försäkringsbevis'}</p>
                                 <p className="mt-1 text-xs uppercase tracking-[0.16em] text-stone-500">
                                   {item.status} · uppladdad {formatDateTime(item.uploadedAt)}
                                 </p>
@@ -1818,21 +1813,29 @@ export default function RenoAppApplyPage() {
 
         {draftInfo?.messages.length ? (
           <div className="mt-6 rounded-3xl border border-stone-200 bg-white/90 p-5">
-            <p className="text-sm font-semibold text-stone-900">Kommunikation i ärendet</p>
-            <div className="mt-4 space-y-2">
-              {draftInfo.messages.map((message) => (
-                <div key={message.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-medium text-stone-900">{getMessageTitle(message.type)}</p>
-                    <p className="text-xs text-stone-500">{formatDateTime(message.createdAt)}</p>
-                  </div>
-                  <p className="mt-1 text-xs uppercase tracking-[0.14em] text-stone-500">
-                    {getMessageAuthorLabel(message.authorRole)}
-                  </p>
-                  {message.message ? <p className="mt-2 whitespace-pre-wrap">{message.message}</p> : null}
-                </div>
-              ))}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-stone-900">Kommunikation i ärendet</p>
+              <button
+                type="button"
+                onClick={() => setShowCaseMessages((current) => !current)}
+                className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+              >
+                {showCaseMessages ? 'Dölj kommunikation' : 'Visa kommunikation'}
+              </button>
             </div>
+            {showCaseMessages ? (
+              <div className="mt-4 space-y-2">
+                {draftInfo.messages.map((message) => (
+                  <div key={message.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium text-stone-900">{getMessageTitle(message.type)}</p>
+                      <p className="text-xs text-stone-500">{formatDateTime(message.createdAt)}</p>
+                    </div>
+                    {message.message ? <p className="mt-2 whitespace-pre-wrap">{message.message}</p> : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
 
