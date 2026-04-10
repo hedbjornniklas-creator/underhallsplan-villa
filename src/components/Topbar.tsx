@@ -55,7 +55,7 @@ export default function Topbar() {
             className="inline-flex max-w-full items-center gap-2 text-sm font-medium text-gray-800 transition hover:text-gray-900"
           >
             <Image
-              src="/landing/hushub-check.svg"
+              src="/landing/Hushub-check2.png"
               alt="HusHub"
               width={148}
               height={36}
