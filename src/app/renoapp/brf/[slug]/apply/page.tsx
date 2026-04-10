@@ -452,7 +452,7 @@ function resolveTriggeredRequirements(
           documentDescription: trigger.documentDescription,
           isRequired: true,
           phase: trigger.documentPhase ?? 'before_required',
-          note: current?.note ?? 'Detta dokument kravs utifran dina svar i foljdfragorna.',
+          note: current?.note ?? null,
           sortOrder: current?.sortOrder ?? 1000 + trigger.sortOrder,
         }
 
@@ -671,6 +671,7 @@ export default function RenoAppApplyPage() {
   const [autosaving, setAutosaving] = useState(false)
   const [lastAutosavedAt, setLastAutosavedAt] = useState<string | null>(null)
   const [uploadingTargetId, setUploadingTargetId] = useState<string | null>(null)
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null)
   const [openVerificationInstructionIds, setOpenVerificationInstructionIds] = useState<string[]>([])
   const [actionDescriptionModal, setActionDescriptionModal] = useState<{
     label: string
@@ -935,15 +936,16 @@ export default function RenoAppApplyPage() {
     }))
   }
 
-  const uploadDocument = async (
+  const uploadDocuments = async (
     input: {
       documentTypeId?: string | null
       participantRoleId?: string | null
       documentScope?: 'general' | 'participant_insurance'
     },
-    file: File | null
+    files: FileList | File[] | null
   ) => {
-    if (!file) return
+    const selectedFiles = files ? Array.from(files).filter((file): file is File => file instanceof File) : []
+    if (selectedFiles.length === 0) return
     if (!activeDraftToken) {
       setError('Spara först ansökan som utkast innan du laddar upp dokument.')
       return
@@ -954,49 +956,77 @@ export default function RenoAppApplyPage() {
     setError(null)
 
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      if (input.documentTypeId) formData.append('document_type_id', input.documentTypeId)
-      if (input.participantRoleId) formData.append('participant_role_id', input.participantRoleId)
-      formData.append('document_scope', input.documentScope ?? 'general')
+      for (const file of selectedFiles) {
+        const formData = new FormData()
+        formData.append('file', file)
+        if (input.documentTypeId) formData.append('document_type_id', input.documentTypeId)
+        if (input.participantRoleId) formData.append('participant_role_id', input.participantRoleId)
+        formData.append('document_scope', input.documentScope ?? 'general')
 
-      const response = await fetch(`/api/renoapp/case-access/${activeDraftToken}/documents`, {
-        method: 'POST',
-        body: formData,
-      })
+        const response = await fetch(`/api/renoapp/case-access/${activeDraftToken}/documents`, {
+          method: 'POST',
+          body: formData,
+        })
 
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string
-        document?: UploadedDocument
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: string
+          document?: UploadedDocument
+        }
+
+        if (!response.ok || !payload.document) {
+          throw new Error(payload.error ?? 'Kunde inte ladda upp dokument.')
+        }
+
+        const uploadedDocument = payload.document as UploadedDocument
+        setUploadedDocuments((current) => [uploadedDocument, ...current])
+        setDraftInfo((current) =>
+          current
+            ? {
+                ...current,
+                messages: [
+                  {
+                    id: `upload-${uploadedDocument.id}`,
+                    type: 'document_uploaded',
+                    authorRole: 'applicant',
+                    message: uploadedDocument.fileName ?? 'Dokument',
+                    createdAt: uploadedDocument.uploadedAt,
+                  },
+                  ...current.messages,
+                ],
+              }
+            : current
+        )
       }
-
-      if (!response.ok || !payload.document) {
-        throw new Error(payload.error ?? 'Kunde inte ladda upp dokument.')
-      }
-
-      const uploadedDocument = payload.document as UploadedDocument
-      setUploadedDocuments((current) => [uploadedDocument, ...current])
-      setDraftInfo((current) =>
-        current
-          ? {
-              ...current,
-              messages: [
-                {
-                  id: `upload-${uploadedDocument.id}`,
-                  type: 'document_uploaded',
-                  authorRole: 'applicant',
-                  message: uploadedDocument.fileName ?? 'Dokument',
-                  createdAt: uploadedDocument.uploadedAt,
-                },
-                ...current.messages,
-              ],
-            }
-          : current
-      )
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp dokument.')
     } finally {
       setUploadingTargetId(null)
+    }
+  }
+
+  const deleteDocument = async (documentId: string) => {
+    if (!activeDraftToken) return
+    if (!window.confirm('Radera detta dokument?')) return
+
+    setDeletingDocumentId(documentId)
+    setError(null)
+
+    try {
+      const response = await fetch(
+        `/api/renoapp/case-access/${activeDraftToken}/documents?documentId=${encodeURIComponent(documentId)}`,
+        { method: 'DELETE' }
+      )
+
+      const payload = (await response.json().catch(() => ({}))) as { error?: string }
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Kunde inte radera dokument.')
+      }
+
+      setUploadedDocuments((current) => current.filter((item) => item.id !== documentId))
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera dokument.')
+    } finally {
+      setDeletingDocumentId(null)
     }
   }
 
@@ -1389,17 +1419,23 @@ export default function RenoAppApplyPage() {
                   >
                     <input
                       type="file"
+                      multiple
                       accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
                       disabled={!activeDraftToken || uploadingTargetId === requirement.documentTypeId}
                       className="hidden"
                       onChange={(event) => {
-                        const file = event.target.files?.[0] ?? null
-                        void uploadDocument({ documentTypeId: requirement.documentTypeId, documentScope: 'general' }, file)
+                        void uploadDocuments(
+                          { documentTypeId: requirement.documentTypeId, documentScope: 'general' },
+                          event.target.files
+                        )
                         event.currentTarget.value = ''
                       }}
                     />
-                    {uploadingTargetId === requirement.documentTypeId ? 'Laddar upp...' : 'Ladda upp dokument'}
+                    {uploadingTargetId === requirement.documentTypeId
+                      ? 'Laddar upp...'
+                      : 'Ladda upp ett eller flera dokument'}
                   </label>
+                  <p className="text-sm text-stone-500">Du kan lägga till fler dokument senare om det behövs.</p>
                 </div>
                 {uploadedDocuments.filter((item) => item.documentTypeId === requirement.documentTypeId).length > 0 ? (
                   <ul className="mt-4 space-y-2">
@@ -1410,11 +1446,23 @@ export default function RenoAppApplyPage() {
                           key={item.id}
                           className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700"
                         >
-                          <p className="font-medium text-stone-900">{item.fileName ?? 'Dokument'}</p>
-                          <p className="mt-1 text-xs uppercase tracking-[0.16em] text-stone-500">
-                            {item.status} · uppladdad {formatDateTime(item.uploadedAt)}
-                          </p>
-                          {item.note ? <p className="mt-1 text-stone-500">{item.note}</p> : null}
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-medium text-stone-900">{item.fileName ?? 'Dokument'}</p>
+                              <p className="mt-1 text-xs uppercase tracking-[0.16em] text-stone-500">
+                                {item.status} · uppladdad {formatDateTime(item.uploadedAt)}
+                              </p>
+                              {item.note ? <p className="mt-1 text-stone-500">{item.note}</p> : null}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void deleteDocument(item.id)}
+                              disabled={deletingDocumentId === item.id}
+                              className="rounded-full border border-stone-300 px-3 py-1 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {deletingDocumentId === item.id ? 'Raderar...' : 'Radera'}
+                            </button>
+                          </div>
                         </li>
                       ))}
                   </ul>
@@ -1589,23 +1637,26 @@ export default function RenoAppApplyPage() {
                       >
                         <input
                           type="file"
+                          multiple
                           accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
                           disabled={!activeDraftToken || uploadingTargetId === participantRole.id}
                           className="hidden"
                           onChange={(event) => {
-                            const file = event.target.files?.[0] ?? null
-                            void uploadDocument(
+                            void uploadDocuments(
                               {
                                 participantRoleId: participantRole.id,
                                 documentScope: 'participant_insurance',
                               },
-                              file
+                              event.target.files
                             )
                             event.currentTarget.value = ''
                           }}
                         />
-                        {uploadingTargetId === participantRole.id ? 'Laddar upp...' : 'Ladda upp försäkringsbevis'}
+                        {uploadingTargetId === participantRole.id
+                          ? 'Laddar upp...'
+                          : 'Ladda upp ett eller flera försäkringsbevis'}
                       </label>
+                      <p className="text-sm text-stone-500">Du kan lägga till fler filer om det behövs.</p>
                     </div>
 
                     {insuranceDocuments.length > 0 ? (
@@ -1615,11 +1666,23 @@ export default function RenoAppApplyPage() {
                             key={item.id}
                             className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700"
                           >
-                            <p className="font-medium text-stone-900">{item.fileName ?? 'Försäkringsbevis'}</p>
-                            <p className="mt-1 text-xs uppercase tracking-[0.16em] text-stone-500">
-                              {item.status} · uppladdad {formatDateTime(item.uploadedAt)}
-                            </p>
-                            {item.note ? <p className="mt-1 text-stone-500">{item.note}</p> : null}
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-medium text-stone-900">{item.fileName ?? 'Försäkringsbevis'}</p>
+                                <p className="mt-1 text-xs uppercase tracking-[0.16em] text-stone-500">
+                                  {item.status} · uppladdad {formatDateTime(item.uploadedAt)}
+                                </p>
+                                {item.note ? <p className="mt-1 text-stone-500">{item.note}</p> : null}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => void deleteDocument(item.id)}
+                                disabled={deletingDocumentId === item.id}
+                                className="rounded-full border border-stone-300 px-3 py-1 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {deletingDocumentId === item.id ? 'Raderar...' : 'Radera'}
+                              </button>
+                            </div>
                           </li>
                         ))}
                       </ul>

@@ -41,24 +41,34 @@ type RouteContext = {
   }>
 }
 
+async function getWritableAccess(token: string) {
+  const access = await getCaseAccessByToken(token)
+
+  if (!access) {
+    return { error: jsonError('Länken hittades inte.', 404), access: null }
+  }
+  if (access.state !== 'open') {
+    return { error: jsonError('Länken är inte längre aktiv.', 409), access: null }
+  }
+  if (access.case.status === 'approved' || access.case.status === 'rejected') {
+    return { error: jsonError('Ärendet är låst för ändringar efter beslut.', 409), access: null }
+  }
+  if (!access.access.allowedActions.includes('upload_documents')) {
+    return { error: jsonError('Länken saknar rätt att ladda upp dokument.', 403), access: null }
+  }
+
+  return { error: null, access }
+}
+
 export async function POST(request: Request, context: RouteContext) {
   try {
     const { token } = await context.params
-    const access = await getCaseAccessByToken(token)
-
-    if (!access) {
-      return jsonError('Länken hittades inte.', 404)
-    }
-    if (access.state !== 'open') {
-      return jsonError('Länken är inte längre aktiv.', 409)
-    }
-    if (access.case.status === 'approved' || access.case.status === 'rejected') {
-      return jsonError('Ärendet är låst för ändringar efter beslut.', 409)
-    }
-    if (!access.access.allowedActions.includes('upload_documents')) {
-      return jsonError('Länken saknar rätt att ladda upp dokument.', 403)
+    const accessResult = await getWritableAccess(token)
+    if (accessResult.error || !accessResult.access) {
+      return accessResult.error
     }
 
+    const access = accessResult.access
     const formData = await request.formData()
     const fileEntry = formData.get('file')
     const note = String(formData.get('note') ?? '').trim() || null
@@ -133,5 +143,60 @@ export async function POST(request: Request, context: RouteContext) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     return jsonError(message || 'Kunde inte ladda upp dokument.', 500)
+  }
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
+  try {
+    const { token } = await context.params
+    const accessResult = await getWritableAccess(token)
+    if (accessResult.error || !accessResult.access) {
+      return accessResult.error
+    }
+
+    const access = accessResult.access
+    const documentId = new URL(request.url).searchParams.get('documentId')?.trim() ?? ''
+    if (!documentId) {
+      return jsonError('Dokument saknas.', 400)
+    }
+
+    const admin = createSupabaseAdminClient()
+    const { data: documentRow, error: documentError } = await admin
+      .from('renovation_case_documents')
+      .select('id,case_id,storage_bucket,file_path')
+      .eq('id', documentId)
+      .eq('case_id', access.case.id)
+      .maybeSingle()
+
+    if (documentError) {
+      throw new Error(documentError.message ?? 'Kunde inte läsa dokumentet.')
+    }
+    if (!documentRow) {
+      return jsonError('Dokumentet hittades inte.', 404)
+    }
+
+    const bucket = String(documentRow.storage_bucket ?? '')
+    const filePath = String(documentRow.file_path ?? '')
+    if (bucket && filePath) {
+      const { error: storageError } = await admin.storage.from(bucket).remove([filePath])
+      if (storageError) {
+        throw new Error(storageError.message ?? 'Kunde inte radera filen.')
+      }
+    }
+
+    const { error: deleteError } = await admin
+      .from('renovation_case_documents')
+      .delete()
+      .eq('id', documentId)
+      .eq('case_id', access.case.id)
+
+    if (deleteError) {
+      throw new Error(deleteError.message ?? 'Kunde inte radera dokumentet.')
+    }
+
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Okänt fel.'
+    return jsonError(message || 'Kunde inte radera dokumentet.', 500)
   }
 }

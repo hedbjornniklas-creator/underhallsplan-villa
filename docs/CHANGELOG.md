@@ -2,6 +2,16 @@
 
 ## 2026-04-08
 
+### RenoApp public apply documents
+- Improved document handling on the public RenoApp apply page:
+  - `src/app/renoapp/brf/[slug]/apply/page.tsx`
+  - `src/app/api/renoapp/case-access/[token]/documents/route.ts`
+- Changes:
+  - applicants can now select and upload multiple files in one action
+  - uploaded documents can now be deleted from the apply flow
+  - the UI now makes it explicit that more documents can be added later
+  - removed the repeated generic helper note for triggered document requirements
+
 ### Access admin planning
 - Added `docs/ADMIN_ACCESS_UI_SPEC.md` with an implementation-ready redesign spec for `/admin/access`
 - Updated `docs/ACCESS_IMPLEMENTATION_PLAN.md` to reflect the current agreed product behavior for the admin UI:

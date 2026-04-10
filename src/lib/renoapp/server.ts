@@ -1530,12 +1530,12 @@ function requiresQualifiedContractor(actionTypes: ActionTypeRow[]) {
 }
 
 function getContractorRequirementLabel(requirement: ActionTypeRow['contractor_requirement']) {
-  if (requirement === 'authorized_electrician') return 'BehÃ¶rig elektriker'
-  if (requirement === 'safe_water') return 'SÃ¤ker Vatten-auktoriserad VVS-entreprenÃ¶r'
-  if (requirement === 'bkr_or_gvk') return 'BehÃ¶rig vÃ¥trumsentreprenÃ¶r enligt BKR eller GVK'
-  if (requirement === 'structural_engineer') return 'KonstruktÃ¶r eller sÃ¤rskilt sakkunnig'
-  if (requirement === 'qualified_contractor') return 'Kvalificerad entreprenÃ¶r'
-  return 'Ingen sÃ¤rskild entreprenÃ¶r krÃ¤vs'
+  if (requirement === 'authorized_electrician') return 'Behörig elektriker'
+  if (requirement === 'safe_water') return 'Säker Vatten-auktoriserad VVS-entreprenör'
+  if (requirement === 'bkr_or_gvk') return 'Behörig våtrumsentreprenör enligt BKR eller GVK'
+  if (requirement === 'structural_engineer') return 'Konstruktör eller särskilt sakkunnig'
+  if (requirement === 'qualified_contractor') return 'Kvalificerad entreprenör'
+  return 'Ingen särskild entreprenör krävs'
 }
 
 function buildContractorRequirementSummary(actionTypes: ActionTypeRow[]) {
@@ -1801,10 +1801,10 @@ function mapParticipantRoleToPublic(
   return {
     id: row.id,
     key: row.key,
-    label: row.label,
-    description: row.description ?? null,
+    label: repairLikelyMojibakeText(row.label) ?? '',
+    description: repairLikelyMojibakeText(row.description ?? null),
     roleKind: row.role_kind,
-    verificationInstructions: row.verification_instructions ?? null,
+    verificationInstructions: repairLikelyMojibakeText(row.verification_instructions ?? null),
     verificationUrl: row.verification_url ?? null,
     insuranceRequired: row.insurance_required === true,
     requiresCompanyName: row.requires_company_name,
@@ -1945,14 +1945,14 @@ function buildPublicActionTypes(
       return {
         id: category?.id ?? '',
         slug: category?.slug ?? 'ovrigt',
-        label: category?.label ?? 'Ã–vrigt',
-        description: category?.description ?? null,
+        label: repairLikelyMojibakeText(category?.label ?? null) ?? 'Övrigt',
+        description: repairLikelyMojibakeText(category?.description ?? null),
         sortOrder: category?.sort_order ?? 999,
       }
     })(),
     key: actionType.key,
-    label: actionType.label,
-    description: actionType.description ?? null,
+    label: repairLikelyMojibakeText(actionType.label) ?? '',
+    description: repairLikelyMojibakeText(actionType.description ?? null),
     riskLevel: actionType.risk_level,
     contractorRequirement: actionType.contractor_requirement,
     sortOrder: actionType.sort_order,
@@ -1965,11 +1965,11 @@ function buildPublicActionTypes(
           id: requirement.id,
           documentTypeId: requirement.document_type_id,
           documentKey: documentType?.key ?? 'unknown',
-          documentLabel: documentType?.label ?? 'OkÃ¤nd dokumenttyp',
-          documentDescription: documentType?.description ?? null,
+          documentLabel: repairLikelyMojibakeText(documentType?.label ?? null) ?? 'Okänd dokumenttyp',
+          documentDescription: repairLikelyMojibakeText(documentType?.description ?? null),
           isRequired: requirement.is_required,
           phase: requirement.phase,
-          note: requirement.note,
+          note: repairLikelyMojibakeText(requirement.note),
           sortOrder: requirement.sort_order,
         }
       })

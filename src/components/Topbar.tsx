@@ -69,7 +69,7 @@ export default function Topbar() {
               className="h-8 w-auto object-contain"
             />
             {isAdminContext || isDashboardLanding ? (
-              <span className="text-lg font-semibold tracking-tight text-stone-900">HusHub</span>
+              <span className="text-2xl font-semibold tracking-tight text-stone-900">HusHub</span>
             ) : null}
             {isAdminContext ? (
               <span className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-600">Admin</span>
