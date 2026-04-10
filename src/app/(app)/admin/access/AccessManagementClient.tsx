@@ -611,9 +611,9 @@ export default function AccessManagementClient() {
                   <tr className="border-b border-stone-200 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">
                     <th className="px-3 py-3">Status</th>
                     <th className="px-3 py-3">Namn</th>
-                    <th className="px-3 py-3">RA</th>
-                    <th className="px-3 py-3">DB</th>
-                    <th className="px-3 py-3">HHA</th>
+                    <th className="px-3 py-3">RenoApp</th>
+                    <th className="px-3 py-3">Dashboard</th>
+                    <th className="px-3 py-3">HusHub Admin</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -623,7 +623,7 @@ export default function AccessManagementClient() {
                         <button
                           type="button"
                           onClick={() => setDialog({ kind: 'user', userId: user.id })}
-                          className="inline-flex"
+                          className="inline-flex cursor-pointer transition hover:scale-105"
                           aria-label={user.accessStatus === 'active' ? 'Med access' : 'Ingen access'}
                           title={user.accessStatus === 'active' ? 'Med access' : 'Ingen access'}
                         >
@@ -634,7 +634,7 @@ export default function AccessManagementClient() {
                         <button
                           type="button"
                           onClick={() => setDialog({ kind: 'user', userId: user.id })}
-                          className="truncate text-left font-semibold text-stone-900 transition hover:text-stone-600"
+                          className="truncate cursor-pointer text-left font-semibold text-stone-900 transition hover:text-stone-600"
                         >
                           {userName(user)}
                         </button>
@@ -643,7 +643,7 @@ export default function AccessManagementClient() {
                         <button
                           type="button"
                           onClick={() => setDialog({ kind: 'renoapp', userId: user.id })}
-                          className="inline-flex"
+                          className="inline-flex cursor-pointer transition hover:scale-105"
                           aria-label={user.summary.renoapp.active ? 'RenoApp aktiv' : 'RenoApp inaktiv'}
                           title={user.summary.renoapp.active ? 'RenoApp aktiv' : 'RenoApp inaktiv'}
                         >
@@ -654,7 +654,7 @@ export default function AccessManagementClient() {
                         <button
                           type="button"
                           onClick={() => setDialog({ kind: 'dashboard', userId: user.id })}
-                          className="inline-flex"
+                          className="inline-flex cursor-pointer transition hover:scale-105"
                           aria-label={user.summary.dashboard.active ? 'Dashboard aktiv' : 'Dashboard inaktiv'}
                           title={user.summary.dashboard.active ? 'Dashboard aktiv' : 'Dashboard inaktiv'}
                         >
@@ -665,7 +665,7 @@ export default function AccessManagementClient() {
                         <button
                           type="button"
                           onClick={() => setDialog({ kind: 'hushub_admin', userId: user.id })}
-                          className="inline-flex"
+                          className="inline-flex cursor-pointer transition hover:scale-105"
                           aria-label={user.summary.hushub_admin.active ? 'HusHub Admin aktiv' : 'HusHub Admin inaktiv'}
                           title={user.summary.hushub_admin.active ? 'HusHub Admin aktiv' : 'HusHub Admin inaktiv'}
                         >
