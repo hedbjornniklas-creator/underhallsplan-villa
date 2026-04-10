@@ -37,8 +37,12 @@ export default function Topbar() {
   const displayName = profile?.full_name?.trim() || null
   const hasUser = isLoggedIn
   const normalizedPath = (pathname || '').toLowerCase()
+  const isAdminContext = normalizedPath.startsWith('/admin')
   const isObContext = normalizedPath.includes('/ob')
-  const logoHref = isObContext ? '/ob' : '/'
+  const logoHref = isAdminContext ? '/admin' : isObContext ? '/ob' : '/'
+  const logoSrc = isAdminContext ? '/landing/Hushub-check2.png' : '/report-assets/BesiktApp.png'
+  const logoAlt = isAdminContext ? 'HusHub' : 'BesiktApp'
+  const srLabel = isAdminContext ? 'HusHub Admin' : 'BesiktApp'
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -51,18 +55,20 @@ export default function Topbar() {
       <div className="mx-auto grid h-14 w-full max-w-6xl grid-cols-3 items-center px-4 md:px-6">
         <div className="min-w-0">
           <Link
-            href="/admin"
+            href={logoHref}
             className="inline-flex max-w-full items-center gap-2 text-sm font-medium text-gray-800 transition hover:text-gray-900"
           >
             <Image
-              src="/landing/Hushub-check2.png"
-              alt="HusHub"
+              src={logoSrc}
+              alt={logoAlt}
               width={148}
               height={36}
               className="h-8 w-auto object-contain"
             />
-            <span className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-600">Admin</span>
-            <span className="sr-only">HusHub</span>
+            {isAdminContext ? (
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-600">Admin</span>
+            ) : null}
+            <span className="sr-only">{srLabel}</span>
           </Link>
         </div>
 
