@@ -55,13 +55,13 @@ export default function Topbar() {
             className="inline-flex max-w-full items-center gap-2 text-sm font-medium text-gray-800 transition hover:text-gray-900"
           >
             <Image
-              src="/report-assets/BesiktApp.png"
-              alt="Underhållsplan Villa"
-              width={156}
+              src="/landing/hushub-check.svg"
+              alt="HusHub"
+              width={148}
               height={36}
               className="h-8 w-auto object-contain"
             />
-            <span className="sr-only">Underhållsplan Villa</span>
+            <span className="sr-only">HusHub</span>
           </Link>
         </div>
 

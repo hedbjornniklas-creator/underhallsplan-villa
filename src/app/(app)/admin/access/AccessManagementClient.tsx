@@ -60,9 +60,6 @@ type DashboardRow = {
   label: string
   assignmentId: string | null
   enabled: boolean
-  scopeId: string
-  note: string
-  expiresAt: string
 }
 
 const UI_RULES: Record<ProductKey, { modules: string[]; roles: string[] }> = {
@@ -86,6 +83,11 @@ function draftId() {
 
 function trim(value: string | null | undefined) {
   return (value ?? '').trim()
+}
+
+function dashboardModuleLabel(key: string, fallback: string) {
+  if (key === 'inspections') return 'Överlåtelsebesiktning'
+  return fallback
 }
 
 function userName(user: UserItem) {
@@ -315,12 +317,9 @@ export default function AccessManagementClient() {
             (module.key === 'inspections' ? legacyDashboardAssignment : null)
           return {
             moduleId: module.id,
-            label: module.label,
+            label: dashboardModuleLabel(module.key, module.label),
             assignmentId: assignment?.id ?? null,
             enabled: Boolean(assignment),
-            scopeId: assignment?.scopeId ?? '',
-            note: assignment?.grantedReason ?? '',
-            expiresAt: toInputDateTime(assignment?.expiresAt ?? null),
           }
         })
       )
@@ -454,12 +453,6 @@ export default function AccessManagementClient() {
       setDialogError('Dashboard-konfiguration saknas.')
       return
     }
-    for (const row of dashboardRows) {
-      if (row.enabled && !row.scopeId) {
-        setDialogError(`Välj organisation för ${row.label}.`)
-        return
-      }
-    }
 
     setSaving(true)
     setDialogError(null)
@@ -475,10 +468,7 @@ export default function AccessManagementClient() {
         }
         const assignmentNeedsMigration =
           Boolean(original) &&
-          (original?.moduleId !== row.moduleId ||
-            original?.roleKey !== 'inspector' ||
-            original?.scopeType !== 'organization' ||
-            trim(original?.scopeId) !== trim(row.scopeId))
+          (original?.moduleId !== row.moduleId || original?.roleKey !== 'inspector' || original?.scopeType !== 'global')
 
         if (original?.id && assignmentNeedsMigration) await deleteAssignment(original.id)
         await postAssignment({
@@ -486,10 +476,10 @@ export default function AccessManagementClient() {
           productId: product.id,
           moduleId: row.moduleId,
           roleId,
-          scopeType: 'organization',
-          scopeId: trim(row.scopeId) || null,
-          grantedReason: trim(row.note) || null,
-          expiresAt: toIso(row.expiresAt),
+          scopeType: 'global',
+          scopeId: null,
+          grantedReason: null,
+          expiresAt: null,
         })
       }
       for (const original of originals) {
@@ -937,7 +927,7 @@ export default function AccessManagementClient() {
         {dialog?.kind === 'dashboard' && activeUser ? (
           <Modal
             title={`Dashboard för ${userName(activeUser)}`}
-            subtitle="Aktivera de Dashboard-moduler som användaren ska kunna öppna. Rollen sätts automatiskt till inspector."
+            subtitle="Välj vilka aktiva Dashboard-moduler användaren ska kunna öppna. Rollen sätts automatiskt till inspector."
             onClose={closeDialog}
           >
             <div className="p-6 sm:p-8">
@@ -949,12 +939,7 @@ export default function AccessManagementClient() {
               <div className="grid gap-4">
                 {dashboardRows.map((row) => (
                   <div key={row.moduleId} className="rounded-[24px] border border-stone-200 bg-stone-50 p-4">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                      <div>
-                        <div className="text-lg font-semibold text-stone-900">{row.label}</div>
-                        <p className="mt-1 text-sm text-stone-600">Aktivera modulen för vald organisation.</p>
-                      </div>
-                      <label className="inline-flex items-center gap-3 rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800">
+                    <label className="inline-flex cursor-pointer items-center gap-3 text-sm font-semibold text-stone-900">
                         <input
                           type="checkbox"
                           checked={row.enabled}
@@ -966,62 +951,8 @@ export default function AccessManagementClient() {
                             )
                           }
                         />
-                        Aktiv modul
+                        <span>{row.label}</span>
                       </label>
-                    </div>
-                    <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                      <label className="text-sm font-semibold text-stone-800">
-                        Organisation
-                        <select
-                          className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm font-normal text-stone-900 disabled:bg-stone-100"
-                          value={row.scopeId}
-                          disabled={!row.enabled}
-                          onChange={(event) =>
-                            setDashboardRows((current) =>
-                              current.map((item) =>
-                                item.moduleId === row.moduleId ? { ...item, scopeId: event.target.value } : item
-                              )
-                            )
-                          }
-                        >
-                          <option value="">Välj organisation</option>
-                          {(data?.scopeOptions.organizations ?? []).map((option) => (
-                            <option key={option.id} value={option.id}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="text-sm font-semibold text-stone-800">
-                        Gäller till
-                        <input
-                          type="datetime-local"
-                          className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm font-normal text-stone-900 disabled:bg-stone-100"
-                          value={row.expiresAt}
-                          disabled={!row.enabled}
-                          onChange={(event) =>
-                            setDashboardRows((current) =>
-                              current.map((item) =>
-                                item.moduleId === row.moduleId ? { ...item, expiresAt: event.target.value } : item
-                              )
-                            )
-                          }
-                        />
-                      </label>
-                      <label className="text-sm font-semibold text-stone-800 lg:col-span-2">
-                        Kommentar
-                        <input
-                          className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm font-normal text-stone-900 disabled:bg-stone-100"
-                          value={row.note}
-                          disabled={!row.enabled}
-                          onChange={(event) =>
-                            setDashboardRows((current) =>
-                              current.map((item) => (item.moduleId === row.moduleId ? { ...item, note: event.target.value } : item))
-                            )
-                          }
-                        />
-                      </label>
-                    </div>
                   </div>
                 ))}
               </div>
