@@ -772,6 +772,10 @@ export default function RenoAppApplyPage() {
     [config, form.actionTypeKeys]
   )
   const isNeedInfoCase = draftInfo?.case.status === 'need_info'
+  const caseMessages = useMemo(
+    () => (draftInfo?.messages ?? []).filter((message) => message.type !== 'document_uploaded'),
+    [draftInfo?.messages]
+  )
 
   const baseRequirements = useMemo(() => mergeRequirements(selectedActions), [selectedActions])
   const baseQuestions = useMemo(() => mergeQuestions(selectedActions), [selectedActions])
@@ -974,23 +978,6 @@ export default function RenoAppApplyPage() {
 
         const uploadedDocument = payload.document as UploadedDocument
         setUploadedDocuments((current) => [uploadedDocument, ...current])
-        setDraftInfo((current) =>
-          current
-            ? {
-                ...current,
-                messages: [
-                  {
-                    id: `upload-${uploadedDocument.id}`,
-                    type: 'document_uploaded',
-                    authorRole: 'applicant',
-                    message: uploadedDocument.fileName ?? 'Dokument',
-                    createdAt: uploadedDocument.uploadedAt,
-                  },
-                  ...current.messages,
-                ],
-              }
-            : current
-        )
       }
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp dokument.')
@@ -1811,7 +1798,7 @@ export default function RenoAppApplyPage() {
           </div>
         ) : null}
 
-        {draftInfo?.messages.length ? (
+        {caseMessages.length ? (
           <div className="mt-6 rounded-3xl border border-stone-200 bg-white/90 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm font-semibold text-stone-900">Kommunikation i ärendet</p>
@@ -1825,7 +1812,7 @@ export default function RenoAppApplyPage() {
             </div>
             {showCaseMessages ? (
               <div className="mt-4 space-y-2">
-                {draftInfo.messages.map((message) => (
+                {caseMessages.map((message) => (
                   <div key={message.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="font-medium text-stone-900">{getMessageTitle(message.type)}</p>
