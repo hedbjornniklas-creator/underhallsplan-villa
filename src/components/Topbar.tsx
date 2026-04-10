@@ -51,7 +51,7 @@ export default function Topbar() {
       <div className="mx-auto grid h-14 w-full max-w-6xl grid-cols-3 items-center px-4 md:px-6">
         <div className="min-w-0">
           <Link
-            href={logoHref}
+            href="/admin"
             className="inline-flex max-w-full items-center gap-2 text-sm font-medium text-gray-800 transition hover:text-gray-900"
           >
             <Image
@@ -61,6 +61,7 @@ export default function Topbar() {
               height={36}
               className="h-8 w-auto object-contain"
             />
+            <span className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-600">Admin</span>
             <span className="sr-only">HusHub</span>
           </Link>
         </div>
