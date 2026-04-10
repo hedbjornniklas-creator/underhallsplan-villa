@@ -2,6 +2,10 @@
 
 ## 2026-04-08
 
+### RenoApp apply entry
+- Rebuilt `src/app/renoapp/apply/page.tsx` from a quadrant grid into the same stacked top-to-bottom section structure used on `/renoapp`
+- Updated the public BRF picker copy on the page and in the modal to clearer Swedish text
+
 ### RenoApp public apply documents
 - Improved document handling on the public RenoApp apply page:
   - `src/app/renoapp/brf/[slug]/apply/page.tsx`
