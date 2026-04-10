@@ -1,4 +1,10 @@
 ﻿# Changelog
+ 
+## 2026-04-10
+
+### RenoApp cases status help
+- Added a mobile-friendly status help dialog to `src/app/renoapp/app/cases/page.tsx`
+- Added a compact `Vad betyder statusarna?` trigger in the cases toolbar so board members can open the help on demand without cluttering the list view
 
 ## 2026-04-08
 

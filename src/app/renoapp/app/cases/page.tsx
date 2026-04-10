@@ -54,6 +54,45 @@ const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'rejected', label: 'Avslag' },
 ]
 
+const STATUS_HELP_ITEMS = [
+  {
+    key: 'draft',
+    label: 'Utkast',
+    meaning: 'Ärendet är påbörjat men ännu inte inskickat av lägenhetsinnehavaren.',
+    action: 'Styrelsen behöver normalt inte göra något ännu. Avvakta tills ansökan skickas in.',
+  },
+  {
+    key: 'review',
+    label: 'Under granskning',
+    meaning: 'Ansökan är inskickad och väntar på styrelsens handläggning.',
+    action: 'Öppna ärendet, granska underlag och fatta beslut eller begär komplettering om något saknas.',
+  },
+  {
+    key: 'need_info',
+    label: 'Komplettering begärd',
+    meaning: 'Styrelsen har bett lägenhetsinnehavaren att skicka in mer information eller fler underlag.',
+    action: 'Följ upp ärendet och fortsätt handläggningen när kompletteringen har kommit in.',
+  },
+  {
+    key: 'approved',
+    label: 'Godkänd',
+    meaning: 'Ansökan är godkänd och beslut är fattat.',
+    action: 'Öppna ärendet om du vill läsa beslutet eller använda det som dokumentation i efterhand.',
+  },
+  {
+    key: 'conditional',
+    label: 'Godkänd med villkor',
+    meaning: 'Ansökan är godkänd, men bara under de villkor som styrelsen har angett.',
+    action: 'Öppna ärendet och kontrollera att villkoren är tydligt dokumenterade.',
+  },
+  {
+    key: 'rejected',
+    label: 'Avslag',
+    meaning: 'Ansökan har fått avslag i sin nuvarande form.',
+    action: 'Öppna ärendet för att läsa motivering och beslut om lägenhetsinnehavaren återkommer senare.',
+  },
+] as const
+
 function formatDate(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
@@ -197,6 +236,7 @@ export default function RenoAppCasesPage() {
   const [items, setItems] = useState<CaseItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showStatusHelp, setShowStatusHelp] = useState(false)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [sortField, setSortField] = useState<SortField>('submittedAt')
@@ -436,6 +476,14 @@ export default function RenoAppCasesPage() {
             )
           })}
 
+          <button
+            type="button"
+            onClick={() => setShowStatusHelp(true)}
+            className="inline-flex shrink-0 items-center rounded-md border border-stone-300 bg-white px-2 py-0.5 text-[11px] text-stone-700 transition hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-stone-400"
+          >
+            Vad betyder statusarna?
+          </button>
+
           <div className="ml-auto flex shrink-0 items-center gap-1">
             <label className="text-[10px] text-stone-600" htmlFor="renoappCasesPageSize">
               Rader/sida
@@ -584,6 +632,54 @@ export default function RenoAppCasesPage() {
           </div>
         </>
       )}
+
+      {showStatusHelp ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-stone-950/40 px-3 py-4 sm:items-center sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="renoapp-status-help-title"
+          onClick={() => setShowStatusHelp(false)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-[28px] bg-white shadow-[0_24px_80px_-32px_rgba(28,25,23,0.55)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-stone-200 px-5 py-4 sm:px-6">
+              <div className="space-y-1">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500">Hjälp</p>
+                <h2 id="renoapp-status-help-title" className="text-xl font-semibold tracking-tight text-stone-900">
+                  Status i ärendehanteringen
+                </h2>
+                <p className="max-w-xl text-sm text-stone-600">
+                  Här ser du vad varje status betyder och vad styrelsen normalt kan göra i det läget.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowStatusHelp(false)}
+                className="shrink-0 rounded-full border border-stone-300 px-3 py-1.5 text-sm text-stone-700 transition hover:bg-stone-50"
+              >
+                Stäng
+              </button>
+            </div>
+
+            <div className="max-h-[calc(85vh-96px)] overflow-y-auto px-5 py-4 sm:px-6">
+              <div className="grid gap-3">
+                {STATUS_HELP_ITEMS.map((item) => (
+                  <article key={item.key} className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4">
+                    <h3 className="text-base font-semibold text-stone-900">{item.label}</h3>
+                    <p className="mt-2 text-sm leading-6 text-stone-700">{item.meaning}</p>
+                    <p className="mt-2 text-sm leading-6 text-stone-600">
+                      <span className="font-medium text-stone-800">Det kan du göra:</span> {item.action}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
