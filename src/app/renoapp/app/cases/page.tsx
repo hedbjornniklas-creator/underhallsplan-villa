@@ -437,14 +437,14 @@ export default function RenoAppCasesPage() {
       </div>
 
       <section className="rounded-[32px] border border-stone-200/80 bg-white/90 p-3 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-        <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-0.5">
-          <div className="w-[320px] shrink-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="w-full shrink-0 lg:w-[320px]">
             <input
               type="text"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Sök på ärendenummer, åtgärd, status eller sökande"
-              className="w-full rounded-md border border-stone-300 bg-white px-2 py-1 text-[11px] text-stone-900 placeholder:text-stone-400 focus:border-stone-500 focus:outline-none focus:ring-1 focus:ring-stone-500"
+              className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-stone-500 focus:outline-none focus:ring-1 focus:ring-stone-500"
             />
           </div>
 
@@ -458,8 +458,8 @@ export default function RenoAppCasesPage() {
                 onClick={() => setStatusFilter(tab.key)}
                 className={
                   active
-                    ? `inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${style.active}`
-                    : `inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] ${style.inactive}`
+                    ? `inline-flex shrink-0 items-center gap-1 rounded-md border px-3 py-1.5 text-sm font-medium ${style.active}`
+                    : `inline-flex shrink-0 items-center gap-1 rounded-md border px-3 py-1.5 text-sm ${style.inactive}`
                 }
               >
                 <span>{tab.label}</span>
@@ -479,20 +479,20 @@ export default function RenoAppCasesPage() {
           <button
             type="button"
             onClick={() => setShowStatusHelp(true)}
-            className="inline-flex shrink-0 items-center rounded-md border border-stone-300 bg-white px-2 py-0.5 text-[11px] text-stone-700 transition hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-stone-400"
+            className="inline-flex shrink-0 items-center rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm text-stone-700 transition hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-stone-400"
           >
             Vad betyder statusarna?
           </button>
 
-          <div className="ml-auto flex shrink-0 items-center gap-1">
-            <label className="text-[10px] text-stone-600" htmlFor="renoappCasesPageSize">
+          <div className="flex shrink-0 items-center gap-2 lg:ml-auto">
+            <label className="text-xs text-stone-600" htmlFor="renoappCasesPageSize">
               Rader/sida
             </label>
             <select
               id="renoappCasesPageSize"
               value={pageSize}
               onChange={(event) => setPageSize(Number(event.target.value))}
-              className="rounded-md border border-stone-300 bg-white px-1.5 py-0.5 text-[11px] text-stone-700"
+              className="rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm text-stone-700"
             >
               {PAGE_SIZE_OPTIONS.map((option) => (
                 <option key={option} value={option}>
@@ -505,7 +505,7 @@ export default function RenoAppCasesPage() {
               <button
                 type="button"
                 onClick={resetView}
-                className="rounded-md border border-stone-300 px-2 py-0.5 text-[11px] text-stone-700 hover:bg-stone-50"
+                className="rounded-md border border-stone-300 px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50"
               >
                 Rensa filter
               </button>

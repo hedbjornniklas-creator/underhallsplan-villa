@@ -1,5 +1,12 @@
 ﻿# Changelog
  
+## 2026-04-11
+
+### RenoApp case decision view
+- Rebuilt the board case detail page at `src/app/renoapp/app/cases/[id]/page.tsx` into a decision-preparation layout.
+- Added `src/app/renoapp/app/cases/[id]/RenoAppCaseDecisionView.tsx` with local panels for case summary, material status, neutral considerations, documents, contractors/consultants, board decision action, case history, and the RenoApp information disclaimer.
+- Kept the existing case detail API and status update POST flow, while tightening copy to avoid technical or legal advice.
+
 ## 2026-04-10
 
 ### RenoApp cases status help
