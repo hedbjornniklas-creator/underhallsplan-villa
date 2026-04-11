@@ -25,6 +25,11 @@ export type RenoAppCaseDetail = {
     key: string | null
     label: string | null
   }
+  actionTypes?: Array<{
+    id: string
+    key: string
+    label: string
+  }>
   applicant: {
     id: string | null
     name: string | null
@@ -245,6 +250,15 @@ function getParticipantStatusLabel(row: UnderlagItem) {
   return row.checked ? 'Uppgifter inlämnade' : 'Ej angiven'
 }
 
+function getParticipantDisplayLabel(label: string) {
+  const normalized = repairText(label).trim().toLowerCase()
+  if (normalized === 'saknas') return 'Företagsuppgifter'
+  if (normalized === 'verifiering saknas') return 'Verifiering av behörigheter utförd'
+  if (normalized === 'sanningsförsäkran saknas') return 'Sanningsförsäkran från sökanden'
+  if (normalized === 'försäkringsbevis finns') return 'Försäkringsbevis'
+  return displayText(label)
+}
+
 function getSummaryChecked(line: string) {
   const normalized = repairText(line).trim().toLowerCase()
   return normalized.endsWith('finns') || normalized.startsWith('verifierad')
@@ -257,8 +271,16 @@ function appendSnippet(current: string, snippet: string) {
 
 function buildCaseSummaryChips(item: RenoAppCaseDetail) {
   const chips: string[] = []
-  const actionLabel = getCaseSubtitle(item)
-  if (actionLabel && actionLabel !== '-') chips.push(actionLabel)
+  const actionLabels = (item.actionTypes ?? [])
+    .map((actionType) => displayText(actionType.label, ''))
+    .filter(Boolean)
+
+  if (actionLabels.length > 0) {
+    chips.push(...actionLabels)
+  } else {
+    const actionLabel = getCaseSubtitle(item)
+    if (actionLabel && actionLabel !== '-') chips.push(actionLabel)
+  }
   if (item.checks?.affectsStructure) chips.push('Kan påverka konstruktion')
   if (item.checks?.affectsPlumbing) chips.push('Kan påverka VVS')
   if (item.checks?.affectsVentilation) chips.push('Kan påverka ventilation')
@@ -442,25 +464,19 @@ function ConsiderationsCard({ items }: { items: string[] }) {
 function DocumentsPanel({
   item,
   documentRows,
-  selectedDocumentIds,
   downloading,
-  onToggleDocument,
   onDownloadAll,
-  onDownloadSelected,
 }: {
   item: RenoAppCaseDetail
   documentRows: UnderlagItem[]
-  selectedDocumentIds: Record<string, boolean>
   downloading: boolean
-  onToggleDocument: (documentId: string) => void
   onDownloadAll: () => void
-  onDownloadSelected: () => void
 }) {
   const requiredLabels = new Set(item.requirements.filter((requirement) => requirement.isRequired).map((requirement) => displayText(requirement.documentLabel)))
   const requiredRows = documentRows.filter((row) => requiredLabels.has(displayText(row.label)))
   const supportingRows = documentRows.filter((row) => !requiredLabels.has(displayText(row.label)))
+  const rows = [...requiredRows, ...supportingRows]
   const documentById = new Map(item.documents.map((document) => [document.id, document]))
-  const selectedCount = Object.values(selectedDocumentIds).filter(Boolean).length
 
   const renderRows = (rows: UnderlagItem[], emptyText: string) => {
     if (rows.length === 0) {
@@ -474,23 +490,13 @@ function DocumentsPanel({
           return (
             <div key={row.id} className="grid gap-3 border-b border-stone-200 bg-white px-4 py-3 last:border-b-0 md:grid-cols-[auto_minmax(0,1fr)_160px_90px] md:items-center">
               <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  checked={row.documentId ? selectedDocumentIds[row.documentId] === true : false}
-                  disabled={!row.documentId}
-                  onChange={() => {
-                    if (row.documentId) onToggleDocument(row.documentId)
-                  }}
-                  className="h-4 w-4 rounded border-stone-300 text-stone-700 accent-stone-700 disabled:opacity-40"
-                  aria-label={`Markera ${displayText(row.label)}`}
-                />
                 <span
                   className={cx(
                     'inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold',
                     row.checked ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                   )}
                 >
-                  {row.checked ? 'OK' : '!'}
+                  {row.checked ? '✓' : '!'}
                 </span>
               </div>
               <div className="min-w-0">
@@ -518,19 +524,8 @@ function DocumentsPanel({
   return (
     <Card className="p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <SectionTitle
-          title="Underlag"
-          description="Dokumentstatusen visar vad som har registrerats i ärendet. Statusen är inte en teknisk bedömning."
-        />
+        <SectionTitle title="Underlag" />
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={onDownloadSelected}
-            disabled={selectedCount === 0 || downloading}
-            className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Ladda ner markerade
-          </button>
           <button
             type="button"
             onClick={onDownloadAll}
@@ -544,12 +539,7 @@ function DocumentsPanel({
 
       <div className="mt-6 grid gap-5">
         <section className="grid gap-3">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Obligatoriskt underlag</h3>
-          {renderRows(requiredRows, 'Inga obligatoriska dokumentkrav är registrerade för ärendet.')}
-        </section>
-        <section className="grid gap-3">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Kompletterande underlag</h3>
-          {renderRows(supportingRows, 'Inga kompletterande underlag är registrerade.')}
+          {renderRows(rows, 'Inga underlag är registrerade.')}
         </section>
       </div>
     </Card>
@@ -581,9 +571,17 @@ function ConsultantsPanel({
             const expanded = expandedParticipantIds[row.id] === true
             return (
               <div key={row.id} className="border-b border-stone-200 bg-white px-4 py-3 last:border-b-0">
-                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_170px_80px] md:items-center">
+                <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)_170px_80px] md:items-center">
+                  <span
+                    className={cx(
+                      'inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold',
+                      row.checked ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                    )}
+                  >
+                    {row.checked ? '✓' : '!'}
+                  </span>
                   <div className="min-w-0">
-                    <p className="font-semibold text-stone-950">{displayText(row.label)}</p>
+                    <p className="font-semibold text-stone-950">{getParticipantDisplayLabel(row.label)}</p>
                     <p className="mt-1 text-sm text-stone-500">{row.details?.companyName ? displayText(row.details.companyName) : 'Företag ej angivet'}</p>
                   </div>
                   <p className="text-sm text-stone-700">{getParticipantStatusLabel(row)}</p>
@@ -614,7 +612,7 @@ function ConsultantsPanel({
                               className={cx('mt-1.5 h-2 w-2 shrink-0 rounded-full', getSummaryChecked(line) ? 'bg-emerald-500' : 'bg-amber-500')}
                               aria-hidden="true"
                             />
-                            <span>{displayText(line)}</span>
+                            <span>{getParticipantDisplayLabel(line)}</span>
                           </li>
                         ))}
                       </ul>
@@ -923,8 +921,6 @@ export default function RenoAppCaseDecisionView({
   const [historyExpanded, setHistoryExpanded] = useState(false)
   const [downloadingFiles, setDownloadingFiles] = useState(false)
   const [expandedParticipantIds, setExpandedParticipantIds] = useState<Record<string, boolean>>({})
-  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Record<string, boolean>>({})
-
   const documentUnderlag = useMemo(() => item.underlag.filter((row) => row.category === 'document'), [item])
   const participantUnderlag = useMemo(() => item.underlag.filter((row) => row.category === 'participant'), [item])
   const missingUnderlag = useMemo(() => item.underlag.filter((row) => !row.checked), [item])
@@ -946,14 +942,6 @@ export default function RenoAppCaseDecisionView({
       ),
     [item]
   )
-  const selectedDownloadUrls = useMemo(
-    () =>
-      Object.keys(selectedDocumentIds)
-        .filter((documentId) => selectedDocumentIds[documentId])
-        .map((documentId) => `/api/renoapp/app/cases/${item.id}/documents/${documentId}`),
-    [item.id, selectedDocumentIds]
-  )
-
   const startDownloads = (urls: string[]) => {
     if (urls.length === 0) return
     setDownloadingFiles(true)
@@ -984,13 +972,6 @@ export default function RenoAppCaseDecisionView({
     }))
   }
 
-  const toggleSelectedDocument = (documentId: string) => {
-    setSelectedDocumentIds((current) => ({
-      ...current,
-      [documentId]: !current[documentId],
-    }))
-  }
-
   return (
     <div className="grid gap-6">
       <section className="grid items-start gap-6 xl:grid-cols-[2fr_1fr]">
@@ -999,11 +980,8 @@ export default function RenoAppCaseDecisionView({
           <DocumentsPanel
             item={item}
             documentRows={documentUnderlag}
-            selectedDocumentIds={selectedDocumentIds}
             downloading={downloadingFiles}
-            onToggleDocument={toggleSelectedDocument}
             onDownloadAll={() => startDownloads(downloadAllUrls)}
-            onDownloadSelected={() => startDownloads(selectedDownloadUrls)}
           />
           <ConsultantsPanel rows={participantUnderlag} expandedParticipantIds={expandedParticipantIds} onToggle={toggleParticipantDetails} />
           <BoardDecisionPanel

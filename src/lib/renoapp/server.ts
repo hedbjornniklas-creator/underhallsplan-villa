@@ -1308,6 +1308,11 @@ export type RenoAppCaseDetail = {
     key: string | null
     label: string | null
   }
+  actionTypes: Array<{
+    id: string
+    key: string
+    label: string
+  }>
   applicant: {
     id: string | null
     name: string | null
@@ -7492,6 +7497,14 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
       key: (actionResult.data?.key as string | null | undefined) ?? null,
       label: (actionResult.data?.label as string | null | undefined) ?? null,
     },
+    actionTypes: selectedActionTypes
+      .slice()
+      .sort((left, right) => left.sort_order - right.sort_order)
+      .map((actionType) => ({
+        id: actionType.id,
+        key: actionType.key,
+        label: actionType.label,
+      })),
     applicant: {
       id: (contactResult.data?.id as string | null | undefined) ?? null,
       name: (contactResult.data?.name as string | null | undefined) ?? null,
