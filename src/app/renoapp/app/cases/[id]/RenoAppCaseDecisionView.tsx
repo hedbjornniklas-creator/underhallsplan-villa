@@ -326,46 +326,50 @@ function KeyValueCard({ label, value, secondary }: { label: string; value: strin
 
 function CaseHeaderSummary({ item }: { item: RenoAppCaseDetail }) {
   const summaryChips = buildCaseSummaryChips(item)
+  const apartmentNumber = displayText(item.unit.unitNumberInternal, 'ej angivet')
 
   return (
     <Card className="p-5 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500">Ärendesammanfattning</p>
-          <h1 className="mt-2 text-xl font-semibold tracking-tight text-stone-950 sm:text-2xl">Ärende {item.caseNumber}</h1>
-          <p className="mt-1 text-sm text-stone-600">{getCaseSubtitle(item)}</p>
-        </div>
-        <StatusBadge status={item.status} />
-      </div>
+      <SectionTitle title="Ärendesammanfattning" />
 
-      <div className="mt-5 grid overflow-hidden rounded-[18px] border border-stone-200 bg-white sm:grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-stone-200">
-        <KeyValueCard label="Ansökningsdatum" value={formatDate(item.submittedAt)} secondary={formatDateTime(item.submittedAt)} />
-        <KeyValueCard label="Senast uppdaterad" value={formatDate(item.updatedAt)} secondary={formatDateTime(item.updatedAt)} />
-        <KeyValueCard
-          label="Sökande"
-          value={displayText(item.applicant.name, 'Okänd kontakt')}
-          secondary={[item.applicant.email, item.applicant.phone].filter(Boolean).map((value) => displayText(value)).join(' · ') || '-'}
-        />
-        <KeyValueCard
-          label="Lägenhet"
-          value={`Internt nr: ${displayText(item.unit.unitNumberInternal)}`}
-          secondary={`Skatteverket: ${displayText(item.unit.unitNumberSkatteverket)}`}
-        />
-      </div>
-
-      <div className="mt-4 grid gap-3 rounded-[18px] border border-stone-200 bg-white p-5">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Sammanfattning av ansökan</h3>
-        {summaryChips.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {summaryChips.map((chip) => (
-              <span key={chip} className="rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-sm font-medium text-sky-900">
-                {chip}
-              </span>
-            ))}
+      <div className="mt-4 overflow-hidden rounded-[18px] border border-stone-200 bg-white">
+        <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight text-stone-950">Ärende lägenhet {apartmentNumber}</h1>
           </div>
-        ) : (
-          <p className="text-sm text-stone-600">Strukturerad sammanfattning saknas.</p>
-        )}
+          <div className="grid justify-items-start gap-1 sm:justify-items-end">
+            <StatusBadge status={item.status} />
+            <p className="max-w-[240px] text-xs leading-5 text-stone-500 sm:text-right">
+              Status visar ärendets aktuella handläggningsläge.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid sm:grid-cols-3 sm:divide-x sm:divide-stone-200">
+          <KeyValueCard label="Ansökningsdatum" value={formatDate(item.submittedAt)} secondary={formatDateTime(item.submittedAt)} />
+          <KeyValueCard label="Senast uppdaterad" value={formatDate(item.updatedAt)} secondary={formatDateTime(item.updatedAt)} />
+          <KeyValueCard
+            label="Sökande"
+            value={displayText(item.applicant.name, 'Okänd kontakt')}
+            secondary={[item.applicant.email, item.applicant.phone].filter(Boolean).map((value) => displayText(value)).join(' · ') || '-'}
+          />
+        </div>
+
+        <div className="grid gap-3 border-t border-stone-200 px-5 py-4">
+          <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Sammanfattning av ansökan</h3>
+          {summaryChips.length > 0 ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {summaryChips.map((chip) => (
+                <div key={chip} className="flex items-start gap-2 text-sm leading-6 text-stone-700">
+                  <span className="mt-0.5 text-emerald-700" aria-hidden="true">✓</span>
+                  <span>{chip}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-stone-600">Strukturerad sammanfattning saknas.</p>
+          )}
+        </div>
       </div>
 
       <div className="mt-4 rounded-[18px] border border-stone-200 bg-stone-50/80 p-5">
