@@ -314,12 +314,11 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-function KeyValueCard({ label, value, secondary }: { label: string; value: string; secondary?: string }) {
+function KeyValueCard({ label, value }: { label: string; value: string; secondary?: string }) {
   return (
-    <div className="px-5 py-4">
+    <div className="px-5 py-3.5">
       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">{label}</p>
       <p className="mt-2 text-sm font-semibold text-stone-950">{value}</p>
-      {secondary ? <p className="mt-1 text-sm leading-5 text-stone-600">{secondary}</p> : null}
     </div>
   )
 }
@@ -333,25 +332,22 @@ function CaseHeaderSummary({ item }: { item: RenoAppCaseDetail }) {
       <SectionTitle title="Ärendesammanfattning" />
 
       <div className="mt-4 overflow-hidden rounded-[18px] border border-stone-200 bg-white">
-        <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
           <div>
             <h1 className="text-lg font-semibold tracking-tight text-stone-950">Ärende lägenhet {apartmentNumber}</h1>
           </div>
-          <div className="grid justify-items-start gap-1 sm:justify-items-end">
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">Status</span>
             <StatusBadge status={item.status} />
-            <p className="max-w-[240px] text-xs leading-5 text-stone-500 sm:text-right">
-              Status visar ärendets aktuella handläggningsläge.
-            </p>
           </div>
         </div>
 
-        <div className="grid sm:grid-cols-3 sm:divide-x sm:divide-stone-200">
-          <KeyValueCard label="Ansökningsdatum" value={formatDate(item.submittedAt)} secondary={formatDateTime(item.submittedAt)} />
-          <KeyValueCard label="Senast uppdaterad" value={formatDate(item.updatedAt)} secondary={formatDateTime(item.updatedAt)} />
+        <div className="grid border-t border-stone-200 sm:grid-cols-3 sm:divide-x sm:divide-stone-200">
+          <KeyValueCard label="Ansökningsdatum" value={formatDate(item.submittedAt)} />
+          <KeyValueCard label="Senast uppdaterad" value={formatDate(item.updatedAt)} />
           <KeyValueCard
             label="Sökande"
             value={displayText(item.applicant.name, 'Okänd kontakt')}
-            secondary={[item.applicant.email, item.applicant.phone].filter(Boolean).map((value) => displayText(value)).join(' · ') || '-'}
           />
         </div>
 
