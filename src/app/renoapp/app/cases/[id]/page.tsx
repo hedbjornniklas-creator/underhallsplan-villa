@@ -129,7 +129,7 @@ export default function RenoAppCaseDetailPage() {
 
   if (loading) {
     return (
-      <div className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 text-sm text-stone-600 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+      <div className="rounded-[18px] border border-stone-200/80 bg-white p-6 text-sm text-stone-600 shadow-[0_18px_55px_-44px_rgba(41,37,36,0.34)]">
         Laddar RenoApp-ärende...
       </div>
     )
@@ -141,7 +141,7 @@ export default function RenoAppCaseDetailPage() {
         <Link href="/renoapp/app/cases" className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline">
           Tillbaka till ärenden
         </Link>
-        <div className="rounded-[32px] border border-rose-200 bg-rose-50 p-8 text-rose-900">
+        <div className="rounded-[18px] border border-rose-200 bg-rose-50 p-6 text-rose-900">
           {error ?? 'Kunde inte läsa RenoApp-ärendet.'}
         </div>
       </div>
@@ -149,7 +149,7 @@ export default function RenoAppCaseDetailPage() {
   }
 
   return (
-    <div className="mx-auto grid w-full max-w-[1440px] gap-6 px-4 py-6 sm:px-8">
+    <div className="mx-auto grid w-full max-w-[1440px] gap-6 px-4 py-8 sm:px-8">
       <div className="flex flex-wrap items-center gap-3">
         <Link href="/renoapp/app/cases" className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline">
           Tillbaka till ärenden

@@ -287,7 +287,7 @@ function Card({ children, className }: { children: ReactNode; className?: string
   return (
     <article
       className={cx(
-        'rounded-[28px] border border-stone-200/80 bg-white/90 shadow-[0_24px_70px_-44px_rgba(41,37,36,0.42)]',
+        'rounded-[18px] border border-stone-200/80 bg-white shadow-[0_18px_55px_-44px_rgba(41,37,36,0.34)]',
         className
       )}
     >
@@ -300,7 +300,7 @@ function SectionTitle({ title, eyebrow, description }: { title: string; eyebrow?
   return (
     <div className="grid gap-1">
       {eyebrow ? <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500">{eyebrow}</p> : null}
-      <h2 className="text-2xl font-semibold tracking-tight text-stone-950">{title}</h2>
+      <h2 className="text-xl font-semibold tracking-tight text-stone-950 sm:text-2xl">{title}</h2>
       {description ? <p className="text-sm leading-6 text-stone-600">{description}</p> : null}
     </div>
   )
@@ -316,9 +316,9 @@ function StatusBadge({ status }: { status: string }) {
 
 function KeyValueCard({ label, value, secondary }: { label: string; value: string; secondary?: string }) {
   return (
-    <div className="rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3">
+    <div className="px-5 py-4">
       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">{label}</p>
-      <p className="mt-2 text-base font-semibold text-stone-950">{value}</p>
+      <p className="mt-2 text-sm font-semibold text-stone-950">{value}</p>
       {secondary ? <p className="mt-1 text-sm leading-5 text-stone-600">{secondary}</p> : null}
     </div>
   )
@@ -328,17 +328,17 @@ function CaseHeaderSummary({ item }: { item: RenoAppCaseDetail }) {
   const summaryChips = buildCaseSummaryChips(item)
 
   return (
-    <Card className="p-6 sm:p-8">
+    <Card className="p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500">Ärendesammanfattning</p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-stone-950 sm:text-3xl">Ärende {item.caseNumber}</h1>
+          <h1 className="mt-2 text-xl font-semibold tracking-tight text-stone-950 sm:text-2xl">Ärende {item.caseNumber}</h1>
           <p className="mt-1 text-sm text-stone-600">{getCaseSubtitle(item)}</p>
         </div>
         <StatusBadge status={item.status} />
       </div>
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-5 grid overflow-hidden rounded-[18px] border border-stone-200 bg-white sm:grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-stone-200">
         <KeyValueCard label="Ansökningsdatum" value={formatDate(item.submittedAt)} secondary={formatDateTime(item.submittedAt)} />
         <KeyValueCard label="Senast uppdaterad" value={formatDate(item.updatedAt)} secondary={formatDateTime(item.updatedAt)} />
         <KeyValueCard
@@ -353,7 +353,7 @@ function CaseHeaderSummary({ item }: { item: RenoAppCaseDetail }) {
         />
       </div>
 
-      <div className="mt-6 grid gap-3 rounded-3xl border border-stone-200 bg-white p-5">
+      <div className="mt-4 grid gap-3 rounded-[18px] border border-stone-200 bg-white p-5">
         <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Sammanfattning av ansökan</h3>
         {summaryChips.length > 0 ? (
           <div className="flex flex-wrap gap-2">
@@ -368,13 +368,13 @@ function CaseHeaderSummary({ item }: { item: RenoAppCaseDetail }) {
         )}
       </div>
 
-      <div className="mt-4 rounded-3xl border border-stone-200 bg-stone-50/80 p-5">
+      <div className="mt-4 rounded-[18px] border border-stone-200 bg-stone-50/80 p-5">
         <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Lägenhetsinnehavarens beskrivning</h3>
         <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-stone-700">
           {displayText(item.description, 'Ingen beskrivning registrerad.')}
         </p>
         {item.blockedAt ? (
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+          <div className="mt-4 rounded-[14px] border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
             <p className="font-semibold">Ärendet är spärrat</p>
             <p>Tidpunkt: {formatDateTime(item.blockedAt)}</p>
             <p>Orsak: {displayText(item.blockedReason, 'Ingen orsak angiven.')}</p>
@@ -397,7 +397,7 @@ function CaseMaterialStatusCard({ missingItems, reviewFlags }: { missingItems: U
   return (
     <Card className="p-6">
       <SectionTitle title="Underlagsstatus" />
-      <div className={cx('mt-5 rounded-2xl border p-4', hasMissing ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-emerald-200 bg-emerald-50 text-emerald-950')}>
+      <div className={cx('mt-5 rounded-[14px] border p-4', hasMissing ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-emerald-200 bg-emerald-50 text-emerald-950')}>
         <div className="flex items-start gap-3">
           <span className="mt-1 h-3 w-3 shrink-0 rounded-full bg-current" aria-hidden="true" />
           <div>
@@ -464,11 +464,11 @@ function DocumentsPanel({
 
   const renderRows = (rows: UnderlagItem[], emptyText: string) => {
     if (rows.length === 0) {
-      return <p className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">{emptyText}</p>
+      return <p className="rounded-[14px] border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">{emptyText}</p>
     }
 
     return (
-      <div className="overflow-hidden rounded-3xl border border-stone-200">
+      <div className="overflow-hidden rounded-[18px] border border-stone-200">
         {rows.map((row) => {
           const document = row.documentId ? documentById.get(row.documentId) : null
           return (
@@ -516,7 +516,7 @@ function DocumentsPanel({
   }
 
   return (
-    <Card className="p-6 sm:p-8">
+    <Card className="p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <SectionTitle
           title="Underlag"
@@ -542,7 +542,7 @@ function DocumentsPanel({
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6">
+      <div className="mt-6 grid gap-5">
         <section className="grid gap-3">
           <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Obligatoriskt underlag</h3>
           {renderRows(requiredRows, 'Inga obligatoriska dokumentkrav är registrerade för ärendet.')}
@@ -566,17 +566,17 @@ function ConsultantsPanel({
   onToggle: (participantId: string) => void
 }) {
   return (
-    <Card className="p-6 sm:p-8">
+    <Card className="p-5 sm:p-6">
       <SectionTitle
         title="Uppgifter om entreprenörer och konsulter"
         description="Följande roller kan vara relevanta beroende på åtgärdens omfattning."
       />
       {rows.length === 0 ? (
-        <p className="mt-5 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+        <p className="mt-5 rounded-[14px] border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">
           Inga entreprenörer eller konsulter efterfrågas i ärendet.
         </p>
       ) : (
-        <div className="mt-6 overflow-hidden rounded-3xl border border-stone-200">
+        <div className="mt-6 overflow-hidden rounded-[18px] border border-stone-200">
           {rows.map((row) => {
             const expanded = expandedParticipantIds[row.id] === true
             return (
@@ -597,7 +597,7 @@ function ConsultantsPanel({
                 </div>
 
                 {expanded ? (
-                  <div className="mt-4 grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
+                  <div className="mt-4 grid gap-4 rounded-[14px] border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
                     <div className="grid gap-2 sm:grid-cols-2">
                       <p><span className="font-semibold text-stone-950">Företag:</span> {displayText(row.details?.companyName)}</p>
                       <p><span className="font-semibold text-stone-950">Kontaktperson:</span> {displayText(row.details?.contactName)}</p>
@@ -664,14 +664,14 @@ function BoardDecisionPanel({
   const showDecisionConfirmation = selectedStatus !== 'need_info'
 
   return (
-    <Card className="p-6 sm:p-8">
+    <Card className="p-5 sm:p-6">
       <SectionTitle
         title="Dokumentera styrelsens beslut"
         description="Beslutet fattas av styrelsen utifrån inkommet underlag. RenoApp tillhandahåller endast struktur och information."
       />
 
       {isDraftCase ? (
-        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-900">
+        <div className="mt-6 rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-900">
           Ärendet är fortfarande ett utkast. Styrelsen kan inte agera förrän lägenhetsinnehavaren har skickat in ansökan.
         </div>
       ) : (
@@ -715,7 +715,7 @@ function BoardDecisionPanel({
                 value={reason}
                 onChange={(event) => onReasonChange(event.target.value)}
                 rows={5}
-                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                className="rounded-[14px] border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
                 placeholder="Meddelande till lägenhetsinnehavaren"
               />
             </label>
@@ -728,7 +728,7 @@ function BoardDecisionPanel({
                 value={reason}
                 onChange={(event) => onReasonChange(event.target.value)}
                 rows={4}
-                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                className="rounded-[14px] border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
                 placeholder="Valfri intern notering."
               />
             </label>
@@ -753,7 +753,7 @@ function BoardDecisionPanel({
                 value={conditions}
                 onChange={(event) => onConditionsChange(event.target.value)}
                 rows={5}
-                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                className="rounded-[14px] border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
                 placeholder="Villkor som ska ingå i beslutet."
               />
             </label>
@@ -778,14 +778,14 @@ function BoardDecisionPanel({
                 value={reason}
                 onChange={(event) => onReasonChange(event.target.value)}
                 rows={5}
-                className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                className="rounded-[14px] border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
                 placeholder="Motivering till avslag."
               />
             </label>
           ) : null}
 
           {showDecisionConfirmation ? (
-            <label className="flex items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm leading-6 text-stone-700">
+            <label className="flex items-start gap-3 rounded-[14px] border border-stone-200 bg-stone-50 p-4 text-sm leading-6 text-stone-700">
               <input
                 type="checkbox"
                 checked={decisionConfirmed}
@@ -827,13 +827,13 @@ function CaseHistoryTimeline({ messages, expanded, onToggle }: { messages: Messa
       </div>
 
       {messages.length === 0 ? (
-        <p className="mt-5 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+        <p className="mt-5 rounded-[14px] border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">
           Ingen historik har registrerats ännu.
         </p>
       ) : (
         <ol className="mt-5 grid gap-3">
           {visibleMessages.map((message) => (
-            <li key={message.id} className="relative rounded-2xl border border-stone-200 bg-stone-50 p-4">
+            <li key={message.id} className="relative rounded-[14px] border border-stone-200 bg-stone-50 p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <p className="font-semibold text-stone-950">{getMessageTitle(message.type)}</p>
                 <p className="text-xs text-stone-500">{formatDateTime(message.createdAt)}</p>
@@ -873,7 +873,7 @@ function ReviewFlagsCard({ flags }: { flags: ReviewFlag[] }) {
           <div
             key={flag.id}
             className={cx(
-              'rounded-2xl border p-4 text-sm leading-6',
+              'rounded-[14px] border p-4 text-sm leading-6',
               flag.severity === 'high'
                 ? 'border-rose-200 bg-rose-50 text-rose-900'
                 : flag.severity === 'warning'
@@ -1024,7 +1024,7 @@ export default function RenoAppCaseDecisionView({
           />
         </div>
 
-        <aside className="grid gap-6 xl:sticky xl:top-6">
+        <aside className="grid gap-5 xl:sticky xl:top-6">
           <CaseMaterialStatusCard missingItems={missingUnderlag} reviewFlags={missingReviewFlags} />
           <ConsiderationsCard items={considerations} />
           <CaseHistoryTimeline messages={item.messages} expanded={historyExpanded} onToggle={() => setHistoryExpanded((current) => !current)} />
