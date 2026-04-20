@@ -7,6 +7,7 @@ type DocumentTypeItem = {
   key: string
   label: string
   description: string | null
+  reviewGuidance: string | null
   defaultPhase: 'before_required' | 'during_execution' | 'after_completion'
   sortOrder: number
   isActive: boolean
@@ -17,6 +18,7 @@ type DraftDocumentType = {
   key: string
   label: string
   description: string
+  reviewGuidance: string
   defaultPhase: 'before_required' | 'during_execution' | 'after_completion'
   sortOrder: string
   isActive: boolean
@@ -28,6 +30,7 @@ const EMPTY_DRAFT: DraftDocumentType = {
   key: '',
   label: '',
   description: '',
+  reviewGuidance: '',
   defaultPhase: 'before_required',
   sortOrder: '100',
   isActive: true,
@@ -109,7 +112,13 @@ export default function RenoAppDocumentTypesAdminPage() {
   const sortedItems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
     const filtered = items.filter((item) => {
-      const haystack = [item.label, item.key, item.description ?? '', item.isActive ? 'aktiv' : 'inaktiv']
+      const haystack = [
+        item.label,
+        item.key,
+        item.description ?? '',
+        item.reviewGuidance ?? '',
+        item.isActive ? 'aktiv' : 'inaktiv',
+      ]
         .join(' ')
         .toLowerCase()
 
@@ -167,6 +176,7 @@ export default function RenoAppDocumentTypesAdminPage() {
       key: item.key,
       label: item.label,
       description: item.description ?? '',
+      reviewGuidance: item.reviewGuidance ?? '',
       defaultPhase: item.defaultPhase,
       sortOrder: String(item.sortOrder),
       isActive: item.isActive,
@@ -187,6 +197,7 @@ export default function RenoAppDocumentTypesAdminPage() {
           key: generatedDocumentKey,
           label: draft.label,
           description: draft.description,
+          reviewGuidance: draft.reviewGuidance,
           defaultPhase: draft.defaultPhase,
           sortOrder: Number(draft.sortOrder || '100'),
           isActive: draft.isActive,
@@ -307,9 +318,10 @@ export default function RenoAppDocumentTypesAdminPage() {
             <table className="w-full table-fixed border-separate border-spacing-y-2 text-[11px]">
               <thead>
                 <tr className="whitespace-nowrap text-left text-[10px] uppercase text-gray-400">
-                  <th className="w-[26%] px-3 py-1">Term</th>
-                  <th className="w-[18%] px-3 py-1">Kod</th>
-                  <th className="w-[18%] px-3 py-1">Beskrivning</th>
+                  <th className="w-[22%] px-3 py-1">Term</th>
+                  <th className="w-[16%] px-3 py-1">Kod</th>
+                  <th className="w-[16%] px-3 py-1">Beskrivning</th>
+                  <th className="w-[18%] px-3 py-1">Granskningsstöd</th>
                   <th className="w-[10%] px-3 py-1">Fas</th>
                   <th className="w-[10%] px-3 py-1">Sortering</th>
                   <th className="w-[6%] px-3 py-1">Aktiv</th>
@@ -319,13 +331,13 @@ export default function RenoAppDocumentTypesAdminPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td className="py-4 text-xs text-gray-500" colSpan={7}>
+                    <td className="py-4 text-xs text-gray-500" colSpan={8}>
                       Laddar dokumenttyper...
                     </td>
                   </tr>
                 ) : sortedItems.length === 0 ? (
                   <tr>
-                    <td className="py-4 text-xs text-gray-500" colSpan={7}>
+                    <td className="py-4 text-xs text-gray-500" colSpan={8}>
                       Inga rader.
                     </td>
                   </tr>
@@ -340,6 +352,9 @@ export default function RenoAppDocumentTypesAdminPage() {
                       </td>
                       <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
                         <div className="truncate">{item.description || '-'}</div>
+                      </td>
+                      <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                        <div className="truncate">{item.reviewGuidance || '-'}</div>
                       </td>
                       <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
                         {labelForDefaultPhase(item.defaultPhase)}
@@ -474,6 +489,18 @@ export default function RenoAppDocumentTypesAdminPage() {
                   value={draft.description}
                   onChange={(event) =>
                     setDraft((current) => ({ ...current, description: event.target.value }))
+                  }
+                  rows={4}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+              </label>
+
+              <label className="space-y-1 md:col-span-2">
+                <div className="text-xs font-medium text-gray-600">Granskningsstöd</div>
+                <textarea
+                  value={draft.reviewGuidance}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, reviewGuidance: event.target.value }))
                   }
                   rows={4}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"

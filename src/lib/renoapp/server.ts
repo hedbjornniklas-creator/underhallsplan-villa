@@ -74,6 +74,7 @@ type DocumentTypeRow = {
   key: string
   label: string
   description: string | null
+  review_guidance: string | null
   default_phase: 'before_required' | 'during_execution' | 'after_completion'
   sort_order: number
   is_active: boolean
@@ -912,6 +913,7 @@ export type RenoAppAdminDocumentType = {
   key: string
   label: string
   description: string | null
+  reviewGuidance: string | null
   defaultPhase: 'before_required' | 'during_execution' | 'after_completion'
   sortOrder: number
   isActive: boolean
@@ -1353,6 +1355,7 @@ export type RenoAppCaseDetail = {
     id: string
     category: 'document' | 'participant'
     label: string
+    reviewGuidance: string | null
     checked: boolean
     documentId: string | null
     summary: string[]
@@ -1759,7 +1762,7 @@ async function listActiveActionCategories(admin: SupabaseAdminClient) {
 async function listActiveDocumentTypes(admin: SupabaseAdminClient) {
   const { data, error } = await admin
     .from('renovation_document_types')
-    .select('id,key,label,description,default_phase,sort_order,is_active')
+    .select('id,key,label,description,review_guidance,default_phase,sort_order,is_active')
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
 
@@ -2581,7 +2584,8 @@ function buildCaseUnderlagItems(params: {
     checked: boolean,
     documentId: string | null = null,
     summary: string[] = [],
-    details: RenoAppCaseDetail['underlag'][number]['details'] = null
+    details: RenoAppCaseDetail['underlag'][number]['details'] = null,
+    reviewGuidance: string | null = null
   ) => {
     const existing = itemMap.get(key)
     if (!existing) {
@@ -2589,6 +2593,7 @@ function buildCaseUnderlagItems(params: {
         id: key,
         category,
         label,
+        reviewGuidance,
         checked,
         documentId,
         summary,
@@ -2599,6 +2604,7 @@ function buildCaseUnderlagItems(params: {
     }
 
     existing.label = existing.label || label
+    existing.reviewGuidance = existing.reviewGuidance ?? reviewGuidance
     existing.checked = existing.checked || checked
     existing.documentId = existing.documentId ?? documentId
     existing.summary = existing.summary.length > 0 ? existing.summary : summary
@@ -2617,7 +2623,9 @@ function buildCaseUnderlagItems(params: {
       requirement.sort_order,
       Boolean(document),
       document?.id ?? null,
-      []
+      [],
+      null,
+      documentType?.review_guidance ?? null
     )
   }
 
@@ -2639,7 +2647,9 @@ function buildCaseUnderlagItems(params: {
             1000 + question.sortOrder * 10 + trigger.sortOrder,
             Boolean(document),
             document?.id ?? null,
-            []
+            [],
+            null,
+            documentType?.review_guidance ?? null
           )
         }
 
@@ -5621,7 +5631,7 @@ export async function listRenoAppAdminDocumentTypes(): Promise<RenoAppAdminDocum
 
   const { data, error } = await admin
     .from('renovation_document_types')
-    .select('id,key,label,description,default_phase,sort_order,is_active')
+    .select('id,key,label,description,review_guidance,default_phase,sort_order,is_active')
     .order('sort_order', { ascending: true })
 
   if (error) {
@@ -5633,6 +5643,7 @@ export async function listRenoAppAdminDocumentTypes(): Promise<RenoAppAdminDocum
     key: item.key,
     label: item.label,
     description: item.description ?? null,
+    reviewGuidance: item.review_guidance ?? null,
     defaultPhase: item.default_phase,
     sortOrder: item.sort_order,
     isActive: item.is_active,
@@ -5741,6 +5752,7 @@ export async function saveRenoAppAdminDocumentType(input: {
   key: string
   label: string
   description?: string | null
+  reviewGuidance?: string | null
   defaultPhase?: 'before_required' | 'during_execution' | 'after_completion' | null
   sortOrder?: number | null
   isActive?: boolean
@@ -5751,6 +5763,7 @@ export async function saveRenoAppAdminDocumentType(input: {
   const label = normalizeText(input.label)
   const key = normalizeMachineKey(label) ?? null
   const description = normalizeText(input.description)
+  const reviewGuidance = normalizeText(input.reviewGuidance)
   const defaultPhase =
     input.defaultPhase === 'during_execution' || input.defaultPhase === 'after_completion'
       ? input.defaultPhase
@@ -5765,6 +5778,7 @@ export async function saveRenoAppAdminDocumentType(input: {
     key,
     label,
     description,
+    review_guidance: reviewGuidance,
     default_phase: defaultPhase,
     sort_order: sortOrder,
     is_active: isActive,
@@ -5775,7 +5789,7 @@ export async function saveRenoAppAdminDocumentType(input: {
     : admin.from('renovation_document_types').insert(payload)
 
   const { data, error } = await query
-    .select('id,key,label,description,default_phase,sort_order,is_active')
+    .select('id,key,label,description,review_guidance,default_phase,sort_order,is_active')
     .single()
 
   if (error || !data) {
@@ -5788,6 +5802,7 @@ export async function saveRenoAppAdminDocumentType(input: {
     key: row.key,
     label: row.label,
     description: row.description ?? null,
+    reviewGuidance: row.review_guidance ?? null,
     defaultPhase: row.default_phase,
     sortOrder: row.sort_order,
     isActive: row.is_active,
@@ -6105,7 +6120,7 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
       .order('sort_order', { ascending: true }),
     admin
       .from('renovation_document_types')
-      .select('id,key,label,description,default_phase,sort_order,is_active')
+      .select('id,key,label,description,review_guidance,default_phase,sort_order,is_active')
       .order('sort_order', { ascending: true }),
     admin
       .from('renoapp_participant_roles')
@@ -6849,7 +6864,7 @@ export async function listRenoAppAdminRequirementConfig(): Promise<{
       .order('sort_order', { ascending: true }),
     admin
       .from('renovation_document_types')
-      .select('id,key,label,description,default_phase,sort_order,is_active')
+      .select('id,key,label,description,review_guidance,default_phase,sort_order,is_active')
       .order('sort_order', { ascending: true }),
     admin
       .from('renovation_action_document_requirements')
@@ -6874,6 +6889,7 @@ export async function listRenoAppAdminRequirementConfig(): Promise<{
       key: item.key,
       label: item.label,
       description: item.description ?? null,
+      reviewGuidance: item.review_guidance ?? null,
       defaultPhase: item.default_phase,
       sortOrder: item.sort_order,
       isActive: item.is_active,

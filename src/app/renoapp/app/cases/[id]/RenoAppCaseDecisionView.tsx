@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 
 export type RenoAppCaseStatusAction = 'need_info' | 'approved' | 'conditional' | 'rejected'
 
@@ -70,6 +70,7 @@ export type RenoAppCaseDetail = {
     id: string
     category: 'document' | 'participant'
     label: string
+    reviewGuidance: string | null
     checked: boolean
     documentId: string | null
     summary: string[]
@@ -472,11 +473,28 @@ function DocumentsPanel({
   downloading: boolean
   onDownloadAll: () => void
 }) {
+  const [activeReviewSupport, setActiveReviewSupport] = useState<{ label: string; reviewGuidance: string | null } | null>(
+    null
+  )
   const requiredLabels = new Set(item.requirements.filter((requirement) => requirement.isRequired).map((requirement) => displayText(requirement.documentLabel)))
   const requiredRows = documentRows.filter((row) => requiredLabels.has(displayText(row.label)))
   const supportingRows = documentRows.filter((row) => !requiredLabels.has(displayText(row.label)))
   const rows = [...requiredRows, ...supportingRows]
   const documentById = new Map(item.documents.map((document) => [document.id, document]))
+
+  useEffect(() => {
+    if (!activeReviewSupport) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setActiveReviewSupport(null)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [activeReviewSupport])
 
   const renderRows = (rows: UnderlagItem[], emptyText: string) => {
     if (rows.length === 0) {
@@ -488,7 +506,7 @@ function DocumentsPanel({
         {rows.map((row) => {
           const document = row.documentId ? documentById.get(row.documentId) : null
           return (
-            <div key={row.id} className="grid gap-3 border-b border-stone-200 bg-white px-4 py-3 last:border-b-0 md:grid-cols-[auto_minmax(0,1fr)_160px_90px] md:items-center">
+            <div key={row.id} className="grid gap-3 border-b border-stone-200 bg-white px-4 py-3 last:border-b-0 md:grid-cols-[auto_minmax(0,1fr)_160px_90px_44px] md:items-center">
               <div className="flex items-center gap-3">
                 <span
                   className={cx(
@@ -514,6 +532,20 @@ function DocumentsPanel({
               ) : (
                 <span className="text-sm text-stone-400">-</span>
               )}
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveReviewSupport({
+                    label: displayText(row.label),
+                    reviewGuidance: row.reviewGuidance,
+                  })
+                }
+                className="inline-flex h-9 w-9 items-center justify-center justify-self-start rounded-full border border-stone-300 bg-white text-sm font-semibold text-stone-700 transition hover:bg-stone-100 md:justify-self-end"
+                aria-label={`Visa granskningsstöd för ${displayText(row.label)}`}
+                title="Visa granskningsstöd"
+              >
+                i
+              </button>
             </div>
           )
         })}
@@ -542,6 +574,41 @@ function DocumentsPanel({
           {renderRows(rows, 'Inga underlag är registrerade.')}
         </section>
       </div>
+      {activeReviewSupport ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/45 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="review-support-title"
+        >
+          <button
+            type="button"
+            onClick={() => setActiveReviewSupport(null)}
+            className="absolute inset-0 cursor-default"
+            aria-label="Stäng granskningsstöd"
+          />
+          <div className="relative z-10 w-full max-w-lg rounded-[18px] border border-stone-200 bg-white p-6 shadow-[0_30px_80px_-45px_rgba(28,25,23,0.5)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500">Granskningsstöd</p>
+                <h3 id="review-support-title" className="mt-2 text-lg font-semibold text-stone-950">
+                  {activeReviewSupport.label}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveReviewSupport(null)}
+                className="rounded-full border border-stone-300 px-3 py-1 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+              >
+                Stäng
+              </button>
+            </div>
+            <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-stone-700">
+              {displayText(activeReviewSupport.reviewGuidance, 'Inget granskningsstöd är registrerat för detta underlag.')}
+            </p>
+          </div>
+        </div>
+      ) : null}
     </Card>
   )
 }
