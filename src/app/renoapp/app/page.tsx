@@ -218,9 +218,6 @@ export default function RenoAppAppHomePage() {
               >
                 {sendingApplyLink ? 'Skickar...' : 'Skicka ansökningslänk'}
               </button>
-              <p className="text-sm text-stone-600">
-                BRF: {brfItems.find((item) => item.id === (payload?.activeBrfId ?? brfItems[0]?.id))?.name ?? '-'}
-              </p>
               {applyLinkSuccess ? <p className="text-sm text-emerald-700">{applyLinkSuccess}</p> : null}
               {brfItems.length === 0 ? (
                 <p className="text-sm text-stone-600">Ingen BRF med aktiv publik ansökan finns tillgänglig.</p>
