@@ -320,7 +320,7 @@ export default function RenoAppDocumentTypesAdminPage() {
                 <tr className="whitespace-nowrap text-left text-[10px] uppercase text-gray-400">
                   <th className="w-[22%] px-3 py-1">Term</th>
                   <th className="w-[16%] px-3 py-1">Kod</th>
-                  <th className="w-[16%] px-3 py-1">Beskrivning</th>
+                  <th className="w-[16%] px-3 py-1">Hjälpttext till sökande</th>
                   <th className="w-[18%] px-3 py-1">Granskningsstöd</th>
                   <th className="w-[10%] px-3 py-1">Fas</th>
                   <th className="w-[10%] px-3 py-1">Sortering</th>
@@ -484,7 +484,7 @@ export default function RenoAppDocumentTypesAdminPage() {
               </label>
 
               <label className="space-y-1 md:col-span-2">
-                <div className="text-xs font-medium text-gray-600">Beskrivning</div>
+                <div className="text-xs font-medium text-gray-600">Hjälpttext till sökande</div>
                 <textarea
                   value={draft.description}
                   onChange={(event) =>

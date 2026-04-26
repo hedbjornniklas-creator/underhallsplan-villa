@@ -85,6 +85,7 @@ type ParticipantRoleRow = {
   key: string
   label: string
   description: string | null
+  review_guidance: string | null
   role_kind: 'contractor' | 'consultant'
   verification_instructions: string | null
   verification_url: string | null
@@ -651,6 +652,7 @@ export type PublicParticipantRole = {
   key: string
   label: string
   description: string | null
+  reviewGuidance: string | null
   roleKind: 'contractor' | 'consultant'
   verificationInstructions: string | null
   verificationUrl: string | null
@@ -924,6 +926,7 @@ export type RenoAppAdminParticipantRole = {
   key: string
   label: string
   description: string | null
+  reviewGuidance: string | null
   roleKind: 'contractor' | 'consultant'
   verificationInstructions: string | null
   verificationUrl: string | null
@@ -1777,7 +1780,7 @@ async function listActiveParticipantRoles(admin: SupabaseAdminClient) {
   const { data, error } = await admin
     .from('renoapp_participant_roles')
     .select(
-      'id,key,label,description,role_kind,verification_instructions,verification_url,insurance_required,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
+      'id,key,label,description,review_guidance,role_kind,verification_instructions,verification_url,insurance_required,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
     )
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
@@ -1812,6 +1815,7 @@ function mapParticipantRoleToPublic(
     key: row.key,
     label: repairLikelyMojibakeText(row.label) ?? '',
     description: repairLikelyMojibakeText(row.description ?? null),
+    reviewGuidance: repairLikelyMojibakeText(row.review_guidance ?? null),
     roleKind: row.role_kind,
     verificationInstructions: repairLikelyMojibakeText(row.verification_instructions ?? null),
     verificationUrl: row.verification_url ?? null,
@@ -1833,6 +1837,7 @@ function mapParticipantRoleToAdmin(row: ParticipantRoleRow): RenoAppAdminPartici
     key: row.key,
     label: row.label,
     description: row.description ?? null,
+    reviewGuidance: row.review_guidance ?? null,
     roleKind: row.role_kind,
     verificationInstructions: row.verification_instructions ?? null,
     verificationUrl: row.verification_url ?? null,
@@ -2658,6 +2663,7 @@ function buildCaseUnderlagItems(params: {
             ? {
                 id: trigger.participantRole.id,
                 label: trigger.participantRole.label,
+                reviewGuidance: trigger.participantRole.reviewGuidance,
                 insuranceRequired: trigger.participantRole.insuranceRequired,
                 sortOrder: trigger.participantRole.sortOrder,
               }
@@ -2667,6 +2673,7 @@ function buildCaseUnderlagItems(params: {
                 return {
                   id: role.id,
                   label: role.label,
+                  reviewGuidance: role.review_guidance ?? null,
                   insuranceRequired: role.insurance_required === true,
                   sortOrder: role.sort_order,
                 }
@@ -2715,7 +2722,8 @@ function buildCaseUnderlagItems(params: {
                   hasVerifiedAuthorization: participant.has_verified_authorization === true,
                   acceptsResponsibility: participant.accepts_responsibility === true,
                 }
-              : null
+              : null,
+            participantRole.reviewGuidance ?? null
           )
         }
       }
@@ -2768,7 +2776,8 @@ function buildCaseUnderlagItems(params: {
             hasVerifiedAuthorization: participant.has_verified_authorization === true,
             acceptsResponsibility: participant.accepts_responsibility === true,
           }
-        : null
+        : null,
+      role.review_guidance ?? null
     )
   }
 
@@ -5831,6 +5840,7 @@ export async function saveRenoAppAdminParticipantRole(input: {
   key: string
   label: string
   description?: string | null
+  reviewGuidance?: string | null
   roleKind?: 'contractor' | 'consultant' | null
   verificationInstructions?: string | null
   verificationUrl?: string | null
@@ -5850,6 +5860,7 @@ export async function saveRenoAppAdminParticipantRole(input: {
   const label = normalizeText(input.label)
   const key = normalizeMachineKey(label) ?? null
   const description = normalizeText(input.description)
+  const reviewGuidance = normalizeText(input.reviewGuidance)
   const roleKind = input.roleKind === 'consultant' ? 'consultant' : 'contractor'
   const verificationInstructions = normalizeText(input.verificationInstructions)
   const verificationUrl = normalizeText(input.verificationUrl)
@@ -5858,6 +5869,7 @@ export async function saveRenoAppAdminParticipantRole(input: {
     key,
     label,
     description,
+    review_guidance: reviewGuidance,
     role_kind: roleKind,
     verification_instructions: verificationInstructions,
     verification_url: verificationUrl,
@@ -5881,7 +5893,7 @@ export async function saveRenoAppAdminParticipantRole(input: {
 
   const { data, error } = await query
     .select(
-      'id,key,label,description,role_kind,verification_instructions,verification_url,insurance_required,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
+      'id,key,label,description,review_guidance,role_kind,verification_instructions,verification_url,insurance_required,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
     )
     .single()
 
@@ -5990,7 +6002,7 @@ export async function listRenoAppAdminParticipantRoleConfig(): Promise<{
     admin
       .from('renoapp_participant_roles')
       .select(
-        'id,key,label,description,role_kind,verification_instructions,verification_url,insurance_required,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
+        'id,key,label,description,review_guidance,role_kind,verification_instructions,verification_url,insurance_required,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
       )
       .order('sort_order', { ascending: true }),
     admin
@@ -6125,7 +6137,7 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
     admin
       .from('renoapp_participant_roles')
       .select(
-        'id,key,label,description,role_kind,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
+        'id,key,label,description,review_guidance,role_kind,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
       )
       .order('sort_order', { ascending: true }),
     admin

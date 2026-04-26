@@ -34,6 +34,7 @@ export async function POST(request: Request) {
       key: typeof body.key === 'string' ? body.key : '',
       label: typeof body.label === 'string' ? body.label : '',
       description: typeof body.description === 'string' ? body.description : null,
+      reviewGuidance: typeof body.reviewGuidance === 'string' ? body.reviewGuidance : null,
       roleKind: body.roleKind === 'consultant' ? 'consultant' : 'contractor',
       verificationInstructions:
         typeof body.verificationInstructions === 'string' ? body.verificationInstructions : null,

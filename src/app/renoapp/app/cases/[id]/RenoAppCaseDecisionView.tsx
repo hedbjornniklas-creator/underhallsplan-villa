@@ -540,7 +540,7 @@ function DocumentsPanel({
                     reviewGuidance: row.reviewGuidance,
                   })
                 }
-                className="inline-flex h-9 w-9 items-center justify-center justify-self-start rounded-full border border-stone-300 bg-white text-sm font-semibold text-stone-700 transition hover:bg-stone-100 md:justify-self-end"
+                className="inline-flex h-7 w-7 items-center justify-center justify-self-start rounded-full border border-stone-300 bg-white text-xs font-semibold text-stone-700 transition hover:bg-stone-100 md:justify-self-end"
                 aria-label={`Visa granskningsstöd för ${displayText(row.label)}`}
                 title="Visa granskningsstöd"
               >
@@ -622,6 +622,24 @@ function ConsultantsPanel({
   expandedParticipantIds: Record<string, boolean>
   onToggle: (participantId: string) => void
 }) {
+  const [activeReviewSupport, setActiveReviewSupport] = useState<{ label: string; reviewGuidance: string | null } | null>(
+    null
+  )
+
+  useEffect(() => {
+    if (!activeReviewSupport) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setActiveReviewSupport(null)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [activeReviewSupport])
+
   return (
     <Card className="p-5 sm:p-6">
       <SectionTitle
@@ -638,7 +656,7 @@ function ConsultantsPanel({
             const expanded = expandedParticipantIds[row.id] === true
             return (
               <div key={row.id} className="border-b border-stone-200 bg-white px-4 py-3 last:border-b-0">
-                <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)_170px_80px] md:items-center">
+                <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)_170px_44px_80px] md:items-center">
                   <span
                     className={cx(
                       'inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold',
@@ -652,6 +670,20 @@ function ConsultantsPanel({
                     <p className="mt-1 text-sm text-stone-500">{row.details?.companyName ? displayText(row.details.companyName) : 'Företag ej angivet'}</p>
                   </div>
                   <p className="text-sm text-stone-700">{getParticipantStatusLabel(row)}</p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setActiveReviewSupport({
+                        label: getParticipantDisplayLabel(row.label),
+                        reviewGuidance: row.reviewGuidance,
+                      })
+                    }
+                    className="inline-flex h-7 w-7 items-center justify-center justify-self-start rounded-full border border-stone-300 bg-white text-xs font-semibold text-stone-700 transition hover:bg-stone-100 md:justify-self-center"
+                    aria-label={`Visa granskningsstöd för ${getParticipantDisplayLabel(row.label)}`}
+                    title="Visa granskningsstöd"
+                  >
+                    i
+                  </button>
                   <button
                     type="button"
                     onClick={() => onToggle(row.id)}
@@ -691,6 +723,41 @@ function ConsultantsPanel({
           })}
         </div>
       )}
+      {activeReviewSupport ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/45 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="participant-review-support-title"
+        >
+          <button
+            type="button"
+            onClick={() => setActiveReviewSupport(null)}
+            className="absolute inset-0 cursor-default"
+            aria-label="Stäng granskningsstöd"
+          />
+          <div className="relative z-10 w-full max-w-lg rounded-[18px] border border-stone-200 bg-white p-6 shadow-[0_30px_80px_-45px_rgba(28,25,23,0.5)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500">Granskningsstöd</p>
+                <h3 id="participant-review-support-title" className="mt-2 text-lg font-semibold text-stone-950">
+                  {activeReviewSupport.label}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveReviewSupport(null)}
+                className="rounded-full border border-stone-300 px-3 py-1 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+              >
+                Stäng
+              </button>
+            </div>
+            <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-stone-700">
+              {displayText(activeReviewSupport.reviewGuidance, 'Inget granskningsstöd är registrerat för denna roll.')}
+            </p>
+          </div>
+        </div>
+      ) : null}
     </Card>
   )
 }

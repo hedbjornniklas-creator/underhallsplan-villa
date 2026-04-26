@@ -105,6 +105,7 @@ type ParticipantRoleItem = {
   key: string
   label: string
   description: string | null
+  reviewGuidance: string | null
   roleKind: 'contractor' | 'consultant'
   verificationInstructions: string | null
   verificationUrl: string | null
@@ -201,6 +202,7 @@ type ParticipantDraft = {
   key: string
   label: string
   description: string
+  reviewGuidance: string
   roleKind: ParticipantRoleItem['roleKind']
   verificationInstructions: string
   verificationUrl: string
@@ -280,6 +282,7 @@ const EMPTY_PARTICIPANT_DRAFT: ParticipantDraft = {
   key: '',
   label: '',
   description: '',
+  reviewGuidance: '',
   roleKind: 'contractor',
   verificationInstructions: '',
   verificationUrl: '',
@@ -916,6 +919,7 @@ export default function RenoAppFlowBuilderPage() {
             key: participant.key,
             label: participant.label,
             description: participant.description ?? '',
+            reviewGuidance: participant.reviewGuidance ?? '',
             roleKind: participant.roleKind,
             verificationInstructions: participant.verificationInstructions ?? '',
             verificationUrl: participant.verificationUrl ?? '',
@@ -1240,6 +1244,7 @@ export default function RenoAppFlowBuilderPage() {
             key: participantDraft.key || slugifyKey(participantDraft.label),
             label: participantDraft.label,
             description: participantDraft.description || null,
+            reviewGuidance: participantDraft.reviewGuidance || null,
             roleKind: participantDraft.roleKind,
             verificationInstructions: participantDraft.verificationInstructions || null,
             verificationUrl: participantDraft.verificationUrl || null,
@@ -1743,6 +1748,7 @@ export default function RenoAppFlowBuilderPage() {
               key: participantDraft.key || slugifyKey(participantDraft.label),
               label: participantDraft.label,
               description: participantDraft.description || null,
+              reviewGuidance: participantDraft.reviewGuidance || null,
               roleKind: participantDraft.roleKind,
               verificationInstructions: participantDraft.verificationInstructions || null,
               verificationUrl: participantDraft.verificationUrl || null,
@@ -2187,8 +2193,11 @@ export default function RenoAppFlowBuilderPage() {
                       <ModalField label="Intern nyckel">
                         <input value={participantDraft.key} onChange={(event) => setParticipantDraft((current) => ({ ...current, key: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" />
                       </ModalField>
-                      <ModalField label="Beskrivning">
+                      <ModalField label="Hjälpttext till sökande">
                         <textarea value={participantDraft.description} onChange={(event) => setParticipantDraft((current) => ({ ...current, description: event.target.value }))} rows={3} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" />
+                      </ModalField>
+                      <ModalField label="Granskningsstöd">
+                        <textarea value={participantDraft.reviewGuidance} onChange={(event) => setParticipantDraft((current) => ({ ...current, reviewGuidance: event.target.value }))} rows={3} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" />
                       </ModalField>
                       <ModalField label="Typ">
                         <select value={participantDraft.roleKind} onChange={(event) => setParticipantDraft((current) => ({ ...current, roleKind: event.target.value as ParticipantDraft['roleKind'] }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="contractor">Entreprenör</option><option value="consultant">Konsult</option></select>
@@ -2377,7 +2386,8 @@ export default function RenoAppFlowBuilderPage() {
                       {addType === 'participant' ? <>
                         <ModalField label="Visningsnamn"><input value={participantDraft.label} onChange={(event) => setParticipantDraft((current) => ({ ...current, label: event.target.value, key: current.key || slugifyKey(event.target.value) }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
                         <ModalField label="Intern nyckel"><input value={participantDraft.key} onChange={(event) => setParticipantDraft((current) => ({ ...current, key: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
-                        <ModalField label="Beskrivning"><textarea value={participantDraft.description} onChange={(event) => setParticipantDraft((current) => ({ ...current, description: event.target.value }))} rows={3} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" /></ModalField>
+                        <ModalField label="Hjälpttext till sökande"><textarea value={participantDraft.description} onChange={(event) => setParticipantDraft((current) => ({ ...current, description: event.target.value }))} rows={3} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" /></ModalField>
+                        <ModalField label="Granskningsstöd"><textarea value={participantDraft.reviewGuidance} onChange={(event) => setParticipantDraft((current) => ({ ...current, reviewGuidance: event.target.value }))} rows={3} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" /></ModalField>
                         <ModalField label="Typ"><select value={participantDraft.roleKind} onChange={(event) => setParticipantDraft((current) => ({ ...current, roleKind: event.target.value as ParticipantDraft['roleKind'] }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"><option value="contractor">Entreprenör</option><option value="consultant">Konsult</option></select></ModalField>
                         <ModalField label="Verifieringsinstruktion"><textarea value={participantDraft.verificationInstructions} onChange={(event) => setParticipantDraft((current) => ({ ...current, verificationInstructions: event.target.value }))} rows={4} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" /></ModalField>
                         <ModalField label="Verifieringslänk"><input value={participantDraft.verificationUrl} onChange={(event) => setParticipantDraft((current) => ({ ...current, verificationUrl: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" /></ModalField>

@@ -7,6 +7,7 @@ type ParticipantRoleItem = {
   key: string
   label: string
   description: string | null
+  reviewGuidance: string | null
   roleKind: 'contractor' | 'consultant'
   verificationInstructions: string | null
   verificationUrl: string | null
@@ -26,6 +27,7 @@ type DraftParticipantRole = {
   key: string
   label: string
   description: string
+  reviewGuidance: string
   roleKind: 'contractor' | 'consultant'
   verificationInstructions: string
   verificationUrl: string
@@ -44,6 +46,7 @@ const EMPTY_DRAFT: DraftParticipantRole = {
   key: '',
   label: '',
   description: '',
+  reviewGuidance: '',
   roleKind: 'contractor',
   verificationInstructions: '',
   verificationUrl: '',
@@ -122,6 +125,7 @@ export default function RenoAppParticipantsAdminPage() {
           item.label,
           item.key,
           item.description ?? '',
+          item.reviewGuidance ?? '',
           item.roleKind,
           item.verificationInstructions ?? '',
           item.verificationUrl ?? '',
@@ -146,6 +150,7 @@ export default function RenoAppParticipantsAdminPage() {
       key: item.key,
       label: item.label,
       description: item.description ?? '',
+      reviewGuidance: item.reviewGuidance ?? '',
       roleKind: item.roleKind,
       verificationInstructions: item.verificationInstructions ?? '',
       verificationUrl: item.verificationUrl ?? '',
@@ -269,11 +274,12 @@ export default function RenoAppParticipantsAdminPage() {
             <table className="w-full table-fixed border-separate border-spacing-y-2 text-[11px]">
               <thead>
                 <tr className="whitespace-nowrap text-left text-[10px] uppercase text-gray-400">
-                  <th className="w-[18%] px-3 py-1">Term</th>
-                  <th className="w-[14%] px-3 py-1">Kod</th>
-                  <th className="w-[10%] px-3 py-1">Typ</th>
-                  <th className="w-[20%] px-3 py-1">Informationskrav</th>
-                  <th className="w-[20%] px-3 py-1">Verifiering</th>
+                  <th className="w-[16%] px-3 py-1">Term</th>
+                  <th className="w-[12%] px-3 py-1">Kod</th>
+                  <th className="w-[8%] px-3 py-1">Typ</th>
+                  <th className="w-[16%] px-3 py-1">Informationskrav</th>
+                  <th className="w-[16%] px-3 py-1">Granskningsstöd</th>
+                  <th className="w-[14%] px-3 py-1">Verifiering</th>
                   <th className="w-[6%] px-3 py-1">Aktiv</th>
                   <th className="w-[12%] px-3 py-1 text-center">Åtgärder</th>
                 </tr>
@@ -303,6 +309,9 @@ export default function RenoAppParticipantsAdminPage() {
                         {item.roleKind === 'consultant' ? 'Konsult' : 'Entreprenör'}
                       </td>
                       <td className="border-y border-gray-200 bg-white px-3 py-2">{infoSummary || '-'}</td>
+                      <td className="border-y border-gray-200 bg-white px-3 py-2">
+                        <div className="truncate">{item.reviewGuidance || '-'}</div>
+                      </td>
                       <td className="border-y border-gray-200 bg-white px-3 py-2">
                         {item.verificationInstructions || item.verificationUrl ? (
                           <div className="space-y-1">
@@ -425,10 +434,20 @@ export default function RenoAppParticipantsAdminPage() {
               </label>
 
               <label className="block md:col-span-2">
-                <span className="mb-2 block text-sm font-semibold text-stone-800">Beskrivning</span>
+                <span className="mb-2 block text-sm font-semibold text-stone-800">Hjälpttext till sökande</span>
                 <textarea
                   value={draft.description}
                   onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
+                  rows={3}
+                  className="w-full rounded-2xl border border-stone-300 px-4 py-3 text-sm"
+                />
+              </label>
+
+              <label className="block md:col-span-2">
+                <span className="mb-2 block text-sm font-semibold text-stone-800">Granskningsstöd</span>
+                <textarea
+                  value={draft.reviewGuidance}
+                  onChange={(event) => setDraft((current) => ({ ...current, reviewGuidance: event.target.value }))}
                   rows={3}
                   className="w-full rounded-2xl border border-stone-300 px-4 py-3 text-sm"
                 />
