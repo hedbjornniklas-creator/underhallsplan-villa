@@ -21,17 +21,17 @@ export default function RenoAppAdminShell({ children }: { children: ReactNode })
             </div>
 
             <nav className="min-w-0 flex-1 overflow-x-auto" aria-label="RenoApp admin navigation">
-              <div className="flex w-max items-center gap-1.5 whitespace-nowrap pr-2">
+              <div className="flex w-max items-center gap-4 whitespace-nowrap pr-2">
                 {RENOAPP_ADMIN_TABS.map((tab) => {
                   const active = tab.href === activeTab.href
                   return (
                     <Link
                       key={tab.href}
                       href={tab.href}
-                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                      className={`border-b-2 px-1 py-1 text-xs font-semibold transition ${
                         active
-                          ? 'bg-stone-900 text-white'
-                          : 'border border-stone-300 bg-white text-stone-800 hover:bg-stone-100'
+                          ? 'border-stone-900 text-stone-900'
+                          : 'border-transparent text-stone-600 hover:border-stone-300 hover:text-stone-900'
                       }`}
                     >
                       {tab.label}

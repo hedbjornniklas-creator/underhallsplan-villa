@@ -9,6 +9,7 @@ const ORG_NUMBER_REGEX = /^\d{6}-\d{4}$/
 const POSTAL_CODE_REGEX = /^\d{3}\s\d{2}$/
 const INVITE_TTL_HOURS = 24 * 7
 const MIN_PASSWORD_LENGTH = 8
+const BRF_REQUEST_ADMIN_NOTIFICATION_EMAIL = 'jn@hedbjorn.se'
 
 type SupabaseError = {
   message?: string
@@ -908,6 +909,54 @@ async function sendBrfRequestReceiptEmail(input: {
   })
 }
 
+async function sendBrfRequestAdminNotificationEmail(input: {
+  origin: string
+  brfName: string
+  orgNumber: string | null
+  address: string | null
+  contactName: string | null
+  contactEmail: string | null
+  contactPhone: string | null
+  message: string | null
+}) {
+  const safeBrfName = escapeHtml(input.brfName)
+  const safeOrgNumber = escapeHtml(input.orgNumber ?? 'Ej angivet')
+  const safeAddress = escapeHtml(input.address ?? 'Ej angiven')
+  const safeContactName = escapeHtml(input.contactName ?? 'Ej angiven')
+  const safeContactEmail = escapeHtml(input.contactEmail ?? 'Ej angiven')
+  const safeContactPhone = escapeHtml(input.contactPhone ?? 'Ej angivet')
+  const safeMessage = escapeHtml(input.message ?? 'Inget meddelande')
+  const reviewUrl = buildAbsoluteUrl(input.origin, '/admin/renoapp/brf-requests')
+
+  return sendRenoAppEmail({
+    to: BRF_REQUEST_ADMIN_NOTIFICATION_EMAIL,
+    origin: input.origin,
+    subject: `Ny BRF-ansökan: ${input.brfName}`,
+    htmlBody: `
+      <p>En ny BRF-ansökan har kommit in i RenoApp.</p>
+      <p><strong>BRF:</strong> ${safeBrfName}</p>
+      <p><strong>Organisationsnummer:</strong> ${safeOrgNumber}</p>
+      <p><strong>Adress:</strong> ${safeAddress}</p>
+      <p><strong>Kontaktperson:</strong> ${safeContactName}</p>
+      <p><strong>E-post:</strong> ${safeContactEmail}</p>
+      <p><strong>Telefon:</strong> ${safeContactPhone}</p>
+      <p><strong>Meddelande:</strong> ${safeMessage}</p>
+      <p><a href="${reviewUrl}">Öppna BRF-ansökningar</a></p>
+    `,
+    text: [
+      'En ny BRF-ansökan har kommit in i RenoApp.',
+      `BRF: ${input.brfName}`,
+      `Organisationsnummer: ${input.orgNumber ?? 'Ej angivet'}`,
+      `Adress: ${input.address ?? 'Ej angiven'}`,
+      `Kontaktperson: ${input.contactName ?? 'Ej angiven'}`,
+      `E-post: ${input.contactEmail ?? 'Ej angiven'}`,
+      `Telefon: ${input.contactPhone ?? 'Ej angivet'}`,
+      `Meddelande: ${input.message ?? 'Inget meddelande'}`,
+      `Öppna BRF-ansökningar: ${reviewUrl}`,
+    ].join('\n'),
+  })
+}
+
 async function sendBrfRequestRejectedEmail(input: {
   origin: string
   brfName: string
@@ -998,6 +1047,17 @@ export async function createBrfRequest(input: CreateBrfRequestInput): Promise<Cr
     brfName: name as string,
     contactName,
     contactEmail,
+  })
+
+  await sendBrfRequestAdminNotificationEmail({
+    origin: origin ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushub.se',
+    brfName: name as string,
+    orgNumber,
+    address,
+    contactName,
+    contactEmail,
+    contactPhone,
+    message,
   })
 
   return {
