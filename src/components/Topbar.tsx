@@ -42,7 +42,7 @@ export default function Topbar() {
   const isObHome = normalizedPath === '/ob'
   const isObContext = normalizedPath.includes('/ob')
 
-  const logoHref = isAdminContext ? '/' : isDashboardLanding ? '/' : isObHome ? '/dashboard-v1' : isObContext ? '/ob' : '/'
+  const logoHref = isAdminContext ? '/admin' : isDashboardLanding ? '/' : isObHome ? '/dashboard-v1' : isObContext ? '/ob' : '/'
   const logoSrc = isAdminContext || isDashboardLanding ? '/landing/Hushub-check2.png' : '/report-assets/BesiktApp.png'
   const logoAlt = isAdminContext || isDashboardLanding ? 'HusHub' : 'BesiktApp'
   const srLabel = isAdminContext ? 'HusHub Admin' : isDashboardLanding ? 'HusHub' : 'BesiktApp'
@@ -70,9 +70,6 @@ export default function Topbar() {
             />
             {isAdminContext || isDashboardLanding ? (
               <span className="text-2xl font-semibold tracking-tight text-stone-900">HusHub</span>
-            ) : null}
-            {isAdminContext ? (
-              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-600">Admin</span>
             ) : null}
             <span className="sr-only">{srLabel}</span>
           </Link>

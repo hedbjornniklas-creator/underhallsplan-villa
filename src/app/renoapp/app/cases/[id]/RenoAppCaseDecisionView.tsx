@@ -656,7 +656,7 @@ function ConsultantsPanel({
             const expanded = expandedParticipantIds[row.id] === true
             return (
               <div key={row.id} className="border-b border-stone-200 bg-white px-4 py-3 last:border-b-0">
-                <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)_170px_44px_80px] md:items-center">
+                <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)_170px_80px_44px] md:items-center">
                   <span
                     className={cx(
                       'inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold',
@@ -672,24 +672,24 @@ function ConsultantsPanel({
                   <p className="text-sm text-stone-700">{getParticipantStatusLabel(row)}</p>
                   <button
                     type="button"
+                    onClick={() => onToggle(row.id)}
+                    className="text-left text-sm font-semibold text-stone-900 underline-offset-4 hover:underline md:text-right"
+                  >
+                    {expanded ? 'Dölj' : 'Visa'}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() =>
                       setActiveReviewSupport({
                         label: getParticipantDisplayLabel(row.label),
                         reviewGuidance: row.reviewGuidance,
                       })
                     }
-                    className="inline-flex h-7 w-7 items-center justify-center justify-self-start rounded-full border border-stone-300 bg-white text-xs font-semibold text-stone-700 transition hover:bg-stone-100 md:justify-self-center"
+                    className="inline-flex h-7 w-7 items-center justify-center justify-self-start rounded-full border border-stone-300 bg-white text-xs font-semibold text-stone-700 transition hover:bg-stone-100 md:justify-self-end"
                     aria-label={`Visa granskningsstöd för ${getParticipantDisplayLabel(row.label)}`}
                     title="Visa granskningsstöd"
                   >
                     i
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onToggle(row.id)}
-                    className="text-left text-sm font-semibold text-stone-900 underline-offset-4 hover:underline md:text-right"
-                  >
-                    {expanded ? 'Dölj' : 'Visa'}
                   </button>
                 </div>
 

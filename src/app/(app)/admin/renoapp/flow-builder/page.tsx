@@ -1868,7 +1868,7 @@ export default function RenoAppFlowBuilderPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-[1900px] px-4 pb-6 pt-3 md:px-5">
+    <main className="w-full px-4 pb-6 pt-3 md:px-6">
       {error ? <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
 
       <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 lg:hidden">
@@ -1876,18 +1876,18 @@ export default function RenoAppFlowBuilderPage() {
       </div>
 
       <div className="hidden space-y-3 lg:block">
-        <div className="overflow-x-auto border-b border-stone-200 pb-2">
-          <div className="flex min-w-max items-center gap-1.5">
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Sök renoveringstyp..." className="mr-2 w-56 rounded-md border border-stone-300 px-3 py-2 text-sm text-stone-900" />
+        <div className="border-b border-stone-200 pb-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Sök renoveringstyp..." className="mr-2 w-48 rounded-md border border-stone-300 px-3 py-1.5 text-sm text-stone-900" />
             {visibleActionTypes.map((item) => (
-              <button key={item.id} type="button" onClick={() => setSelectedActionTypeId(item.id)} className={cn('rounded-md border px-2.5 py-2 text-sm font-semibold transition', item.id === selectedActionTypeId ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>
+              <button key={item.id} type="button" onClick={() => setSelectedActionTypeId(item.id)} className={cn('rounded-md border px-2 py-1 text-xs font-semibold transition', item.id === selectedActionTypeId ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>
                 {item.label}
               </button>
             ))}
             <button
               type="button"
               onClick={openCreateActionTypeModal}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-dashed border-stone-300 bg-white text-xl font-semibold text-stone-700 transition hover:border-stone-900 hover:text-stone-900"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-dashed border-stone-300 bg-white text-lg font-semibold text-stone-700 transition hover:border-stone-900 hover:text-stone-900"
               aria-label="Skapa ny renoveringstyp"
               title="Skapa ny renoveringstyp"
             >
