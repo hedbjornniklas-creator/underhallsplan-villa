@@ -561,6 +561,137 @@ function ModalField({
   )
 }
 
+function HelpField({
+  name,
+  children,
+}: {
+  name: string
+  children: ReactNode
+}) {
+  return (
+    <div className="border-t border-stone-200 py-2 first:border-t-0 first:pt-0 last:pb-0">
+      <dt className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">{name}</dt>
+      <dd className="mt-1 text-sm leading-6 text-stone-700">{children}</dd>
+    </div>
+  )
+}
+
+function HelpGroup({
+  title,
+  children,
+}: {
+  title: string
+  children: ReactNode
+}) {
+  return (
+    <section className="rounded-md border border-stone-200 bg-white p-4">
+      <h3 className="text-sm font-semibold text-stone-900">{title}</h3>
+      <dl className="mt-3">{children}</dl>
+    </section>
+  )
+}
+
+function FlowBuilderHelpSection() {
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 text-sm leading-6 text-stone-700 xl:grid-cols-3">
+        <div>
+          <h3 className="font-semibold text-stone-900">Grundstruktur</h3>
+          <p className="mt-1">
+            En renoveringstyp är startpunkten för ett ärendeflöde. Den kan ha startfrågor, underlag som alltid ska begäras in och medverkande som alltid ska anges.
+          </p>
+        </div>
+        <div>
+          <h3 className="font-semibold text-stone-900">Villkorade delar</h3>
+          <p className="mt-1">
+            Frågor har svarsalternativ. Ett svarsalternativ kan i sin tur lägga till följdfrågor, extra underlag, medverkande eller granskningsflaggor.
+          </p>
+        </div>
+        <div>
+          <h3 className="font-semibold text-stone-900">Objekt och kopplingar</h3>
+          <p className="mt-1">
+            Ett objekt kan återanvändas i flera flöden. Ta bort från flödet tar bara bort kopplingen, medan radera överallt tar bort själva objektet.
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-md border border-stone-200 bg-stone-50 p-4 text-sm leading-6 text-stone-700">
+        <h3 className="font-semibold text-stone-900">Fält som inte fylls i manuellt</h3>
+        <p className="mt-1">
+          Intern nyckel visas för spårbarhet och teknisk stabilitet. Den skapas automatiskt från namnet när nya objekt skapas och ska normalt inte redigeras manuellt.
+        </p>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <HelpGroup title="Renoveringstyp">
+          <HelpField name="Visningsnamn">Namnet administratörer ser i flödesbyggaren och som beskriver vilken typ av åtgärd flödet gäller.</HelpField>
+          <HelpField name="Beskrivning">Intern förklaring av när renoveringstypen ska användas och vad den omfattar.</HelpField>
+          <HelpField name="Sortering">Styr ordningen i listor. Lägre tal visas tidigare.</HelpField>
+          <HelpField name="Aktiv renoveringstyp">Avgör om renoveringstypen ska vara tillgänglig för användning.</HelpField>
+        </HelpGroup>
+
+        <HelpGroup title="Fråga">
+          <HelpField name="Visningsnamn">Själva frågan som användaren eller administratören ska förstå och besvara.</HelpField>
+          <HelpField name="Hjälptext">Förklarar vad frågan betyder, vad som ska vägas in och hur svaret bör tolkas.</HelpField>
+          <HelpField name="Svarstyp">Bestämmer om frågan tillåter ett val, flera val eller ja/nej-svar.</HelpField>
+          <HelpField name="Sortering">Styr frågans ordning bland andra frågor på samma nivå.</HelpField>
+          <HelpField name="Aktiv fråga">Avgör om frågan kan användas i flöden och visas som valbar.</HelpField>
+          <HelpField name="Obligatorisk i denna renoveringstyp">Anger om frågan måste besvaras när den ligger direkt under en renoveringstyp.</HelpField>
+          <HelpField name="Kopplingens sortering">Styr ordningen för frågans koppling i just den valda renoveringstypen.</HelpField>
+        </HelpGroup>
+
+        <HelpGroup title="Svarsalternativ">
+          <HelpField name="Svarstext">Texten på valet som användaren kan välja för en fråga.</HelpField>
+          <HelpField name="Beskrivning">Förklarar valet när det behövs mer kontext än själva svarstexten.</HelpField>
+          <HelpField name="Sortering">Styr ordningen mellan svarsalternativen i frågan.</HelpField>
+          <HelpField name="Aktivt svarsalternativ">Avgör om valet ska visas och kunna trigga kopplade delar.</HelpField>
+        </HelpGroup>
+
+        <HelpGroup title="Underlag">
+          <HelpField name="Visningsnamn">Namnet på dokumentet eller uppgiften som ska lämnas in.</HelpField>
+          <HelpField name="Hjälptext till sökande">Text som förklarar för den sökande vad som ska bifogas eller beskrivas.</HelpField>
+          <HelpField name="Granskningsstöd">Intern vägledning för handläggaren vid kontroll av underlaget.</HelpField>
+          <HelpField name="Standardfas">Anger om underlaget normalt hör hemma före, under eller efter utförandet.</HelpField>
+          <HelpField name="Sortering">Styr ordningen bland underlag av samma typ eller nivå.</HelpField>
+          <HelpField name="Aktiv underlagstyp">Avgör om underlaget kan användas i nya flödeskopplingar.</HelpField>
+          <HelpField name="Obligatoriskt i denna renoveringstyp">Anger om underlaget krävs när det ligger direkt under renoveringstypen.</HelpField>
+          <HelpField name="Kopplingens sortering">Styr ordningen för underlaget i just den valda renoveringstypen.</HelpField>
+          <HelpField name="Notering">Intern notering för kopplingen, till exempel särskilda villkor för varför underlaget behövs här.</HelpField>
+        </HelpGroup>
+
+        <HelpGroup title="Medverkande">
+          <HelpField name="Visningsnamn">Namnet på rollen som ska anges, till exempel entreprenör eller konsult.</HelpField>
+          <HelpField name="Hjälptext till sökande">Förklarar för den sökande vilken part som ska anges och vilka uppgifter som behövs.</HelpField>
+          <HelpField name="Granskningsstöd">Intern vägledning för hur rollen ska kontrolleras vid granskning.</HelpField>
+          <HelpField name="Typ">Markerar om rollen är entreprenör eller konsult.</HelpField>
+          <HelpField name="Verifieringsinstruktion">Beskriver hur administratören ska verifiera rollen eller dess behörighet.</HelpField>
+          <HelpField name="Verifieringslänk">Länk till extern kontroll, register eller instruktion som stödjer verifieringen.</HelpField>
+          <HelpField name="Sortering">Styr ordningen mellan medverkande roller.</HelpField>
+          <HelpField name="Försäkringsbevis krävs">Anger om rollen måste styrka försäkring.</HelpField>
+          <HelpField name="Kräver företagsnamn">Anger om företagsnamn ska samlas in.</HelpField>
+          <HelpField name="Kräver org.nr">Anger om organisationsnummer ska samlas in.</HelpField>
+          <HelpField name="Kräver kontaktperson">Anger om kontaktperson ska samlas in.</HelpField>
+          <HelpField name="Kräver e-post">Anger om e-postadress ska samlas in.</HelpField>
+          <HelpField name="Kräver telefon">Anger om telefonnummer ska samlas in.</HelpField>
+          <HelpField name="Kräver certifiering">Anger om certifiering ska samlas in eller kontrolleras.</HelpField>
+          <HelpField name="Aktiv medverkandetyp">Avgör om rollen kan användas i nya flödeskopplingar.</HelpField>
+          <HelpField name="Obligatorisk i denna renoveringstyp">Anger om rollen måste anges när den ligger direkt under renoveringstypen.</HelpField>
+          <HelpField name="Kopplingens sortering">Styr ordningen för rollen i just den valda renoveringstypen.</HelpField>
+        </HelpGroup>
+
+        <HelpGroup title="Granskningsflagga">
+          <HelpField name="Visningsnamn">Namnet på risken, kontrollpunkten eller uppmärksammandet som ska visas för granskaren.</HelpField>
+          <HelpField name="Allvar">Anger om flaggan är information, varning eller hög risk.</HelpField>
+          <HelpField name="Kategori">Grupperar flaggor så de blir enklare att hitta, filtrera och förstå.</HelpField>
+          <HelpField name="Sortering">Styr ordningen mellan flaggor när flera visas samtidigt.</HelpField>
+          <HelpField name="Beskrivning">Förklarar vad flaggan betyder och vad granskaren bör vara uppmärksam på.</HelpField>
+          <HelpField name="Aktiv flagga">Avgör om flaggan kan användas i nya flödeskopplingar.</HelpField>
+        </HelpGroup>
+      </div>
+    </div>
+  )
+}
+
 export default function RenoAppFlowBuilderPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1948,6 +2079,15 @@ export default function RenoAppFlowBuilderPage() {
             </button>
           </div>
         </div>
+
+        <details className="rounded-md border border-stone-200 bg-white">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-stone-900 hover:bg-stone-50">
+            Hjälp för flödesbyggaren
+          </summary>
+          <div className="border-t border-stone-200 px-4 py-4">
+            <FlowBuilderHelpSection />
+          </div>
+        </details>
 
         {!selectedAction ? (
           <div className="rounded-md border border-dashed border-stone-300 bg-stone-50 px-6 py-10 text-center text-sm text-stone-600">Välj en renoveringstyp ovan.</div>
