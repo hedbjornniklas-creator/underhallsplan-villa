@@ -72,7 +72,7 @@ export default function RenoAppDocumentTypesAdminPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [draft, setDraft] = useState<DraftDocumentType>(EMPTY_DRAFT)
   const generatedDocumentKey =
-    draft.id && draft.key ? slugifyDocumentTypeKey(draft.label) || draft.key : slugifyDocumentTypeKey(draft.label)
+    draft.id && draft.key ? draft.key : slugifyDocumentTypeKey(draft.label)
 
   useEffect(() => {
     let active = true
@@ -441,6 +441,9 @@ export default function RenoAppDocumentTypesAdminPage() {
                   readOnly
                   className="w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm"
                 />
+                <div className="text-xs text-gray-500">
+                  Nyckeln skapas automatiskt och kan inte ändras efter att underlaget har skapats.
+                </div>
               </label>
 
               <label className="space-y-1">

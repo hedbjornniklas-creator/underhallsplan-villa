@@ -61,6 +61,9 @@ export async function POST(request: Request) {
     if (message === 'ADMIN_REQUIRED') return jsonError('Endast admin har atkomst.', 403)
     if (message === 'PARTICIPANT_ROLE_KEY_REQUIRED') return jsonError('Ange intern nyckel.', 400)
     if (message === 'PARTICIPANT_ROLE_LABEL_REQUIRED') return jsonError('Ange visningsnamn.', 400)
+    if (message.includes('renoapp_participant_roles_key_key')) {
+      return jsonError('Intern nyckel används redan. Byt visningsnamn eller använd en unik nyckel.', 409)
+    }
     return jsonError(message || 'Kunde inte spara medverkandetyp.', 500)
   }
 }

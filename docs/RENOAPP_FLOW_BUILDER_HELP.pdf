@@ -1,0 +1,442 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R 7 0 R 9 0 R 11 0 R] /Count 4 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Length 1744 >>
+stream
+BT
+/F1 11 Tf
+14 TL
+1 0 0 1 50 792 Tm
+(RENOAPP FLODESBYGGARE - HJALPSEKTION) Tj
+T*
+() Tj
+T*
+(OVERGRIPANDE: HUR ALLT HANGER IHOP) Tj
+T*
+() Tj
+T*
+(Flodesbyggaren utgar alltid fran en renoveringstyp.) Tj
+T*
+(Renoveringstypen ar roten i flodet och innehaller:) Tj
+T*
+() Tj
+T*
+(- startfragor) Tj
+T*
+(- underlag som alltid ska samlas in) Tj
+T*
+(- medverkande som alltid ska anges) Tj
+T*
+() Tj
+T*
+(Varje fraga har svarsalternativ.) Tj
+T*
+(Ett svarsalternativ kan i sin tur trigga fler delar:) Tj
+T*
+() Tj
+T*
+(- foljdfraga) Tj
+T*
+(- extra underlag) Tj
+T*
+(- extra medverkande) Tj
+T*
+(- granskningsflagga) Tj
+T*
+() Tj
+T*
+(Objekt \(fraga, underlag, medverkande, flagga\) kan ateranvandas i flera floden.) Tj
+T*
+(Att "ta bort fran flodet" tar bort kopplingen i just det flodet.) Tj
+T*
+(Att "radera overallt" tar bort objektet helt ur systemet.) Tj
+T*
+() Tj
+T*
+(FALT SOM INTE FYLLS I MANUELLT) Tj
+T*
+() Tj
+T*
+(Intern nyckel skapas automatiskt nar ett nytt objekt skapas.) Tj
+T*
+(Nyckeln anvands tekniskt for stabil koppling och spÂrbarhet och ska normalt inte redigeras) Tj
+T*
+(manuellt.) Tj
+T*
+() Tj
+T*
+(RENOVERINGSTYP) Tj
+T*
+() Tj
+T*
+(Visningsnamn:) Tj
+T*
+(Namnet administratoren ser i listor och i flodeskartan.) Tj
+T*
+() Tj
+T*
+(Beskrivning:) Tj
+T*
+(Intern beskrivning av nar renoveringstypen ska anvandas och vad den omfattar.) Tj
+T*
+() Tj
+T*
+(Sortering:) Tj
+T*
+(Styr ordningen i listor. Lagre tal visas tidigare.) Tj
+T*
+() Tj
+T*
+(Aktiv renoveringstyp:) Tj
+T*
+(Avgor om renoveringstypen ska vara valbar och kunna anvandas i nya floden.) Tj
+T*
+() Tj
+T*
+(FRAGA) Tj
+T*
+() Tj
+T*
+(Visningsnamn:) Tj
+T*
+(Sj‰lva fragetexten som ska besvaras.) Tj
+T*
+() Tj
+T*
+(Hjalptext:) Tj
+T*
+(Forklarar hur fragan ska tolkas och vad den som svarar ska ta hansyn till.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 4 0 R >>
+endobj
+6 0 obj
+<< /Length 1540 >>
+stream
+BT
+/F1 11 Tf
+14 TL
+1 0 0 1 50 792 Tm
+() Tj
+T*
+(Svarstyp:) Tj
+T*
+(Styr om fragan ska ha ett val, flera val eller ja/nej.) Tj
+T*
+() Tj
+T*
+(Sortering:) Tj
+T*
+(Styr ordningen mellan fragor pa samma niva.) Tj
+T*
+() Tj
+T*
+(Aktiv fraga:) Tj
+T*
+(Avgor om fragan kan anvandas i floden.) Tj
+T*
+() Tj
+T*
+(Obligatorisk i denna renoveringstyp:) Tj
+T*
+(Anger om fragan maste besvaras nar den ligger direkt under en renoveringstyp.) Tj
+T*
+() Tj
+T*
+(Kopplingens sortering:) Tj
+T*
+(Styr ordningen for fragan i just den valda renoveringstypen.) Tj
+T*
+() Tj
+T*
+(SVARSALTERNATIV) Tj
+T*
+() Tj
+T*
+(Svarstext:) Tj
+T*
+(Texten som visas som val pa en fraga.) Tj
+T*
+() Tj
+T*
+(Beskrivning:) Tj
+T*
+(Kompletterar svarstexten nar valet behover extra forklaring.) Tj
+T*
+() Tj
+T*
+(Sortering:) Tj
+T*
+(Styr ordningen mellan svarsalternativen.) Tj
+T*
+() Tj
+T*
+(Aktivt svarsalternativ:) Tj
+T*
+(Avgor om valet ar valbart och kan trigga foljddelar.) Tj
+T*
+() Tj
+T*
+(UNDERLAG) Tj
+T*
+() Tj
+T*
+(Visningsnamn:) Tj
+T*
+(Namnet pa dokumentet eller uppgiften som ska lamnas in.) Tj
+T*
+() Tj
+T*
+(Hjalptext till sokande:) Tj
+T*
+(Forklarar for sokande vad som ska bifogas eller beskrivas.) Tj
+T*
+() Tj
+T*
+(Granskningsstod:) Tj
+T*
+(Intern vagledning till handlaggaren om vad som ska kontrolleras.) Tj
+T*
+() Tj
+T*
+(Standardfas:) Tj
+T*
+(Anger om underlaget normalt hors hemma fore, under eller efter utforandet.) Tj
+T*
+() Tj
+T*
+(Sortering:) Tj
+T*
+(Styr ordningen mellan underlag.) Tj
+T*
+() Tj
+T*
+(Aktiv underlagstyp:) Tj
+T*
+(Avgor om underlaget kan anvandas i nya kopplingar.) Tj
+T*
+() Tj
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 6 0 R >>
+endobj
+8 0 obj
+<< /Length 1631 >>
+stream
+BT
+/F1 11 Tf
+14 TL
+1 0 0 1 50 792 Tm
+(Obligatoriskt i denna renoveringstyp:) Tj
+T*
+(Anger om underlaget maste lamnas in nar det ar direkt kopplat till renoveringstypen.) Tj
+T*
+() Tj
+T*
+(Kopplingens sortering:) Tj
+T*
+(Styr ordningen for underlaget i just den valda renoveringstypen.) Tj
+T*
+() Tj
+T*
+(Notering:) Tj
+T*
+(Intern notering pa kopplingen, till exempel motiv eller specialvillkor.) Tj
+T*
+() Tj
+T*
+(MEDVERKANDE) Tj
+T*
+() Tj
+T*
+(Visningsnamn:) Tj
+T*
+(Namnet pa rollen som ska anges, till exempel entreprenor eller konsult.) Tj
+T*
+() Tj
+T*
+(Hjalptext till sokande:) Tj
+T*
+(Forklarar vilken part som ska anges och vilka uppgifter som behovs.) Tj
+T*
+() Tj
+T*
+(Granskningsstod:) Tj
+T*
+(Intern vagledning om hur rollen ska verifieras.) Tj
+T*
+() Tj
+T*
+(Typ:) Tj
+T*
+(Anger om rollen ar entreprenor eller konsult.) Tj
+T*
+() Tj
+T*
+(Verifieringsinstruktion:) Tj
+T*
+(Beskriver hur rollen eller dess behorighet ska kontrolleras.) Tj
+T*
+() Tj
+T*
+(Verifieringslank:) Tj
+T*
+(Lank till register, kontrollsida eller annan extern verifieringskalla.) Tj
+T*
+() Tj
+T*
+(Sortering:) Tj
+T*
+(Styr ordningen mellan medverkande.) Tj
+T*
+() Tj
+T*
+(Forsakringsbevis kravs:) Tj
+T*
+(Anger om forsakringsbevis maste kunna visas.) Tj
+T*
+() Tj
+T*
+(Krav pa foretagsnamn:) Tj
+T*
+(Anger om foretagsnamn ska samlas in.) Tj
+T*
+() Tj
+T*
+(Krav pa org.nr:) Tj
+T*
+(Anger om organisationsnummer ska samlas in.) Tj
+T*
+() Tj
+T*
+(Krav pa kontaktperson:) Tj
+T*
+(Anger om kontaktperson ska samlas in.) Tj
+T*
+() Tj
+T*
+(Krav pa e-post:) Tj
+T*
+(Anger om e-postadress ska samlas in.) Tj
+T*
+() Tj
+T*
+(Krav pa telefon:) Tj
+T*
+(Anger om telefonnummer ska samlas in.) Tj
+T*
+() Tj
+ET
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 8 0 R >>
+endobj
+10 0 obj
+<< /Length 1036 >>
+stream
+BT
+/F1 11 Tf
+14 TL
+1 0 0 1 50 792 Tm
+(Krav pa certifiering:) Tj
+T*
+(Anger om certifiering ska samlas in eller kontrolleras.) Tj
+T*
+() Tj
+T*
+(Aktiv:) Tj
+T*
+(Avgor om rollen kan anvandas i nya floden.) Tj
+T*
+() Tj
+T*
+(Obligatorisk i denna renoveringstyp:) Tj
+T*
+(Anger om rollen maste anges nar den ar direkt kopplad till renoveringstypen.) Tj
+T*
+() Tj
+T*
+(Kopplingens sortering:) Tj
+T*
+(Styr ordningen for rollen i just den valda renoveringstypen.) Tj
+T*
+() Tj
+T*
+(GRANSKNINGSFLAGGA) Tj
+T*
+() Tj
+T*
+(Visningsnamn:) Tj
+T*
+(Namnet pa risk, avvikelse eller uppmarksammande som ska visas for granskaren.) Tj
+T*
+() Tj
+T*
+(Allvar:) Tj
+T*
+(Anger niva: info, varning eller hog risk.) Tj
+T*
+() Tj
+T*
+(Kategori:) Tj
+T*
+(Gor flaggor enklare att gruppera och filtrera.) Tj
+T*
+() Tj
+T*
+(Sortering:) Tj
+T*
+(Styr ordningen mellan flaggor.) Tj
+T*
+() Tj
+T*
+(Beskrivning:) Tj
+T*
+(Forklarar vad flaggan betyder och vad granskaren bor kontrollera.) Tj
+T*
+() Tj
+T*
+(Aktiv flagga:) Tj
+T*
+(Avgor om flaggan kan anvandas i nya flodeskopplingar.) Tj
+T*
+() Tj
+ET
+endstream
+endobj
+11 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 10 0 R >>
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000140 00000 n 
+0000000237 00000 n 
+0000002032 00000 n 
+0000002158 00000 n 
+0000003749 00000 n 
+0000003875 00000 n 
+0000005557 00000 n 
+0000005683 00000 n 
+0000006771 00000 n 
+trailer
+<< /Size 12 /Root 1 0 R >>
+startxref
+6899
+%%EOF

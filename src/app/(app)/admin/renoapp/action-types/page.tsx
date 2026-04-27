@@ -170,7 +170,6 @@ export default function RenoAppActionTypesAdminPage() {
   const [participantRolesLoading, setParticipantRolesLoading] = useState(false)
   const [requirementsLoaded, setRequirementsLoaded] = useState(false)
   const [questionsLoaded, setQuestionsLoaded] = useState(false)
-  const [participantRolesLoaded, setParticipantRolesLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState('')
@@ -343,7 +342,7 @@ export default function RenoAppActionTypesAdminPage() {
   }
 
   const loadParticipantRoleConfig = async () => {
-    if (participantRolesLoaded || participantRolesLoading) return
+    if (participantRolesLoading) return
 
     setParticipantRolesLoading(true)
     setError(null)
@@ -379,7 +378,6 @@ export default function RenoAppActionTypesAdminPage() {
       setParticipantRoles(nextParticipantRoles)
       setParticipantRoleDrafts(nextParticipantRoleDrafts)
       setSavedParticipantRoleDrafts(nextParticipantRoleDrafts)
-      setParticipantRolesLoaded(true)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Kunde inte lasa medverkandekopplingar.')
     } finally {
@@ -436,18 +434,14 @@ export default function RenoAppActionTypesAdminPage() {
     )
   }, [activeQuestions, questionDrafts, questionsActionId])
 
-  const activeParticipantRoles = useMemo(
-    () => participantRoles.filter((participantRole) => participantRole.isActive),
-    [participantRoles]
-  )
-
   const participantRoleChips = useMemo(() => {
     if (!participantRolesActionId) return []
-    return activeParticipantRoles.filter(
+    return participantRoles.filter(
       (participantRole) =>
+        participantRole.isActive &&
         participantRoleDrafts[`${participantRolesActionId}:${participantRole.id}`]?.isEnabled
     )
-  }, [activeParticipantRoles, participantRoleDrafts, participantRolesActionId])
+  }, [participantRoles, participantRoleDrafts, participantRolesActionId])
 
   const getRequirementDraft = (actionTypeId: string, documentTypeId: string) =>
     requirementDrafts[`${actionTypeId}:${documentTypeId}`]
@@ -635,7 +629,7 @@ export default function RenoAppActionTypesAdminPage() {
       })
       setParticipantRoleDrafts((current) => {
         const next = { ...current }
-        for (const participantRole of activeParticipantRoles) {
+        for (const participantRole of participantRoles) {
           const key = `${savedItem.id}:${participantRole.id}`
           if (!next[key]) {
             next[key] = {
@@ -649,7 +643,7 @@ export default function RenoAppActionTypesAdminPage() {
       })
       setSavedParticipantRoleDrafts((current) => {
         const next = { ...current }
-        for (const participantRole of activeParticipantRoles) {
+        for (const participantRole of participantRoles) {
           const key = `${savedItem.id}:${participantRole.id}`
           if (!next[key]) {
             next[key] = {
@@ -1363,7 +1357,7 @@ export default function RenoAppActionTypesAdminPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {activeParticipantRoles.map((participantRole) => {
+                  {participantRoles.map((participantRole) => {
                     const draftKey = `${participantRolesAction.id}:${participantRole.id}`
                     const draft = participantRoleDrafts[draftKey]
                     if (!draft) return null

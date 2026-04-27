@@ -5769,8 +5769,9 @@ export async function saveRenoAppAdminDocumentType(input: {
   await requireRenoAppAdminProfile()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
 
+  const isUpdate = Boolean(input.id)
   const label = normalizeText(input.label)
-  const key = normalizeMachineKey(label) ?? null
+  const key = normalizeMachineKey(input.key) ?? normalizeMachineKey(label) ?? null
   const description = normalizeText(input.description)
   const reviewGuidance = normalizeText(input.reviewGuidance)
   const defaultPhase =
@@ -5780,11 +5781,12 @@ export async function saveRenoAppAdminDocumentType(input: {
   const sortOrder = Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0 ? Number(input.sortOrder) : 100
   const isActive = input.isActive !== false
 
-  assertRequiredText(key, 'DOCUMENT_TYPE_KEY_REQUIRED')
+  if (!isUpdate) {
+    assertRequiredText(key, 'DOCUMENT_TYPE_KEY_REQUIRED')
+  }
   assertRequiredText(label, 'DOCUMENT_TYPE_LABEL_REQUIRED')
 
   const payload = {
-    key,
     label,
     description,
     review_guidance: reviewGuidance,
@@ -5795,7 +5797,10 @@ export async function saveRenoAppAdminDocumentType(input: {
 
   const query = input.id
     ? admin.from('renovation_document_types').update(payload).eq('id', input.id)
-    : admin.from('renovation_document_types').insert(payload)
+    : admin.from('renovation_document_types').insert({
+        ...payload,
+        key,
+      })
 
   const { data, error } = await query
     .select('id,key,label,description,review_guidance,default_phase,sort_order,is_active')
@@ -5831,7 +5836,18 @@ export async function deleteRenoAppAdminDocumentType(id: string): Promise<void> 
 export async function listRenoAppAdminParticipantRoles(): Promise<RenoAppAdminParticipantRole[]> {
   await requireRenoAppAdminProfile()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
-  const rows = await listActiveParticipantRoles(admin)
+  const { data, error } = await admin
+    .from('renoapp_participant_roles')
+    .select(
+      'id,key,label,description,review_guidance,role_kind,verification_instructions,verification_url,insurance_required,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
+    )
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa medverkandetyper.')
+  }
+
+  const rows = (data ?? []) as ParticipantRoleRow[]
   return rows.map(mapParticipantRoleToAdmin)
 }
 
@@ -5857,8 +5873,9 @@ export async function saveRenoAppAdminParticipantRole(input: {
   await requireRenoAppAdminProfile()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
 
+  const isUpdate = Boolean(input.id)
   const label = normalizeText(input.label)
-  const key = normalizeMachineKey(label) ?? null
+  const key = normalizeMachineKey(input.key) ?? normalizeMachineKey(label) ?? null
   const description = normalizeText(input.description)
   const reviewGuidance = normalizeText(input.reviewGuidance)
   const roleKind = input.roleKind === 'consultant' ? 'consultant' : 'contractor'
@@ -5866,7 +5883,6 @@ export async function saveRenoAppAdminParticipantRole(input: {
   const verificationUrl = normalizeText(input.verificationUrl)
   const sortOrder = Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0 ? Number(input.sortOrder) : 100
   const payload = {
-    key,
     label,
     description,
     review_guidance: reviewGuidance,
@@ -5884,12 +5900,17 @@ export async function saveRenoAppAdminParticipantRole(input: {
     is_active: input.isActive !== false,
   }
 
-  assertRequiredText(key, 'PARTICIPANT_ROLE_KEY_REQUIRED')
+  if (!isUpdate) {
+    assertRequiredText(key, 'PARTICIPANT_ROLE_KEY_REQUIRED')
+  }
   assertRequiredText(label, 'PARTICIPANT_ROLE_LABEL_REQUIRED')
 
   const query = input.id
     ? admin.from('renoapp_participant_roles').update(payload).eq('id', input.id)
-    : admin.from('renoapp_participant_roles').insert(payload)
+    : admin.from('renoapp_participant_roles').insert({
+        ...payload,
+        key,
+      })
 
   const { data, error } = await query
     .select(
@@ -5942,6 +5963,7 @@ export async function saveRenoAppAdminReviewFlag(input: {
   await requireRenoAppAdminProfile()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
 
+  const isUpdate = Boolean(input.id)
   const label = normalizeText(input.label)
   const key = normalizeMachineKey(input.key) ?? normalizeMachineKey(label) ?? null
   const description = normalizeText(input.description)
@@ -5950,11 +5972,12 @@ export async function saveRenoAppAdminReviewFlag(input: {
   const sortOrder = Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0 ? Number(input.sortOrder) : 100
   const isActive = input.isActive !== false
 
-  assertRequiredText(key, 'REVIEW_FLAG_KEY_REQUIRED')
+  if (!isUpdate) {
+    assertRequiredText(key, 'REVIEW_FLAG_KEY_REQUIRED')
+  }
   assertRequiredText(label, 'REVIEW_FLAG_LABEL_REQUIRED')
 
   const payload = {
-    key,
     label,
     description,
     severity,
@@ -5965,7 +5988,10 @@ export async function saveRenoAppAdminReviewFlag(input: {
 
   const query = input.id
     ? admin.from('renoapp_review_flags').update(payload).eq('id', input.id)
-    : admin.from('renoapp_review_flags').insert(payload)
+    : admin.from('renoapp_review_flags').insert({
+        ...payload,
+        key,
+      })
 
   const { data, error } = await query
     .select('id,key,label,description,severity,category,sort_order,is_active')
@@ -6249,6 +6275,7 @@ export async function saveRenoAppAdminQuestion(input: {
   await requireRenoAppAdminProfile()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
 
+  const isQuestionUpdate = Boolean(input.question.id)
   const label = normalizeTerminologyText(input.question.label)
   const computedKey = normalizeMachineKey(input.question.key) ?? normalizeMachineKey(label) ?? null
   const key = computedKey
@@ -6261,11 +6288,12 @@ export async function saveRenoAppAdminQuestion(input: {
   const isActive = input.question.isActive !== false
   const metadata = normalizeJsonValue(input.question.metadata ?? {})
 
-  assertRequiredText(key, 'QUESTION_KEY_REQUIRED')
+  if (!isQuestionUpdate) {
+    assertRequiredText(key, 'QUESTION_KEY_REQUIRED')
+  }
   assertRequiredText(label, 'QUESTION_LABEL_REQUIRED')
 
   const payload = {
-    key,
     label,
     help_text: helpText,
     response_type: responseType,
@@ -6276,7 +6304,10 @@ export async function saveRenoAppAdminQuestion(input: {
 
   const questionQuery = input.question.id
     ? admin.from('renoapp_apply_questions').update(payload).eq('id', input.question.id)
-    : admin.from('renoapp_apply_questions').insert(payload)
+    : admin.from('renoapp_apply_questions').insert({
+        ...payload,
+        key,
+      })
 
   const { data: savedQuestionData, error: savedQuestionError } = await questionQuery
     .select('id,key,label,help_text,response_type,sort_order,is_locked,is_active,metadata')
@@ -6302,6 +6333,7 @@ export async function saveRenoAppAdminQuestion(input: {
   const options = (input.options ?? []).filter((item) => normalizeText(item.label))
 
   for (const optionInput of options) {
+    const isOptionUpdate = Boolean(optionInput.id)
     const optionLabel = normalizeTerminologyText(optionInput.label)
     const computedOptionKey =
       normalizeMachineKey(optionInput.key) ?? normalizeMachineKey(optionLabel) ?? null
@@ -6311,11 +6343,11 @@ export async function saveRenoAppAdminQuestion(input: {
         ? Number(optionInput.sortOrder)
         : 100
 
-    if (!optionLabel || !computedOptionKey) continue
+    if (!optionLabel) continue
+    if (!isOptionUpdate && !computedOptionKey) continue
 
     const optionPayload = {
       question_id: questionId,
-      key: computedOptionKey,
       label: optionLabel,
       description: optionDescription,
       sort_order: optionSortOrder,
@@ -6325,7 +6357,10 @@ export async function saveRenoAppAdminQuestion(input: {
 
     const optionQuery = optionInput.id
       ? admin.from('renoapp_apply_question_options').update(optionPayload).eq('id', optionInput.id)
-      : admin.from('renoapp_apply_question_options').insert(optionPayload)
+      : admin.from('renoapp_apply_question_options').insert({
+          ...optionPayload,
+          key: computedOptionKey,
+        })
 
     const { data: savedOptionData, error: savedOptionError } = await optionQuery
       .select('id')
@@ -6796,6 +6831,7 @@ export async function saveRenoAppAdminActionType(input: {
   await requireRenoAppAdminProfile()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
 
+  const isUpdate = Boolean(input.id)
   const key = normalizeText(input.key)?.toLowerCase() ?? null
   const label = normalizeText(input.label)
   const description = normalizeText(input.description)
@@ -6808,12 +6844,13 @@ export async function saveRenoAppAdminActionType(input: {
   const sortOrder = Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0 ? Number(input.sortOrder) : 100
   const isActive = input.isActive !== false
 
-  assertRequiredText(key, 'ACTION_TYPE_KEY_REQUIRED')
+  if (!isUpdate) {
+    assertRequiredText(key, 'ACTION_TYPE_KEY_REQUIRED')
+  }
   assertRequiredText(label, 'ACTION_TYPE_LABEL_REQUIRED')
 
   const payload = {
     category_id: categoryId,
-    key,
     label,
     description,
     risk_level: riskLevel,
@@ -6824,7 +6861,10 @@ export async function saveRenoAppAdminActionType(input: {
 
   const query = input.id
     ? admin.from('renovation_action_types').update(payload).eq('id', input.id)
-    : admin.from('renovation_action_types').insert(payload)
+    : admin.from('renovation_action_types').insert({
+        ...payload,
+        key,
+      })
 
   const { data, error } = await query
     .select('id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active')

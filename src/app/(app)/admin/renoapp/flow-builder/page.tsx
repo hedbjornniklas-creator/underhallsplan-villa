@@ -368,7 +368,7 @@ function generatedOptionKey(draft: OptionDraft) {
 }
 
 function generatedDocumentKey(draft: DocumentDraft) {
-  return draft.id && draft.key ? slugifyKey(draft.label) || draft.key : slugifyKey(draft.label)
+  return draft.id && draft.key ? draft.key : slugifyKey(draft.label)
 }
 
 function generatedParticipantKey(draft: ParticipantDraft) {
@@ -618,7 +618,7 @@ function FlowBuilderHelpSection() {
       <div className="rounded-md border border-stone-200 bg-stone-50 p-4 text-sm leading-6 text-stone-700">
         <h3 className="font-semibold text-stone-900">Fält som inte fylls i manuellt</h3>
         <p className="mt-1">
-          Intern nyckel visas för spårbarhet och teknisk stabilitet. Den skapas automatiskt från namnet när nya objekt skapas och ska normalt inte redigeras manuellt.
+          Intern nyckel visas för spårbarhet och teknisk stabilitet. Den skapas automatiskt från namnet när nya objekt skapas och kan inte ändras efter att objektet har skapats.
         </p>
       </div>
 
@@ -674,7 +674,7 @@ function FlowBuilderHelpSection() {
           <HelpField name="Kräver e-post">Anger om e-postadress ska samlas in.</HelpField>
           <HelpField name="Kräver telefon">Anger om telefonnummer ska samlas in.</HelpField>
           <HelpField name="Kräver certifiering">Anger om certifiering ska samlas in eller kontrolleras.</HelpField>
-          <HelpField name="Aktiv medverkandetyp">Avgör om rollen kan användas i nya flödeskopplingar.</HelpField>
+          <HelpField name="Aktiv">Avgör om rollen kan användas i nya flödeskopplingar.</HelpField>
           <HelpField name="Obligatorisk i denna renoveringstyp">Anger om rollen måste anges när den ligger direkt under renoveringstypen.</HelpField>
           <HelpField name="Kopplingens sortering">Styr ordningen för rollen i just den valda renoveringstypen.</HelpField>
         </HelpGroup>
@@ -2400,6 +2400,10 @@ export default function RenoAppFlowBuilderPage() {
                       </ModalField>
                       <div className="grid gap-2 rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700 md:col-span-2 md:grid-cols-2">
                         <label className="inline-flex items-center gap-2">
+                          <input type="checkbox" checked={participantDraft.isActive} onChange={(event) => setParticipantDraft((current) => ({ ...current, isActive: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
+                          Aktiv
+                        </label>
+                        <label className="inline-flex items-center gap-2">
                           <input type="checkbox" checked={participantDraft.insuranceRequired} onChange={(event) => setParticipantDraft((current) => ({ ...current, insuranceRequired: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
                           Försäkringsbevis krävs
                         </label>
@@ -2426,10 +2430,6 @@ export default function RenoAppFlowBuilderPage() {
                         <label className="inline-flex items-center gap-2">
                           <input type="checkbox" checked={participantDraft.requiresCertification} onChange={(event) => setParticipantDraft((current) => ({ ...current, requiresCertification: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
                           Kräver certifiering
-                        </label>
-                        <label className="inline-flex items-center gap-2">
-                          <input type="checkbox" checked={participantDraft.isActive} onChange={(event) => setParticipantDraft((current) => ({ ...current, isActive: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />
-                          Aktiv medverkandetyp
                         </label>
                       </div>
                       {activeNode?.ref.type === 'rootParticipant' ? (
@@ -2580,6 +2580,7 @@ export default function RenoAppFlowBuilderPage() {
                         <ModalField label="Verifieringsinstruktion"><textarea value={participantDraft.verificationInstructions} onChange={(event) => setParticipantDraft((current) => ({ ...current, verificationInstructions: event.target.value }))} rows={4} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" /></ModalField>
                         <ModalField label="Verifieringslänk"><input value={participantDraft.verificationUrl} onChange={(event) => setParticipantDraft((current) => ({ ...current, verificationUrl: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm md:col-span-2" /></ModalField>
                         <ModalField label="Sortering"><input value={participantDraft.sortOrder} onChange={(event) => setParticipantDraft((current) => ({ ...current, sortOrder: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
+                        <label className="inline-flex items-center gap-2 text-sm text-stone-700"><input type="checkbox" checked={participantDraft.isActive} onChange={(event) => setParticipantDraft((current) => ({ ...current, isActive: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />Aktiv</label>
                         <label className="inline-flex items-center gap-2 text-sm text-stone-700"><input type="checkbox" checked={participantDraft.insuranceRequired} onChange={(event) => setParticipantDraft((current) => ({ ...current, insuranceRequired: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />Försäkringsbevis krävs</label>
                         <label className="inline-flex items-center gap-2 text-sm text-stone-700"><input type="checkbox" checked={participantDraft.requiresCompanyName} onChange={(event) => setParticipantDraft((current) => ({ ...current, requiresCompanyName: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />Kräver företagsnamn</label>
                         <label className="inline-flex items-center gap-2 text-sm text-stone-700"><input type="checkbox" checked={participantDraft.requiresOrgNumber} onChange={(event) => setParticipantDraft((current) => ({ ...current, requiresOrgNumber: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />Kräver org.nr</label>
@@ -2587,7 +2588,6 @@ export default function RenoAppFlowBuilderPage() {
                         <label className="inline-flex items-center gap-2 text-sm text-stone-700"><input type="checkbox" checked={participantDraft.requiresEmail} onChange={(event) => setParticipantDraft((current) => ({ ...current, requiresEmail: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />Kräver e-post</label>
                         <label className="inline-flex items-center gap-2 text-sm text-stone-700"><input type="checkbox" checked={participantDraft.requiresPhone} onChange={(event) => setParticipantDraft((current) => ({ ...current, requiresPhone: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />Kräver telefon</label>
                         <label className="inline-flex items-center gap-2 text-sm text-stone-700"><input type="checkbox" checked={participantDraft.requiresCertification} onChange={(event) => setParticipantDraft((current) => ({ ...current, requiresCertification: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />Kräver certifiering</label>
-                        <label className="inline-flex items-center gap-2 text-sm text-stone-700"><input type="checkbox" checked={participantDraft.isActive} onChange={(event) => setParticipantDraft((current) => ({ ...current, isActive: event.target.checked }))} className="h-4 w-4 rounded border-stone-300" />Aktiv medverkandetyp</label>
                       </> : null}
                       {addType === 'flag' ? <>
                         <ModalField label="Visningsnamn"><input value={reviewFlagDraft.label} onChange={(event) => setReviewFlagDraft((current) => ({ ...current, label: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" /></ModalField>
