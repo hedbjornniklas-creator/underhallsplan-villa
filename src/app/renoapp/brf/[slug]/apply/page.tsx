@@ -1942,13 +1942,13 @@ export default function RenoAppApplyPage() {
           onClick={() => setActionDescriptionModal(null)}
         >
           <div
-            className="w-full max-w-lg rounded-[28px] bg-white p-5 shadow-[0_30px_80px_-40px_rgba(41,37,36,0.6)] md:p-6"
+            className="flex max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col rounded-[28px] bg-white p-5 shadow-[0_30px_80px_-40px_rgba(41,37,36,0.6)] md:max-h-[calc(100vh-4rem)] md:p-6"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4">
-              <div>
+            <div className="flex min-h-0 items-start justify-between gap-4">
+              <div className="min-h-0 min-w-0 flex-1">
                 <p className="text-lg font-semibold text-stone-900">{actionDescriptionModal.label}</p>
-                <p className="mt-2 text-sm leading-7 text-stone-700">
+                <p className="mt-2 max-h-[calc(100vh-12rem)] overflow-y-auto whitespace-pre-line pr-2 text-sm leading-7 text-stone-700 md:max-h-[calc(100vh-14rem)]">
                   {actionDescriptionModal.description}
                 </p>
               </div>
