@@ -132,6 +132,16 @@ type ReviewFlagItem = {
   isActive: boolean
 }
 
+type ReviewFlagLinkItem = {
+  id: string
+  reviewFlagId: string
+  actionTypeId: string | null
+  documentTypeId: string | null
+  participantRoleId: string | null
+  sortOrder: number
+  isActive: boolean
+}
+
 type FlowNodeTone = 'stone' | 'sky' | 'emerald' | 'amber' | 'rose' | 'violet'
 
 type FlowNodeRef =
@@ -145,6 +155,9 @@ type FlowNodeRef =
   | { type: 'optionDocumentTrigger'; questionId: string; optionId: string; targetDocumentTypeId: string }
   | { type: 'optionParticipantTrigger'; questionId: string; optionId: string; targetParticipantRoleId: string }
   | { type: 'optionReviewFlagTrigger'; questionId: string; optionId: string; targetReviewFlagId: string }
+  | { type: 'actionTypeReviewFlag'; actionTypeId: string; targetReviewFlagId: string }
+  | { type: 'documentReviewFlag'; documentTypeId: string; targetReviewFlagId: string }
+  | { type: 'participantReviewFlag'; participantRoleId: string; targetReviewFlagId: string }
   | { type: 'status' }
 
 type FlowNode = {
@@ -725,6 +738,7 @@ export default function RenoAppFlowBuilderPage() {
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeItem[]>([])
   const [participantRoles, setParticipantRoles] = useState<ParticipantRoleItem[]>([])
   const [reviewFlags, setReviewFlags] = useState<ReviewFlagItem[]>([])
+  const [reviewFlagLinks, setReviewFlagLinks] = useState<ReviewFlagLinkItem[]>([])
   const [requirementGroups, setRequirementGroups] = useState<ActionTypeGroup[]>([])
   const [questionGroups, setQuestionGroups] = useState<ActionTypeQuestionGroup[]>([])
   const [participantGroups, setParticipantGroups] = useState<ActionTypeParticipantRoleGroup[]>([])
@@ -770,6 +784,7 @@ export default function RenoAppFlowBuilderPage() {
         requirementsResponse,
         questionConfigResponse,
         participantConfigResponse,
+        reviewFlagLinksResponse,
       ] = await Promise.all([
         fetch('/api/renoapp/admin/action-types', { cache: 'no-store' }),
         fetch('/api/renoapp/admin/questions', { cache: 'no-store' }),
@@ -779,6 +794,7 @@ export default function RenoAppFlowBuilderPage() {
         fetch('/api/renoapp/admin/requirements', { cache: 'no-store' }),
         fetch('/api/renoapp/admin/action-type-questions', { cache: 'no-store' }),
         fetch('/api/renoapp/admin/action-type-participants', { cache: 'no-store' }),
+        fetch('/api/renoapp/admin/review-flag-links', { cache: 'no-store' }),
       ])
 
       const [
@@ -790,6 +806,7 @@ export default function RenoAppFlowBuilderPage() {
         requirementsPayload,
         questionConfigPayload,
         participantConfigPayload,
+        reviewFlagLinksPayload,
       ] = await Promise.all([
         readJson<{ items?: ActionTypeItem[]; error?: string }>(actionTypesResponse),
         readJson<{ items?: QuestionItem[]; error?: string }>(questionsResponse),
@@ -799,6 +816,7 @@ export default function RenoAppFlowBuilderPage() {
         readJson<{ actionTypes?: ActionTypeGroup[]; error?: string }>(requirementsResponse),
         readJson<{ actionTypes?: ActionTypeQuestionGroup[]; error?: string }>(questionConfigResponse),
         readJson<{ actionTypes?: ActionTypeParticipantRoleGroup[]; error?: string }>(participantConfigResponse),
+        readJson<{ items?: ReviewFlagLinkItem[]; error?: string }>(reviewFlagLinksResponse),
       ])
 
       if (!actionTypesResponse.ok) throw new Error(actionTypesPayload.error ?? 'Kunde inte läsa renoveringstyper.')
@@ -809,6 +827,7 @@ export default function RenoAppFlowBuilderPage() {
       if (!requirementsResponse.ok) throw new Error(requirementsPayload.error ?? 'Kunde inte läsa dokumentkopplingar.')
       if (!questionConfigResponse.ok) throw new Error(questionConfigPayload.error ?? 'Kunde inte läsa frågekopplingar.')
       if (!participantConfigResponse.ok) throw new Error(participantConfigPayload.error ?? 'Kunde inte läsa medverkandekopplingar.')
+      if (!reviewFlagLinksResponse.ok) throw new Error(reviewFlagLinksPayload.error ?? 'Kunde inte läsa flaggkopplingar.')
 
       const nextActionTypes = [...(actionTypesPayload.items ?? [])].sort(
         (left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv')
@@ -822,6 +841,7 @@ export default function RenoAppFlowBuilderPage() {
       setRequirementGroups(requirementsPayload.actionTypes ?? [])
       setQuestionGroups(questionConfigPayload.actionTypes ?? [])
       setParticipantGroups(participantConfigPayload.actionTypes ?? [])
+      setReviewFlagLinks(reviewFlagLinksPayload.items ?? [])
 
       setSelectedActionTypeId((current) => {
         const candidate = preferredActionTypeId ?? current
@@ -881,6 +901,62 @@ export default function RenoAppFlowBuilderPage() {
   }, [participantGroups, selectedActionTypeId])
 
   const flowRootChildren = useMemo(() => {
+    const buildReviewFlagNode = (
+      flagId: string,
+      ref:
+        | { type: 'actionTypeReviewFlag'; actionTypeId: string; targetReviewFlagId: string }
+        | { type: 'documentReviewFlag'; documentTypeId: string; targetReviewFlagId: string }
+        | { type: 'participantReviewFlag'; participantRoleId: string; targetReviewFlagId: string },
+      idPrefix: string
+    ): FlowNode => {
+      const flag = reviewFlagMap.get(flagId)
+      return {
+        id: `${idPrefix}:flag:${flagId}`,
+        kind: 'flag',
+        title: flag?.label ?? 'Flagga saknas',
+        badges: [flag ? labelForSeverity(flag.severity) : 'Fel'],
+        tone: (flag?.severity === 'high' ? 'rose' : flag?.severity === 'warning' ? 'amber' : flag ? 'violet' : 'rose') as FlowNodeTone,
+        children: [],
+        ref,
+      }
+    }
+
+    const flagChildrenForActionType = (actionTypeId: string) =>
+      reviewFlagLinks
+        .filter((link) => link.isActive && link.actionTypeId === actionTypeId)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((link) =>
+          buildReviewFlagNode(
+            link.reviewFlagId,
+            { type: 'actionTypeReviewFlag', actionTypeId, targetReviewFlagId: link.reviewFlagId },
+            `action:${actionTypeId}`
+          )
+        )
+
+    const flagChildrenForDocumentType = (documentTypeId: string) =>
+      reviewFlagLinks
+        .filter((link) => link.isActive && link.documentTypeId === documentTypeId)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((link) =>
+          buildReviewFlagNode(
+            link.reviewFlagId,
+            { type: 'documentReviewFlag', documentTypeId, targetReviewFlagId: link.reviewFlagId },
+            `document:${documentTypeId}`
+          )
+        )
+
+    const flagChildrenForParticipantRole = (participantRoleId: string) =>
+      reviewFlagLinks
+        .filter((link) => link.isActive && link.participantRoleId === participantRoleId)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((link) =>
+          buildReviewFlagNode(
+            link.reviewFlagId,
+            { type: 'participantReviewFlag', participantRoleId, targetReviewFlagId: link.reviewFlagId },
+            `participant:${participantRoleId}`
+          )
+        )
+
     const buildQuestionNode = (questionId: string, ancestry: string[], rootLink?: ActionQuestionItem): FlowNode => {
       const question = questionMap.get(questionId)
       if (!question) {
@@ -931,7 +1007,7 @@ export default function RenoAppFlowBuilderPage() {
                       title: doc?.label ?? 'Underlag saknas',
                       badges: [doc ? labelForPhase(doc.defaultPhase) : 'Fel'],
                       tone: (doc ? 'sky' : 'rose') as FlowNodeTone,
-                      children: [],
+                      children: flagChildrenForDocumentType(trigger.documentTypeId as string),
                       ref: {
                         type: 'optionDocumentTrigger' as const,
                         questionId: question.id,
@@ -950,7 +1026,7 @@ export default function RenoAppFlowBuilderPage() {
                       title: role?.label ?? 'Medverkande saknas',
                       badges: [role?.roleKind === 'consultant' ? 'Konsult' : 'Entreprenör'],
                       tone: (role?.roleKind === 'consultant' ? 'amber' : role ? 'emerald' : 'rose') as FlowNodeTone,
-                      children: [],
+                      children: flagChildrenForParticipantRole(trigger.participantRoleId as string),
                       ref: {
                         type: 'optionParticipantTrigger' as const,
                         questionId: question.id,
@@ -987,17 +1063,18 @@ export default function RenoAppFlowBuilderPage() {
     if (!selectedActionTypeId) return []
 
     return [
+      ...flagChildrenForActionType(selectedActionTypeId),
       ...rootQuestions.map((item) => buildQuestionNode(item.questionId, [], item)),
       ...rootRequirements.map((item) => {
         const doc = documentTypeMap.get(item.documentTypeId)
-        return { id: `root-document:${item.documentTypeId}`, kind: 'document' as const, title: item.documentLabel, badges: [doc ? labelForPhase(doc.defaultPhase) : 'Okänd fas', item.isRequired ? 'Obligatoriskt' : 'Valfritt'], tone: 'sky' as const, children: [], ref: { type: 'rootRequirement' as const, actionTypeId: selectedActionTypeId, documentTypeId: item.documentTypeId } }
+        return { id: `root-document:${item.documentTypeId}`, kind: 'document' as const, title: item.documentLabel, badges: [doc ? labelForPhase(doc.defaultPhase) : 'Okänd fas', item.isRequired ? 'Obligatoriskt' : 'Valfritt'], tone: 'sky' as const, children: flagChildrenForDocumentType(item.documentTypeId), ref: { type: 'rootRequirement' as const, actionTypeId: selectedActionTypeId, documentTypeId: item.documentTypeId } }
       }),
       ...rootParticipants.map((item) => {
         const role = participantRoleMap.get(item.participantRoleId)
-        return { id: `root-participant:${item.participantRoleId}`, kind: 'participant' as const, title: item.participantRoleLabel, badges: [role?.roleKind === 'consultant' ? 'Konsult' : 'Entreprenör', item.isRequired ? 'Obligatorisk' : 'Valfri'], tone: (role?.roleKind === 'consultant' ? 'amber' : 'emerald') as FlowNodeTone, children: [], ref: { type: 'rootParticipant' as const, actionTypeId: selectedActionTypeId, participantRoleId: item.participantRoleId } }
+        return { id: `root-participant:${item.participantRoleId}`, kind: 'participant' as const, title: item.participantRoleLabel, badges: [role?.roleKind === 'consultant' ? 'Konsult' : 'Entreprenör', item.isRequired ? 'Obligatorisk' : 'Valfri'], tone: (role?.roleKind === 'consultant' ? 'amber' : 'emerald') as FlowNodeTone, children: flagChildrenForParticipantRole(item.participantRoleId), ref: { type: 'rootParticipant' as const, actionTypeId: selectedActionTypeId, participantRoleId: item.participantRoleId } }
       }),
     ]
-  }, [documentTypeMap, participantRoleMap, questionMap, reviewFlagMap, rootParticipants, rootQuestions, rootRequirements, selectedActionTypeId])
+  }, [documentTypeMap, participantRoleMap, questionMap, reviewFlagLinks, reviewFlagMap, rootParticipants, rootQuestions, rootRequirements, selectedActionTypeId])
 
   const allExpandableNodeIds = useMemo(() => collectExpandableNodeIds(flowRootChildren), [flowRootChildren])
 
@@ -1151,7 +1228,13 @@ export default function RenoAppFlowBuilderPage() {
         : EMPTY_PARTICIPANT_LINK_DRAFT
     )
 
-    const reviewFlag = ref.type === 'optionReviewFlagTrigger' ? reviewFlagMap.get(ref.targetReviewFlagId) : null
+    const reviewFlag =
+      ref.type === 'optionReviewFlagTrigger' ||
+      ref.type === 'actionTypeReviewFlag' ||
+      ref.type === 'documentReviewFlag' ||
+      ref.type === 'participantReviewFlag'
+        ? reviewFlagMap.get(ref.targetReviewFlagId)
+        : null
     setReviewFlagDraft(
       reviewFlag
         ? {
@@ -1240,12 +1323,15 @@ export default function RenoAppFlowBuilderPage() {
         activeNode.ref.type === 'optionDocumentTrigger' ||
         activeNode.ref.type === 'rootParticipant' ||
         activeNode.ref.type === 'optionParticipantTrigger' ||
-        activeNode.ref.type === 'optionReviewFlagTrigger')
+        activeNode.ref.type === 'optionReviewFlagTrigger' ||
+        activeNode.ref.type === 'actionTypeReviewFlag' ||
+        activeNode.ref.type === 'documentReviewFlag' ||
+        activeNode.ref.type === 'participantReviewFlag')
   )
 
   const addableTypes = useMemo<AddType[]>(() => {
     if (!activeNode) return []
-    if (activeNode.ref.type === 'actionType') return ['question', 'document', 'participant']
+    if (activeNode.ref.type === 'actionType') return ['question', 'document', 'participant', 'flag']
     if (
       activeNode.ref.type === 'rootQuestion' ||
       activeNode.ref.type === 'question' ||
@@ -1254,6 +1340,14 @@ export default function RenoAppFlowBuilderPage() {
       return ['option', 'flag']
     }
     if (activeNode.ref.type === 'option') return ['question', 'document', 'participant', 'flag']
+    if (
+      activeNode.ref.type === 'rootRequirement' ||
+      activeNode.ref.type === 'optionDocumentTrigger' ||
+      activeNode.ref.type === 'rootParticipant' ||
+      activeNode.ref.type === 'optionParticipantTrigger'
+    ) {
+      return ['flag']
+    }
     return []
   }, [activeNode])
 
@@ -1265,7 +1359,10 @@ export default function RenoAppFlowBuilderPage() {
         activeNode.ref.type === 'optionQuestionTrigger' ||
         activeNode.ref.type === 'optionDocumentTrigger' ||
         activeNode.ref.type === 'optionParticipantTrigger' ||
-        activeNode.ref.type === 'optionReviewFlagTrigger')
+        activeNode.ref.type === 'optionReviewFlagTrigger' ||
+        activeNode.ref.type === 'actionTypeReviewFlag' ||
+        activeNode.ref.type === 'documentReviewFlag' ||
+        activeNode.ref.type === 'participantReviewFlag')
   )
 
   const canDeleteOption = activeNode?.ref.type === 'option'
@@ -1286,7 +1383,10 @@ export default function RenoAppFlowBuilderPage() {
         activeNode.ref.type === 'optionDocumentTrigger' ||
         activeNode.ref.type === 'rootParticipant' ||
         activeNode.ref.type === 'optionParticipantTrigger' ||
-        activeNode.ref.type === 'optionReviewFlagTrigger') &&
+        activeNode.ref.type === 'optionReviewFlagTrigger' ||
+        activeNode.ref.type === 'actionTypeReviewFlag' ||
+        activeNode.ref.type === 'documentReviewFlag' ||
+        activeNode.ref.type === 'participantReviewFlag') &&
       !isCreatingActionType
   )
 
@@ -1325,6 +1425,26 @@ export default function RenoAppFlowBuilderPage() {
       options: question.options.map((option) => (option.id === optionId ? { ...option, triggers: updater(option.triggers) } : option)),
     }
     await persistQuestionWithOptions(nextQuestion)
+  }
+
+  const saveReviewFlagLink = async (input: {
+    reviewFlagId: string
+    actionTypeId?: string | null
+    documentTypeId?: string | null
+    participantRoleId?: string | null
+    isEnabled?: boolean
+  }) => {
+    const response = await fetch('/api/renoapp/admin/review-flag-links', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...input,
+        isEnabled: input.isEnabled !== false,
+        sortOrder: Math.max(0, ...reviewFlagLinks.map((item) => item.sortOrder)) + 10,
+      }),
+    })
+    const payload = await readJson<{ error?: string }>(response)
+    if (!response.ok) throw new Error(payload.error ?? 'Kunde inte spara flaggkoppling.')
   }
 
   const saveEdit = async () => {
@@ -1476,7 +1596,12 @@ export default function RenoAppFlowBuilderPage() {
           const relationPayload = await readJson<{ error?: string }>(relationResponse)
           if (!relationResponse.ok) throw new Error(relationPayload.error ?? 'Kunde inte spara medverkandekopplingen.')
         }
-      } else if (activeNode.ref.type === 'optionReviewFlagTrigger') {
+      } else if (
+        activeNode.ref.type === 'optionReviewFlagTrigger' ||
+        activeNode.ref.type === 'actionTypeReviewFlag' ||
+        activeNode.ref.type === 'documentReviewFlag' ||
+        activeNode.ref.type === 'participantReviewFlag'
+      ) {
         const response = await fetch('/api/renoapp/admin/review-flags', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1545,6 +1670,12 @@ export default function RenoAppFlowBuilderPage() {
         await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => triggers.filter((trigger) => !(trigger.triggerType === 'participant_role' && trigger.participantRoleId === ref.targetParticipantRoleId)))
       } else if (ref.type === 'optionReviewFlagTrigger') {
         await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => triggers.filter((trigger) => !(trigger.triggerType === 'review_flag' && trigger.reviewFlagId === ref.targetReviewFlagId)))
+      } else if (ref.type === 'actionTypeReviewFlag') {
+        await saveReviewFlagLink({ actionTypeId: ref.actionTypeId, reviewFlagId: ref.targetReviewFlagId, isEnabled: false })
+      } else if (ref.type === 'documentReviewFlag') {
+        await saveReviewFlagLink({ documentTypeId: ref.documentTypeId, reviewFlagId: ref.targetReviewFlagId, isEnabled: false })
+      } else if (ref.type === 'participantReviewFlag') {
+        await saveReviewFlagLink({ participantRoleId: ref.participantRoleId, reviewFlagId: ref.targetReviewFlagId, isEnabled: false })
       }
 
       await loadData(selectedActionTypeId)
@@ -1773,7 +1904,12 @@ export default function RenoAppFlowBuilderPage() {
             },
           ])
         }
-      } else if (ref.type === 'optionReviewFlagTrigger') {
+      } else if (
+        ref.type === 'optionReviewFlagTrigger' ||
+        ref.type === 'actionTypeReviewFlag' ||
+        ref.type === 'documentReviewFlag' ||
+        ref.type === 'participantReviewFlag'
+      ) {
         const flag = reviewFlagMap.get(ref.targetReviewFlagId)
         if (!flag) throw new Error('Flaggan kunde inte hittas.')
         const response = await fetch('/api/renoapp/admin/review-flags', {
@@ -1789,19 +1925,27 @@ export default function RenoAppFlowBuilderPage() {
         })
         const payload = await readJson<{ item?: ReviewFlagItem; error?: string }>(response)
         if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte duplicera flaggan.')
-        await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => [
-          ...triggers,
-          {
-            id: `new-${Date.now()}`,
-            triggerType: 'review_flag',
-            questionId: null,
-            documentTypeId: null,
-            participantRoleId: null,
-            reviewFlagId: payload.item!.id,
-            sortOrder: Math.max(0, ...triggers.map((item) => item.sortOrder)) + 10,
-            isActive: true,
-          },
-        ])
+        if (ref.type === 'optionReviewFlagTrigger') {
+          await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => [
+            ...triggers,
+            {
+              id: `new-${Date.now()}`,
+              triggerType: 'review_flag',
+              questionId: null,
+              documentTypeId: null,
+              participantRoleId: null,
+              reviewFlagId: payload.item!.id,
+              sortOrder: Math.max(0, ...triggers.map((item) => item.sortOrder)) + 10,
+              isActive: true,
+            },
+          ])
+        } else if (ref.type === 'actionTypeReviewFlag') {
+          await saveReviewFlagLink({ actionTypeId: ref.actionTypeId, reviewFlagId: payload.item.id })
+        } else if (ref.type === 'documentReviewFlag') {
+          await saveReviewFlagLink({ documentTypeId: ref.documentTypeId, reviewFlagId: payload.item.id })
+        } else if (ref.type === 'participantReviewFlag') {
+          await saveReviewFlagLink({ participantRoleId: ref.participantRoleId, reviewFlagId: payload.item.id })
+        }
       }
 
       await loadData(selectedActionTypeId)
@@ -1856,7 +2000,12 @@ export default function RenoAppFlowBuilderPage() {
         })
         const payload = await readJson<{ error?: string }>(response)
         if (!response.ok) throw new Error(payload.error ?? 'Kunde inte radera medverkandetypen.')
-      } else if (ref.type === 'optionReviewFlagTrigger') {
+      } else if (
+        ref.type === 'optionReviewFlagTrigger' ||
+        ref.type === 'actionTypeReviewFlag' ||
+        ref.type === 'documentReviewFlag' ||
+        ref.type === 'participantReviewFlag'
+      ) {
         const response = await fetch('/api/renoapp/admin/review-flags', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
@@ -2010,6 +2159,11 @@ export default function RenoAppFlowBuilderPage() {
           })
           const payload = await readJson<{ error?: string }>(response)
           if (!response.ok) throw new Error(payload.error ?? 'Kunde inte koppla medverkandetypen.')
+        } else if (addType === 'flag') {
+          await saveReviewFlagLink({
+            actionTypeId: activeNode.ref.actionTypeId,
+            reviewFlagId: targetId,
+          })
         }
       } else if (
         (activeNode.ref.type === 'rootQuestion' ||
@@ -2067,6 +2221,28 @@ export default function RenoAppFlowBuilderPage() {
               isActive: true,
             },
           ]
+        })
+      } else if (
+        (activeNode.ref.type === 'rootRequirement' || activeNode.ref.type === 'optionDocumentTrigger') &&
+        addType === 'flag'
+      ) {
+        await saveReviewFlagLink({
+          documentTypeId:
+            activeNode.ref.type === 'rootRequirement'
+              ? activeNode.ref.documentTypeId
+              : activeNode.ref.targetDocumentTypeId,
+          reviewFlagId: targetId,
+        })
+      } else if (
+        (activeNode.ref.type === 'rootParticipant' || activeNode.ref.type === 'optionParticipantTrigger') &&
+        addType === 'flag'
+      ) {
+        await saveReviewFlagLink({
+          participantRoleId:
+            activeNode.ref.type === 'rootParticipant'
+              ? activeNode.ref.participantRoleId
+              : activeNode.ref.targetParticipantRoleId,
+          reviewFlagId: targetId,
         })
       } else if (activeNode.ref.type === 'option') {
         await updateOptionTriggers(activeNode.ref.questionId, activeNode.ref.optionId, (triggers) => {
@@ -2504,7 +2680,10 @@ export default function RenoAppFlowBuilderPage() {
                       ) : null}
                     </div>
                   ) : null}
-                  {activeNode?.ref.type === 'optionReviewFlagTrigger' ? (
+                  {activeNode?.ref.type === 'optionReviewFlagTrigger' ||
+                  activeNode?.ref.type === 'actionTypeReviewFlag' ||
+                  activeNode?.ref.type === 'documentReviewFlag' ||
+                  activeNode?.ref.type === 'participantReviewFlag' ? (
                     <div className="grid gap-4 md:grid-cols-2">
                       <ModalField label="Visningsnamn">
                         <input value={reviewFlagDraft.label} onChange={(event) => setReviewFlagDraft((current) => ({ ...current, label: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" />

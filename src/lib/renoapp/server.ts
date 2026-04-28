@@ -146,6 +146,16 @@ type ReviewFlagRow = {
   is_active: boolean
 }
 
+type ReviewFlagLinkRow = {
+  id: string
+  review_flag_id: string
+  action_type_id: string | null
+  document_type_id: string | null
+  participant_role_id: string | null
+  sort_order: number
+  is_active: boolean
+}
+
 type ActionTypeQuestionRow = {
   id: string
   action_type_id: string
@@ -2360,6 +2370,7 @@ function addCaseReviewFlag(
 function buildCaseReviewFlags(params: {
   selectedActionTypes: ActionTypeRow[]
   requirements: RequirementRow[]
+  actionTypeParticipantRoles: ActionTypeParticipantRoleRow[]
   questionConfig: {
     questions: ApplyQuestionRow[]
     options: ApplyQuestionOptionRow[]
@@ -2368,6 +2379,7 @@ function buildCaseReviewFlags(params: {
   }
   questionAnswerRows: CaseQuestionAnswerRow[]
   reviewFlags: ReviewFlagRow[]
+  reviewFlagLinks: ReviewFlagLinkRow[]
   documentTypes: DocumentTypeRow[]
   documents: Array<{
     documentTypeId: string | null
@@ -2377,9 +2389,11 @@ function buildCaseReviewFlags(params: {
   const {
     selectedActionTypes,
     requirements,
+    actionTypeParticipantRoles,
     questionConfig,
     questionAnswerRows,
     reviewFlags,
+    reviewFlagLinks,
     documentTypes,
     documents,
   } = params
@@ -2419,6 +2433,35 @@ function buildCaseReviewFlags(params: {
 
   const flagMap = new Map<string, RenoAppCaseDetail['reviewFlags'][number]>()
 
+  const addConfiguredReviewFlags = (
+    links: ReviewFlagLinkRow[],
+    sourceType: RenoAppCaseDetail['reviewFlags'][number]['sourceType'],
+    sourceLabel: string | null
+  ) => {
+    for (const link of links) {
+      const reviewFlag = reviewFlagById.get(link.review_flag_id)
+      if (!reviewFlag) continue
+      addCaseReviewFlag(flagMap, {
+        id: reviewFlag.id,
+        code: reviewFlag.key,
+        label: reviewFlag.label,
+        description: reviewFlag.description ?? null,
+        severity: reviewFlag.severity,
+        category: reviewFlag.category,
+        sourceType,
+        sourceLabel,
+      })
+    }
+  }
+
+  for (const actionType of selectedActionTypes) {
+    addConfiguredReviewFlags(
+      reviewFlagLinks.filter((link) => link.action_type_id === actionType.id),
+      'answer_rule',
+      actionType.label
+    )
+  }
+
   for (const question of applicableQuestions) {
     const selectedOptionKeys = questionAnswers[question.key] ?? []
     if (selectedOptionKeys.length === 0) continue
@@ -2445,20 +2488,37 @@ function buildCaseReviewFlags(params: {
 
         if (
           trigger.triggerType === 'document' &&
-          trigger.documentTypeId &&
-          !uploadedDocumentTypeIds.has(trigger.documentTypeId)
+          trigger.documentTypeId
         ) {
           const documentType = documentTypeById.get(trigger.documentTypeId)
-          addCaseReviewFlag(flagMap, {
-            id: `missing-document-${trigger.documentTypeId}`,
-            code: `missing_document:${trigger.documentTypeId}`,
-            label: `Saknat underlag: ${documentType?.label ?? trigger.documentLabel ?? 'OkÃ¤nt underlag'}`,
-            description: trigger.documentDescription ?? documentType?.description ?? null,
-            severity: 'warning',
-            category: 'dokument',
-            sourceType: 'missing_document',
-            sourceLabel: `${question.label}: ${option.label}`,
-          })
+          const sourceLabel = `${question.label}: ${option.label}`
+          addConfiguredReviewFlags(
+            reviewFlagLinks.filter((link) => link.document_type_id === trigger.documentTypeId),
+            'answer_rule',
+            sourceLabel
+          )
+
+          if (!uploadedDocumentTypeIds.has(trigger.documentTypeId)) {
+            addCaseReviewFlag(flagMap, {
+              id: `missing-document-${trigger.documentTypeId}`,
+              code: `missing_document:${trigger.documentTypeId}`,
+              label: `Saknat underlag: ${documentType?.label ?? trigger.documentLabel ?? 'OkÃ¤nt underlag'}`,
+              description: trigger.documentDescription ?? documentType?.description ?? null,
+              severity: 'warning',
+              category: 'dokument',
+              sourceType: 'missing_document',
+              sourceLabel,
+            })
+          }
+        }
+
+        if (trigger.triggerType === 'participant_role' && trigger.participantRoleId) {
+          const sourceLabel = `${question.label}: ${option.label}`
+          addConfiguredReviewFlags(
+            reviewFlagLinks.filter((link) => link.participant_role_id === trigger.participantRoleId),
+            'answer_rule',
+            sourceLabel
+          )
         }
       }
     }
@@ -2466,12 +2526,19 @@ function buildCaseReviewFlags(params: {
 
   for (const requirement of requirements) {
     if (!selectedActionTypeIds.has(requirement.action_type_id)) continue
+    const documentType = documentTypeById.get(requirement.document_type_id)
+    const actionType = actionTypeById.get(requirement.action_type_id)
+    const sourceLabel = actionType?.label ?? 'Grundkrav'
+
+    addConfiguredReviewFlags(
+      reviewFlagLinks.filter((link) => link.document_type_id === requirement.document_type_id),
+      'answer_rule',
+      sourceLabel
+    )
+
     if (!requirement.is_required) continue
     if (requirement.phase !== 'before_required' && requirement.phase !== 'before_conditional') continue
     if (uploadedDocumentTypeIds.has(requirement.document_type_id)) continue
-
-    const documentType = documentTypeById.get(requirement.document_type_id)
-    const actionType = actionTypeById.get(requirement.action_type_id)
 
     addCaseReviewFlag(flagMap, {
       id: `missing-document-${requirement.document_type_id}`,
@@ -2481,8 +2548,18 @@ function buildCaseReviewFlags(params: {
       severity: 'warning',
       category: 'dokument',
       sourceType: 'missing_document',
-      sourceLabel: actionType?.label ?? 'Grundkrav',
+      sourceLabel,
     })
+  }
+
+  for (const link of actionTypeParticipantRoles) {
+    if (!selectedActionTypeIds.has(link.action_type_id)) continue
+    const actionType = actionTypeById.get(link.action_type_id)
+    addConfiguredReviewFlags(
+      reviewFlagLinks.filter((flagLink) => flagLink.participant_role_id === link.participant_role_id),
+      'participant',
+      actionType?.label ?? 'Medverkande'
+    )
   }
 
   return Array.from(flagMap.values()).sort((left, right) => {
@@ -6013,6 +6090,131 @@ export async function deleteRenoAppAdminReviewFlag(id: string): Promise<void> {
   }
 }
 
+export type RenoAppAdminReviewFlagLink = {
+  id: string
+  reviewFlagId: string
+  actionTypeId: string | null
+  documentTypeId: string | null
+  participantRoleId: string | null
+  sortOrder: number
+  isActive: boolean
+}
+
+function mapReviewFlagLinkToAdmin(row: ReviewFlagLinkRow): RenoAppAdminReviewFlagLink {
+  return {
+    id: row.id,
+    reviewFlagId: row.review_flag_id,
+    actionTypeId: row.action_type_id,
+    documentTypeId: row.document_type_id,
+    participantRoleId: row.participant_role_id,
+    sortOrder: row.sort_order,
+    isActive: row.is_active,
+  }
+}
+
+export async function listRenoAppAdminReviewFlagLinks(): Promise<RenoAppAdminReviewFlagLink[]> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const { data, error } = await admin
+    .from('renoapp_review_flag_links')
+    .select('id,review_flag_id,action_type_id,document_type_id,participant_role_id,sort_order,is_active')
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa flaggkopplingar.')
+  }
+
+  return ((data ?? []) as ReviewFlagLinkRow[]).map(mapReviewFlagLinkToAdmin)
+}
+
+export async function listActiveReviewFlagLinks(admin: SupabaseAdminClient): Promise<ReviewFlagLinkRow[]> {
+  const { data, error } = await admin
+    .from('renoapp_review_flag_links')
+    .select('id,review_flag_id,action_type_id,document_type_id,participant_role_id,sort_order,is_active')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa flaggkopplingar.')
+  }
+
+  return (data ?? []) as ReviewFlagLinkRow[]
+}
+
+export async function saveRenoAppAdminReviewFlagLink(input: {
+  reviewFlagId: string
+  actionTypeId?: string | null
+  documentTypeId?: string | null
+  participantRoleId?: string | null
+  isEnabled: boolean
+  sortOrder?: number | null
+}): Promise<void> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const actionTypeId = input.actionTypeId || null
+  const documentTypeId = input.documentTypeId || null
+  const participantRoleId = input.participantRoleId || null
+  const targetCount = [actionTypeId, documentTypeId, participantRoleId].filter(Boolean).length
+
+  if (!input.reviewFlagId || targetCount !== 1) {
+    throw new Error('REVIEW_FLAG_LINK_TARGET_REQUIRED')
+  }
+
+  let existingQuery = admin
+    .from('renoapp_review_flag_links')
+    .select('id')
+    .eq('review_flag_id', input.reviewFlagId)
+
+  existingQuery = actionTypeId
+    ? existingQuery.eq('action_type_id', actionTypeId)
+    : existingQuery.is('action_type_id', null)
+  existingQuery = documentTypeId
+    ? existingQuery.eq('document_type_id', documentTypeId)
+    : existingQuery.is('document_type_id', null)
+  existingQuery = participantRoleId
+    ? existingQuery.eq('participant_role_id', participantRoleId)
+    : existingQuery.is('participant_role_id', null)
+
+  const existingResult = await existingQuery.maybeSingle()
+  if (existingResult.error) {
+    throw new Error(existingResult.error.message ?? 'Kunde inte läsa flaggkoppling.')
+  }
+
+  if (!input.isEnabled) {
+    if (existingResult.data?.id) {
+      const { error } = await admin
+        .from('renoapp_review_flag_links')
+        .delete()
+        .eq('id', String(existingResult.data.id))
+      if (error) throw new Error(error.message ?? 'Kunde inte ta bort flaggkoppling.')
+    }
+    return
+  }
+
+  const payload = {
+    review_flag_id: input.reviewFlagId,
+    action_type_id: actionTypeId,
+    document_type_id: documentTypeId,
+    participant_role_id: participantRoleId,
+    sort_order:
+      Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0
+        ? Number(input.sortOrder)
+        : 100,
+    is_active: true,
+  }
+
+  const query = existingResult.data?.id
+    ? admin.from('renoapp_review_flag_links').update(payload).eq('id', String(existingResult.data.id))
+    : admin.from('renoapp_review_flag_links').insert(payload)
+
+  const { error } = await query
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte spara flaggkoppling.')
+  }
+}
+
 export async function listRenoAppAdminParticipantRoleConfig(): Promise<{
   participantRoles: RenoAppAdminParticipantRole[]
   actionTypes: RenoAppAdminActionTypeParticipantRoleGroup[]
@@ -7355,6 +7557,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
     participantRoleRows,
     participantRoleConfig,
     reviewFlagRows,
+    reviewFlagLinkRows,
     messages,
   ] =
     await Promise.all([
@@ -7405,6 +7608,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
         .eq('is_active', true)
         .order('sort_order', { ascending: true }),
       listActiveReviewFlags(admin),
+      listActiveReviewFlagLinks(admin),
       listCaseMessages(admin, caseId),
     ])
 
@@ -7517,9 +7721,11 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
   const reviewFlags = buildCaseReviewFlags({
     selectedActionTypes,
     requirements,
+    actionTypeParticipantRoles: (participantRoleConfig.data ?? []) as ActionTypeParticipantRoleRow[],
     questionConfig,
     questionAnswerRows: caseQuestionAnswersResult ?? [],
     reviewFlags: reviewFlagRows,
+    reviewFlagLinks: reviewFlagLinkRows,
     documentTypes: requiredDocumentTypes,
     documents: ((docsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
       documentTypeId: (row.document_type_id as string | null | undefined) ?? null,
