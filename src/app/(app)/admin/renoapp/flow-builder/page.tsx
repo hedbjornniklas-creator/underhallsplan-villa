@@ -741,6 +741,7 @@ export default function RenoAppFlowBuilderPage() {
   const [existingTargetId, setExistingTargetId] = useState('')
   const [addPreviewQuestionId, setAddPreviewQuestionId] = useState<string | null>(null)
   const [duplicateQuestionSourceId, setDuplicateQuestionSourceId] = useState<string | null>(null)
+  const [flagTargetOptionId, setFlagTargetOptionId] = useState('')
 
   const [actionTypeDraft, setActionTypeDraft] = useState<ActionTypeDraft>(EMPTY_ACTION_TYPE_DRAFT)
   const [questionDraft, setQuestionDraft] = useState<QuestionDraft>(EMPTY_QUESTION_DRAFT)
@@ -1010,6 +1011,7 @@ export default function RenoAppFlowBuilderPage() {
     setExistingTargetId('')
     setAddPreviewQuestionId(null)
     setDuplicateQuestionSourceId(null)
+    setFlagTargetOptionId('')
     const ref = node.ref
 
     const question =
@@ -1203,6 +1205,7 @@ export default function RenoAppFlowBuilderPage() {
     setExistingTargetId('')
     setAddPreviewQuestionId(null)
     setDuplicateQuestionSourceId(null)
+    setFlagTargetOptionId('')
   }
 
   const toggleNode = (id: string) => setExpandedNodeIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
@@ -1248,7 +1251,7 @@ export default function RenoAppFlowBuilderPage() {
       activeNode.ref.type === 'question' ||
       activeNode.ref.type === 'optionQuestionTrigger'
     ) {
-      return ['option']
+      return ['option', 'flag']
     }
     if (activeNode.ref.type === 'option') return ['question', 'document', 'participant', 'flag']
     return []
@@ -2034,6 +2037,37 @@ export default function RenoAppFlowBuilderPage() {
             },
           ],
         })
+      } else if (
+        (activeNode.ref.type === 'rootQuestion' ||
+          activeNode.ref.type === 'question' ||
+          activeNode.ref.type === 'optionQuestionTrigger') &&
+        addType === 'flag'
+      ) {
+        const questionId = activeQuestionIdForOptionAdd
+        if (!questionId) throw new Error('Frågan kunde inte hittas.')
+        const targetOptionId = flagTargetOptionId || activeQuestionSummary?.options[0]?.id || ''
+        if (!targetOptionId) throw new Error('Välj vilket svarsalternativ som ska trigga flaggan.')
+
+        await updateOptionTriggers(questionId, targetOptionId, (triggers) => {
+          const exists = triggers.some(
+            (trigger) => trigger.triggerType === 'review_flag' && trigger.reviewFlagId === targetId
+          )
+          if (exists) return triggers
+
+          return [
+            ...triggers,
+            {
+              id: `new-${Date.now()}`,
+              triggerType: 'review_flag',
+              questionId: null,
+              documentTypeId: null,
+              participantRoleId: null,
+              reviewFlagId: targetId,
+              sortOrder: Math.max(0, ...triggers.map((item) => item.sortOrder)) + 10,
+              isActive: true,
+            },
+          ]
+        })
       } else if (activeNode.ref.type === 'option') {
         await updateOptionTriggers(activeNode.ref.questionId, activeNode.ref.optionId, (triggers) => {
           const exists = triggers.some((trigger) => {
@@ -2066,6 +2100,7 @@ export default function RenoAppFlowBuilderPage() {
         setExistingTargetId('')
         setAddPreviewQuestionId(null)
         setDuplicateQuestionSourceId(null)
+        setFlagTargetOptionId('')
         resetNewDraftForType(addType)
       }
     } catch (addError) {
@@ -2506,7 +2541,7 @@ export default function RenoAppFlowBuilderPage() {
                 <div className="space-y-4">
                   <div className="flex flex-wrap gap-2">
                     {addableTypes.map((type) => (
-                      <button key={type} type="button" onClick={() => { setAddType(type); setExistingTargetId(''); setAddMode(type === 'option' ? 'new' : 'existing'); setAddPreviewQuestionId(null); setDuplicateQuestionSourceId(null); if (type === 'question') setQuestionOptionDrafts([createQuestionOptionDraft()]) }} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', addType === type ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>
+                      <button key={type} type="button" onClick={() => { setAddType(type); setExistingTargetId(''); setAddMode(type === 'option' ? 'new' : 'existing'); setAddPreviewQuestionId(null); setDuplicateQuestionSourceId(null); setFlagTargetOptionId(type === 'flag' ? activeQuestionSummary?.options[0]?.id ?? '' : ''); if (type === 'question') setQuestionOptionDrafts([createQuestionOptionDraft()]) }} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', addType === type ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>
                         {type === 'question' ? 'Fråga' : type === 'option' ? 'Svarsalternativ' : type === 'document' ? 'Underlag' : type === 'participant' ? 'Medverkande' : 'Flagga'}
                       </button>
                     ))}
@@ -2515,6 +2550,22 @@ export default function RenoAppFlowBuilderPage() {
                     <button type="button" onClick={() => { setAddMode('existing'); setExistingTargetId(''); setAddPreviewQuestionId(null); setDuplicateQuestionSourceId(null) }} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', addMode === 'existing' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Lägg till befintlig</button>
                     <button type="button" onClick={() => { setAddMode('new'); setDuplicateQuestionSourceId(null); if (addType === 'question') setQuestionOptionDrafts([createQuestionOptionDraft()]) }} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', addMode === 'new' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Skapa ny</button>
                   </div> : null}
+                  {addType === 'flag' && activeNode?.ref.type !== 'option' ? (
+                    <ModalField label="Flaggan triggas av svar">
+                      <select
+                        value={flagTargetOptionId}
+                        onChange={(event) => setFlagTargetOptionId(event.target.value)}
+                        className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"
+                      >
+                        <option value="">Välj svarsalternativ...</option>
+                        {(activeQuestionSummary?.options ?? []).map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </ModalField>
+                  ) : null}
                   {addMode === 'existing' && addType === 'question' ? (
                     <div className="space-y-4">
                       <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl border border-stone-200 bg-stone-50 p-3">
