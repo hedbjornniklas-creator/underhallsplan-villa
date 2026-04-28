@@ -42,6 +42,8 @@ type DraftParticipantRole = {
   isActive: boolean
 }
 
+type SortKey = 'label' | 'key' | 'roleKind' | 'sortOrder' | 'isActive'
+
 const EMPTY_DRAFT: DraftParticipantRole = {
   key: '',
   label: '',
@@ -71,11 +73,20 @@ function slugifyKey(value: string) {
     .replace(/_{2,}/g, '_')
 }
 
+function renderSortIcon(active: boolean, dir: 'asc' | 'desc') {
+  if (!active) return <span className="text-stone-300">◇</span>
+  return <span className="text-stone-500">{dir === 'asc' ? '↑' : '↓'}</span>
+}
+
 export default function RenoAppParticipantsAdminPage() {
   const [items, setItems] = useState<ParticipantRoleItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({
+    key: 'sortOrder',
+    dir: 'asc',
+  })
   const [modalOpen, setModalOpen] = useState(false)
   const [draft, setDraft] = useState<DraftParticipantRole>(EMPTY_DRAFT)
   const [savingKey, setSavingKey] = useState<string | null>(null)
@@ -134,8 +145,45 @@ export default function RenoAppParticipantsAdminPage() {
           .toLowerCase()
           .includes(normalizedQuery)
       })
-      .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv'))
-  }, [items, query])
+      .sort((left, right) => {
+        let comparison = 0
+
+        switch (sort.key) {
+          case 'label':
+            comparison = left.label.localeCompare(right.label, 'sv')
+            break
+          case 'key':
+            comparison = left.key.localeCompare(right.key, 'sv')
+            break
+          case 'roleKind':
+            comparison = left.roleKind.localeCompare(right.roleKind, 'sv')
+            break
+          case 'isActive':
+            comparison = Number(left.isActive) - Number(right.isActive)
+            break
+          default:
+            comparison = left.sortOrder - right.sortOrder
+            break
+        }
+
+        if (comparison === 0) {
+          comparison =
+            left.sortOrder - right.sortOrder ||
+            left.label.localeCompare(right.label, 'sv') ||
+            left.key.localeCompare(right.key, 'sv')
+        }
+
+        return sort.dir === 'asc' ? comparison : -comparison
+      })
+  }, [items, query, sort])
+
+  const toggleSort = (key: SortKey) => {
+    setSort((current) =>
+      current.key === key
+        ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: 'asc' }
+    )
+  }
 
   const generatedKey = draft.id && draft.key ? draft.key : slugifyKey(draft.label)
 
@@ -259,6 +307,27 @@ export default function RenoAppParticipantsAdminPage() {
               + Ny
             </button>
           </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-stone-600">
+          <span className="text-stone-400">Sortera:</span>
+          {[
+            ['label', 'Term'],
+            ['key', 'Kod'],
+            ['roleKind', 'Typ'],
+            ['sortOrder', 'Sortering'],
+            ['isActive', 'Aktiv'],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => toggleSort(key as SortKey)}
+              className="inline-flex items-center gap-1 rounded-full border border-stone-200 px-2.5 py-1 hover:bg-stone-50"
+            >
+              {label}
+              {renderSortIcon(sort.key === key, sort.dir)}
+            </button>
+          ))}
         </div>
 
         {loading ? (
