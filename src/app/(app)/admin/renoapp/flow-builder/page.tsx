@@ -597,6 +597,38 @@ function ModalField({
   )
 }
 
+function OverviewCard({
+  label,
+  value,
+}: {
+  label: string
+  value: ReactNode
+}) {
+  return (
+    <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">{label}</div>
+      <div className="mt-1 font-medium text-stone-900">{value}</div>
+    </div>
+  )
+}
+
+function OverviewText({
+  label,
+  value,
+  fallback = 'Ej angivet.',
+}: {
+  label: string
+  value: string | null | undefined
+  fallback?: string
+}) {
+  return (
+    <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">{label}</div>
+      <div className="mt-1 whitespace-pre-wrap text-stone-800">{value?.trim() ? value : fallback}</div>
+    </div>
+  )
+}
+
 function HelpField({
   name,
   children,
@@ -2286,6 +2318,180 @@ export default function RenoAppFlowBuilderPage() {
     }
   }
 
+  const renderOverview = () => {
+    if (!activeNode) return null
+
+    const commonShell = (children: ReactNode) => (
+      <div className="space-y-4 rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
+        {children}
+      </div>
+    )
+
+    if (activeNode.ref.type === 'actionType') {
+      return commonShell(
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <OverviewCard label="Intern nyckel" value={actionTypeDraft.key || '-'} />
+            <OverviewCard label="Status" value={actionTypeDraft.isActive ? 'Aktiv renoveringstyp' : 'Inaktiv renoveringstyp'} />
+            <OverviewCard label="Sortering" value={actionTypeDraft.sortOrder} />
+            <OverviewCard label="Kopplingar" value={`${rootQuestions.length} frågor, ${rootRequirements.length} underlag, ${rootParticipants.length} medverkande`} />
+          </div>
+          <OverviewText label="Beskrivning" value={actionTypeDraft.description} fallback="Ingen beskrivning angiven." />
+        </>
+      )
+    }
+
+    if (activeQuestionSummary) {
+      return commonShell(
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <OverviewCard label="Intern nyckel" value={activeQuestionSummary.key} />
+            <OverviewCard label="Svarstyp" value={labelForResponseType(activeQuestionSummary.responseType)} />
+            <OverviewCard label="Sortering" value={activeQuestionSummary.sortOrder} />
+            <OverviewCard label="Status" value={activeQuestionSummary.isActive ? 'Aktiv fråga' : 'Inaktiv fråga'} />
+          </div>
+
+          {activeNode.ref.type === 'rootQuestion' ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <OverviewCard label="Koppling till renoveringstyp" value={questionLinkDraft.isRequired ? 'Obligatorisk' : 'Valfri'} />
+              <OverviewCard label="Kopplingens sortering" value={questionLinkDraft.sortOrder} />
+            </div>
+          ) : null}
+
+          <OverviewText label="Hjälptext" value={activeQuestionSummary.helpText} fallback="Ingen hjälptext angiven." />
+
+          <div className="space-y-2">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Svarsalternativ</div>
+            {activeQuestionSummary.options.length > 0 ? (
+              activeQuestionSummary.options
+                .slice()
+                .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv'))
+                .map((option) => {
+                  const activeTriggerCount = option.triggers.filter((trigger) => trigger.isActive).length
+                  return (
+                    <div key={option.id} className="rounded-lg border border-stone-200 bg-white px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-stone-900">{option.label}</div>
+                          <div className="mt-1 text-xs text-stone-500">{option.key}</div>
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-1">
+                          <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-semibold text-stone-700">{option.sortOrder}</span>
+                          <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-semibold text-stone-700">{activeTriggerCount} kopplingar</span>
+                          <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-semibold text-stone-700">{option.isActive ? 'Aktiv' : 'Inaktiv'}</span>
+                        </div>
+                      </div>
+                      {option.description?.trim() ? <div className="mt-2 whitespace-pre-wrap text-sm text-stone-700">{option.description}</div> : null}
+                    </div>
+                  )
+                })
+            ) : (
+              <div className="rounded-lg border border-dashed border-stone-300 bg-white px-4 py-3 text-stone-600">Inga svarsalternativ finns ännu.</div>
+            )}
+          </div>
+        </>
+      )
+    }
+
+    if (activeNode.ref.type === 'option') {
+      return commonShell(
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <OverviewCard label="Intern nyckel" value={optionDraft.key || generatedOptionKey(optionDraft) || '-'} />
+            <OverviewCard label="Status" value={optionDraft.isActive ? 'Aktivt svarsalternativ' : 'Inaktivt svarsalternativ'} />
+            <OverviewCard label="Sortering" value={optionDraft.sortOrder} />
+            <OverviewCard label="Kopplingar" value={`${questionMap.get(activeNode.ref.questionId)?.options.find((item) => item.id === activeNode.ref.optionId)?.triggers.filter((trigger) => trigger.isActive).length ?? 0} kopplingar`} />
+          </div>
+          <OverviewText label="Beskrivning" value={optionDraft.description} fallback="Ingen beskrivning angiven." />
+        </>
+      )
+    }
+
+    if (activeNode.ref.type === 'rootRequirement' || activeNode.ref.type === 'optionDocumentTrigger') {
+      return commonShell(
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <OverviewCard label="Intern nyckel" value={documentDraft.key || '-'} />
+            <OverviewCard label="Standardfas" value={labelForPhase(documentDraft.defaultPhase)} />
+            <OverviewCard label="Sortering" value={documentDraft.sortOrder} />
+            <OverviewCard label="Status" value={documentDraft.isActive ? 'Aktiv underlagstyp' : 'Inaktiv underlagstyp'} />
+          </div>
+          {activeNode.ref.type === 'rootRequirement' ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <OverviewCard label="Koppling till renoveringstyp" value={requirementLinkDraft.isRequired ? 'Obligatoriskt' : 'Valfritt'} />
+              <OverviewCard label="Kopplingens sortering" value={requirementLinkDraft.sortOrder} />
+            </div>
+          ) : null}
+          <OverviewText label="Hjälptext till sökande" value={documentDraft.description} fallback="Ingen hjälptext angiven." />
+          <OverviewText label="Granskningsstöd" value={documentDraft.reviewGuidance} fallback="Inget granskningsstöd angivet." />
+          {activeNode.ref.type === 'rootRequirement' ? <OverviewText label="Notering" value={requirementLinkDraft.note} fallback="Ingen notering angiven." /> : null}
+        </>
+      )
+    }
+
+    if (activeNode.ref.type === 'rootParticipant' || activeNode.ref.type === 'optionParticipantTrigger') {
+      const requirements = [
+        participantDraft.insuranceRequired ? 'Försäkringsbevis' : null,
+        participantDraft.requiresCompanyName ? 'Företagsnamn' : null,
+        participantDraft.requiresOrgNumber ? 'Org.nr' : null,
+        participantDraft.requiresContactName ? 'Kontaktperson' : null,
+        participantDraft.requiresEmail ? 'E-post' : null,
+        participantDraft.requiresPhone ? 'Telefon' : null,
+        participantDraft.requiresCertification ? 'Certifiering' : null,
+      ].filter(Boolean).join(', ')
+
+      return commonShell(
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <OverviewCard label="Intern nyckel" value={participantDraft.key || '-'} />
+            <OverviewCard label="Typ" value={participantDraft.roleKind === 'consultant' ? 'Konsult' : 'Entreprenör'} />
+            <OverviewCard label="Sortering" value={participantDraft.sortOrder} />
+            <OverviewCard label="Status" value={participantDraft.isActive ? 'Aktiv medverkandetyp' : 'Inaktiv medverkandetyp'} />
+          </div>
+          {activeNode.ref.type === 'rootParticipant' ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <OverviewCard label="Koppling till renoveringstyp" value={participantLinkDraft.isRequired ? 'Obligatorisk' : 'Valfri'} />
+              <OverviewCard label="Kopplingens sortering" value={participantLinkDraft.sortOrder} />
+            </div>
+          ) : null}
+          <OverviewCard label="Informationskrav" value={requirements || 'Inga särskilda informationskrav'} />
+          <OverviewText label="Hjälptext till sökande" value={participantDraft.description} fallback="Ingen hjälptext angiven." />
+          <OverviewText label="Granskningsstöd" value={participantDraft.reviewGuidance} fallback="Inget granskningsstöd angivet." />
+          <OverviewText label="Verifieringsinstruktion" value={participantDraft.verificationInstructions} fallback="Ingen verifieringsinstruktion angiven." />
+          <OverviewCard label="Verifieringslänk" value={participantDraft.verificationUrl || '-'} />
+        </>
+      )
+    }
+
+    if (
+      activeNode.ref.type === 'optionReviewFlagTrigger' ||
+      activeNode.ref.type === 'actionTypeReviewFlag' ||
+      activeNode.ref.type === 'documentReviewFlag' ||
+      activeNode.ref.type === 'participantReviewFlag'
+    ) {
+      return commonShell(
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <OverviewCard label="Intern nyckel" value={reviewFlagDraft.key || '-'} />
+            <OverviewCard label="Allvar" value={labelForSeverity(reviewFlagDraft.severity)} />
+            <OverviewCard label="Kategori" value={reviewFlagDraft.category || '-'} />
+            <OverviewCard label="Status" value={reviewFlagDraft.isActive ? 'Aktiv flagga' : 'Inaktiv flagga'} />
+            <OverviewCard label="Sortering" value={reviewFlagDraft.sortOrder} />
+            <OverviewCard label="Kopplad från" value={labelForNodeKind(activeNode.kind)} />
+          </div>
+          <OverviewText label="Beskrivning" value={reviewFlagDraft.description} fallback="Ingen beskrivning angiven." />
+        </>
+      )
+    }
+
+    return commonShell(
+      <>
+        <p>Här ser du en snabb översikt av den valda noden.</p>
+        <p className="text-xs text-stone-500">Använd <span className="font-semibold">Redigera</span> för att ändra innehåll eller <span className="font-semibold">Lägg till</span> för att bygga vidare i flödet.</p>
+      </>
+    )
+  }
+
   return (
     <main className="w-full px-4 pb-6 pt-3 md:px-6">
       {error ? <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
@@ -2398,86 +2604,7 @@ export default function RenoAppFlowBuilderPage() {
                 {canRemoveConnection ? <button type="button" onClick={() => { if (window.confirm('Ta bort denna koppling från det här flödet? Själva objektet finns kvar i systemet.')) void removeConnection() }} className="rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Ta bort från flödet</button> : null}
               </div>
 
-              {modalMode === 'summary' ? (
-                activeQuestionSummary ? (
-                  <div className="space-y-4 rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Intern nyckel</div>
-                        <div className="mt-1 font-medium text-stone-900">{activeQuestionSummary.key}</div>
-                      </div>
-                      <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Svarstyp</div>
-                        <div className="mt-1 font-medium text-stone-900">{labelForResponseType(activeQuestionSummary.responseType)}</div>
-                      </div>
-                      <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Sortering</div>
-                        <div className="mt-1 font-medium text-stone-900">{activeQuestionSummary.sortOrder}</div>
-                      </div>
-                      <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Status</div>
-                        <div className="mt-1 font-medium text-stone-900">{activeQuestionSummary.isActive ? 'Aktiv fråga' : 'Inaktiv fråga'}</div>
-                      </div>
-                    </div>
-
-                    {activeNode?.ref.type === 'rootQuestion' ? (
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
-                          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Koppling till renoveringstyp</div>
-                          <div className="mt-1 font-medium text-stone-900">{questionLinkDraft.isRequired ? 'Obligatorisk' : 'Valfri'}</div>
-                        </div>
-                        <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
-                          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Kopplingens sortering</div>
-                          <div className="mt-1 font-medium text-stone-900">{questionLinkDraft.sortOrder}</div>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Hjälptext</div>
-                      <div className="mt-1 whitespace-pre-wrap text-stone-800">
-                        {activeQuestionSummary.helpText?.trim() ? activeQuestionSummary.helpText : 'Ingen hjälpttext angiven.'}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Svarsalternativ</div>
-                      {activeQuestionSummary.options.length > 0 ? (
-                        activeQuestionSummary.options
-                          .slice()
-                          .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv'))
-                          .map((option) => {
-                            const activeTriggerCount = option.triggers.filter((trigger) => trigger.isActive).length
-                            return (
-                              <div key={option.id} className="rounded-lg border border-stone-200 bg-white px-4 py-3">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div className="font-semibold text-stone-900">{option.label}</div>
-                                    <div className="mt-1 text-xs text-stone-500">{option.key}</div>
-                                  </div>
-                                  <div className="flex flex-wrap justify-end gap-1">
-                                    <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-semibold text-stone-700">{option.sortOrder}</span>
-                                    <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-semibold text-stone-700">{activeTriggerCount} kopplingar</span>
-                                    <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-semibold text-stone-700">{option.isActive ? 'Aktiv' : 'Inaktiv'}</span>
-                                  </div>
-                                </div>
-                                {option.description?.trim() ? <div className="mt-2 text-sm text-stone-700">{option.description}</div> : null}
-                              </div>
-                            )
-                          })
-                      ) : (
-                        <div className="rounded-lg border border-dashed border-stone-300 bg-white px-4 py-3 text-stone-600">Inga svarsalternativ finns ännu.</div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-3 rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
-                    <p>Här ser du en snabb översikt av den valda noden.</p>
-                    <p className="text-xs text-stone-500">Använd <span className="font-semibold">Redigera</span> för att ändra innehåll eller <span className="font-semibold">Lägg till</span> för att bygga vidare i flödet.</p>
-                    <p className="text-xs text-stone-500"><span className="font-semibold">Skapa kopia</span> gör en ny fristående variant. <span className="font-semibold">Ta bort från flödet</span> tar bara bort länken här. <span className="font-semibold">Radera överallt</span> tar bort själva objektet ur systemet.</p>
-                  </div>
-                )
-              ) : null}
+              {modalMode === 'summary' ? renderOverview() : null}
 
               {modalMode === 'edit' && canEditNode ? (
                 <div className="space-y-4">
