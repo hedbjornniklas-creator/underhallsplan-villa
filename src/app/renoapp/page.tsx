@@ -1,4 +1,11 @@
 import Link from 'next/link'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'RenoApp | Renoveringsärenden för BRF',
+  description:
+    'RenoApp samlar BRF:s renoveringsansökningar i ett tydligt flöde för boende, styrelse och föreningar som vill ansluta.',
+}
 
 const FAQ_ITEMS = [
   {
@@ -43,8 +50,8 @@ export default function RenoAppLandingPage() {
               <h2 className="mt-4 max-w-[14ch] text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
                 Skapa renoveringsansökan
               </h2>
-              <p className="mt-5 max-w-[30rem] text-base leading-8 text-stone-700 sm:text-lg">
-                Gå vidare till din BRF:s ansökan, fyll i projektet och komplettera underlag i samma flöde.
+              <p className="mt-5 max-w-[30rem] text-base leading-7 text-stone-700 sm:text-lg sm:leading-8">
+                Gå vidare till din BRF:s ansökningssida, fyll i projektet och komplettera underlag i samma flöde.
               </p>
               <div className="mt-10 text-base font-semibold text-stone-950">
                 Till ansökan <span aria-hidden="true">→</span>
@@ -95,9 +102,7 @@ export default function RenoAppLandingPage() {
         </section>
 
         <section className="border-t border-stone-200 pt-8">
-          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
-            Vanliga frågor
-          </p>
+          <h2 className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">Vanliga frågor</h2>
           <div className="mt-6 border-t border-stone-200">
             {FAQ_ITEMS.map((item) => (
               <details key={item.question} className="border-b border-stone-200 py-5">
