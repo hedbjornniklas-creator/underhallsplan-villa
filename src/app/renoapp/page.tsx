@@ -28,11 +28,11 @@ export default function RenoAppLandingPage() {
   return (
     <main>
       <div className="mx-auto flex min-h-[calc(100vh-73px)] w-full max-w-[1800px] flex-col px-6 py-8 sm:px-8 lg:px-10">
-        <section className="border-b border-stone-200 pb-8 text-center">
-          <h1 className="mx-auto max-w-[18ch] text-3xl font-semibold tracking-tight text-stone-950 sm:text-4xl xl:text-5xl">
+        <section className="border-b border-stone-200 pb-8 text-left sm:text-center">
+          <h1 className="max-w-[18ch] text-[2.15rem] font-semibold tracking-tight text-stone-950 sm:mx-auto sm:text-4xl xl:text-5xl">
             Renoveringsärenden för BRF
           </h1>
-          <p className="mx-auto mt-4 max-w-[42rem] text-base leading-7 text-stone-700 sm:text-lg sm:leading-8">
+          <p className="mt-5 max-w-[34rem] text-base leading-7 text-stone-700 sm:mx-auto sm:mt-4 sm:max-w-[42rem] sm:text-lg sm:leading-8">
             Ansökan är för boende, login är för styrelse och BRF-användare, och anslutning är för
             föreningar som vill börja använda RenoApp.
           </p>
@@ -44,7 +44,7 @@ export default function RenoAppLandingPage() {
             className="group border-b border-stone-200 px-2 py-12 transition duration-300 ease-out hover:bg-stone-950/[0.025] md:px-12 lg:px-16 xl:px-20"
           >
             <div className="mx-auto w-full max-w-[32rem] origin-center transition duration-300 ease-out group-hover:scale-[1.02]">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-stone-500 sm:tracking-[0.24em]">
                 För boende och lägenhetsinnehavare
               </p>
               <h2 className="mt-4 max-w-[14ch] text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
@@ -64,13 +64,13 @@ export default function RenoAppLandingPage() {
             className="group border-b border-stone-200 px-2 py-12 transition duration-300 ease-out hover:bg-stone-950/[0.025] md:px-12 lg:px-16 xl:px-20"
           >
             <div className="mx-auto w-full max-w-[32rem] origin-center transition duration-300 ease-out group-hover:scale-[1.02]">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-stone-500 sm:tracking-[0.24em]">
                 För styrelse och BRF-användare
               </p>
               <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
                 Styrelse-login
               </h2>
-              <p className="mt-5 max-w-[30rem] text-base leading-8 text-stone-700 sm:text-lg">
+              <p className="mt-5 max-w-[30rem] text-base leading-7 text-stone-700 sm:text-lg sm:leading-8">
                 Öppna ärenden, dokument och beslut för föreningens pågående renoveringsärenden.
               </p>
               <div className="mt-10 text-base font-semibold text-stone-950">
@@ -84,13 +84,13 @@ export default function RenoAppLandingPage() {
             className="group border-b border-stone-200 px-2 py-12 transition duration-300 ease-out hover:bg-stone-950/[0.025] md:px-12 lg:px-16 xl:px-20"
           >
             <div className="mx-auto w-full max-w-[32rem] origin-center transition duration-300 ease-out group-hover:scale-[1.02]">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-stone-500 sm:tracking-[0.24em]">
                 För föreningar som vill ansluta sig
               </p>
               <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
                 Anslut BRF
               </h2>
-              <p className="mt-5 max-w-[30rem] text-base leading-8 text-stone-700 sm:text-lg">
+              <p className="mt-5 max-w-[30rem] text-base leading-7 text-stone-700 sm:text-lg sm:leading-8">
                 Ansök om att börja använda RenoApp och kom igång med ett gemensamt flöde för ansökan,
                 granskning och beslut.
               </p>
