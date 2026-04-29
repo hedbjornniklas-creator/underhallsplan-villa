@@ -2394,13 +2394,20 @@ export default function RenoAppFlowBuilderPage() {
     }
 
     if (activeNode.ref.type === 'option') {
+      const optionRef = activeNode.ref
+      const optionTriggerCount =
+        questionMap
+          .get(optionRef.questionId)
+          ?.options.find((item) => item.id === optionRef.optionId)
+          ?.triggers.filter((trigger) => trigger.isActive).length ?? 0
+
       return commonShell(
         <>
           <div className="grid gap-4 md:grid-cols-2">
             <OverviewCard label="Intern nyckel" value={optionDraft.key || generatedOptionKey(optionDraft) || '-'} />
             <OverviewCard label="Status" value={optionDraft.isActive ? 'Aktivt svarsalternativ' : 'Inaktivt svarsalternativ'} />
             <OverviewCard label="Sortering" value={optionDraft.sortOrder} />
-            <OverviewCard label="Kopplingar" value={`${questionMap.get(activeNode.ref.questionId)?.options.find((item) => item.id === activeNode.ref.optionId)?.triggers.filter((trigger) => trigger.isActive).length ?? 0} kopplingar`} />
+            <OverviewCard label="Kopplingar" value={`${optionTriggerCount} kopplingar`} />
           </div>
           <OverviewText label="Beskrivning" value={optionDraft.description} fallback="Ingen beskrivning angiven." />
         </>

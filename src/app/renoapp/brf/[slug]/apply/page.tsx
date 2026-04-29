@@ -253,6 +253,16 @@ const STEP_ITEMS = [
   { id: 5, label: 'Granska och skicka' },
 ]
 
+const VISIBLE_STEP_ITEMS = STEP_ITEMS.filter((item) => item.id !== 3 && item.id !== 4)
+
+function getNextVisibleStepId(currentStep: number | null) {
+  if (currentStep == null) return VISIBLE_STEP_ITEMS[0]?.id ?? 1
+
+  const currentIndex = VISIBLE_STEP_ITEMS.findIndex((item) => item.id === currentStep)
+  const nextStep = VISIBLE_STEP_ITEMS[currentIndex + 1]
+  return nextStep?.id ?? currentStep
+}
+
 function formatDateTime(value: string | null) {
   if (!value) return '-'
   const date = new Date(value)
@@ -847,7 +857,7 @@ export default function RenoAppApplyPage() {
       5:
         submitResult?.caseNumber
           ? `Ärendenummer ${submitResult.caseNumber}.`
-          : `${selectedActions.length} valda renoveringar och ${beforePhaseRequirements.length} underlagskrav sammanställda.`,
+          : `${selectedActions.length} valda renoveringar sammanställda.`,
     }),
     [
       beforePhaseRequirements.length,
@@ -1352,7 +1362,7 @@ export default function RenoAppApplyPage() {
               onChange={(event) => updateField('description', event.target.value)}
               rows={7}
               className="mt-3 min-h-44 w-full rounded-3xl border border-stone-300 bg-white px-5 py-4 text-sm text-stone-900"
-              placeholder="Beskriv kort vad du vill göra, hur omfattande arbetet är och om du redan har ritningar eller annan dokumentation klar."
+              placeholder="Beskriv så noggrant som möjligt vad du vill göra, hur omfattande arbetet är, vilka rum eller installationer som berörs och om du redan har ritningar eller annan dokumentation klar."
             />
           </div>
         </div>
@@ -1838,7 +1848,7 @@ export default function RenoAppApplyPage() {
           </div>
 
           <div className="mt-4 space-y-2 md:mt-6 md:space-y-3">
-            {STEP_ITEMS.map((item) => {
+            {VISIBLE_STEP_ITEMS.map((item, visibleIndex) => {
               const isOpen = step === item.id
 
               return (
@@ -1863,7 +1873,7 @@ export default function RenoAppApplyPage() {
                             : 'border-stone-300 bg-white text-stone-700'
                         }`}
                       >
-                        {item.id}
+                        {visibleIndex + 1}
                       </span>
                       <div className="min-w-0">
                         <p className="text-[15px] font-semibold text-stone-900 md:text-base">{item.label}</p>
@@ -1901,7 +1911,7 @@ export default function RenoAppApplyPage() {
             {step !== 5 ? (
               <button
                 type="button"
-                onClick={() => setStep((current) => (current == null ? 1 : Math.min(5, current + 1)))}
+                onClick={() => setStep((current) => getNextVisibleStepId(current))}
                 className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700"
               >
                 Nästa steg
