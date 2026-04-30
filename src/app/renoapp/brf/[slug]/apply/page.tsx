@@ -1156,6 +1156,7 @@ export default function RenoAppApplyPage() {
               onChange={(event) => updateField('applicantName', event.target.value)}
               className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
               placeholder="Namn"
+              required
             />
             <input
               value={form.applicantEmail}
@@ -1163,24 +1164,28 @@ export default function RenoAppApplyPage() {
               className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
               placeholder="E-post"
               type="email"
+              required
             />
             <input
               value={form.applicantPhone}
               onChange={(event) => updateField('applicantPhone', event.target.value)}
               className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
               placeholder="Telefon"
+              required
             />
             <input
               value={form.unitNumberInternal}
               onChange={(event) => updateField('unitNumberInternal', event.target.value)}
               className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
               placeholder="Internt lägenhetsnummer"
+              required
             />
             <input
               value={form.unitNumberSkatteverket}
               onChange={(event) => updateField('unitNumberSkatteverket', event.target.value)}
               className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
               placeholder="Skatteverkets lägenhetsnummer"
+              required
             />
           </div>
 

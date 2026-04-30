@@ -96,7 +96,11 @@ export async function POST(request: Request) {
       return jsonError('Ärendet är låst för ändringar efter beslut.', 409)
     }
     if (message === 'APPLICANT_NAME_REQUIRED') return jsonError('Ange namn.', 400)
+    if (message === 'APPLICANT_EMAIL_REQUIRED') return jsonError('Ange e-postadress.', 400)
     if (message === 'APPLICANT_EMAIL_INVALID') return jsonError('Ange en giltig e-postadress.', 400)
+    if (message === 'APPLICANT_PHONE_REQUIRED') return jsonError('Ange telefon.', 400)
+    if (message === 'UNIT_NUMBER_INTERNAL_REQUIRED') return jsonError('Ange internt lägenhetsnummer.', 400)
+    if (message === 'UNIT_NUMBER_SKATTEVERKET_REQUIRED') return jsonError('Ange Skatteverkets lägenhetsnummer.', 400)
     if (message === 'UNIT_NUMBER_REQUIRED') return jsonError('Ange lagenhetsnummer.', 400)
     if (message === 'DESCRIPTION_REQUIRED') return jsonError('Beskriv atgarden.', 400)
     if (message === 'ACTION_TYPE_REQUIRED') return jsonError('Valj minst en renoveringstyp.', 400)
