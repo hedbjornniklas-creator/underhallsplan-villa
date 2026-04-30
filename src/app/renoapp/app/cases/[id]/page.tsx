@@ -8,6 +8,84 @@ import RenoAppCaseDecisionView, {
   type RenoAppCaseStatusAction,
 } from './RenoAppCaseDecisionView'
 
+function getFlowStepClass(active: boolean, tone: 'blue' | 'amber' | 'violet' | 'emerald' | 'rose' | 'stone') {
+  if (active) {
+    if (tone === 'blue') return 'border-sky-300 bg-sky-50 text-sky-950'
+    if (tone === 'amber') return 'border-amber-300 bg-amber-50 text-amber-950'
+    if (tone === 'violet') return 'border-violet-300 bg-violet-50 text-violet-950'
+    if (tone === 'emerald') return 'border-emerald-300 bg-emerald-50 text-emerald-950'
+    if (tone === 'rose') return 'border-rose-300 bg-rose-50 text-rose-950'
+  }
+
+  return 'border-stone-200 bg-white text-stone-800'
+}
+
+function CaseFlowVisualization({ status }: { status: string }) {
+  const normalizedStatus = status === 'submitted' ? 'new_application' : status
+  const activeMainStep =
+    normalizedStatus === 'new_application'
+      ? 1
+      : normalizedStatus === 'need_info'
+        ? 2
+        : normalizedStatus === 'review'
+          ? 3
+          : 4
+
+  const outcomeTone =
+    normalizedStatus === 'approved' || normalizedStatus === 'conditional'
+      ? 'emerald'
+      : normalizedStatus === 'rejected'
+        ? 'rose'
+        : normalizedStatus === 'need_info'
+          ? 'amber'
+          : 'stone'
+
+  return (
+    <section className="min-w-0 flex-1 rounded-[18px] border border-stone-200 bg-white px-4 py-4 shadow-[0_18px_55px_-48px_rgba(41,37,36,0.36)]">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+        <div className={getFlowStepClass(activeMainStep === 1, 'blue') + ' rounded-[14px] border px-4 py-3'}>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">1</p>
+          <p className="mt-1 text-sm font-semibold">Ansökan inkommen</p>
+          <p className="mt-1 text-xs leading-5 text-stone-600">Ansökan är registrerad.</p>
+        </div>
+
+        <div className="hidden text-stone-400 xl:block" aria-hidden="true">→</div>
+
+        <div className={getFlowStepClass(activeMainStep === 2, 'amber') + ' rounded-[14px] border px-4 py-3'}>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">2</p>
+          <p className="mt-1 text-sm font-semibold">Styrelsen granskar</p>
+          <p className="mt-1 text-xs leading-5 text-stone-600">Begär in de uppgifter som behövs.</p>
+        </div>
+
+        <div className="hidden text-stone-400 xl:block" aria-hidden="true">→</div>
+
+        <div className={getFlowStepClass(activeMainStep === 3, 'violet') + ' rounded-[14px] border px-4 py-3'}>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">3</p>
+          <p className="mt-1 text-sm font-semibold">Sökanden kompletterar</p>
+          <p className="mt-1 text-xs leading-5 text-stone-600">Begärda uppgifter lämnas in.</p>
+        </div>
+
+        <div className="hidden text-stone-400 xl:block" aria-hidden="true">→</div>
+
+        <div className="grid min-w-[250px] gap-2">
+          <div className={getFlowStepClass(outcomeTone === 'amber', 'amber') + ' rounded-[14px] border px-4 py-2'}>
+            <p className="text-sm font-semibold">Begär mer uppgifter</p>
+            <p className="text-xs leading-5 text-stone-600">Styrelsen kan begära komplettering igen.</p>
+          </div>
+          <div className={getFlowStepClass(outcomeTone === 'rose', 'rose') + ' rounded-[14px] border px-4 py-2'}>
+            <p className="text-sm font-semibold">Avslag</p>
+            <p className="text-xs leading-5 text-stone-600">Ansökan avslås med motivering.</p>
+          </div>
+          <div className={getFlowStepClass(outcomeTone === 'emerald', 'emerald') + ' rounded-[14px] border px-4 py-2'}>
+            <p className="text-sm font-semibold">Godkännande</p>
+            <p className="text-xs leading-5 text-stone-600">Ansökan godkänns eller godkänns med villkor.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export default function RenoAppCaseDetailPage() {
   const params = useParams<{ id: string }>()
   const caseId = typeof params?.id === 'string' ? params.id : ''
@@ -220,10 +298,11 @@ export default function RenoAppCaseDetailPage() {
 
   return (
     <div className="mx-auto grid w-full max-w-[1440px] gap-6 px-4 py-8 sm:px-8">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
         <Link href="/renoapp/app/cases" className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline">
           Tillbaka till ärenden
         </Link>
+        <CaseFlowVisualization status={item.status} />
       </div>
 
       <RenoAppCaseDecisionView
