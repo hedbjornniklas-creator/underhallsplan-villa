@@ -3540,15 +3540,6 @@ async function upsertPublicApplicationContact(input: {
     assertValidEmail(applicantEmail, 'APPLICANT_EMAIL_INVALID')
   }
 
-  if (mode === 'submit') {
-    if (!applicantName) throw new Error('APPLICANT_NAME_REQUIRED')
-    if (!applicantEmail) throw new Error('APPLICANT_EMAIL_REQUIRED')
-    assertValidEmail(applicantEmail, 'APPLICANT_EMAIL_INVALID')
-    if (!applicantPhone) throw new Error('APPLICANT_PHONE_REQUIRED')
-    if (!unitNumberInternal) throw new Error('UNIT_NUMBER_INTERNAL_REQUIRED')
-    if (!unitNumberSkatteverket) throw new Error('UNIT_NUMBER_SKATTEVERKET_REQUIRED')
-  }
-
   if (!applicantName || (!applicantEmail && !applicantPhone)) {
     if (requireContact) {
       if (!applicantName) throw new Error('APPLICANT_NAME_REQUIRED')
@@ -4029,6 +4020,15 @@ export async function upsertPublicApplication(
 
   if (applicantEmail) {
     assertValidEmail(applicantEmail, 'APPLICANT_EMAIL_INVALID')
+  }
+
+  if (mode === 'submit') {
+    if (!applicantName) throw new Error('APPLICANT_NAME_REQUIRED')
+    if (!applicantEmail) throw new Error('APPLICANT_EMAIL_REQUIRED')
+    assertValidEmail(applicantEmail, 'APPLICANT_EMAIL_INVALID')
+    if (!applicantPhone) throw new Error('APPLICANT_PHONE_REQUIRED')
+    if (!unitNumberInternal) throw new Error('UNIT_NUMBER_INTERNAL_REQUIRED')
+    if (!unitNumberSkatteverket) throw new Error('UNIT_NUMBER_SKATTEVERKET_REQUIRED')
   }
 
   const selectedActionTypes = await loadActiveActionTypesByKeys(admin, actionTypeKeys)
