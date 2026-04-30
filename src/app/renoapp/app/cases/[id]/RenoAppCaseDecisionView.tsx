@@ -293,6 +293,7 @@ function buildCaseSummaryChips(item: RenoAppCaseDetail) {
   return Array.from(new Set(chips))
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function buildConsiderations(item: RenoAppCaseDetail, missingItems: UnderlagItem[]) {
   const considerations: string[] = []
   if (item.checks?.affectsStructure) considerations.push('Åtgärden kan påverka bärande konstruktion eller stomme.')
@@ -444,6 +445,7 @@ function CaseHeaderSummary({ item }: { item: RenoAppCaseDetail }) {
   )
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function CaseMaterialStatusCard({ missingItems, reviewFlags }: { missingItems: UnderlagItem[]; reviewFlags: ReviewFlag[] }) {
   const missingLabels = Array.from(
     new Set([
@@ -482,6 +484,7 @@ function CaseMaterialStatusCard({ missingItems, reviewFlags }: { missingItems: U
   )
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function ConsiderationsCard({ items }: { items: string[] }) {
   return (
     <Card className="p-6">
@@ -603,7 +606,7 @@ function DocumentsPanel({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <SectionTitle
           title="Föreslagna underlag"
-          description="RenoApp föreslår underlag utifrån den valda åtgärden och de uppgifter som har lämnats i ansökan. Styrelsen kan begära in, avstå från eller ersätta underlag utifrån det enskilda ärendets omfattning. Styrelsen ansvarar för sitt beslut, medan sökanden ansvarar för att uppgifter och inlämnade handlingar är korrekta."
+          description="RenoApp föreslår underlag utifrån den valda åtgärden och de uppgifter som har lämnats i ansökan. Styrelsen kan begära in eller avstå från underlag utifrån det enskilda ärendets omfattning. Styrelsen ansvarar för sitt beslut, medan sökanden ansvarar för att uppgifter och inlämnade handlingar är korrekta."
         />
         <div className="flex flex-wrap gap-2">
           <button
@@ -696,7 +699,7 @@ function ConsultantsPanel({
     <Card className="p-5 sm:p-6">
       <SectionTitle
         title="Föreslagna uppgifter om entreprenörer och konsulter"
-        description="RenoApp föreslår vilka entreprenörer eller konsulter som kan behöva anges utifrån den valda åtgärden och de uppgifter som har lämnats i ansökan. Styrelsen kan begära in, avstå från eller ersätta uppgifter utifrån det enskilda ärendets omfattning."
+        description="RenoApp föreslår vilka entreprenörer eller konsulter som kan behöva anges utifrån den valda åtgärden och de uppgifter som har lämnats i ansökan. Styrelsen kan begära in eller avstå från uppgifter utifrån det enskilda ärendets omfattning."
       />
       {rows.length === 0 ? (
         <p className="mt-5 rounded-[14px] border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">
@@ -851,13 +854,38 @@ function BoardDecisionPanel({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }) {
   const showDecisionConfirmation = selectedStatus !== 'need_info'
+  const [helpOpen, setHelpOpen] = useState(false)
 
   return (
     <Card className="p-5 sm:p-6">
-      <SectionTitle
-        title="Dokumentera styrelsens beslut"
-        description="Beslutet fattas av styrelsen utifrån inkommet underlag. RenoApp tillhandahåller endast struktur och information."
-      />
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <SectionTitle
+          title="Dokumentera styrelsens beslut"
+          description="Välj om ärendet ska kompletteras, godkännas, godkännas med villkor eller avslås. Texten du skriver sparas i ärendehistoriken och används som meddelande till sökanden vid komplettering."
+        />
+        <button
+          type="button"
+          onClick={() => setHelpOpen((current) => !current)}
+          className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+        >
+          {helpOpen ? 'Dölj hjälp' : 'Visa hjälp'}
+        </button>
+      </div>
+
+      {helpOpen ? (
+        <div className="mt-5 rounded-[14px] border border-sky-200 bg-sky-50 p-5 text-sm leading-6 text-sky-950">
+          <p className="font-semibold">Så används beslutskortet</p>
+          <ul className="mt-3 grid gap-2">
+            <li><span className="font-semibold">Begär komplettering:</span> skickar ärendet till sökanden igen. Skriv tydligt vilka underlag eller uppgifter som ska lämnas in.</li>
+            <li><span className="font-semibold">Godkänn:</span> registrerar att styrelsen godkänner ansökan utifrån inkommet underlag.</li>
+            <li><span className="font-semibold">Godkänn med villkor:</span> registrerar ett godkännande där villkoren måste följas. Villkoren ska framgå i textfältet.</li>
+            <li><span className="font-semibold">Avslag:</span> registrerar att ansökan avslås. Motiveringen sparas på ärendet.</li>
+          </ul>
+          <p className="mt-3">
+            Valen under föreslagna underlag och entreprenörer är styrelsens interna markering av vad som ska begäras in. De ersätter inte styrelsens ansvar att formulera en tydlig kompletteringsbegäran.
+          </p>
+        </div>
+      ) : null}
 
       {isDraftCase ? (
         <div className="mt-6 rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-900">
@@ -1120,7 +1148,6 @@ export default function RenoAppCaseDecisionView({
   const participantUnderlag = useMemo(() => item.underlag.filter((row) => row.category === 'participant'), [item])
   const missingUnderlag = useMemo(() => item.underlag.filter((row) => !row.checked), [item])
   const missingReviewFlags = useMemo(() => getMissingReviewFlags(item), [item])
-  const considerations = useMemo(() => buildConsiderations(item, missingUnderlag), [item, missingUnderlag])
   const missingSnippets = useMemo(
     () => Array.from(new Set(missingUnderlag.map((row) => `${displayText(row.label)} saknas`))).slice(0, 8),
     [missingUnderlag]
@@ -1185,8 +1212,6 @@ export default function RenoAppCaseDecisionView({
         onToggle={toggleParticipantDetails}
         onRequirementDecisionChange={onRequirementDecisionChange}
       />
-      <CaseMaterialStatusCard missingItems={missingUnderlag} reviewFlags={missingReviewFlags} />
-      <ConsiderationsCard items={considerations} />
       <ReviewFlagsCard flags={missingReviewFlags.filter((flag) => flag.sourceType !== 'missing_document')} />
       <BoardDecisionPanel
         isDraftCase={item.status === 'draft'}

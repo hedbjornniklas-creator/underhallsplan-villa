@@ -138,9 +138,25 @@ export default function RenoAppCaseDetailPage() {
     }
 
     const targetId = row.id.includes(':') ? row.id.split(':').slice(1).join(':') : row.id
+    const previousItem = item
     setSavingRequirementDecisionKey(row.id)
     setActionError(null)
     setActionSuccess(null)
+    setItem((current) =>
+      current
+        ? {
+            ...current,
+            underlag: current.underlag.map((underlagRow) =>
+              underlagRow.id === row.id
+                ? {
+                    ...underlagRow,
+                    requirementDecision: decision,
+                  }
+                : underlagRow
+            ),
+          }
+        : current
+    )
 
     try {
       const response = await fetch(`/api/renoapp/app/cases/${caseId}/requirement-decisions`, {
@@ -163,6 +179,7 @@ export default function RenoAppCaseDetailPage() {
       setItem(payload.item ?? null)
       setActionSuccess('Kompletteringsvalet sparades.')
     } catch (submitError) {
+      setItem(previousItem)
       setActionError(submitError instanceof Error ? submitError.message : 'Kunde inte spara kompletteringsval.')
     } finally {
       setSavingRequirementDecisionKey(null)
