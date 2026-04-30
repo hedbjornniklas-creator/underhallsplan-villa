@@ -8,7 +8,7 @@ type CaseItem = {
   id: string
   caseNumber: string
   title: string
-  status: 'draft' | 'submitted' | 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected' | string
+  status: 'draft' | 'new_application' | 'submitted' | 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected' | string
   riskLevel: string | null
   updatedAt: string
   submittedAt: string
@@ -27,7 +27,7 @@ type CaseItem = {
   }
 }
 
-type StatusFilter = 'all' | 'draft' | 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected'
+type StatusFilter = 'all' | 'draft' | 'new_application' | 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected'
 type SortField = 'caseNumber' | 'title' | 'status' | 'submittedAt' | 'applicant'
 type SortDirection = 'asc' | 'desc'
 
@@ -47,6 +47,7 @@ const COLLATOR = new Intl.Collator('sv', { sensitivity: 'base', numeric: true })
 const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'Alla' },
   { key: 'draft', label: 'Utkast' },
+  { key: 'new_application', label: 'Ny ansökan' },
   { key: 'review', label: 'Under granskning' },
   { key: 'need_info', label: 'Komplettering begärd' },
   { key: 'approved', label: 'Godkänd' },
@@ -60,6 +61,12 @@ const STATUS_HELP_ITEMS = [
     label: 'Utkast',
     meaning: 'Ärendet är påbörjat men ännu inte inskickat av lägenhetsinnehavaren.',
     action: 'Styrelsen behöver normalt inte göra något ännu. Avvakta tills ansökan skickas in.',
+  },
+  {
+    key: 'new_application',
+    label: 'Ny ansökan',
+    meaning: 'Ansökan är inskickad och styrelsen ska välja vilka uppgifter eller underlag som ska begäras in.',
+    action: 'Öppna ärendet, granska ansökan och markera vad som ska begäras in från sökanden.',
   },
   {
     key: 'review',
@@ -101,7 +108,8 @@ function formatDate(value: string) {
 
 function getStatusLabel(status: string) {
   if (status === 'draft') return 'Utkast'
-  if (status === 'submitted' || status === 'review') return 'Under granskning'
+  if (status === 'new_application' || status === 'submitted') return 'Ny ansökan'
+  if (status === 'review') return 'Under granskning'
   if (status === 'need_info') return 'Komplettering begärd'
   if (status === 'approved') return 'Godkänd'
   if (status === 'conditional') return 'Godkänd med villkor'
@@ -111,6 +119,7 @@ function getStatusLabel(status: string) {
 
 function getStatusBucket(status: CaseItem['status']): StatusFilter {
   if (status === 'draft') return 'draft'
+  if (status === 'new_application' || status === 'submitted') return 'new_application'
   if (status === 'need_info') return 'need_info'
   if (status === 'approved') return 'approved'
   if (status === 'conditional') return 'conditional'
@@ -122,18 +131,20 @@ function getStatusSortRank(status: CaseItem['status']) {
   switch (getStatusBucket(status)) {
     case 'draft':
       return 0
-    case 'review':
+    case 'new_application':
       return 1
-    case 'need_info':
+    case 'review':
       return 2
-    case 'approved':
+    case 'need_info':
       return 3
-    case 'conditional':
+    case 'approved':
       return 4
-    case 'rejected':
+    case 'conditional':
       return 5
-    default:
+    case 'rejected':
       return 6
+    default:
+      return 7
   }
 }
 
@@ -141,6 +152,8 @@ function getStatusRowClass(status: CaseItem['status']) {
   switch (getStatusBucket(status)) {
     case 'draft':
       return 'bg-[#FEFEFE] text-black hover:bg-[#FBFBFC] focus-visible:bg-[#FBFBFC]'
+    case 'new_application':
+      return 'bg-[#FAFAFF] text-black hover:bg-[#F2F1FF] focus-visible:bg-[#F2F1FF]'
     case 'review':
       return 'bg-[#FAFCFF] text-black hover:bg-[#F3F7FD] focus-visible:bg-[#F3F7FD]'
     case 'need_info':
@@ -171,6 +184,13 @@ function getStatusTabStyle(key: StatusFilter): StatusTabStyle {
         active: 'border-gray-400 bg-[#FFFFFF] text-[#111827]',
         countInactive: 'bg-gray-200 text-[#111827]',
         countActive: 'bg-gray-200 text-[#111827]',
+      }
+    case 'new_application':
+      return {
+        inactive: 'border-[#D8D4FA] bg-[#FAFAFF] text-[#514A92] hover:bg-[#F2F1FF]',
+        active: 'border-[#AAA2E8] bg-[#EFEEFF] text-[#463F83]',
+        countInactive: 'bg-[#F0EEFF] text-[#514A92]',
+        countActive: 'bg-white/20 text-white',
       }
     case 'review':
       return {
@@ -320,6 +340,7 @@ export default function RenoAppCasesPage() {
     const counts: Record<StatusFilter, number> = {
       all: items.length,
       draft: 0,
+      new_application: 0,
       review: 0,
       need_info: 0,
       approved: 0,

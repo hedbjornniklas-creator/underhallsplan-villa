@@ -251,6 +251,16 @@ type RequirementRow = {
   sort_order: number
 }
 
+type CaseRequirementDecisionRow = {
+  id: string
+  case_id: string
+  document_type_id: string | null
+  participant_role_id: string | null
+  decision: 'requested' | 'not_requested'
+  note: string | null
+  decided_at: string
+}
+
 type ContactRow = {
   id: string
   name: string
@@ -1371,6 +1381,7 @@ export type RenoAppCaseDetail = {
     reviewGuidance: string | null
     checked: boolean
     documentId: string | null
+    requirementDecision: 'requested' | 'not_requested' | null
     summary: string[]
     details: {
       companyName: string | null
@@ -1413,10 +1424,17 @@ export type RenoAppCaseDetail = {
 }
 
 export type UpdateRenoAppCaseStatusInput = {
-  status: 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected'
+  status: 'new_application' | 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected'
   reason?: string | null
   conditions?: string | null
   requestOrigin?: string | null
+}
+
+export type SaveRenoAppCaseRequirementDecisionInput = {
+  targetType: 'document' | 'participant'
+  targetId: string
+  decision: 'requested' | 'not_requested'
+  note?: string | null
 }
 
 function parseBrfAssociationValue(value: BrfMemberRow['brf_associations']) {
@@ -2593,6 +2611,7 @@ function buildCaseUnderlagItems(params: {
   participantRows: CaseParticipantRow[]
   participantRoles: ParticipantRoleRow[]
   actionTypeParticipantRoles: ActionTypeParticipantRoleRow[]
+  requirementDecisions: CaseRequirementDecisionRow[]
 }): RenoAppCaseDetail['underlag'] {
   const {
     selectedActionTypes,
@@ -2604,6 +2623,7 @@ function buildCaseUnderlagItems(params: {
     participantRows,
     participantRoles,
     actionTypeParticipantRoles,
+    requirementDecisions,
   } = params
 
   const isAcceptedDocument = (status: string) => status !== 'missing' && status !== 'rejected'
@@ -2616,6 +2636,18 @@ function buildCaseUnderlagItems(params: {
   const latestDocumentByTypeId = new Map<string, (typeof acceptedDocuments)[number]>()
   const latestParticipantInsuranceByRoleId = new Map<string, (typeof acceptedDocuments)[number]>()
   const participantByRoleId = new Map(participantRows.map((item) => [item.participant_role_id, item] as const))
+  const decisionByTargetKey = new Map(
+    requirementDecisions
+      .map((decision) => {
+        const targetKey = decision.document_type_id
+          ? `document:${decision.document_type_id}`
+          : decision.participant_role_id
+            ? `participant:${decision.participant_role_id}`
+            : null
+        return targetKey ? ([targetKey, decision.decision] as const) : null
+      })
+      .filter((item): item is readonly [string, CaseRequirementDecisionRow['decision']] => Boolean(item))
+  )
 
   for (const document of acceptedDocuments) {
     if (document.documentTypeId && !latestDocumentByTypeId.has(document.documentTypeId)) {
@@ -2678,6 +2710,7 @@ function buildCaseUnderlagItems(params: {
         reviewGuidance,
         checked,
         documentId,
+        requirementDecision: decisionByTargetKey.get(key) ?? null,
         summary,
         details,
         sortOrder,
@@ -3311,22 +3344,22 @@ export async function createPublicApplication(
         to: applicantEmailValue,
         from: mailFrom,
         replyTo: brf.email ?? null,
-        subject: `RenoApp: ditt Ã¤rende ${caseNumber}`,
+        subject: `RenoApp: ditt ärende ${caseNumber}`,
         html: [
           `<p>Hej ${applicantName},</p>`,
-          `<p>Vi har tagit emot din renoveringsansÃ¶kan fÃ¶r <strong>${brf.name}</strong>.</p>`,
-          `<p>Ã„rendenummer: <strong>${caseNumber}</strong></p>`,
-          `<p>Ã–ppna och komplettera ditt Ã¤rende via lÃ¤nken nedan:</p>`,
+          `<p>Vi har tagit emot din renoveringsansökan för <strong>${brf.name}</strong>.</p>`,
+          `<p>Ärendenummer: <strong>${caseNumber}</strong></p>`,
+          `<p>Öppna och komplettera ditt ärende via länken nedan:</p>`,
           `<p><a href="${resumeUrl}">${resumeUrl}</a></p>`,
-          `<p>LÃ¤nken gÃ¤ller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>`,
+          `<p>Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>`,
         ].join(''),
         text: [
           `Hej ${applicantName},`,
           ``,
-          `Vi har tagit emot din renoveringsansÃ¶kan fÃ¶r ${brf.name}.`,
-          `Ã„rendenummer: ${caseNumber}`,
-          `Ã–ppna och komplettera ditt Ã¤rende hÃ¤r: ${resumeUrl}`,
-          `LÃ¤nken gÃ¤ller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
+          `Vi har tagit emot din renoveringsansökan för ${brf.name}.`,
+          `Ärendenummer: ${caseNumber}`,
+          `Öppna och komplettera ditt ärende här: ${resumeUrl}`,
+          `Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
         ].join('\n'),
       })
       emailSent = true
@@ -3334,9 +3367,9 @@ export async function createPublicApplication(
       emailError = error instanceof Error ? error.message : 'Mejlutskick misslyckades.'
     }
   } else if (!applicantEmailValue) {
-    emailError = 'Ingen e-postadress Ã¤r angiven. AnsÃ¶kan sparades men inget mejl kunde skickas.'
+        emailError = 'Ingen e-postadress är angiven. Ansökan sparades men inget mejl kunde skickas.'
   } else {
-    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Ã…tkomstlÃ¤nken skapades men inget mejl skickades.'
+        emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Åtkomstlänken skapades men inget mejl skickades.'
   }
 
   return {
@@ -4086,7 +4119,9 @@ export async function upsertPublicApplication(
       ? existingStatus && existingStatus !== 'draft'
         ? existingStatus
         : 'draft'
-      : 'review'
+      : existingStatus === 'need_info'
+        ? 'review'
+        : 'new_application'
 
   let caseId = existingCase ? String(existingCase.id ?? '') : ''
   let caseNumber = existingCase ? String(existingCase.case_number ?? '') : ''
@@ -4314,22 +4349,22 @@ export async function upsertPublicApplication(
         requestOrigin,
         replyTo: brf.email ?? null,
         subject: `RenoApp: komplettering klar ${caseNumber}`,
-        preheader: `Komplettering klar fÃ¶r ${caseNumber}`,
+        preheader: `Komplettering klar för ${caseNumber}`,
         bodyHtml: `
-          <p>En medlem har skickat in begÃ¤rd komplettering i RenoApp.</p>
-          <p>Ã„rendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
+          <p>En medlem har skickat in begärd komplettering i RenoApp.</p>
+          <p>Ärendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
           ${caseTitle ? `<p>Renovering: <strong>${escapeHtml(caseTitle)}</strong></p>` : ''}
-          <p>SÃ¶kande: <strong>${escapeHtml(applicantDisplayName)}</strong></p>
-          <p>Ã–ppna Ã¤rendet hÃ¤r:</p>
+          <p>Sökande: <strong>${escapeHtml(applicantDisplayName)}</strong></p>
+          <p>Öppna ärendet här:</p>
           <p><a href="${caseAdminUrl}">${caseAdminUrl}</a></p>
         `,
         text: [
-          'En medlem har skickat in begÃ¤rd komplettering i RenoApp.',
-          `Ã„rendenummer: ${caseNumber}`,
+          'En medlem har skickat in begärd komplettering i RenoApp.',
+          `Ärendenummer: ${caseNumber}`,
           ...(caseTitle ? [`Renovering: ${caseTitle}`] : []),
-          `SÃ¶kande: ${applicantDisplayName}`,
+          `Sökande: ${applicantDisplayName}`,
           '',
-          `Ã–ppna Ã¤rendet hÃ¤r: ${caseAdminUrl}`,
+          `Öppna ärendet här: ${caseAdminUrl}`,
         ].join('\n'),
       })
     } else {
@@ -4338,23 +4373,23 @@ export async function upsertPublicApplication(
         brfId: brf.id,
         requestOrigin,
         replyTo: brf.email ?? null,
-        subject: `RenoApp: ny ansÃ¶kan ${caseNumber}`,
-        preheader: `Ny ansÃ¶kan inkommen ${caseNumber}`,
+        subject: `RenoApp: ny ansökan ${caseNumber}`,
+        preheader: `Ny ansökan inkommen ${caseNumber}`,
         bodyHtml: `
-          <p>En ny ansÃ¶kan har kommit in i RenoApp.</p>
-          <p>Ã„rendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
+          <p>En ny ansökan har kommit in i RenoApp.</p>
+          <p>Ärendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
           ${caseTitle ? `<p>Renovering: <strong>${escapeHtml(caseTitle)}</strong></p>` : ''}
-          <p>SÃ¶kande: <strong>${escapeHtml(applicantDisplayName)}</strong></p>
-          <p>Ã–ppna Ã¤rendet hÃ¤r:</p>
+          <p>Sökande: <strong>${escapeHtml(applicantDisplayName)}</strong></p>
+          <p>Öppna ärendet här:</p>
           <p><a href="${caseAdminUrl}">${caseAdminUrl}</a></p>
         `,
         text: [
-          'En ny ansÃ¶kan har kommit in i RenoApp.',
-          `Ã„rendenummer: ${caseNumber}`,
+          'En ny ansökan har kommit in i RenoApp.',
+          `Ärendenummer: ${caseNumber}`,
           ...(caseTitle ? [`Renovering: ${caseTitle}`] : []),
-          `SÃ¶kande: ${applicantDisplayName}`,
+          `Sökande: ${applicantDisplayName}`,
           '',
-          `Ã–ppna Ã¤rendet hÃ¤r: ${caseAdminUrl}`,
+          `Öppna ärendet här: ${caseAdminUrl}`,
         ].join('\n'),
       })
     }
@@ -4372,28 +4407,28 @@ export async function upsertPublicApplication(
             to: applicantEmailValue,
             from: mailFrom,
             replyTo: brf.email ?? null,
-            subject: `RenoApp: fortsÃ¤tt din ansÃ¶kan fÃ¶r ${brf.name}`,
+          subject: `RenoApp: fortsätt din ansökan för ${brf.name}`,
             html: buildRenoAppEmailHtml({
               origin: requestOrigin,
-              preheader: `FortsÃ¤tt din ansÃ¶kan fÃ¶r ${brf.name}`,
+            preheader: `Fortsätt din ansökan för ${brf.name}`,
               bodyHtml: `
               <p>Hej ${escapeHtml(applicantDisplayName)},</p>
-              <p>Vi har sparat ditt utkast fÃ¶r <strong>${escapeHtml(brf.name)}</strong>.</p>
+              <p>Vi har sparat ditt utkast för <strong>${escapeHtml(brf.name)}</strong>.</p>
               ${
                 contractorRequirementSummary.length > 0
-                  ? `<p>Kom ihÃ¥g att fÃ¶ljande entreprenÃ¶rskrav gÃ¤ller: ${escapeHtml(
+                ? `<p>Kom ihåg att följande entreprenörskrav gäller: ${escapeHtml(
                       contractorRequirementSummary.map((item) => item.label).join(', ')
                     )}.</p>`
                   : ''
               }
-              <p>Ã–ppna lÃ¤nken nedan fÃ¶r att fortsÃ¤tta senare:</p>
+              <p>Öppna länken nedan för att fortsätta senare:</p>
                 <p><a href="${resumeUrl}">${resumeUrl}</a></p>
               `,
             }),
             text: [
               `Hej ${applicantDisplayName},`,
-              `Vi har sparat ditt utkast fÃ¶r ${brf.name}.`,
-              `FortsÃ¤tt hÃ¤r: ${resumeUrl}`,
+            `Vi har sparat ditt utkast för ${brf.name}.`,
+            `Fortsätt här: ${resumeUrl}`,
             ].join('\n'),
           })
           emailSent = true
@@ -4403,30 +4438,30 @@ export async function upsertPublicApplication(
           to: applicantEmailValue,
           from: mailFrom,
           replyTo: brf.email ?? null,
-          subject: `RenoApp: din ansÃ¶kan ${caseNumber}`,
+          subject: `RenoApp: din ansökan ${caseNumber}`,
           html: buildRenoAppEmailHtml({
             origin: requestOrigin,
-            preheader: `Din ansÃ¶kan ${caseNumber}`,
+            preheader: `Din ansökan ${caseNumber}`,
             bodyHtml: `
               <p>Hej ${escapeHtml(applicantDisplayName)},</p>
-              <p>Vi har tagit emot din renoveringsansÃ¶kan fÃ¶r <strong>${escapeHtml(brf.name)}</strong>.</p>
-              <p>Ã„rendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
+              <p>Vi har tagit emot din renoveringsansökan för <strong>${escapeHtml(brf.name)}</strong>.</p>
+              <p>Ärendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
               ${
                 contractorRequirementSummary.length > 0
-                  ? `<p>AnsÃ¶kan gÃ¤ller arbete dÃ¤r fÃ¶ljande entreprenÃ¶rskrav normalt gÃ¤ller: ${escapeHtml(
+                ? `<p>Ansökan gäller arbete där följande entreprenörskrav normalt gäller: ${escapeHtml(
                       contractorRequirementSummary.map((item) => item.label).join(', ')
                     )}.</p>`
                   : ''
               }
-              <p>Ã–ppna och komplettera ditt Ã¤rende via lÃ¤nken nedan:</p>
+              <p>Öppna och komplettera ditt ärende via länken nedan:</p>
               <p><a href="${resumeUrl}">${resumeUrl}</a></p>
             `,
           }),
           text: [
             `Hej ${applicantDisplayName},`,
-            `Vi har tagit emot din renoveringsansÃ¶kan fÃ¶r ${brf.name}.`,
-            `Ã„rendenummer: ${caseNumber}`,
-            `Ã–ppna Ã¤rendet hÃ¤r: ${resumeUrl}`,
+            `Vi har tagit emot din renoveringsansökan för ${brf.name}.`,
+            `Ärendenummer: ${caseNumber}`,
+            `Öppna ärendet här: ${resumeUrl}`,
           ].join('\n'),
         })
         emailSent = true
@@ -4435,11 +4470,11 @@ export async function upsertPublicApplication(
       emailError = mailError instanceof Error ? mailError.message : 'Mejlutskick misslyckades.'
     }
   } else if (!applicantEmailValue) {
-    emailError = 'Ingen e-postadress Ã¤r angiven. AnsÃ¶kan sparades men inget mejl kunde skickas.'
+        emailError = 'Ingen e-postadress är angiven. Ansökan sparades men inget mejl kunde skickas.'
   } else if (mode === 'draft' && isNewDraft) {
-    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Utkastet sparades men ingen fortsÃ¤tt-lÃ¤nk skickades.'
+        emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Utkastet sparades men ingen fortsätt-länk skickades.'
   } else if (mode === 'submit') {
-    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Ã„rendet skapades men inget mejl skickades.'
+        emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Ärendet skapades men inget mejl skickades.'
   }
 
   return {
@@ -4908,7 +4943,7 @@ function buildRenoAppEmailHtml(input: {
           </div>
           <div style="font-size:16px;line-height:1.75;color:#292524;">
             ${input.bodyHtml}
-            <p style="margin:24px 0 0;">Med vÃ¤nlig hÃ¤lsning,<br />RenoApp-teamet pÃ¥ HusHub</p>
+            <p style="margin:24px 0 0;">Med vänlig hälsning,<br />RenoApp-teamet på HusHub</p>
           </div>
         </div>
       </div>
@@ -4938,7 +4973,7 @@ export async function getRenoAppDashboardSummary(): Promise<RenoAppDashboardSumm
     activeBrfId: context.activeBrfId,
     viewerName: context.profile.full_name ?? null,
     stats: {
-      newCases: cases.filter((item) => ['submitted', 'review'].includes(item.status)).length,
+      newCases: cases.filter((item) => ['new_application', 'submitted', 'review'].includes(item.status)).length,
       needInfoCases: cases.filter((item) => item.status === 'need_info').length,
       handledCases: cases.filter((item) => ['need_info', 'approved', 'conditional', 'rejected'].includes(item.status)).length,
     },
@@ -7375,7 +7410,7 @@ export async function createRenoAppUserInvite(input: {
 
   if (mailFrom) {
     try {
-      const subject = `Inbjudan till RenoApp fÃ¶r ${String(brfData.name ?? 'er BRF')}`
+  const subject = `Inbjudan till RenoApp för ${String(brfData.name ?? 'er BRF')}`
       await sendAssignmentEmail({
         to: email as string,
         from: mailFrom,
@@ -7385,20 +7420,20 @@ export async function createRenoAppUserInvite(input: {
           preheader: subject,
           bodyHtml: `
             <p>Hej ${escapeHtml(fullName as string)},</p>
-            <p>Du har blivit inbjuden till RenoApp fÃ¶r <strong>${escapeHtml(String(brfData.name ?? 'er BRF'))}</strong>.</p>
-            <p>Ã–ppna lÃ¤nken nedan fÃ¶r att aktivera ditt konto:</p>
+      <p>Du har blivit inbjuden till RenoApp för <strong>${escapeHtml(String(brfData.name ?? 'er BRF'))}</strong>.</p>
+      <p>Öppna länken nedan för att aktivera ditt konto:</p>
             <p><a href="${inviteUrl}">${inviteUrl}</a></p>
-            <p>LÃ¤nken gÃ¤ller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>
+      <p>Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>
           `,
         }),
         text: [
           `Hej ${fullName},`,
-          `Du har blivit inbjuden till RenoApp fÃ¶r ${String(brfData.name ?? 'er BRF')}.`,
-          `Ã–ppna lÃ¤nken fÃ¶r att aktivera ditt konto: ${inviteUrl}`,
-          `LÃ¤nken gÃ¤ller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
-          '',
-          'Med vÃ¤nlig hÃ¤lsning,',
-          'RenoApp-teamet pÃ¥ HusHub',
+      `Du har blivit inbjuden till RenoApp för ${String(brfData.name ?? 'er BRF')}.`,
+      `Öppna länken för att aktivera ditt konto: ${inviteUrl}`,
+      `Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
+      '',
+      'Med vänlig hälsning,',
+      'RenoApp-teamet på HusHub',
         ].join('\n'),
       })
       emailSent = true
@@ -7558,6 +7593,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
     participantRoleConfig,
     reviewFlagRows,
     reviewFlagLinkRows,
+    requirementDecisionRows,
     messages,
   ] =
     await Promise.all([
@@ -7609,6 +7645,11 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
         .order('sort_order', { ascending: true }),
       listActiveReviewFlags(admin),
       listActiveReviewFlagLinks(admin),
+      admin
+        .from('renoapp_case_requirement_decisions')
+        .select('id,case_id,document_type_id,participant_role_id,decision,note,decided_at')
+        .eq('case_id', caseId)
+        .order('decided_at', { ascending: false }),
       listCaseMessages(admin, caseId),
     ])
 
@@ -7622,6 +7663,9 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
   if (actionResult.error) throw new Error(actionResult.error.message ?? 'Kunde inte lÃ¤sa Ã¥tgÃ¤rdstyp.')
   if (participantRoleConfig.error) {
     throw new Error(participantRoleConfig.error.message ?? 'Kunde inte lÃ¤sa deltagarroller fÃ¶r Ã¥tgÃ¤rdstyp.')
+  }
+  if (requirementDecisionRows.error) {
+    throw new Error(requirementDecisionRows.error.message ?? 'Kunde inte lÃ¤sa kompletteringsval.')
   }
 
   const currentContactsResult =
@@ -7748,6 +7792,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
     participantRows: participantRows ?? [],
     participantRoles: participantRoleRows,
     actionTypeParticipantRoles: (participantRoleConfig.data ?? []) as ActionTypeParticipantRoleRow[],
+    requirementDecisions: (requirementDecisionRows.data ?? []) as CaseRequirementDecisionRow[],
   })
 
   return {
@@ -7842,6 +7887,97 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
   }
 }
 
+export async function saveRenoAppCaseRequirementDecision(
+  caseId: string,
+  input: SaveRenoAppCaseRequirementDecisionInput
+): Promise<RenoAppCaseDetail> {
+  const context = await requireRenoAppViewerContext()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const targetId = normalizeText(input.targetId)
+
+  if (!targetId || (input.targetType !== 'document' && input.targetType !== 'participant')) {
+    throw new Error('INVALID_REQUIREMENT_DECISION_TARGET')
+  }
+
+  if (input.decision !== 'requested' && input.decision !== 'not_requested') {
+    throw new Error('INVALID_REQUIREMENT_DECISION')
+  }
+
+  const { data: caseData, error: caseError } = await admin
+    .from('renovation_cases')
+    .select('id,brf_id')
+    .eq('id', caseId)
+    .maybeSingle()
+
+  if (caseError) {
+    throw new Error(caseError.message ?? 'Kunde inte lÃ¤sa RenoApp-Ã¤rende.')
+  }
+
+  if (!caseData) {
+    throw new Error('CASE_NOT_FOUND')
+  }
+
+  const brfId = String(caseData.brf_id ?? '')
+  if (context.accessibleBrfIds && !context.accessibleBrfIds.includes(brfId)) {
+    throw new Error('CASE_NOT_FOUND')
+  }
+
+  const payload = {
+    case_id: caseId,
+    document_type_id: input.targetType === 'document' ? targetId : null,
+    participant_role_id: input.targetType === 'participant' ? targetId : null,
+    decision: input.decision,
+    note: normalizeText(input.note),
+    decided_by: context.profile.id,
+    decided_at: new Date().toISOString(),
+  }
+
+  let existingQuery = admin
+    .from('renoapp_case_requirement_decisions')
+    .select('id')
+    .eq('case_id', caseId)
+
+  existingQuery =
+    input.targetType === 'document'
+      ? existingQuery.eq('document_type_id', targetId)
+      : existingQuery.eq('participant_role_id', targetId)
+
+  const { data: existingDecision, error: existingError } = await existingQuery.maybeSingle()
+
+  if (existingError) {
+    throw new Error(existingError.message ?? 'Kunde inte lÃ¤sa kompletteringsval.')
+  }
+
+  const saveResult = existingDecision
+    ? await admin
+        .from('renoapp_case_requirement_decisions')
+        .update(payload)
+        .eq('id', String((existingDecision as Record<string, unknown>).id ?? ''))
+    : await admin
+        .from('renoapp_case_requirement_decisions')
+        .insert(payload)
+
+  if (saveResult.error) {
+    throw new Error(saveResult.error.message ?? 'Kunde inte spara kompletteringsval.')
+  }
+
+  const { error: updateCaseError } = await admin
+    .from('renovation_cases')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', caseId)
+
+  if (updateCaseError) {
+    throw new Error(updateCaseError.message ?? 'Kunde inte uppdatera Ã¤rendet.')
+  }
+
+  const updatedCase = await getRenoAppCaseDetail(caseId)
+  if (!updatedCase) {
+    throw new Error('CASE_NOT_FOUND')
+  }
+
+  return updatedCase
+}
+
 export async function updateRenoAppCaseStatus(
   caseId: string,
   input: UpdateRenoAppCaseStatusInput
@@ -7849,7 +7985,7 @@ export async function updateRenoAppCaseStatus(
   const context = await requireRenoAppViewerContext()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
 
-  const allowedStatuses = new Set(['review', 'need_info', 'approved', 'conditional', 'rejected'])
+  const allowedStatuses = new Set(['new_application', 'review', 'need_info', 'approved', 'conditional', 'rejected'])
   const decisionStatuses = new Set(['approved', 'conditional', 'rejected'])
 
   if (!allowedStatuses.has(input.status)) {
@@ -7956,32 +8092,32 @@ export async function updateRenoAppCaseStatus(
             to: applicantEmail,
             from: mailFrom,
             replyTo: (brfResult.data?.email as string | null | undefined) ?? null,
-            subject: `RenoApp: ditt Ã¤rende ${String(caseData.case_number ?? '')} behÃ¶ver kompletteras`,
+            subject: `RenoApp: ditt ärende ${String(caseData.case_number ?? '')} behöver kompletteras`,
             html: buildRenoAppEmailHtml({
               origin: input.requestOrigin,
-              preheader: `Ditt Ã¤rende ${String(caseData.case_number ?? '')} behÃ¶ver kompletteras`,
+              preheader: `Ditt ärende ${String(caseData.case_number ?? '')} behöver kompletteras`,
               bodyHtml: `
                 <div style="height:16px;"></div>
                 <p>Hej ${escapeHtml(applicantName)},</p>
-                <p>Styrelsen behÃ¶ver komplettering i ditt Ã¤rende fÃ¶r <strong>${escapeHtml(brfName)}</strong>.</p>
-                <p>Ã„rendenummer: <strong>${escapeHtml(String(caseData.case_number ?? ''))}</strong></p>
+                <p>Styrelsen behöver komplettering i ditt ärende för <strong>${escapeHtml(brfName)}</strong>.</p>
+                <p>Ärendenummer: <strong>${escapeHtml(String(caseData.case_number ?? ''))}</strong></p>
                 ${caseTitle ? `<p>Renovering: <strong>${escapeHtml(caseTitle)}</strong></p>` : ''}
-                <p><strong>BegÃ¤ran om komplettering:</strong></p>
+                <p><strong>Begäran om komplettering:</strong></p>
                 <p>${escapeHtml(reason ?? '')}</p>
-                <p>Ã–ppna din ansÃ¶kningssida hÃ¤r:</p>
+                <p>Öppna din ansökningssida här:</p>
                 <p><a href="${resumeUrl}">${resumeUrl}</a></p>
               `,
             }),
             text: [
               `Hej ${applicantName},`,
-              `Styrelsen behÃ¶ver komplettering i ditt Ã¤rende fÃ¶r ${brfName}.`,
-              `Ã„rendenummer: ${String(caseData.case_number ?? '')}`,
+              `Styrelsen behöver komplettering i ditt ärende för ${brfName}.`,
+              `Ärendenummer: ${String(caseData.case_number ?? '')}`,
               ...(caseTitle ? [`Renovering: ${caseTitle}`] : []),
               ``,
-              `BegÃ¤ran om komplettering:`,
+              `Begäran om komplettering:`,
               reason ?? '',
               ``,
-              `Ã–ppna din ansÃ¶kningssida hÃ¤r: ${resumeUrl}`,
+              `Öppna din ansökningssida här: ${resumeUrl}`,
             ].join('\n'),
           })
         } catch {

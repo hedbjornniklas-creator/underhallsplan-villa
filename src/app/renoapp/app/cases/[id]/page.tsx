@@ -22,6 +22,7 @@ export default function RenoAppCaseDetailPage() {
   const [reason, setReason] = useState('')
   const [conditions, setConditions] = useState('')
   const [decisionConfirmed, setDecisionConfirmed] = useState(false)
+  const [savingRequirementDecisionKey, setSavingRequirementDecisionKey] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -127,6 +128,47 @@ export default function RenoAppCaseDetailPage() {
     }
   }
 
+  const handleRequirementDecisionChange = async (
+    row: RenoAppCaseDetail['underlag'][number],
+    decision: 'requested' | 'not_requested'
+  ) => {
+    if (!caseId) {
+      setActionError('Ogiltigt RenoApp-ärende.')
+      return
+    }
+
+    const targetId = row.id.includes(':') ? row.id.split(':').slice(1).join(':') : row.id
+    setSavingRequirementDecisionKey(row.id)
+    setActionError(null)
+    setActionSuccess(null)
+
+    try {
+      const response = await fetch(`/api/renoapp/app/cases/${caseId}/requirement-decisions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          targetType: row.category,
+          targetId,
+          decision,
+        }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as { item?: RenoAppCaseDetail; error?: string }
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Kunde inte spara kompletteringsval.')
+      }
+
+      setItem(payload.item ?? null)
+      setActionSuccess('Kompletteringsvalet sparades.')
+    } catch (submitError) {
+      setActionError(submitError instanceof Error ? submitError.message : 'Kunde inte spara kompletteringsval.')
+    } finally {
+      setSavingRequirementDecisionKey(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="rounded-[18px] border border-stone-200/80 bg-white p-6 text-sm text-stone-600 shadow-[0_18px_55px_-44px_rgba(41,37,36,0.34)]">
@@ -165,6 +207,7 @@ export default function RenoAppCaseDetailPage() {
         submitting={submitting}
         actionError={actionError}
         actionSuccess={actionSuccess}
+        savingRequirementDecisionKey={savingRequirementDecisionKey}
         onStatusChange={(status) => {
           setSelectedStatus(status)
           setActionError(null)
@@ -173,6 +216,7 @@ export default function RenoAppCaseDetailPage() {
         onReasonChange={setReason}
         onConditionsChange={setConditions}
         onDecisionConfirmedChange={setDecisionConfirmed}
+        onRequirementDecisionChange={handleRequirementDecisionChange}
         onSubmit={handleStatusSubmit}
       />
     </div>

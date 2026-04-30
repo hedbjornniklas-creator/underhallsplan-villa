@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 
 export type RenoAppCaseStatusAction = 'need_info' | 'approved' | 'conditional' | 'rejected'
+type RequirementDecision = 'requested' | 'not_requested'
 
 export type RenoAppCaseDetail = {
   id: string
@@ -73,6 +74,7 @@ export type RenoAppCaseDetail = {
     reviewGuidance: string | null
     checked: boolean
     documentId: string | null
+    requirementDecision: RequirementDecision | null
     summary: string[]
     details: {
       companyName: string | null
@@ -191,7 +193,7 @@ function getCaseSubtitle(item: RenoAppCaseDetail) {
 
 function formatStatusLabel(status: string) {
   if (status === 'draft') return 'Utkast'
-  if (status === 'submitted') return 'Under granskning'
+  if (status === 'new_application' || status === 'submitted') return 'Ny ansökan'
   if (status === 'ready_for_review') return 'Klar för granskning'
   if (status === 'need_info') return 'Begär komplettering'
   if (status === 'review') return 'Under granskning'
@@ -204,7 +206,7 @@ function formatStatusLabel(status: string) {
 
 function getStatusBadgeClass(status: string) {
   if (status === 'draft') return 'border-stone-200 bg-stone-100 text-stone-700'
-  if (status === 'submitted') return 'border-slate-200 bg-slate-100 text-slate-700'
+  if (status === 'new_application' || status === 'submitted') return 'border-indigo-200 bg-indigo-100 text-indigo-800'
   if (status === 'need_info') return 'border-amber-200 bg-amber-100 text-amber-900'
   if (status === 'ready_for_review' || status === 'review') return 'border-sky-200 bg-sky-100 text-sky-800'
   if (status === 'approved') return 'border-emerald-200 bg-emerald-100 text-emerald-800'
@@ -337,6 +339,40 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
+function RequirementDecisionButtons({
+  value,
+  saving,
+  onChange,
+}: {
+  value: RequirementDecision | null
+  saving: boolean
+  onChange: (decision: RequirementDecision) => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {(['requested', 'not_requested'] as const).map((decision) => {
+        const active = value === decision
+        return (
+          <button
+            key={decision}
+            type="button"
+            onClick={() => onChange(decision)}
+            disabled={saving}
+            className={cx(
+              'rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60',
+              active
+                ? 'border-stone-900 bg-stone-900 text-white'
+                : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
+            )}
+          >
+            {decision === 'requested' ? 'Begär in' : 'Begär inte in'}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function KeyValueCard({ label, value }: { label: string; value: string; secondary?: string }) {
   return (
     <div className="px-5 py-3.5">
@@ -466,12 +502,16 @@ function DocumentsPanel({
   item,
   documentRows,
   downloading,
+  savingDecisionKey,
   onDownloadAll,
+  onRequirementDecisionChange,
 }: {
   item: RenoAppCaseDetail
   documentRows: UnderlagItem[]
   downloading: boolean
+  savingDecisionKey: string | null
   onDownloadAll: () => void
+  onRequirementDecisionChange: (row: UnderlagItem, decision: RequirementDecision) => void
 }) {
   const [activeReviewSupport, setActiveReviewSupport] = useState<{ label: string; reviewGuidance: string | null } | null>(
     null
@@ -506,7 +546,7 @@ function DocumentsPanel({
         {rows.map((row) => {
           const document = row.documentId ? documentById.get(row.documentId) : null
           return (
-            <div key={row.id} className="grid gap-3 border-b border-stone-200 bg-white px-4 py-3 last:border-b-0 md:grid-cols-[auto_minmax(0,1fr)_160px_90px_44px] md:items-center">
+            <div key={row.id} className="grid gap-3 border-b border-stone-200 bg-white px-4 py-4 last:border-b-0 lg:grid-cols-[auto_minmax(0,1fr)_160px_220px_90px_44px] lg:items-center">
               <div className="flex items-center gap-3">
                 <span
                   className={cx(
@@ -522,6 +562,11 @@ function DocumentsPanel({
                 {document?.fileName ? <p className="mt-1 truncate text-sm text-stone-500">{displayText(document.fileName)}</p> : null}
               </div>
               <p className="text-sm text-stone-700">{getDocumentStatusLabel(row)}</p>
+              <RequirementDecisionButtons
+                value={row.requirementDecision}
+                saving={savingDecisionKey === row.id}
+                onChange={(decision) => onRequirementDecisionChange(row, decision)}
+              />
               {row.documentId ? (
                 <a
                   href={`/api/renoapp/app/cases/${item.id}/documents/${row.documentId}`}
@@ -556,7 +601,10 @@ function DocumentsPanel({
   return (
     <Card className="p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <SectionTitle title="Underlag" />
+        <SectionTitle
+          title="Föreslagna underlag"
+          description="RenoApp föreslår underlag utifrån den valda åtgärden och de uppgifter som har lämnats i ansökan. Styrelsen kan begära in, avstå från eller ersätta underlag utifrån det enskilda ärendets omfattning. Styrelsen ansvarar för sitt beslut, medan sökanden ansvarar för att uppgifter och inlämnade handlingar är korrekta."
+        />
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -615,12 +663,16 @@ function DocumentsPanel({
 
 function ConsultantsPanel({
   rows,
+  savingDecisionKey,
   expandedParticipantIds,
   onToggle,
+  onRequirementDecisionChange,
 }: {
   rows: UnderlagItem[]
+  savingDecisionKey: string | null
   expandedParticipantIds: Record<string, boolean>
   onToggle: (participantId: string) => void
+  onRequirementDecisionChange: (row: UnderlagItem, decision: RequirementDecision) => void
 }) {
   const [activeReviewSupport, setActiveReviewSupport] = useState<{ label: string; reviewGuidance: string | null } | null>(
     null
@@ -643,8 +695,8 @@ function ConsultantsPanel({
   return (
     <Card className="p-5 sm:p-6">
       <SectionTitle
-        title="Uppgifter om entreprenörer och konsulter"
-        description="Följande roller kan vara relevanta beroende på åtgärdens omfattning."
+        title="Föreslagna uppgifter om entreprenörer och konsulter"
+        description="RenoApp föreslår vilka entreprenörer eller konsulter som kan behöva anges utifrån den valda åtgärden och de uppgifter som har lämnats i ansökan. Styrelsen kan begära in, avstå från eller ersätta uppgifter utifrån det enskilda ärendets omfattning."
       />
       {rows.length === 0 ? (
         <p className="mt-5 rounded-[14px] border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">
@@ -656,7 +708,7 @@ function ConsultantsPanel({
             const expanded = expandedParticipantIds[row.id] === true
             return (
               <div key={row.id} className="border-b border-stone-200 bg-white px-4 py-3 last:border-b-0">
-                <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)_170px_80px_44px] md:items-center">
+                <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)_170px_220px_80px_44px] lg:items-center">
                   <span
                     className={cx(
                       'inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold',
@@ -670,6 +722,11 @@ function ConsultantsPanel({
                     <p className="mt-1 text-sm text-stone-500">{row.details?.companyName ? displayText(row.details.companyName) : 'Företag ej angivet'}</p>
                   </div>
                   <p className="text-sm text-stone-700">{getParticipantStatusLabel(row)}</p>
+                  <RequirementDecisionButtons
+                    value={row.requirementDecision}
+                    saving={savingDecisionKey === row.id}
+                    onChange={(decision) => onRequirementDecisionChange(row, decision)}
+                  />
                   <button
                     type="button"
                     onClick={() => onToggle(row.id)}
@@ -1032,10 +1089,12 @@ export default function RenoAppCaseDecisionView({
   submitting,
   actionError,
   actionSuccess,
+  savingRequirementDecisionKey,
   onStatusChange,
   onReasonChange,
   onConditionsChange,
   onDecisionConfirmedChange,
+  onRequirementDecisionChange,
   onSubmit,
 }: {
   item: RenoAppCaseDetail
@@ -1046,10 +1105,12 @@ export default function RenoAppCaseDecisionView({
   submitting: boolean
   actionError: string | null
   actionSuccess: string | null
+  savingRequirementDecisionKey: string | null
   onStatusChange: (status: RenoAppCaseStatusAction) => void
   onReasonChange: (value: string) => void
   onConditionsChange: (value: string) => void
   onDecisionConfirmedChange: (value: boolean) => void
+  onRequirementDecisionChange: (row: UnderlagItem, decision: RequirementDecision) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }) {
   const [historyExpanded, setHistoryExpanded] = useState(false)
@@ -1108,42 +1169,43 @@ export default function RenoAppCaseDecisionView({
 
   return (
     <div className="grid gap-6">
-      <section className="grid items-start gap-6 xl:grid-cols-[2fr_1fr]">
-        <div className="grid gap-6">
-          <CaseHeaderSummary item={item} />
-          <DocumentsPanel
-            item={item}
-            documentRows={documentUnderlag}
-            downloading={downloadingFiles}
-            onDownloadAll={() => startDownloads(downloadAllUrls)}
-          />
-          <ConsultantsPanel rows={participantUnderlag} expandedParticipantIds={expandedParticipantIds} onToggle={toggleParticipantDetails} />
-          <BoardDecisionPanel
-            isDraftCase={item.status === 'draft'}
-            selectedStatus={selectedStatus}
-            reason={reason}
-            conditions={conditions}
-            decisionConfirmed={decisionConfirmed}
-            submitting={submitting}
-            actionError={actionError}
-            actionSuccess={actionSuccess}
-            missingSnippets={missingSnippets}
-            onStatusChange={onStatusChange}
-            onReasonChange={onReasonChange}
-            onConditionsChange={onConditionsChange}
-            onDecisionConfirmedChange={onDecisionConfirmedChange}
-            onSubmit={onSubmit}
-          />
-        </div>
-
-        <aside className="grid gap-5 xl:sticky xl:top-6">
-          <CaseMaterialStatusCard missingItems={missingUnderlag} reviewFlags={missingReviewFlags} />
-          <ConsiderationsCard items={considerations} />
-          <CaseHistoryTimeline messages={item.messages} expanded={historyExpanded} onToggle={() => setHistoryExpanded((current) => !current)} />
-          <ReviewFlagsCard flags={missingReviewFlags.filter((flag) => flag.sourceType !== 'missing_document')} />
-          <InfoDisclaimerCard />
-        </aside>
-      </section>
+      <CaseHeaderSummary item={item} />
+      <DocumentsPanel
+        item={item}
+        documentRows={documentUnderlag}
+        downloading={downloadingFiles}
+        savingDecisionKey={savingRequirementDecisionKey}
+        onDownloadAll={() => startDownloads(downloadAllUrls)}
+        onRequirementDecisionChange={onRequirementDecisionChange}
+      />
+      <ConsultantsPanel
+        rows={participantUnderlag}
+        savingDecisionKey={savingRequirementDecisionKey}
+        expandedParticipantIds={expandedParticipantIds}
+        onToggle={toggleParticipantDetails}
+        onRequirementDecisionChange={onRequirementDecisionChange}
+      />
+      <CaseMaterialStatusCard missingItems={missingUnderlag} reviewFlags={missingReviewFlags} />
+      <ConsiderationsCard items={considerations} />
+      <ReviewFlagsCard flags={missingReviewFlags.filter((flag) => flag.sourceType !== 'missing_document')} />
+      <BoardDecisionPanel
+        isDraftCase={item.status === 'draft'}
+        selectedStatus={selectedStatus}
+        reason={reason}
+        conditions={conditions}
+        decisionConfirmed={decisionConfirmed}
+        submitting={submitting}
+        actionError={actionError}
+        actionSuccess={actionSuccess}
+        missingSnippets={missingSnippets}
+        onStatusChange={onStatusChange}
+        onReasonChange={onReasonChange}
+        onConditionsChange={onConditionsChange}
+        onDecisionConfirmedChange={onDecisionConfirmedChange}
+        onSubmit={onSubmit}
+      />
+      <CaseHistoryTimeline messages={item.messages} expanded={historyExpanded} onToggle={() => setHistoryExpanded((current) => !current)} />
+      <InfoDisclaimerCard />
     </div>
   )
 }

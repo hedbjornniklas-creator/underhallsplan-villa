@@ -272,6 +272,7 @@ function formatDateTime(value: string | null) {
 
 function formatCaseStatus(status: string) {
   if (status === 'draft') return 'Utkast'
+  if (status === 'new_application') return 'Ny ansökan'
   if (status === 'submitted') return 'Inskickad'
   if (status === 'need_info') return 'Komplettering krävs'
   if (status === 'review') return 'Under granskning'

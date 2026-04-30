@@ -39,7 +39,7 @@ export async function POST(request: Request, context: RouteContext) {
     const { id } = await context.params
     const origin = new URL(request.url).origin
     const body = (await request.json().catch(() => ({}))) as {
-      status?: 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected'
+      status?: 'new_application' | 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected'
       reason?: string | null
       conditions?: string | null
     }
