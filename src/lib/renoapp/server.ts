@@ -4341,6 +4341,20 @@ export async function upsertPublicApplication(
     })
   }
 
+  if (mode === 'submit' && !isCompletionSubmit) {
+    await insertCaseMessage({
+      admin,
+      caseId,
+      type: 'status_change',
+      authorRole: 'applicant',
+      authorContactId: contact?.id ?? null,
+      message: 'Ansökan inkommen.',
+      metadata: {
+        nextStatus,
+      },
+    })
+  }
+
   if (mode === 'submit') {
     if (isCompletionSubmit) {
       await sendRenoAppCaseEventNotification({

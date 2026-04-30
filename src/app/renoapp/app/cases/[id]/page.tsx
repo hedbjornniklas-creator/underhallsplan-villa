@@ -297,13 +297,13 @@ export default function RenoAppCaseDetailPage() {
   }
 
   return (
-    <div className="mx-auto grid w-full max-w-[1440px] gap-6 px-4 py-8 sm:px-8">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+    <div className="mx-auto grid w-full max-w-[1440px] gap-4 px-4 py-4 sm:px-8 sm:py-6">
+      <div className="flex items-center">
         <Link href="/renoapp/app/cases" className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline">
           Tillbaka till ärenden
         </Link>
-        <CaseFlowVisualization status={item.status} />
       </div>
+      <CaseFlowVisualization status={item.status} />
 
       <RenoAppCaseDecisionView
         item={item}
