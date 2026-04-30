@@ -342,11 +342,9 @@ function StatusBadge({ status }: { status: string }) {
 
 function RequirementDecisionButtons({
   value,
-  saving,
   onChange,
 }: {
   value: RequirementDecision | null
-  saving: boolean
   onChange: (decision: RequirementDecision) => void
 }) {
   return (
@@ -358,9 +356,8 @@ function RequirementDecisionButtons({
             key={decision}
             type="button"
             onClick={() => onChange(decision)}
-            disabled={saving}
             className={cx(
-              'rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60',
+              'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
               active
                 ? 'border-stone-900 bg-stone-900 text-white'
                 : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
@@ -505,14 +502,12 @@ function DocumentsPanel({
   item,
   documentRows,
   downloading,
-  savingDecisionKey,
   onDownloadAll,
   onRequirementDecisionChange,
 }: {
   item: RenoAppCaseDetail
   documentRows: UnderlagItem[]
   downloading: boolean
-  savingDecisionKey: string | null
   onDownloadAll: () => void
   onRequirementDecisionChange: (row: UnderlagItem, decision: RequirementDecision) => void
 }) {
@@ -567,7 +562,6 @@ function DocumentsPanel({
               <p className="text-sm text-stone-700">{getDocumentStatusLabel(row)}</p>
               <RequirementDecisionButtons
                 value={row.requirementDecision}
-                saving={savingDecisionKey === row.id}
                 onChange={(decision) => onRequirementDecisionChange(row, decision)}
               />
               {row.documentId ? (
@@ -638,7 +632,7 @@ function DocumentsPanel({
             className="absolute inset-0 cursor-default"
             aria-label="Stäng granskningsstöd"
           />
-          <div className="relative z-10 w-full max-w-lg rounded-[18px] border border-stone-200 bg-white p-6 shadow-[0_30px_80px_-45px_rgba(28,25,23,0.5)]">
+          <div className="relative z-10 flex max-h-[86vh] w-full max-w-5xl flex-col rounded-[18px] border border-stone-200 bg-white p-6 shadow-[0_30px_80px_-45px_rgba(28,25,23,0.5)]">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500">Granskningsstöd</p>
@@ -654,7 +648,7 @@ function DocumentsPanel({
                 Stäng
               </button>
             </div>
-            <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-stone-700">
+            <p className="mt-4 overflow-y-auto whitespace-pre-wrap pr-2 text-sm leading-6 text-stone-700">
               {displayText(activeReviewSupport.reviewGuidance, 'Inget granskningsstöd är registrerat för detta underlag.')}
             </p>
           </div>
@@ -666,13 +660,11 @@ function DocumentsPanel({
 
 function ConsultantsPanel({
   rows,
-  savingDecisionKey,
   expandedParticipantIds,
   onToggle,
   onRequirementDecisionChange,
 }: {
   rows: UnderlagItem[]
-  savingDecisionKey: string | null
   expandedParticipantIds: Record<string, boolean>
   onToggle: (participantId: string) => void
   onRequirementDecisionChange: (row: UnderlagItem, decision: RequirementDecision) => void
@@ -727,7 +719,6 @@ function ConsultantsPanel({
                   <p className="text-sm text-stone-700">{getParticipantStatusLabel(row)}</p>
                   <RequirementDecisionButtons
                     value={row.requirementDecision}
-                    saving={savingDecisionKey === row.id}
                     onChange={(decision) => onRequirementDecisionChange(row, decision)}
                   />
                   <button
@@ -831,7 +822,7 @@ function BoardDecisionPanel({
   submitting,
   actionError,
   actionSuccess,
-  missingSnippets,
+  completionSnippets,
   onStatusChange,
   onReasonChange,
   onConditionsChange,
@@ -846,7 +837,7 @@ function BoardDecisionPanel({
   submitting: boolean
   actionError: string | null
   actionSuccess: string | null
-  missingSnippets: string[]
+  completionSnippets: string[]
   onStatusChange: (status: RenoAppCaseStatusAction) => void
   onReasonChange: (value: string) => void
   onConditionsChange: (value: string) => void
@@ -914,18 +905,14 @@ function BoardDecisionPanel({
           {selectedStatus === 'need_info' ? (
             <label className="grid gap-2 text-sm text-stone-700">
               <span className="font-semibold text-stone-950">Vad behöver kompletteras?</span>
-              {missingSnippets.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {missingSnippets.map((snippet) => (
-                    <button
-                      key={snippet}
-                      type="button"
-                      onClick={() => onReasonChange(appendSnippet(reason, snippet))}
-                      className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm text-amber-900 hover:bg-amber-100"
-                    >
-                      {snippet}
-                    </button>
-                  ))}
+              {completionSnippets.length > 0 ? (
+                <div className="rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+                  <p className="font-semibold">Komplettering som kommer med i meddelandet</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    {completionSnippets.map((snippet) => (
+                      <li key={snippet}>{snippet}</li>
+                    ))}
+                  </ul>
                 </div>
               ) : null}
               <textarea
@@ -1117,7 +1104,6 @@ export default function RenoAppCaseDecisionView({
   submitting,
   actionError,
   actionSuccess,
-  savingRequirementDecisionKey,
   onStatusChange,
   onReasonChange,
   onConditionsChange,
@@ -1133,7 +1119,6 @@ export default function RenoAppCaseDecisionView({
   submitting: boolean
   actionError: string | null
   actionSuccess: string | null
-  savingRequirementDecisionKey: string | null
   onStatusChange: (status: RenoAppCaseStatusAction) => void
   onReasonChange: (value: string) => void
   onConditionsChange: (value: string) => void
@@ -1146,11 +1131,17 @@ export default function RenoAppCaseDecisionView({
   const [expandedParticipantIds, setExpandedParticipantIds] = useState<Record<string, boolean>>({})
   const documentUnderlag = useMemo(() => item.underlag.filter((row) => row.category === 'document'), [item])
   const participantUnderlag = useMemo(() => item.underlag.filter((row) => row.category === 'participant'), [item])
-  const missingUnderlag = useMemo(() => item.underlag.filter((row) => !row.checked), [item])
   const missingReviewFlags = useMemo(() => getMissingReviewFlags(item), [item])
-  const missingSnippets = useMemo(
-    () => Array.from(new Set(missingUnderlag.map((row) => `${displayText(row.label)} saknas`))).slice(0, 8),
-    [missingUnderlag]
+  const completionSnippets = useMemo(
+    () =>
+      item.underlag
+        .filter((row) => row.requirementDecision === 'requested')
+        .map((row) =>
+          row.category === 'document'
+            ? `Underlag: ${displayText(row.label)}`
+            : `Uppgifter: ${getParticipantDisplayLabel(row.label)}`
+        ),
+    [item.underlag]
   )
   const downloadAllUrls = useMemo(
     () =>
@@ -1201,13 +1192,11 @@ export default function RenoAppCaseDecisionView({
         item={item}
         documentRows={documentUnderlag}
         downloading={downloadingFiles}
-        savingDecisionKey={savingRequirementDecisionKey}
         onDownloadAll={() => startDownloads(downloadAllUrls)}
         onRequirementDecisionChange={onRequirementDecisionChange}
       />
       <ConsultantsPanel
         rows={participantUnderlag}
-        savingDecisionKey={savingRequirementDecisionKey}
         expandedParticipantIds={expandedParticipantIds}
         onToggle={toggleParticipantDetails}
         onRequirementDecisionChange={onRequirementDecisionChange}
@@ -1222,7 +1211,7 @@ export default function RenoAppCaseDecisionView({
         submitting={submitting}
         actionError={actionError}
         actionSuccess={actionSuccess}
-        missingSnippets={missingSnippets}
+        completionSnippets={completionSnippets}
         onStatusChange={onStatusChange}
         onReasonChange={onReasonChange}
         onConditionsChange={onConditionsChange}

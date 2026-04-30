@@ -22,7 +22,6 @@ export default function RenoAppCaseDetailPage() {
   const [reason, setReason] = useState('')
   const [conditions, setConditions] = useState('')
   const [decisionConfirmed, setDecisionConfirmed] = useState(false)
-  const [savingRequirementDecisionKey, setSavingRequirementDecisionKey] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -67,13 +66,28 @@ export default function RenoAppCaseDetailPage() {
 
   const handleStatusSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const requestedCompletionLines =
+      item?.underlag
+        .filter((row) => row.requirementDecision === 'requested')
+        .map((row) => `${row.category === 'document' ? 'Underlag' : 'Uppgifter'}: ${row.label}`) ?? []
+    const completionMessage =
+      selectedStatus === 'need_info'
+        ? [
+            requestedCompletionLines.length > 0
+              ? `Följande ska kompletteras:\n${requestedCompletionLines.map((line) => `- ${line}`).join('\n')}`
+              : null,
+            reason.trim() || null,
+          ]
+            .filter((line): line is string => Boolean(line))
+            .join('\n\n')
+        : reason
 
     if (!caseId) {
       setActionError('Ogiltigt RenoApp-ärende.')
       return
     }
 
-    if (selectedStatus === 'need_info' && !reason.trim()) {
+    if (selectedStatus === 'need_info' && !completionMessage.trim()) {
       setActionError('Skriv vad lägenhetsinnehavaren behöver komplettera.')
       return
     }
@@ -105,7 +119,7 @@ export default function RenoAppCaseDetailPage() {
         },
         body: JSON.stringify({
           status: selectedStatus,
-          reason: selectedStatus === 'conditional' ? null : reason,
+          reason: selectedStatus === 'conditional' ? null : completionMessage,
           conditions: selectedStatus === 'conditional' ? conditions : null,
         }),
       })
@@ -139,7 +153,6 @@ export default function RenoAppCaseDetailPage() {
 
     const targetId = row.id.includes(':') ? row.id.split(':').slice(1).join(':') : row.id
     const previousItem = item
-    setSavingRequirementDecisionKey(row.id)
     setActionError(null)
     setActionSuccess(null)
     setItem((current) =>
@@ -181,8 +194,6 @@ export default function RenoAppCaseDetailPage() {
     } catch (submitError) {
       setItem(previousItem)
       setActionError(submitError instanceof Error ? submitError.message : 'Kunde inte spara kompletteringsval.')
-    } finally {
-      setSavingRequirementDecisionKey(null)
     }
   }
 
@@ -224,7 +235,6 @@ export default function RenoAppCaseDetailPage() {
         submitting={submitting}
         actionError={actionError}
         actionSuccess={actionSuccess}
-        savingRequirementDecisionKey={savingRequirementDecisionKey}
         onStatusChange={(status) => {
           setSelectedStatus(status)
           setActionError(null)
