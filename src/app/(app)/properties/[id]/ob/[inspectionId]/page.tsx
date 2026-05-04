@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Menu, X } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 import { parseScopeCodes } from '@/lib/report/scopeText'
@@ -184,6 +184,7 @@ export default function InspectionDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedAddonKeys, setSelectedAddonKeys] = useState<string[]>([])
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const handleInspectionAddonSelectionChanged = useCallback((keys: string[]) => {
     setSelectedAddonKeys((prev) => (areAddonKeyListsEqual(prev, keys) ? prev : keys))
   }, [])
@@ -420,7 +421,6 @@ export default function InspectionDetailPage() {
     showAreaMeasurement,
     showMoistureControl
   )
-  const isAppendixSection = activeSection === 'areamatning' || activeSection === 'fuktkontroll'
   const activeSectionIndex = visibleSections.findIndex((section) => section.key === activeSection)
   const activeSectionLabel = visibleSections.find((section) => section.key === activeSection)?.label ?? ''
 
@@ -441,6 +441,21 @@ export default function InspectionDetailPage() {
       setActiveSection(showAreaMeasurement ? 'areamatning' : 'insida')
     }
   }, [activeSection, showAreaMeasurement, showMoistureControl])
+
+  useEffect(() => {
+    setMobileMenuOpen(false)
+  }, [activeSection])
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [mobileMenuOpen])
 
   if (loading) {
     return (
@@ -470,7 +485,7 @@ export default function InspectionDetailPage() {
 
   return (
     <Protected>
-      <main className="relative min-h-full overflow-hidden p-4 md:p-6">
+      <main className="relative min-h-full overflow-hidden px-2 pb-24 pt-3 sm:px-3 md:p-6">
         <div
           className="pointer-events-none absolute inset-0"
           style={{
@@ -480,38 +495,43 @@ export default function InspectionDetailPage() {
         />
         <div className="pointer-events-none absolute inset-0 bg-white/8" />
 
-        <div className="relative mx-auto w-full max-w-7xl space-y-4">
-          {isAppendixSection ? (
-            <div className="rounded-xl border border-white/50 bg-white/95 p-3 shadow-lg ring-1 ring-black/5 md:hidden">
-              <div className="mb-2 flex items-center justify-between">
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">Steg</div>
-                <div className="text-xs text-gray-500">
-                  {activeSectionIndex >= 0 ? `${activeSectionIndex + 1}/${visibleSections.length}` : null}
-                </div>
+        <div className="relative mx-auto w-full max-w-7xl space-y-3 md:space-y-4">
+          <div className="flex items-center justify-between gap-2 rounded-full border border-white/45 bg-white/90 px-2.5 py-2 shadow-lg ring-1 ring-black/5 md:hidden">
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.history.length > 1) {
+                  router.back()
+                  return
+                }
+                router.push(`/properties/${propertyId}/ob`)
+              }}
+              aria-label="Tillbaka"
+              title="Tillbaka"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
+              <ArrowLeft size={17} strokeWidth={2} />
+            </button>
+            <div className="min-w-0 flex-1 text-center">
+              <div className="truncate text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                Överlåtelsebesiktning
               </div>
-              <label className="sr-only" htmlFor="ob-mobile-section-select">
-                Välj steg
-              </label>
-              <select
-                id="ob-mobile-section-select"
-                value={activeSection}
-                onChange={(event) => setActiveSection(event.target.value as ObSectionKey)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              >
-                {visibleSections.map((section) => (
-                  <option key={section.key} value={section.key}>
-                    {section.label}
-                  </option>
-                ))}
-              </select>
-              {activeSectionLabel ? (
-                <div className="mt-2 text-xs text-gray-500">Aktivt: {activeSectionLabel}</div>
-              ) : null}
+              <div className="truncate text-sm font-semibold text-gray-900">
+                {activeSectionLabel}
+                {activeSectionIndex >= 0 ? (
+                  <span className="ml-1 text-xs font-medium text-gray-500">
+                    {activeSectionIndex + 1}/{visibleSections.length}
+                  </span>
+                ) : null}
+              </div>
             </div>
-          ) : null}
+            <div className="inline-flex h-9 min-w-9 items-center justify-center rounded-full bg-indigo-50 px-2 text-xs font-semibold text-indigo-700">
+              {activeSectionIndex >= 0 ? `${activeSectionIndex + 1}/${visibleSections.length}` : null}
+            </div>
+          </div>
 
           <div className="grid items-start gap-6 md:grid-cols-[240px_minmax(0,1fr)]">
-            <div className={`md:w-[240px] ${isAppendixSection ? 'hidden md:block' : ''}`}>
+            <div className="hidden md:block md:w-[240px]">
               <nav className="space-y-2 rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:sticky md:top-24 md:max-h-[calc(100vh-7rem)] md:w-[240px] md:overflow-auto">
                 <div className="mb-2 flex items-center gap-2">
                   <button
@@ -558,7 +578,7 @@ export default function InspectionDetailPage() {
                 activeSection === 'areamatning' ||
                 activeSection === 'fuktkontroll'
                   ? 'p-0 md:p-0'
-                  : 'rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:p-4'
+                  : 'md:rounded-2xl md:border md:border-white/45 md:bg-white/95 md:p-4 md:shadow-xl md:ring-1 md:ring-black/5'
               }
                 [&_input]:text-gray-900
                 [&_input]:placeholder:text-gray-500
@@ -582,6 +602,69 @@ export default function InspectionDetailPage() {
             </div>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen(true)}
+          aria-label="Öppna stegmeny"
+          title="Öppna stegmeny"
+          className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 inline-flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-2xl shadow-indigo-950/30 ring-1 ring-white/50 transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 md:hidden"
+        >
+          <Menu size={25} strokeWidth={2.35} />
+        </button>
+
+        {mobileMenuOpen ? (
+          <div className="fixed inset-0 z-[70] md:hidden" role="dialog" aria-modal="true">
+            <button
+              type="button"
+              aria-label="Stäng stegmeny"
+              className="absolute inset-0 h-full w-full bg-black/40"
+              onClick={() => setMobileMenuOpen(false)}
+            />
+            <div className="absolute inset-x-0 bottom-0 rounded-t-[2rem] border border-white/40 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl">
+              <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-gray-300" />
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Steg</div>
+                  <div className="text-lg font-semibold text-gray-900">Överlåtelsebesiktning</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(false)}
+                  aria-label="Stäng"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-700"
+                >
+                  <X size={20} strokeWidth={2.25} />
+                </button>
+              </div>
+              <div className="grid max-h-[62vh] gap-2 overflow-auto pr-1">
+                {visibleSections.map((section, index) => (
+                  <button
+                    key={section.key}
+                    type="button"
+                    onClick={() => setActiveSection(section.key)}
+                    className={`flex items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${
+                      activeSection === section.key
+                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/15'
+                        : 'bg-gray-50 text-gray-800 hover:bg-gray-100'
+                    }`}
+                  >
+                    <span>{section.label}</span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs ${
+                        activeSection === section.key
+                          ? 'bg-white/18 text-white'
+                          : 'bg-white text-gray-500'
+                      }`}
+                    >
+                      {index + 1}/{visibleSections.length}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
       </main>
     </Protected>
   )

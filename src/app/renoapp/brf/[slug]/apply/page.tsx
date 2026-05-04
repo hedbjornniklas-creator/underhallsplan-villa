@@ -1155,14 +1155,14 @@ export default function RenoAppApplyPage() {
               value={form.applicantName}
               onChange={(event) => updateField('applicantName', event.target.value)}
               className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-              placeholder="Namn"
+              placeholder="Namn *"
               required
             />
             <input
               value={form.applicantEmail}
               onChange={(event) => updateField('applicantEmail', event.target.value)}
               className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-              placeholder="E-post"
+              placeholder="E-post *"
               type="email"
               required
             />
@@ -1170,21 +1170,21 @@ export default function RenoAppApplyPage() {
               value={form.applicantPhone}
               onChange={(event) => updateField('applicantPhone', event.target.value)}
               className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
-              placeholder="Telefon"
+              placeholder="Telefon *"
               required
             />
             <input
               value={form.unitNumberInternal}
               onChange={(event) => updateField('unitNumberInternal', event.target.value)}
               className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-              placeholder="Internt lägenhetsnummer"
+              placeholder="Internt lägenhetsnummer *"
               required
             />
             <input
               value={form.unitNumberSkatteverket}
               onChange={(event) => updateField('unitNumberSkatteverket', event.target.value)}
               className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-              placeholder="Skatteverkets lägenhetsnummer"
+              placeholder="Skatteverkets lägenhetsnummer *"
               required
             />
           </div>
@@ -1730,7 +1730,7 @@ export default function RenoAppApplyPage() {
       <div className="grid gap-4">
         <div className="rounded-3xl border border-stone-200 bg-white p-5">
           <p className="text-sm font-semibold text-stone-900">Sammanfattning</p>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
             <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
               <p className="font-medium text-stone-900">Sökande</p>
               <p className="mt-1">{form.applicantName || '-'}</p>
@@ -1741,6 +1741,18 @@ export default function RenoAppApplyPage() {
               <p className="font-medium text-stone-900">Lägenhet</p>
               <p className="mt-1">Internt nr: {form.unitNumberInternal || '-'}</p>
               <p>Skatteverket: {form.unitNumberSkatteverket || '-'}</p>
+            </div>
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+              <p className="font-medium text-stone-900">Valda renoveringstyper</p>
+              {selectedActions.length > 0 ? (
+                <ul className="mt-1 list-disc space-y-1 pl-5">
+                  {selectedActions.map((action) => (
+                    <li key={action.id}>{action.label}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-1">Inga valda renoveringstyper.</p>
+              )}
             </div>
           </div>
         </div>

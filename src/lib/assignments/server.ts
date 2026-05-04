@@ -1537,6 +1537,22 @@ function toAddonCurrency(value: unknown): string {
   return normalized.length === 3 ? normalized : 'SEK'
 }
 
+function toDateOnly(value: string | null | undefined): string | null {
+  if (!value) return null
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return null
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Europe/Stockholm',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(parsed)
+  const year = parts.find(part => part.type === 'year')?.value
+  const month = parts.find(part => part.type === 'month')?.value
+  const day = parts.find(part => part.type === 'day')?.value
+  return year && month && day ? `${year}-${month}-${day}` : null
+}
+
 function buildSnapshotPayload(inspectionId: string, propertyData: PropertySeedRow) {
   return {
     inspection_id: inspectionId,
@@ -1641,6 +1657,7 @@ export async function convertAssignmentToInspection(input: {
       client_name: assignment.customer_name,
       client_contact: clientContact,
       assignment_number: assignmentNo,
+      assignment_confirmation_delivered_date: toDateOnly(assignment.accepted_at),
     })
     .select('id')
     .single()
