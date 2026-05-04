@@ -530,7 +530,7 @@ export default function InspectionDetailPage() {
             </div>
           </div>
 
-          <div className="grid items-start gap-6 md:grid-cols-[240px_minmax(0,1fr)]">
+          <div className="grid min-w-0 items-start gap-6 md:grid-cols-[240px_minmax(0,1fr)]">
             <div className="hidden md:block md:w-[240px]">
               <nav className="space-y-2 rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:sticky md:top-24 md:max-h-[calc(100vh-7rem)] md:w-[240px] md:overflow-auto">
                 <div className="mb-2 flex items-center gap-2">
@@ -580,7 +580,7 @@ export default function InspectionDetailPage() {
                   ? 'p-0 md:p-0'
                   : 'md:rounded-2xl md:border md:border-white/45 md:bg-white/95 md:p-4 md:shadow-xl md:ring-1 md:ring-black/5'
               }
-                min-w-0
+                min-w-0 max-w-full overflow-x-hidden
                 [&_input]:text-gray-900
                 [&_input]:placeholder:text-gray-500
                 [&_input]:border-gray-300

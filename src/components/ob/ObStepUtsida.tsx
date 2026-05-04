@@ -1382,9 +1382,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         <section
           key={item.id}
           id={itemAnchorId}
-          className="min-w-0 scroll-mt-28 rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3"
+          className="w-full min-w-0 max-w-full scroll-mt-28 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3"
         >
-          <header className="flex min-w-0 items-center justify-between gap-2">
+          <header className="flex min-w-0 max-w-full items-center justify-between gap-2">
             <h3 className="min-w-0 text-base font-semibold text-gray-900">
               <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
               {item.label}
@@ -1421,9 +1421,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       <section
         key={item.id}
         id={itemAnchorId}
-        className="min-w-0 scroll-mt-28 rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-4"
+        className="w-full min-w-0 max-w-full scroll-mt-28 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-4"
       >
-        <header className="flex min-w-0 items-center justify-between gap-2">
+        <header className="flex min-w-0 max-w-full items-center justify-between gap-2">
           <h3 className="min-w-0 text-base font-semibold text-gray-900">
             <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
             {item.label}
@@ -1431,7 +1431,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         </header>
 
         {/* Kontrollpunkter för komponenten */}
-        <div className="min-w-0 rounded-xl bg-gray-50 ring-1 ring-gray-200 p-3 md:p-4">
+        <div className="w-full min-w-0 max-w-full overflow-hidden rounded-xl bg-gray-50 ring-1 ring-gray-200 p-3 md:p-4">
           <ExteriorControlPointsSection
             item={item}
             row={mainRow}
@@ -1499,8 +1499,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   }
 
   return (
-    <div className="w-full min-w-0 space-y-5">
-      <section className="min-w-0 rounded-2xl border border-gray-200 bg-white/95 p-4 md:p-5 space-y-4">
+    <div className="w-full min-w-0 max-w-full overflow-x-hidden space-y-5">
+      <section className="w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-gray-200 bg-white/95 p-4 md:p-5 space-y-4">
         <header className="space-y-1">
           <h2 className="text-xl font-semibold text-gray-900">Byggnad – utsida</h2>
           <p className="text-sm text-gray-700">
@@ -1526,7 +1526,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         </section>
       </section>
 
-      <section className="min-w-0 space-y-4">
+      <section className="w-full min-w-0 max-w-full space-y-4">
         {items.map(item => renderItemCard(item))}
       </section>
     </div>
