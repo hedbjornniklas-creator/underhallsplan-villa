@@ -1,4 +1,3 @@
-﻿// @ts-nocheck
 'use client'
 
 import { useEffect, useState, ChangeEvent, useRef, useMemo } from 'react'
@@ -13,6 +12,8 @@ type Inspection = {
   locked_at?: string | null
 }
 type SearchMode = 'control_points' | 'chips'
+type ValueMap = Record<string, unknown>
+type ErrorLike = { code?: string; message?: string; details?: string; hint?: string }
 
 type SettingsExteriorItem = {
   id: string
@@ -43,7 +44,7 @@ type SettingsExteriorOption = {
   label: string
   sort_order: number
   is_active: boolean
-  trigger_tags?: any | null
+  trigger_tags?: unknown
   created_at?: string | null
   updated_at?: string | null
 }
@@ -53,7 +54,7 @@ type InspectionExteriorObservation = {
   inspection_id: string
   exterior_item_id: string
   part_label: string | null
-  values: Record<string, any>
+  values: ValueMap
   is_free_note?: boolean | null
   note: string | null
   risk_text?: string | null
@@ -87,7 +88,7 @@ type ControlPointLite = {
   key: string
   title: string
   description: string | null
-  tags: any | null
+  tags: unknown
   exterior_item_key?: string | null
   search_hint?: string | null
 }
@@ -101,7 +102,7 @@ type ControlPointOutcome = {
   note_template: string | null
   risk_template: string | null
   ftu_template: string | null
-  tags: any | null
+  tags: unknown
   sort_order: number
   is_active: boolean
 }
@@ -141,24 +142,32 @@ const getImagePublicUrl = (filePath: string) => {
   return data.publicUrl
 }
 
-const serializeDbError = (err: any) => {
-  if (!err) return null
+const toErrorLike = (err: unknown): ErrorLike | null => {
+  if (!err || typeof err !== 'object') return null
+  return err as ErrorLike
+}
+
+const serializeDbError = (err: unknown) => {
+  const e = toErrorLike(err)
+  if (!e) return null
   return {
-    code: err.code ?? null,
-    message: err.message ?? null,
-    details: err.details ?? null,
-    hint: err.hint ?? null,
+    code: e.code ?? null,
+    message: e.message ?? null,
+    details: e.details ?? null,
+    hint: e.hint ?? null,
   }
 }
 
-const isMissingIsFreeNoteColumnError = (err: any) => {
-  const text = `${err?.message ?? ''} ${err?.details ?? ''} ${err?.hint ?? ''}`.toLowerCase()
-  return err?.code === '42703' || (text.includes('is_free_note') && text.includes('column'))
+const isMissingIsFreeNoteColumnError = (err: unknown) => {
+  const e = toErrorLike(err)
+  const text = `${e?.message ?? ''} ${e?.details ?? ''} ${e?.hint ?? ''}`.toLowerCase()
+  return e?.code === '42703' || (text.includes('is_free_note') && text.includes('column'))
 }
 
-const isUniqueViolationError = (err: any) => {
-  const text = `${err?.message ?? ''} ${err?.details ?? ''}`.toLowerCase()
-  return err?.code === '23505' || text.includes('duplicate key') || text.includes('unique')
+const isUniqueViolationError = (err: unknown) => {
+  const e = toErrorLike(err)
+  const text = `${e?.message ?? ''} ${e?.details ?? ''}`.toLowerCase()
+  return e?.code === '23505' || text.includes('duplicate key') || text.includes('unique')
 }
 
 export default function ObStepUtsida({ inspection }: { inspection: Inspection }) {
@@ -189,7 +198,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   >({})
   const supportsIsFreeNoteRef = useRef<boolean | null>(null)
 
-  const buildObservationPayload = (base: Record<string, any>, isFreeNote: boolean) => {
+  const buildObservationPayload = (base: ValueMap, isFreeNote: boolean) => {
     if (supportsIsFreeNoteRef.current === false) return base
     return { ...base, is_free_note: isFreeNote }
   }
@@ -197,7 +206,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   const fetchMainObservation = async (
     inspectionId: string,
     exteriorItemId: string
-  ): Promise<{ data: InspectionExteriorObservation | null; error: any }> => {
+  ): Promise<{ data: InspectionExteriorObservation | null; error: unknown }> => {
     let query = supabase
       .from('inspection_exterior_observations')
       .select('*')
@@ -371,9 +380,11 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           throw new Error(obsErr.message)
         }
 
-        let allObs: InspectionExteriorObservation[] = (obsData ?? []).map(o => ({
+        const allObs: InspectionExteriorObservation[] = (
+          (obsData ?? []) as Array<InspectionExteriorObservation & { values?: unknown }>
+        ).map(o => ({
           ...o,
-          values: (o.values as any) || {},
+          values: (o.values as ValueMap) || {},
         }))
 
         // 4b) Säkerställ att varje komponent har minst EN "main"-observation (utan free_note)
@@ -399,8 +410,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
 
             if (existingMain) {
               allObs.push({
-                ...(existingMain as any),
-                values: (existingMain.values as any) || {},
+                ...existingMain,
+                values: (existingMain.values as ValueMap) || {},
               })
               continue
             }
@@ -442,7 +453,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                 )
               }
               if (existingAfterConflict) {
-                newObsData = existingAfterConflict as any
+                newObsData = existingAfterConflict
                 newObsErr = null
               }
             }
@@ -456,8 +467,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             }
 
             const newObs: InspectionExteriorObservation = {
-              ...(newObsData as any),
-              values: ((newObsData as any).values as any) || {},
+              ...(newObsData as InspectionExteriorObservation),
+              values: ((newObsData as InspectionExteriorObservation).values as ValueMap) || {},
             }
 
             allObs.push(newObs)
@@ -555,7 +566,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             throw new Error(ciErr.message)
           }
 
-          const ciArr = (ciData ?? []).map(ci => ({
+          const ciArr = ((ciData ?? []) as InspectionControlItem[]).map(ci => ({
             ...(ci as InspectionControlItem),
             selected_outcome_id:
               (ci as InspectionControlItem).selected_outcome_id ?? null,
@@ -680,9 +691,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           imgObsMap[key].push(img)
         }
         setImagesByObservationId(imgObsMap)
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error('loadAll utsida failed:', e)
-        setError(e?.message ?? 'Kunde inte ladda Utsida-data.')
+        setError(e instanceof Error ? e.message : 'Kunde inte ladda Utsida-data.')
       } finally {
         setLoading(false)
       }
@@ -739,8 +750,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         }
 
         if (error) throw error
-        const r = data as any
-        return { ...r, values: (r.values as any) || {} }
+        const r = data as InspectionExteriorObservation
+        return { ...r, values: (r.values as ValueMap) || {} }
       } else {
         const baseInsertPayload = {
           inspection_id: row.inspection_id,
@@ -770,12 +781,12 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         }
 
         if (error) throw error
-        const r = data as any
-        return { ...r, values: (r.values as any) || {} }
+        const r = data as InspectionExteriorObservation
+        return { ...r, values: (r.values as ValueMap) || {} }
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('upsertObservationRow utsida failed:', e)
-      setError(e?.message ?? 'Kunde inte spara notering.')
+      setError(e instanceof Error ? e.message : 'Kunde inte spara notering.')
       return row
     } finally {
       setSaving(false)
@@ -862,9 +873,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         delete next[rowId]
         return next
       })
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('deleteFreeNoteRow utsida failed:', e)
-      setError(e?.message ?? 'Kunde inte ta bort fri notering.')
+      setError(e instanceof Error ? e.message : 'Kunde inte ta bort fri notering.')
     } finally {
       setSaving(false)
     }
@@ -923,9 +934,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         if (error) throw error
         return data as InspectionControlItem
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('upsertControlItem (utsida) failed:', e)
-      setError(e?.message ?? 'Kunde inte spara kontrollpunkt.')
+      setError(e instanceof Error ? e.message : 'Kunde inte spara kontrollpunkt.')
       return item
     } finally {
       setSaving(false)
@@ -1006,9 +1017,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         delete clone[itemId]
         return clone
       })
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('deleteControlItem (utsida) failed:', e)
-      setError(e?.message ?? 'Kunde inte ta bort kontrollpunkt.')
+      setError(e instanceof Error ? e.message : 'Kunde inte ta bort kontrollpunkt.')
     } finally {
       setSaving(false)
     }
@@ -1167,9 +1178,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           ),
         }
       })
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('handleUploadImageForControlItem failed', e)
-      setError(e?.message ?? 'Kunde inte ladda upp bild för kontrollpunkt.')
+      setError(e instanceof Error ? e.message : 'Kunde inte ladda upp bild för kontrollpunkt.')
     } finally {
       setSaving(false)
     }
@@ -1210,9 +1221,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           [targetControlId!]: prevArr.filter(img => img.id !== imageId),
         }
       })
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('handleDeleteControlItemImage failed', e)
-      setError(e?.message ?? 'Kunde inte ta bort bild för kontrollpunkt.')
+      setError(e instanceof Error ? e.message : 'Kunde inte ta bort bild för kontrollpunkt.')
     } finally {
       setSaving(false)
     }
@@ -1285,9 +1296,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           ),
         }
       })
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('handleUploadImageForObservation failed', e)
-      setError(e?.message ?? 'Kunde inte ladda upp bild för fri notering.')
+      setError(e instanceof Error ? e.message : 'Kunde inte ladda upp bild för fri notering.')
     } finally {
       setSaving(false)
     }
@@ -1327,9 +1338,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           [targetObservationId!]: prevArr.filter(img => img.id !== imageId),
         }
       })
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('handleDeleteObservationImage failed', e)
-      setError(e?.message ?? 'Kunde inte ta bort bild för fri notering.')
+      setError(e instanceof Error ? e.message : 'Kunde inte ta bort bild för fri notering.')
     } finally {
       setSaving(false)
     }
@@ -1482,7 +1493,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   if (!items.length) {
     return (
       <div className="p-4 text-sm text-gray-600">
-        Inga rubriker för utsida är definierade. Lägg upp dem under Settings → Utsida.
+        Inga rubriker för utsida är definierade. Lägg upp dem under Settings ? Utsida.
       </div>
     )
   }
@@ -1959,7 +1970,7 @@ function ExteriorControlPointsSection({
                 <div className="space-y-2">
                   <div className="space-y-1">
                     <label className="text-[11px] text-gray-600">
-                      🧱 Notering
+                      ?? Notering
                     </label>
                     <textarea
                       rows={2}
@@ -2020,7 +2031,7 @@ function ExteriorControlPointsSection({
 
                         <div className="space-y-1">
                           <label className="text-[11px] text-gray-600">
-                            🧱 Notering
+                            ?? Notering
                           </label>
                           <textarea
                             rows={2}
@@ -2040,7 +2051,7 @@ function ExteriorControlPointsSection({
                             {riskText.length > 0 && (
                               <div className="rounded-lg border border-gray-200 bg-white p-3">
                                 <div className="text-xs font-semibold text-gray-700">
-                                  ⚠️ Riskanalys
+                                  ?? Riskanalys
                                 </div>
                                 <textarea
                                   rows={3}
@@ -2058,7 +2069,7 @@ function ExteriorControlPointsSection({
                             {ftuText.length > 0 && (
                               <div className="rounded-lg border border-gray-200 bg-white p-3">
                                 <div className="text-xs font-semibold text-gray-700">
-                                  🔍 Fortsatt teknisk utredning (FTU)
+                                  ?? Fortsatt teknisk utredning (FTU)
                                 </div>
                                 <textarea
                                   rows={3}
@@ -2432,7 +2443,7 @@ function FreeNotesSection({
 
               <div className="space-y-1">
                 <label className="text-[11px] text-gray-600">
-                  🧱 Notering (fri text)
+                  ?? Notering (fri text)
                 </label>
                 <textarea
                   rows={2}
@@ -2449,7 +2460,7 @@ function FreeNotesSection({
 
               <div className="space-y-1">
                 <label className="text-[11px] text-gray-600">
-                  ⚠️ Riskanalys
+                  ?? Riskanalys
                 </label>
                 <textarea
                   rows={3}
@@ -2466,7 +2477,7 @@ function FreeNotesSection({
 
               <div className="space-y-1">
                 <label className="text-[11px] text-gray-600">
-                  🔍 Fortsatt teknisk utredning (FTU)
+                  ?? Fortsatt teknisk utredning (FTU)
                 </label>
                 <textarea
                   rows={3}

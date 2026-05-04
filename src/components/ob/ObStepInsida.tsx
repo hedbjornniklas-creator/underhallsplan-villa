@@ -14,6 +14,7 @@ type Inspection = {
 }
 type InspectionSide = 'buyer' | 'seller' | 'apartment'
 type SearchMode = 'control_points' | 'chips'
+type ValueMap = Record<string, unknown>
 
 type RoomType = {
   id: string
@@ -39,7 +40,7 @@ type InteriorOption = {
   label: string
   sort_order: number
   is_active: boolean
-  trigger_tags?: any | null
+  trigger_tags?: unknown
 }
 
 type InteriorRoom = {
@@ -49,7 +50,7 @@ type InteriorRoom = {
   order_index: number
   room_type_key: string
   room_label: string
-  values: Record<string, any>
+  values: ValueMap
   note: string | null
 }
 
@@ -73,8 +74,8 @@ type ControlPointLite = {
   title: string
   label: string | null
   description: string | null
-  tags: any | null
-  trigger_room_types?: any | null
+  tags: unknown
+  trigger_room_types?: unknown
   applies_to?: unknown
   search_hint?: string | null
 }
@@ -96,7 +97,7 @@ type ControlPointMeta = {
   title: string
   label: string | null
   description: string | null
-  trigger_room_types?: any | null
+  trigger_room_types?: unknown
   applies_to?: unknown
 }
 
@@ -138,7 +139,7 @@ const getImagePublicUrl = (filePath: string) => {
 // -----------------------------
 // Hjälpfunktion: bygg våningsnycklar från Förutsättningar (Byggnadstyp)
 // -----------------------------
-const buildFloorsFromAnswers = (answers: Record<string, any>): string[] => {
+const buildFloorsFromAnswers = (answers: ValueMap): string[] => {
   const floorsVal =
     answers['floors'] ??
     answers['våningar'] ??
@@ -263,20 +264,26 @@ const isOtherRoomKey = (value: string | null | undefined) => {
   return key === 'ovrigt' || key === 'övrigt'
 }
 
-const isPgUniqueViolation = (error: any) =>
-  error?.code === '23505' ||
-  error?.details?.includes?.('duplicate key value violates unique constraint') ||
-  error?.message?.includes?.('duplicate key value violates unique constraint')
+const isPgUniqueViolation = (error: unknown) => {
+  const err = (error && typeof error === 'object' ? error : null) as
+    | { code?: string; details?: string; message?: string }
+    | null
+  return (
+    err?.code === '23505' ||
+    err?.details?.includes('duplicate key value violates unique constraint') ||
+    err?.message?.includes('duplicate key value violates unique constraint')
+  )
+}
 
-const getNormalizedTriggerRoomTypes = (triggerRoomTypes: any | null | undefined) => {
+const getNormalizedTriggerRoomTypes = (triggerRoomTypes: unknown) => {
   const raw = Array.isArray(triggerRoomTypes) ? triggerRoomTypes : []
   return raw
-    .map(val => normalizeRoomTypeKey(val))
+    .map(val => normalizeRoomTypeKey((val ?? null) as string | null))
     .filter((val): val is string => !!val)
 }
 
 const triggerRoomTypesMatchRoom = (
-  triggerRoomTypes: any | null | undefined,
+  triggerRoomTypes: unknown,
   roomTypeKey: string | null | undefined
 ) => {
   const roomKey = normalizeRoomTypeKey(roomTypeKey)
@@ -414,10 +421,10 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
         setGroups((gData ?? []) as InteriorGroup[])
         setOptions((oData ?? []) as InteriorOption[])
 
-        const roomsArr = (rData ?? []) as any[]
+        const roomsArr = (rData ?? []) as Array<InteriorRoom & { values?: unknown }>
         const normalizedRooms: InteriorRoom[] = roomsArr.map(r => ({
           ...r,
-          values: (r.values as any) || {},
+          values: (r.values as ValueMap) || {},
         }))
         setRooms(normalizedRooms)
 
@@ -443,7 +450,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
             if (btSelErr) throw btSelErr
 
-            const answers = (btSelData?.[0]?.values as any) || {}
+            const answers = (btSelData?.[0]?.values as ValueMap) || {}
             floorsFromConditions = buildFloorsFromAnswers(answers)
 
             const rawAttic = answers['attic'] ?? null
@@ -626,9 +633,9 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             setNewFloorLabel('Entréplan')
           }
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error('loadAll insida failed:', e)
-        setError(e?.message ?? 'Kunde inte ladda Insida-data.')
+        setError(e instanceof Error ? e.message : 'Kunde inte ladda Insida-data.')
       } finally {
         setLoading(false)
       }
@@ -960,9 +967,9 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
         }
         return data as InspectionControlItem
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('upsertControlItem failed:', e)
-      setError(e?.message ?? 'Kunde inte spara kontrollpunkt.')
+      setError(e instanceof Error ? e.message : 'Kunde inte spara kontrollpunkt.')
       return item
     } finally {
       setSaving(false)
@@ -1068,7 +1075,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       if (cpErr) {
         console.error(
           'fetch control points failed:',
-          (cpErr as any)?.message || cpErr
+          (cpErr instanceof Error ? cpErr.message : String(cpErr))
         )
         return 0
       }
@@ -1404,9 +1411,9 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           ),
         }
       })
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('handleUploadImageForControlItem (insida) failed:', e)
-      setError(e?.message ?? 'Kunde inte ladda upp bild.')
+      setError(e instanceof Error ? e.message : 'Kunde inte ladda upp bild.')
     } finally {
       setSaving(false)
     }
@@ -1448,9 +1455,9 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           [targetControlId!]: prevArr.filter(img => img.id !== imageId),
         }
       })
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('handleDeleteImage (insida) failed:', e)
-      setError(e?.message ?? 'Kunde inte ta bort bild.')
+      setError(e instanceof Error ? e.message : 'Kunde inte ta bort bild.')
     } finally {
       setSaving(false)
     }
@@ -1479,8 +1486,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           .single()
 
         if (error) throw error
-        const r = data as any
-        return { ...r, values: (r.values as any) || {} }
+        const r = data as InteriorRoom & { values?: unknown }
+        return { ...r, values: (r.values as ValueMap) || {} }
       } else {
         const { data, error } = await supabase
           .from('inspection_interior_rooms')
@@ -1515,19 +1522,19 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                   normalizeSwedish(r.floor_label) === OTHER_ROOM_TYPE_KEY
               )
               if (existing) {
-                return { ...existing, values: (existing.values as any) || {} }
+                return { ...existing, values: (existing.values as ValueMap) || {} }
               }
             }
           }
 
           throw error
         }
-        const r = data as any
-        return { ...r, values: (r.values as any) || {} }
+        const r = data as InteriorRoom & { values?: unknown }
+        return { ...r, values: (r.values as ValueMap) || {} }
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('upsertRoom insida failed:', e)
-      setError(e?.message ?? 'Kunde inte spara rum.')
+      setError(e instanceof Error ? e.message : 'Kunde inte spara rum.')
       return room
     } finally {
       setSaving(false)
@@ -1647,7 +1654,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
   const updateRoomValues = async (
     id: string | undefined,
-    patchValues: Record<string, any>
+    patchValues: ValueMap
   ) => {
     if (!id) return
     const current = rooms.find(r => r.id === id)
@@ -1668,14 +1675,22 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     options,
   }: {
     label: string
-    value: any
+    value: unknown
     onChange: (v: string) => void
     options: InteriorOption[]
-  }) => (
+  }) => {
+    const normalizedValue =
+      typeof value === 'boolean'
+        ? String(value)
+        : typeof value === 'string' || typeof value === 'number'
+          ? value
+          : ''
+
+    return (
     <div className="space-y-1">
       <label className="text-xs font-medium text-gray-700">{label}</label>
       <select
-        value={value ?? ''}
+        value={normalizedValue}
         onChange={e => onChange(e.target.value)}
         className="h-9 w-full rounded-lg border border-gray-300 bg-gray-50 px-2 text-sm text-gray-900
                    focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
@@ -1688,7 +1703,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
         ))}
       </select>
     </div>
-  )
+    )
+  }
 
   // ----------------- RENDER -----------------
   if (loading) {

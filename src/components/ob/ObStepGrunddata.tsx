@@ -663,8 +663,8 @@ export default function ObStepGrunddata({
         }
 
         let maxSeq = 0
-        ;(data || []).forEach(row => {
-          const typedRow = row as { assignment_number?: string | null }
+        ;(data || []).forEach((row: { assignment_number?: string | null }) => {
+          const typedRow = row
           const num = typedRow.assignment_number ?? null
           if (!num) return
           const prefix = `${dateKey}-`
