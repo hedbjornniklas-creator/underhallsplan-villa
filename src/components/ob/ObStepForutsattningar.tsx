@@ -68,6 +68,60 @@ type ItemBundle = SettingsOverviewItem & {
 }
 
 const SPECIAL_CONDITIONS_COLLAPSE_KEY = '__special_conditions__'
+const NOTE_SAVE_DELAY_MS = 800
+
+function NoteField({
+  value,
+  disabled,
+  onSave,
+}: {
+  value: string
+  disabled: boolean
+  onSave: (note: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (disabled || draft === value) return
+    if (timerRef.current) clearTimeout(timerRef.current)
+
+    timerRef.current = setTimeout(() => {
+      onSave(draft)
+      timerRef.current = null
+    }, NOTE_SAVE_DELAY_MS)
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+    }
+  }, [disabled, draft, onSave, value])
+
+  const flush = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+    if (!disabled && draft !== value) {
+      onSave(draft)
+    }
+  }
+
+  return (
+    <textarea
+      value={draft}
+      onBlur={flush}
+      onChange={e => setDraft(e.target.value)}
+      disabled={disabled}
+      placeholder="Kort notering..."
+      rows={2}
+      className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm
+                 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-70"
+    />
+  )
+}
 
 const toErrorLike = (error: unknown): Record<string, unknown> | null => {
   if (!error || typeof error !== 'object') return null
@@ -163,8 +217,8 @@ export default function ObStepForutsattningar({
   const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(() => new Set())
   const isSpecialConditionsCollapsed = collapsedItemIds.has(SPECIAL_CONDITIONS_COLLAPSE_KEY)
 
-  // debounce timers för note
-  const noteTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  // Ignore stale save responses if the same note is saved again before Supabase responds.
+  const noteSaveVersions = useRef<Record<string, number>>({})
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -521,14 +575,19 @@ export default function ObStepForutsattningar({
     setItemSelections(itemId, next)
 
     const timerKey = `${itemId}:${sel.floor_key ?? 'nofloor'}:${sel.set_index}`
-    if (noteTimers.current[timerKey]) clearTimeout(noteTimers.current[timerKey])
-    noteTimers.current[timerKey] = setTimeout(async () => {
-      const saved = await upsertSelection(sel)
-      const latest = getItemSelections(itemId).map(s =>
-        s.set_index === saved.set_index && s.floor_key === saved.floor_key ? saved : s
-      )
+    const version = (noteSaveVersions.current[timerKey] ?? 0) + 1
+    noteSaveVersions.current[timerKey] = version
+
+    void upsertSelection(sel).then(saved => {
+      if (noteSaveVersions.current[timerKey] !== version) return
+      const latest = getItemSelections(itemId).map(s => {
+        if (s.set_index === saved.set_index && s.floor_key === saved.floor_key) {
+          return { ...saved, note }
+        }
+        return s
+      })
       setItemSelections(itemId, latest)
-    }, 500)
+    })
   }
 
   // -----------------------------
@@ -695,10 +754,6 @@ export default function ObStepForutsattningar({
 
           {rightGroups.length > 0 && (
             <div className="space-y-3">
-              <div className="text-[11px] font-semibold tracking-wide text-gray-500 uppercase md:hidden">
-                Ålder & underhåll
-              </div>
-
               {rightGroups.map(g => (
                 <SelectField
                   key={g.id}
@@ -718,14 +773,10 @@ export default function ObStepForutsattningar({
         {item.note_enabled && (
           <div className="space-y-1">
             <label className="text-xs font-medium text-gray-700">Notering (valfritt)</label>
-            <textarea
+            <NoteField
               value={sel.note ?? ''}
-              onChange={e => updateSelectionNote(item.id, selIndex, e.target.value)}
               disabled={isInspectionLocked}
-              placeholder="Kort notering…"
-              rows={2}
-              className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm
-                         placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-70"
+              onSave={note => updateSelectionNote(item.id, selIndex, note)}
             />
           </div>
         )}
@@ -734,7 +785,7 @@ export default function ObStepForutsattningar({
   }
 
   const isRepeatableItem = (item: ItemBundle) =>
-    item.selection_mode === 'multi_set' || item.key === 'foundation'
+    item.selection_mode === 'multi_set'
 
   const getRepeatableItemTitle = (item: ItemBundle, sel: InspectionOverviewSelection, idx: number) => {
     if (item.key !== 'building_year') return `${item.label} ${idx + 1}`
@@ -789,7 +840,7 @@ export default function ObStepForutsattningar({
             className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium
                        text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {item.key === 'foundation' ? '+ Lägg till grundläggning' : '+ Lägg till fler'}
+            + Lägg till {item.label.toLowerCase()}
           </button>
         </div>
       )

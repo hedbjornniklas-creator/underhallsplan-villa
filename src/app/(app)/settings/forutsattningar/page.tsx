@@ -51,6 +51,12 @@ type SettingsOverviewOption = {
 const SELECTION_MODES: SelectionMode[] = ['single', 'multi_set', 'per_floor']
 const APPLIES_TO_ALL: InspectionSide[] = ['buyer', 'seller', 'apartment']
 
+const selectionModeLabel = (mode: SelectionMode) => {
+  if (mode === 'single') return 'En uppsättning fält'
+  if (mode === 'multi_set') return 'Kan lägga till flera'
+  return 'En uppsättning per våningsplan'
+}
+
 const normalizeAppliesTo = (value: unknown): InspectionSide[] => {
   if (!Array.isArray(value)) return [...APPLIES_TO_ALL]
   const allowed = new Set<InspectionSide>(APPLIES_TO_ALL)
@@ -575,11 +581,10 @@ export default function ForutsattningarSettingsPage() {
                   </div>
 
                   <div>
-                    <label className="text-xs text-gray-600">Selection mode</label>
+                    <label className="text-xs text-gray-600">Hur kategorin ska fyllas i</label>
                     <select
-                      className={`w-full rounded-md border px-2 py-1 text-sm ${selectedItemHasHistory ? 'bg-gray-100 text-gray-500' : ''}`}
+                      className="w-full rounded-md border px-2 py-1 text-sm"
                       value={selectedItem.selection_mode}
-                      disabled={selectedItemHasHistory}
                       onChange={e =>
                         saveItem(selectedItem.id, {
                           selection_mode: e.target.value as SelectionMode,
@@ -588,15 +593,13 @@ export default function ForutsattningarSettingsPage() {
                     >
                       {SELECTION_MODES.map(m => (
                         <option key={m} value={m}>
-                          {m}
+                          {selectionModeLabel(m)}
                         </option>
                       ))}
                     </select>
-                    {selectedItemHasHistory && (
-                      <div className="text-[11px] text-gray-500 mt-1">
-                        Selection mode är låst p.g.a. historik.
-                      </div>
-                    )}
+                    <div className="text-[11px] text-gray-500 mt-1">
+                      Styr om kategorin visas en gång, kan upprepas eller skapas per våningsplan.
+                    </div>
                   </div>
                 </div>
 
