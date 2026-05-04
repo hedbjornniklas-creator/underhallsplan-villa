@@ -168,6 +168,7 @@ export default function ObStepHandlingar({
   property: Property
   inspection: Inspection
 }) {
+  const collapsedStorageKey = `ob:handlingar:collapsed:${inspection.id}`
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const inspectionWithExtras = inspection as InspectionExtraFields
@@ -196,6 +197,30 @@ export default function ObStepHandlingar({
     return v && v.trim() !== '' ? v : STANDARD_DEFECT_TEXT
   })
   const inspectionSide = normalizeInspectionSide(inspectionWithExtras.inspection_side)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(collapsedStorageKey)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return
+      const ids = parsed.filter((value): value is string => typeof value === 'string')
+      setCollapsedDocumentIds(new Set(ids))
+    } catch (e) {
+      console.warn('Kunde inte läsa sparat minimeringsläge för handlingar:', e)
+    }
+  }, [collapsedStorageKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const ids = Array.from(collapsedDocumentIds.values())
+      window.localStorage.setItem(collapsedStorageKey, JSON.stringify(ids))
+    } catch (e) {
+      console.warn('Kunde inte spara minimeringsläge för handlingar:', e)
+    }
+  }, [collapsedDocumentIds, collapsedStorageKey])
 
   // -------------------------------
   // Helpers
