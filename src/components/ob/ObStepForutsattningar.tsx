@@ -677,9 +677,6 @@ export default function ObStepForutsattningar({
         <div className={`grid grid-cols-1 gap-3 ${rightGroups.length > 0 ? 'md:grid-cols-2' : ''}`}>
           {/* Vänster: vad är det? */}
           <div className="space-y-3">
-            <div className="text-[11px] font-semibold tracking-wide text-gray-500 uppercase md:hidden">
-              Vad är det?
-            </div>
             {leftGroups.map(g => (
               <SelectField
                 key={g.id}
