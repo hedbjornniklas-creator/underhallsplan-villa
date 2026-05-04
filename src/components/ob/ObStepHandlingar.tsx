@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
 
@@ -33,6 +33,42 @@ const STATUS_LABELS: Record<InspectionDocumentStatus, string> = {
   na: 'Bedöms ej relevant',
 }
 
+type PropertyDisplayFields = Property & {
+  name?: string | null
+  address?: string | null
+}
+
+type InspectionExtraFields = Inspection & {
+  defect_disclosures?: string | null
+  inspection_side?: unknown
+  locked_at?: string | null
+}
+
+type DocumentTypeExtraFields = DocumentType & {
+  applies_to?: unknown
+  label?: string | null
+  description?: string | null
+}
+
+type InspectionDocumentExtraFields = InspectionDocument & {
+  document_type_id?: string | null
+  title?: string | null
+  status?: string | null
+  document_date?: string | null
+  note?: string | null
+  created_at?: string | null
+}
+
+type InspectionDisclosureExtraFields = InspectionDisclosure & {
+  note?: string | null
+}
+
+type InspectionDefectRow = {
+  defect_disclosures?: string | null
+}
+
+const STANDARD_DISCLOSURE_TEXT =
+  'Säljaren förvärvade fastigheten\nFöljande renoveringar och underhåll är utförda:'
 const STANDARD_DEFECT_TEXT = 'Inga kända fel enligt fastighetsägaren.'
 
 const normalizeSwedishToken = (value: string) =>
@@ -88,7 +124,7 @@ const documentTypeAppliesToInspectionSide = (
   documentType: DocumentType,
   inspectionSide: InspectionSide
 ) => {
-  const appliesTo = parseAppliesToSides((documentType as { applies_to?: unknown }).applies_to)
+  const appliesTo = parseAppliesToSides((documentType as DocumentTypeExtraFields).applies_to)
   return !appliesTo || appliesTo.includes(inspectionSide)
 }
 
@@ -96,16 +132,10 @@ const toDocumentViewModel = (
   doc: InspectionDocument,
   documentTypes: DocumentType[]
 ): DocumentViewModel => {
-  const typedDoc = doc as InspectionDocument & {
-    document_type_id?: string | null
-    title?: string | null
-    status?: string | null
-    document_date?: string | null
-    note?: string | null
-  }
+  const typedDoc = doc as InspectionDocumentExtraFields
   const typeId = typedDoc.document_type_id ?? null
   const documentType = typeId ? documentTypes.find(type => type.id === typeId) : null
-  const typedDocumentType = documentType as (DocumentType & { description?: string | null }) | null
+  const typedDocumentType = documentType as DocumentTypeExtraFields | null
   const status = typedDoc.status
   const normalizedStatus: InspectionDocumentStatus =
     status === 'present' || status === 'na' || status === 'missing' ? status : 'missing'
@@ -129,9 +159,9 @@ export default function ObStepHandlingar({
 }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const isInspectionLocked = Boolean(
-    (inspection as Inspection & { locked_at?: string | null }).locked_at
-  )
+  const inspectionWithExtras = inspection as InspectionExtraFields
+  const propertyWithDisplay = property as PropertyDisplayFields
+  const isInspectionLocked = Boolean(inspectionWithExtras.locked_at)
 
   // saving-states
   const [savingDocs, setSavingDocs] = useState(false)
@@ -142,6 +172,7 @@ export default function ObStepHandlingar({
 
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([])
   const [documentsRaw, setDocumentsRaw] = useState<InspectionDocument[]>([])
+  const [collapsedDocumentIds, setCollapsedDocumentIds] = useState<Set<string>>(() => new Set())
 
   // Upplysningar (fri text) via egen tabell (en rad)
   const [disclosure, setDisclosure] = useState<InspectionDisclosure | null>(null)
@@ -149,15 +180,15 @@ export default function ObStepHandlingar({
 
   // Upplysningar om fel/brister via inspections.defect_disclosures
   const [defectText, setDefectText] = useState(() => {
-    const v = (inspection as any)?.defect_disclosures as string | null | undefined
+    const v = inspectionWithExtras.defect_disclosures
     return v && v.trim() !== '' ? v : STANDARD_DEFECT_TEXT
   })
-  const inspectionSide = normalizeInspectionSide((inspection as { inspection_side?: unknown })?.inspection_side)
+  const inspectionSide = normalizeInspectionSide(inspectionWithExtras.inspection_side)
 
   // -------------------------------
   // Helpers
   // -------------------------------
-  const fetchDocumentTypes = async (): Promise<DocumentType[]> => {
+  const fetchDocumentTypes = useCallback(async (): Promise<DocumentType[]> => {
     const { data, error: dtErr } = await supabase
       .from('document_types')
       .select('id,label,description,scope,is_active,applies_to')
@@ -166,9 +197,9 @@ export default function ObStepHandlingar({
 
     if (dtErr) throw dtErr
     return (data || []) as DocumentType[]
-  }
+  }, [])
 
-  const fetchInspectionDocuments = async (): Promise<InspectionDocument[]> => {
+  const fetchInspectionDocuments = useCallback(async (): Promise<InspectionDocument[]> => {
     const { data, error: docsErr } = await supabase
       .from('inspection_documents')
       .select('*')
@@ -176,9 +207,9 @@ export default function ObStepHandlingar({
 
     if (docsErr) throw docsErr
     return (data || []) as InspectionDocument[]
-  }
+  }, [inspection.id])
 
-  const ensureTemplateDocuments = async (
+  const ensureTemplateDocuments = useCallback(async (
     types: DocumentType[],
     existing: InspectionDocument[]
   ) => {
@@ -186,7 +217,8 @@ export default function ObStepHandlingar({
     const newestByType = new Map<string, InspectionDocument>()
 
     for (const d of existing) {
-      const typeId = (d as any).document_type_id as string | null
+      const typedDocument = d as InspectionDocumentExtraFields
+      const typeId = typedDocument.document_type_id ?? null
       if (!typeId) continue
 
       const prev = newestByType.get(typeId)
@@ -195,8 +227,9 @@ export default function ObStepHandlingar({
         continue
       }
 
-      const prevTs = (prev as any).created_at ? new Date((prev as any).created_at).getTime() : 0
-      const dTs = (d as any).created_at ? new Date((d as any).created_at).getTime() : 0
+      const typedPrevious = prev as InspectionDocumentExtraFields
+      const prevTs = typedPrevious.created_at ? new Date(typedPrevious.created_at).getTime() : 0
+      const dTs = typedDocument.created_at ? new Date(typedDocument.created_at).getTime() : 0
       if (dTs >= prevTs) newestByType.set(typeId, d)
     }
 
@@ -206,7 +239,7 @@ export default function ObStepHandlingar({
     const payload = missingTypes.map(dt => ({
       inspection_id: inspection.id,
       document_type_id: dt.id,
-      title: (dt as any).label ?? 'Handling',
+      title: (dt as DocumentTypeExtraFields).label ?? 'Handling',
       status: 'missing' as InspectionDocumentStatus,
       document_date: null,
       document_value: null,
@@ -215,9 +248,9 @@ export default function ObStepHandlingar({
 
     const { error: insErr } = await supabase.from('inspection_documents').insert(payload)
     if (insErr) throw insErr
-  }
+  }, [inspection.id])
 
-  const loadOrCreateDisclosureRow = async (): Promise<InspectionDisclosure | null> => {
+  const loadOrCreateDisclosureRow = useCallback(async (): Promise<InspectionDisclosure | null> => {
     const { data, error: discErr } = await supabase
       .from('inspection_disclosures')
       .select('*')
@@ -234,7 +267,7 @@ export default function ObStepHandlingar({
         .insert({
           inspection_id: inspection.id,
           title: 'upplysningar',
-          note: '',
+          note: STANDARD_DISCLOSURE_TEXT,
         })
         .select('*')
         .single()
@@ -244,9 +277,9 @@ export default function ObStepHandlingar({
     }
 
     return row ?? null
-  }
+  }, [inspection.id, isInspectionLocked])
 
-  const ensureDefectTextSaved = async () => {
+  const ensureDefectTextSaved = useCallback(async () => {
     const { data: inspRow, error: inspErr } = await supabase
       .from('inspections')
       .select('defect_disclosures')
@@ -255,9 +288,10 @@ export default function ObStepHandlingar({
 
     if (inspErr) throw inspErr
 
-    const current = ((inspRow as any)?.defect_disclosures ?? '').trim()
+    const typedInspectionRow = (inspRow ?? null) as InspectionDefectRow | null
+    const current = (typedInspectionRow?.defect_disclosures ?? '').trim()
     if (current !== '') {
-      setDefectText((inspRow as any)?.defect_disclosures ?? STANDARD_DEFECT_TEXT)
+      setDefectText(typedInspectionRow?.defect_disclosures ?? STANDARD_DEFECT_TEXT)
       return
     }
     if (isInspectionLocked) {
@@ -271,7 +305,7 @@ export default function ObStepHandlingar({
       .eq('id', inspection.id)
 
     setDefectText(STANDARD_DEFECT_TEXT)
-  }
+  }, [inspection.id, isInspectionLocked])
 
   // -------------------------------
   // LOAD ALL + ENSURE TEMPLATE DOCS
@@ -304,17 +338,18 @@ export default function ObStepHandlingar({
         if (cancelled) return
         setDocumentsRaw(docsAfter)
 
-        // disclosures (fri text) – säkerställ att en rad finns
+        // disclosures (fri text) - säkerställ att en rad finns
         const disclosureRow = await loadOrCreateDisclosureRow()
         if (cancelled) return
         setDisclosure(disclosureRow)
-        setDisclosureText((disclosureRow as any)?.note ?? '')
+        const typedDisclosureRow = disclosureRow as InspectionDisclosureExtraFields | null
+        setDisclosureText(typedDisclosureRow?.note ?? '')
 
-        // defect_disclosures – säkerställ att standard sparas även utan input
+        // defect_disclosures - säkerställ att standard sparas även utan input
         await ensureDefectTextSaved()
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error(e)
-        setError(e?.message || 'Ett fel inträffade.')
+        setError(e instanceof Error ? e.message : 'Ett fel inträffade.')
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -325,7 +360,16 @@ export default function ObStepHandlingar({
     return () => {
       cancelled = true
     }
-  }, [inspection?.id, inspectionSide, isInspectionLocked])
+  }, [
+    inspection?.id,
+    inspectionSide,
+    isInspectionLocked,
+    ensureDefectTextSaved,
+    ensureTemplateDocuments,
+    fetchDocumentTypes,
+    fetchInspectionDocuments,
+    loadOrCreateDisclosureRow,
+  ])
 
   // -------------------------------
   // DEDUPE + SORT (hide duplicates)
@@ -336,7 +380,8 @@ export default function ObStepHandlingar({
     const customs: InspectionDocument[] = []
 
     for (const d of documentsRaw) {
-      const typeId = (d as any).document_type_id as string | null
+      const typedDocument = d as InspectionDocumentExtraFields
+      const typeId = typedDocument.document_type_id ?? null
       if (!typeId) {
         customs.push(d)
         continue
@@ -349,13 +394,18 @@ export default function ObStepHandlingar({
         continue
       }
 
-      const prevTs = (prev as any).created_at ? new Date((prev as any).created_at).getTime() : 0
-      const dTs = (d as any).created_at ? new Date((d as any).created_at).getTime() : 0
+      const typedPrevious = prev as InspectionDocumentExtraFields
+      const prevTs = typedPrevious.created_at ? new Date(typedPrevious.created_at).getTime() : 0
+      const dTs = typedDocument.created_at ? new Date(typedDocument.created_at).getTime() : 0
       if (dTs >= prevTs) newestByType.set(typeId, d)
     }
 
     const merged = [...newestByType.values(), ...customs]
-    merged.sort((a, b) => ((a as any).title ?? '').localeCompare((b as any).title ?? '', 'sv'))
+    merged.sort((a, b) => {
+      const left = (a as InspectionDocumentExtraFields).title ?? ''
+      const right = (b as InspectionDocumentExtraFields).title ?? ''
+      return left.localeCompare(right, 'sv')
+    })
     return merged
   }, [documentsRaw, documentTypes])
 
@@ -364,7 +414,7 @@ export default function ObStepHandlingar({
   // -------------------------------
   const updateDoc = async (id: string, patch: Partial<InspectionDocument>) => {
     if (isInspectionLocked) return
-    setDocumentsRaw(prev => prev.map(d => (d.id === id ? ({ ...d, ...patch } as any) : d)))
+    setDocumentsRaw(prev => prev.map(d => (d.id === id ? ({ ...d, ...patch } as InspectionDocument) : d)))
     setSavingDocs(true)
 
     const { error } = await supabase.from('inspection_documents').update(patch).eq('id', id)
@@ -375,6 +425,18 @@ export default function ObStepHandlingar({
       console.error(error)
       setError('Kunde inte spara handling.')
     }
+  }
+
+  const toggleDocumentCollapsed = (id: string) => {
+    setCollapsedDocumentIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
   }
 
   // -------------------------------
@@ -407,7 +469,7 @@ export default function ObStepHandlingar({
 
     const { data, error } = await supabase
       .from('inspection_documents')
-      .insert(insertPayload as any)
+      .insert(insertPayload)
       .select('*')
       .single()
 
@@ -437,7 +499,7 @@ export default function ObStepHandlingar({
 
       const { error } = await supabase
         .from('inspection_disclosures')
-        .update({ note: disclosureText || '' } as any)
+        .update({ note: disclosureText || '' })
         .eq('id', disclosure.id)
 
       setSavingDisclosure(false)
@@ -456,7 +518,7 @@ export default function ObStepHandlingar({
   }, [disclosureText, disclosure, isInspectionLocked])
 
   // -------------------------------
-  // SAVE defectText (debounce) – tomt => standard
+  // SAVE defectText (debounce) - tomt => standard
   // -------------------------------
   useEffect(() => {
     if (isInspectionLocked) return
@@ -475,7 +537,7 @@ export default function ObStepHandlingar({
 
       const { error } = await supabase
         .from('inspections')
-        .update({ defect_disclosures: valueToSave } as any)
+        .update({ defect_disclosures: valueToSave })
         .eq('id', inspection.id)
 
       setSavingDefect(false)
@@ -496,7 +558,7 @@ export default function ObStepHandlingar({
   // -------------------------------
   // RENDER
   // -------------------------------
-  if (loading) return <div className="p-4">Laddar…</div>
+  if (loading) return <div className="p-4">Laddar...</div>
   if (error) return <div className="p-4 text-red-600">{error}</div>
 
   return (
@@ -515,88 +577,102 @@ export default function ObStepHandlingar({
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Handlingar</h2>
             <div className="text-sm text-gray-600">
-              {(property as any)?.name || 'Fastighet'}
-              {(property as any)?.address ? ` – ${(property as any).address}` : ''}
+              {propertyWithDisplay.name || 'Fastighet'}
+              {propertyWithDisplay.address ? ` - ${propertyWithDisplay.address}` : ''}
             </div>
           </div>
-          {savingDocs && <span className="text-sm text-gray-600">Sparar handling…</span>}
+          {savingDocs && <span className="text-sm text-gray-600">Sparar handling...</span>}
         </div>
 
         <div className="space-y-3 md:hidden">
           {documents.map(doc => {
             const viewDoc = toDocumentViewModel(doc, documentTypes)
+            const isCollapsed = collapsedDocumentIds.has(doc.id)
 
             return (
               <article
                 key={doc.id}
                 className="min-w-0 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm"
               >
-                <div className="min-w-0">
-                  <h3 className="break-words text-sm font-semibold text-gray-900">
-                    {viewDoc.title}
-                  </h3>
-                  {viewDoc.description ? (
-                    <p className="mt-1 break-words text-xs leading-5 text-gray-600">
-                      {viewDoc.description}
-                    </p>
-                  ) : null}
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="break-words text-sm font-semibold text-gray-900">
+                      {viewDoc.title}
+                    </h3>
+                    <div className="mt-1 text-xs font-medium text-blue-700">
+                      {STATUS_LABELS[viewDoc.status]}
+                    </div>
+                    {viewDoc.description && !isCollapsed ? (
+                      <p className="mt-1 break-words text-xs leading-5 text-gray-600">
+                        {viewDoc.description}
+                      </p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleDocumentCollapsed(doc.id)}
+                    className="shrink-0 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 shadow-sm"
+                    aria-expanded={!isCollapsed}
+                  >
+                    {isCollapsed ? 'Visa' : 'Minimera'}
+                  </button>
                 </div>
 
-                <div className="mt-3 space-y-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                    Status
-                  </div>
-                  <div className="grid gap-1.5">
-                    {(Object.keys(STATUS_LABELS) as InspectionDocumentStatus[]).map(key => (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => void updateDoc(doc.id, { status: key })}
+                {!isCollapsed ? (
+                  <>
+                    <label className="mt-3 block min-w-0 space-y-1">
+                      <span className="text-xs font-medium text-gray-600">Status</span>
+                      <select
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                        value={viewDoc.status}
                         disabled={isInspectionLocked}
-                        className={
-                          'min-w-0 rounded-xl border px-3 py-2 text-left text-xs font-medium transition ' +
-                          (viewDoc.status === key
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
+                        onChange={event =>
+                          void updateDoc(doc.id, {
+                            status: event.target.value as InspectionDocumentStatus,
+                          })
                         }
                       >
-                        {STATUS_LABELS[key]}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                        {(Object.keys(STATUS_LABELS) as InspectionDocumentStatus[]).map(key => (
+                          <option key={key} value={key}>
+                            {STATUS_LABELS[key]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
 
-                <div className="mt-3 grid gap-3">
-                  <label className="min-w-0 space-y-1">
-                    <span className="text-xs font-medium text-gray-600">Datum</span>
-                    <input
-                      type="date"
-                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
-                      value={viewDoc.documentDate}
-                      disabled={isInspectionLocked}
-                      onChange={e =>
-                        void updateDoc(doc.id, { document_date: e.target.value || null })
-                      }
-                    />
-                  </label>
+                    <div className="mt-3 grid gap-3">
+                      <label className="min-w-0 space-y-1">
+                        <span className="text-xs font-medium text-gray-600">Datum</span>
+                        <input
+                          type="date"
+                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                          value={viewDoc.documentDate}
+                          disabled={isInspectionLocked}
+                          onChange={e =>
+                            void updateDoc(doc.id, { document_date: e.target.value || null })
+                          }
+                        />
+                      </label>
 
-                  <label className="min-w-0 space-y-1">
-                    <span className="text-xs font-medium text-gray-600">Notering</span>
-                    <textarea
-                      className="min-h-20 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
-                      value={viewDoc.note}
-                      disabled={isInspectionLocked}
-                      onChange={e => void updateDoc(doc.id, { note: e.target.value })}
-                    />
-                  </label>
-                </div>
+                      <label className="min-w-0 space-y-1">
+                        <span className="text-xs font-medium text-gray-600">Notering</span>
+                        <textarea
+                          className="min-h-20 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                          value={viewDoc.note}
+                          disabled={isInspectionLocked}
+                          onChange={e => void updateDoc(doc.id, { note: e.target.value })}
+                        />
+                      </label>
+                    </div>
+                  </>
+                ) : null}
               </article>
             )
           })}
 
           {documents.length === 0 ? (
             <div className="rounded-2xl border border-gray-200 bg-white px-3 py-4 text-center text-sm text-gray-600">
-              Inga handlingar Ã¤nnu.
+              Inga handlingar ännu.
             </div>
           ) : null}
         </div>
@@ -614,48 +690,55 @@ export default function ObStepHandlingar({
 
             <tbody>
               {documents.map(doc => {
-                const typeId = (doc as any).document_type_id as string | null
+                const typedDocument = doc as InspectionDocumentExtraFields
+                const typeId = typedDocument.document_type_id ?? null
                 const dt = typeId ? documentTypes.find(d => d.id === typeId) : null
 
-                const docStatus = ((doc as any).status ?? 'missing') as InspectionDocumentStatus
+                const docStatus = (
+                  typedDocument.status === 'present' ||
+                  typedDocument.status === 'missing' ||
+                  typedDocument.status === 'na'
+                    ? typedDocument.status
+                    : 'missing'
+                ) as InspectionDocumentStatus
+                const typedDocumentType = dt as DocumentTypeExtraFields | null
 
                 return (
                   <tr key={doc.id} className="border-t border-gray-200">
                     <td className="px-3 py-2 align-top">
-                      <div className="font-medium text-gray-900">{(doc as any).title}</div>
-                      {(dt as any)?.description && (
-                        <div className="mt-0.5 text-sm text-gray-600">{(dt as any).description}</div>
+                      <div className="font-medium text-gray-900">{typedDocument.title}</div>
+                      {typedDocumentType?.description && (
+                        <div className="mt-0.5 text-sm text-gray-600">{typedDocumentType.description}</div>
                       )}
                     </td>
 
                     <td className="px-3 py-2 align-top">
-                      <div className="flex gap-1 flex-wrap">
+                      <select
+                        className="w-full min-w-[11rem] rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900"
+                        value={docStatus}
+                        disabled={isInspectionLocked}
+                        onChange={event =>
+                          void updateDoc(doc.id, {
+                            status: event.target.value as InspectionDocumentStatus,
+                          })
+                        }
+                      >
                         {(Object.keys(STATUS_LABELS) as InspectionDocumentStatus[]).map(key => (
-                          <button
-                            key={key}
-                            onClick={() => void updateDoc(doc.id, { status: key } as any)}
-                            disabled={isInspectionLocked}
-                            className={
-                              'px-2 py-1 rounded-full text-sm border ' +
-                              (docStatus === key
-                                ? 'bg-blue-50 border-blue-500 text-blue-700'
-                                : 'bg-white border-gray-400 text-gray-800 hover:bg-gray-50')
-                            }
-                          >
+                          <option key={key} value={key}>
                             {STATUS_LABELS[key]}
-                          </button>
+                          </option>
                         ))}
-                      </div>
+                      </select>
                     </td>
 
                     <td className="px-3 py-2 align-top">
                       <input
                         type="date"
                         className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900"
-                        value={((doc as any).document_date ?? '') as string}
+                        value={typedDocument.document_date ?? ''}
                         disabled={isInspectionLocked}
                         onChange={e =>
-                          void updateDoc(doc.id, { document_date: e.target.value || null } as any)
+                          void updateDoc(doc.id, { document_date: e.target.value || null })
                         }
                       />
                     </td>
@@ -663,9 +746,9 @@ export default function ObStepHandlingar({
                     <td className="px-3 py-2 align-top">
                       <textarea
                         className="min-h-[2.5rem] w-full rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900"
-                        value={(((doc as any).note ?? '') as string) ?? ''}
+                        value={typedDocument.note ?? ''}
                         disabled={isInspectionLocked}
-                        onChange={e => void updateDoc(doc.id, { note: e.target.value } as any)}
+                        onChange={e => void updateDoc(doc.id, { note: e.target.value })}
                       />
                     </td>
                   </tr>
@@ -688,7 +771,7 @@ export default function ObStepHandlingar({
             type="button"
             onClick={() => void handleAddCustomDocument()}
             disabled={isInspectionLocked}
-            className="text-sm px-3 py-1.5 border rounded-md bg-white hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
           >
             + Lägg till egen handling
           </button>
@@ -696,20 +779,20 @@ export default function ObStepHandlingar({
       </section>
 
       {/* =======================
-          UPPlysningar – fri text
+          UPPlysningar - fri text
       ======================== */}
       <section>
         <div className="flex items-center gap-2 mb-2">
           <h2 className="text-lg font-semibold text-gray-900">Upplysningar</h2>
-          {savingDisclosure && <span className="text-sm text-gray-600">Sparar…</span>}
+          {savingDisclosure && <span className="text-sm text-gray-600">Sparar...</span>}
           {!savingDisclosure && savedDisclosure && (
-            <span className="text-xs text-emerald-600">Sparad ✓</span>
+            <span className="text-xs text-emerald-600">Sparad</span>
           )}
         </div>
 
         <textarea
           className="min-h-[200px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500"
-          placeholder="Skriv alla upplysningar här …"
+          placeholder="Skriv alla upplysningar här ..."
           value={disclosureText}
           disabled={isInspectionLocked}
           onChange={e => setDisclosureText(e.target.value)}
@@ -722,9 +805,9 @@ export default function ObStepHandlingar({
       <section>
         <div className="flex items-center gap-2 mb-2">
           <h2 className="text-lg font-semibold text-gray-900">Upplysningar om fel i fastigheten</h2>
-          {savingDefect && <span className="text-sm text-gray-600">Sparar…</span>}
+          {savingDefect && <span className="text-sm text-gray-600">Sparar...</span>}
           {!savingDefect && savedDefect && (
-            <span className="text-xs text-emerald-600">Sparad ✓</span>
+            <span className="text-xs text-emerald-600">Sparad</span>
           )}
         </div>
 
@@ -738,3 +821,5 @@ export default function ObStepHandlingar({
     </div>
   )
 }
+
+

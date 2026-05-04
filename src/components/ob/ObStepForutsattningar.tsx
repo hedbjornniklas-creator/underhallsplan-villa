@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
 
 type FurnishingLevel = 'fullt_moblerad' | 'delvis_moblerad' | 'omoblerad'
 type SelectionMode = 'single' | 'multi_set' | 'per_floor'
 type InspectionSide = 'buyer' | 'seller' | 'apartment'
+type SelectionValue = string | number | boolean | null
+type SelectionValues = Record<string, SelectionValue>
 
 // Hämta direkt från Supabase-typerna
 type Property = Tables<'properties'>
@@ -39,7 +41,7 @@ interface SettingsOverviewGroup {
   sort_order: number
   is_active: boolean
   conditional_on_group_key: string | null
-  conditional_on_values: any | null
+  conditional_on_values: unknown
 }
 
 interface SettingsOverviewOption {
@@ -57,7 +59,7 @@ interface InspectionOverviewSelection {
   overview_item_id: string
   floor_key: string | null
   set_index: number
-  values: Record<string, any>
+  values: SelectionValues
   note: string | null
 }
 
@@ -65,20 +67,27 @@ type ItemBundle = SettingsOverviewItem & {
   groups: (SettingsOverviewGroup & { options: SettingsOverviewOption[] })[]
 }
 
-const serializeLoadError = (error: any) => {
-  if (!error) return null
+const toErrorLike = (error: unknown): Record<string, unknown> | null => {
+  if (!error || typeof error !== 'object') return null
+  return error as Record<string, unknown>
+}
+
+const serializeLoadError = (error: unknown) => {
+  const err = toErrorLike(error)
+  if (!err) return null
   return {
-    code: error.code ?? null,
-    message: error.message ?? null,
-    details: error.details ?? null,
-    hint: error.hint ?? null,
-    status: error.status ?? null,
+    code: err.code ?? null,
+    message: err.message ?? null,
+    details: err.details ?? null,
+    hint: err.hint ?? null,
+    status: err.status ?? null,
   }
 }
 
-const isUniqueViolation = (error: any) => {
-  const text = `${error?.message ?? ''} ${error?.details ?? ''}`.toLowerCase()
-  return error?.code === '23505' || text.includes('duplicate key')
+const isUniqueViolation = (error: unknown) => {
+  const err = toErrorLike(error)
+  const text = `${err?.message ?? ''} ${err?.details ?? ''}`.toLowerCase()
+  return err?.code === '23505' || text.includes('duplicate key')
 }
 
 const normalizeSwedishToken = (value: string) =>
@@ -151,7 +160,7 @@ export default function ObStepForutsattningar({
   const [selections, setSelections] = useState<Record<string, InspectionOverviewSelection[]>>({})
 
   // debounce timers för note
-  const noteTimers = useRef<Record<string, any>>({})
+  const noteTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   // -----------------------------
   // LOAD: inspection_conditions + settings + selections
@@ -300,13 +309,13 @@ export default function ObStepForutsattningar({
           selMap[s.overview_item_id] = selMap[s.overview_item_id] || []
           selMap[s.overview_item_id].push({
             ...s,
-            values: (s.values as any) || {},
+            values: (s.values as SelectionValues) || {},
           })
         }
         setSelections(selMap)
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error('loadAll failed:', serializeLoadError(e) ?? e)
-        setError(e?.message ?? 'Kunde inte läsa inställningar/besiktningsdata.')
+        setError(e instanceof Error ? e.message : 'Kunde inte läsa inställningar/besiktningsdata.')
       } finally {
         setLoading(false)
       }
@@ -379,9 +388,9 @@ export default function ObStepForutsattningar({
         if (insErr) throw insErr
         return data as InspectionOverviewSelection
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('upsertSelection failed:', e)
-      setError(e?.message ?? 'Kunde inte spara val.')
+      setError(e instanceof Error ? e.message : 'Kunde inte spara val.')
       return sel
     } finally {
       setSaving(false)
@@ -391,7 +400,10 @@ export default function ObStepForutsattningar({
   // -----------------------------
   // Local helpers
   // -----------------------------
-  const getItemSelections = (itemId: string) => selections[itemId] || []
+  const getItemSelections = useCallback(
+    (itemId: string) => selections[itemId] || [],
+    [selections]
+  )
 
   const setItemSelections = (itemId: string, next: InspectionOverviewSelection[]) => {
     setSelections(prev => ({ ...prev, [itemId]: next }))
@@ -444,7 +456,7 @@ export default function ObStepForutsattningar({
     itemId: string,
     selIndex: number,
     groupKey: string,
-    value: any
+    value: SelectionValue
   ) => {
     if (isInspectionLocked) return
     const arr = ensureSingleSelection(itemId)
@@ -516,12 +528,12 @@ export default function ObStepForutsattningar({
     if (count >= 3) keys.push('plan3')
 
     return keys
-  }, [items, selections])
+  }, [items, getItemSelections])
 
   // -----------------------------
   // Conditional group visibility
   // -----------------------------
-  const groupVisible = (group: SettingsOverviewGroup, selValues: Record<string, any>) => {
+  const groupVisible = (group: SettingsOverviewGroup, selValues: SelectionValues) => {
     if (!group.conditional_on_group_key) return true
     const key = group.conditional_on_group_key
     const want = group.conditional_on_values
@@ -562,7 +574,7 @@ export default function ObStepForutsattningar({
     disabled,
   }: {
     label: string
-    value: any
+    value: SelectionValue | ''
     onChange: (v: string) => void
     options: SettingsOverviewOption[]
     disabledEmpty?: boolean

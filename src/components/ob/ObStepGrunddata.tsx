@@ -25,6 +25,14 @@ type Property = BaseProperty & {
 type Inspection = ObInspection
 type InspectionSide = Inspection['inspection_side'] // typiskt: 'buyer' | 'seller' | null
 type EditableInspectionSide = 'buyer' | 'seller' | 'apartment'
+type SupabaseUpsertClient = {
+  from: (table: string) => {
+    upsert: (
+      payload: Record<string, unknown>,
+      options: { onConflict: string }
+    ) => Promise<{ error: { message?: string } | null }>
+  }
+}
 type InspectorProfile = {
   full_name: string | null
   sbr_group: string | null
@@ -476,7 +484,8 @@ export default function ObStepGrunddata({
       ...patch,
     }
 
-    const { error: updErr } = await (supabase as any)
+    const obSnapshotClient = supabase as unknown as SupabaseUpsertClient
+    const { error: updErr } = await obSnapshotClient
       .from('ob_property_snapshot')
       .upsert(payload, { onConflict: 'inspection_id' })
 
@@ -494,7 +503,7 @@ export default function ObStepGrunddata({
   }
 
   // Hjälpare: spara inspection-fält
-  const saveInspection = async (patch: Partial<Inspection>): Promise<Inspection | null> => {
+  const saveInspection = useCallback(async (patch: Partial<Inspection>): Promise<Inspection | null> => {
     if (isInspectionLocked) return null
     setError(null)
     setSavingInsp(true)
@@ -519,7 +528,7 @@ export default function ObStepGrunddata({
     }
 
     return (data as Inspection | null) ?? null
-  }
+  }, [inspection.id, isInspectionLocked, onInspectionUpdated])
 
   const saveOrdererToAssignment = async (
     patch: Partial<{
@@ -654,8 +663,9 @@ export default function ObStepGrunddata({
         }
 
         let maxSeq = 0
-        ;(data || []).forEach((row: any) => {
-          const num = row.assignment_number as string | null
+        ;(data || []).forEach(row => {
+          const typedRow = row as { assignment_number?: string | null }
+          const num = typedRow.assignment_number ?? null
           if (!num) return
           const prefix = `${dateKey}-`
           if (!num.startsWith(prefix)) return
@@ -676,7 +686,7 @@ export default function ObStepGrunddata({
     }
 
     void maybeGenerateAssignmentNumber()
-  }, [inspection.id, inspection.assignment_number, inspection.date, isInspectionLocked])
+  }, [inspection.id, inspection.assignment_number, inspection.date, isInspectionLocked, saveInspection])
 
   // Handlers för formulärfält - spara vid blur
   const handlePropChange = (field: keyof typeof propForm, value: string) => {
@@ -687,7 +697,7 @@ export default function ObStepGrunddata({
   const handlePropBlur = (field: keyof typeof propForm) => {
     if (isInspectionLocked) return
     const rawVal = propForm[field]
-    const val = rawVal === '' ? null : (rawVal as any)
+    const val = rawVal === '' ? null : rawVal
 
     const patch: Partial<Property> = {}
     if (field === 'cadastral_id') patch.cadastral_id = val
@@ -713,15 +723,15 @@ export default function ObStepGrunddata({
     const val = inspForm[field] || null
     const patch: Partial<Inspection> = {}
 
-    if (field === 'assignment_number') patch.assignment_number = val as any
+    if (field === 'assignment_number') patch.assignment_number = val
     if (field === 'assignment_confirmation_delivered_date') {
-      patch.assignment_confirmation_delivered_date = val as any
+      patch.assignment_confirmation_delivered_date = val
     }
-    if (field === 'scope') patch.scope = val as any
-    if (field === 'date') patch.date = val as any
-    if (field === 'inspection_time') patch.inspection_time = val as any
-    if (field === 'attendees') patch.attendees = val as any
-    if (field === 'attendees_other') patch.attendees_other = val as any
+    if (field === 'scope') patch.scope = val
+    if (field === 'date') patch.date = val
+    if (field === 'inspection_time') patch.inspection_time = val
+    if (field === 'attendees') patch.attendees = val
+    if (field === 'attendees_other') patch.attendees_other = val
 
     if (field === 'inspection_side') {
       patch.inspection_side = (val as EditableInspectionSide) as InspectionSide
@@ -881,7 +891,7 @@ export default function ObStepGrunddata({
       if (current.includes('Köpare')) {
         const next = current.filter(l => l !== 'Köpare')
         const newAttendees = formatAttendeeLabels(next)
-        patch.attendees = newAttendees as any
+        patch.attendees = newAttendees
         setInspForm(prev => ({
           ...prev,
           inspection_side: side,
@@ -948,9 +958,9 @@ export default function ObStepGrunddata({
           console.warn('Kunde inte ta bort tidigare omslagsbild:', removeError.message)
         }
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('handleInspectionCoverUpload failed:', e)
-      setError(e?.message ?? 'Kunde inte ladda upp omslagsbild.')
+      setError(e instanceof Error ? e.message : 'Kunde inte ladda upp omslagsbild.')
     } finally {
       setUploadingCover(false)
       event.target.value = ''
