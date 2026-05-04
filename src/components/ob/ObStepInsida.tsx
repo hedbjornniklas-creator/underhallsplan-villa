@@ -1753,14 +1753,14 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           </p>
         </header>
 
-        {/* Plan-flikar + Lägg till rum */}
+        {/* Plan-flikar */}
         <section className="flex flex-wrap items-center gap-2">
           {floorLabels.map(fl => (
             <button
               key={fl}
               type="button"
               onClick={() => setActiveFloor(fl)}
-              className={`rounded-full border px-3 py-1 text-xs ${
+              className={`rounded-md border px-3 py-1 text-xs ${
                 activeFloor === fl
                   ? 'bg-gray-900 text-white border-gray-900'
                   : 'bg-white text-gray-800 border-gray-300 hover:bg-gray-50'
@@ -1775,32 +1775,10 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
               Inga plan ännu. Fyll i Byggnadstyp under Förutsättningar, eller lägg till ett rum så skapas plan automatiskt.
             </span>
           )}
-
-          {!isOtherFloor && (
-            <button
-              type="button"
-              onClick={() => {
-                // Alltid förinställ Plan till aktuellt plan om det finns
-                if (activeFloor && activeFloor !== OTHER_ROOM_TYPE_KEY) {
-                  setNewFloorLabel(activeFloor)
-                } else if (derivedFloors.length) {
-                  setNewFloorLabel(derivedFloors[0])
-                } else if (floorLabels.length) {
-                  setNewFloorLabel(floorLabels[0])
-                } else {
-                  setNewFloorLabel('plan1')
-                }
-                setShowNewRoomForm(true)
-              }}
-              className="ml-auto inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
-            >
-              + Lägg till rum
-            </button>
-          )}
         </section>
 
         {roomChips.length > 0 && (
-          <section className="flex flex-wrap items-center gap-2">
+          <section className="flex flex-wrap items-center gap-2 border-t border-gray-200 pt-3">
             {roomChips.map(room => (
               <button
                 key={room.id ?? room.room_label}
@@ -1814,6 +1792,30 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           </section>
         )}
       </section>
+
+      {!isOtherFloor && (
+        <section className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => {
+              // Alltid förinställ Plan till aktuellt plan om det finns
+              if (activeFloor && activeFloor !== OTHER_ROOM_TYPE_KEY) {
+                setNewFloorLabel(activeFloor)
+              } else if (derivedFloors.length) {
+                setNewFloorLabel(derivedFloors[0])
+              } else if (floorLabels.length) {
+                setNewFloorLabel(floorLabels[0])
+              } else {
+                setNewFloorLabel('plan1')
+              }
+              setShowNewRoomForm(true)
+            }}
+            className="inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
+          >
+            + Lägg till rum
+          </button>
+        </section>
+      )}
 
       {/* Ny-rumsformulär */}
       {showNewRoomForm && (
@@ -2031,6 +2033,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
               {room.id && (
                 <RoomControlPointsSection
                   room={room}
+                  collapsedStorageKey={`ob:insida:collapsed:${inspection.id}:room:${room.id}`}
                   inspectionSide={inspectionSide}
                   items={roomControlItems}
                   onUpdateItem={updateControlItem}
@@ -2177,6 +2180,7 @@ function ControlItemImagesSection({
 // =============================
 type RoomControlPointsSectionProps = {
   room: InteriorRoom
+  collapsedStorageKey: string
   inspectionSide: InspectionSide
   items: InspectionControlItem[]
   isInspectionLocked: boolean
@@ -2198,6 +2202,7 @@ type RoomControlPointsSectionProps = {
 
 function RoomControlPointsSection({
   room,
+  collapsedStorageKey,
   inspectionSide,
   items,
   isInspectionLocked,
@@ -2224,6 +2229,11 @@ function RoomControlPointsSection({
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
     () => new Set()
   )
+  const [collapsedFreeNoteIds, setCollapsedFreeNoteIds] = useState<Set<string>>(
+    () => new Set()
+  )
+  const hasLoadedCollapsedGroupsRef = useRef(false)
+  const hasLoadedCollapsedFreeNotesRef = useRef(false)
   const roomDisplayLabel = isOtherRoomKey(room.room_type_key)
     ? OTHER_ROOM_DISPLAY_LABEL
     : room.room_label
@@ -2248,6 +2258,79 @@ function RoomControlPointsSection({
         .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
     [items]
   )
+
+  useEffect(() => {
+    hasLoadedCollapsedGroupsRef.current = false
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(`${collapsedStorageKey}:control-points`)
+      if (!raw) {
+        setCollapsedGroupIds(new Set())
+        hasLoadedCollapsedGroupsRef.current = true
+        return
+      }
+      const parsed = JSON.parse(raw)
+      setCollapsedGroupIds(
+        Array.isArray(parsed)
+          ? new Set(parsed.filter((value): value is string => typeof value === 'string'))
+          : new Set()
+      )
+    } catch (e) {
+      console.warn('Kunde inte läsa dolda kontrollpunkter för insida:', e)
+      setCollapsedGroupIds(new Set())
+    } finally {
+      hasLoadedCollapsedGroupsRef.current = true
+    }
+  }, [collapsedStorageKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !hasLoadedCollapsedGroupsRef.current) return
+    try {
+      window.localStorage.setItem(
+        `${collapsedStorageKey}:control-points`,
+        JSON.stringify(Array.from(collapsedGroupIds.values()))
+      )
+    } catch (e) {
+      console.warn('Kunde inte spara dolda kontrollpunkter för insida:', e)
+    }
+  }, [collapsedGroupIds, collapsedStorageKey])
+
+  useEffect(() => {
+    hasLoadedCollapsedFreeNotesRef.current = false
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(`${collapsedStorageKey}:free-notes`)
+      if (!raw) {
+        setCollapsedFreeNoteIds(new Set())
+        hasLoadedCollapsedFreeNotesRef.current = true
+        return
+      }
+      const parsed = JSON.parse(raw)
+      setCollapsedFreeNoteIds(
+        Array.isArray(parsed)
+          ? new Set(parsed.filter((value): value is string => typeof value === 'string'))
+          : new Set()
+      )
+    } catch (e) {
+      console.warn('Kunde inte läsa dolda fria noteringar för insida:', e)
+      setCollapsedFreeNoteIds(new Set())
+    } finally {
+      hasLoadedCollapsedFreeNotesRef.current = true
+    }
+  }, [collapsedStorageKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !hasLoadedCollapsedFreeNotesRef.current) return
+    try {
+      window.localStorage.setItem(
+        `${collapsedStorageKey}:free-notes`,
+        JSON.stringify(Array.from(collapsedFreeNoteIds.values()))
+      )
+    } catch (e) {
+      console.warn('Kunde inte spara dolda fria noteringar för insida:', e)
+    }
+  }, [collapsedFreeNoteIds, collapsedStorageKey])
+
   const expandOkGroup = (groupId: string) => {
     setExpandedOkGroupIds(prev => {
       const next = new Set(prev)
@@ -2277,6 +2360,18 @@ function RoomControlPointsSection({
       if (!prev.has(groupId)) return prev
       const next = new Set(prev)
       next.delete(groupId)
+      return next
+    })
+  }
+
+  const toggleFreeNoteCollapsed = (itemId: string) => {
+    setCollapsedFreeNoteIds(prev => {
+      const next = new Set(prev)
+      if (next.has(itemId)) {
+        next.delete(itemId)
+      } else {
+        next.add(itemId)
+      }
       return next
     })
   }
@@ -2547,6 +2642,7 @@ function RoomControlPointsSection({
         {freeNoteItems.map(ci => {
           const ciId = ci.id ?? ''
           const ciImages = imagesByControlItemId[ciId] || []
+          const isCollapsed = ciId ? collapsedFreeNoteIds.has(ciId) : false
           return (
             <div
               key={ci.id}
@@ -2557,7 +2653,17 @@ function RoomControlPointsSection({
                   {ci.title}
                 </div>
 
-                {ci.id && (
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => ciId && toggleFreeNoteCollapsed(ciId)}
+                    className="text-xs md:text-[11px] text-gray-700 hover:underline"
+                    aria-expanded={!isCollapsed}
+                    disabled={!ciId}
+                  >
+                    {isCollapsed ? 'Visa' : 'Dölj'}
+                  </button>
+                  {ci.id && (
                   <button
                     type="button"
                     onClick={() => ci.id && onDeleteItem(ci.id)}
@@ -2566,67 +2672,72 @@ function RoomControlPointsSection({
                   >
                     Ta bort notering
                   </button>
-                )}
+                  )}
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs md:text-[11px] text-gray-600">
-                  🧱 Notering
-                </label>
-                <textarea
-                  rows={2}
-                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
-                  placeholder="Fri notering för rummet…"
-                  value={ci.note ?? ''}
-                  onChange={e =>
-                    ci.id &&
-                    onUpdateItem(ci.id, { note: e.target.value })
-                  }
-                  readOnly={isInspectionLocked}
-                />
-              </div>
+              {!isCollapsed && (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-xs md:text-[11px] text-gray-600">
+                      🧱 Notering
+                    </label>
+                    <textarea
+                      rows={2}
+                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
+                      placeholder="Fri notering för rummet…"
+                      value={ci.note ?? ''}
+                      onChange={e =>
+                        ci.id &&
+                        onUpdateItem(ci.id, { note: e.target.value })
+                      }
+                      readOnly={isInspectionLocked}
+                    />
+                  </div>
 
-              <div className="space-y-1">
-                <label className="text-xs md:text-[11px] text-gray-600">
-                  ⚠️ Riskanalys
-                </label>
-                <textarea
-                  rows={3}
-                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
-                  placeholder="Beskriv riskanalys..."
-                  value={ci.risk_text ?? ''}
-                  onChange={e =>
-                    ci.id &&
-                    onUpdateItem(ci.id, { risk_text: e.target.value })
-                  }
-                  readOnly={isInspectionLocked}
-                />
-              </div>
+                  <div className="space-y-1">
+                    <label className="text-xs md:text-[11px] text-gray-600">
+                      ⚠️ Riskanalys
+                    </label>
+                    <textarea
+                      rows={3}
+                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
+                      placeholder="Beskriv riskanalys..."
+                      value={ci.risk_text ?? ''}
+                      onChange={e =>
+                        ci.id &&
+                        onUpdateItem(ci.id, { risk_text: e.target.value })
+                      }
+                      readOnly={isInspectionLocked}
+                    />
+                  </div>
 
-              <div className="space-y-1">
-                <label className="text-xs md:text-[11px] text-gray-600">
-                  🔍 Fortsatt teknisk utredning (FTU)
-                </label>
-                <textarea
-                  rows={3}
-                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
-                  placeholder="Beskriv fortsatt teknisk utredning..."
-                  value={ci.ftu_text ?? ''}
-                  onChange={e =>
-                    ci.id &&
-                    onUpdateItem(ci.id, { ftu_text: e.target.value })
-                  }
-                  readOnly={isInspectionLocked}
-                />
-              </div>
+                  <div className="space-y-1">
+                    <label className="text-xs md:text-[11px] text-gray-600">
+                      🔍 Fortsatt teknisk utredning (FTU)
+                    </label>
+                    <textarea
+                      rows={3}
+                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
+                      placeholder="Beskriv fortsatt teknisk utredning..."
+                      value={ci.ftu_text ?? ''}
+                      onChange={e =>
+                        ci.id &&
+                        onUpdateItem(ci.id, { ftu_text: e.target.value })
+                      }
+                      readOnly={isInspectionLocked}
+                    />
+                  </div>
 
-              {ci.id && (
-                <ControlItemImagesSection
-                  controlItem={ci}
-                  images={ciImages}
-                  onUpload={onUploadImage}
-                  onDelete={onDeleteImage}
-                />
+                  {ci.id && (
+                    <ControlItemImagesSection
+                      controlItem={ci}
+                      images={ciImages}
+                      onUpload={onUploadImage}
+                      onDelete={onDeleteImage}
+                    />
+                  )}
+                </>
               )}
             </div>
           )
