@@ -674,7 +674,7 @@ export default function ObStepForutsattningar({
 
     return (
       <div className="space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className={`grid grid-cols-1 gap-3 ${rightGroups.length > 0 ? 'md:grid-cols-2' : ''}`}>
           {/* Vänster: vad är det? */}
           <div className="space-y-3">
             <div className="text-[11px] font-semibold tracking-wide text-gray-500 uppercase md:hidden">
@@ -693,18 +693,13 @@ export default function ObStepForutsattningar({
             ))}
           </div>
 
-          {/* Höger: ålder/underhåll */}
-          <div className="space-y-3">
-            <div className="text-[11px] font-semibold tracking-wide text-gray-500 uppercase md:hidden">
-              Ålder & underhåll
-            </div>
-
-            {rightGroups.length === 0 ? (
-              <div className="text-xs text-gray-400 md:mt-6">
-                Inga ålder-/underhållsfält för denna del.
+          {rightGroups.length > 0 && (
+            <div className="space-y-3">
+              <div className="text-[11px] font-semibold tracking-wide text-gray-500 uppercase md:hidden">
+                Ålder & underhåll
               </div>
-            ) : (
-              rightGroups.map(g => (
+
+              {rightGroups.map(g => (
                 <SelectField
                   key={g.id}
                   label={g.label}
@@ -714,9 +709,9 @@ export default function ObStepForutsattningar({
                   disabled={isInspectionLocked}
                   onChange={v => updateGroupValue(item.id, selIndex, g.key, v)}
                 />
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Notering */}
