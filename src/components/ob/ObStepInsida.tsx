@@ -324,6 +324,12 @@ const floorLabelFromKey = (k: string) => {
   return normalized
 }
 
+const normalizeFloorKey = (value: string | null | undefined) => {
+  const normalized = normalizeSwedish(String(value ?? '')).trim()
+  if (normalized === 'entréplan') return 'plan1'
+  return normalized
+}
+
 // =============================
 // Huvudkomponent
 // =============================
@@ -625,7 +631,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
         if (floorsFromConditions.length) {
           setActiveFloor(floorsFromConditions[0])
         } else if (normalizedRooms.length) {
-          setActiveFloor(normalizedRooms[0].floor_label)
+          setActiveFloor(normalizeFloorKey(normalizedRooms[0].floor_label))
         } else {
           setActiveFloor(null)
         }
@@ -797,8 +803,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   // Våningar för flikar
   const floorLabels = useMemo(() => {
     const base = derivedFloors.length
-      ? [...derivedFloors]
-      : Array.from(new Set(rooms.map(r => r.floor_label)))
+      ? derivedFloors.map(normalizeFloorKey)
+      : Array.from(new Set(rooms.map(r => normalizeFloorKey(r.floor_label))))
 
     const withoutOther = base.filter(k => k && k !== OTHER_ROOM_TYPE_KEY)
     const hasVind = withoutOther.includes('vind')
@@ -810,8 +816,11 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
   useEffect(() => {
     if (!floorLabels.length) return
-    if (!activeFloor || !floorLabels.includes(activeFloor)) {
+    const normalizedActiveFloor = normalizeFloorKey(activeFloor)
+    if (!activeFloor || !floorLabels.includes(normalizedActiveFloor)) {
       setActiveFloor(floorLabels[0])
+    } else if (activeFloor !== normalizedActiveFloor) {
+      setActiveFloor(normalizedActiveFloor)
     }
   }, [floorLabels, activeFloor])
 
@@ -832,11 +841,11 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
   const filteredRooms = useMemo(() => {
     if (!activeFloor) return rooms
-    const target = normalizeSwedish(activeFloor)
+    const target = normalizeFloorKey(activeFloor)
     return rooms.filter(
       r =>
         !isMissingRoom(r) &&
-        normalizeSwedish(r.floor_label) === target
+        normalizeFloorKey(r.floor_label) === target
     )
   }, [rooms, activeFloor])
 
@@ -861,12 +870,12 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
   const roomChips = useMemo(() => {
     if (!activeFloor) return []
-    const target = normalizeSwedish(activeFloor)
+    const target = normalizeFloorKey(activeFloor)
     return rooms
       .filter(
         r =>
           !isMissingRoom(r) &&
-          normalizeSwedish(r.floor_label) === target
+          normalizeFloorKey(r.floor_label) === target
       )
       .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
   }, [rooms, activeFloor])
@@ -880,8 +889,10 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   }
 
   const sortRooms = (a: InteriorRoom, b: InteriorRoom) => {
-    if (a.floor_label < b.floor_label) return -1
-    if (a.floor_label > b.floor_label) return 1
+    const aFloor = normalizeFloorKey(a.floor_label)
+    const bFloor = normalizeFloorKey(b.floor_label)
+    if (aFloor < bFloor) return -1
+    if (aFloor > bFloor) return 1
     // Nyaste (högst order_index) överst inom samma plan
     return (b.order_index ?? 0) - (a.order_index ?? 0)
   }
@@ -1556,21 +1567,21 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       return
     }
 
-    const floor = newFloorLabel.trim()
+    const floor = normalizeFloorKey(newFloorLabel)
     const typeKey = newRoomTypeKey
     const defaultLabel =
       newRoomLabel.trim() ||
       (() => {
         const baseLabel = getRoomTypeLabel(typeKey)
         const existingOnFloor = rooms.filter(
-          r => r.floor_label === floor && r.room_type_key === typeKey
+          r => normalizeFloorKey(r.floor_label) === floor && r.room_type_key === typeKey
         ).length
         const num = existingOnFloor + 1
         return `${baseLabel} ${num}`
       })()
 
     const maxOrder = rooms
-      .filter(r => r.floor_label === floor)
+      .filter(r => normalizeFloorKey(r.floor_label) === floor)
       .reduce((m, r) => Math.max(m, r.order_index ?? 0), 0)
 
     const newRoom: InteriorRoom = {
@@ -1642,11 +1653,11 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     if (!editingRoomId) return
     const current = rooms.find(r => r.id === editingRoomId)
     if (!current) return
-    const nextFloor = editRoomFloorLabel || current.floor_label
-    const isFloorChanged = nextFloor !== current.floor_label
+    const nextFloor = normalizeFloorKey(editRoomFloorLabel || current.floor_label)
+    const isFloorChanged = nextFloor !== normalizeFloorKey(current.floor_label)
     const nextOrder = isFloorChanged
       ? rooms
-          .filter(r => r.floor_label === nextFloor && r.id !== current.id)
+          .filter(r => normalizeFloorKey(r.floor_label) === nextFloor && r.id !== current.id)
           .reduce((m, r) => Math.max(m, r.order_index ?? 0), 0) + 10
       : current.order_index
     await updateRoomField(editingRoomId, {
