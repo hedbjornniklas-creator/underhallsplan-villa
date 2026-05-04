@@ -38,6 +38,7 @@ interface SettingsOverviewGroup {
   overview_item_id: string
   key: string
   label: string
+  field_type: 'select' | 'year' | null
   sort_order: number
   is_active: boolean
   conditional_on_group_key: string | null
@@ -69,6 +70,7 @@ type ItemBundle = SettingsOverviewItem & {
 
 const SPECIAL_CONDITIONS_COLLAPSE_KEY = '__special_conditions__'
 const NOTE_SAVE_DELAY_MS = 800
+const YEAR_OPTION_START = 1850
 
 function NoteField({
   value,
@@ -666,6 +668,24 @@ export default function ObStepForutsattningar({
     sewage: '🕳️',
   }
 
+  const yearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear()
+    return Array.from({ length: currentYear - YEAR_OPTION_START + 1 }, (_, index) => {
+      const year = String(currentYear - index)
+      return {
+        id: `year-${year}`,
+        group_id: 'generated-years',
+        value: year,
+        label: year,
+        sort_order: index,
+        is_active: true,
+      } satisfies SettingsOverviewOption
+    })
+  }, [])
+
+  const getGroupOptions = (group: SettingsOverviewGroup & { options: SettingsOverviewOption[] }) =>
+    group.field_type === 'year' ? yearOptions : group.options
+
   const SelectField = ({
     label,
     value,
@@ -744,7 +764,7 @@ export default function ObStepForutsattningar({
                 key={g.id}
                 label={g.label}
                 value={values[g.key] ?? ''}
-                options={g.options}
+                options={getGroupOptions(g)}
                 disabledEmpty
                 disabled={isInspectionLocked}
                 onChange={v => updateGroupValue(item.id, selIndex, g.key, v)}
@@ -759,7 +779,7 @@ export default function ObStepForutsattningar({
                   key={g.id}
                   label={g.label}
                   value={values[g.key] ?? ''}
-                  options={g.options}
+                  options={getGroupOptions(g)}
                   disabledEmpty
                   disabled={isInspectionLocked}
                   onChange={v => updateGroupValue(item.id, selIndex, g.key, v)}

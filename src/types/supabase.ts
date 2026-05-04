@@ -1970,6 +1970,7 @@ export type Database = {
           conditional_on_group_key: string | null
           conditional_on_values: Json | null
           created_at: string
+          field_type: string | null
           id: string
           is_active: boolean
           key: string
@@ -1982,6 +1983,7 @@ export type Database = {
           conditional_on_group_key?: string | null
           conditional_on_values?: Json | null
           created_at?: string
+          field_type?: string | null
           id?: string
           is_active?: boolean
           key: string
@@ -1994,6 +1996,7 @@ export type Database = {
           conditional_on_group_key?: string | null
           conditional_on_values?: Json | null
           created_at?: string
+          field_type?: string | null
           id?: string
           is_active?: boolean
           key?: string

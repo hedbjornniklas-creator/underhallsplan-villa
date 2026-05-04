@@ -8,12 +8,14 @@ import { useEffect, useMemo, useState } from 'react'
 export const dynamic = 'force-dynamic'
 
 type SelectionMode = 'single' | 'multi_set' | 'per_floor'
+type OverviewFieldType = 'select' | 'year'
 type InspectionSide = 'buyer' | 'seller' | 'apartment'
 
 type SettingsOverviewItem = {
   id: string
   key: string
   label: string
+  field_type: OverviewFieldType | null
   sort_order: number
   is_active: boolean
   selection_mode: SelectionMode
@@ -49,12 +51,18 @@ type SettingsOverviewOption = {
 }
 
 const SELECTION_MODES: SelectionMode[] = ['single', 'multi_set', 'per_floor']
+const OVERVIEW_FIELD_TYPES: OverviewFieldType[] = ['select', 'year']
 const APPLIES_TO_ALL: InspectionSide[] = ['buyer', 'seller', 'apartment']
 
 const selectionModeLabel = (mode: SelectionMode) => {
   if (mode === 'single') return 'En uppsättning fält'
   if (mode === 'multi_set') return 'Kan lägga till flera'
   return 'En uppsättning per våningsplan'
+}
+
+const overviewFieldTypeLabel = (fieldType: OverviewFieldType | null | undefined) => {
+  if (fieldType === 'year') return 'Årtal'
+  return 'Val från admin'
 }
 
 const normalizeAppliesTo = (value: unknown): InspectionSide[] => {
@@ -295,6 +303,7 @@ export default function ForutsattningarSettingsPage() {
         overview_item_id: selectedItemId,
         key,
         label: 'Ny parameter',
+        field_type: 'select',
         sort_order: maxSort + 10,
         is_active: true,
         conditional_on_group_key: null,
@@ -771,6 +780,28 @@ export default function ForutsattningarSettingsPage() {
                       </div>
                     </div>
 
+                    <div>
+                      <label className="text-xs text-gray-600">Fälttyp</label>
+                      <select
+                        className="w-full rounded-md border px-2 py-1 text-sm"
+                        value={selectedGroup.field_type ?? 'select'}
+                        onChange={e =>
+                          saveGroup(selectedGroup.id, {
+                            field_type: e.target.value as OverviewFieldType,
+                          })
+                        }
+                      >
+                        {OVERVIEW_FIELD_TYPES.map(fieldType => (
+                          <option key={fieldType} value={fieldType}>
+                            {overviewFieldTypeLabel(fieldType)}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="text-[11px] text-gray-500 mt-1">
+                        Välj Årtal för att låta besiktningsvyn skapa årtalslistan automatiskt.
+                      </div>
+                    </div>
+
                     <label className="text-xs text-gray-600">
                       Conditional on group key (valfritt)
                     </label>
@@ -834,7 +865,7 @@ export default function ForutsattningarSettingsPage() {
               </h2>
               <button
                 onClick={addOption}
-                disabled={!selectedGroupId || saving}
+                disabled={!selectedGroupId || saving || selectedGroup?.field_type === 'year'}
                 className="text-xs rounded-md bg-emerald-600 text-white px-2.5 py-1.5 disabled:opacity-50"
               >
                 + Nytt val
@@ -843,6 +874,11 @@ export default function ForutsattningarSettingsPage() {
 
             {!selectedGroupId ? (
               <div className="text-sm text-gray-500">Välj en parameter i mitten.</div>
+            ) : selectedGroup?.field_type === 'year' ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                Den här parametern är ett årtalsfält. Årtalen skapas automatiskt i besiktningsvyn,
+                så du behöver inte lägga in val här.
+              </div>
             ) : (
               <>
                 <input
