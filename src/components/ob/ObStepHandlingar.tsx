@@ -25,12 +25,12 @@ type DocumentViewModel = {
   note: string
 }
 
-// Om din DB-typ fÃ¶r inspection_documents.status redan Ã¤r en enum union kan du ta bort denna
-// och anvÃ¤nda InspectionDocument['status'] direkt.
+// Om din DB-typ för inspection_documents.status redan är en enum union kan du ta bort denna
+// och använda InspectionDocument['status'] direkt.
 const STATUS_LABELS: Record<InspectionDocumentStatus, string> = {
-  present: 'TillhandahÃ¥llen',
-  missing: 'Inte tillhandahÃ¥llen',
-  na: 'BedÃ¶ms ej relevant',
+  present: 'Tillhandahållen',
+  missing: 'Inte tillhandahållen',
+  na: 'Bedöms ej relevant',
 }
 
 type InspectionExtraFields = Inspection & {
@@ -66,16 +66,16 @@ type InspectionDefectRow = {
 const DISCLOSURE_IMAGE_BUCKET = 'inspection-images' as const
 
 const STANDARD_DISCLOSURE_TEXT =
-  'SÃ¤ljaren fÃ¶rvÃ¤rvade fastigheten\nFÃ¶ljande renoveringar och underhÃ¥ll Ã¤r utfÃ¶rda:'
-const STANDARD_DEFECT_TEXT = 'Inga kÃ¤nda fel enligt fastighetsÃ¤garen.'
+  'Säljaren förvärvade fastigheten\nFöljande renoveringar och underhåll är utförda:'
+const STANDARD_DEFECT_TEXT = 'Inga kända fel enligt fastighetsägaren.'
 
 const normalizeSwedishToken = (value: string) =>
   value
     .trim()
     .toLowerCase()
-    .replaceAll('Ã¥', 'a')
-    .replaceAll('Ã¤', 'a')
-    .replaceAll('Ã¶', 'o')
+    .replaceAll('å', 'a')
+    .replaceAll('ä', 'a')
+    .replaceAll('ö', 'o')
 
 const parseInspectionSideToken = (value: string): InspectionSide | null => {
   const token = normalizeSwedishToken(value)
@@ -365,17 +365,17 @@ export default function ObStepHandlingar({
         const existingDocs = await fetchInspectionDocuments()
         if (cancelled) return
 
-        // Seeda handlingar: skapa rader fÃ¶r saknade document_types
+        // Seeda handlingar: skapa rader för saknade document_types
         if (!isInspectionLocked) {
           await ensureTemplateDocuments(types, existingDocs)
         }
 
-        // LÃ¤s om efter ev insert
+        // Läs om efter ev insert
         const docsAfter = await fetchInspectionDocuments()
         if (cancelled) return
         setDocumentsRaw(docsAfter)
 
-        // disclosures (fri text) - sÃ¤kerstÃ¤ll att en rad finns
+        // disclosures (fri text) - säkerställ att en rad finns
         const disclosureRow = await loadOrCreateDisclosureRow()
         if (cancelled) return
         setDisclosure(disclosureRow)
@@ -383,11 +383,11 @@ export default function ObStepHandlingar({
         setDisclosureText(typedDisclosureRow?.note ?? '')
         setDisclosureImagePath(typedDisclosureRow?.source_image_url ?? null)
 
-        // defect_disclosures - sÃ¤kerstÃ¤ll att standard sparas Ã¤ven utan input
+        // defect_disclosures - säkerställ att standard sparas även utan input
         await ensureDefectTextSaved()
       } catch (e: unknown) {
         console.error(e)
-        setError(e instanceof Error ? e.message : 'Ett fel intrÃ¤ffade.')
+        setError(e instanceof Error ? e.message : 'Ett fel inträffade.')
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -478,13 +478,13 @@ export default function ObStepHandlingar({
   }
 
   // -------------------------------
-  // LÃ„GG TILL EGEN HANDLING
+  // LÄGG TILL EGEN HANDLING
   // -------------------------------
   const handleAddCustomDocument = async () => {
     if (!inspection?.id) return
     if (isInspectionLocked) return
 
-    const title = window.prompt('Ange titel fÃ¶r den egna handlingen:')
+    const title = window.prompt('Ange titel för den egna handlingen:')
     if (!title) return
 
     setSavingDocs(true)
@@ -515,7 +515,7 @@ export default function ObStepHandlingar({
 
     if (error) {
       console.error(error)
-      setError('Kunde inte lÃ¤gga till handlingen.')
+      setError('Kunde inte lägga till handlingen.')
       return
     }
 
@@ -721,7 +721,7 @@ export default function ObStepHandlingar({
     <div className="space-y-8">
       {isInspectionLocked ? (
         <section className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-          Besiktningen Ã¤r lÃ¥st. Handlingar och upplysningar Ã¤r skrivskyddade.
+          Besiktningen är låst. Handlingar och upplysningar är skrivskyddade.
         </section>
       ) : null}
 
@@ -839,7 +839,7 @@ export default function ObStepHandlingar({
 
           {documents.length === 0 ? (
             <div className="rounded-2xl border border-gray-200 bg-white px-3 py-4 text-center text-sm text-gray-600">
-              Inga handlingar Ã¤nnu.
+              Inga handlingar ännu.
             </div>
           ) : null}
         </div>
@@ -936,7 +936,7 @@ export default function ObStepHandlingar({
               {documents.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-3 py-4 text-center text-sm text-gray-600">
-                    Inga handlingar Ã¤nnu.
+                    Inga handlingar ännu.
                   </td>
                 </tr>
               )}
@@ -951,7 +951,7 @@ export default function ObStepHandlingar({
             disabled={isInspectionLocked}
             className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            + LÃ¤gg till egen handling
+            + Lägg till egen handling
           </button>
         </div>
       </section>
@@ -970,7 +970,7 @@ export default function ObStepHandlingar({
 
         <textarea
           className="min-h-[200px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500"
-          placeholder="Skriv alla upplysningar hÃ¤r ..."
+          placeholder="Skriv alla upplysningar här ..."
           value={disclosureText}
           disabled={isInspectionLocked}
           onChange={e => setDisclosureText(e.target.value)}
@@ -990,7 +990,7 @@ export default function ObStepHandlingar({
                   event.currentTarget.value = ''
                 }}
               />
-              {uploadingDisclosureImage ? 'Laddar upp bild...' : '+ LÃ¤gg till bild'}
+              {uploadingDisclosureImage ? 'Laddar upp bild...' : '+ Lägg till bild'}
             </label>
 
             {disclosureImagePath ? (

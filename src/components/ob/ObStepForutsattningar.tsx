@@ -10,7 +10,7 @@ type InspectionSide = 'buyer' | 'seller' | 'apartment'
 type SelectionValue = string | number | boolean | null
 type SelectionValues = Record<string, SelectionValue>
 
-// HÃ¤mta direkt frÃ¥n Supabase-typerna
+// Hämta direkt från Supabase-typerna
 type Property = Tables<'properties'>
 type Inspection = Tables<'inspections'>
 
@@ -94,9 +94,9 @@ const normalizeSwedishToken = (value: string) =>
   value
     .trim()
     .toLowerCase()
-    .replaceAll('Ã¥', 'a')
-    .replaceAll('Ã¤', 'a')
-    .replaceAll('Ã¶', 'o')
+    .replaceAll('å', 'a')
+    .replaceAll('ä', 'a')
+    .replaceAll('ö', 'o')
 
 const parseInspectionSideToken = (value: string): InspectionSide | null => {
   const token = normalizeSwedishToken(value)
@@ -150,7 +150,7 @@ export default function ObStepForutsattningar({
     (inspection as Inspection & { locked_at?: string | null }).locked_at
   )
 
-  // inspection_conditions (bara fÃ¶r furnishing)
+  // inspection_conditions (bara för furnishing)
   const [condRow, setCondRow] = useState<InspectionConditionsRow | null>(null)
   const [furnishing, setFurnishing] = useState<FurnishingLevel>('fullt_moblerad')
 
@@ -158,7 +158,7 @@ export default function ObStepForutsattningar({
   const [items, setItems] = useState<ItemBundle[]>([])
   const [selections, setSelections] = useState<Record<string, InspectionOverviewSelection[]>>({})
 
-  // debounce timers fÃ¶r note
+  // debounce timers för note
   const noteTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   // -----------------------------
@@ -314,7 +314,7 @@ export default function ObStepForutsattningar({
         setSelections(selMap)
       } catch (e: unknown) {
         console.error('loadAll failed:', serializeLoadError(e) ?? e)
-        setError(e instanceof Error ? e.message : 'Kunde inte lÃ¤sa instÃ¤llningar/besiktningsdata.')
+        setError(e instanceof Error ? e.message : 'Kunde inte läsa inställningar/besiktningsdata.')
       } finally {
         setLoading(false)
       }
@@ -499,8 +499,8 @@ export default function ObStepForutsattningar({
     if (!sels.length) return [] as string[]
 
     const v = sels[0].values || {}
-    const floorsVal = v['floors'] ?? v['vÃ¥ningar'] ?? v['vÃ¥ning'] ?? null
-    const basementVal = v['basement'] ?? v['kÃ¤llare'] ?? null
+    const floorsVal = v['floors'] ?? v['våningar'] ?? v['våning'] ?? null
+    const basementVal = v['basement'] ?? v['källare'] ?? null
 
     const count =
       floorsVal === '1_5'
@@ -517,12 +517,12 @@ export default function ObStepForutsattningar({
 
     const keys: string[] = []
     if (basementVal === 'yes' || basementVal === 'ja' || basementVal === true) {
-      keys.push('kÃ¤llare')
+      keys.push('källare')
     } else if (basementVal === 'partial' || basementVal === 'delvis') {
-      keys.push('kÃ¤llare_delvis')
+      keys.push('källare_delvis')
     }
 
-    if (count >= 1) keys.push('entrÃ©plan')
+    if (count >= 1) keys.push('entréplan')
     if (count >= 2) keys.push('plan2')
     if (count >= 3) keys.push('plan3')
 
@@ -549,19 +549,19 @@ export default function ObStepForutsattningar({
   // UI helpers (endast layout)
   // -----------------------------
   const itemEmoji: Record<string, string> = {
-    weather: 'ðŸŒ¤ï¸',
-    building_type: 'ðŸ ',
-    building_year: 'ðŸ“…',
-    foundation: 'ðŸ§±',
-    structure: 'ðŸ—ï¸',
-    joist: 'ðŸªµ',
-    facade: 'ðŸ§±',
-    windows: 'ðŸªŸ',
-    roof: 'ðŸ¡',
-    heating: 'ðŸ”¥',
-    ventilation: 'ðŸ’¨',
-    water: 'ðŸš°',
-    sewage: 'ðŸ•³ï¸',
+    weather: '🌤️',
+    building_type: '🏠',
+    building_year: '📅',
+    foundation: '🧱',
+    structure: '🏗️',
+    joist: '🪵',
+    facade: '🧱',
+    windows: '🪟',
+    roof: '🏡',
+    heating: '🔥',
+    ventilation: '💨',
+    water: '🚰',
+    sewage: '🕳️',
   }
 
   const SelectField = ({
@@ -595,10 +595,10 @@ export default function ObStepForutsattningar({
         className="h-10 w-full rounded-lg border border-gray-300 bg-gray-50 px-3 text-sm text-gray-900
                    focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-70"
       >
-        <option value="">VÃ¤ljâ€¦</option>
+        <option value="">Välj…</option>
         {options.length === 0 && (
           <option disabled value="">
-            {disabledEmpty ? 'Inga val i settings' : 'â€”'}
+            {disabledEmpty ? 'Inga val i settings' : '—'}
           </option>
         )}
         {options.map(o => (
@@ -612,7 +612,7 @@ export default function ObStepForutsattningar({
   }
 
   // -----------------------------
-  // Layout-regel: hÃ¶gerkolumn = Ã¥lder/underhÃ¥ll
+  // Layout-regel: högerkolumn = ålder/underhåll
   // -----------------------------
   const isRightGroupKey = (key: string) => {
     if (!key) return false
@@ -635,10 +635,10 @@ export default function ObStepForutsattningar({
     return (
       <div className="space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* VÃ¤nster: vad Ã¤r det? */}
+          {/* Vänster: vad är det? */}
           <div className="space-y-3">
             <div className="text-[11px] font-semibold tracking-wide text-gray-500 uppercase md:hidden">
-              Vad Ã¤r det?
+              Vad är det?
             </div>
             {leftGroups.map(g => (
               <SelectField
@@ -653,15 +653,15 @@ export default function ObStepForutsattningar({
             ))}
           </div>
 
-          {/* HÃ¶ger: Ã¥lder/underhÃ¥ll */}
+          {/* Höger: ålder/underhåll */}
           <div className="space-y-3">
             <div className="text-[11px] font-semibold tracking-wide text-gray-500 uppercase md:hidden">
-              Ã…lder & underhÃ¥ll
+              Ålder & underhåll
             </div>
 
             {rightGroups.length === 0 ? (
               <div className="text-xs text-gray-400 md:mt-6">
-                Inga Ã¥lder-/underhÃ¥llsfÃ¤lt fÃ¶r denna del.
+                Inga ålder-/underhållsfält för denna del.
               </div>
             ) : (
               rightGroups.map(g => (
@@ -687,7 +687,7 @@ export default function ObStepForutsattningar({
               value={sel.note ?? ''}
               onChange={e => updateSelectionNote(item.id, selIndex, e.target.value)}
               disabled={isInspectionLocked}
-              placeholder="Kort noteringâ€¦"
+              placeholder="Kort notering…"
               rows={2}
               className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm
                          placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-70"
@@ -751,7 +751,7 @@ export default function ObStepForutsattningar({
             className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium
                        text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            + LÃ¤gg till fler
+            + Lägg till fler
           </button>
         </div>
       )
@@ -764,14 +764,14 @@ export default function ObStepForutsattningar({
       return (
         <div className="space-y-2">
           <p className="text-xs text-gray-500">
-            Fyll i &quot;Byggnadstyp&quot; (vÃ¥ningar/kÃ¤llare) sÃ¥ skapas val per vÃ¥ning.
+            Fyll i &quot;Byggnadstyp&quot; (våningar/källare) så skapas val per våning.
           </p>
           {renderSelectionSet(item, arr[0], 0)}
         </div>
       )
     }
 
-    // sÃ¤kerstÃ¤ll selection per floor
+    // säkerställ selection per floor
     const existing = getItemSelections(item.id)
     const next: InspectionOverviewSelection[] = []
 
@@ -794,9 +794,9 @@ export default function ObStepForutsattningar({
     }
 
     const floorLabel = (k?: string | null) => {
-      if (k === 'kÃ¤llare') return 'KÃ¤llare'
-      if (k === 'kÃ¤llare_delvis') return 'KÃ¤llare (delvis)'
-      if (k === 'entrÃ©plan') return 'EntrÃ©plan'
+      if (k === 'källare') return 'Källare'
+      if (k === 'källare_delvis') return 'Källare (delvis)'
+      if (k === 'entréplan') return 'Entréplan'
       if (k === 'plan2') return 'Plan 2'
       if (k === 'plan3') return 'Plan 3'
       return k || ''
@@ -820,7 +820,7 @@ export default function ObStepForutsattningar({
   }
 
   if (loading) {
-    return <div className="p-4 text-sm text-gray-600">Laddar fÃ¶rutsÃ¤ttningarâ€¦</div>
+    return <div className="p-4 text-sm text-gray-600">Laddar förutsättningar…</div>
   }
 
   if (error) {
@@ -828,8 +828,8 @@ export default function ObStepForutsattningar({
       <div className="p-4 text-sm text-red-600">
         {error}
         <div className="mt-2 text-xs text-gray-500">
-          Tips: Om detta hÃ¤nder direkt efter du skapade tabellerna Ã¤r det ofta RLS/policy
-          som blockerar. Kontrollera att du Ã¤r inloggad och att policies finns.
+          Tips: Om detta händer direkt efter du skapade tabellerna är det ofta RLS/policy
+          som blockerar. Kontrollera att du är inloggad och att policies finns.
         </div>
       </div>
     )
@@ -839,18 +839,18 @@ export default function ObStepForutsattningar({
     <div className="space-y-6">
       {/* HEADER */}
       <header className="space-y-1">
-        <h2 className="text-xl font-semibold text-gray-900">FÃ¶rutsÃ¤ttningar</h2>
+        <h2 className="text-xl font-semibold text-gray-900">Förutsättningar</h2>
 
         
       </header>
 
       {isInspectionLocked ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Besiktningen Ã¤r lÃ¥st. FÃ¶rutsÃ¤ttningar Ã¤r skrivskyddade.
+          Besiktningen är låst. Förutsättningar är skrivskyddade.
         </div>
       ) : null}
 
-      {/* SÃ„RSKILDA FÃ–RUTSÃ„TTNINGAR */}
+      {/* SÄRSKILDA FÖRUTSÄTTNINGAR */}
       <section className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3">
         <div className="text-sm text-gray-900">
           Utrymmet var{' '}
@@ -865,30 +865,30 @@ export default function ObStepForutsattningar({
             className="mx-1 h-9 rounded-lg border border-gray-300 bg-gray-50 px-2 text-sm
                        focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            <option value="fullt_moblerad">fullt mÃ¶blerad</option>
-            <option value="delvis_moblerad">delvis mÃ¶blerad</option>
-            <option value="omoblerad">omÃ¶blerad</option>
+            <option value="fullt_moblerad">fullt möblerad</option>
+            <option value="delvis_moblerad">delvis möblerad</option>
+            <option value="omoblerad">omöblerad</option>
           </select>{' '}
-          vid besiktningstillfÃ¤llet.
+          vid besiktningstillfället.
         </div>
 
         <p className="text-sm text-gray-700">
-          Besiktning har skett av de delar som varit normalt Ã¥tkomliga utan omflyttning av
-          mÃ¶bler och belamrade ytor. Bakomliggande ytor ingÃ¥r i kÃ¶parens undersÃ¶kningsplikt.
+          Besiktning har skett av de delar som varit normalt åtkomliga utan omflyttning av
+          möbler och belamrade ytor. Bakomliggande ytor ingår i köparens undersökningsplikt.
         </p>
 
         <p className="text-sm text-gray-700">
-          FÃ¶r ytor, utrymmen och byggnadsdelar som noterats helt eller delvis ej
+          För ytor, utrymmen och byggnadsdelar som noterats helt eller delvis ej
           besiktningsbara eller belamrade har besiktningsmannen inget ansvar.
         </p>
 
         <p className="text-sm text-gray-700">
-          Notering â€-----â€ innebÃ¤r att utrymmet/ytan bedÃ¶ms vara i normalt skick med hÃ¤nsyn
-          taget till byggnadens Ã¥lder och byggnadssÃ¤tt.
+          Notering ”-----” innebär att utrymmet/ytan bedöms vara i normalt skick med hänsyn
+          taget till byggnadens ålder och byggnadssätt.
         </p>
       </section>
 
-      {/* PUNKT 2 â€“ dynamiskt frÃ¥n settings */}
+      {/* PUNKT 2 – dynamiskt från settings */}
       <section className="space-y-4">
         {items.map(item => (
           <section
@@ -897,7 +897,7 @@ export default function ObStepForutsattningar({
           >
             <header className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-gray-900">
-                <span className="mr-2">{itemEmoji[item.key] || 'â€¢'}</span>
+                <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
                 {item.label}
               </h3>
               <span className="text-xs text-gray-500">Punkt 2</span>
@@ -908,7 +908,7 @@ export default function ObStepForutsattningar({
         ))}
       </section>
 
-      {saving && <div className="text-xs text-gray-500">Spararâ€¦</div>}
+      {saving && <div className="text-xs text-gray-500">Sparar…</div>}
     </div>
   )
 }
