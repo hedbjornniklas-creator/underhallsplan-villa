@@ -25,17 +25,12 @@ type DocumentViewModel = {
   note: string
 }
 
-// Om din DB-typ för inspection_documents.status redan är en enum union kan du ta bort denna
-// och använda InspectionDocument['status'] direkt.
+// Om din DB-typ fÃ¶r inspection_documents.status redan Ã¤r en enum union kan du ta bort denna
+// och anvÃ¤nda InspectionDocument['status'] direkt.
 const STATUS_LABELS: Record<InspectionDocumentStatus, string> = {
-  present: 'Tillhandahållen',
-  missing: 'Inte tillhandahållen',
-  na: 'Bedöms ej relevant',
-}
-
-type PropertyDisplayFields = Property & {
-  name?: string | null
-  address?: string | null
+  present: 'TillhandahÃ¥llen',
+  missing: 'Inte tillhandahÃ¥llen',
+  na: 'BedÃ¶ms ej relevant',
 }
 
 type InspectionExtraFields = Inspection & {
@@ -61,23 +56,26 @@ type InspectionDocumentExtraFields = InspectionDocument & {
 
 type InspectionDisclosureExtraFields = InspectionDisclosure & {
   note?: string | null
+  source_image_url?: string | null
 }
 
 type InspectionDefectRow = {
   defect_disclosures?: string | null
 }
 
+const DISCLOSURE_IMAGE_BUCKET = 'inspection-images' as const
+
 const STANDARD_DISCLOSURE_TEXT =
-  'Säljaren förvärvade fastigheten\nFöljande renoveringar och underhåll är utförda:'
-const STANDARD_DEFECT_TEXT = 'Inga kända fel enligt fastighetsägaren.'
+  'SÃ¤ljaren fÃ¶rvÃ¤rvade fastigheten\nFÃ¶ljande renoveringar och underhÃ¥ll Ã¤r utfÃ¶rda:'
+const STANDARD_DEFECT_TEXT = 'Inga kÃ¤nda fel enligt fastighetsÃ¤garen.'
 
 const normalizeSwedishToken = (value: string) =>
   value
     .trim()
     .toLowerCase()
-    .replaceAll('å', 'a')
-    .replaceAll('ä', 'a')
-    .replaceAll('ö', 'o')
+    .replaceAll('Ã¥', 'a')
+    .replaceAll('Ã¤', 'a')
+    .replaceAll('Ã¶', 'o')
 
 const parseInspectionSideToken = (value: string): InspectionSide | null => {
   const token = normalizeSwedishToken(value)
@@ -150,8 +148,21 @@ const toDocumentViewModel = (
   }
 }
 
+const resolveInspectionImageUrl = (path: string | null | undefined) => {
+  if (!path) return null
+  if (path.startsWith('http://') || path.startsWith('https://')) return path
+
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!base) return null
+
+  if (path.startsWith('/storage/')) return `${base}${path}`
+  if (path.startsWith('storage/')) return `${base}/${path}`
+  if (path.startsWith('/')) return path
+
+  return `${base}/storage/v1/object/public/${DISCLOSURE_IMAGE_BUCKET}/${path}`
+}
+
 export default function ObStepHandlingar({
-  property,
   inspection,
 }: {
   property: Property
@@ -160,13 +171,13 @@ export default function ObStepHandlingar({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const inspectionWithExtras = inspection as InspectionExtraFields
-  const propertyWithDisplay = property as PropertyDisplayFields
   const isInspectionLocked = Boolean(inspectionWithExtras.locked_at)
 
   // saving-states
   const [savingDocs, setSavingDocs] = useState(false)
   const [savingDisclosure, setSavingDisclosure] = useState(false)
   const [savingDefect, setSavingDefect] = useState(false)
+  const [uploadingDisclosureImage, setUploadingDisclosureImage] = useState(false)
   const [savedDisclosure, setSavedDisclosure] = useState(false)
   const [savedDefect, setSavedDefect] = useState(false)
 
@@ -177,6 +188,7 @@ export default function ObStepHandlingar({
   // Upplysningar (fri text) via egen tabell (en rad)
   const [disclosure, setDisclosure] = useState<InspectionDisclosure | null>(null)
   const [disclosureText, setDisclosureText] = useState('')
+  const [disclosureImagePath, setDisclosureImagePath] = useState<string | null>(null)
 
   // Upplysningar om fel/brister via inspections.defect_disclosures
   const [defectText, setDefectText] = useState(() => {
@@ -328,28 +340,29 @@ export default function ObStepHandlingar({
         const existingDocs = await fetchInspectionDocuments()
         if (cancelled) return
 
-        // Seeda handlingar: skapa rader för saknade document_types
+        // Seeda handlingar: skapa rader fÃ¶r saknade document_types
         if (!isInspectionLocked) {
           await ensureTemplateDocuments(types, existingDocs)
         }
 
-        // Läs om efter ev insert
+        // LÃ¤s om efter ev insert
         const docsAfter = await fetchInspectionDocuments()
         if (cancelled) return
         setDocumentsRaw(docsAfter)
 
-        // disclosures (fri text) - säkerställ att en rad finns
+        // disclosures (fri text) - sÃ¤kerstÃ¤ll att en rad finns
         const disclosureRow = await loadOrCreateDisclosureRow()
         if (cancelled) return
         setDisclosure(disclosureRow)
         const typedDisclosureRow = disclosureRow as InspectionDisclosureExtraFields | null
         setDisclosureText(typedDisclosureRow?.note ?? '')
+        setDisclosureImagePath(typedDisclosureRow?.source_image_url ?? null)
 
-        // defect_disclosures - säkerställ att standard sparas även utan input
+        // defect_disclosures - sÃ¤kerstÃ¤ll att standard sparas Ã¤ven utan input
         await ensureDefectTextSaved()
       } catch (e: unknown) {
         console.error(e)
-        setError(e instanceof Error ? e.message : 'Ett fel inträffade.')
+        setError(e instanceof Error ? e.message : 'Ett fel intrÃ¤ffade.')
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -440,13 +453,13 @@ export default function ObStepHandlingar({
   }
 
   // -------------------------------
-  // LÄGG TILL EGEN HANDLING
+  // LÃ„GG TILL EGEN HANDLING
   // -------------------------------
   const handleAddCustomDocument = async () => {
     if (!inspection?.id) return
     if (isInspectionLocked) return
 
-    const title = window.prompt('Ange titel för den egna handlingen:')
+    const title = window.prompt('Ange titel fÃ¶r den egna handlingen:')
     if (!title) return
 
     setSavingDocs(true)
@@ -477,13 +490,43 @@ export default function ObStepHandlingar({
 
     if (error) {
       console.error(error)
-      setError('Kunde inte lägga till handlingen.')
+      setError('Kunde inte lÃ¤gga till handlingen.')
       return
     }
 
     if (data) {
       setDocumentsRaw(prev => [...prev, data as InspectionDocument])
     }
+  }
+
+  const handleDeleteCustomDocument = async (doc: InspectionDocument) => {
+    if (isInspectionLocked) return
+    const typedDocument = doc as InspectionDocumentExtraFields
+    if (typedDocument.document_type_id) return
+
+    const confirmed = window.confirm('Vill du radera den här egna handlingen?')
+    if (!confirmed) return
+
+    setSavingDocs(true)
+    setError(null)
+
+    const { error } = await supabase.from('inspection_documents').delete().eq('id', doc.id)
+
+    setSavingDocs(false)
+
+    if (error) {
+      console.error(error)
+      setError('Kunde inte radera handlingen.')
+      return
+    }
+
+    setDocumentsRaw(prev => prev.filter(item => item.id !== doc.id))
+    setCollapsedDocumentIds(prev => {
+      if (!prev.has(doc.id)) return prev
+      const next = new Set(prev)
+      next.delete(doc.id)
+      return next
+    })
   }
 
   // -------------------------------
@@ -555,6 +598,94 @@ export default function ObStepHandlingar({
     return () => clearTimeout(timeout)
   }, [defectText, inspection?.id, isInspectionLocked])
 
+  const handleDisclosureImageUpload = async (file: File | null) => {
+    if (!file) return
+    if (isInspectionLocked) return
+    if (!disclosure) return
+
+    try {
+      setError(null)
+      setUploadingDisclosureImage(true)
+
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+      const fileName = `disclosure-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+      const nextPath = `${inspection.id}/disclosures/${disclosure.id}/${fileName}`
+      const previousPath = disclosureImagePath
+
+      const { error: uploadError } = await supabase.storage
+        .from(DISCLOSURE_IMAGE_BUCKET)
+        .upload(nextPath, file, { upsert: false, cacheControl: '3600' })
+
+      if (uploadError) throw uploadError
+
+      const { error: updateError } = await supabase
+        .from('inspection_disclosures')
+        .update({ source_image_url: nextPath })
+        .eq('id', disclosure.id)
+      if (updateError) throw updateError
+
+      setDisclosureImagePath(nextPath)
+
+      if (
+        previousPath &&
+        previousPath !== nextPath &&
+        !previousPath.startsWith('http://') &&
+        !previousPath.startsWith('https://') &&
+        !previousPath.startsWith('/')
+      ) {
+        const { error: removeError } = await supabase.storage
+          .from(DISCLOSURE_IMAGE_BUCKET)
+          .remove([previousPath])
+        if (removeError) {
+          console.warn('Kunde inte ta bort tidigare upplysningsbild:', removeError.message)
+        }
+      }
+    } catch (e: unknown) {
+      console.error('handleDisclosureImageUpload failed:', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte ladda upp bild till upplysningar.')
+    } finally {
+      setUploadingDisclosureImage(false)
+    }
+  }
+
+  const handleDisclosureImageRemove = async () => {
+    if (isInspectionLocked) return
+    if (!disclosure) return
+    if (!disclosureImagePath) return
+
+    try {
+      setError(null)
+      setUploadingDisclosureImage(true)
+
+      const oldPath = disclosureImagePath
+      const { error: updateError } = await supabase
+        .from('inspection_disclosures')
+        .update({ source_image_url: null })
+        .eq('id', disclosure.id)
+      if (updateError) throw updateError
+
+      setDisclosureImagePath(null)
+
+      if (
+        !oldPath.startsWith('http://') &&
+        !oldPath.startsWith('https://') &&
+        !oldPath.startsWith('/')
+      ) {
+        const { error: removeError } = await supabase.storage
+          .from(DISCLOSURE_IMAGE_BUCKET)
+          .remove([oldPath])
+        if (removeError) {
+          console.warn('Kunde inte ta bort upplysningsbild:', removeError.message)
+        }
+      }
+    } catch (e: unknown) {
+      console.error('handleDisclosureImageRemove failed:', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte ta bort upplysningsbild.')
+    } finally {
+      setUploadingDisclosureImage(false)
+    }
+  }
+
   // -------------------------------
   // RENDER
   // -------------------------------
@@ -565,7 +696,7 @@ export default function ObStepHandlingar({
     <div className="space-y-8">
       {isInspectionLocked ? (
         <section className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-          Besiktningen är låst. Handlingar och upplysningar är skrivskyddade.
+          Besiktningen Ã¤r lÃ¥st. Handlingar och upplysningar Ã¤r skrivskyddade.
         </section>
       ) : null}
 
@@ -576,10 +707,6 @@ export default function ObStepHandlingar({
         <div className="flex items-center justify-between mb-2">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Handlingar</h2>
-            <div className="text-sm text-gray-600">
-              {propertyWithDisplay.name || 'Fastighet'}
-              {propertyWithDisplay.address ? ` - ${propertyWithDisplay.address}` : ''}
-            </div>
           </div>
           {savingDocs && <span className="text-sm text-gray-600">Sparar handling...</span>}
         </div>
@@ -588,6 +715,8 @@ export default function ObStepHandlingar({
           {documents.map(doc => {
             const viewDoc = toDocumentViewModel(doc, documentTypes)
             const isCollapsed = collapsedDocumentIds.has(doc.id)
+            const typedDocument = doc as InspectionDocumentExtraFields
+            const isCustomDocument = !typedDocument.document_type_id
 
             return (
               <article
@@ -664,6 +793,19 @@ export default function ObStepHandlingar({
                         />
                       </label>
                     </div>
+
+                    {isCustomDocument ? (
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteCustomDocument(doc)}
+                          disabled={isInspectionLocked || savingDocs}
+                          className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          Radera handling
+                        </button>
+                      </div>
+                    ) : null}
                   </>
                 ) : null}
               </article>
@@ -672,7 +814,7 @@ export default function ObStepHandlingar({
 
           {documents.length === 0 ? (
             <div className="rounded-2xl border border-gray-200 bg-white px-3 py-4 text-center text-sm text-gray-600">
-              Inga handlingar ännu.
+              Inga handlingar Ã¤nnu.
             </div>
           ) : null}
         </div>
@@ -693,6 +835,7 @@ export default function ObStepHandlingar({
                 const typedDocument = doc as InspectionDocumentExtraFields
                 const typeId = typedDocument.document_type_id ?? null
                 const dt = typeId ? documentTypes.find(d => d.id === typeId) : null
+                const isCustomDocument = !typeId
 
                 const docStatus = (
                   typedDocument.status === 'present' ||
@@ -710,6 +853,16 @@ export default function ObStepHandlingar({
                       {typedDocumentType?.description && (
                         <div className="mt-0.5 text-sm text-gray-600">{typedDocumentType.description}</div>
                       )}
+                      {isCustomDocument ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteCustomDocument(doc)}
+                          disabled={isInspectionLocked || savingDocs}
+                          className="mt-2 rounded-md border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          Radera
+                        </button>
+                      ) : null}
                     </td>
 
                     <td className="px-3 py-2 align-top">
@@ -758,7 +911,7 @@ export default function ObStepHandlingar({
               {documents.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-3 py-4 text-center text-sm text-gray-600">
-                    Inga handlingar ännu.
+                    Inga handlingar Ã¤nnu.
                   </td>
                 </tr>
               )}
@@ -773,7 +926,7 @@ export default function ObStepHandlingar({
             disabled={isInspectionLocked}
             className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            + Lägg till egen handling
+            + LÃ¤gg till egen handling
           </button>
         </div>
       </section>
@@ -792,11 +945,51 @@ export default function ObStepHandlingar({
 
         <textarea
           className="min-h-[200px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500"
-          placeholder="Skriv alla upplysningar här ..."
+          placeholder="Skriv alla upplysningar hÃ¤r ..."
           value={disclosureText}
           disabled={isInspectionLocked}
           onChange={e => setDisclosureText(e.target.value)}
         />
+
+        <div className="mt-3 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex cursor-pointer items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-50">
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={isInspectionLocked || uploadingDisclosureImage}
+                onChange={event => {
+                  const file = event.target.files?.[0] ?? null
+                  void handleDisclosureImageUpload(file)
+                  event.currentTarget.value = ''
+                }}
+              />
+              {uploadingDisclosureImage ? 'Laddar upp bild...' : '+ LÃ¤gg till bild'}
+            </label>
+
+            {disclosureImagePath ? (
+              <button
+                type="button"
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
+                disabled={isInspectionLocked || uploadingDisclosureImage}
+                onClick={() => void handleDisclosureImageRemove()}
+              >
+                Ta bort bild
+              </button>
+            ) : null}
+          </div>
+
+          {disclosureImagePath ? (
+            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+              <img
+                src={resolveInspectionImageUrl(disclosureImagePath) ?? ''}
+                alt="Upplysningsbild"
+                className="max-h-64 w-full object-contain"
+              />
+            </div>
+          ) : null}
+        </div>
       </section>
 
       {/* =======================
@@ -821,5 +1014,6 @@ export default function ObStepHandlingar({
     </div>
   )
 }
+
 
 
