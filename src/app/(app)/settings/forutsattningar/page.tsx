@@ -15,7 +15,6 @@ type SettingsOverviewItem = {
   id: string
   key: string
   label: string
-  field_type: OverviewFieldType | null
   sort_order: number
   is_active: boolean
   selection_mode: SelectionMode
@@ -30,6 +29,7 @@ type SettingsOverviewGroup = {
   overview_item_id: string
   key: string
   label: string
+  field_type: OverviewFieldType | null
   sort_order: number
   is_active: boolean
   conditional_on_group_key: string | null
