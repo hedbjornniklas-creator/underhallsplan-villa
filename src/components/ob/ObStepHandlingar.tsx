@@ -16,6 +16,15 @@ type InspectionDisclosure = Tables<'inspection_disclosures'>
 type InspectionDocumentStatus = 'present' | 'missing' | 'na'
 type InspectionSide = 'buyer' | 'seller' | 'apartment'
 
+type DocumentViewModel = {
+  id: string
+  title: string
+  description: string | null
+  status: InspectionDocumentStatus
+  documentDate: string
+  note: string
+}
+
 // Om din DB-typ för inspection_documents.status redan är en enum union kan du ta bort denna
 // och använda InspectionDocument['status'] direkt.
 const STATUS_LABELS: Record<InspectionDocumentStatus, string> = {
@@ -81,6 +90,34 @@ const documentTypeAppliesToInspectionSide = (
 ) => {
   const appliesTo = parseAppliesToSides((documentType as { applies_to?: unknown }).applies_to)
   return !appliesTo || appliesTo.includes(inspectionSide)
+}
+
+const toDocumentViewModel = (
+  doc: InspectionDocument,
+  documentTypes: DocumentType[]
+): DocumentViewModel => {
+  const typedDoc = doc as InspectionDocument & {
+    document_type_id?: string | null
+    title?: string | null
+    status?: string | null
+    document_date?: string | null
+    note?: string | null
+  }
+  const typeId = typedDoc.document_type_id ?? null
+  const documentType = typeId ? documentTypes.find(type => type.id === typeId) : null
+  const typedDocumentType = documentType as (DocumentType & { description?: string | null }) | null
+  const status = typedDoc.status
+  const normalizedStatus: InspectionDocumentStatus =
+    status === 'present' || status === 'na' || status === 'missing' ? status : 'missing'
+
+  return {
+    id: doc.id,
+    title: typedDoc.title ?? 'Handling',
+    description: typedDocumentType?.description ?? null,
+    status: normalizedStatus,
+    documentDate: typedDoc.document_date ?? '',
+    note: typedDoc.note ?? '',
+  }
 }
 
 export default function ObStepHandlingar({
@@ -485,7 +522,86 @@ export default function ObStepHandlingar({
           {savingDocs && <span className="text-sm text-gray-600">Sparar handling…</span>}
         </div>
 
-        <div className="overflow-x-auto rounded-lg border border-gray-300 bg-white">
+        <div className="space-y-3 md:hidden">
+          {documents.map(doc => {
+            const viewDoc = toDocumentViewModel(doc, documentTypes)
+
+            return (
+              <article
+                key={doc.id}
+                className="min-w-0 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm"
+              >
+                <div className="min-w-0">
+                  <h3 className="break-words text-sm font-semibold text-gray-900">
+                    {viewDoc.title}
+                  </h3>
+                  {viewDoc.description ? (
+                    <p className="mt-1 break-words text-xs leading-5 text-gray-600">
+                      {viewDoc.description}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                    Status
+                  </div>
+                  <div className="grid gap-1.5">
+                    {(Object.keys(STATUS_LABELS) as InspectionDocumentStatus[]).map(key => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => void updateDoc(doc.id, { status: key })}
+                        disabled={isInspectionLocked}
+                        className={
+                          'min-w-0 rounded-xl border px-3 py-2 text-left text-xs font-medium transition ' +
+                          (viewDoc.status === key
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
+                        }
+                      >
+                        {STATUS_LABELS[key]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-3 grid gap-3">
+                  <label className="min-w-0 space-y-1">
+                    <span className="text-xs font-medium text-gray-600">Datum</span>
+                    <input
+                      type="date"
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                      value={viewDoc.documentDate}
+                      disabled={isInspectionLocked}
+                      onChange={e =>
+                        void updateDoc(doc.id, { document_date: e.target.value || null })
+                      }
+                    />
+                  </label>
+
+                  <label className="min-w-0 space-y-1">
+                    <span className="text-xs font-medium text-gray-600">Notering</span>
+                    <textarea
+                      className="min-h-20 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                      value={viewDoc.note}
+                      disabled={isInspectionLocked}
+                      onChange={e => void updateDoc(doc.id, { note: e.target.value })}
+                    />
+                  </label>
+                </div>
+              </article>
+            )
+          })}
+
+          {documents.length === 0 ? (
+            <div className="rounded-2xl border border-gray-200 bg-white px-3 py-4 text-center text-sm text-gray-600">
+              Inga handlingar Ã¤nnu.
+            </div>
+          ) : null}
+        </div>
+
+        <div className="hidden overflow-x-auto rounded-lg border border-gray-300 bg-white md:block">
           <table className="min-w-[720px] w-full text-sm text-gray-900">
             <thead className="bg-gray-100">
               <tr>
