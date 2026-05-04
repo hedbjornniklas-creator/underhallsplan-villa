@@ -580,6 +580,7 @@ export default function InspectionDetailPage() {
                   ? 'p-0 md:p-0'
                   : 'md:rounded-2xl md:border md:border-white/45 md:bg-white/95 md:p-4 md:shadow-xl md:ring-1 md:ring-black/5'
               }
+                min-w-0
                 [&_input]:text-gray-900
                 [&_input]:placeholder:text-gray-500
                 [&_input]:border-gray-300

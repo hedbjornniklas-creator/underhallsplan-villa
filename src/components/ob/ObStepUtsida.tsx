@@ -1382,10 +1382,10 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         <section
           key={item.id}
           id={itemAnchorId}
-          className="scroll-mt-28 rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3"
+          className="min-w-0 scroll-mt-28 rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3"
         >
-          <header className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-gray-900">
+          <header className="flex min-w-0 items-center justify-between gap-2">
+            <h3 className="min-w-0 text-base font-semibold text-gray-900">
               <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
               {item.label}
             </h3>
@@ -1421,17 +1421,17 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       <section
         key={item.id}
         id={itemAnchorId}
-        className="scroll-mt-28 rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-4"
+        className="min-w-0 scroll-mt-28 rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-4"
       >
-        <header className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">
+        <header className="flex min-w-0 items-center justify-between gap-2">
+          <h3 className="min-w-0 text-base font-semibold text-gray-900">
             <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
             {item.label}
           </h3>
         </header>
 
         {/* Kontrollpunkter för komponenten */}
-        <div className="rounded-xl bg-gray-50 ring-1 ring-gray-200 p-3 md:p-4">
+        <div className="min-w-0 rounded-xl bg-gray-50 ring-1 ring-gray-200 p-3 md:p-4">
           <ExteriorControlPointsSection
             item={item}
             row={mainRow}
@@ -1499,8 +1499,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   }
 
   return (
-    <div className="space-y-5">
-      <section className="rounded-2xl border border-gray-200 bg-white/95 p-4 md:p-5 space-y-4">
+    <div className="w-full min-w-0 space-y-5">
+      <section className="min-w-0 rounded-2xl border border-gray-200 bg-white/95 p-4 md:p-5 space-y-4">
         <header className="space-y-1">
           <h2 className="text-xl font-semibold text-gray-900">Byggnad – utsida</h2>
           <p className="text-sm text-gray-700">
@@ -1526,7 +1526,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         </section>
       </section>
 
-      <section className="space-y-4">
+      <section className="min-w-0 space-y-4">
         {items.map(item => renderItemCard(item))}
       </section>
     </div>
@@ -1788,8 +1788,8 @@ function ExteriorControlPointsSection({
                 key={group.controlPointId}
                 className={`rounded-lg border px-3 py-2 ${rowToneClass}`}
               >
-                <div className="flex items-center gap-2">
-                  <div className="text-xs font-semibold text-gray-900 truncate">
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="min-w-0 truncate text-xs font-semibold text-gray-900">
                     {baseItem.title}
                   </div>
                   <span
@@ -1797,7 +1797,7 @@ function ExteriorControlPointsSection({
                   >
                     {collapsedBadgeText}
                   </span>
-                  <div className="ml-auto flex items-center gap-2">
+                  <div className="ml-auto flex shrink-0 items-center gap-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -1829,11 +1829,11 @@ function ExteriorControlPointsSection({
               key={group.controlPointId}
               className={`rounded-lg border px-3 py-2 space-y-2 ${rowToneClass}`}
             >
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs font-semibold text-gray-900">
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <div className="min-w-0 text-xs font-semibold text-gray-900">
                   {baseItem.title}
                 </div>
-                <div className="ml-auto flex items-center gap-2">
+                <div className="ml-auto flex shrink-0 items-center gap-2">
                   <button
                     type="button"
                     onClick={() => {
