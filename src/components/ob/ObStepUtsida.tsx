@@ -129,13 +129,6 @@ type InspectionImage = {
 // Storage-bucket för bilder
 const IMAGE_BUCKET = 'inspection-images' as const
 const RED_STATUS: InspectionControlItem['status'] = null
-const normalizeInspectionStatus = (value: string | null | undefined) => {
-  const normalized = String(value ?? '').trim().toLowerCase()
-  if (normalized === 'completed' || normalized === 'klar' || normalized === 'done') {
-    return 'completed'
-  }
-  return normalized
-}
 
 const getImagePublicUrl = (filePath: string) => {
   const { data } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(filePath)
@@ -173,7 +166,7 @@ const isUniqueViolationError = (err: unknown) => {
 export default function ObStepUtsida({ inspection }: { inspection: Inspection }) {
   const collapsedStorageKey = `ob:utsida:collapsed:${inspection.id}`
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const isInspectionLocked = Boolean(inspection?.locked_at)
 
@@ -1494,7 +1487,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             <div className="w-full min-w-0 max-w-full overflow-hidden rounded-xl bg-gray-50 ring-1 ring-gray-200 p-3 md:p-4">
               <ExteriorControlPointsSection
                 item={item}
-                row={mainRow}
+                collapsedStorageKey={`${collapsedStorageKey}:control-points:${item.id}`}
                 items={rowControlItems}
                 isInspectionLocked={isInspectionLocked}
                 onUpdateItem={updateControlItem}
@@ -1512,6 +1505,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             {/* Fria noteringar + knapp för ytterligare kontrollpunkt */}
             <FreeNotesSection
               item={item}
+              collapsedStorageKey={`${collapsedStorageKey}:free-notes:${item.id}`}
               rows={freeNoteRows}
               imagesByObservationId={imagesByObservationId}
               onAddFreeNote={() => addFreeNoteRow(item)}
@@ -1707,7 +1701,7 @@ function ControlPointImagesSection({
 // UND-KOMPONENT: Kontrollpunkter per komponent
 type ExteriorControlPointsSectionProps = {
   item: ItemBundle
-  row: InspectionExteriorObservation
+  collapsedStorageKey: string
   items: InspectionControlItem[]
   isInspectionLocked: boolean
   onUpdateItem: (itemId: string, patch: Partial<InspectionControlItem>) => void
@@ -1729,7 +1723,7 @@ type ExteriorControlPointsSectionProps = {
 
 function ExteriorControlPointsSection({
   item,
-  row,
+  collapsedStorageKey,
   items,
   isInspectionLocked,
   onUpdateItem,
@@ -1762,6 +1756,44 @@ function ExteriorControlPointsSection({
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
     () => new Set()
   )
+  const hasLoadedCollapsedGroupsRef = useRef(false)
+
+  useEffect(() => {
+    hasLoadedCollapsedGroupsRef.current = false
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(collapsedStorageKey)
+      if (!raw) {
+        setCollapsedGroupIds(new Set())
+        hasLoadedCollapsedGroupsRef.current = true
+        return
+      }
+      const parsed = JSON.parse(raw)
+      setCollapsedGroupIds(
+        Array.isArray(parsed)
+          ? new Set(parsed.filter((value): value is string => typeof value === 'string'))
+          : new Set()
+      )
+    } catch (e) {
+      console.warn('Kunde inte läsa dolda kontrollpunkter för utsida:', e)
+      setCollapsedGroupIds(new Set())
+    } finally {
+      hasLoadedCollapsedGroupsRef.current = true
+    }
+  }, [collapsedStorageKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !hasLoadedCollapsedGroupsRef.current) return
+    try {
+      window.localStorage.setItem(
+        collapsedStorageKey,
+        JSON.stringify(Array.from(collapsedGroupIds.values()))
+      )
+    } catch (e) {
+      console.warn('Kunde inte spara dolda kontrollpunkter för utsida:', e)
+    }
+  }, [collapsedGroupIds, collapsedStorageKey])
+
   const expandOkGroup = (groupId: string) => {
     setExpandedOkGroupIds(prev => {
       const next = new Set(prev)
@@ -2173,6 +2205,7 @@ function ExteriorControlPointsSection({
 // =============================
 type FreeNotesSectionProps = {
   item: ItemBundle
+  collapsedStorageKey: string
   rows: InspectionExteriorObservation[]
   imagesByObservationId: Record<string, InspectionImage[]>
   isInspectionLocked: boolean
@@ -2192,6 +2225,7 @@ type FreeNotesSectionProps = {
 
 function FreeNotesSection({
   item,
+  collapsedStorageKey,
   rows,
   imagesByObservationId,
   isInspectionLocked,
@@ -2210,6 +2244,43 @@ function FreeNotesSection({
   const [collapsedFreeNoteIds, setCollapsedFreeNoteIds] = useState<Set<string>>(
     () => new Set()
   )
+  const hasLoadedCollapsedFreeNotesRef = useRef(false)
+
+  useEffect(() => {
+    hasLoadedCollapsedFreeNotesRef.current = false
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(collapsedStorageKey)
+      if (!raw) {
+        setCollapsedFreeNoteIds(new Set())
+        hasLoadedCollapsedFreeNotesRef.current = true
+        return
+      }
+      const parsed = JSON.parse(raw)
+      setCollapsedFreeNoteIds(
+        Array.isArray(parsed)
+          ? new Set(parsed.filter((value): value is string => typeof value === 'string'))
+          : new Set()
+      )
+    } catch (e) {
+      console.warn('Kunde inte läsa dolda fria noteringar för utsida:', e)
+      setCollapsedFreeNoteIds(new Set())
+    } finally {
+      hasLoadedCollapsedFreeNotesRef.current = true
+    }
+  }, [collapsedStorageKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !hasLoadedCollapsedFreeNotesRef.current) return
+    try {
+      window.localStorage.setItem(
+        collapsedStorageKey,
+        JSON.stringify(Array.from(collapsedFreeNoteIds.values()))
+      )
+    } catch (e) {
+      console.warn('Kunde inte spara dolda fria noteringar för utsida:', e)
+    }
+  }, [collapsedFreeNoteIds, collapsedStorageKey])
 
   const clearSearch = () => {
     setSearchTerm('')
@@ -2510,7 +2581,7 @@ function FreeNotesSection({
                     <button
                       type="button"
                       onClick={() => rowId && toggleFreeNoteCollapsed(rowId)}
-                      className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                      className="text-[11px] text-gray-700 hover:underline"
                       aria-expanded={!isCollapsed}
                       disabled={!rowId}
                     >
