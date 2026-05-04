@@ -259,6 +259,15 @@ const normalizeRoomTypeKey = (value: string | null | undefined) => {
   return base
 }
 
+const sortRoomTypesByLabel = (roomTypes: RoomType[]) =>
+  [...roomTypes].sort((a, b) =>
+    normalizeSwedish(a.label || a.key).localeCompare(
+      normalizeSwedish(b.label || b.key),
+      'sv',
+      { sensitivity: 'base' }
+    )
+  )
+
 const isOtherRoomKey = (value: string | null | undefined) => {
   const key = normalizeRoomTypeKey(value)
   return key === 'ovrigt' || key === 'övrigt'
@@ -417,7 +426,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           const key = normalizeSwedish(rt.key ?? '').toLowerCase()
           return label !== 'rum saknas' && key !== 'rum_saknas'
         })
-        setRoomTypes(filteredRoomTypes)
+        setRoomTypes(sortRoomTypesByLabel(filteredRoomTypes))
         setGroups((gData ?? []) as InteriorGroup[])
         setOptions((oData ?? []) as InteriorOption[])
 
