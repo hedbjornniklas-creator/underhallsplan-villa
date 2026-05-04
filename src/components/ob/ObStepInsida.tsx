@@ -169,7 +169,7 @@ const buildFloorsFromAnswers = (answers: ValueMap): string[] => {
     keys.push('källare_delvis')
   }
 
-  if (count >= 1) keys.push('entréplan')
+  if (count >= 1) keys.push('plan1')
   if (count >= 2) keys.push('plan2')
   if (count >= 3) keys.push('plan3')
   if (atticVal !== null && atticVal !== undefined && String(atticVal).trim() !== '') {
@@ -308,7 +308,7 @@ const floorLabelFromKey = (k: string) => {
   const normalized = normalizeSwedish(k)
   if (normalized === 'källare') return 'Källare'
   if (normalized === 'källare_delvis') return 'Källare (delvis)'
-  if (normalized === 'entréplan') return 'Entréplan'
+  if (normalized === 'entréplan' || normalized === 'plan1') return 'Plan 1'
   if (normalized === 'plan2') return 'Plan 2 / Övre plan'
   if (normalized === 'plan3') return 'Plan 3'
   if (normalized.startsWith('plan')) return `Plan ${normalized.replace('plan', '')}`
@@ -630,7 +630,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           if (floorsFromConditions.length) {
             setNewFloorLabel(floorsFromConditions[0])
           } else {
-            setNewFloorLabel('Entréplan')
+            setNewFloorLabel('plan1')
           }
         }
       } catch (e: unknown) {
@@ -1779,7 +1779,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                 } else if (floorLabels.length) {
                   setNewFloorLabel(floorLabels[0])
                 } else {
-                  setNewFloorLabel('entréplan')
+                  setNewFloorLabel('plan1')
                 }
                 setShowNewRoomForm(true)
               }}
@@ -1829,7 +1829,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                   className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm"
                   value={newFloorLabel}
                   onChange={e => setNewFloorLabel(e.target.value)}
-                  placeholder="t.ex. Källare, Entréplan, Övre plan"
+                  placeholder="t.ex. Källare, Plan 1, Övre plan"
                 />
               )}
             </div>

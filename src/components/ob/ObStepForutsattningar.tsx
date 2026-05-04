@@ -624,7 +624,7 @@ export default function ObStepForutsattningar({
       keys.push('källare_delvis')
     }
 
-    if (count >= 1) keys.push('entréplan')
+    if (count >= 1) keys.push('plan1')
     if (count >= 2) keys.push('plan2')
     if (count >= 3) keys.push('plan3')
 
@@ -787,6 +787,8 @@ export default function ObStepForutsattningar({
   const isRepeatableItem = (item: ItemBundle) =>
     item.selection_mode === 'multi_set'
 
+  const isJoistItem = (item: ItemBundle) => item.key === 'joist' || item.key === 'joists'
+
   const getRepeatableItemTitle = (item: ItemBundle, sel: InspectionOverviewSelection, idx: number) => {
     if (item.key !== 'building_year') return `${item.label} ${idx + 1}`
 
@@ -885,7 +887,7 @@ export default function ObStepForutsattningar({
     const floorLabel = (k?: string | null) => {
       if (k === 'källare') return 'Källare'
       if (k === 'källare_delvis') return 'Källare (delvis)'
-      if (k === 'entréplan') return 'Entréplan'
+      if (k === 'entréplan' || k === 'plan1') return 'Plan 1'
       if (k === 'plan2') return 'Plan 2'
       if (k === 'plan3') return 'Plan 3'
       return k || ''
@@ -900,6 +902,9 @@ export default function ObStepForutsattningar({
           >
             <div className="text-xs font-semibold text-gray-900">
               {floorLabel(sel.floor_key)}
+              {isJoistItem(item) ? (
+                <span className="ml-1 font-normal text-gray-500">(bjälklag under detta plan)</span>
+              ) : null}
             </div>
             {renderSelectionSet(item, sel, idx)}
           </div>

@@ -165,12 +165,13 @@ const COMPONENT_DEFS: Array<{
 const FLOOR_LABELS: Record<string, string> = {
   'k\u00e4llare': 'k\u00e4llare',
   'k\u00e4llare_delvis': 'K\u00e4llare (delvis)',
-  'entr\u00e9plan': 'entr\u00e9plan',
+  'entr\u00e9plan': 'Plan 1',
+  'plan1': 'Plan 1',
   'plan2': 'Plan 2',
   'plan3': 'Plan 3',
 }
 
-const FLOOR_ORDER = ['k\u00e4llare', 'k\u00e4llare_delvis', 'entr\u00e9plan', 'plan2', 'plan3']
+const FLOOR_ORDER = ['k\u00e4llare', 'k\u00e4llare_delvis', 'entr\u00e9plan', 'plan1', 'plan2', 'plan3']
 
 const valueOrFallback = (value: string | number | null | undefined, fallback = '--') => {
   if (value === null || value === undefined) return fallback
