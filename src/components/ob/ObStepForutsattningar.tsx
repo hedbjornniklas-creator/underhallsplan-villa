@@ -143,6 +143,7 @@ export default function ObStepForutsattningar({
   property: Property
   inspection: Inspection
 }) {
+  const collapsedStorageKey = `ob:forutsattningar:collapsed:${inspection.id}`
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -157,9 +158,36 @@ export default function ObStepForutsattningar({
   // settings + selections
   const [items, setItems] = useState<ItemBundle[]>([])
   const [selections, setSelections] = useState<Record<string, InspectionOverviewSelection[]>>({})
+  const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(() => new Set())
 
   // debounce timers för note
   const noteTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(collapsedStorageKey)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return
+      const ids = parsed.filter((value): value is string => typeof value === 'string')
+      setCollapsedItemIds(new Set(ids))
+    } catch (e) {
+      console.warn('Kunde inte läsa sparat visningsläge för förutsättningar:', e)
+    }
+  }, [collapsedStorageKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(
+        collapsedStorageKey,
+        JSON.stringify(Array.from(collapsedItemIds.values()))
+      )
+    } catch (e) {
+      console.warn('Kunde inte spara visningsläge för förutsättningar:', e)
+    }
+  }, [collapsedItemIds, collapsedStorageKey])
 
   // -----------------------------
   // LOAD: inspection_conditions + settings + selections
@@ -449,6 +477,18 @@ export default function ObStepForutsattningar({
     if (target?.id) {
       await supabase.from('inspection_overview_selections').delete().eq('id', target.id)
     }
+  }
+
+  const toggleItemCollapsed = (itemId: string) => {
+    setCollapsedItemIds(prev => {
+      const next = new Set(prev)
+      if (next.has(itemId)) {
+        next.delete(itemId)
+      } else {
+        next.add(itemId)
+      }
+      return next
+    })
   }
 
   const updateGroupValue = async (
@@ -888,24 +928,35 @@ export default function ObStepForutsattningar({
         </p>
       </section>
 
-      {/* PUNKT 2 – dynamiskt från settings */}
+      {/* Dynamiskt från settings */}
       <section className="space-y-4">
-        {items.map(item => (
-          <section
-            key={item.id}
-            className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3"
-          >
-            <header className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-900">
-                <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
-                {item.label}
-              </h3>
-              <span className="text-xs text-gray-500">Punkt 2</span>
-            </header>
+        {items.map(item => {
+          const isCollapsed = collapsedItemIds.has(item.id)
 
-            {renderItem(item)}
-          </section>
-        ))}
+          return (
+            <section
+              key={item.id}
+              className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3"
+            >
+              <header className="flex items-center justify-between gap-3">
+                <h3 className="text-base font-semibold text-gray-900">
+                  <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
+                  {item.label}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => toggleItemCollapsed(item.id)}
+                  className="shrink-0 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                  aria-expanded={!isCollapsed}
+                >
+                  {isCollapsed ? 'Visa' : 'Dölj'}
+                </button>
+              </header>
+
+              {!isCollapsed ? renderItem(item) : null}
+            </section>
+          )
+        })}
       </section>
 
       {saving && <div className="text-xs text-gray-500">Sparar…</div>}
