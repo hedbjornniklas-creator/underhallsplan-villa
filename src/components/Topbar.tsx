@@ -100,7 +100,11 @@ export default function Topbar() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-sm transition-[height,box-shadow] duration-200 ease-out">
+    <header
+      className={`sticky top-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-sm transition-[transform,box-shadow] duration-200 ease-out md:translate-y-0 ${
+        isMobileCompact ? '-translate-y-full shadow-none' : 'translate-y-0'
+      }`}
+    >
       <div
         className={`mx-auto grid w-full max-w-6xl grid-cols-3 items-center px-3 transition-[height,padding] duration-200 ease-out md:h-14 md:px-6 ${
           isMobileCompact ? 'h-11 shadow-sm' : 'h-14'
