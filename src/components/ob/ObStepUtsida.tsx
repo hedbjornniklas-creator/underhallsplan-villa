@@ -171,6 +171,7 @@ const isUniqueViolationError = (err: unknown) => {
 }
 
 export default function ObStepUtsida({ inspection }: { inspection: Inspection }) {
+  const collapsedStorageKey = `ob:utsida:collapsed:${inspection.id}`
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -196,7 +197,33 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   const [imagesByObservationId, setImagesByObservationId] = useState<
     Record<string, InspectionImage[]>
   >({})
+  const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(() => new Set())
   const supportsIsFreeNoteRef = useRef<boolean | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(collapsedStorageKey)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return
+      setCollapsedItemIds(new Set(parsed.filter((value): value is string => typeof value === 'string')))
+    } catch (e) {
+      console.warn('Kunde inte läsa sparat visningsläge för utsida:', e)
+    }
+  }, [collapsedStorageKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(
+        collapsedStorageKey,
+        JSON.stringify(Array.from(collapsedItemIds.values()))
+      )
+    } catch (e) {
+      console.warn('Kunde inte spara visningsläge för utsida:', e)
+    }
+  }, [collapsedItemIds, collapsedStorageKey])
 
   const buildObservationPayload = (base: ValueMap, isFreeNote: boolean) => {
     if (supportsIsFreeNoteRef.current === false) return base
@@ -1373,9 +1400,22 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       return map
     }, {} as Record<string, InspectionControlItem[]>)
 
+  const toggleItemCollapsed = (itemId: string) => {
+    setCollapsedItemIds(prev => {
+      const next = new Set(prev)
+      if (next.has(itemId)) {
+        next.delete(itemId)
+      } else {
+        next.add(itemId)
+      }
+      return next
+    })
+  }
+
   const renderItemCard = (item: ItemBundle) => {
     const rows = getItemRows(item.id)
     const itemAnchorId = `utsida-${item.key}`
+    const isCollapsed = collapsedItemIds.has(item.id)
 
     if (!rows || rows.length === 0) {
       return (
@@ -1389,8 +1429,18 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
               {item.label}
             </h3>
+            <button
+              type="button"
+              onClick={() => toggleItemCollapsed(item.id)}
+              className="shrink-0 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+              aria-expanded={!isCollapsed}
+            >
+              {isCollapsed ? 'Visa' : 'Dölj'}
+            </button>
           </header>
-          <p className="text-xs text-gray-500">Initierar komponentdata…</p>
+          {!isCollapsed ? (
+            <p className="text-xs text-gray-500">Initierar komponentdata…</p>
+          ) : null}
         </section>
       )
     }
@@ -1428,44 +1478,56 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
             {item.label}
           </h3>
+          <button
+            type="button"
+            onClick={() => toggleItemCollapsed(item.id)}
+            className="shrink-0 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+            aria-expanded={!isCollapsed}
+          >
+            {isCollapsed ? 'Visa' : 'Dölj'}
+          </button>
         </header>
 
-        {/* Kontrollpunkter för komponenten */}
-        <div className="w-full min-w-0 max-w-full overflow-hidden rounded-xl bg-gray-50 ring-1 ring-gray-200 p-3 md:p-4">
-          <ExteriorControlPointsSection
-            item={item}
-            row={mainRow}
-            items={rowControlItems}
-            isInspectionLocked={isInspectionLocked}
-            onUpdateItem={updateControlItem}
-            onDeleteItem={deleteControlItem}
-            onDeleteItemGroup={deleteControlItemGroup}
-            onAddOutcomeItem={addOutcomeControlItem}
-            outcomesByControlPointId={outcomesByControlPointId}
-            controlPointMetaById={controlPointMetaById}
-            imagesByControlItemId={imagesByControlItemId}
-            onUploadImageForControlItem={handleUploadImageForControlItem}
-            onDeleteControlItemImage={handleDeleteControlItemImage}
-          />
-        </div>
+        {!isCollapsed ? (
+          <>
+            {/* Kontrollpunkter för komponenten */}
+            <div className="w-full min-w-0 max-w-full overflow-hidden rounded-xl bg-gray-50 ring-1 ring-gray-200 p-3 md:p-4">
+              <ExteriorControlPointsSection
+                item={item}
+                row={mainRow}
+                items={rowControlItems}
+                isInspectionLocked={isInspectionLocked}
+                onUpdateItem={updateControlItem}
+                onDeleteItem={deleteControlItem}
+                onDeleteItemGroup={deleteControlItemGroup}
+                onAddOutcomeItem={addOutcomeControlItem}
+                outcomesByControlPointId={outcomesByControlPointId}
+                controlPointMetaById={controlPointMetaById}
+                imagesByControlItemId={imagesByControlItemId}
+                onUploadImageForControlItem={handleUploadImageForControlItem}
+                onDeleteControlItemImage={handleDeleteControlItemImage}
+              />
+            </div>
 
-        {/* Fria noteringar + knapp för ytterligare kontrollpunkt */}
-        <FreeNotesSection
-          item={item}
-          rows={freeNoteRows}
-          imagesByObservationId={imagesByObservationId}
-          onAddFreeNote={() => addFreeNoteRow(item)}
-          onUpdateFreeNote={(rowId, patch) =>
-            updateFreeNoteRow(item.id, rowId, patch)
-          }
-          onDeleteFreeNote={(rowId) => deleteFreeNoteRow(item.id, rowId)}
-          onUploadImageForObservation={handleUploadImageForObservation}
-          onDeleteObservationImage={handleDeleteObservationImage}
-          onAddControlFromCatalog={cp =>
-            addControlItemFromCatalog(item, mainRow, cp)
-          }
-          isInspectionLocked={isInspectionLocked}
-        />
+            {/* Fria noteringar + knapp för ytterligare kontrollpunkt */}
+            <FreeNotesSection
+              item={item}
+              rows={freeNoteRows}
+              imagesByObservationId={imagesByObservationId}
+              onAddFreeNote={() => addFreeNoteRow(item)}
+              onUpdateFreeNote={(rowId, patch) =>
+                updateFreeNoteRow(item.id, rowId, patch)
+              }
+              onDeleteFreeNote={(rowId) => deleteFreeNoteRow(item.id, rowId)}
+              onUploadImageForObservation={handleUploadImageForObservation}
+              onDeleteObservationImage={handleDeleteObservationImage}
+              onAddControlFromCatalog={cp =>
+                addControlItemFromCatalog(item, mainRow, cp)
+              }
+              isInspectionLocked={isInspectionLocked}
+            />
+          </>
+        ) : null}
       </section>
     )
   }
@@ -1970,7 +2032,7 @@ function ExteriorControlPointsSection({
                 <div className="space-y-2">
                   <div className="space-y-1">
                     <label className="text-[11px] text-gray-600">
-                      ?? Notering
+                      🧱 Notering
                     </label>
                     <textarea
                       rows={2}
@@ -2031,7 +2093,7 @@ function ExteriorControlPointsSection({
 
                         <div className="space-y-1">
                           <label className="text-[11px] text-gray-600">
-                            ?? Notering
+                            🧱 Notering
                           </label>
                           <textarea
                             rows={2}
@@ -2051,7 +2113,7 @@ function ExteriorControlPointsSection({
                             {riskText.length > 0 && (
                               <div className="rounded-lg border border-gray-200 bg-white p-3">
                                 <div className="text-xs font-semibold text-gray-700">
-                                  ?? Riskanalys
+                                  ⚠️ Riskanalys
                                 </div>
                                 <textarea
                                   rows={3}
@@ -2069,7 +2131,7 @@ function ExteriorControlPointsSection({
                             {ftuText.length > 0 && (
                               <div className="rounded-lg border border-gray-200 bg-white p-3">
                                 <div className="text-xs font-semibold text-gray-700">
-                                  ?? Fortsatt teknisk utredning (FTU)
+                                  🔍 Fortsatt teknisk utredning (FTU)
                                 </div>
                                 <textarea
                                   rows={3}
@@ -2145,6 +2207,9 @@ function FreeNotesSection({
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState<ControlPointLite[]>([])
   const [searching, setSearching] = useState(false)
+  const [collapsedFreeNoteIds, setCollapsedFreeNoteIds] = useState<Set<string>>(
+    () => new Set()
+  )
 
   const clearSearch = () => {
     setSearchTerm('')
@@ -2162,6 +2227,18 @@ function FreeNotesSection({
     if (mode === searchMode) return
     setSearchMode(mode)
     clearSearch()
+  }
+
+  const toggleFreeNoteCollapsed = (rowId: string) => {
+    setCollapsedFreeNoteIds(prev => {
+      const next = new Set(prev)
+      if (next.has(rowId)) {
+        next.delete(rowId)
+      } else {
+        next.add(rowId)
+      }
+      return next
+    })
   }
 
   const handleSearchChange = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -2279,17 +2356,18 @@ function FreeNotesSection({
     }
   }
 
+  const hasFreeNotes = rows.length > 0
+
   return (
     <section className="space-y-3">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h4 className="text-sm font-semibold text-gray-900">
-            Fria noteringar – {item.label}
-          </h4>
-          <span className="text-[11px] text-gray-500">
-            Noteringarna här gäller den valda komponenten.
-          </span>
-        </div>
+        {hasFreeNotes && (
+          <div>
+            <h4 className="text-sm font-semibold text-gray-900">
+              Fria noteringar – {item.label}
+            </h4>
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -2401,108 +2479,121 @@ function FreeNotesSection({
       )}
 
       {/* Lista fria noteringar */}
-      {rows.length === 0 && (
-        <p className="text-xs text-gray-500">
-          Inga fria noteringar ännu. Använd knappen ovan om du vill lägga till en separat rad med
-          rubrik/del och notering för denna komponent.
-        </p>
-      )}
-
-      {rows.length > 0 && (
+      {hasFreeNotes && (
         <div className="space-y-2">
-          {rows.map(row => (
-            <div
-              key={row.id}
-              className="rounded-lg border bg-gray-50 px-3 py-2 space-y-2"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex-1 space-y-1">
-                  <label className="text-[11px] text-gray-600">
-                    Del / rubrik (fri)
-                  </label>
-                  <input
-                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
-                    placeholder="t.ex. Uterum, altanräcke, stödmur…"
-                    value={row.part_label ?? ''}
-                    onChange={e =>
-                      row.id &&
-                      onUpdateFreeNote(row.id, { part_label: e.target.value })
-                    }
-                    readOnly={isInspectionLocked}
-                  />
+          {rows.map(row => {
+            const rowId = row.id ?? ''
+            const isCollapsed = rowId ? collapsedFreeNoteIds.has(rowId) : false
+
+            return (
+              <div
+                key={row.id}
+                className="rounded-lg border bg-gray-50 px-3 py-2 space-y-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex-1 space-y-1">
+                    <label className="text-[11px] text-gray-600">
+                      Del / rubrik (fri)
+                    </label>
+                    <input
+                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
+                      placeholder="t.ex. Uterum, altanräcke, stödmur…"
+                      value={row.part_label ?? ''}
+                      onChange={e =>
+                        row.id &&
+                        onUpdateFreeNote(row.id, { part_label: e.target.value })
+                      }
+                      readOnly={isInspectionLocked}
+                    />
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => rowId && toggleFreeNoteCollapsed(rowId)}
+                      className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                      aria-expanded={!isCollapsed}
+                      disabled={!rowId}
+                    >
+                      {isCollapsed ? 'Visa' : 'Dölj'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => row.id && onDeleteFreeNote(row.id)}
+                      className="text-[11px] text-red-600 hover:underline"
+                      disabled={isInspectionLocked}
+                    >
+                      Ta bort
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => row.id && onDeleteFreeNote(row.id)}
-                  className="text-[11px] text-red-600 hover:underline"
-                  disabled={isInspectionLocked}
-                >
-                  Ta bort
-                </button>
-              </div>
 
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-600">
-                  ?? Notering (fri text)
-                </label>
-                <textarea
-                  rows={2}
-                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
-                  placeholder="Beskrivning av observationen eller kompletterande upplysning…"
-                  value={row.note ?? ''}
-                  onChange={e =>
-                    row.id &&
-                    onUpdateFreeNote(row.id, { note: e.target.value })
-                  }
-                  readOnly={isInspectionLocked}
-                />
-              </div>
+                {!isCollapsed && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-gray-600">
+                        🧱 Notering (fri text)
+                      </label>
+                      <textarea
+                        rows={2}
+                        className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
+                        placeholder="Beskrivning av observationen eller kompletterande upplysning…"
+                        value={row.note ?? ''}
+                        onChange={e =>
+                          row.id &&
+                          onUpdateFreeNote(row.id, { note: e.target.value })
+                        }
+                        readOnly={isInspectionLocked}
+                      />
+                    </div>
 
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-600">
-                  ?? Riskanalys
-                </label>
-                <textarea
-                  rows={3}
-                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
-                  placeholder="Beskriv riskanalys..."
-                  value={row.risk_text ?? ''}
-                  onChange={e =>
-                    row.id &&
-                    onUpdateFreeNote(row.id, { risk_text: e.target.value })
-                  }
-                  readOnly={isInspectionLocked}
-                />
-              </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-gray-600">
+                        ⚠️ Riskanalys
+                      </label>
+                      <textarea
+                        rows={3}
+                        className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
+                        placeholder="Beskriv riskanalys..."
+                        value={row.risk_text ?? ''}
+                        onChange={e =>
+                          row.id &&
+                          onUpdateFreeNote(row.id, { risk_text: e.target.value })
+                        }
+                        readOnly={isInspectionLocked}
+                      />
+                    </div>
 
-              <div className="space-y-1">
-                <label className="text-[11px] text-gray-600">
-                  ?? Fortsatt teknisk utredning (FTU)
-                </label>
-                <textarea
-                  rows={3}
-                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
-                  placeholder="Beskriv fortsatt teknisk utredning..."
-                  value={row.ftu_text ?? ''}
-                  onChange={e =>
-                    row.id &&
-                    onUpdateFreeNote(row.id, { ftu_text: e.target.value })
-                  }
-                  readOnly={isInspectionLocked}
-                />
-              </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-gray-600">
+                        🔍 Fortsatt teknisk utredning (FTU)
+                      </label>
+                      <textarea
+                        rows={3}
+                        className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
+                        placeholder="Beskriv fortsatt teknisk utredning..."
+                        value={row.ftu_text ?? ''}
+                        onChange={e =>
+                          row.id &&
+                          onUpdateFreeNote(row.id, { ftu_text: e.target.value })
+                        }
+                        readOnly={isInspectionLocked}
+                      />
+                    </div>
 
-              {row.id && (
-                <ControlPointImagesSection
-                  images={imagesByObservationId[row.id] || []}
-                  onUpload={file => onUploadImageForObservation(row, file)}
-                  onDelete={onDeleteObservationImage}
-                  title="Bilder (fri notering)"
-                  disabled={isInspectionLocked}
-                />
-              )}
-            </div>
-          ))}
+                    {row.id && (
+                      <ControlPointImagesSection
+                        images={imagesByObservationId[row.id] || []}
+                        onUpload={file => onUploadImageForObservation(row, file)}
+                        onDelete={onDeleteObservationImage}
+                        title="Bilder (fri notering)"
+                        disabled={isInspectionLocked}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </section>
