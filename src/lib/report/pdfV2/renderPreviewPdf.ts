@@ -7,7 +7,7 @@ import puppeteer from 'puppeteer-core'
 const DEFAULT_TIMEOUT_MS = 60000
 const BROWSER_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
 const REPORT_TIMING_LOGS = process.env.REPORT_TIMING_LOGS !== '0'
-const REPORT_READY_TIMEOUT_MS = Number(process.env.REPORT_READY_TIMEOUT_MS ?? 20000)
+const REPORT_READY_TIMEOUT_MS = Number(process.env.REPORT_READY_TIMEOUT_MS ?? 45000)
 const NETWORK_IDLE_TIMEOUT_MS = Number(process.env.REPORT_NETWORK_IDLE_TIMEOUT_MS ?? 12000)
 const BROWSER_LAUNCH_TIMEOUT_MS = Number(process.env.PUPPETEER_LAUNCH_TIMEOUT_MS ?? 25000)
 const BROWSER_RESOLVE_TIMEOUT_MS = Number(process.env.PUPPETEER_CHROME_RESOLVE_TIMEOUT_MS ?? 30000)
@@ -258,8 +258,12 @@ export async function renderPreviewPdf(params: {
 
       await page.evaluateHandle('document.fonts.ready')
       mark('fonts_ready')
-      await page.waitForFunction(isReportReady, { timeout: REPORT_READY_TIMEOUT_MS })
-      mark('report_ready')
+      const reportReadyTimeoutMs = Math.min(
+        REPORT_READY_TIMEOUT_MS,
+        Math.max(5000, timeoutMs - 5000)
+      )
+      await page.waitForFunction(isReportReady, { timeout: reportReadyTimeoutMs })
+      mark('report_ready', { timeoutMs: reportReadyTimeoutMs })
 
       const pdf = await page.pdf({
         format: 'A4',

@@ -188,7 +188,7 @@ export default async function Page({
   const floorLabelFromKey = (value: string) => {
     const key = normalizeKey(value)
     if (key === 'k\u00e4llare') return 'K\u00e4llare'
-    if (key === 'k\u00e4llare_delvis') return 'K\u00e4llare (delvis)'
+    if (key === 'k\u00e4llare_delvis') return 'K\u00e4llare'
     if (key === 'entr\u00e9plan' || key === 'plan1') return 'Plan 1'
     if (key === 'plan2') return 'Plan 2'
     if (key === 'plan3') return 'Plan 3'

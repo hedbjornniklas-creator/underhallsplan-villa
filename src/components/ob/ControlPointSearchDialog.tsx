@@ -40,7 +40,7 @@ type ControlPointSearchDialogProps<T extends ControlPointSearchResult> = {
   aiPlaceholder?: string
   showAiMode?: boolean
   aiSearchHasRun?: boolean
-  onRunAiSearch?: () => void
+  onRunAiSearch?: () => void | Promise<void>
   scopeLabelForResult: (result: T) => string
   onSearchModeChange: (mode: ControlPointSearchMode) => void
   onSearchChange: (event: ChangeEvent<HTMLInputElement>) => void
@@ -248,6 +248,13 @@ export default function ControlPointSearchDialog<T extends ControlPointSearchRes
 }: ControlPointSearchDialogProps<T>) {
   const inputRef = useRef<HTMLInputElement | null>(null)
 
+  const handleRunAiSearch = () => {
+    if (!onRunAiSearch) return
+    void Promise.resolve(onRunAiSearch()).finally(() => {
+      inputRef.current?.blur()
+    })
+  }
+
   useEffect(() => {
     if (!open) return
     const previousOverflow = document.body.style.overflow
@@ -352,7 +359,7 @@ export default function ControlPointSearchDialog<T extends ControlPointSearchRes
             {searchMode === 'ai' && onRunAiSearch && (
               <button
                 type="button"
-                onClick={onRunAiSearch}
+                onClick={handleRunAiSearch}
                 disabled={disabled || searching || searchTerm.trim().length < 2}
                 className="rounded-xl bg-gray-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
               >

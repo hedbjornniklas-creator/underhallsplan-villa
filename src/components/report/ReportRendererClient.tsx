@@ -30,6 +30,7 @@ type ReportRendererClientProps = {
 const PHOTO_POLICY = {
   maxLongSidePx: 1600,
   quality: 0.7,
+  loadTimeoutMs: 12000,
 }
 
 const TRANSPARENT_PIXEL =
@@ -46,6 +47,44 @@ const toProxyUrl = (src: string) => {
   if (src.startsWith('/')) return src
   if (typeof window !== 'undefined' && src.startsWith(window.location.origin)) return src
   return `/api/image-proxy?url=${encodeURIComponent(src)}`
+}
+
+const createTimeoutError = () => new Error('REPORT_IMAGE_TIMEOUT')
+
+const withClientTimeout = async <T,>(
+  promise: Promise<T>,
+  timeoutMs: number
+): Promise<T> => {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => reject(createTimeoutError()), timeoutMs)
+  })
+
+  try {
+    return await Promise.race([promise, timeoutPromise])
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle)
+  }
+}
+
+const fetchImageWithTimeout = async (url: string) => {
+  const controller = new AbortController()
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = setTimeout(
+    () => controller.abort(),
+    PHOTO_POLICY.loadTimeoutMs
+  )
+  try {
+    return await fetch(url, {
+      mode: 'cors',
+      credentials: 'omit',
+      signal: controller.signal,
+    })
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle)
+      timeoutHandle = null
+    }
+  }
 }
 
 const resizeImage = async (src: string): Promise<string> => {
@@ -78,10 +117,13 @@ const resizeImage = async (src: string): Promise<string> => {
 
   try {
     const fetchSrc = toProxyUrl(src)
-    const response = await fetch(fetchSrc, { mode: 'cors', credentials: 'omit' })
+    const response = await fetchImageWithTimeout(fetchSrc)
     if (response.ok) {
       const blob = await response.blob()
-      const bitmap = await createImageBitmap(blob)
+      const bitmap = await withClientTimeout(
+        createImageBitmap(blob),
+        PHOTO_POLICY.loadTimeoutMs
+      )
       const dataUrl = renderToCanvas(bitmap.width, bitmap.height, (ctx) => {
         ctx.drawImage(bitmap, 0, 0, ctx.canvas.width, ctx.canvas.height)
       })
@@ -94,25 +136,39 @@ const resizeImage = async (src: string): Promise<string> => {
 
   return new Promise((resolve) => {
     const img = new Image()
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+    const finish = (value: string) => {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle)
+        timeoutHandle = null
+      }
+      img.onload = null
+      img.onerror = null
+      resolve(value)
+    }
     img.crossOrigin = 'anonymous'
     img.onload = () => {
       const width = img.naturalWidth || img.width
       const height = img.naturalHeight || img.height
       if (!width || !height) {
-        resolve(src)
+        finish(TRANSPARENT_PIXEL)
         return
       }
       try {
-        resolve(
+        finish(
           renderToCanvas(width, height, (ctx) => {
             ctx.drawImage(img, 0, 0, ctx.canvas.width, ctx.canvas.height)
           })
         )
       } catch {
-        resolve(src)
+        finish(TRANSPARENT_PIXEL)
       }
     }
-    img.onerror = () => resolve(src)
+    img.onerror = () => finish(TRANSPARENT_PIXEL)
+    timeoutHandle = setTimeout(
+      () => finish(TRANSPARENT_PIXEL),
+      PHOTO_POLICY.loadTimeoutMs
+    )
     img.src = toProxyUrl(src)
   })
 }

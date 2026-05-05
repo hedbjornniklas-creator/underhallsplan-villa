@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 
+const IMAGE_PROXY_TIMEOUT_MS = Number(process.env.IMAGE_PROXY_TIMEOUT_MS ?? 12000)
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const url = searchParams.get('url')
@@ -8,7 +10,14 @@ export async function GET(request: Request) {
   }
 
   try {
-    const response = await fetch(url, { cache: 'force-cache' })
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), IMAGE_PROXY_TIMEOUT_MS)
+    const response = await fetch(url, {
+      cache: 'force-cache',
+      signal: controller.signal,
+    }).finally(() => {
+      clearTimeout(timeout)
+    })
     if (!response.ok) {
       return new NextResponse('Image fetch failed', { status: response.status })
     }
@@ -24,7 +33,10 @@ export async function GET(request: Request) {
         'Access-Control-Allow-Origin': '*',
       },
     })
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return new NextResponse('Image fetch timeout', { status: 504 })
+    }
     return new NextResponse('Image fetch error', { status: 500 })
   }
 }
