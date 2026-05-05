@@ -473,9 +473,6 @@ export default function ObWizard({
     : ''
   const newTabHref = reportHref
   const autoPrintHref = hasValidIds ? `${reportHref}?autoprint=1` : ''
-  const pdfV2Href = hasValidIds
-    ? `/utlatande-v2/${propertyId}/${inspectionId}`
-    : ''
   const iframeSrc = hasValidIds ? `${reportHref}?embed=1` : ''
   const reportDeliveryPreviewHref = iframeSrc
 
@@ -507,14 +504,6 @@ export default function ObWizard({
                     className="inline-flex items-center rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-black"
                   >
                     Skriv ut
-                  </Link>
-                  <Link
-                    href={pdfV2Href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-100"
-                  >
-                    PDF V.2
                   </Link>
                 </div>
 
