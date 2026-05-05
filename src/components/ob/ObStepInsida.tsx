@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import DebouncedTextarea from './DebouncedTextarea'
 import ControlPointSearchDialog, {
   type ControlPointSearchMode,
+  type ControlPointSearchResult,
 } from './ControlPointSearchDialog'
 
 type Inspection = {
@@ -72,7 +73,7 @@ type InspectionControlItem = {
   selected_outcome_id: string | null
 }
 
-type ControlPointLite = {
+type ControlPointLite = ControlPointSearchResult & {
   id: string
   key: string
   title: string
