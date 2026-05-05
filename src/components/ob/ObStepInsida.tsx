@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, ChangeEvent, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import DebouncedTextarea from './DebouncedTextarea'
+import ControlPointSearchDialog from './ControlPointSearchDialog'
 
 type Inspection = {
   id: string
@@ -75,6 +76,8 @@ type ControlPointLite = {
   title: string
   label: string | null
   description: string | null
+  scope?: string | null
+  exterior_item_key?: string | null
   tags: unknown
   trigger_room_types?: unknown
   applies_to?: unknown
@@ -2406,6 +2409,11 @@ function RoomControlPointsSection({
     if (!next) clearSearch()
   }
 
+  const handleCloseSearch = () => {
+    setShowSearch(false)
+    clearSearch()
+  }
+
   const handleSearchModeChange = (mode: SearchMode) => {
     if (mode === searchMode) return
     setSearchMode(mode)
@@ -2428,8 +2436,7 @@ function RoomControlPointsSection({
       if (searchMode === 'control_points') {
         const { data, error } = await supabase
           .from('settings_control_points')
-          .select('id, key, title, label, description, tags, trigger_room_types, applies_to')
-          .eq('scope', 'interior')
+          .select('id, key, title, label, description, scope, exterior_item_key, tags, trigger_room_types, applies_to')
           .eq('is_active', true)
           .or(
             `title.ilike.${like},label.ilike.${like},key.ilike.${like},description.ilike.${like}`
@@ -2483,8 +2490,7 @@ function RoomControlPointsSection({
 
       const { data: controlPointsData, error: controlPointsError } = await supabase
         .from('settings_control_points')
-        .select('id, key, title, label, description, tags, trigger_room_types, applies_to')
-        .eq('scope', 'interior')
+        .select('id, key, title, label, description, scope, exterior_item_key, tags, trigger_room_types, applies_to')
         .eq('is_active', true)
         .in('id', controlPointIds)
 
@@ -2527,96 +2533,36 @@ function RoomControlPointsSection({
     }
   }
 
+  const controlPointScopeLabel = (cp: ControlPointLite) => {
+    if (cp.scope === 'exterior') {
+      return cp.exterior_item_key ? `Utsida - ${cp.exterior_item_key}` : 'Utsida'
+    }
+    if (cp.scope === 'interior') return 'Insida'
+    return cp.scope || 'Kontrollpunkt'
+  }
+
   return (
     <section className="space-y-3 border-t pt-3">
-      {showSearch && (
-        <div className="space-y-2">
-          <label className="text-xs font-medium text-gray-700">
-            Lägg till kontrollpunkt i {roomDisplayLabel}
-          </label>
-          <div className="inline-flex rounded-md border border-gray-300 bg-white p-0.5">
-            <button
-              type="button"
-              onClick={() => handleSearchModeChange('control_points')}
-              className={
-                'rounded px-2.5 py-1 text-xs md:text-[11px] font-medium ' +
-                (searchMode === 'control_points'
-                  ? 'bg-gray-900 text-white'
-                  : 'text-gray-700 hover:bg-gray-100')
-              }
-            >
-              Kontrollpunkter
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSearchModeChange('chips')}
-              className={
-                'rounded px-2.5 py-1 text-xs md:text-[11px] font-medium ' +
-                (searchMode === 'chips'
-                  ? 'bg-gray-900 text-white'
-                  : 'text-gray-700 hover:bg-gray-100')
-              }
-            >
-              Chips
-            </button>
-          </div>
-          <input
-            className="w-full rounded-md border px-2 py-1.5 text-sm"
-            placeholder={
-              searchMode === 'chips'
-                ? 'Sök chip, t.ex. spricka, fukt, missfärgning…'
-                : 'Sök t.ex. golvbrunn, kyl, trinett…'
-            }
-            value={searchTerm}
-            onChange={handleSearchChange}
-            readOnly={isInspectionLocked}
-          />
-
-          {searching && (
-            <div className="text-xs md:text-[11px] text-gray-600">Söker…</div>
-          )}
-
-          {!searching && searchTerm.trim().length >= 2 && (
-            <div className="max-h-40 overflow-auto rounded-md border bg-white">
-              {searchResults.length === 0 ? (
-                <div className="px-3 py-2 text-xs text-gray-600">
-                  {searchMode === 'chips' ? 'Inga chips' : 'Inga kontrollpunkter'} hittades för
-                  {' '}“{searchTerm.trim()}”.
-                </div>
-              ) : (
-                searchResults.map(cp => (
-                  <button
-                    key={cp.id}
-                    type="button"
-                    onClick={() => {
-                      onAddFromCatalog(room, cp)
-                      setSearchTerm('')
-                      setSearchResults([])
-                      setShowSearch(false)
-                    }}
-                    className="flex w-full flex-col items-start px-3 py-2 text-left text-xs hover:bg-gray-50"
-                    disabled={isInspectionLocked}
-                  >
-                    <span className="font-medium text-gray-900">
-                      {cp.title || cp.label || cp.key}
-                    </span>
-                    {cp.description && (
-                      <span className="text-xs md:text-[11px] text-gray-600 line-clamp-2">
-                        {cp.description}
-                      </span>
-                    )}
-                    {cp.search_hint && (
-                      <span className="text-xs md:text-[11px] text-gray-600">
-                        {cp.search_hint}
-                      </span>
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-      )}
+      <ControlPointSearchDialog
+        open={showSearch}
+        title="Lägg till kontrollpunkt"
+        contextLabel={roomDisplayLabel}
+        searchMode={searchMode}
+        searchTerm={searchTerm}
+        searchResults={searchResults}
+        searching={searching}
+        disabled={isInspectionLocked}
+        controlPointPlaceholder="Sök t.ex. golvbrunn, kyl, trinett..."
+        chipPlaceholder="Sök chip, t.ex. spricka, fukt, missfärgning..."
+        scopeLabelForResult={controlPointScopeLabel}
+        onSearchModeChange={handleSearchModeChange}
+        onSearchChange={handleSearchChange}
+        onSelect={cp => {
+          onAddFromCatalog(room, cp)
+          handleCloseSearch()
+        }}
+        onClose={handleCloseSearch}
+      />
 
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
