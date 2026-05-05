@@ -814,24 +814,6 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     }
   }
 
-  const addFreeNoteRow = async (item: ItemBundle) => {
-    if (isInspectionLocked) return
-    const rows = getItemRows(item.id)
-    const newRow: InspectionExteriorObservation = {
-      inspection_id: inspection.id,
-      exterior_item_id: item.id,
-      part_label: '',
-      values: { _free_note: true },
-      is_free_note: true,
-      note: '',
-      risk_text: null,
-      ftu_text: null,
-    }
-
-    const saved = await upsertObservationRow(newRow)
-    setItemRows(item.id, [...rows, saved])
-  }
-
   const updateFreeNoteRow = async (
     itemId: string,
     rowId: string,
@@ -1542,7 +1524,6 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               collapsedStorageKey={`${collapsedStorageKey}:free-notes:${item.id}`}
               rows={freeNoteRows}
               imagesByObservationId={imagesByObservationId}
-              onAddFreeNote={() => addFreeNoteRow(item)}
               onAddNewFreeNote={() => addFreeNoteControlItem(mainRow)}
               onUpdateFreeNote={(rowId, patch) =>
                 updateFreeNoteRow(item.id, rowId, patch)
@@ -1802,6 +1783,7 @@ function ExteriorControlPointsSection({
     () => new Set()
   )
   const hasLoadedCollapsedGroupsRef = useRef(false)
+  const hasLoadedCollapsedFreeNotesRef = useRef(false)
 
   useEffect(() => {
     hasLoadedCollapsedGroupsRef.current = false
@@ -1838,6 +1820,42 @@ function ExteriorControlPointsSection({
       console.warn('Kunde inte spara dolda kontrollpunkter för utsida:', e)
     }
   }, [collapsedGroupIds, collapsedStorageKey])
+
+  useEffect(() => {
+    hasLoadedCollapsedFreeNotesRef.current = false
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(`${collapsedStorageKey}:free-control-notes`)
+      if (!raw) {
+        setCollapsedFreeNoteIds(new Set())
+        hasLoadedCollapsedFreeNotesRef.current = true
+        return
+      }
+      const parsed = JSON.parse(raw)
+      setCollapsedFreeNoteIds(
+        Array.isArray(parsed)
+          ? new Set(parsed.filter((value): value is string => typeof value === 'string'))
+          : new Set()
+      )
+    } catch (e) {
+      console.warn('Kunde inte läsa dolda fria kontrollpunkter för utsida:', e)
+      setCollapsedFreeNoteIds(new Set())
+    } finally {
+      hasLoadedCollapsedFreeNotesRef.current = true
+    }
+  }, [collapsedStorageKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !hasLoadedCollapsedFreeNotesRef.current) return
+    try {
+      window.localStorage.setItem(
+        `${collapsedStorageKey}:free-control-notes`,
+        JSON.stringify(Array.from(collapsedFreeNoteIds.values()))
+      )
+    } catch (e) {
+      console.warn('Kunde inte spara dolda fria kontrollpunkter för utsida:', e)
+    }
+  }, [collapsedFreeNoteIds, collapsedStorageKey])
 
   const expandOkGroup = (groupId: string) => {
     setExpandedOkGroupIds(prev => {
@@ -2364,7 +2382,6 @@ type FreeNotesSectionProps = {
   rows: InspectionExteriorObservation[]
   imagesByObservationId: Record<string, InspectionImage[]>
   isInspectionLocked: boolean
-  onAddFreeNote: () => void
   onAddNewFreeNote: () => void
   onUpdateFreeNote: (
     rowId: string,
@@ -2385,7 +2402,6 @@ function FreeNotesSection({
   rows,
   imagesByObservationId,
   isInspectionLocked,
-  onAddFreeNote,
   onAddNewFreeNote,
   onUpdateFreeNote,
   onDeleteFreeNote,
@@ -2604,14 +2620,6 @@ function FreeNotesSection({
             disabled={isInspectionLocked}
           >
             + Lägg till fri notering
-          </button>
-          <button
-            type="button"
-            onClick={onAddFreeNote}
-            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50"
-            disabled={isInspectionLocked}
-          >
-            + Äldre fri notering
           </button>
           <button
             type="button"
