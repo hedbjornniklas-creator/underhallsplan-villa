@@ -157,6 +157,28 @@ export default async function Page({
     return key === 'ovrigt' || key === '\u00f6vrigt'
   }
 
+  const normalizeInteriorFloorKey = (value: string | null | undefined) => {
+    const key = normalizeKey(value)
+    if (key === 'entr\u00e9plan') return 'plan1'
+    return key
+  }
+
+  const getInteriorFloorRank = (value: string | null | undefined) => {
+    const key = normalizeInteriorFloorKey(value)
+    if (key === 'ovrigt' || key === '\u00f6vrigt') return 0
+    if (key === 'k\u00e4llare') return 10
+    if (key === 'k\u00e4llare_delvis') return 20
+    if (key === 'plan1') return 30
+    if (key === 'plan2') return 40
+    if (key === 'plan3') return 50
+    if (key === 'vind' || key.includes('vind')) return 900
+    if (key.startsWith('plan')) {
+      const floorNumber = Number(key.replace('plan', ''))
+      if (Number.isFinite(floorNumber)) return 20 + floorNumber * 10
+    }
+    return 800
+  }
+
   const floorLabelFromKey = (value: string) => {
     const key = normalizeKey(value)
     if (key === 'k\u00e4llare') return 'K\u00e4llare'
@@ -943,14 +965,6 @@ export default async function Page({
   }
 
   const interiorRoomRows = (interiorRooms ?? []) as InteriorRoomRow[]
-  const FLOOR_ORDER = ['k\u00e4llare', 'k\u00e4llare_delvis', 'entr\u00e9plan', 'plan2', 'plan3']
-
-  const getFloorRank = (floor: string) => {
-    if (floor === 'vind') return 900
-    const index = FLOOR_ORDER.indexOf(floor)
-    if (index >= 0) return index
-    return 100 + floor.localeCompare('')
-  }
 
   const sortedInteriorRooms = [...interiorRoomRows].sort((a, b) => {
     const aIsOther = isOtherKey(a.room_type_key)
@@ -958,15 +972,18 @@ export default async function Page({
     if (aIsOther && !bIsOther) return -1
     if (!aIsOther && bIsOther) return 1
 
-    const aRank = getFloorRank(a.floor_label)
-    const bRank = getFloorRank(b.floor_label)
+    const aRank = getInteriorFloorRank(a.floor_label)
+    const bRank = getInteriorFloorRank(b.floor_label)
     if (aRank !== bRank) return aRank - bRank
 
     const aOrder = a.order_index ?? 0
     const bOrder = b.order_index ?? 0
     if (aOrder !== bOrder) return aOrder - bOrder
 
-    return (a.room_label ?? '').localeCompare(b.room_label ?? '')
+    return normalizeSwedish(a.room_label ?? '').localeCompare(
+      normalizeSwedish(b.room_label ?? ''),
+      'sv'
+    )
   })
   const interiorRoomIds = sortedInteriorRooms.map((room) => room.id)
 
