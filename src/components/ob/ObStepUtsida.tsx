@@ -73,7 +73,7 @@ type InspectionControlItem = {
   id?: string
   inspection_id: string
   exterior_observation_id: string
-  control_point_id: string
+  control_point_id: string | null
   title: string
   status: string | null
   note: string | null
@@ -940,6 +940,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           .insert({
             inspection_id: item.inspection_id,
             exterior_observation_id: item.exterior_observation_id,
+            interior_room_id: null,
             control_point_id: item.control_point_id,
             title: item.title,
             status: item.status,
@@ -1077,6 +1078,38 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
 
     const saved = await upsertControlItem(newItem)
     setControlItems(prev => [...prev, saved])
+  }
+
+  const addFreeNoteControlItem = async (
+    row: InspectionExteriorObservation
+  ) => {
+    if (isInspectionLocked) return
+    if (!row.id) return
+
+    const existingForRow = controlItems.filter(
+      ci => ci.exterior_observation_id === row.id
+    )
+    const sortOrder =
+      existingForRow.length > 0
+        ? Math.min(...existingForRow.map(ci => ci.sort_order || 0)) - 10
+        : 10
+
+    const newItem: InspectionControlItem = {
+      inspection_id: inspection.id,
+      exterior_observation_id: row.id,
+      control_point_id: null,
+      title: 'Fri notering',
+      status: RED_STATUS,
+      note: '',
+      risk_text: null,
+      ftu_text: null,
+      sort_order: sortOrder,
+      selected_outcome_id: null,
+    }
+
+    const saved = await upsertControlItem(newItem)
+    if (!saved.id) return
+    setControlItems(prev => [saved, ...prev])
   }
 
   const addOutcomeControlItem = async (
@@ -1510,6 +1543,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               rows={freeNoteRows}
               imagesByObservationId={imagesByObservationId}
               onAddFreeNote={() => addFreeNoteRow(item)}
+              onAddNewFreeNote={() => addFreeNoteControlItem(mainRow)}
               onUpdateFreeNote={(rowId, patch) =>
                 updateFreeNoteRow(item.id, rowId, patch)
               }
@@ -1751,10 +1785,20 @@ function ExteriorControlPointsSection({
       items: list.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
     }))
   }, [items])
+  const freeNoteItems = useMemo(
+    () =>
+      items
+        .filter(ci => ci.control_point_id === null)
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
+    [items]
+  )
   const [expandedOkGroupIds, setExpandedOkGroupIds] = useState<Set<string>>(
     () => new Set()
   )
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
+    () => new Set()
+  )
+  const [collapsedFreeNoteIds, setCollapsedFreeNoteIds] = useState<Set<string>>(
     () => new Set()
   )
   const hasLoadedCollapsedGroupsRef = useRef(false)
@@ -1829,6 +1873,18 @@ function ExteriorControlPointsSection({
     })
   }
 
+  const toggleFreeNoteCollapsed = (itemId: string) => {
+    setCollapsedFreeNoteIds(prev => {
+      const next = new Set(prev)
+      if (next.has(itemId)) {
+        next.delete(itemId)
+      } else {
+        next.add(itemId)
+      }
+      return next
+    })
+  }
+
   return (
     <section className="space-y-3">
       <header className="flex items-center justify-between">
@@ -1841,11 +1897,113 @@ function ExteriorControlPointsSection({
       </header>
 
       <div className="space-y-2">
-        {items.length === 0 && (
+        {groupedItems.length === 0 && freeNoteItems.length === 0 && (
           <div className="text-xs text-gray-500">
             Inga kontrollpunkter ännu. Lägg till via knappen Lägg till ytterligare kontrollpunkt.
           </div>
         )}
+
+        {freeNoteItems.map(ci => {
+          const ciId = ci.id ?? ''
+          const ciImages = ciId ? imagesByControlItemId[ciId] || [] : []
+          const isCollapsed = ciId ? collapsedFreeNoteIds.has(ciId) : false
+
+          return (
+            <div
+              key={ci.id}
+              className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 space-y-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-semibold text-gray-900">
+                  {ci.title || 'Fri notering'}
+                </div>
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => ciId && toggleFreeNoteCollapsed(ciId)}
+                    className="text-[11px] text-gray-700 hover:underline"
+                    aria-expanded={!isCollapsed}
+                    disabled={!ciId}
+                  >
+                    {isCollapsed ? 'Visa' : 'Dölj'}
+                  </button>
+                  {ci.id && (
+                    <button
+                      type="button"
+                      onClick={() => onDeleteItem(ci.id!)}
+                      className="text-[11px] text-rose-600 hover:underline"
+                      disabled={isInspectionLocked}
+                    >
+                      Ta bort
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {!isCollapsed && (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-gray-600">
+                      Notering
+                    </label>
+                    <DebouncedTextarea
+                      rows={2}
+                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
+                      placeholder={`Fri notering för ${item.label.toLowerCase()}...`}
+                      value={ci.note ?? ''}
+                      onSave={value => {
+                        if (ci.id) onUpdateItem(ci.id, { note: value })
+                      }}
+                      readOnly={isInspectionLocked}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-gray-600">
+                      Riskanalys
+                    </label>
+                    <DebouncedTextarea
+                      rows={3}
+                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
+                      placeholder="Beskriv riskanalys..."
+                      value={ci.risk_text ?? ''}
+                      onSave={value => {
+                        if (ci.id) onUpdateItem(ci.id, { risk_text: value })
+                      }}
+                      readOnly={isInspectionLocked}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-gray-600">
+                      Fortsatt teknisk utredning (FTU)
+                    </label>
+                    <DebouncedTextarea
+                      rows={3}
+                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
+                      placeholder="Beskriv fortsatt teknisk utredning..."
+                      value={ci.ftu_text ?? ''}
+                      onSave={value => {
+                        if (ci.id) onUpdateItem(ci.id, { ftu_text: value })
+                      }}
+                      readOnly={isInspectionLocked}
+                    />
+                  </div>
+
+                  {ci.id && (
+                    <ControlPointImagesSection
+                      images={ciImages}
+                      onUpload={file => onUploadImageForControlItem(ci, file)}
+                      onDelete={onDeleteControlItemImage}
+                      title="Bilder (fri notering)"
+                      disabled={isInspectionLocked}
+                    />
+                  )}
+                </>
+              )}
+            </div>
+          )
+        })}
 
         {groupedItems.map(group => {
           const groupId = group.controlPointId
@@ -2207,6 +2365,7 @@ type FreeNotesSectionProps = {
   imagesByObservationId: Record<string, InspectionImage[]>
   isInspectionLocked: boolean
   onAddFreeNote: () => void
+  onAddNewFreeNote: () => void
   onUpdateFreeNote: (
     rowId: string,
     patch: Partial<InspectionExteriorObservation>
@@ -2227,6 +2386,7 @@ function FreeNotesSection({
   imagesByObservationId,
   isInspectionLocked,
   onAddFreeNote,
+  onAddNewFreeNote,
   onUpdateFreeNote,
   onDeleteFreeNote,
   onUploadImageForObservation,
@@ -2439,11 +2599,19 @@ function FreeNotesSection({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={onAddFreeNote}
+            onClick={onAddNewFreeNote}
             className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
             disabled={isInspectionLocked}
           >
             + Lägg till fri notering
+          </button>
+          <button
+            type="button"
+            onClick={onAddFreeNote}
+            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50"
+            disabled={isInspectionLocked}
+          >
+            + Äldre fri notering
           </button>
           <button
             type="button"

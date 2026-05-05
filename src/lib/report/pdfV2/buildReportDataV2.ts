@@ -1070,6 +1070,7 @@ const supabase: any = createSupabaseServerClient()
         ? outcomeById.get(controlItem.selected_outcome_id) ?? null
         : null
       const hasOutcome = Boolean(controlItem.selected_outcome_id)
+      const isFreeControlItem = controlItem.control_point_id === null
 
       const controlItemImages =
         controlItem.id ? imagesByControlItemId.get(controlItem.id) ?? [] : []
@@ -1078,13 +1079,40 @@ const supabase: any = createSupabaseServerClient()
         .filter((url): url is string => Boolean(url))
 
       const riskText = trimText(controlItem.risk_text ?? outcome?.risk_template ?? '')
+      const ftuText = trimText(controlItem.ftu_text ?? outcome?.ftu_template ?? '')
+
+      if (isFreeControlItem) {
+        if (!note && riskText.length === 0 && ftuText.length === 0) return
+        if (riskText.length > 0) {
+          riskLines.push(item.label)
+          riskLines.push(riskText)
+          riskLines.push('')
+        }
+        if (ftuText.length > 0) {
+          ftuLines.push(item.label)
+          ftuLines.push(ftuText)
+          ftuLines.push('')
+        }
+
+        const line = note || '--'
+        itemLines.push(line)
+        blocksForItem.push({
+          title: item.label,
+          noteText: line,
+          riskText,
+          ftuText,
+          photoUrls,
+          hasDeviations: true,
+        })
+        return
+      }
+
       if (riskText.length > 0) {
         riskLines.push(item.label)
         riskLines.push(riskText)
         riskLines.push('')
       }
 
-      const ftuText = trimText(controlItem.ftu_text ?? outcome?.ftu_template ?? '')
       if (ftuText.length > 0) {
         ftuLines.push(item.label)
         ftuLines.push(ftuText)

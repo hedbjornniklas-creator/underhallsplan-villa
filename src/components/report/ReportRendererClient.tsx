@@ -265,6 +265,120 @@ type PagePlan =
       pageNumber: number
     }
 
+type ReportIconName = 'note' | 'risk' | 'ftu' | 'photo'
+
+function ReportIcon({ name }: { name: ReportIconName }) {
+  const baseStyle: CSSProperties = {
+    width: '13px',
+    height: '13px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: '0 0 13px',
+    position: 'relative',
+  }
+
+  if (name === 'note') {
+    return (
+      <span style={baseStyle} aria-hidden="true">
+        <span
+          style={{
+            width: '11px',
+            height: '12px',
+            border: '1.5px solid #5b9bd5',
+            borderRadius: '2px',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            gap: '2px',
+            padding: '2px',
+          }}
+        >
+          <span style={{ height: '1px', backgroundColor: '#5b9bd5' }} />
+          <span style={{ height: '1px', backgroundColor: '#5b9bd5' }} />
+          <span style={{ height: '1px', width: '70%', backgroundColor: '#5b9bd5' }} />
+        </span>
+      </span>
+    )
+  }
+
+  if (name === 'risk') {
+    return (
+      <span
+        style={{
+          ...baseStyle,
+          borderRadius: '999px',
+          border: '1.5px solid #b45309',
+          color: '#b45309',
+          fontSize: '10px',
+          fontWeight: 700,
+          lineHeight: 1,
+        }}
+        aria-hidden="true"
+      >
+        !
+      </span>
+    )
+  }
+
+  if (name === 'ftu') {
+    return (
+      <span style={baseStyle} aria-hidden="true">
+        <span
+          style={{
+            width: '8px',
+            height: '8px',
+            border: '1.7px solid #374151',
+            borderRadius: '999px',
+            position: 'absolute',
+            left: '1px',
+            top: '1px',
+          }}
+        />
+        <span
+          style={{
+            width: '6px',
+            height: '1.7px',
+            backgroundColor: '#374151',
+            position: 'absolute',
+            right: '0px',
+            bottom: '1px',
+            transform: 'rotate(45deg)',
+            transformOrigin: 'center',
+            borderRadius: '999px',
+          }}
+        />
+      </span>
+    )
+  }
+
+  return (
+    <span style={baseStyle} aria-hidden="true">
+      <span
+        style={{
+          width: '12px',
+          height: '9px',
+          border: '1.5px solid #374151',
+          borderRadius: '2px',
+          position: 'relative',
+        }}
+      >
+        <span
+          style={{
+            width: '4px',
+            height: '4px',
+            border: '1.2px solid #374151',
+            borderRadius: '999px',
+            position: 'absolute',
+            left: '3px',
+            top: '2px',
+          }}
+        />
+      </span>
+    </span>
+  )
+}
+
 const mmToPxNumber = (mm: number) => (mm * 96) / 25.4
 
 function getMockValue(data: Record<string, unknown>, path: string): string {
@@ -1024,8 +1138,8 @@ export default function ReportRendererClient({
       <>
         <section className="ob-section ob-section--note">
           <div className="ob-section__head grid grid-cols-[auto_auto_1fr] items-baseline gap-x-2">
-            <span className="ob-icon ob-icon--note self-start mt-[1px]" aria-hidden="true">
-              {'\u{1F9F1}'}
+            <span className="ob-icon ob-icon--note self-start mt-[3px]" aria-hidden="true">
+              <ReportIcon name="note" />
             </span>
             <span className="ob-section__label text-sm font-bold tracking-wide uppercase leading-relaxed text-gray-900">
               NOTERING
@@ -1037,7 +1151,7 @@ export default function ReportRendererClient({
           {photoUrls.length > 0 && (
             <div className="mt-2 space-y-2">
               <div className="flex items-center gap-1.5 text-xs text-gray-700">
-                <span aria-hidden="true">{'\u{1F4F7}'}</span>
+                <ReportIcon name="photo" />
                 <span>Bilder</span>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1073,7 +1187,7 @@ export default function ReportRendererClient({
           <div className="mt-4 rounded-md border border-gray-200 bg-white p-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-gray-700">
               <span className="ob-icon ob-icon--risk" aria-hidden="true">
-                {'\u26A0\uFE0F'}
+                <ReportIcon name="risk" />
               </span>
               <span>Riskanalys</span>
             </div>
@@ -1087,7 +1201,7 @@ export default function ReportRendererClient({
           <div className="mt-4 rounded-md border border-gray-200 bg-white p-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-gray-700">
               <span className="ob-icon ob-icon--ftu" aria-hidden="true">
-                {'\u{1F50D}'}
+                <ReportIcon name="ftu" />
               </span>
               <span>Fortsatt teknisk utredning</span>
             </div>
@@ -1149,7 +1263,7 @@ export default function ReportRendererClient({
         >
           <div className="flex gap-2">
             <span className="ob-icon ob-icon--risk" aria-hidden="true">
-              {'\u26A0\uFE0F'}
+              <ReportIcon name="risk" />
             </span>
             <div className="text-sm text-gray-900 whitespace-pre-line">
               <div className="font-semibold">{block.title}</div>
@@ -1170,7 +1284,7 @@ export default function ReportRendererClient({
         >
           <div className="flex gap-2">
             <span className="ob-icon ob-icon--ftu" aria-hidden="true">
-              {'\u{1F50D}'}
+              <ReportIcon name="ftu" />
             </span>
             <div className="text-sm text-gray-900 whitespace-pre-line">
               <div className="font-semibold">{block.title}</div>

@@ -1,4 +1,5 @@
 ﻿import Link from 'next/link'
+import type { CSSProperties } from 'react'
 import type { ReportSnapshotPayloadV1 } from '@/lib/report/pdfV2/renderStructuredPdfV2'
 import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import { loadAppendixText } from '@/lib/report/loadAppendixText'
@@ -16,6 +17,93 @@ type SnapshotInspectionBlock = {
   ftuText?: string | null
   photoUrls?: string[] | null
   hasDeviations?: boolean | null
+}
+
+type SnapshotIconName = 'note' | 'risk' | 'ftu'
+
+function SnapshotIcon({ name }: { name: SnapshotIconName }) {
+  const baseStyle: CSSProperties = {
+    width: '13px',
+    height: '13px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: '0 0 13px',
+    position: 'relative',
+    marginTop: '2px',
+  }
+
+  if (name === 'note') {
+    return (
+      <span style={baseStyle} aria-hidden="true">
+        <span
+          style={{
+            width: '11px',
+            height: '12px',
+            border: '1.5px solid #5b9bd5',
+            borderRadius: '2px',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            gap: '2px',
+            padding: '2px',
+          }}
+        >
+          <span style={{ height: '1px', backgroundColor: '#5b9bd5' }} />
+          <span style={{ height: '1px', backgroundColor: '#5b9bd5' }} />
+          <span style={{ height: '1px', width: '70%', backgroundColor: '#5b9bd5' }} />
+        </span>
+      </span>
+    )
+  }
+
+  if (name === 'risk') {
+    return (
+      <span
+        style={{
+          ...baseStyle,
+          borderRadius: '999px',
+          border: '1.5px solid #b45309',
+          color: '#b45309',
+          fontSize: '10px',
+          fontWeight: 700,
+          lineHeight: 1,
+        }}
+        aria-hidden="true"
+      >
+        !
+      </span>
+    )
+  }
+
+  return (
+    <span style={baseStyle} aria-hidden="true">
+      <span
+        style={{
+          width: '8px',
+          height: '8px',
+          border: '1.7px solid #374151',
+          borderRadius: '999px',
+          position: 'absolute',
+          left: '1px',
+          top: '1px',
+        }}
+      />
+      <span
+        style={{
+          width: '6px',
+          height: '1.7px',
+          backgroundColor: '#374151',
+          position: 'absolute',
+          right: '0px',
+          bottom: '1px',
+          transform: 'rotate(45deg)',
+          transformOrigin: 'center',
+          borderRadius: '999px',
+        }}
+      />
+    </span>
+  )
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -131,12 +219,12 @@ function renderBlocks(items: SnapshotInspectionBlock[]) {
           >
             <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
             <p className="mt-1 flex items-start gap-2 whitespace-pre-wrap text-sm text-gray-700">
-              <span aria-hidden="true">🧱</span>
+              <SnapshotIcon name="note" />
               <span>{note}</span>
             </p>
             {risk ? (
               <p className="mt-2 flex items-start gap-2 whitespace-pre-wrap text-xs text-rose-800">
-                <span aria-hidden="true">⚠️</span>
+                <SnapshotIcon name="risk" />
                 <span>
                   <span className="font-semibold">Risk:</span> {risk}
                 </span>
@@ -144,7 +232,7 @@ function renderBlocks(items: SnapshotInspectionBlock[]) {
             ) : null}
             {ftu ? (
               <p className="mt-1 flex items-start gap-2 whitespace-pre-wrap text-xs text-amber-800">
-                <span aria-hidden="true">🔍</span>
+                <SnapshotIcon name="ftu" />
                 <span>
                   <span className="font-semibold">FTU:</span> {ftu}
                 </span>
