@@ -1500,23 +1500,21 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         {!isCollapsed ? (
           <>
             {/* Kontrollpunkter för komponenten */}
-            <div className="w-full min-w-0 max-w-full overflow-hidden rounded-xl bg-gray-50 ring-1 ring-gray-200 p-3 md:p-4">
-              <ExteriorControlPointsSection
-                item={item}
-                collapsedStorageKey={`${collapsedStorageKey}:control-points:${item.id}`}
-                items={rowControlItems}
-                isInspectionLocked={isInspectionLocked}
-                onUpdateItem={updateControlItem}
-                onDeleteItem={deleteControlItem}
-                onDeleteItemGroup={deleteControlItemGroup}
-                onAddOutcomeItem={addOutcomeControlItem}
-                outcomesByControlPointId={outcomesByControlPointId}
-                controlPointMetaById={controlPointMetaById}
-                imagesByControlItemId={imagesByControlItemId}
-                onUploadImageForControlItem={handleUploadImageForControlItem}
-                onDeleteControlItemImage={handleDeleteControlItemImage}
-              />
-            </div>
+            <ExteriorControlPointsSection
+              item={item}
+              collapsedStorageKey={`${collapsedStorageKey}:control-points:${item.id}`}
+              items={rowControlItems}
+              isInspectionLocked={isInspectionLocked}
+              onUpdateItem={updateControlItem}
+              onDeleteItem={deleteControlItem}
+              onDeleteItemGroup={deleteControlItemGroup}
+              onAddOutcomeItem={addOutcomeControlItem}
+              outcomesByControlPointId={outcomesByControlPointId}
+              controlPointMetaById={controlPointMetaById}
+              imagesByControlItemId={imagesByControlItemId}
+              onUploadImageForControlItem={handleUploadImageForControlItem}
+              onDeleteControlItemImage={handleDeleteControlItemImage}
+            />
 
             {/* Fria noteringar + knapp för ytterligare kontrollpunkt */}
             <FreeNotesSection
@@ -1909,9 +1907,6 @@ function ExteriorControlPointsSection({
         <h4 className="text-sm font-semibold text-gray-900">
           Kontrollpunkter – {item.label}
         </h4>
-        <span className="text-[11px] text-gray-500">
-          Varje kontrollpunkt kan ha flera val med egna noteringar.
-        </span>
       </header>
 
       <div className="space-y-2">
