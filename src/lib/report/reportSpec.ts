@@ -626,6 +626,43 @@ const buildObjectRows = (
   ]
 }
 
+function repairReportText(value: string): string {
+  return value
+    .replace(/\u00c3\u0192\u00c2\u00a4/g, '\u00e4')
+    .replace(/\u00c3\u0192\u00c2\u00a5/g, '\u00e5')
+    .replace(/\u00c3\u0192\u00c2\u00b6/g, '\u00f6')
+    .replace(/\u00c3\u0192\u00e2\u20ac\u017e/g, '\u00c4')
+    .replace(/\u00c3\u0192\u00e2\u20ac\u00a6/g, '\u00c5')
+    .replace(/\u00c3\u0192\u00e2\u20ac\u201c/g, '\u00d6')
+    .replace(/\u00c3\u0192\u00c2\u00a9/g, '\u00e9')
+    .replace(/\u00c3\u0192\u00e2\u20ac\u00b0/g, '\u00c9')
+    .replace(/\u00c3\u00a4/g, '\u00e4')
+    .replace(/\u00c3\u00a5/g, '\u00e5')
+    .replace(/\u00c3\u00b6/g, '\u00f6')
+    .replace(/\u00c3\u201e/g, '\u00c4')
+    .replace(/\u00c3\u2026/g, '\u00c5')
+    .replace(/\u00c3\u2013/g, '\u00d6')
+    .replace(/\u00c3\u00a9/g, '\u00e9')
+    .replace(/\u00c3\u2030/g, '\u00c9')
+    .replace(/\u00e2\u20ac\u201c/g, '\u2013')
+    .replace(/\u00e2\u20ac\u201d/g, '\u2014')
+    .replace(/\u00e2\u20ac\u2122/g, '\u2019')
+    .replace(/\u00e2\u20ac\u009d/g, '\u201d')
+    .replace(/\u00e2\u20ac\u0153/g, '\u201c')
+    .replace(/\u00e2\u20ac\u00a6/g, '\u2026')
+}
+
+function repairReportSpecText<T>(value: T): T {
+  if (typeof value === 'string') return repairReportText(value) as T
+  if (Array.isArray(value)) return value.map(item => repairReportSpecText(item)) as T
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, repairReportSpecText(entry)])
+    ) as T
+  }
+  return value
+}
+
 export function buildReportSpec(params?: {
   inspectionSide?: 'buyer' | 'seller' | 'apartment' | null
   dynamicAppendices?: DynamicAppendixConfig
@@ -1201,7 +1238,7 @@ export function buildReportSpec(params?: {
     }
   }
 
-  return spec
+  return repairReportSpecText(spec)
 }
 
 
