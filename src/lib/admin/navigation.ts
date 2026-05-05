@@ -2,6 +2,7 @@ export type BesiktAppAdminTab =
   | 'docs'
   | 'comps'
   | 'control-points'
+  | 'exterior-items'
   | 'room-types'
   | 'certifications'
   | 'forutsattningar'
@@ -26,6 +27,11 @@ export const BESIKTAPP_ADMIN_TABS: {
     key: 'room-types',
     label: 'Rumstyper',
     description: 'Bygg upp vilka rumstyper som används i interiöra flöden och kontrollpunkter.',
+  },
+  {
+    key: 'exterior-items',
+    label: 'Utsida',
+    description: 'Styr vilka utsidesdelar, parametrar och val som visas i OB Utsida.',
   },
   {
     key: 'addon-services',

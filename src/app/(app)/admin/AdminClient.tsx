@@ -6,6 +6,7 @@ import type { Database } from '@/types/supabase'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import ForutsattningarSettingsPage from '@/app/(app)/settings/forutsattningar/page'
+import ObUtsidaSettingsPage from '@/app/(app)/settings/ob-utsida/page'
 import {
   BESIKTAPP_ADMIN_TABS,
   type BesiktAppAdminTab as AdminTab,
@@ -177,6 +178,8 @@ export default function AdminClient() {
       ? 'control-points'
     : search.get('tab') === 'forutsattningar'
       ? 'forutsattningar'
+    : search.get('tab') === 'exterior-items'
+      ? 'exterior-items'
     : search.get('tab') === 'room-types'
       ? 'room-types'
     : search.get('tab') === 'certifications'
@@ -189,7 +192,7 @@ export default function AdminClient() {
   // Synka tab <-> URL
   useEffect(() => {
     const t = search.get('tab')
-    if (t === 'docs' || t === 'comps' || t === 'control-points' || t === 'room-types' || t === 'certifications' || t === 'forutsattningar' || t === 'addon-services') setTab(t)
+    if (t === 'docs' || t === 'comps' || t === 'control-points' || t === 'exterior-items' || t === 'room-types' || t === 'certifications' || t === 'forutsattningar' || t === 'addon-services') setTab(t)
   }, [search])
   const setTabAndPush = (t: AdminTab) => {
     setTab(t)
@@ -1522,6 +1525,7 @@ export default function AdminClient() {
         </section>
 
         {tab === 'forutsattningar' && <ForutsattningarSettingsPage />}
+        {tab === 'exterior-items' && <ObUtsidaSettingsPage />}
 
         {tab === 'docs' && (
           <div className="bg-white rounded-xl shadow p-4">
