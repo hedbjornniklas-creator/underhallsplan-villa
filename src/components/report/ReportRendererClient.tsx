@@ -1,6 +1,6 @@
 'use client'
 
-import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import AppendixPage from '@/components/report/AppendixPage'
 import ReportCoverPage from '@/components/report/ReportCoverPage'
 import ReportPage from '@/components/report/ReportPage'
@@ -1230,6 +1230,89 @@ export default function ReportRendererClient({
       ? item.photoUrls.filter((url) => typeof url === 'string')
       : []
 
+    if (isPdfMode) {
+      const labelWidth = mmToPx(30)
+      const renderPdfRow = (
+        label: string,
+        body: ReactNode,
+        tone: 'default' | 'risk' | 'ftu' = 'default'
+      ) => (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `${labelWidth} 1fr`,
+            columnGap: mmToPx(3),
+            marginTop: mmToPx(1.5),
+            alignItems: 'start',
+          }}
+        >
+          <div
+            style={{
+              fontSize: '9pt',
+              fontWeight: 700,
+              color:
+                tone === 'risk'
+                  ? '#b45309'
+                  : tone === 'ftu'
+                    ? '#334155'
+                    : '#475569',
+              lineHeight: 1.2,
+            }}
+          >
+            {label}
+          </div>
+          <div
+            style={{
+              fontSize: '10.5pt',
+              color: '#111827',
+              lineHeight: 1.25,
+              whiteSpace: 'pre-line',
+            }}
+          >
+            {body}
+          </div>
+        </div>
+      )
+
+      return (
+        <>
+          {renderPdfRow('Notering', noteText || '--')}
+
+          {photoUrls.length > 0
+            ? renderPdfRow(
+                'Bilder',
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: mmToPx(3),
+                    marginTop: mmToPx(1),
+                  }}
+                >
+                  {photoUrls.map((url, urlIndex) => (
+                    <ReportPhoto
+                      key={`${keyPrefix}-photo-${urlIndex}`}
+                      src={url}
+                      alt={`Foto ${urlIndex + 1}`}
+                      className="h-auto object-contain bg-white"
+                      style={{ width: '58mm', maxHeight: '75mm' }}
+                    />
+                  ))}
+                </div>
+              )
+            : null}
+
+          {riskText.length > 0
+            ? renderPdfRow('Riskanalys', riskText, 'risk')
+            : null}
+
+          {ftuText.length > 0
+            ? renderPdfRow('FTU', ftuText, 'ftu')
+            : null}
+        </>
+      )
+    }
+
     return (
       <>
         <section className="ob-section ob-section--note">
@@ -1330,6 +1413,45 @@ export default function ReportRendererClient({
     )
   }
 
+  const renderPdfInspectionRow = (
+    item: InspectionBlockItem,
+    key: string,
+    title: string,
+    marginTopMm: number,
+    marginBottomMm: number
+  ) => (
+    <article
+      key={key}
+      className="ob-block bg-white"
+      style={blockMargins({ marginTopMm, marginBottomMm } as ReportBlock)}
+    >
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `${mmToPx(42)} 1fr`,
+          columnGap: mmToPx(4),
+          borderTop: '1px solid #cbd5e1',
+          paddingTop: mmToPx(2.5),
+          paddingBottom: mmToPx(2.5),
+        }}
+      >
+        <div
+          style={{
+            fontSize: '10.5pt',
+            fontWeight: 700,
+            color: '#111827',
+            lineHeight: 1.2,
+            paddingRight: mmToPx(2),
+            wordBreak: 'break-word',
+          }}
+        >
+          {title}
+        </div>
+        <div>{renderInspectionItemContent(item, key, 'wide')}</div>
+      </div>
+    </article>
+  )
+
   const renderInspectionBlockItem = (
     item: InspectionBlockItem,
     key: string,
@@ -1337,6 +1459,9 @@ export default function ReportRendererClient({
     marginBottomMm: number
   ) => {
     const title = String(item.title ?? '')
+    if (isPdfMode) {
+      return renderPdfInspectionRow(item, key, title, marginTopMm, marginBottomMm)
+    }
     return (
       <article
         key={key}
@@ -1524,6 +1649,15 @@ export default function ReportRendererClient({
           style={blockMargins(block)}
         >
           {blocks.map((item, itemIndex) => {
+            if (isPdfMode) {
+              return renderPdfInspectionRow(
+                item,
+                `${sectionId}-inspection-${index}-${itemIndex}`,
+                String(item.title ?? ''),
+                0,
+                0
+              )
+            }
             return (
               <article
                 key={`${sectionId}-inspection-${index}-${itemIndex}`}
@@ -1587,27 +1721,12 @@ export default function ReportRendererClient({
 
     if (block.type === 'inspectionRoomGroupItem') {
       const title = String(block.title ?? '')
-      const marginBottomMm = block.isLastInGroup
-        ? (block.marginBottomMm ?? 0) + 2
-        : 4
-      return (
-        <article
-          key={`${sectionId}-room-group-item-${index}`}
-          style={{
-            ...blockMargins(block),
-            marginBottom: mmToPx(marginBottomMm),
-          }}
-          className="bg-white pb-4 mb-4 border-b border-slate-200"
-        >
-          <header className="mb-2">
-            <h4 className="text-[15px] font-semibold text-gray-900">{title}</h4>
-          </header>
-          {renderInspectionItemContent(
-            block.item,
-            `${sectionId}-room-group-item-${index}`,
-            'wide'
-          )}
-        </article>
+      return renderPdfInspectionRow(
+        block.item,
+        `${sectionId}-room-group-item-${index}`,
+        title,
+        block.marginTopMm,
+        block.marginBottomMm
       )
     }
 
