@@ -261,6 +261,16 @@ type InspectionRoomGroupEntry = {
   marginBottomMm: number
 }
 
+type InspectionRoomGroupItemEntry = {
+  type: 'inspectionRoomGroupItem'
+  title: string
+  item: InspectionBlockItem
+  isFirstInGroup: boolean
+  isLastInGroup: boolean
+  marginTopMm: number
+  marginBottomMm: number
+}
+
 type RiskItemEntry = {
   type: 'riskItem'
   title: string
@@ -285,6 +295,7 @@ type ExtendedReportBlock =
   | ReportBlock
   | InspectionBlockItemEntry
   | InspectionRoomGroupEntry
+  | InspectionRoomGroupItemEntry
   | RiskItemEntry
   | FtuItemEntry
 
@@ -660,6 +671,9 @@ export default function ReportRendererClient({
   inspectionSide,
   rootClassName,
 }: ReportRendererClientProps) {
+  const rootClasses = ['report-root', rootClassName].filter(Boolean).join(' ')
+  const isPdfMode = rootClasses.includes('report-root--pdf')
+
   const [pagePlan, setPagePlan] = useState<{
     pages: PagePlan[]
     sectionPageMap: Map<string, number>
@@ -804,21 +818,50 @@ export default function ReportRendererClient({
               })
 
               groups.forEach((group, groupIndex) => {
-                entries.push({
-                  kind: 'block',
-                  id: `${section.id}-room-group-${blockIndex}-${groupIndex}`,
-                  sectionId: section.id,
-                  sectionStartOnNewPage:
-                    section.startOnNewPage && blockIndex === 0 && groupIndex === 0,
-                  block: {
-                    type: 'inspectionRoomGroup',
-                    title: group.title,
-                    items: group.items,
-                    marginTopMm: groupIndex === 0 ? block.marginTopMm : 0,
-                    marginBottomMm:
-                      groupIndex === groups.length - 1 ? block.marginBottomMm : 0,
-                  },
-                })
+                if (isPdfMode) {
+                  group.items.forEach((item, itemIndex) => {
+                    entries.push({
+                      kind: 'block',
+                      id: `${section.id}-room-group-${blockIndex}-${groupIndex}-${itemIndex}`,
+                      sectionId: section.id,
+                      sectionStartOnNewPage:
+                        section.startOnNewPage &&
+                        blockIndex === 0 &&
+                        groupIndex === 0 &&
+                        itemIndex === 0,
+                      block: {
+                        type: 'inspectionRoomGroupItem',
+                        title: group.title,
+                        item,
+                        isFirstInGroup: itemIndex === 0,
+                        isLastInGroup: itemIndex === group.items.length - 1,
+                        marginTopMm:
+                          groupIndex === 0 && itemIndex === 0 ? block.marginTopMm : 0,
+                        marginBottomMm:
+                          groupIndex === groups.length - 1 &&
+                          itemIndex === group.items.length - 1
+                            ? block.marginBottomMm
+                            : 0,
+                      },
+                    })
+                  })
+                } else {
+                  entries.push({
+                    kind: 'block',
+                    id: `${section.id}-room-group-${blockIndex}-${groupIndex}`,
+                    sectionId: section.id,
+                    sectionStartOnNewPage:
+                      section.startOnNewPage && blockIndex === 0 && groupIndex === 0,
+                    block: {
+                      type: 'inspectionRoomGroup',
+                      title: group.title,
+                      items: group.items,
+                      marginTopMm: groupIndex === 0 ? block.marginTopMm : 0,
+                      marginBottomMm:
+                        groupIndex === groups.length - 1 ? block.marginBottomMm : 0,
+                    },
+                  })
+                }
               })
               return
             }
@@ -867,7 +910,7 @@ export default function ReportRendererClient({
       }
     })
     return entries
-  }, [contentSections, sectionSpacingPx])
+  }, [contentSections, isPdfMode, mockData, sectionSpacingPx])
 
   const appendices = useMemo(() => {
     const pages: Array<{ section: ResolvedReportSection; rawText: string; showTitle: boolean }> = []
@@ -969,9 +1012,6 @@ export default function ReportRendererClient({
     </div>
   )
 
-  const rootClasses = ['report-root', rootClassName].filter(Boolean).join(' ')
-  const isPdfMode = rootClasses.includes('report-root--pdf')
-
   useLayoutEffect(() => {
     if (!measureContainerRef.current) return
 
@@ -997,7 +1037,7 @@ export default function ReportRendererClient({
     const paddingBottomPx = mmToPxNumber(PAGE_PADDING_MM.bottom)
     const footerMarkPx = mmToPxNumber(FOOTER_MARK_HEIGHT_MM)
     // Extra safety in PDF mode to avoid late-page collisions with fixed footer artwork.
-    const safetyMm = isPdfMode ? 14 : 0
+    const safetyMm = isPdfMode ? 22 : 0
     const availableHeight =
       pageHeightPx -
       paddingTopPx -
@@ -1513,6 +1553,32 @@ export default function ReportRendererClient({
               </div>
             ))}
           </div>
+        </article>
+      )
+    }
+
+    if (block.type === 'inspectionRoomGroupItem') {
+      const title = String(block.title ?? '')
+      const marginBottomMm = block.isLastInGroup
+        ? (block.marginBottomMm ?? 0) + 2
+        : 4
+      return (
+        <article
+          key={`${sectionId}-room-group-item-${index}`}
+          style={{
+            ...blockMargins(block),
+            marginBottom: mmToPx(marginBottomMm),
+          }}
+          className="rounded-lg border border-blue-300/70 bg-white p-4 mb-4"
+        >
+          <header className="mb-3">
+            <h4 className="text-[15px] font-semibold text-gray-900">{title}</h4>
+          </header>
+          {renderInspectionItemContent(
+            block.item,
+            `${sectionId}-room-group-item-${index}`,
+            'wide'
+          )}
         </article>
       )
     }
