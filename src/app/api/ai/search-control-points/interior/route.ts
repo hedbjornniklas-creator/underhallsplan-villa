@@ -42,17 +42,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    let rebuiltIndex = false
     const indexCount = await getControlPointSearchIndexCount()
-    if (indexCount === 0) {
-      await rebuildControlPointSearchIndex(apiKey)
-      rebuiltIndex = true
-    }
+    const rebuildResult = await rebuildControlPointSearchIndex(apiKey)
 
     const results = await searchControlPointIndex(apiKey, query, limit)
     return NextResponse.json({
       model: CONTROL_POINT_EMBEDDING_MODEL,
-      index_rebuilt: rebuiltIndex,
+      index_rebuilt: indexCount === 0,
+      index_updated: rebuildResult.updated > 0 || rebuildResult.removed > 0,
       results,
     })
   } catch (error) {

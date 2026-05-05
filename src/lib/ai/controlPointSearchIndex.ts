@@ -7,6 +7,60 @@ export const CONTROL_POINT_EMBEDDING_DIMENSIONS = 1536
 const OPENAI_EMBEDDINGS_URL = 'https://api.openai.com/v1/embeddings'
 const EMBEDDING_BATCH_SIZE = 64
 const MAX_MATCH_POOL = 40
+const SEARCH_TEXT_VERSION = 'control-point-search-v2'
+const LOW_SIGNAL_QUERY_TERMS = new Set([
+  'att',
+  'det',
+  'den',
+  'der',
+  'ett',
+  'finns',
+  'har',
+  'med',
+  'mot',
+  'och',
+  'pa',
+  'runt',
+  'som',
+  'vid',
+])
+const SUPPORTING_QUERY_TERMS = new Set([
+  'bristfallig',
+  'bristfalligt',
+  'fast',
+  'fastsatt',
+  'fastsattning',
+  'infast',
+  'infastning',
+  'los',
+  'losa',
+  'lossnar',
+  'lost',
+  'sitter',
+])
+const SEARCH_SYNONYMS: Record<string, string[]> = {
+  avluftning: ['avluftning', 'luftning', 'ventilation', 'ror'],
+  beslag: ['beslag', 'platbeslag', 'skorstensbeslag'],
+  brunn: ['brunn', 'golvbrunn'],
+  glipa: ['glipa', 'springa', 'otat', 'otathet', 'anslutning'],
+  genomforing: ['genomforing', 'takgenomforing', 'ror', 'avluftning'],
+  los: ['los', 'lost', 'losa', 'lossnar', 'infastning', 'bristfalligt', 'bristfallig'],
+  lost: ['lost', 'los', 'losa', 'lossnar', 'infastning', 'bristfalligt', 'bristfallig'],
+  plat: [
+    'plat',
+    'platarbeten',
+    'platdetalj',
+    'platdetaljer',
+    'platbeslag',
+    'fonsterbleck',
+    'skorstensbeslag',
+    'takplat',
+    'vindskiveplat',
+    'randal',
+  ],
+  sitter: ['sitter', 'fastsatt', 'fastsattning', 'infastning', 'infast', 'lossnar'],
+  tak: ['tak', 'yttertak', 'taktackning', 'takgenomforing'],
+}
 
 export type ControlPointSearchControlPoint = {
   id: string
@@ -45,7 +99,7 @@ export type ControlPointSearchOutcome = {
 }
 
 export type RankedControlPointSearchResult = ControlPointSearchControlPoint & {
-  match_score: number | null
+  match_score: number
   search_hint: string
   outcomes: ControlPointSearchOutcome[]
 }
@@ -70,6 +124,11 @@ type MatchRow = {
   search_text: string | null
 }
 
+type QueryTermGroup = {
+  terms: string[]
+  weight: number
+}
+
 type OpenAiEmbeddingResponse = {
   data?: Array<{
     index?: number
@@ -79,6 +138,18 @@ type OpenAiEmbeddingResponse = {
 
 const normalizeText = (value: unknown) =>
   String(value ?? '').replace(/\s+/g, ' ').trim()
+
+const normalizeSearchText = (value: unknown) =>
+  normalizeText(value)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/å/g, 'a')
+    .replace(/ä/g, 'a')
+    .replace(/ö/g, 'o')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 
 const compactPart = (label: string, value: unknown) => {
   const text = normalizeText(value)
@@ -110,7 +181,9 @@ const scopeLabel = (scope: string | null) => {
 }
 
 const toHash = (value: string) =>
-  createHash('sha256').update(value, 'utf8').digest('hex')
+  createHash('sha256')
+    .update(`${SEARCH_TEXT_VERSION}\n${value}`, 'utf8')
+    .digest('hex')
 
 const toVectorLiteral = (embedding: number[]) =>
   `[${embedding.map(value => (Number.isFinite(value) ? value : 0)).join(',')}]`
@@ -131,7 +204,6 @@ export const buildControlPointSearchText = (
     .map((outcome, index) =>
       [
         `Chip ${index + 1}`,
-        compactPart('Nyckel', outcome.outcome_key),
         compactPart('Rubrik', outcome.label),
         compactPart('Allvar', outcome.severity),
         compactPart('Notering', outcome.note_template),
@@ -145,7 +217,6 @@ export const buildControlPointSearchText = (
 
   return [
     compactPart('Kontrollpunkt', controlPoint.title || controlPoint.label || controlPoint.key),
-    compactPart('Nyckel', controlPoint.key),
     compactPart('Beskrivning', controlPoint.description),
     compactPart('Fraga', controlPoint.question),
     compactPart('Omrade', scopeLabel(controlPoint.scope)),
@@ -166,6 +237,101 @@ export const buildControlPointSearchText = (
   ]
     .filter(Boolean)
     .join('\n')
+}
+
+const buildQueryTermGroups = (query: string): QueryTermGroup[] => {
+  const tokens = Array.from(
+    new Set(
+      normalizeSearchText(query)
+        .split(' ')
+        .filter(token => token.length >= 3 && !LOW_SIGNAL_QUERY_TERMS.has(token))
+    )
+  )
+
+  return tokens.map(token => {
+    const terms = Array.from(new Set([token, ...(SEARCH_SYNONYMS[token] ?? [])]))
+    const isSupporting = SUPPORTING_QUERY_TERMS.has(token)
+    return {
+      terms,
+      weight: isSupporting ? 0.7 : 1.5,
+    }
+  })
+}
+
+const textMatchesAnyTerm = (text: string, terms: string[]) =>
+  terms.some(term => text.includes(term))
+
+const scoreField = (
+  value: unknown,
+  fieldWeight: number,
+  queryGroups: QueryTermGroup[]
+) => {
+  const text = normalizeSearchText(value)
+  if (!text) return 0
+
+  return queryGroups.reduce((score, group) => {
+    return textMatchesAnyTerm(text, group.terms)
+      ? score + fieldWeight * group.weight
+      : score
+  }, 0)
+}
+
+const calculateLexicalScore = (
+  controlPoint: ControlPointSearchControlPoint,
+  outcomes: ControlPointSearchOutcome[],
+  queryGroups: QueryTermGroup[]
+) => {
+  if (queryGroups.length === 0) return 0
+
+  const outcomeLabels = outcomes.map(outcome => outcome.label).join(' ')
+  const outcomeTemplates = outcomes
+    .map(outcome =>
+      [outcome.note_template, outcome.risk_template, outcome.ftu_template]
+        .filter(Boolean)
+        .join(' ')
+    )
+    .join(' ')
+  const tagText = [
+    ...normalizeJsonList(controlPoint.tags),
+    ...normalizeJsonList(controlPoint.risk_tags),
+    ...normalizeJsonList(controlPoint.trigger_room_types),
+    ...normalizeJsonList(controlPoint.trigger_component_keys),
+    ...normalizeJsonList(controlPoint.trigger_foundation_types),
+    ...normalizeJsonList(controlPoint.trigger_tags),
+  ].join(' ')
+  const fullText = normalizeSearchText(
+    [
+      controlPoint.title,
+      controlPoint.label,
+      controlPoint.exterior_item_key,
+      controlPoint.room_type_key,
+      controlPoint.description,
+      outcomeLabels,
+      outcomeTemplates,
+      tagText,
+    ].join(' ')
+  )
+  const primaryGroups = queryGroups.filter(group => group.weight > 1)
+  const hasPrimaryMatch =
+    primaryGroups.length === 0 ||
+    primaryGroups.some(group => textMatchesAnyTerm(fullText, group.terms))
+
+  const rawScore =
+    scoreField(
+      [controlPoint.title, controlPoint.label].filter(Boolean).join(' '),
+      4,
+      queryGroups
+    ) +
+    scoreField(outcomeLabels, 3.5, queryGroups) +
+    scoreField(controlPoint.exterior_item_key, 3, queryGroups) +
+    scoreField(controlPoint.room_type_key, 2, queryGroups) +
+    scoreField(controlPoint.description, 1.5, queryGroups) +
+    scoreField(outcomeTemplates, 1.25, queryGroups) +
+    scoreField(tagText, 1.25, queryGroups)
+
+  const maxScore = queryGroups.reduce((sum, group) => sum + group.weight, 0) * 8
+  const normalizedScore = Math.min(rawScore / Math.max(maxScore, 1), 1)
+  return hasPrimaryMatch ? normalizedScore : Math.min(normalizedScore * 0.25, 0.2)
 }
 
 const embedTexts = async (apiKey: string, texts: string[]) => {
@@ -390,6 +556,7 @@ export const searchControlPointIndex = async (
   const admin = createSupabaseAdminClient()
   const [queryEmbedding] = await embedTexts(apiKey, [query])
   const matchCount = Math.max(Math.min(limit * 4, MAX_MATCH_POOL), limit)
+  const queryGroups = buildQueryTermGroups(query)
 
   const { data: matchRows, error: matchError } = await admin.rpc(
     'match_settings_control_point_search_index',
@@ -478,15 +645,19 @@ export const searchControlPointIndex = async (
       const controlPoint = controlPointById.get(match.control_point_id)
       if (!controlPoint || seen.has(controlPoint.id)) return null
       seen.add(controlPoint.id)
-      const score = match.similarity ?? null
-      const percent = score === null ? null : Math.round(score * 100)
+      const embeddingScore = Math.max(match.similarity ?? 0, 0)
+      const outcomes = outcomesByControlPointId[controlPoint.id] ?? []
+      const lexicalScore = calculateLexicalScore(controlPoint, outcomes, queryGroups)
+      const score = Math.min(embeddingScore + lexicalScore * 0.45, 1)
+      const percent = Math.round(score * 100)
       return {
         ...controlPoint,
         match_score: score,
-        search_hint: percent === null ? 'AI-traff' : `AI-traff ${percent}%`,
-        outcomes: outcomesByControlPointId[controlPoint.id] ?? [],
+        search_hint: `AI-traff ${percent}%`,
+        outcomes,
       }
     })
     .filter((result): result is RankedControlPointSearchResult => Boolean(result))
+    .sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0))
     .slice(0, limit)
 }
