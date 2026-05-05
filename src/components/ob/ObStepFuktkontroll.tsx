@@ -13,6 +13,7 @@ import {
 import type { Tables } from '@/types/supabase'
 import { formatCertificationDisplayLines } from '@/lib/certifications/display'
 import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
+import DebouncedTextarea from './DebouncedTextarea'
 
 type Property = Tables<'properties'>
 type Inspection = Tables<'inspections'>
@@ -1156,10 +1157,11 @@ function TextArea({
   return (
     <label className="space-y-1">
       <span className="text-xs font-medium text-slate-600">{label}</span>
-      <textarea
+      <DebouncedTextarea
         value={value}
         rows={rows}
-        onChange={(event) => onChange(event.target.value)}
+        onValueChange={onChange}
+        onSave={onChange}
         disabled={disabled}
         className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-70"
       />

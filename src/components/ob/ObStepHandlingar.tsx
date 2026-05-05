@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
+import DebouncedTextarea from './DebouncedTextarea'
 
 export type TenureType = 'freehold' | 'bostadsratt' | null
 export type DwellingType = 'house' | 'apartment' | null
@@ -554,74 +555,60 @@ export default function ObStepHandlingar({
     })
   }
 
-  // -------------------------------
-  // SAVE disclosureText (debounce)
-  // -------------------------------
-  useEffect(() => {
+  const saveDisclosureText = async (value: string) => {
     if (isInspectionLocked) return
     if (!disclosure) return
 
     setSavedDisclosure(false)
-    const timeout = setTimeout(async () => {
-      setSavingDisclosure(true)
+    setSavingDisclosure(true)
 
-      const { error } = await supabase
-        .from('inspection_disclosures')
-        .update({ note: disclosureText || '' })
-        .eq('id', disclosure.id)
+    const { error } = await supabase
+      .from('inspection_disclosures')
+      .update({ note: value || '' })
+      .eq('id', disclosure.id)
 
-      setSavingDisclosure(false)
+    setSavingDisclosure(false)
 
-      if (error) {
-        console.error(error)
-        setError('Kunde inte spara upplysningar.')
-        return
-      }
+    if (error) {
+      console.error(error)
+      setError('Kunde inte spara upplysningar.')
+      return
+    }
 
-      setSavedDisclosure(true)
-      setTimeout(() => setSavedDisclosure(false), 1500)
-    }, 500)
+    setSavedDisclosure(true)
+    setTimeout(() => setSavedDisclosure(false), 1500)
+  }
 
-    return () => clearTimeout(timeout)
-  }, [disclosureText, disclosure, isInspectionLocked])
-
-  // -------------------------------
-  // SAVE defectText (debounce) - tomt => standard
-  // -------------------------------
-  useEffect(() => {
+  const saveDefectText = async (value: string) => {
     if (isInspectionLocked) return
     if (!inspection?.id) return
 
     setSavedDefect(false)
-    const timeout = setTimeout(async () => {
-      let valueToSave = defectText
+    let valueToSave = value
 
-      if (!valueToSave || valueToSave.trim() === '') {
-        valueToSave = STANDARD_DEFECT_TEXT
-        setDefectText(valueToSave)
-      }
+    if (!valueToSave || valueToSave.trim() === '') {
+      valueToSave = STANDARD_DEFECT_TEXT
+      setDefectText(valueToSave)
+    }
 
-      setSavingDefect(true)
+    setSavingDefect(true)
 
-      const { error } = await supabase
-        .from('inspections')
-        .update({ defect_disclosures: valueToSave })
-        .eq('id', inspection.id)
+    const { error } = await supabase
+      .from('inspections')
+      .update({ defect_disclosures: valueToSave })
+      .eq('id', inspection.id)
 
-      setSavingDefect(false)
+    setSavingDefect(false)
 
-      if (error) {
-        console.error(error)
-        setError('Kunde inte spara upplysningar om fel.')
-        return
-      }
+    if (error) {
+      console.error(error)
+      setError('Kunde inte spara upplysningar om fel.')
+      return
+    }
 
-      setSavedDefect(true)
-      setTimeout(() => setSavedDefect(false), 1500)
-    }, 500)
-
-    return () => clearTimeout(timeout)
-  }, [defectText, inspection?.id, isInspectionLocked])
+    setSavedDefect(true)
+    setTimeout(() => setSavedDefect(false), 1500)
+  }
 
   const handleDisclosureImageUpload = async (file: File | null) => {
     if (!file) return
@@ -810,11 +797,11 @@ export default function ObStepHandlingar({
 
                       <label className="min-w-0 space-y-1">
                         <span className="text-xs font-medium text-gray-600">Notering</span>
-                        <textarea
+                        <DebouncedTextarea
                           className="min-h-20 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
                           value={viewDoc.note}
                           disabled={isInspectionLocked}
-                          onChange={e => void updateDoc(doc.id, { note: e.target.value })}
+                          onSave={value => void updateDoc(doc.id, { note: value })}
                         />
                       </label>
                     </div>
@@ -922,11 +909,11 @@ export default function ObStepHandlingar({
                     </td>
 
                     <td className="px-3 py-2 align-top">
-                      <textarea
+                      <DebouncedTextarea
                         className="min-h-[2.5rem] w-full rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900"
                         value={typedDocument.note ?? ''}
                         disabled={isInspectionLocked}
-                        onChange={e => void updateDoc(doc.id, { note: e.target.value })}
+                        onSave={value => void updateDoc(doc.id, { note: value })}
                       />
                     </td>
                   </tr>
@@ -968,12 +955,13 @@ export default function ObStepHandlingar({
           )}
         </div>
 
-        <textarea
+        <DebouncedTextarea
           className="min-h-[200px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500"
           placeholder="Skriv alla upplysningar här ..."
           value={disclosureText}
           disabled={isInspectionLocked}
-          onChange={e => setDisclosureText(e.target.value)}
+          onValueChange={setDisclosureText}
+          onSave={saveDisclosureText}
         />
 
         <div className="mt-3 space-y-2">
@@ -1029,11 +1017,12 @@ export default function ObStepHandlingar({
           )}
         </div>
 
-        <textarea
+        <DebouncedTextarea
           className="min-h-[160px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500"
           value={defectText}
           disabled={isInspectionLocked}
-          onChange={e => setDefectText(e.target.value)}
+          onValueChange={setDefectText}
+          onSave={saveDefectText}
         />
       </section>
     </div>

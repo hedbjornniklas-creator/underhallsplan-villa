@@ -6,6 +6,7 @@ import type { Tables } from '@/types/supabase'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 import { formatCertificationDisplayLines } from '@/lib/certifications/display'
 import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
+import DebouncedTextarea from './DebouncedTextarea'
 
 export type ObInspection = Tables<'inspections'>
 
@@ -1354,7 +1355,7 @@ export default function ObStepGrunddata({
                 <div className="text-xs font-medium text-gray-600">
                   Övriga närvarande (namn och roll)
                 </div>
-                <textarea
+                <DebouncedTextarea
                   className={`w-full rounded-md border px-3 py-2 text-xs ${
                     isInspectionLocked ? 'bg-gray-100 text-gray-600' : ''
                   }`}
@@ -1362,8 +1363,8 @@ export default function ObStepGrunddata({
                   placeholder="T.ex. Anna Andersson (mäklare), Kalle Karlsson (besiktningsman säljare)"
                   value={inspForm.attendees_other}
                   disabled={isInspectionLocked}
-                  onChange={e => handleInspChange('attendees_other', e.target.value)}
-                  onBlur={() => handleInspBlur('attendees_other')}
+                  onValueChange={value => handleInspChange('attendees_other', value)}
+                  onSave={value => void saveInspection({ attendees_other: value || null })}
                 />
               </div>
 
@@ -1477,11 +1478,14 @@ function Field({
     <div className="space-y-1">
       <div className="text-xs font-medium text-gray-600">{label}</div>
       {multiline ? (
-        <textarea
+        <DebouncedTextarea
           className={`w-full rounded-md border px-3 py-2 text-sm ${readOnly ? 'bg-gray-100 text-gray-600' : ''}`}
           value={value}
-          onChange={e => onChange(e.target.value)}
-          onBlur={onBlur}
+          onValueChange={onChange}
+          onSave={nextValue => {
+            onChange(nextValue)
+            onBlur?.()
+          }}
           placeholder={placeholder}
           rows={3}
           readOnly={readOnly}

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
+import DebouncedTextarea from './DebouncedTextarea'
 
 type FurnishingLevel = 'fullt_moblerad' | 'delvis_moblerad' | 'omoblerad'
 type SelectionMode = 'single' | 'multi_set' | 'per_floor'
@@ -69,61 +70,7 @@ type ItemBundle = SettingsOverviewItem & {
 }
 
 const SPECIAL_CONDITIONS_COLLAPSE_KEY = '__special_conditions__'
-const NOTE_SAVE_DELAY_MS = 800
 const YEAR_OPTION_START = 1850
-
-function NoteField({
-  value,
-  disabled,
-  onSave,
-}: {
-  value: string
-  disabled: boolean
-  onSave: (note: string) => void
-}) {
-  const [draft, setDraft] = useState(value)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (disabled || draft === value) return
-    if (timerRef.current) clearTimeout(timerRef.current)
-
-    timerRef.current = setTimeout(() => {
-      onSave(draft)
-      timerRef.current = null
-    }, NOTE_SAVE_DELAY_MS)
-
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
-        timerRef.current = null
-      }
-    }
-  }, [disabled, draft, onSave, value])
-
-  const flush = () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current)
-      timerRef.current = null
-    }
-    if (!disabled && draft !== value) {
-      onSave(draft)
-    }
-  }
-
-  return (
-    <textarea
-      value={draft}
-      onBlur={flush}
-      onChange={e => setDraft(e.target.value)}
-      disabled={disabled}
-      placeholder="Kort notering..."
-      rows={2}
-      className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm
-                 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-70"
-    />
-  )
-}
 
 const toErrorLike = (error: unknown): Record<string, unknown> | null => {
   if (!error || typeof error !== 'object') return null
@@ -793,10 +740,13 @@ export default function ObStepForutsattningar({
         {item.note_enabled && (
           <div className="space-y-1">
             <label className="text-xs font-medium text-gray-700">Notering (valfritt)</label>
-            <NoteField
+            <DebouncedTextarea
               value={sel.note ?? ''}
               disabled={isInspectionLocked}
               onSave={note => updateSelectionNote(item.id, selIndex, note)}
+              placeholder="Kort notering..."
+              rows={2}
+              className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-70"
             />
           </div>
         )}

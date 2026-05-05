@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, ChangeEvent, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import DebouncedTextarea from './DebouncedTextarea'
 
 type Inspection = {
   id: string
@@ -2693,15 +2694,14 @@ function RoomControlPointsSection({
                     <label className="text-xs md:text-[11px] text-gray-600">
                       🧱 Notering
                     </label>
-                    <textarea
+                    <DebouncedTextarea
                       rows={2}
                       className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                       placeholder="Fri notering för rummet…"
                       value={ci.note ?? ''}
-                      onChange={e =>
-                        ci.id &&
-                        onUpdateItem(ci.id, { note: e.target.value })
-                      }
+                      onSave={value => {
+                        if (ci.id) onUpdateItem(ci.id, { note: value })
+                      }}
                       readOnly={isInspectionLocked}
                     />
                   </div>
@@ -2710,15 +2710,14 @@ function RoomControlPointsSection({
                     <label className="text-xs md:text-[11px] text-gray-600">
                       ⚠️ Riskanalys
                     </label>
-                    <textarea
+                    <DebouncedTextarea
                       rows={3}
                       className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                       placeholder="Beskriv riskanalys..."
                       value={ci.risk_text ?? ''}
-                      onChange={e =>
-                        ci.id &&
-                        onUpdateItem(ci.id, { risk_text: e.target.value })
-                      }
+                      onSave={value => {
+                        if (ci.id) onUpdateItem(ci.id, { risk_text: value })
+                      }}
                       readOnly={isInspectionLocked}
                     />
                   </div>
@@ -2727,15 +2726,14 @@ function RoomControlPointsSection({
                     <label className="text-xs md:text-[11px] text-gray-600">
                       🔍 Fortsatt teknisk utredning (FTU)
                     </label>
-                    <textarea
+                    <DebouncedTextarea
                       rows={3}
                       className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                       placeholder="Beskriv fortsatt teknisk utredning..."
                       value={ci.ftu_text ?? ''}
-                      onChange={e =>
-                        ci.id &&
-                        onUpdateItem(ci.id, { ftu_text: e.target.value })
-                      }
+                      onSave={value => {
+                        if (ci.id) onUpdateItem(ci.id, { ftu_text: value })
+                      }}
                       readOnly={isInspectionLocked}
                     />
                   </div>
@@ -2976,15 +2974,14 @@ function RoomControlPointsSection({
                     <label className="text-xs md:text-[11px] text-gray-600">
                       🧱 Notering
                     </label>
-                    <textarea
+                    <DebouncedTextarea
                       rows={2}
                       className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                       placeholder="Notering för just denna kontrollpunkt…"
                       value={baseItem.note ?? ''}
-                      onChange={e =>
-                        baseItem.id &&
-                        onUpdateItem(baseItem.id, { note: e.target.value })
-                      }
+                      onSave={value => {
+                        if (baseItem.id) onUpdateItem(baseItem.id, { note: value })
+                      }}
                       readOnly={isInspectionLocked}
                     />
                   </div>
@@ -3038,15 +3035,14 @@ function RoomControlPointsSection({
                           <label className="text-xs md:text-[11px] text-gray-600">
                             🧱 Notering
                           </label>
-                          <textarea
+                          <DebouncedTextarea
                             rows={2}
                             className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                             placeholder="Notering för just detta chip…"
                             value={ci.note ?? ''}
-                            onChange={e =>
-                              ci.id &&
-                              onUpdateItem(ci.id, { note: e.target.value })
-                            }
+                            onSave={value => {
+                              if (ci.id) onUpdateItem(ci.id, { note: value })
+                            }}
                             readOnly={isInspectionLocked}
                           />
                         </div>
@@ -3058,15 +3054,14 @@ function RoomControlPointsSection({
                                 <div className="text-xs font-semibold text-gray-700">
                                   ⚠️ Riskanalys
                                 </div>
-                                <textarea
+                                <DebouncedTextarea
                                   rows={3}
                                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                                   placeholder="Beskriv riskanalys..."
                                   value={riskText}
-                                  onChange={e =>
-                                    ci.id &&
-                                    onUpdateItem(ci.id, { risk_text: e.target.value })
-                                  }
+                                  onSave={value => {
+                                    if (ci.id) onUpdateItem(ci.id, { risk_text: value })
+                                  }}
                                   readOnly={isInspectionLocked}
                                 />
                               </div>
@@ -3076,15 +3071,14 @@ function RoomControlPointsSection({
                                 <div className="text-xs font-semibold text-gray-700">
                                   🔍 Fortsatt teknisk utredning (FTU)
                                 </div>
-                                <textarea
+                                <DebouncedTextarea
                                   rows={3}
                                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                                   placeholder="Beskriv fortsatt teknisk utredning..."
                                   value={ftuText}
-                                  onChange={e =>
-                                    ci.id &&
-                                    onUpdateItem(ci.id, { ftu_text: e.target.value })
-                                  }
+                                  onSave={value => {
+                                    if (ci.id) onUpdateItem(ci.id, { ftu_text: value })
+                                  }}
                                   readOnly={isInspectionLocked}
                                 />
                               </div>
