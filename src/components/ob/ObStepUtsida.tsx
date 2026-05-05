@@ -1921,6 +1921,12 @@ function ExteriorControlPointsSection({
           </div>
         )}
 
+        {freeNoteItems.length > 0 && (
+          <div className="pt-1 text-xs font-semibold text-gray-900">
+            Fria noteringar - {item.label}
+          </div>
+        )}
+
         {freeNoteItems.map(ci => {
           const ciId = ci.id ?? ''
           const ciImages = ciId ? imagesByControlItemId[ciId] || [] : []
@@ -1939,7 +1945,7 @@ function ExteriorControlPointsSection({
                   <button
                     type="button"
                     onClick={() => ciId && toggleFreeNoteCollapsed(ciId)}
-                    className="text-[11px] text-gray-700 hover:underline"
+                    className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
                     aria-expanded={!isCollapsed}
                     disabled={!ciId}
                   >
