@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState, ChangeEvent, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import DebouncedTextarea from './DebouncedTextarea'
-import ControlPointSearchDialog from './ControlPointSearchDialog'
+import ControlPointSearchDialog, {
+  type ControlPointSearchMode,
+} from './ControlPointSearchDialog'
 
 type Inspection = {
   id: string
@@ -15,7 +17,7 @@ type Inspection = {
   inspection_side?: string | null
 }
 type InspectionSide = 'buyer' | 'seller' | 'apartment'
-type SearchMode = 'control_points' | 'chips'
+type SearchMode = ControlPointSearchMode
 type ValueMap = Record<string, unknown>
 
 type RoomType = {
@@ -2242,6 +2244,7 @@ function RoomControlPointsSection({
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState<ControlPointLite[]>([])
   const [searching, setSearching] = useState(false)
+  const [aiSearchHasRun, setAiSearchHasRun] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [searchMode, setSearchMode] = useState<SearchMode>('control_points')
   const [expandedOkGroupIds, setExpandedOkGroupIds] = useState<Set<string>>(
@@ -2401,6 +2404,7 @@ function RoomControlPointsSection({
     setSearchTerm('')
     setSearchResults([])
     setSearching(false)
+    setAiSearchHasRun(false)
   }
 
   const handleToggleSearch = () => {
@@ -2425,6 +2429,13 @@ function RoomControlPointsSection({
     setSearchTerm(term)
 
     const trimmed = term.trim()
+    if (searchMode === 'ai') {
+      setAiSearchHasRun(false)
+      setSearchResults([])
+      setSearching(false)
+      return
+    }
+
     if (trimmed.length < 2) {
       setSearchResults([])
       return
@@ -2533,6 +2544,42 @@ function RoomControlPointsSection({
     }
   }
 
+  const handleAiSearch = async () => {
+    const trimmed = searchTerm.trim()
+    if (trimmed.length < 2 || isInspectionLocked) return
+
+    setSearching(true)
+    setAiSearchHasRun(false)
+    try {
+      const response = await fetch('/api/ai/search-control-points/interior', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: trimmed,
+          limit: 10,
+        }),
+      })
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string }
+        console.error('AI control point search failed:', payload.error ?? response.statusText)
+        setSearchResults([])
+        return
+      }
+
+      const payload = (await response.json()) as { results?: ControlPointLite[] }
+      setSearchResults(payload.results ?? [])
+    } catch (error) {
+      console.error('AI control point search failed:', error)
+      setSearchResults([])
+    } finally {
+      setAiSearchHasRun(true)
+      setSearching(false)
+    }
+  }
+
   const controlPointScopeLabel = (cp: ControlPointLite) => {
     if (cp.scope === 'exterior') {
       return cp.exterior_item_key ? `Utsida - ${cp.exterior_item_key}` : 'Utsida'
@@ -2554,9 +2601,13 @@ function RoomControlPointsSection({
         disabled={isInspectionLocked}
         controlPointPlaceholder="Sök t.ex. golvbrunn, kyl, trinett..."
         chipPlaceholder="Sök chip, t.ex. spricka, fukt, missfärgning..."
+        aiPlaceholder="Beskriv vad du ser, t.ex. plåt som släppt på insidan..."
+        showAiMode
+        aiSearchHasRun={aiSearchHasRun}
         scopeLabelForResult={controlPointScopeLabel}
         onSearchModeChange={handleSearchModeChange}
         onSearchChange={handleSearchChange}
+        onRunAiSearch={handleAiSearch}
         onSelect={cp => {
           onAddFromCatalog(room, cp)
           handleCloseSearch()

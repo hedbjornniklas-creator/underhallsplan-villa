@@ -2,7 +2,7 @@
 
 import { ChangeEvent, useEffect, useRef } from 'react'
 
-export type ControlPointSearchMode = 'control_points' | 'chips'
+export type ControlPointSearchMode = 'control_points' | 'chips' | 'ai'
 
 export type ControlPointSearchResult = {
   id: string
@@ -24,6 +24,10 @@ type ControlPointSearchDialogProps<T extends ControlPointSearchResult> = {
   disabled?: boolean
   controlPointPlaceholder: string
   chipPlaceholder: string
+  aiPlaceholder?: string
+  showAiMode?: boolean
+  aiSearchHasRun?: boolean
+  onRunAiSearch?: () => void
   scopeLabelForResult: (result: T) => string
   onSearchModeChange: (mode: ControlPointSearchMode) => void
   onSearchChange: (event: ChangeEvent<HTMLInputElement>) => void
@@ -42,6 +46,10 @@ export default function ControlPointSearchDialog<T extends ControlPointSearchRes
   disabled = false,
   controlPointPlaceholder,
   chipPlaceholder,
+  aiPlaceholder,
+  showAiMode = false,
+  aiSearchHasRun = false,
+  onRunAiSearch,
   scopeLabelForResult,
   onSearchModeChange,
   onSearchChange,
@@ -69,6 +77,13 @@ export default function ControlPointSearchDialog<T extends ControlPointSearchRes
   }, [open, onClose])
 
   if (!open) return null
+  const emptyStateEnabled = searchMode !== 'ai' || aiSearchHasRun
+  const currentPlaceholder =
+    searchMode === 'chips'
+      ? chipPlaceholder
+      : searchMode === 'ai'
+        ? aiPlaceholder ?? controlPointPlaceholder
+        : controlPointPlaceholder
 
   return (
     <div className="fixed inset-0 z-50 bg-white md:bg-black/35">
@@ -119,15 +134,39 @@ export default function ControlPointSearchDialog<T extends ControlPointSearchRes
               >
                 Chips
               </button>
+              {showAiMode && (
+                <button
+                  type="button"
+                  onClick={() => onSearchModeChange('ai')}
+                  className={
+                    'rounded px-3 py-1.5 text-xs font-medium ' +
+                    (searchMode === 'ai'
+                      ? 'bg-gray-900 text-white'
+                      : 'text-gray-700 hover:bg-gray-100')
+                  }
+                >
+                  AI-sök
+                </button>
+              )}
             </div>
             <input
               ref={inputRef}
               className="w-full rounded-xl border border-gray-300 bg-white px-3 py-3 text-base text-gray-900 placeholder:text-gray-500 focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
-              placeholder={searchMode === 'chips' ? chipPlaceholder : controlPointPlaceholder}
+              placeholder={currentPlaceholder}
               value={searchTerm}
               onChange={onSearchChange}
               readOnly={disabled}
             />
+            {searchMode === 'ai' && onRunAiSearch && (
+              <button
+                type="button"
+                onClick={onRunAiSearch}
+                disabled={disabled || searching || searchTerm.trim().length < 2}
+                className="rounded-xl bg-gray-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Sök med AI
+              </button>
+            )}
           </div>
         </header>
 
@@ -144,9 +183,13 @@ export default function ControlPointSearchDialog<T extends ControlPointSearchRes
             </div>
           )}
 
-          {!searching && searchTerm.trim().length >= 2 && searchResults.length === 0 && (
+          {!searching && emptyStateEnabled && searchTerm.trim().length >= 2 && searchResults.length === 0 && (
             <div className="rounded-lg border border-gray-200 bg-white px-3 py-3 text-sm text-gray-600">
-              {searchMode === 'chips' ? 'Inga chips' : 'Inga kontrollpunkter'} hittades för &quot;{searchTerm.trim()}&quot;.
+              {searchMode === 'chips'
+                ? 'Inga chips'
+                : searchMode === 'ai'
+                  ? 'Inga AI-träffar'
+                  : 'Inga kontrollpunkter'} hittades för &quot;{searchTerm.trim()}&quot;.
             </div>
           )}
 

@@ -3,7 +3,9 @@
 import { useEffect, useState, ChangeEvent, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import DebouncedTextarea from './DebouncedTextarea'
-import ControlPointSearchDialog from './ControlPointSearchDialog'
+import ControlPointSearchDialog, {
+  type ControlPointSearchMode,
+} from './ControlPointSearchDialog'
 
 type Inspection = {
   id: string
@@ -13,7 +15,7 @@ type Inspection = {
   status?: string | null
   locked_at?: string | null
 }
-type SearchMode = 'control_points' | 'chips'
+type SearchMode = ControlPointSearchMode
 type ValueMap = Record<string, unknown>
 type ErrorLike = { code?: string; message?: string; details?: string; hint?: string }
 
