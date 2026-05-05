@@ -245,9 +245,6 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
   const buildingDataText = isApartment
     ? filterApartmentBuildingData(buildingDataTextRaw)
     : buildingDataTextRaw
-  const riskText = getTextByPath(mock, 'risk.text', '')
-  const ftuText = getTextByPath(mock, 'ftu.text', '')
-
   const attendeesText = getTextByPath(mock, 'inspections.attendees_text', '--')
   const assignmentConfirmationText = getTextByPath(
     mock,
@@ -274,7 +271,6 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
 
   const visualConditionsText = loadStandardText('STD_VISUAL_INSPECTION_CONDITIONS')
   const visualOralText = loadStandardText('STD_VISUAL_INSPECTION_ORAL')
-  const ftuGeneralNotice = loadStandardText('STD_FTU_GENERAL_NOTICE')
   const appendix1Text = loadAppendixText(resolveAppendix1Id(inspectionSide))
   const appendix2Text = loadAppendixText('APPENDIX_2_LITEN_BYGGORDBOK_SBR')
   const appendix3Text = loadAppendixText('APPENDIX_3_LIFESPAN_TABLE_SBR')
@@ -629,23 +625,6 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
           </h2>
           <div className="mt-3">{renderBlocks(interiorBlocks)}</div>
         </section>
-
-        {riskText ? (
-          <section className="rounded-xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-rose-800">Risker</h2>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-rose-900">{riskText}</p>
-          </section>
-        ) : null}
-
-        {ftuText ? (
-          <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-800">
-              Fortsatt teknisk utredning
-            </h2>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-amber-900">{ftuText}</p>
-            <p className="mt-3 whitespace-pre-wrap text-xs text-amber-900">{ftuGeneralNotice}</p>
-          </section>
-        ) : null}
 
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Bilagor</h2>

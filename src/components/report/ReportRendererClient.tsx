@@ -7,9 +7,9 @@ import ReportPage from '@/components/report/ReportPage'
 import type { ReportBlock, ReportSection, TextSource } from '@/lib/report/reportSpec'
 import {
   ACCENT_COLOR,
+  APPENDIX_FONT_PT,
   REPORT_STYLES,
   FONT_FAMILY,
-  BASE_FONT_PT,
   LINE_HEIGHT,
   PAGE_HEIGHT_MM,
   PAGE_PADDING_MM,
@@ -404,31 +404,60 @@ const splitAppendixText = (rawText: string) => {
     .filter((segment) => segment.length > 0)
 }
 
-const appendixLineHeightPx = (BASE_FONT_PT * 96) / 72 * LINE_HEIGHT
-const APPENDIX_PAGE_SAFETY_MM = 10
+const APPENDIX_LINE_HEIGHT = 1.15
+const APPENDIX_PAGE_SAFETY_MM = 30
+const APPENDIX_HEADER_RESERVE_MM = 10
+const APPENDIX_MAX_LINES_PER_COLUMN = 38
+const APPENDIX_LONGFORM_CHARS_PER_LINE = 108
+const appendixLineHeightPx = (APPENDIX_FONT_PT * 96) / 72 * APPENDIX_LINE_HEIGHT
 const appendixAvailableHeightPx = mmToPxNumber(
   PAGE_HEIGHT_MM -
     PAGE_PADDING_MM.top -
     PAGE_PADDING_MM.bottom -
     FOOTER_MARK_HEIGHT_MM -
+    APPENDIX_HEADER_RESERVE_MM -
     6 -
     APPENDIX_PAGE_SAFETY_MM
 )
 const appendixLinesPerColumn = Math.max(
   1,
-  Math.floor(appendixAvailableHeightPx / appendixLineHeightPx)
+  Math.min(
+    APPENDIX_MAX_LINES_PER_COLUMN,
+    Math.floor(appendixAvailableHeightPx / appendixLineHeightPx)
+  )
 )
 const appendixLinesPerPage = appendixLinesPerColumn
-const appendixTitleLineReduction = 6
+const appendixTitleLineReduction = 7
+
+const estimateAppendixLineUnits = (line: string) => {
+  const trimmed = line.trim()
+  if (!trimmed) return 0.7
+  return Math.max(1, Math.ceil(trimmed.length / APPENDIX_LONGFORM_CHARS_PER_LINE))
+}
 
 const chunkAppendixLines = (lines: string[], showTitle: boolean) => {
-  const pageSize = Math.max(
+  const chunks: string[][] = []
+  let current: string[] = []
+  let currentUnits = 0
+  let limit = Math.max(
     1,
     appendixLinesPerPage - (showTitle ? appendixTitleLineReduction : 0)
   )
-  const chunks: string[][] = []
-  for (let i = 0; i < lines.length; i += pageSize) {
-    chunks.push(lines.slice(i, i + pageSize))
+
+  lines.forEach((line) => {
+    const units = estimateAppendixLineUnits(line)
+    if (current.length > 0 && currentUnits + units > limit) {
+      chunks.push(current)
+      current = []
+      currentUnits = 0
+      limit = appendixLinesPerPage
+    }
+    current.push(line)
+    currentUnits += units
+  })
+
+  if (current.length > 0) {
+    chunks.push(current)
   }
   return chunks
 }

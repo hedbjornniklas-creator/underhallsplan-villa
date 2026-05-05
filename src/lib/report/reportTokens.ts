@@ -2,6 +2,7 @@ export const FONT_FAMILY = 'Calibri, sans-serif'
 export const ACCENT_COLOR = '#5B9BD5'
 export const TEXT_COLOR = '#000000'
 export const BASE_FONT_PT = 11
+export const APPENDIX_FONT_PT = 9.5
 export const LINE_HEIGHT = 1.15
 export const PAGE_WIDTH_MM = 210
 export const PAGE_HEIGHT_MM = 297

@@ -1,5 +1,4 @@
-import { ACCENT_COLOR, REPORT_STYLES, mmToPx } from '@/lib/report/reportTokens'
-import type { ReactElement } from 'react'
+import { ACCENT_COLOR, APPENDIX_FONT_PT, REPORT_STYLES, mmToPx } from '@/lib/report/reportTokens'
 
 type AppendixPageProps = {
   title: string
@@ -29,8 +28,7 @@ export default function AppendixPage({
   const isLongform = variant === 'longform'
   const isGlossary = variant === 'glossary'
   const isLifespan = variant === 'lifespan'
-  const baseFontSize = isLifespan ? '10pt' : REPORT_STYLES.BODY.fontSize
-  const exceptionFontSize = isLifespan ? '11pt' : baseFontSize
+  const baseFontSize = isLifespan ? '9pt' : `${APPENDIX_FONT_PT}pt`
   const columnStyles = {}
 
   const exceptionHeadings = [
