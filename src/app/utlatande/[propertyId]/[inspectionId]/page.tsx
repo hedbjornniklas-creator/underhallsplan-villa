@@ -157,6 +157,12 @@ export default async function Page({
     return key === 'ovrigt' || key === '\u00f6vrigt'
   }
 
+  const getInteriorRoomNameForReport = (room: InteriorRoomRow) => {
+    const roomName = normalizeSwedish(String(room.room_label ?? '')).trim()
+    if (!isOtherKey(room.room_type_key)) return roomName
+    return normalizeKey(roomName) === 'allm\u00e4nt' ? '' : roomName
+  }
+
   const normalizeInteriorFloorKey = (value: string | null | undefined) => {
     const key = normalizeKey(value)
     if (key === 'entr\u00e9plan') return 'plan1'
@@ -1214,9 +1220,7 @@ export default async function Page({
 
   for (const room of sortedInteriorRooms) {
     const floorLabel = floorLabelFromKey(room.floor_label)
-    const roomName = isOtherKey(room.room_type_key)
-      ? ''
-      : normalizeSwedish(String(room.room_label ?? '')).trim()
+    const roomName = getInteriorRoomNameForReport(room)
     const roomTitle = [floorLabel, roomName]
       .filter(Boolean)
       .join(' - ')

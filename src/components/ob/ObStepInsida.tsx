@@ -866,8 +866,11 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     normalizeSwedish(room.floor_label) === OTHER_ROOM_TYPE_KEY &&
     (room.order_index ?? 0) === 0
 
-  const getRoomDisplayLabel = (room: InteriorRoom) =>
-    isOtherRoom(room) ? OTHER_ROOM_DISPLAY_LABEL : room.room_label
+  const getRoomDisplayLabel = (room: InteriorRoom) => {
+    const customLabel = normalizeSwedish(room.room_label ?? '').trim()
+    if (customLabel) return customLabel
+    return isOtherRoom(room) ? OTHER_ROOM_DISPLAY_LABEL : getRoomTypeLabel(room.room_type_key)
+  }
 
   const roomChips = useMemo(() => {
     if (!activeFloor) return []
@@ -1654,6 +1657,9 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     if (!editingRoomId) return
     const current = rooms.find(r => r.id === editingRoomId)
     if (!current) return
+    const nextRoomTypeKey = editRoomTypeKey || current.room_type_key
+    const nextRoomLabel =
+      normalizeSwedish(editRoomLabel).trim() || getRoomTypeLabel(nextRoomTypeKey)
     const nextFloor = normalizeFloorKey(editRoomFloorLabel || current.floor_label)
     const isFloorChanged = nextFloor !== normalizeFloorKey(current.floor_label)
     const nextOrder = isFloorChanged
@@ -1662,8 +1668,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           .reduce((m, r) => Math.max(m, r.order_index ?? 0), 0) + 10
       : current.order_index
     await updateRoomField(editingRoomId, {
-      room_label: editRoomLabel,
-      room_type_key: editRoomTypeKey,
+      room_label: nextRoomLabel,
+      room_type_key: nextRoomTypeKey,
       floor_label: nextFloor,
       order_index: nextOrder,
     })
@@ -2246,9 +2252,9 @@ function RoomControlPointsSection({
   )
   const hasLoadedCollapsedGroupsRef = useRef(false)
   const hasLoadedCollapsedFreeNotesRef = useRef(false)
-  const roomDisplayLabel = isOtherRoomKey(room.room_type_key)
-    ? OTHER_ROOM_DISPLAY_LABEL
-    : room.room_label
+  const roomDisplayLabel =
+    normalizeSwedish(room.room_label ?? '').trim() ||
+    (isOtherRoomKey(room.room_type_key) ? OTHER_ROOM_DISPLAY_LABEL : 'rummet')
   const groupedItems = useMemo(() => {
     const map = new Map<string, InspectionControlItem[]>()
     for (const ci of items) {
