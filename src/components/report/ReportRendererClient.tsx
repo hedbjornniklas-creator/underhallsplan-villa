@@ -1257,14 +1257,22 @@ export default function ReportRendererClient({
                         key={`${keyPrefix}-photo-${urlIndex}`}
                         src={url}
                         alt={`Foto ${urlIndex + 1}`}
-                        className="h-auto rounded border border-gray-200 object-contain bg-white"
+                        className={
+                          isPdfMode
+                            ? 'h-auto object-contain bg-white'
+                            : 'h-auto rounded border border-gray-200 object-contain bg-white'
+                        }
                         style={{ width: '60mm' }}
                       />
                     ))
                   : photoUrls.map((url, urlIndex) => (
                       <div
                         key={`${keyPrefix}-photo-${urlIndex}`}
-                        className="h-24 w-32 rounded-md border border-gray-200 bg-white overflow-hidden flex items-center justify-center"
+                        className={
+                          isPdfMode
+                            ? 'h-24 w-32 bg-white overflow-hidden flex items-center justify-center'
+                            : 'h-24 w-32 rounded-md border border-gray-200 bg-white overflow-hidden flex items-center justify-center'
+                        }
                       >
                         <ReportPhoto
                           src={url}
@@ -1280,7 +1288,13 @@ export default function ReportRendererClient({
         </section>
 
         {riskText.length > 0 && (
-          <div className="mt-4 rounded-md border border-gray-200 bg-white p-3">
+          <div
+            className={
+              isPdfMode
+                ? 'mt-3 border-l-2 border-amber-500 bg-white py-1 pl-3'
+                : 'mt-4 rounded-md border border-gray-200 bg-white p-3'
+            }
+          >
             <div className="flex items-center gap-2 text-xs font-semibold text-gray-700">
               <span className="ob-icon ob-icon--risk" aria-hidden="true">
                 <ReportIcon name="risk" />
@@ -1294,7 +1308,13 @@ export default function ReportRendererClient({
         )}
 
         {ftuText.length > 0 && (
-          <div className="mt-4 rounded-md border border-gray-200 bg-white p-3">
+          <div
+            className={
+              isPdfMode
+                ? 'mt-3 border-l-2 border-slate-400 bg-white py-1 pl-3'
+                : 'mt-4 rounded-md border border-gray-200 bg-white p-3'
+            }
+          >
             <div className="flex items-center gap-2 text-xs font-semibold text-gray-700">
               <span className="ob-icon ob-icon--ftu" aria-hidden="true">
                 <ReportIcon name="ftu" />
@@ -1320,10 +1340,14 @@ export default function ReportRendererClient({
     return (
       <article
         key={key}
-        className="ob-block border border-gray-200 rounded-lg p-4 mb-6 bg-white"
+        className={
+          isPdfMode
+            ? 'ob-block bg-white pb-4 mb-5 border-b border-slate-200'
+            : 'ob-block border border-gray-200 rounded-lg p-4 mb-6 bg-white'
+        }
         style={blockMargins({ marginTopMm, marginBottomMm } as ReportBlock)}
       >
-        <header className="ob-block__header mb-3">
+        <header className={isPdfMode ? 'ob-block__header mb-2' : 'ob-block__header mb-3'}>
           <h4 className="ob-block__title text-[15px] font-semibold text-gray-900">
             {title}
           </h4>
@@ -1503,9 +1527,13 @@ export default function ReportRendererClient({
             return (
               <article
                 key={`${sectionId}-inspection-${index}-${itemIndex}`}
-                className="ob-block border border-gray-200 rounded-lg p-4 mb-6 bg-white"
+                className={
+                  isPdfMode
+                    ? 'ob-block bg-white pb-4 mb-5 border-b border-slate-200'
+                    : 'ob-block border border-gray-200 rounded-lg p-4 mb-6 bg-white'
+                }
               >
-                <header className="ob-block__header mb-3">
+                <header className={isPdfMode ? 'ob-block__header mb-2' : 'ob-block__header mb-3'}>
                   <h4 className="ob-block__title text-[15px] font-semibold text-gray-900">
                     {String(item.title ?? '')}
                   </h4>
@@ -1569,9 +1597,9 @@ export default function ReportRendererClient({
             ...blockMargins(block),
             marginBottom: mmToPx(marginBottomMm),
           }}
-          className="rounded-lg border border-blue-300/70 bg-white p-4 mb-4"
+          className="bg-white pb-4 mb-4 border-b border-slate-200"
         >
-          <header className="mb-3">
+          <header className="mb-2">
             <h4 className="text-[15px] font-semibold text-gray-900">{title}</h4>
           </header>
           {renderInspectionItemContent(
