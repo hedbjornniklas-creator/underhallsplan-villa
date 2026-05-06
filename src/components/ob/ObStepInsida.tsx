@@ -323,9 +323,9 @@ const controlPointMatchesRoom = (
 const floorLabelFromKey = (k: string) => {
   const normalized = normalizeSwedish(k)
   if (normalized === 'källare') return 'Källare'
-  if (normalized === 'källare_delvis') return 'Källare (delvis)'
+  if (normalized === 'källare_delvis') return 'Källare'
   if (normalized === 'entréplan' || normalized === 'plan1') return 'Plan 1'
-  if (normalized === 'plan2') return 'Plan 2 / Övre plan'
+  if (normalized === 'plan2') return 'Plan 2'
   if (normalized === 'plan3') return 'Plan 3'
   if (normalized.startsWith('plan')) return `Plan ${normalized.replace('plan', '')}`
   return normalized
@@ -383,13 +383,54 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   const [editRoomLabel, setEditRoomLabel] = useState('')
   const [editRoomTypeKey, setEditRoomTypeKey] = useState('')
   const [editRoomFloorLabel, setEditRoomFloorLabel] = useState('')
+  const [collapsedRoomIds, setCollapsedRoomIds] = useState<Set<string>>(
+    () => new Set()
+  )
   const otherRoomEnsuredRef = useRef(false)
   const otherRoomItemsEnsuredRef = useRef(false)
+  const hasLoadedCollapsedRoomsRef = useRef(false)
+  const collapsedRoomsStorageKey = `ob:insida:collapsed:${inspection.id}:rooms`
 
   useEffect(() => {
     otherRoomEnsuredRef.current = false
     otherRoomItemsEnsuredRef.current = false
   }, [inspection?.id])
+
+  useEffect(() => {
+    hasLoadedCollapsedRoomsRef.current = false
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(collapsedRoomsStorageKey)
+      if (!raw) {
+        setCollapsedRoomIds(new Set())
+        hasLoadedCollapsedRoomsRef.current = true
+        return
+      }
+      const parsed = JSON.parse(raw)
+      setCollapsedRoomIds(
+        Array.isArray(parsed)
+          ? new Set(parsed.filter((value): value is string => typeof value === 'string'))
+          : new Set()
+      )
+    } catch (e) {
+      console.warn('Kunde inte läsa dolda rum för insida:', e)
+      setCollapsedRoomIds(new Set())
+    } finally {
+      hasLoadedCollapsedRoomsRef.current = true
+    }
+  }, [collapsedRoomsStorageKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !hasLoadedCollapsedRoomsRef.current) return
+    try {
+      window.localStorage.setItem(
+        collapsedRoomsStorageKey,
+        JSON.stringify(Array.from(collapsedRoomIds.values()))
+      )
+    } catch (e) {
+      console.warn('Kunde inte spara dolda rum för insida:', e)
+    }
+  }, [collapsedRoomIds, collapsedRoomsStorageKey])
 
   useEffect(() => {
     if (!inspection?.id) return
@@ -876,6 +917,42 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     const customLabel = normalizeSwedish(room.room_label ?? '').trim()
     if (customLabel) return customLabel
     return isOtherRoom(room) ? OTHER_ROOM_DISPLAY_LABEL : getRoomTypeLabel(room.room_type_key)
+  }
+
+  const getCompactRoomTypeLabel = (room: InteriorRoom) => {
+    const typeLabel = getRoomTypeLabel(room.room_type_key)
+    const roomLabel = normalizeSwedish(room.room_label ?? '').trim()
+    if (!roomLabel) return typeLabel
+
+    const normalizedRoomLabel = roomLabel.toLowerCase()
+    const normalizedTypeLabel = normalizeSwedish(typeLabel).trim().toLowerCase()
+    const autoNumberedRoomPattern = new RegExp(
+      `^${normalizedTypeLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+\\d+$`
+    )
+
+    if (autoNumberedRoomPattern.test(normalizedRoomLabel)) {
+      return typeLabel
+    }
+
+    return roomLabel
+  }
+
+  const getRoomHeading = (room: InteriorRoom) => {
+    const floorLabel = getFloorLabel(room.floor_label)
+    const roomLabel = getCompactRoomTypeLabel(room)
+    return floorLabel ? `${floorLabel}, ${roomLabel}` : roomLabel
+  }
+
+  const toggleRoomCollapsed = (roomId: string) => {
+    setCollapsedRoomIds(prev => {
+      const next = new Set(prev)
+      if (next.has(roomId)) {
+        next.delete(roomId)
+      } else {
+        next.add(roomId)
+      }
+      return next
+    })
   }
 
   const roomChips = useMemo(() => {
@@ -1646,6 +1723,12 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
   const startEditRoom = (room: InteriorRoom) => {
     if (!room.id) return
+    setCollapsedRoomIds(prev => {
+      if (!prev.has(room.id!)) return prev
+      const next = new Set(prev)
+      next.delete(room.id!)
+      return next
+    })
     setEditingRoomId(room.id)
     setEditRoomLabel(room.room_label)
     setEditRoomTypeKey(room.room_type_key)
@@ -1864,7 +1947,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                   className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm"
                   value={newFloorLabel}
                   onChange={e => setNewFloorLabel(e.target.value)}
-                  placeholder="t.ex. Källare, Plan 1, Övre plan"
+                  placeholder="t.ex. Källare, Plan 1, Plan 2"
                 />
               )}
             </div>
@@ -1922,10 +2005,10 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       {/* Rumskort */}
       <section className="space-y-4">
         {filteredRooms.map(room => {
-          const rtLabel = getRoomTypeLabel(room.room_type_key)
           const vals = room.values || {}
           const roomId = room.id ?? ''
           const roomControlItems = controlItemsByRoomId[roomId] || []
+          const isRoomCollapsed = roomId ? collapsedRoomIds.has(roomId) : false
 
           return (
             <article
@@ -1933,18 +2016,23 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
               id={room.id ? `room-card-${room.id}` : undefined}
               className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-4"
             >
-              <header className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="text-xs uppercase text-gray-600">
-                    {getFloorLabel(room.floor_label)}
-                  </div>
-                  <h3 className="text-base font-semibold text-gray-900">
-                    {getRoomDisplayLabel(room)}{' '}
-                    <span className="text-gray-600 text-xs">({rtLabel})</span>
+              <header className="flex min-w-0 items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-semibold text-gray-900">
+                    {getRoomHeading(room)}
                   </h3>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => roomId && toggleRoomCollapsed(roomId)}
+                    className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
+                    aria-expanded={!isRoomCollapsed}
+                    disabled={!roomId}
+                  >
+                    {isRoomCollapsed ? 'Visa' : 'Dölj'}
+                  </button>
                   <button
                     type="button"
                     onClick={() => startEditRoom(room)}
@@ -1965,7 +2053,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                 </div>
               </header>
 
-              {editingRoomId === room.id && (
+              {!isRoomCollapsed && editingRoomId === room.id && (
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
                   <div className="grid gap-3 md:grid-cols-3">
                     <div>
@@ -2039,40 +2127,44 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                 </div>
               )}
 
-              <div className="grid gap-3 md:grid-cols-3">
-                {filteredGroups.map(g => (
-                  <SelectField
-                    key={g.id}
-                    label={g.label}
-                    value={vals[g.key] ?? ''}
-                    options={optionsByGroup[g.id] || []}
-                    onChange={v =>
-                      updateRoomValues(room.id, { [g.key]: v })
-                    }
-                  />
-                ))}
-              </div>
+              {!isRoomCollapsed && (
+                <>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {filteredGroups.map(g => (
+                      <SelectField
+                        key={g.id}
+                        label={g.label}
+                        value={vals[g.key] ?? ''}
+                        options={optionsByGroup[g.id] || []}
+                        onChange={v =>
+                          updateRoomValues(room.id, { [g.key]: v })
+                        }
+                      />
+                    ))}
+                  </div>
 
-              {/* Kontrollpunkter för rummet */}
-              {room.id && (
-                <RoomControlPointsSection
-                  room={room}
-                  collapsedStorageKey={`ob:insida:collapsed:${inspection.id}:room:${room.id}`}
-                  inspectionSide={inspectionSide}
-                  items={roomControlItems}
-                  onUpdateItem={updateControlItem}
-                  onDeleteItem={deleteControlItem}
-                  onDeleteItemGroup={deleteControlItemGroup}
-                  onAddOutcomeItem={addOutcomeControlItem}
-                  onAddFromCatalog={addControlItemFromCatalog}
-                  onAddFreeNote={addFreeNoteControlItem}
-                  isInspectionLocked={isInspectionLocked}
-                  outcomesByControlPointId={outcomesByControlPointId}
-                  controlPointMetaById={controlPointMetaById}
-                  imagesByControlItemId={imagesByControlItemId}
-                  onUploadImage={handleUploadImageForControlItem}
-                  onDeleteImage={handleDeleteImage}
-                />
+                  {/* Kontrollpunkter för rummet */}
+                  {room.id && (
+                    <RoomControlPointsSection
+                      room={room}
+                      collapsedStorageKey={`ob:insida:collapsed:${inspection.id}:room:${room.id}`}
+                      inspectionSide={inspectionSide}
+                      items={roomControlItems}
+                      onUpdateItem={updateControlItem}
+                      onDeleteItem={deleteControlItem}
+                      onDeleteItemGroup={deleteControlItemGroup}
+                      onAddOutcomeItem={addOutcomeControlItem}
+                      onAddFromCatalog={addControlItemFromCatalog}
+                      onAddFreeNote={addFreeNoteControlItem}
+                      isInspectionLocked={isInspectionLocked}
+                      outcomesByControlPointId={outcomesByControlPointId}
+                      controlPointMetaById={controlPointMetaById}
+                      imagesByControlItemId={imagesByControlItemId}
+                      onUploadImage={handleUploadImageForControlItem}
+                      onDeleteImage={handleDeleteImage}
+                    />
+                  )}
+                </>
               )}
             </article>
           )
@@ -2621,9 +2713,6 @@ function RoomControlPointsSection({
           <h4 className="text-sm font-semibold text-gray-900">
             Kontrollpunkter i detta rum
           </h4>
-          <span className="text-xs md:text-[11px] text-gray-600">
-            Noteringarna här gäller respektive kontrollpunkt.
-          </span>
         </div>
 
         <div className="flex flex-wrap gap-2">

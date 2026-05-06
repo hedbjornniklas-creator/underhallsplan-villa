@@ -1921,12 +1921,6 @@ function ExteriorControlPointsSection({
           </div>
         )}
 
-        {freeNoteItems.length > 0 && (
-          <div className="pt-1 text-xs font-semibold text-gray-900">
-            Fria noteringar - {item.label}
-          </div>
-        )}
-
         {freeNoteItems.map(ci => {
           const ciId = ci.id ?? ''
           const ciImages = ciId ? imagesByControlItemId[ciId] || [] : []
@@ -2019,7 +2013,7 @@ function ExteriorControlPointsSection({
                       images={ciImages}
                       onUpload={file => onUploadImageForControlItem(ci, file)}
                       onDelete={onDeleteControlItemImage}
-                      title="Bilder (fri notering)"
+                      title="Bilder"
                       disabled={isInspectionLocked}
                     />
                   )}
@@ -2621,15 +2615,8 @@ function FreeNotesSection({
 
   return (
     <section className="space-y-3">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        {hasFreeNotes && (
-          <div>
-            <h4 className="text-sm font-semibold text-gray-900">
-              Fria noteringar – {item.label}
-            </h4>
-          </div>
-        )}
-        <div className="flex flex-wrap gap-2">
+      <header className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-2">
           <button
             type="button"
             onClick={onAddNewFreeNote}
@@ -2671,7 +2658,7 @@ function FreeNotesSection({
         onClose={handleCloseSearch}
       />
 
-      {/* Lista fria noteringar */}
+      {/* Äldre fria observationer visas kvar för bakåtkompatibilitet. */}
       {hasFreeNotes && (
         <div className="space-y-2">
           {rows.map(row => {
@@ -2681,16 +2668,13 @@ function FreeNotesSection({
             return (
               <div
                 key={row.id}
-                className="rounded-lg border bg-gray-50 px-3 py-2 space-y-2"
+                className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 space-y-2"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex-1 space-y-1">
-                    <label className="text-[11px] text-gray-600">
-                      Del / rubrik (fri)
-                    </label>
+                  <div className="flex-1">
                     <input
-                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
-                      placeholder="t.ex. Uterum, altanräcke, stödmur…"
+                      className="w-full rounded-md border border-transparent bg-transparent px-0 py-0.5 text-xs font-semibold text-gray-900 placeholder:text-gray-500 focus:border-gray-300 focus:bg-white focus:px-2 focus:py-1.5"
+                      placeholder="Rubrik"
                       value={row.part_label ?? ''}
                       onChange={e =>
                         row.id &&
@@ -2724,7 +2708,7 @@ function FreeNotesSection({
                   <>
                     <div className="space-y-1">
                       <label className="text-[11px] text-gray-600">
-                        🧱 Notering (fri text)
+                        Notering
                       </label>
                       <DebouncedTextarea
                         rows={2}
@@ -2740,7 +2724,7 @@ function FreeNotesSection({
 
                     <div className="space-y-1">
                       <label className="text-[11px] text-gray-600">
-                        ⚠️ Riskanalys
+                        Riskanalys
                       </label>
                       <DebouncedTextarea
                         rows={3}
@@ -2756,7 +2740,7 @@ function FreeNotesSection({
 
                     <div className="space-y-1">
                       <label className="text-[11px] text-gray-600">
-                        🔍 Fortsatt teknisk utredning (FTU)
+                        Fortsatt teknisk utredning (FTU)
                       </label>
                       <DebouncedTextarea
                         rows={3}
@@ -2775,7 +2759,7 @@ function FreeNotesSection({
                         images={imagesByObservationId[row.id] || []}
                         onUpload={file => onUploadImageForObservation(row, file)}
                         onDelete={onDeleteObservationImage}
-                        title="Bilder (fri notering)"
+                        title="Bilder"
                         disabled={isInspectionLocked}
                       />
                     )}

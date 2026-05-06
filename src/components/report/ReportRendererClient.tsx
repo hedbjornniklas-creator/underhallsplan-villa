@@ -616,13 +616,15 @@ const estimateAppendixLineUnits = (line: string) => {
   return Math.max(1, Math.ceil(trimmed.length / APPENDIX_LONGFORM_CHARS_PER_LINE))
 }
 
-const chunkAppendixLines = (lines: string[], showTitle: boolean) => {
+const chunkAppendixLines = (lines: string[], showTitle: boolean, columns = 1) => {
   const chunks: string[][] = []
   let current: string[] = []
   let currentUnits = 0
+  const pageCapacity = Math.max(1, appendixLinesPerPage * columns)
+  const titleReduction = showTitle ? appendixTitleLineReduction * columns : 0
   let limit = Math.max(
     1,
-    appendixLinesPerPage - (showTitle ? appendixTitleLineReduction : 0)
+    pageCapacity - titleReduction
   )
 
   lines.forEach((line) => {
@@ -631,7 +633,7 @@ const chunkAppendixLines = (lines: string[], showTitle: boolean) => {
       chunks.push(current)
       current = []
       currentUnits = 0
-      limit = appendixLinesPerPage
+      limit = pageCapacity
     }
     current.push(line)
     currentUnits += units
@@ -928,7 +930,7 @@ export default function ReportRendererClient({
         segments.forEach((segment) => {
           const normalizedLines = normalizeAppendixLines(segment.split(/\r?\n/))
           if (normalizedLines.length === 0) return
-          const chunks = chunkAppendixLines(normalizedLines, isFirstPage)
+          const chunks = chunkAppendixLines(normalizedLines, isFirstPage, 2)
           chunks.forEach((chunk, index) => {
             const showTitle = isFirstPage && index === 0
             const chunkText = chunk.join('\n')

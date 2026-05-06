@@ -28,8 +28,44 @@ export default function AppendixPage({
   const isLongform = variant === 'longform'
   const isGlossary = variant === 'glossary'
   const isLifespan = variant === 'lifespan'
-  const baseFontSize = isLifespan ? '9pt' : `${APPENDIX_FONT_PT}pt`
+  const baseFontSize = isLifespan ? '9pt' : isLongform ? '8.7pt' : `${APPENDIX_FONT_PT}pt`
   const columnStyles = {}
+
+  const normalizeHeadingLabel = (value: string) =>
+    value
+      .trim()
+      .replace(/:$/, '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+
+  const longformHeadings = new Set(
+    [
+      'Begreppsbestämningar',
+      'Ändamålet',
+      'Ändamål',
+      'Genomförandet',
+      'Genomförande',
+      'Uppdragsbekräftelse',
+      'Överlåtelsebesiktningens huvudsakliga innehåll',
+      'Lägenhetsbesiktningens huvudsakliga innehåll',
+      'Handlingar och upplysningar',
+      'Besiktning',
+      'Besiktningen omfattar inte',
+      'Undantag',
+      'Riskanalys',
+      'Fortsatt teknisk utredning',
+      'Besiktningsutlåtande',
+      'Tilläggsuppdrag',
+      'Besiktningsmannens ansvar',
+      'Reklamation och preskription',
+      'Uppdragsgivarens ansvar',
+      'Besiktningsutlåtandets juridiska betydelse',
+      'Äganderätt och nyttjanderätt till besiktningsutlåtandet',
+      'Äganderätt eller nyttjanderätt till besiktningsutlåtandet',
+      'Betalning och hävning',
+    ].map(normalizeHeadingLabel)
+  )
 
   const exceptionHeadings = [
     'Vid köp av en fastighet bör man räkna med olika intervall för renovering och underhåll.',
@@ -119,22 +155,17 @@ export default function AppendixPage({
       }
 
       const trimmed = line.replace(/\s+$/, '')
-      const isFirst = offset + index === firstLineIndex
-      const isHeading =
-        isLongform &&
-        !isFirst &&
-        trimmed.length > 0 &&
-        trimmed.length < 50 &&
-        !trimmed.includes('.')
-      const emphasizeFirst = isLongform && isFirst
-      const fontSize = fontSizeOverride ?? (emphasizeFirst ? '12pt' : baseFontSize)
+      const isHeading = isLongform && longformHeadings.has(normalizeHeadingLabel(trimmed))
+      const fontSize = fontSizeOverride ?? baseFontSize
 
       return (
         <div
           key={`appendix-line-${offset + index}`}
           style={{
             fontSize,
-            fontWeight: emphasizeFirst || isHeading ? 700 : 400,
+            fontWeight: isHeading ? 700 : 400,
+            marginTop: isHeading && offset + index !== firstLineIndex ? '4pt' : 0,
+            marginBottom: isHeading ? '1.5pt' : 0,
             whiteSpace: 'pre-wrap',
           }}
         >
@@ -142,6 +173,44 @@ export default function AppendixPage({
         </div>
       )
     })
+
+  const estimatePlainLineUnits = (line: string) => {
+    const trimmed = line.trim()
+    if (!trimmed) return 0.7
+    return Math.max(1, Math.ceil(trimmed.length / 52))
+  }
+
+  const splitPlainColumns = (segment: string[]) => {
+    const totalUnits = segment.reduce((sum, line) => sum + estimatePlainLineUnits(line), 0)
+    const targetUnits = totalUnits / 2
+    let splitIndex = Math.ceil(segment.length / 2)
+    let currentUnits = 0
+
+    for (let index = 0; index < segment.length; index += 1) {
+      currentUnits += estimatePlainLineUnits(segment[index] ?? '')
+      if (currentUnits >= targetUnits) {
+        splitIndex = index + 1
+        break
+      }
+    }
+
+    return [segment.slice(0, splitIndex), segment.slice(splitIndex)]
+  }
+
+  const renderLongformColumns = (segment: string[], offset: number) => {
+    const [left, right] = splitPlainColumns(segment)
+    const rightOffset = offset + left.length
+
+    return [
+      <div
+        key={`appendix-longform-${offset}`}
+        style={{ display: 'flex', gap: mmToPx(8), alignItems: 'flex-start' }}
+      >
+        <div style={{ flex: 1 }}>{renderPlainLines(left, offset)}</div>
+        <div style={{ flex: 1 }}>{renderPlainLines(right, rightOffset)}</div>
+      </div>,
+    ]
+  }
 
   const renderLifespanColumns = (segment: string[], offset: number) => {
     type LifespanEntry =
@@ -310,6 +379,7 @@ export default function AppendixPage({
 const renderLines = (segment: string[], offset: number) => {
     if (isGlossary) return renderGlossaryLines(segment, offset)
     if (isLifespan) return renderLifespanColumns(segment, offset)
+    if (isLongform) return renderLongformColumns(segment, offset)
     return renderPlainLines(segment, offset)
   }
 
