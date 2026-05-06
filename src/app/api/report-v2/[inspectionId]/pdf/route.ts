@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireOrgContext } from '@/lib/assignments/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
@@ -16,14 +17,6 @@ const decodeStoredPdf = (base64: string) => {
   } catch {
     return null
   }
-}
-
-const normalizeInspectionStatus = (value: string | null | undefined) => {
-  const normalized = (value ?? '').trim().toLowerCase()
-  if (normalized === 'completed' || normalized === 'klar' || normalized === 'done') return 'completed'
-  if (normalized === 'archived' || normalized === 'arkiverad') return 'archived'
-  if (normalized === 'draft' || normalized === 'utkast' || normalized === '') return 'draft'
-  return 'ongoing'
 }
 
 const normalizePdfStatus = (value: unknown): 'pending' | 'processing' | 'ready' | 'failed' => {
@@ -46,6 +39,15 @@ type LinkPdfRow = {
   created_at: string
 }
 
+type AdminClient = ReturnType<typeof createSupabaseAdminClient>
+
+type InspectionForPdf = {
+  id: string
+  status: string | null
+  assignment_number: string | null
+  property_id: string | null
+}
+
 const sanitizeFilenamePart = (value: string | null | undefined) => {
   const raw = String(value ?? '').trim()
   if (!raw) return ''
@@ -58,7 +60,7 @@ const buildReportFileName = (assignmentNumber: string | null | undefined) => {
 }
 
 async function createSignedPdfUrl(
-  admin: ReturnType<typeof createSupabaseAdminClient>,
+  admin: AdminClient,
   bucket: string,
   path: string,
   fileName: string
@@ -70,6 +72,42 @@ async function createSignedPdfUrl(
     })
   if (error || !data?.signedUrl) return null
   return data.signedUrl
+}
+
+async function hasAssignmentAccess(admin: AdminClient, orgId: string, inspectionId: string) {
+  const { data, error } = await admin
+    .from('assignments')
+    .select('id')
+    .eq('org_id', orgId)
+    .eq('inspection_id', inspectionId)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte verifiera access till utlåtandet.')
+  }
+
+  return Boolean(data)
+}
+
+async function isInspectionOwnedByUser(
+  admin: AdminClient,
+  propertyId: string | null,
+  userId: string
+) {
+  if (!propertyId) return false
+
+  const { data, error } = await admin
+    .from('properties')
+    .select('id')
+    .eq('id', propertyId)
+    .eq('owner', userId)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte verifiera access till utlåtandet.')
+  }
+
+  return Boolean(data)
 }
 
 export async function GET(
@@ -84,10 +122,11 @@ export async function GET(
 
   try {
     const admin = createSupabaseAdminClient()
+    const orgContext = await requireOrgContext()
 
     const { data: inspection, error: inspectionError } = await admin
       .from('inspections')
-      .select('id,status,assignment_number')
+      .select('id,status,assignment_number,property_id')
       .eq('id', inspectionId)
       .maybeSingle()
 
@@ -99,13 +138,18 @@ export async function GET(
       return new NextResponse('Inspection not found.', { status: 404 })
     }
 
-    const inspectionStatus = normalizeInspectionStatus(inspection.status)
-    const fileName = buildReportFileName((inspection as { assignment_number?: string | null }).assignment_number)
-    if (inspectionStatus !== 'completed') {
-      return new NextResponse('PDF kan laddas ner först efter att utlåtandet har skickats.', {
-        status: 409,
+    const inspectionRow = inspection as InspectionForPdf
+    const hasAccess =
+      (await hasAssignmentAccess(admin, orgContext.orgId, inspectionId)) ||
+      (await isInspectionOwnedByUser(admin, inspectionRow.property_id, orgContext.userId))
+
+    if (!hasAccess) {
+      return new NextResponse('Du saknar behörighet att ladda ner detta utlåtande.', {
+        status: 403,
       })
     }
+
+    const fileName = buildReportFileName(inspectionRow.assignment_number)
 
     const { data: linkRows, error: linkError } = await admin
       .from('inspection_report_links')
@@ -172,6 +216,14 @@ export async function GET(
     return new NextResponse('Ingen lagrad PDF hittades för denna besiktning.', { status: 404 })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
+    if (message === 'UNAUTHORIZED') {
+      return new NextResponse('Du behöver vara inloggad för att ladda ner utlåtandet.', {
+        status: 401,
+      })
+    }
+    if (message === 'ORG_MEMBERSHIP_REQUIRED') {
+      return new NextResponse('Du saknar organisationstillhörighet.', { status: 403 })
+    }
     return new NextResponse(message, { status: 500 })
   }
 }

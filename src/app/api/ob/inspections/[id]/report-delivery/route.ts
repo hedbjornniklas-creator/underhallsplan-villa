@@ -383,6 +383,23 @@ async function setPdfJobStatus(
   }
 }
 
+async function revokeOlderReportLinks(
+  admin: AdminClient,
+  inspectionId: string,
+  activeLinkId: string
+) {
+  const { error } = await admin
+    .from('inspection_report_links')
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('inspection_id', inspectionId)
+    .is('revoked_at', null)
+    .neq('id', activeLinkId)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte spärra äldre rapportlänkar.')
+  }
+}
+
 async function runReportPdfJobInBackground(input: {
   traceId: string
   linkId: string
@@ -660,6 +677,14 @@ async function buildDeliveryActivityLog(input: {
     getUnlockHistory(input.admin, input.orgId, input.inspectionId),
   ])
 
+  const hasDownloadablePdf = reportRows.some(
+    (row) =>
+      normalizePdfStatus(row.pdf_status) === 'ready' &&
+      ((String(row.pdf_storage_bucket ?? '').trim().length > 0 &&
+        String(row.pdf_storage_path ?? '').trim().length > 0) ||
+        String(row.pdf_base64 ?? '').trim().length > 0)
+  )
+
   const reportEntries: DeliveryActivityLogEntry[] = reportRows.map((row) => {
     const hasReadyPdf =
       normalizePdfStatus(row.pdf_status) === 'ready' &&
@@ -696,7 +721,8 @@ async function buildDeliveryActivityLog(input: {
       title: statusText,
       subtitle,
       occurred_at: row.sent_at ?? row.created_at,
-      download_url: row.status === 'sent' ? `/api/report-v2/${input.inspectionId}/pdf` : null,
+      download_url:
+        row.status === 'sent' && hasDownloadablePdf ? `/api/report-v2/${input.inspectionId}/pdf` : null,
     }
   })
 
@@ -980,6 +1006,8 @@ export async function POST(
       throw new Error(linkError?.message ?? 'Kunde inte skapa rapportlÃ¤nk.')
     }
     timing.mark('report_link_created', { linkId: linkData.id })
+    await revokeOlderReportLinks(admin, id, linkData.id)
+    timing.mark('older_report_links_revoked')
 
     const previewReportUrl = `${resolvePublicBaseUrl(request)}/utlatande/${propertyId}/${id}?embed=1&pdf=1`
     const requestCookieHeader = request.headers.get('cookie')
