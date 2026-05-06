@@ -1418,7 +1418,8 @@ export default function ReportRendererClient({
     key: string,
     title: string,
     marginTopMm: number,
-    marginBottomMm: number
+    marginBottomMm: number,
+    showTitle = true
   ) => (
     <article
       key={key}
@@ -1430,24 +1431,32 @@ export default function ReportRendererClient({
           display: 'grid',
           gridTemplateColumns: `${mmToPx(42)} 1fr`,
           columnGap: mmToPx(4),
-          borderTop: '1px solid #cbd5e1',
-          paddingTop: mmToPx(2.5),
-          paddingBottom: mmToPx(2.5),
         }}
       >
         <div
           style={{
+            borderTop: showTitle ? '1px solid #cbd5e1' : 'none',
             fontSize: '10.5pt',
             fontWeight: 700,
             color: '#111827',
             lineHeight: 1.2,
+            paddingTop: mmToPx(2.5),
+            paddingBottom: mmToPx(2.5),
             paddingRight: mmToPx(2),
             wordBreak: 'break-word',
           }}
         >
-          {title}
+          {showTitle ? title : null}
         </div>
-        <div>{renderInspectionItemContent(item, key, 'wide')}</div>
+        <div
+          style={{
+            borderTop: '1px solid #cbd5e1',
+            paddingTop: mmToPx(2.5),
+            paddingBottom: mmToPx(2.5),
+          }}
+        >
+          {renderInspectionItemContent(item, key, 'wide')}
+        </div>
       </div>
     </article>
   )
@@ -1541,6 +1550,21 @@ export default function ReportRendererClient({
     }
 
     if (block.type === 'heading') {
+      const notesScope =
+        sectionId === 'notes'
+          ? 'Byggnad - utsida'
+          : sectionId === 'notes-interior'
+            ? inspectionSide === 'apartment'
+              ? 'Lägenhet - insida'
+              : 'Byggnad - insida'
+            : null
+      if (
+        notesScope &&
+        block.level === 3 &&
+        String(block.text).trim() === notesScope
+      ) {
+        return null
+      }
       const preset =
         block.level === 1
           ? REPORT_STYLES.H1
@@ -1548,6 +1572,10 @@ export default function ReportRendererClient({
             ? REPORT_STYLES.H2
             : REPORT_STYLES.H3
       const fontSize = block.fontSizePt ? `${block.fontSizePt}pt` : preset.fontSize
+      const headingText =
+        notesScope && block.level === 2 && String(block.text).trim() === 'Noteringar'
+          ? `Noteringar - ${notesScope}`
+          : block.text
       return (
         <div
           key={`${sectionId}-heading-${index}`}
@@ -1558,10 +1586,10 @@ export default function ReportRendererClient({
             fontWeight: preset.fontWeight,
             color: block.accent ? ACCENT_COLOR : preset.color,
             textTransform: block.level === 1 ? 'uppercase' : 'none',
-            textAlign: block.align ?? 'left',
+          textAlign: block.align ?? 'left',
           }}
         >
-          {block.text}
+          {headingText}
         </div>
       )
     }
@@ -1726,7 +1754,8 @@ export default function ReportRendererClient({
         `${sectionId}-room-group-item-${index}`,
         title,
         block.marginTopMm,
-        block.marginBottomMm
+        block.marginBottomMm,
+        block.isFirstInGroup
       )
     }
 
