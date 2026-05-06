@@ -3112,16 +3112,6 @@ function RoomControlPointsSection({
                           <div className="text-xs font-semibold text-gray-900">
                             {selectedOutcome.label}
                           </div>
-                          {ci.id && (
-                            <button
-                              type="button"
-                              onClick={() => onDeleteItem(ci.id!, true)}
-                              className="text-xs md:text-[11px] text-rose-600 hover:underline"
-                              disabled={isInspectionLocked}
-                            >
-                              Ta bort
-                            </button>
-                          )}
                         </div>
 
                         <div className="space-y-1">

@@ -2288,15 +2288,6 @@ function ExteriorControlPointsSection({
                           <div className="text-xs font-semibold text-gray-900">
                             {selectedOutcome.label}
                           </div>
-                          {ci.id && (
-                            <button
-                              type="button"
-                              onClick={() => onDeleteItem(ci.id!, true)}
-                              className="text-[11px] text-rose-600 hover:underline"
-                            >
-                              Ta bort
-                            </button>
-                          )}
                         </div>
 
                         <div className="space-y-1">
