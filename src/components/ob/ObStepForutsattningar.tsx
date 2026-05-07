@@ -164,10 +164,18 @@ export default function ObStepForutsattningar({
   const [items, setItems] = useState<ItemBundle[]>([])
   const [selections, setSelections] = useState<Record<string, InspectionOverviewSelection[]>>({})
   const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(() => new Set())
+  const [usePanelLayout, setUsePanelLayout] = useState(false)
+  const [activePanelKey, setActivePanelKey] = useState<string | null>(null)
   const isSpecialConditionsCollapsed = collapsedItemIds.has(SPECIAL_CONDITIONS_COLLAPSE_KEY)
 
   // Ignore stale save responses if the same note is saved again before Supabase responds.
   const noteSaveVersions = useRef<Record<string, number>>({})
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    setUsePanelLayout(params.get('forutsattningarLayout') === 'panel')
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -615,6 +623,24 @@ export default function ObStepForutsattningar({
     sewage: '🕳️',
   }
 
+  const panelEntries = [
+    {
+      key: SPECIAL_CONDITIONS_COLLAPSE_KEY,
+      label: 'Särskilda förutsättningar',
+      emoji: '•',
+      item: null as ItemBundle | null,
+    },
+    ...items.map(item => ({
+      key: item.id,
+      label: item.label,
+      emoji: itemEmoji[item.key] || '•',
+      item,
+    })),
+  ]
+  const selectedPanelEntry =
+    panelEntries.find(entry => entry.key === activePanelKey) ?? null
+  const desktopPanelEntry = selectedPanelEntry ?? panelEntries[0] ?? null
+
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear()
     return Array.from({ length: currentYear - YEAR_OPTION_START + 1 }, (_, index) => {
@@ -883,6 +909,45 @@ export default function ObStepForutsattningar({
     )
   }
 
+  const renderSpecialConditionsContent = () => (
+    <>
+      <div className="text-sm text-gray-900">
+        Utrymmet var{' '}
+        <select
+          value={furnishing}
+          onChange={e => {
+            const lvl = e.target.value as FurnishingLevel
+            setFurnishing(lvl)
+            saveFurnishing(lvl)
+          }}
+          disabled={isInspectionLocked}
+          className="mx-1 h-9 rounded-lg border border-gray-300 bg-gray-50 px-2 text-sm
+                     focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          <option value="fullt_moblerad">fullt möblerad</option>
+          <option value="delvis_moblerad">delvis möblerad</option>
+          <option value="omoblerad">omöblerad</option>
+        </select>{' '}
+        vid besiktningstillfället.
+      </div>
+
+      <p className="text-sm text-gray-700">
+        Besiktning har skett av de delar som varit normalt åtkomliga utan omflyttning av
+        möbler och belamrade ytor. Bakomliggande ytor ingår i köparens undersökningsplikt.
+      </p>
+
+      <p className="text-sm text-gray-700">
+        För ytor, utrymmen och byggnadsdelar som noterats helt eller delvis ej
+        besiktningsbara eller belamrade har besiktningsmannen inget ansvar.
+      </p>
+
+      <p className="text-sm text-gray-700">
+        Notering ”-----” innebär att utrymmet/ytan bedöms vara i normalt skick med hänsyn
+        taget till byggnadens ålder och byggnadssätt.
+      </p>
+    </>
+  )
+
   if (loading) {
     return <div className="p-4 text-sm text-gray-600">Laddar förutsättningar…</div>
   }
@@ -895,6 +960,123 @@ export default function ObStepForutsattningar({
           Tips: Om detta händer direkt efter du skapade tabellerna är det ofta RLS/policy
           som blockerar. Kontrollera att du är inloggad och att policies finns.
         </div>
+      </div>
+    )
+  }
+
+  if (usePanelLayout) {
+    const panelEntry = desktopPanelEntry
+    const panelIndex = panelEntry
+      ? panelEntries.findIndex(entry => entry.key === panelEntry.key)
+      : -1
+    const previousPanelEntry = panelIndex > 0 ? panelEntries[panelIndex - 1] : null
+    const nextPanelEntry =
+      panelIndex >= 0 && panelIndex < panelEntries.length - 1
+        ? panelEntries[panelIndex + 1]
+        : null
+
+    return (
+      <div className="space-y-4">
+        <header className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-xl font-semibold text-gray-900">Förutsättningar</h2>
+            <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+              Paneltest
+            </span>
+          </div>
+          <p className="text-xs text-gray-600">
+            Testvy. Sparning, låsning och rapportdata använder samma logik som ordinarie vy.
+          </p>
+        </header>
+
+        {isInspectionLocked ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Besiktningen är låst. Förutsättningar är skrivskyddade.
+          </div>
+        ) : null}
+
+        <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+          <aside
+            className={`rounded-2xl bg-white p-3 shadow-sm ring-1 ring-gray-200 ${
+              selectedPanelEntry ? 'hidden lg:block' : 'block'
+            }`}
+          >
+            <div className="mb-2 px-1 text-xs font-semibold uppercase text-gray-500">
+              Delar
+            </div>
+            <div className="space-y-1">
+              {panelEntries.map(entry => {
+                const isActive = panelEntry?.key === entry.key
+                return (
+                  <button
+                    key={entry.key}
+                    type="button"
+                    onClick={() => setActivePanelKey(entry.key)}
+                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
+                      isActive
+                        ? 'bg-gray-900 text-white'
+                        : 'text-gray-800 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span aria-hidden="true">{entry.emoji}</span>
+                    <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </aside>
+
+          {panelEntry ? (
+            <section
+              className={`rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 md:p-5 ${
+                selectedPanelEntry ? 'block' : 'hidden lg:block'
+              }`}
+            >
+              <header className="mb-4 flex items-center justify-between gap-3 border-b border-gray-200 pb-3">
+                <div className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setActivePanelKey(null)}
+                    className="mb-2 text-xs font-medium text-gray-600 hover:text-gray-900 lg:hidden"
+                  >
+                    Tillbaka till listan
+                  </button>
+                  <h3 className="truncate text-base font-semibold text-gray-900">
+                    <span className="mr-2">{panelEntry.emoji}</span>
+                    {panelEntry.label}
+                  </h3>
+                </div>
+              </header>
+
+              <div className="space-y-3">
+                {panelEntry.item
+                  ? renderItem(panelEntry.item)
+                  : renderSpecialConditionsContent()}
+              </div>
+
+              <div className="mt-5 flex items-center justify-between gap-2 border-t border-gray-200 pt-3">
+                <button
+                  type="button"
+                  onClick={() => previousPanelEntry && setActivePanelKey(previousPanelEntry.key)}
+                  disabled={!previousPanelEntry}
+                  className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Föregående
+                </button>
+                <button
+                  type="button"
+                  onClick={() => nextPanelEntry && setActivePanelKey(nextPanelEntry.key)}
+                  disabled={!nextPanelEntry}
+                  className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Nästa
+                </button>
+              </div>
+            </section>
+          ) : null}
+        </div>
+
+        {saving && <div className="text-xs text-gray-500">Sparar…</div>}
       </div>
     )
   }
@@ -928,44 +1110,7 @@ export default function ObStepForutsattningar({
           </button>
         </header>
 
-        {!isSpecialConditionsCollapsed ? (
-          <>
-            <div className="text-sm text-gray-900">
-              Utrymmet var{' '}
-              <select
-                value={furnishing}
-                onChange={e => {
-                  const lvl = e.target.value as FurnishingLevel
-                  setFurnishing(lvl)
-                  saveFurnishing(lvl)
-                }}
-                disabled={isInspectionLocked}
-                className="mx-1 h-9 rounded-lg border border-gray-300 bg-gray-50 px-2 text-sm
-                           focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                <option value="fullt_moblerad">fullt möblerad</option>
-                <option value="delvis_moblerad">delvis möblerad</option>
-                <option value="omoblerad">omöblerad</option>
-              </select>{' '}
-              vid besiktningstillfället.
-            </div>
-
-            <p className="text-sm text-gray-700">
-              Besiktning har skett av de delar som varit normalt åtkomliga utan omflyttning av
-              möbler och belamrade ytor. Bakomliggande ytor ingår i köparens undersökningsplikt.
-            </p>
-
-            <p className="text-sm text-gray-700">
-              För ytor, utrymmen och byggnadsdelar som noterats helt eller delvis ej
-              besiktningsbara eller belamrade har besiktningsmannen inget ansvar.
-            </p>
-
-            <p className="text-sm text-gray-700">
-              Notering ”-----” innebär att utrymmet/ytan bedöms vara i normalt skick med hänsyn
-              taget till byggnadens ålder och byggnadssätt.
-            </p>
-          </>
-        ) : null}
+        {!isSpecialConditionsCollapsed ? renderSpecialConditionsContent() : null}
       </section>
 
       {/* Dynamiskt från settings */}
