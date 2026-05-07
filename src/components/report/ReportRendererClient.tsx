@@ -529,18 +529,26 @@ function blockMargins(block: { marginTopMm: number; marginBottomMm: number }) {
 }
 
 function parseBuildingDataLines(content: string) {
-  return content
+  const rows: Array<{ label: string; value: string }> = []
+
+  content
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((line) => {
+    .forEach((line) => {
       const index = line.indexOf(':')
-      if (index === -1) return null
+      if (index === -1) {
+        const previous = rows[rows.length - 1]
+        if (previous) previous.value = `${previous.value}\n${line}`.trim()
+        return
+      }
+
       const label = line.slice(0, index + 1).trim()
       const value = line.slice(index + 1).trim() || '--'
-      return { label, value }
+      rows.push({ label, value })
     })
-    .filter((row): row is { label: string; value: string } => Boolean(row))
+
+  return rows
 }
 
 const appendixBreakHeadings = [
