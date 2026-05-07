@@ -421,7 +421,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               !(o.is_free_note === true || o.values?._free_note)
           )
 
-          if (!hasMain) {
+          if (!hasMain && !isInspectionLocked) {
             const { data: existingMain, error: existingMainErr } = await fetchMainObservation(
               inspection.id,
               it.id
@@ -726,7 +726,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     }
 
     loadAll()
-  }, [inspection?.id])
+  }, [inspection?.id, isInspectionLocked])
 
   // -----------------------------
   // OBSERVATIONER – helpers (fri notering)

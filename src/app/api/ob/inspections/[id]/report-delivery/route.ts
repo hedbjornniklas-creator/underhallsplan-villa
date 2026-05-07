@@ -244,16 +244,17 @@ async function markInspectionCompletedAndLocked(input: {
   inspectionId: string
   inspectionStatus: string
   userId: string
-}) {
+}): Promise<string | null> {
+  const lockedAt = new Date().toISOString()
   const inspectionPatch =
     input.inspectionStatus !== 'completed'
       ? {
           status: 'completed',
-          locked_at: new Date().toISOString(),
+          locked_at: lockedAt,
           locked_by: input.userId,
         }
       : {
-          locked_at: new Date().toISOString(),
+          locked_at: lockedAt,
           locked_by: input.userId,
         }
 
@@ -262,14 +263,14 @@ async function markInspectionCompletedAndLocked(input: {
     .update(inspectionPatch)
     .eq('id', input.inspectionId)
 
-  if (!updateInspectionError) return
+  if (!updateInspectionError) return lockedAt
 
   const message = updateInspectionError.message ?? ''
   if (!isMissingInspectionLockColumnsError(message)) {
     throw new Error(message || 'Kunde inte uppdatera låsstatus för besiktningen.')
   }
 
-  if (input.inspectionStatus === 'completed') return
+  if (input.inspectionStatus === 'completed') return null
 
   const { error: fallbackStatusError } = await input.admin
     .from('inspections')
@@ -281,6 +282,7 @@ async function markInspectionCompletedAndLocked(input: {
       fallbackStatusError.message ?? 'Kunde inte uppdatera besiktningsstatus till klar.'
     )
   }
+  return null
 }
 
 function getMailFromAddress() {
@@ -897,7 +899,7 @@ export async function POST(
     const action = parseDeliveryAction(body?.action, body?.mark_as_completed)
 
     if (action === 'complete_only') {
-      await markInspectionCompletedAndLocked({
+      const inspectionLockedAt = await markInspectionCompletedAndLocked({
         admin,
         inspectionId: id,
         inspectionStatus,
@@ -918,6 +920,7 @@ export async function POST(
       return NextResponse.json({
         inspectionId: id,
         inspectionStatus: 'completed',
+        inspectionLockedAt,
         deliveryMode: 'link_only',
         publicLink: '',
         primaryRecipientEmail: '',
@@ -1092,8 +1095,9 @@ export async function POST(
       }
     }
 
+    let inspectionLockedAt: string | null = null
     if (primarySent && action === 'send_and_complete') {
-      await markInspectionCompletedAndLocked({
+      inspectionLockedAt = await markInspectionCompletedAndLocked({
         admin,
         inspectionId: id,
         inspectionStatus,
@@ -1131,6 +1135,7 @@ export async function POST(
     return NextResponse.json({
       inspectionId: id,
       inspectionStatus: finalInspectionStatus,
+      inspectionLockedAt,
       deliveryMode: 'link_only',
       publicLink: linkUrl,
       primaryRecipientEmail: primaryRecipient,

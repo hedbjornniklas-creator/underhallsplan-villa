@@ -708,6 +708,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   }, [inspection?.id])
   useEffect(() => {
     if (!inspection?.id) return
+    if (isInspectionLocked) return
     if (loading) return
     if (!roomTypes.length) return
     if (otherRoomEnsuredRef.current) return
@@ -746,7 +747,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       })
       if (!activeFloor) setActiveFloor(OTHER_ROOM_TYPE_KEY)
     })()
-  }, [inspection?.id, loading, roomTypes, rooms, activeFloor])
+  }, [inspection?.id, isInspectionLocked, loading, roomTypes, rooms, activeFloor])
 
   useEffect(() => {
     if (loading) return
@@ -1574,6 +1575,10 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   // Upsert rum
   // -----------------------------
   const upsertRoom = async (room: InteriorRoom): Promise<InteriorRoom> => {
+    if (isInspectionLocked) {
+      setError('Besiktningen är låst (klar) och kan inte redigeras.')
+      return room
+    }
     setSaving(true)
     setError(null)
     try {
@@ -1649,6 +1654,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   }
 
   const addRoom = async () => {
+    if (isInspectionLocked) return
     if (!newRoomTypeKey || !newFloorLabel.trim()) {
       alert('Välj rumstyp och ange/ välj plan.')
       return
@@ -1693,6 +1699,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   }
 
   const removeRoom = async (id?: string) => {
+    if (isInspectionLocked) return
     if (!id) return
     if (!confirm('Ta bort rummet från besiktningen?')) return
     const { error } = await supabase
@@ -1712,6 +1719,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     id: string | undefined,
     patch: Partial<InteriorRoom>
   ) => {
+    if (isInspectionLocked) return
     if (!id) return
     const current = rooms.find(r => r.id === id)
     if (!current) return
@@ -1722,6 +1730,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   }
 
   const startEditRoom = (room: InteriorRoom) => {
+    if (isInspectionLocked) return
     if (!room.id) return
     setCollapsedRoomIds(prev => {
       if (!prev.has(room.id!)) return prev
@@ -1743,6 +1752,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   }
 
   const saveEditRoom = async () => {
+    if (isInspectionLocked) return
     if (!editingRoomId) return
     const current = rooms.find(r => r.id === editingRoomId)
     if (!current) return
@@ -1772,6 +1782,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     id: string | undefined,
     patchValues: ValueMap
   ) => {
+    if (isInspectionLocked) return
     if (!id) return
     const current = rooms.find(r => r.id === id)
     if (!current) return
@@ -1789,11 +1800,13 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     value,
     onChange,
     options,
+    disabled = false,
   }: {
     label: string
     value: unknown
     onChange: (v: string) => void
     options: InteriorOption[]
+    disabled?: boolean
   }) => {
     const normalizedValue =
       typeof value === 'boolean'
@@ -1808,6 +1821,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       <select
         value={normalizedValue}
         onChange={e => onChange(e.target.value)}
+        disabled={disabled}
         className="h-9 w-full rounded-lg border border-gray-300 bg-gray-50 px-2 text-sm text-gray-900
                    focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
       >
@@ -1900,7 +1914,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
         )}
       </section>
 
-      {!isOtherFloor && (
+      {!isOtherFloor && !isInspectionLocked && (
         <section className="flex justify-end">
           <button
             type="button"
@@ -1925,7 +1939,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       )}
 
       {/* Ny-rumsformulär */}
-      {showNewRoomForm && (
+      {showNewRoomForm && !isInspectionLocked && (
         <section className="rounded-xl border border-gray-200 bg-gray-50 p-3 md:p-4 space-y-2 text-sm">
           <div className="grid gap-3 md:grid-cols-3">
             <div>
@@ -2036,12 +2050,13 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                   <button
                     type="button"
                     onClick={() => startEditRoom(room)}
+                    disabled={isInspectionLocked}
                     className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
                   >
                     Redigera rum
                   </button>
 
-                  {!isSystemOtherRoom(room) && (
+                  {!isSystemOtherRoom(room) && !isInspectionLocked && (
                     <button
                       type="button"
                       onClick={() => removeRoom(room.id)}
@@ -2062,6 +2077,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                         className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm"
                         value={editRoomLabel}
                         onChange={e => setEditRoomLabel(e.target.value)}
+                        readOnly={isInspectionLocked}
                       />
                     </div>
                     <div>
@@ -2082,6 +2098,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                           className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm bg-white"
                           value={editRoomFloorLabel}
                           onChange={e => setEditRoomFloorLabel(e.target.value)}
+                          disabled={isInspectionLocked}
                         >
                           {floorLabels
                             .filter(fl => fl && fl !== OTHER_ROOM_TYPE_KEY)
@@ -2099,6 +2116,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                         className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm bg-white"
                         value={editRoomTypeKey}
                         onChange={e => setEditRoomTypeKey(e.target.value)}
+                        disabled={isInspectionLocked}
                       >
                         {roomTypes.map(rt => (
                           <option key={rt.id} value={rt.key}>
@@ -2119,6 +2137,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                     <button
                       type="button"
                       onClick={saveEditRoom}
+                      disabled={isInspectionLocked}
                       className="rounded-md bg-gray-900 px-3 py-1.5 text-xs text-white"
                     >
                       Spara
@@ -2136,6 +2155,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                         label={g.label}
                         value={vals[g.key] ?? ''}
                         options={optionsByGroup[g.id] || []}
+                        disabled={isInspectionLocked}
                         onChange={v =>
                           updateRoomValues(room.id, { [g.key]: v })
                         }

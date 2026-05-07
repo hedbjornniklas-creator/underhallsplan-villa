@@ -273,6 +273,7 @@ export default function ObStepHandlingar({
 
     const missingTypes = types.filter(dt => !newestByType.has(dt.id))
     if (missingTypes.length === 0) return
+    if (isInspectionLocked) return
 
     const payload = missingTypes.map(dt => ({
       inspection_id: inspection.id,
@@ -286,7 +287,7 @@ export default function ObStepHandlingar({
 
     const { error: insErr } = await supabase.from('inspection_documents').insert(payload)
     if (insErr) throw insErr
-  }, [inspection.id])
+  }, [inspection.id, isInspectionLocked])
 
   const loadOrCreateDisclosureRow = useCallback(async (): Promise<InspectionDisclosure | null> => {
     const { data, error: discErr } = await supabase

@@ -17,11 +17,15 @@ type DbProperty = Tables<'properties'>
 export type ObWizardInspectionInput = DbInspection & {
   defect_disclosures?: string | null
   attendees_other?: string | null
+  locked_at?: string | null
+  locked_by?: string | null
 }
 
 export type ObWizardInspection = DbInspection & {
   defect_disclosures: string | null
   attendees_other: string | null
+  locked_at?: string | null
+  locked_by?: string | null
 }
 
 export type ObWizardPropertyInput = (Partial<DbProperty> & Pick<DbProperty, 'id' | 'name'>) & {
@@ -112,6 +116,7 @@ type ReportDeliveryMeta = {
 type ReportDeliverySendResponse = {
   inspectionId: string
   inspectionStatus: string
+  inspectionLockedAt: string | null
   deliveryMode: 'link_only' | 'link_pdf'
   publicLink: string
   primaryRecipientEmail: string
@@ -223,6 +228,8 @@ export default function ObWizard({
       ...inspection,
       attendees_other: inspection.attendees_other ?? null,
       defect_disclosures: inspection.defect_disclosures ?? null,
+      locked_at: inspection.locked_at ?? null,
+      locked_by: inspection.locked_by ?? null,
     }),
     [inspection]
   )
@@ -422,6 +429,7 @@ export default function ObWizard({
         onInspectionUpdated({
           ...normalizedInspection,
           status: okPayload.inspectionStatus,
+          locked_at: okPayload.inspectionLockedAt ?? normalizedInspection.locked_at,
         } as ObWizardInspection)
       }
 
@@ -473,7 +481,7 @@ export default function ObWizard({
     : ''
   const newTabHref = reportHref
   const autoPrintHref = hasValidIds ? `${reportHref}?autoprint=1` : ''
-  const iframeSrc = hasValidIds ? `${reportHref}?embed=1` : ''
+  const iframeSrc = hasValidIds ? `${reportHref}?embed=1&pdf=1` : ''
   const reportDeliveryPreviewHref = iframeSrc
 
   switch (activeSection) {
@@ -773,7 +781,7 @@ export default function ObWizard({
                   ) : null}
                 </aside>
 
-                <section className="rounded-xl border bg-white p-4">
+                <section className="space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="text-sm font-semibold text-gray-900">Förhandsgranska utlåtande</h3>
                     <Link
@@ -786,13 +794,13 @@ export default function ObWizard({
                     </Link>
                   </div>
 
-                  <div className="mt-3 overflow-hidden rounded-lg border border-gray-300 bg-white">
+                  <div className="overflow-hidden bg-white">
                     <iframe
                       title="Utlåtande för granskning"
                       src={reportDeliveryPreviewHref}
                       className="w-full"
                       style={{
-                        minHeight: '880px',
+                        minHeight: '1100px',
                         border: '0',
                       }}
                     />
