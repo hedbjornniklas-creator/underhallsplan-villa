@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
@@ -915,13 +915,9 @@ export default function ObStepGrunddata({
 
   const hasLinkedAssignment = !!property.assignment_id
 
-  const handleInspectionCoverUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
+  const uploadInspectionCoverFile = async (file: File) => {
     if (isInspectionLocked) {
       setError('Besiktningen är klar. Omslagsbild kan inte ändras.')
-      event.target.value = ''
       return
     }
 
@@ -960,12 +956,35 @@ export default function ObStepGrunddata({
         }
       }
     } catch (e: unknown) {
-      console.error('handleInspectionCoverUpload failed:', e)
+      console.error('uploadInspectionCoverFile failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte ladda upp omslagsbild.')
     } finally {
       setUploadingCover(false)
+    }
+  }
+
+  const handleInspectionCoverUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      await uploadInspectionCoverFile(file)
+    } finally {
       event.target.value = ''
     }
+  }
+
+  const handleInspectionCoverDrop = async (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (isInspectionLocked || uploadingCover || savingInsp) return
+
+    const file = Array.from(event.dataTransfer.files).find(candidate =>
+      candidate.type.startsWith('image/')
+    )
+    if (!file) return
+
+    await uploadInspectionCoverFile(file)
   }
 
   const hasFrozenInspectorSnapshot = isInspectionLocked && !!frozenInspectorProfile
@@ -1100,7 +1119,14 @@ export default function ObStepGrunddata({
           <div className="space-y-2">
             <div className="text-xs font-medium text-gray-600">Omslagsbild</div>
             <div
-              className={`relative block h-40 w-full overflow-hidden rounded-md border border-gray-300 bg-gray-50 ${isInspectionLocked ? 'opacity-70' : ''}`}
+              onDragOver={event => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              onDrop={event => void handleInspectionCoverDrop(event)}
+              className={`relative block h-40 w-full overflow-hidden rounded-md border border-dashed border-gray-300 bg-gray-50 ${
+                isInspectionLocked ? 'opacity-70' : 'transition hover:border-gray-500'
+              }`}
             >
               {inspectionCoverSrc ? (
                 <img
@@ -1110,7 +1136,7 @@ export default function ObStepGrunddata({
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
-                  Ingen omslagsbild vald
+                  Släpp en bild här eller välj Kamera/Fil
                 </div>
               )}
             </div>
