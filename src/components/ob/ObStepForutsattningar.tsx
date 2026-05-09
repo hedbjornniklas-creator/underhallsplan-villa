@@ -450,6 +450,24 @@ export default function ObStepForutsattningar({
     setSelections(prev => ({ ...prev, [itemId]: next }))
   }
 
+  const parseFloorCount = (value: SelectionValue | null | undefined) => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return Math.max(0, Math.floor(value))
+    }
+
+    const normalized = String(value ?? '').trim().replace(',', '.')
+    if (!normalized) return 0
+
+    const halfFloorMatch = normalized.match(/^(\d+)(?:_5|\.5)$/)
+    if (halfFloorMatch) {
+      return Number(halfFloorMatch[1]) + 1
+    }
+
+    const numeric = Number(normalized)
+    if (!Number.isFinite(numeric)) return 0
+    return Math.max(0, Math.floor(numeric))
+  }
+
   const ensureSingleSelection = (itemId: string) => {
     const arr = getItemSelections(itemId)
     if (arr.length > 0) return arr
@@ -561,18 +579,7 @@ export default function ObStepForutsattningar({
     const floorsVal = v['floors'] ?? v['våningar'] ?? v['våning'] ?? null
     const basementVal = v['basement'] ?? v['källare'] ?? null
 
-    const count =
-      floorsVal === '1_5'
-        ? 2
-        : floorsVal === '2'
-          ? 2
-          : floorsVal === '3'
-            ? 3
-            : floorsVal === '1'
-              ? 1
-              : typeof floorsVal === 'number'
-                ? floorsVal
-                : 0
+    const count = parseFloorCount(floorsVal)
 
     const keys: string[] = []
     if (basementVal === 'yes' || basementVal === 'ja' || basementVal === true) {
@@ -581,9 +588,9 @@ export default function ObStepForutsattningar({
       keys.push('källare_delvis')
     }
 
-    if (count >= 1) keys.push('plan1')
-    if (count >= 2) keys.push('plan2')
-    if (count >= 3) keys.push('plan3')
+    for (let floor = 1; floor <= count; floor += 1) {
+      keys.push(`plan${floor}`)
+    }
 
     return keys
   }, [items, getItemSelections])
@@ -886,6 +893,7 @@ export default function ObStepForutsattningar({
       if (k === 'entréplan' || k === 'plan1') return 'Plan 1'
       if (k === 'plan2') return 'Plan 2'
       if (k === 'plan3') return 'Plan 3'
+      if (k?.startsWith('plan')) return `Plan ${k.replace('plan', '')}`
       return k || ''
     }
 

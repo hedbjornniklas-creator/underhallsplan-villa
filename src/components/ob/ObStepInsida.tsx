@@ -146,6 +146,24 @@ const getImagePublicUrl = (filePath: string) => {
 // -----------------------------
 // Hjälpfunktion: bygg våningsnycklar från Förutsättningar (Byggnadstyp)
 // -----------------------------
+const parseFloorCount = (value: ValueMap[keyof ValueMap]) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value))
+  }
+
+  const normalized = String(value ?? '').trim().replace(',', '.')
+  if (!normalized) return 0
+
+  const halfFloorMatch = normalized.match(/^(\d+)(?:_5|\.5)$/)
+  if (halfFloorMatch) {
+    return Number(halfFloorMatch[1]) + 1
+  }
+
+  const numeric = Number(normalized)
+  if (!Number.isFinite(numeric)) return 0
+  return Math.max(0, Math.floor(numeric))
+}
+
 const buildFloorsFromAnswers = (answers: ValueMap): string[] => {
   const floorsVal =
     answers['floors'] ??
@@ -160,13 +178,7 @@ const buildFloorsFromAnswers = (answers: ValueMap): string[] => {
 
   const atticVal = answers['attic'] ?? null
 
-  const count =
-    floorsVal === '1_5' ? 2 :
-    floorsVal === '2'   ? 2 :
-    floorsVal === '3'   ? 3 :
-    floorsVal === '1'   ? 1 :
-    typeof floorsVal === 'number' ? floorsVal :
-    0
+  const count = parseFloorCount(floorsVal)
 
   const keys: string[] = []
 
@@ -176,9 +188,9 @@ const buildFloorsFromAnswers = (answers: ValueMap): string[] => {
     keys.push('källare_delvis')
   }
 
-  if (count >= 1) keys.push('plan1')
-  if (count >= 2) keys.push('plan2')
-  if (count >= 3) keys.push('plan3')
+  for (let floor = 1; floor <= count; floor += 1) {
+    keys.push(`plan${floor}`)
+  }
   if (atticVal !== null && atticVal !== undefined && String(atticVal).trim() !== '') {
     keys.push('vind')
   }
