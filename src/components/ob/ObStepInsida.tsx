@@ -2507,7 +2507,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 type ControlItemImagesSectionProps = {
   controlItem: InspectionControlItem
   images: InspectionImage[]
-  onUpload: (ci: InspectionControlItem, file: File) => void
+  onUpload: (ci: InspectionControlItem, file: File) => void | Promise<void>
   onDelete: (imageId: string) => void
 }
 
@@ -2520,10 +2520,12 @@ function ControlItemImagesSection({
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const libraryInputRef = useRef<HTMLInputElement | null>(null)
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    onUpload(controlItem, file)
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (files.length === 0) return
+    for (const file of files) {
+      await onUpload(controlItem, file)
+    }
     e.target.value = ''
   }
 
@@ -2564,6 +2566,7 @@ function ControlItemImagesSection({
         ref={libraryInputRef}
         type="file"
         accept="image/*"
+        multiple
         className="hidden"
         onChange={handleFileChange}
       />

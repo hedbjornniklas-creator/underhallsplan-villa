@@ -1809,7 +1809,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
 // =============================
 type ControlPointImagesSectionProps = {
   images: InspectionImage[]
-  onUpload: (file: File) => void
+  onUpload: (file: File) => void | Promise<void>
   onDelete: (imageId: string) => void
   title?: string
   disabled?: boolean
@@ -1825,11 +1825,13 @@ function ControlPointImagesSection({
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const libraryInputRef = useRef<HTMLInputElement | null>(null)
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (disabled) return
-    const file = e.target.files?.[0]
-    if (!file) return
-    onUpload(file)
+    const files = Array.from(e.target.files ?? [])
+    if (files.length === 0) return
+    for (const file of files) {
+      await onUpload(file)
+    }
     e.target.value = ''
   }
 
@@ -1872,6 +1874,7 @@ function ControlPointImagesSection({
         ref={libraryInputRef}
         type="file"
         accept="image/*"
+        multiple
         className="hidden"
         onChange={handleFileChange}
       />
@@ -2135,7 +2138,7 @@ function ExteriorControlPointsSection({
                   <button
                     type="button"
                     onClick={() => ciId && toggleFreeNoteCollapsed(ciId)}
-                    className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                    className="text-[11px] text-gray-700 hover:underline disabled:cursor-not-allowed disabled:opacity-40"
                     aria-expanded={!isCollapsed}
                     disabled={!ciId}
                   >
