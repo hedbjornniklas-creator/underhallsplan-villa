@@ -398,10 +398,18 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   const [collapsedRoomIds, setCollapsedRoomIds] = useState<Set<string>>(
     () => new Set()
   )
+  const [useHybridLayout, setUseHybridLayout] = useState(false)
+  const [activeHybridRoomId, setActiveHybridRoomId] = useState<string | null>(null)
   const otherRoomEnsuredRef = useRef(false)
   const otherRoomItemsEnsuredRef = useRef(false)
   const hasLoadedCollapsedRoomsRef = useRef(false)
   const collapsedRoomsStorageKey = `ob:insida:collapsed:${inspection.id}:rooms`
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    setUseHybridLayout(params.get('obLayout') === 'hybrid')
+  }, [])
 
   useEffect(() => {
     otherRoomEnsuredRef.current = false
@@ -1008,6 +1016,31 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     }
     return map
   }, [controlItems])
+
+  const getRoomSummary = (room: InteriorRoom) => {
+    const roomId = room.id ?? ''
+    const roomControlItems = roomId ? controlItemsByRoomId[roomId] || [] : []
+    const roomNoteCount = (room.note ?? '').trim().length > 0 ? 1 : 0
+    const itemNoteCount = roomControlItems.filter(ci =>
+      [ci.note, ci.risk_text, ci.ftu_text].some(value =>
+        String(value ?? '').trim().length > 0
+      )
+    ).length
+    const imageCount = roomControlItems.reduce((sum, ci) => {
+      if (!ci.id) return sum
+      return sum + (imagesByControlItemId[ci.id] || []).length
+    }, 0)
+
+    return [
+      `${roomControlItems.length} kontrollpunkter`,
+      roomNoteCount + itemNoteCount > 0
+        ? `${roomNoteCount + itemNoteCount} noteringar`
+        : 'inga noteringar',
+      imageCount > 0 ? `${imageCount} bilder` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+  }
 
   // -----------------------------
   // Upsert kontrollpunkt-instans
@@ -1848,6 +1881,270 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     )
   }
 
+  const renderRoomCard = (
+    room: InteriorRoom,
+    options: { forceExpanded?: boolean; embedded?: boolean; hideHeader?: boolean } = {}
+  ) => {
+    const vals = room.values || {}
+    const roomId = room.id ?? ''
+    const roomControlItems = controlItemsByRoomId[roomId] || []
+    const isRoomCollapsed = options.forceExpanded
+      ? false
+      : roomId
+        ? collapsedRoomIds.has(roomId)
+        : false
+    const articleClassName = options.embedded
+      ? 'w-full min-w-0 max-w-full space-y-4'
+      : 'rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-4'
+
+    return (
+      <article
+        key={room.id}
+        id={room.id ? `room-card-${room.id}` : undefined}
+        className={articleClassName}
+      >
+        {!options.hideHeader && (
+          <header className="flex min-w-0 items-center justify-between gap-2">
+            <div className="min-w-0">
+              <h3 className="truncate text-base font-semibold text-gray-900">
+                {getRoomHeading(room)}
+              </h3>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
+              {!options.forceExpanded && (
+                <button
+                  type="button"
+                  onClick={() => roomId && toggleRoomCollapsed(roomId)}
+                  className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
+                  aria-expanded={!isRoomCollapsed}
+                  disabled={!roomId}
+                >
+                  {isRoomCollapsed ? 'Visa' : 'Dölj'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => startEditRoom(room)}
+                disabled={isInspectionLocked}
+                className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Redigera rum
+              </button>
+
+              {!isSystemOtherRoom(room) && !isInspectionLocked && (
+                <button
+                  type="button"
+                  onClick={() => removeRoom(room.id)}
+                  className="text-xs text-rose-600 hover:underline"
+                >
+                  Ta bort rum
+                </button>
+              )}
+            </div>
+          </header>
+        )}
+
+        {!isRoomCollapsed && editingRoomId === room.id && (
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div>
+                <label className="text-xs text-gray-600">Rumnamn</label>
+                <input
+                  className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm"
+                  value={editRoomLabel}
+                  onChange={e => setEditRoomLabel(e.target.value)}
+                  readOnly={isInspectionLocked}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-600">Plan</label>
+                {isSystemOtherRoom(room) ? (
+                  <>
+                    <input
+                      className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm bg-gray-100 text-gray-700"
+                      value={getFloorLabel(editRoomFloorLabel || room.floor_label)}
+                      readOnly
+                    />
+                    <div className="mt-1 text-xs md:text-[11px] text-gray-600">
+                      Systemrummet kan inte flyttas mellan plan.
+                    </div>
+                  </>
+                ) : (
+                  <select
+                    className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm bg-white"
+                    value={editRoomFloorLabel}
+                    onChange={e => setEditRoomFloorLabel(e.target.value)}
+                    disabled={isInspectionLocked}
+                  >
+                    {floorLabels
+                      .filter(fl => fl && fl !== OTHER_ROOM_TYPE_KEY)
+                      .map(fl => (
+                        <option key={fl} value={fl}>
+                          {getFloorLabel(fl)}
+                        </option>
+                      ))}
+                  </select>
+                )}
+              </div>
+              <div>
+                <label className="text-xs text-gray-600">Rumstyp</label>
+                <select
+                  className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm bg-white"
+                  value={editRoomTypeKey}
+                  onChange={e => setEditRoomTypeKey(e.target.value)}
+                  disabled={isInspectionLocked}
+                >
+                  {roomTypes.map(rt => (
+                    <option key={rt.id} value={rt.key}>
+                      {rt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={cancelEditRoom}
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs"
+              >
+                Avbryt
+              </button>
+              <button
+                type="button"
+                onClick={saveEditRoom}
+                disabled={isInspectionLocked}
+                className="rounded-md bg-gray-900 px-3 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Spara
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!isRoomCollapsed && (
+          <>
+            <div className="grid gap-3 md:grid-cols-3">
+              {filteredGroups.map(g => (
+                <SelectField
+                  key={g.id}
+                  label={g.label}
+                  value={vals[g.key] ?? ''}
+                  options={optionsByGroup[g.id] || []}
+                  disabled={isInspectionLocked}
+                  onChange={v => updateRoomValues(room.id, { [g.key]: v })}
+                />
+              ))}
+            </div>
+
+            {room.id && (
+              <RoomControlPointsSection
+                room={room}
+                collapsedStorageKey={`ob:insida:collapsed:${inspection.id}:room:${room.id}`}
+                inspectionSide={inspectionSide}
+                items={roomControlItems}
+                onUpdateItem={updateControlItem}
+                onDeleteItem={deleteControlItem}
+                onDeleteItemGroup={deleteControlItemGroup}
+                onAddOutcomeItem={addOutcomeControlItem}
+                onAddFromCatalog={addControlItemFromCatalog}
+                onAddFreeNote={addFreeNoteControlItem}
+                isInspectionLocked={isInspectionLocked}
+                outcomesByControlPointId={outcomesByControlPointId}
+                controlPointMetaById={controlPointMetaById}
+                imagesByControlItemId={imagesByControlItemId}
+                onUploadImage={handleUploadImageForControlItem}
+                onDeleteImage={handleDeleteImage}
+              />
+            )}
+          </>
+        )}
+      </article>
+    )
+  }
+
+  const renderNewRoomForm = () => {
+    if (!showNewRoomForm || isInspectionLocked) return null
+
+    return (
+      <section className="rounded-xl border border-gray-200 bg-gray-50 p-3 md:p-4 space-y-2 text-sm">
+        <div className="grid gap-3 md:grid-cols-3">
+          <div>
+            <label className="text-xs text-gray-600">Plan</label>
+            {derivedFloors.length ? (
+              <select
+                className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm bg-white"
+                value={newFloorLabel}
+                onChange={e => setNewFloorLabel(e.target.value)}
+              >
+                {derivedFloors.map(fk => (
+                  <option key={fk} value={fk}>
+                    {getFloorLabel(fk)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm"
+                value={newFloorLabel}
+                onChange={e => setNewFloorLabel(e.target.value)}
+                placeholder="t.ex. Källare, Plan 1, Plan 2"
+              />
+            )}
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-600">Rumstyp</label>
+            <select
+              className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm bg-white"
+              value={newRoomTypeKey}
+              onChange={e => setNewRoomTypeKey(e.target.value)}
+            >
+              {roomTypes.map(rt => (
+                <option key={rt.id} value={rt.key}>
+                  {rt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-600">
+              Rumnamn (valfritt, auto om tomt)
+            </label>
+            <input
+              className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm"
+              value={newRoomLabel}
+              onChange={e => setNewRoomLabel(e.target.value)}
+              placeholder="t.ex. Sovrum 1, Master bedroom…"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={() => {
+              setShowNewRoomForm(false)
+              setNewRoomLabel('')
+            }}
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs"
+          >
+            Avbryt
+          </button>
+          <button
+            type="button"
+            onClick={addRoom}
+            className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+          >
+            Spara rum
+          </button>
+        </div>
+      </section>
+    )
+  }
+
   // ----------------- RENDER -----------------
   if (loading) {
     return <div className="p-4 text-sm text-gray-600">Laddar insida…</div>
@@ -1870,6 +2167,235 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     return (
       <div className="p-4 text-sm text-gray-600">
         Inga rumstyper eller grupper definierade ännu. Lägg upp dem under Settings → Insida.
+      </div>
+    )
+  }
+
+  if (useHybridLayout) {
+    const activeRoom = activeHybridRoomId
+      ? rooms.find(room => room.id === activeHybridRoomId) ?? null
+      : null
+    const activeRoomIndex = activeRoom
+      ? filteredRooms.findIndex(room => room.id === activeRoom.id)
+      : -1
+    const previousRoom =
+      activeRoomIndex > 0 ? filteredRooms[activeRoomIndex - 1] : null
+    const nextRoom =
+      activeRoomIndex >= 0 && activeRoomIndex < filteredRooms.length - 1
+        ? filteredRooms[activeRoomIndex + 1]
+        : null
+
+    const panelContent = activeRoom ? (
+      <>
+        <header className="border-b border-gray-200 px-4 py-3 md:px-6">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                Insida
+              </div>
+              <h3 className="mt-1 truncate text-lg font-semibold text-gray-900">
+                {getRoomHeading(activeRoom)}
+              </h3>
+              <p className="mt-1 text-sm text-gray-600">
+                {getRoomSummary(activeRoom)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveHybridRoomId(null)}
+              className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
+            >
+              Stäng
+            </button>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => startEditRoom(activeRoom)}
+              disabled={isInspectionLocked}
+              className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Redigera rum
+            </button>
+            {!isSystemOtherRoom(activeRoom) && !isInspectionLocked && (
+              <button
+                type="button"
+                onClick={() => removeRoom(activeRoom.id)}
+                className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50"
+              >
+                Ta bort rum
+              </button>
+            )}
+          </div>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
+          {renderRoomCard(activeRoom, {
+            forceExpanded: true,
+            embedded: true,
+            hideHeader: true,
+          })}
+        </div>
+
+        <footer className="flex items-center justify-between gap-2 border-t border-gray-200 px-4 py-3 md:px-6">
+          <button
+            type="button"
+            onClick={() => previousRoom?.id && setActiveHybridRoomId(previousRoom.id)}
+            disabled={!previousRoom}
+            className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Föregående
+          </button>
+          <button
+            type="button"
+            onClick={() => nextRoom?.id && setActiveHybridRoomId(nextRoom.id)}
+            disabled={!nextRoom}
+            className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Nästa
+          </button>
+        </footer>
+      </>
+    ) : null
+
+    return (
+      <div className="space-y-5">
+        <section className="rounded-2xl border border-gray-200 bg-white p-4 md:p-5 space-y-4">
+          <header className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-xl font-semibold text-gray-900">
+                Byggnad – insida
+              </h2>
+              <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                Paneltest
+              </span>
+            </div>
+            <p className="text-sm text-gray-700">
+              Testvy. Sparning, låsning och kontrollpunkter använder samma logik som ordinarie vy.
+            </p>
+          </header>
+
+          {isInspectionLocked && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Besiktningen är låst. Insidan är skrivskyddad.
+            </div>
+          )}
+
+          <section className="flex flex-wrap items-center gap-2">
+            {floorLabels.map(fl => (
+              <button
+                key={fl}
+                type="button"
+                onClick={() => {
+                  setActiveFloor(fl)
+                  setActiveHybridRoomId(null)
+                }}
+                className={`rounded-md border px-3 py-1 text-xs ${
+                  activeFloor === fl
+                    ? 'bg-gray-900 text-white border-gray-900'
+                    : 'bg-white text-gray-800 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                {getFloorLabel(fl)}
+              </button>
+            ))}
+
+            {floorLabels.length === 0 && (
+              <span className="text-xs text-gray-600">
+                Inga plan ännu. Fyll i Byggnadstyp under Förutsättningar, eller lägg till ett rum så skapas plan automatiskt.
+              </span>
+            )}
+          </section>
+        </section>
+
+        {!isOtherFloor && !isInspectionLocked && (
+          <section className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                if (activeFloor && activeFloor !== OTHER_ROOM_TYPE_KEY) {
+                  setNewFloorLabel(activeFloor)
+                } else if (derivedFloors.length) {
+                  setNewFloorLabel(derivedFloors[0])
+                } else if (floorLabels.length) {
+                  setNewFloorLabel(floorLabels[0])
+                } else {
+                  setNewFloorLabel('plan1')
+                }
+                setShowNewRoomForm(true)
+              }}
+              className="inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
+            >
+              + Lägg till rum
+            </button>
+          </section>
+        )}
+
+        {renderNewRoomForm()}
+
+        <section className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
+          <header className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Rum
+            </h3>
+            <span className="text-xs text-gray-500">
+              Klicka för att öppna arbetsfönster
+            </span>
+          </header>
+
+          {filteredRooms.length > 0 ? (
+            <div className="divide-y divide-gray-200">
+              {filteredRooms.map(room => {
+                const isActive = activeRoom?.id === room.id
+
+                return (
+                  <button
+                    key={room.id ?? `${room.floor_label}-${room.room_label}`}
+                    type="button"
+                    onClick={() => room.id && setActiveHybridRoomId(room.id)}
+                    className={`grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2 py-3 text-left transition hover:bg-gray-50 ${
+                      isActive ? 'bg-blue-50' : ''
+                    }`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-gray-900">
+                        {getRoomHeading(room)}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-gray-600">
+                        {getRoomSummary(room)}
+                      </span>
+                    </span>
+                    <span className="text-lg leading-none text-gray-400">›</span>
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="p-3 text-sm text-gray-600 border border-dashed rounded-lg">
+              Inga rum registrerade på detta plan ännu.
+              <br />
+              Lägg till ett rum med knappen “Lägg till rum” ovanför.
+            </div>
+          )}
+        </section>
+
+        {activeRoom && panelContent && (
+          <>
+            <aside className="fixed inset-y-0 right-0 z-50 hidden w-full max-w-4xl flex-col border-l border-gray-200 bg-white shadow-2xl lg:flex">
+              {panelContent}
+            </aside>
+            <section className="fixed inset-0 z-50 flex flex-col bg-white lg:hidden">
+              {panelContent}
+            </section>
+          </>
+        )}
+
+        {saving && (
+          <div className="text-xs text-gray-600">
+            Sparar…
+          </div>
+        )}
       </div>
     )
   }
@@ -1951,256 +2477,11 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       )}
 
       {/* Ny-rumsformulär */}
-      {showNewRoomForm && !isInspectionLocked && (
-        <section className="rounded-xl border border-gray-200 bg-gray-50 p-3 md:p-4 space-y-2 text-sm">
-          <div className="grid gap-3 md:grid-cols-3">
-            <div>
-              <label className="text-xs text-gray-600">Plan</label>
-              {derivedFloors.length ? (
-                <select
-                  className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm bg-white"
-                  value={newFloorLabel}
-                  onChange={e => setNewFloorLabel(e.target.value)}
-                >
-                  {derivedFloors.map(fk => (
-                    <option key={fk} value={fk}>
-                      {getFloorLabel(fk)}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm"
-                  value={newFloorLabel}
-                  onChange={e => setNewFloorLabel(e.target.value)}
-                  placeholder="t.ex. Källare, Plan 1, Plan 2"
-                />
-              )}
-            </div>
-
-            <div>
-              <label className="text-xs text-gray-600">Rumstyp</label>
-              <select
-                className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm bg-white"
-                value={newRoomTypeKey}
-                onChange={e => setNewRoomTypeKey(e.target.value)}
-              >
-                {roomTypes.map(rt => (
-                  <option key={rt.id} value={rt.key}>
-                    {rt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-xs text-gray-600">
-                Rumnamn (valfritt, auto om tomt)
-              </label>
-              <input
-                className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm"
-                value={newRoomLabel}
-                onChange={e => setNewRoomLabel(e.target.value)}
-                placeholder="t.ex. Sovrum 1, Master bedroom…"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => {
-                setShowNewRoomForm(false)
-                setNewRoomLabel('')
-              }}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs"
-            >
-              Avbryt
-            </button>
-            <button
-              type="button"
-              onClick={addRoom}
-              className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
-            >
-              Spara rum
-            </button>
-          </div>
-        </section>
-      )}
+      {renderNewRoomForm()}
 
       {/* Rumskort */}
       <section className="space-y-4">
-        {filteredRooms.map(room => {
-          const vals = room.values || {}
-          const roomId = room.id ?? ''
-          const roomControlItems = controlItemsByRoomId[roomId] || []
-          const isRoomCollapsed = roomId ? collapsedRoomIds.has(roomId) : false
-
-          return (
-            <article
-              key={room.id}
-              id={room.id ? `room-card-${room.id}` : undefined}
-              className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-4"
-            >
-              <header className="flex min-w-0 items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <h3 className="truncate text-base font-semibold text-gray-900">
-                    {getRoomHeading(room)}
-                  </h3>
-                </div>
-
-                <div className="flex shrink-0 items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => roomId && toggleRoomCollapsed(roomId)}
-                    className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
-                    aria-expanded={!isRoomCollapsed}
-                    disabled={!roomId}
-                  >
-                    {isRoomCollapsed ? 'Visa' : 'Dölj'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => startEditRoom(room)}
-                    disabled={isInspectionLocked}
-                    className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
-                  >
-                    Redigera rum
-                  </button>
-
-                  {!isSystemOtherRoom(room) && !isInspectionLocked && (
-                    <button
-                      type="button"
-                      onClick={() => removeRoom(room.id)}
-                      className="text-xs text-rose-600 hover:underline"
-                    >
-                      Ta bort rum
-                    </button>
-                  )}
-                </div>
-              </header>
-
-              {!isRoomCollapsed && editingRoomId === room.id && (
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <div>
-                      <label className="text-xs text-gray-600">Rumnamn</label>
-                      <input
-                        className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm"
-                        value={editRoomLabel}
-                        onChange={e => setEditRoomLabel(e.target.value)}
-                        readOnly={isInspectionLocked}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-600">Plan</label>
-                      {isSystemOtherRoom(room) ? (
-                        <>
-                          <input
-                            className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm bg-gray-100 text-gray-700"
-                            value={getFloorLabel(editRoomFloorLabel || room.floor_label)}
-                            readOnly
-                          />
-                          <div className="mt-1 text-xs md:text-[11px] text-gray-600">
-                            Systemrummet kan inte flyttas mellan plan.
-                          </div>
-                        </>
-                      ) : (
-                        <select
-                          className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm bg-white"
-                          value={editRoomFloorLabel}
-                          onChange={e => setEditRoomFloorLabel(e.target.value)}
-                          disabled={isInspectionLocked}
-                        >
-                          {floorLabels
-                            .filter(fl => fl && fl !== OTHER_ROOM_TYPE_KEY)
-                            .map(fl => (
-                              <option key={fl} value={fl}>
-                                {getFloorLabel(fl)}
-                              </option>
-                            ))}
-                        </select>
-                      )}
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-600">Rumstyp</label>
-                      <select
-                        className="mt-0.5 w-full rounded-md border px-2 py-1.5 text-sm bg-white"
-                        value={editRoomTypeKey}
-                        onChange={e => setEditRoomTypeKey(e.target.value)}
-                        disabled={isInspectionLocked}
-                      >
-                        {roomTypes.map(rt => (
-                          <option key={rt.id} value={rt.key}>
-                            {rt.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={cancelEditRoom}
-                      className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs"
-                    >
-                      Avbryt
-                    </button>
-                    <button
-                      type="button"
-                      onClick={saveEditRoom}
-                      disabled={isInspectionLocked}
-                      className="rounded-md bg-gray-900 px-3 py-1.5 text-xs text-white"
-                    >
-                      Spara
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {!isRoomCollapsed && (
-                <>
-                  <div className="grid gap-3 md:grid-cols-3">
-                    {filteredGroups.map(g => (
-                      <SelectField
-                        key={g.id}
-                        label={g.label}
-                        value={vals[g.key] ?? ''}
-                        options={optionsByGroup[g.id] || []}
-                        disabled={isInspectionLocked}
-                        onChange={v =>
-                          updateRoomValues(room.id, { [g.key]: v })
-                        }
-                      />
-                    ))}
-                  </div>
-
-                  {/* Kontrollpunkter för rummet */}
-                  {room.id && (
-                    <RoomControlPointsSection
-                      room={room}
-                      collapsedStorageKey={`ob:insida:collapsed:${inspection.id}:room:${room.id}`}
-                      inspectionSide={inspectionSide}
-                      items={roomControlItems}
-                      onUpdateItem={updateControlItem}
-                      onDeleteItem={deleteControlItem}
-                      onDeleteItemGroup={deleteControlItemGroup}
-                      onAddOutcomeItem={addOutcomeControlItem}
-                      onAddFromCatalog={addControlItemFromCatalog}
-                      onAddFreeNote={addFreeNoteControlItem}
-                      isInspectionLocked={isInspectionLocked}
-                      outcomesByControlPointId={outcomesByControlPointId}
-                      controlPointMetaById={controlPointMetaById}
-                      imagesByControlItemId={imagesByControlItemId}
-                      onUploadImage={handleUploadImageForControlItem}
-                      onDeleteImage={handleDeleteImage}
-                    />
-                  )}
-                </>
-              )}
-            </article>
-          )
-        })}
+        {filteredRooms.map(room => renderRoomCard(room))}
 
         {filteredRooms.length === 0 && (
           <div className="p-3 text-sm text-gray-600 border border-dashed rounded-lg">
