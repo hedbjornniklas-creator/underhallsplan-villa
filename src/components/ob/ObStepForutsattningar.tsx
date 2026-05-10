@@ -175,7 +175,8 @@ export default function ObStepForutsattningar({
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
     const layout = params.get('forutsattningarLayout')
-    setUsePanelLayout(layout === 'panel' || layout === 'hybrid')
+    const sharedLayout = params.get('obLayout')
+    setUsePanelLayout(layout === 'panel' || layout === 'hybrid' || sharedLayout === 'hybrid')
   }, [])
 
   useEffect(() => {

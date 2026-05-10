@@ -197,7 +197,15 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     Record<string, InspectionImage[]>
   >({})
   const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(() => new Set())
+  const [useHybridLayout, setUseHybridLayout] = useState(false)
+  const [activeHybridItemId, setActiveHybridItemId] = useState<string | null>(null)
   const supportsIsFreeNoteRef = useRef<boolean | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    setUseHybridLayout(params.get('obLayout') === 'hybrid')
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1426,32 +1434,75 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     })
   }
 
-  const renderItemCard = (item: ItemBundle) => {
+  const isFreeNoteRow = (row: InspectionExteriorObservation) =>
+    row.is_free_note === true || row.values?._free_note === true
+
+  const getItemSummary = (item: ItemBundle) => {
+    const rows = getItemRows(item.id)
+    if (!rows.length) return 'Initierar komponentdata'
+
+    const observationIds = rows
+      .map(row => row.id)
+      .filter((id): id is string => !!id)
+    const itemControlItems = observationIds.flatMap(id => controlItemsByObservationId[id] || [])
+    const freeNoteRows = rows.filter(isFreeNoteRow)
+
+    const noteCount =
+      itemControlItems.filter(ci =>
+        [ci.note, ci.risk_text, ci.ftu_text].some(value => String(value ?? '').trim().length > 0)
+      ).length +
+      freeNoteRows.filter(row =>
+        [row.note, row.risk_text, row.ftu_text].some(value => String(value ?? '').trim().length > 0)
+      ).length
+    const imageCount =
+      itemControlItems.reduce((sum, ci) => sum + (ci.id ? (imagesByControlItemId[ci.id] || []).length : 0), 0) +
+      observationIds.reduce((sum, id) => sum + (imagesByObservationId[id] || []).length, 0)
+
+    const parts = [
+      `${itemControlItems.length} kontrollpunkter`,
+      noteCount > 0 ? `${noteCount} noteringar` : 'inga noteringar',
+      imageCount > 0 ? `${imageCount} bilder` : null,
+    ].filter(Boolean)
+
+    return parts.join(' · ')
+  }
+
+  const renderItemCard = (
+    item: ItemBundle,
+    options: { forceExpanded?: boolean; embedded?: boolean; hideHeader?: boolean } = {}
+  ) => {
     const rows = getItemRows(item.id)
     const itemAnchorId = `utsida-${item.key}`
-    const isCollapsed = collapsedItemIds.has(item.id)
+    const isCollapsed = options.forceExpanded ? false : collapsedItemIds.has(item.id)
+    const sectionClassName = options.embedded
+      ? 'w-full min-w-0 max-w-full space-y-4'
+      : 'w-full min-w-0 max-w-full scroll-mt-28 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-4'
 
     if (!rows || rows.length === 0) {
       return (
         <section
           key={item.id}
           id={itemAnchorId}
-          className="w-full min-w-0 max-w-full scroll-mt-28 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3"
+          className={options.embedded ? 'w-full min-w-0 max-w-full space-y-3' : 'w-full min-w-0 max-w-full scroll-mt-28 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3'}
         >
-          <header className="flex min-w-0 max-w-full items-center justify-between gap-2">
-            <h3 className="min-w-0 text-base font-semibold text-gray-900">
-              <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
-              {item.label}
-            </h3>
-            <button
-              type="button"
-              onClick={() => toggleItemCollapsed(item.id)}
-              className="shrink-0 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
-              aria-expanded={!isCollapsed}
-            >
-              {isCollapsed ? 'Visa' : 'Dölj'}
-            </button>
-          </header>
+          {!options.hideHeader ? (
+            <header className="flex min-w-0 max-w-full items-center justify-between gap-2">
+              <h3 className="min-w-0 text-base font-semibold text-gray-900">
+                <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
+                {item.label}
+              </h3>
+              {!options.forceExpanded ? (
+                <button
+                  type="button"
+                  onClick={() => toggleItemCollapsed(item.id)}
+                  className="shrink-0 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                  aria-expanded={!isCollapsed}
+                >
+                  {isCollapsed ? 'Visa' : 'Dölj'}
+                </button>
+              ) : null}
+            </header>
+          ) : null}
           {!isCollapsed ? (
             <p className="text-xs text-gray-500">Initierar komponentdata…</p>
           ) : null}
@@ -1459,15 +1510,12 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       )
     }
 
-    const isFreeNote = (row: InspectionExteriorObservation) =>
-      row.is_free_note === true || row.values?._free_note === true
-
     // Huvud-observation (utan free_note)
-    const mainRow = rows.find(r => !isFreeNote(r)) ?? rows[0]
+    const mainRow = rows.find(r => !isFreeNoteRow(r)) ?? rows[0]
 
     // Fria noteringar (med free_note)
     const freeNoteRows = rows
-      .filter(r => r.id !== mainRow.id && isFreeNote(r))
+      .filter(r => r.id !== mainRow.id && isFreeNoteRow(r))
       .sort((a, b) => {
         const aTime = a.created_at ? Date.parse(a.created_at) : Number.NaN
         const bTime = b.created_at ? Date.parse(b.created_at) : Number.NaN
@@ -1485,22 +1533,26 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       <section
         key={item.id}
         id={itemAnchorId}
-        className="w-full min-w-0 max-w-full scroll-mt-28 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-4"
+        className={sectionClassName}
       >
-        <header className="flex min-w-0 max-w-full items-center justify-between gap-2">
-          <h3 className="min-w-0 text-base font-semibold text-gray-900">
-            <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
-            {item.label}
-          </h3>
-          <button
-            type="button"
-            onClick={() => toggleItemCollapsed(item.id)}
-            className="shrink-0 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
-            aria-expanded={!isCollapsed}
-          >
-            {isCollapsed ? 'Visa' : 'Dölj'}
-          </button>
-        </header>
+        {!options.hideHeader ? (
+          <header className="flex min-w-0 max-w-full items-center justify-between gap-2">
+            <h3 className="min-w-0 text-base font-semibold text-gray-900">
+              <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
+              {item.label}
+            </h3>
+            {!options.forceExpanded ? (
+              <button
+                type="button"
+                onClick={() => toggleItemCollapsed(item.id)}
+                className="shrink-0 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                aria-expanded={!isCollapsed}
+              >
+                {isCollapsed ? 'Visa' : 'Dölj'}
+              </button>
+            ) : null}
+          </header>
+        ) : null}
 
         {!isCollapsed ? (
           <>
@@ -1569,6 +1621,150 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     return (
       <div className="p-4 text-sm text-gray-600">
         Inga rubriker för utsida är definierade. Lägg upp dem under Settings ? Utsida.
+      </div>
+    )
+  }
+
+  if (useHybridLayout) {
+    const activeItem = items.find(item => item.id === activeHybridItemId) ?? null
+    const activeIndex = activeItem ? items.findIndex(item => item.id === activeItem.id) : -1
+    const previousItem = activeIndex > 0 ? items[activeIndex - 1] : null
+    const nextItem =
+      activeIndex >= 0 && activeIndex < items.length - 1 ? items[activeIndex + 1] : null
+    const closePanel = () => setActiveHybridItemId(null)
+    const panelContent = activeItem ? (
+      <>
+        <header className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-4 md:px-6">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Utsida
+            </div>
+            <h3 className="mt-1 truncate text-xl font-semibold text-gray-900">
+              <span className="mr-2">{itemEmoji[activeItem.key] || '•'}</span>
+              {activeItem.label}
+            </h3>
+            <p className="mt-1 text-xs text-gray-500">{getItemSummary(activeItem)}</p>
+          </div>
+          <button
+            type="button"
+            onClick={closePanel}
+            className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+          >
+            Stäng
+          </button>
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6">
+          {renderItemCard(activeItem, {
+            forceExpanded: true,
+            embedded: true,
+            hideHeader: true,
+          })}
+        </div>
+
+        <footer className="flex items-center justify-between gap-2 border-t border-gray-200 px-4 py-3 md:px-6">
+          <button
+            type="button"
+            onClick={() => previousItem && setActiveHybridItemId(previousItem.id)}
+            disabled={!previousItem}
+            className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Föregående
+          </button>
+          <button
+            type="button"
+            onClick={() => nextItem && setActiveHybridItemId(nextItem.id)}
+            disabled={!nextItem}
+            className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Nästa
+          </button>
+        </footer>
+      </>
+    ) : null
+
+    return (
+      <div className="w-full min-w-0 max-w-full overflow-x-hidden space-y-5">
+        <section className="w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-gray-200 bg-white/95 p-4 md:p-5 space-y-3">
+          <header className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-xl font-semibold text-gray-900">Byggnad – utsida</h2>
+              <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                Paneltest
+              </span>
+            </div>
+            <p className="text-xs text-gray-600">
+              Testvy. Sparning, låsning och rapportdata använder samma logik som ordinarie vy.
+            </p>
+          </header>
+
+          {isInspectionLocked ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Besiktningen är låst. Utsida är skrivskyddad.
+            </div>
+          ) : null}
+        </section>
+
+        <section className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-gray-200 md:p-4">
+          <div className="mb-3 flex items-center justify-between gap-3 px-1">
+            <div className="text-xs font-semibold uppercase text-gray-500">
+              Delar
+            </div>
+            <div className="text-xs text-gray-500">
+              Klicka för att öppna arbetsfönster
+            </div>
+          </div>
+          <div className="divide-y divide-gray-200 overflow-hidden rounded-xl border border-gray-200 bg-white">
+            {items.map(item => {
+              const isActive = activeItem?.id === item.id
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setActiveHybridItemId(item.id)}
+                  className={`flex w-full items-center gap-3 px-3 py-3 text-left transition ${
+                    isActive
+                      ? 'bg-gray-900 text-white'
+                      : 'bg-white text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  <span aria-hidden="true" className="shrink-0">
+                    {itemEmoji[item.key] || '•'}
+                  </span>
+                  <div className="grid min-w-0 flex-1 gap-1 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
+                    <div className="truncate text-sm font-semibold">{item.label}</div>
+                    <div
+                      className={`truncate text-xs md:text-sm ${
+                        isActive ? 'text-gray-200' : 'text-gray-500'
+                      }`}
+                    >
+                      {getItemSummary(item)}
+                    </div>
+                  </div>
+                  <span
+                    aria-hidden="true"
+                    className={`shrink-0 text-lg leading-none ${
+                      isActive ? 'text-gray-200' : 'text-gray-400'
+                    }`}
+                  >
+                    ›
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+
+        {activeItem && panelContent ? (
+          <>
+            <aside className="fixed inset-y-0 right-0 z-50 hidden w-full max-w-4xl border-l border-gray-200 bg-white shadow-2xl lg:flex lg:flex-col">
+              {panelContent}
+            </aside>
+            <section className="fixed inset-0 z-50 flex flex-col bg-white lg:hidden">
+              {panelContent}
+            </section>
+          </>
+        ) : null}
       </div>
     )
   }
