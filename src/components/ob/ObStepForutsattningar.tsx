@@ -1098,7 +1098,7 @@ export default function ObStepForutsattningar({
               Klicka för att öppna arbetsfönster
             </div>
           </div>
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          <div className="divide-y divide-gray-200 overflow-hidden rounded-xl border border-gray-200 bg-white">
             {panelEntries.map(entry => {
               const isActive = panelEntry?.key === entry.key
               return (
@@ -1106,29 +1106,35 @@ export default function ObStepForutsattningar({
                   key={entry.key}
                   type="button"
                   onClick={() => setActivePanelKey(entry.key)}
-                  className={`min-h-[84px] rounded-xl border px-3 py-3 text-left transition ${
+                  className={`flex w-full items-center gap-3 px-3 py-3 text-left transition ${
                     isActive
-                      ? 'border-gray-900 bg-gray-900 text-white shadow-sm'
-                      : 'border-gray-200 bg-white text-gray-900 hover:border-gray-400 hover:bg-gray-50'
+                      ? 'bg-gray-900 text-white'
+                      : 'bg-white text-gray-900 hover:bg-gray-50'
                   }`}
                 >
-                  <div className="flex items-start gap-2">
-                    <span aria-hidden="true" className="mt-0.5 shrink-0">
-                      {entry.emoji}
-                    </span>
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold">
-                        {entry.label}
-                      </div>
-                      <div
-                        className={`mt-1 line-clamp-2 text-xs ${
-                          isActive ? 'text-gray-200' : 'text-gray-500'
-                        }`}
-                      >
-                        {getPanelEntrySummary(entry)}
-                      </div>
+                  <span aria-hidden="true" className="shrink-0">
+                    {entry.emoji}
+                  </span>
+                  <div className="grid min-w-0 flex-1 gap-1 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
+                    <div className="truncate text-sm font-semibold">
+                      {entry.label}
+                    </div>
+                    <div
+                      className={`truncate text-xs md:text-sm ${
+                        isActive ? 'text-gray-200' : 'text-gray-500'
+                      }`}
+                    >
+                      {getPanelEntrySummary(entry)}
                     </div>
                   </div>
+                  <span
+                    aria-hidden="true"
+                    className={`shrink-0 text-lg leading-none ${
+                      isActive ? 'text-gray-200' : 'text-gray-400'
+                    }`}
+                  >
+                    ›
+                  </span>
                 </button>
               )
             })}
