@@ -12,6 +12,7 @@ import {
   getAssignmentTermsDocument,
   parseAssignmentTermsRole,
 } from '@/lib/assignments/terms'
+import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
 
 export type AssignmentStatus =
   | 'draft'
@@ -1617,6 +1618,25 @@ export async function convertAssignmentToInspection(input: {
   const resolvedAddress = assignment.property_address ?? assignment.preliminary_address ?? null
   const ownerId = assignment.responsible_profile_id ?? input.requestedByUserId
   const propertyName = toPropertyName(resolvedAddress, assignment.id)
+  let assignmentNo: string | null = null
+
+  if (assignment.preferred_date) {
+    const { data: assignmentNumberRows, error: assignmentNumberError } = await admin
+      .from('inspections')
+      .select('assignment_number')
+      .eq('date', assignment.preferred_date)
+
+    if (assignmentNumberError) {
+      throw new Error(
+        assignmentNumberError.message ?? 'Kunde inte generera uppdragsnummer.'
+      )
+    }
+
+    assignmentNo = getNextInspectionAssignmentNumber(
+      assignment.preferred_date,
+      assignmentNumberRows ?? []
+    )
+  }
 
   const { data: propertyData, error: propertyError } = await admin
     .from('properties')
@@ -1641,7 +1661,6 @@ export async function convertAssignmentToInspection(input: {
 
   const property = propertyData as PropertySeedRow
 
-  const assignmentNo = assignment.id.replace(/-/g, '').slice(0, 8).toUpperCase()
   const contactParts = [assignment.customer_phone, assignment.customer_email].filter(Boolean)
   const clientContact = contactParts.length > 0 ? contactParts.join(' | ') : null
 

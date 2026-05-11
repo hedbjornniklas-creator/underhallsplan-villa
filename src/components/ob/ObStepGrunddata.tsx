@@ -6,6 +6,10 @@ import type { Tables } from '@/types/supabase'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 import { formatCertificationDisplayLines } from '@/lib/certifications/display'
 import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
+import {
+  getNextInspectionAssignmentNumber,
+  isInspectionAssignmentNumberForDate,
+} from '@/lib/inspections/assignmentNumber'
 import DebouncedTextarea from './DebouncedTextarea'
 
 export type ObInspection = Tables<'inspections'>
@@ -640,44 +644,22 @@ export default function ObStepGrunddata({
   useEffect(() => {
     const maybeGenerateAssignmentNumber = async () => {
       if (isInspectionLocked) return
-      if (inspection.assignment_number && inspection.assignment_number !== '') return
       if (!inspection.date) return
-
-      const baseDate = inspection.date // YYYY-MM-DD
-      const parts = baseDate.split('-')
-      if (parts.length !== 3) return
-
-      const [year, month, day] = parts
-      if (!year || !month || !day) return
-
-      const dateKey = `${year}-${month}${day}`
+      if (isInspectionAssignmentNumberForDate(inspection.assignment_number, inspection.date)) return
 
       try {
         const { data, error } = await supabase
           .from('inspections')
           .select('assignment_number, date')
-          .eq('date', baseDate)
+          .eq('date', inspection.date)
 
         if (error) {
           console.error('Kunde inte generera uppdragsnummer:', error)
           return
         }
 
-        let maxSeq = 0
-        ;(data || []).forEach((row: { assignment_number?: string | null }) => {
-          const typedRow = row
-          const num = typedRow.assignment_number ?? null
-          if (!num) return
-          const prefix = `${dateKey}-`
-          if (!num.startsWith(prefix)) return
-          const suffix = num.slice(prefix.length)
-          const parsed = parseInt(suffix, 10)
-          if (!isNaN(parsed) && parsed > maxSeq) maxSeq = parsed
-        })
-
-        const next = maxSeq + 1
-        const seqStr = next.toString().padStart(2, '0')
-        const newNumber = `${dateKey}-${seqStr}`
+        const newNumber = getNextInspectionAssignmentNumber(inspection.date, data || [])
+        if (!newNumber) return
 
         await saveInspection({ assignment_number: newNumber } as Partial<Inspection>)
         setInspForm(prev => ({ ...prev, assignment_number: newNumber }))

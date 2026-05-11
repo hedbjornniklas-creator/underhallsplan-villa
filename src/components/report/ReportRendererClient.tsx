@@ -271,6 +271,13 @@ type InspectionRoomGroupItemEntry = {
   marginBottomMm: number
 }
 
+type InspectionFloorHeaderEntry = {
+  type: 'inspectionFloorHeader'
+  title: string
+  marginTopMm: number
+  marginBottomMm: number
+}
+
 type RiskItemEntry = {
   type: 'riskItem'
   title: string
@@ -304,6 +311,7 @@ type ExtendedReportBlock =
   | InspectionBlockItemEntry
   | InspectionRoomGroupEntry
   | InspectionRoomGroupItemEntry
+  | InspectionFloorHeaderEntry
   | RiskItemEntry
   | FtuItemEntry
   | BuildingDataRowEntry
@@ -879,21 +887,49 @@ export default function ReportRendererClient({
                 }
               })
 
+              let previousInteriorFloor = ''
               groups.forEach((group, groupIndex) => {
                 if (isPdfMode) {
+                  const titleParts = splitInspectionGroupTitle(group.title)
+                  const roomTitle =
+                    section.id === 'notes-interior' && titleParts.context
+                      ? titleParts.label
+                      : group.title
+                  if (
+                    section.id === 'notes-interior' &&
+                    titleParts.context &&
+                    titleParts.context !== previousInteriorFloor
+                  ) {
+                    entries.push({
+                      kind: 'block',
+                      id: `${section.id}-floor-header-${blockIndex}-${groupIndex}`,
+                      sectionId: section.id,
+                      sectionStartOnNewPage:
+                        section.startOnNewPage && blockIndex === 0 && groupIndex === 0,
+                      block: {
+                        type: 'inspectionFloorHeader',
+                        title: titleParts.context,
+                        marginTopMm: groupIndex === 0 ? block.marginTopMm : 2,
+                        marginBottomMm: 1.5,
+                      },
+                    })
+                    previousInteriorFloor = titleParts.context
+                  }
+
                   group.items.forEach((item, itemIndex) => {
                     entries.push({
                       kind: 'block',
                       id: `${section.id}-room-group-${blockIndex}-${groupIndex}-${itemIndex}`,
                       sectionId: section.id,
                       sectionStartOnNewPage:
+                        section.id !== 'notes-interior' &&
                         section.startOnNewPage &&
                         blockIndex === 0 &&
                         groupIndex === 0 &&
                         itemIndex === 0,
                       block: {
                         type: 'inspectionRoomGroupItem',
-                        title: group.title,
+                        title: roomTitle,
                         item,
                         isFirstInGroup: itemIndex === 0,
                         isLastInGroup: itemIndex === group.items.length - 1,
@@ -1483,7 +1519,7 @@ export default function ReportRendererClient({
     marginBottomMm: number,
     showTitle = true
   ) => {
-    const titleParts = splitInspectionGroupTitle(title)
+    const rowTitle = title.trim()
     return (
       <article
         key={key}
@@ -1499,44 +1535,22 @@ export default function ReportRendererClient({
         >
           <div
             style={{
-              borderTop: showTitle ? `1px solid ${ACCENT_COLOR}` : 'none',
-              backgroundColor: showTitle ? '#eaf2fb' : 'transparent',
-              borderLeft: showTitle ? `${mmToPx(1)} solid ${ACCENT_COLOR}` : 'none',
+              borderTop: showTitle ? '1px solid #cbd5e1' : 'none',
               fontSize: '10.5pt',
               fontWeight: 700,
               color: '#111827',
               lineHeight: 1.2,
               paddingTop: mmToPx(2.5),
               paddingBottom: mmToPx(2.5),
-              paddingLeft: showTitle ? mmToPx(2) : 0,
               paddingRight: mmToPx(2),
               wordBreak: 'break-word',
             }}
           >
-            {showTitle ? (
-              titleParts.context ? (
-                <>
-                  <div
-                    style={{
-                      fontSize: '8.5pt',
-                      fontWeight: 700,
-                      color: ACCENT_COLOR,
-                      textTransform: 'uppercase',
-                      marginBottom: mmToPx(0.6),
-                    }}
-                  >
-                    {titleParts.context}
-                  </div>
-                  <div>{titleParts.label}</div>
-                </>
-              ) : (
-                titleParts.label
-              )
-            ) : null}
+            {showTitle ? rowTitle : null}
           </div>
           <div
             style={{
-              borderTop: showTitle ? `1px solid ${ACCENT_COLOR}` : '1px solid #cbd5e1',
+              borderTop: '1px solid #cbd5e1',
               paddingTop: mmToPx(2.5),
               paddingBottom: mmToPx(2.5),
             }}
@@ -1585,6 +1599,27 @@ export default function ReportRendererClient({
     index: number,
     sectionPageMap: Map<string, number>
   ) => {
+    if (block.type === 'inspectionFloorHeader') {
+      return (
+        <div
+          key={`${sectionId}-floor-header-${index}`}
+          style={{
+            ...blockMargins(block),
+            backgroundColor: '#eaf2fb',
+            borderLeft: `${mmToPx(1)} solid ${ACCENT_COLOR}`,
+            borderTop: `1px solid ${ACCENT_COLOR}`,
+            color: '#111827',
+            fontSize: '12pt',
+            fontWeight: 700,
+            lineHeight: 1.2,
+            padding: `${mmToPx(2.2)} ${mmToPx(3)}`,
+          }}
+        >
+          {block.title}
+        </div>
+      )
+    }
+
     if (block.type === 'inspectionBlockItem') {
       return renderInspectionBlockItem(
         block.item,
