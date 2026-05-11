@@ -532,22 +532,6 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                 <dt className="text-xs text-slate-500">Uppdragsnummer</dt>
                 <dd>{getTextByPath(mock, 'inspections.assignment_number')}</dd>
               </div>
-              <div>
-                <dt className="text-xs text-slate-500">Besiktningsdag</dt>
-                <dd>{getTextByPath(mock, 'inspections.date_time')}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">Omfattning</dt>
-                <dd className="whitespace-pre-wrap">{getTextByPath(mock, 'inspections.scope_text')}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">Närvarande</dt>
-                <dd className="whitespace-pre-wrap">{attendeesText}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">Uppdragsbekräftelse</dt>
-                <dd className="whitespace-pre-wrap">{assignmentConfirmationText}</dd>
-              </div>
             </dl>
           </article>
 
@@ -597,6 +581,30 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                 <dd>{companyAddress || '--'}</dd>
               </div>
             </dl>
+            <p className="mt-4 whitespace-pre-wrap text-sm text-slate-700">
+              Besiktningsmannen är medlem i Svenska Byggingenjörers Riksförbund (SBR) och är registrerad i SBR:s förteckning över besiktningsmän med därtill hörande förpliktelser.
+            </p>
+          </article>
+
+          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+              Besiktningsuppdrag
+            </h2>
+            <dl className="mt-3 space-y-2 text-sm text-slate-700">
+              <div>
+                <dt className="text-xs text-slate-500">Omfattning</dt>
+                <dd className="whitespace-pre-wrap">{getTextByPath(mock, 'inspections.scope_text')}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Besiktningsdag</dt>
+                <dd>{getTextByPath(mock, 'inspections.date_time')}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Närvarande</dt>
+                <dd className="whitespace-pre-wrap">{attendeesText}</dd>
+              </div>
+            </dl>
+            <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{assignmentNoticeText}</p>
           </article>
         </section>
 
@@ -677,16 +685,6 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
               <p className="mt-1 whitespace-pre-wrap">{visualOralText}</p>
             </div>
           </div>
-        </section>
-
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-            Uppdragsvillkor
-          </h2>
-          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
-            Besiktningsmannen är medlem i Svenska Byggingenjörers Riksförbund (SBR) och är registrerad i SBR:s förteckning över besiktningsmän med därtill hörande förpliktelser.
-          </p>
-          <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{assignmentNoticeText}</p>
         </section>
 
         {buildingDataText ? (
