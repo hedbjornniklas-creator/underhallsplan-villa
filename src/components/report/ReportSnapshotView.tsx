@@ -477,7 +477,7 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
           ) : null}
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-3">
+        <section className="grid items-start gap-4 lg:grid-cols-3">
           <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Objekt</h2>
             <dl className="mt-3 space-y-2 text-sm text-slate-700">
@@ -502,10 +502,6 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                     <dt className="text-xs text-slate-500">Fastighetsbeteckning</dt>
                     <dd>{getTextByPath(mock, 'properties.cadastral_id')}</dd>
                   </div>
-                  <div>
-                    <dt className="text-xs text-slate-500">Fastighetsägare</dt>
-                    <dd>{getTextByPath(mock, 'properties.owner_name')}</dd>
-                  </div>
                 </>
               )}
               <div>
@@ -516,6 +512,12 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                 <dt className="text-xs text-slate-500">Kommun</dt>
                 <dd>{getTextByPath(mock, 'properties.municipality')}</dd>
               </div>
+              {!isApartment ? (
+                <div>
+                  <dt className="text-xs text-slate-500">Fastighetsägare</dt>
+                  <dd>{getTextByPath(mock, 'properties.owner_name')}</dd>
+                </div>
+              ) : null}
             </dl>
           </article>
 
@@ -542,43 +544,27 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
             <dl className="mt-3 space-y-2 text-sm text-slate-700">
               <div>
                 <dt className="text-xs text-slate-500">Namn</dt>
-                <dd>{getTextByPath(mock, 'profile.full_name')}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">E-post</dt>
-                <dd>{getTextByPath(mock, 'profile.email')}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">Telefon</dt>
-                <dd>{getTextByPath(mock, 'profile.phone')}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">SBR-grupp</dt>
-                <dd>{getTextByPath(mock, 'profile.sbr_group')}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">SBR-status</dt>
-                <dd>{getTextByPath(mock, 'profile.sbr_status')}</dd>
+                <dd className="whitespace-pre-line">
+                  {[
+                    getTextByPath(mock, 'profile.full_name'),
+                    getTextByPath(mock, 'profile.sbr_group', ''),
+                    getTextByPath(mock, 'profile.sbr_status', ''),
+                  ]
+                    .filter((line) => line && line !== '--')
+                    .join('\n')}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs text-slate-500">Certifieringsnummer</dt>
                 <dd>--</dd>
               </div>
               <div>
-                <dt className="text-xs text-slate-500">Medlemsnummer</dt>
-                <dd>{getTextByPath(mock, 'profile.membership_number')}</dd>
+                <dt className="text-xs text-slate-500">Telefon</dt>
+                <dd>{getTextByPath(mock, 'profile.phone')}</dd>
               </div>
               <div>
-                <dt className="text-xs text-slate-500">Företag</dt>
-                <dd>{getTextByPath(mock, 'profile.company_name')}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">Org.nr</dt>
-                <dd>{getTextByPath(mock, 'profile.company_orgno')}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">Företagsadress</dt>
-                <dd>{companyAddress || '--'}</dd>
+                <dt className="text-xs text-slate-500">E-post</dt>
+                <dd>{getTextByPath(mock, 'profile.email')}</dd>
               </div>
             </dl>
             <p className="mt-4 whitespace-pre-wrap text-sm text-slate-700">
