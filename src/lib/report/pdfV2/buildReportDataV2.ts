@@ -922,11 +922,6 @@ const supabase: any = createSupabaseServerClient()
   const interiorRoomRows = (interiorRooms ?? []) as InteriorRoomRow[]
 
   const sortedInteriorRooms = [...interiorRoomRows].sort((a, b) => {
-    const aIsOther = isOtherKey(a.room_type_key)
-    const bIsOther = isOtherKey(b.room_type_key)
-    if (aIsOther && !bIsOther) return -1
-    if (!aIsOther && bIsOther) return 1
-
     const aRank = getInteriorFloorRank(a.floor_label)
     const bRank = getInteriorFloorRank(b.floor_label)
     if (aRank !== bRank) return aRank - bRank
