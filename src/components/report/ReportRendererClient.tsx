@@ -560,6 +560,23 @@ function parseBuildingDataLines(content: string) {
   return rows
 }
 
+function splitInspectionGroupTitle(title: string) {
+  const parts = title.split(/\s+-\s+/)
+  if (parts.length < 2) return { context: '', label: title.trim() }
+
+  const context = parts[0]?.trim() ?? ''
+  const label = parts.slice(1).join(' - ').trim()
+  const isFloorContext =
+    /^plan\s+\d+$/i.test(context) ||
+    /^källare/i.test(context) ||
+    /^allmänt$/i.test(context) ||
+    /^vind$/i.test(context) ||
+    /^inredd\s+vind$/i.test(context)
+
+  if (!isFloorContext || !label) return { context: '', label: title.trim() }
+  return { context, label }
+}
+
 const appendixBreakHeadings = [
   'Besiktningsmannens ansvar',
   'Äganderätt och nyttjanderätt till besiktningsutlåtandet',
@@ -1465,46 +1482,71 @@ export default function ReportRendererClient({
     marginTopMm: number,
     marginBottomMm: number,
     showTitle = true
-  ) => (
-    <article
-      key={key}
-      className="ob-block bg-white"
-      style={blockMargins({ marginTopMm, marginBottomMm } as ReportBlock)}
-    >
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: `${mmToPx(42)} 1fr`,
-          columnGap: mmToPx(4),
-        }}
+  ) => {
+    const titleParts = splitInspectionGroupTitle(title)
+    return (
+      <article
+        key={key}
+        className="ob-block bg-white"
+        style={blockMargins({ marginTopMm, marginBottomMm } as ReportBlock)}
       >
         <div
           style={{
-            borderTop: showTitle ? '1px solid #cbd5e1' : 'none',
-            fontSize: '10.5pt',
-            fontWeight: 700,
-            color: '#111827',
-            lineHeight: 1.2,
-            paddingTop: mmToPx(2.5),
-            paddingBottom: mmToPx(2.5),
-            paddingRight: mmToPx(2),
-            wordBreak: 'break-word',
+            display: 'grid',
+            gridTemplateColumns: `${mmToPx(46)} 1fr`,
+            columnGap: mmToPx(4),
           }}
         >
-          {showTitle ? title : null}
+          <div
+            style={{
+              borderTop: showTitle ? `1px solid ${ACCENT_COLOR}` : 'none',
+              backgroundColor: showTitle ? '#eaf2fb' : 'transparent',
+              borderLeft: showTitle ? `${mmToPx(1)} solid ${ACCENT_COLOR}` : 'none',
+              fontSize: '10.5pt',
+              fontWeight: 700,
+              color: '#111827',
+              lineHeight: 1.2,
+              paddingTop: mmToPx(2.5),
+              paddingBottom: mmToPx(2.5),
+              paddingLeft: showTitle ? mmToPx(2) : 0,
+              paddingRight: mmToPx(2),
+              wordBreak: 'break-word',
+            }}
+          >
+            {showTitle ? (
+              titleParts.context ? (
+                <>
+                  <div
+                    style={{
+                      fontSize: '8.5pt',
+                      fontWeight: 700,
+                      color: ACCENT_COLOR,
+                      textTransform: 'uppercase',
+                      marginBottom: mmToPx(0.6),
+                    }}
+                  >
+                    {titleParts.context}
+                  </div>
+                  <div>{titleParts.label}</div>
+                </>
+              ) : (
+                titleParts.label
+              )
+            ) : null}
+          </div>
+          <div
+            style={{
+              borderTop: showTitle ? `1px solid ${ACCENT_COLOR}` : '1px solid #cbd5e1',
+              paddingTop: mmToPx(2.5),
+              paddingBottom: mmToPx(2.5),
+            }}
+          >
+            {renderInspectionItemContent(item, key, 'wide')}
+          </div>
         </div>
-        <div
-          style={{
-            borderTop: '1px solid #cbd5e1',
-            paddingTop: mmToPx(2.5),
-            paddingBottom: mmToPx(2.5),
-          }}
-        >
-          {renderInspectionItemContent(item, key, 'wide')}
-        </div>
-      </div>
-    </article>
-  )
+      </article>
+    )
+  }
 
   const renderInspectionBlockItem = (
     item: InspectionBlockItem,
@@ -1621,15 +1663,28 @@ export default function ReportRendererClient({
         notesScope && block.level === 2 && String(block.text).trim() === 'Noteringar'
           ? `Noteringar - ${notesScope}`
           : block.text
+      const isNotesMainHeading =
+        notesScope && block.level === 2 && String(block.text).trim() === 'Noteringar'
       return (
         <div
           key={`${sectionId}-heading-${index}`}
           className="report-heading"
           style={{
             ...blockMargins(block),
+            ...(isNotesMainHeading
+              ? {
+                  backgroundColor: ACCENT_COLOR,
+                  color: '#ffffff',
+                  padding: `${mmToPx(2)} ${mmToPx(3)}`,
+                }
+              : {}),
             fontSize,
             fontWeight: preset.fontWeight,
-            color: block.accent ? ACCENT_COLOR : preset.color,
+            color: isNotesMainHeading
+              ? '#ffffff'
+              : block.accent
+                ? ACCENT_COLOR
+                : preset.color,
             textTransform: block.level === 1 ? 'uppercase' : 'none',
           textAlign: block.align ?? 'left',
           }}
@@ -2232,6 +2287,9 @@ export default function ReportRendererClient({
     }
 
     if (block.type === 'image') {
+      if ((sectionId === 'notes' || sectionId === 'notes-interior') && !block.label && block.heightMm <= 2) {
+        return null
+      }
       if (!block.label && block.heightMm <= 2) {
         return (
           <div

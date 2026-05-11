@@ -185,6 +185,9 @@ export default function InspectionDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedAddonKeys, setSelectedAddonKeys] = useState<string[]>([])
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const handleBackToInspections = useCallback(() => {
+    router.push('/inspections')
+  }, [router])
   const handleInspectionAddonSelectionChanged = useCallback((keys: string[]) => {
     setSelectedAddonKeys((prev) => (areAddonKeyListsEqual(prev, keys) ? prev : keys))
   }, [])
@@ -499,13 +502,7 @@ export default function InspectionDetailPage() {
           <div className="flex items-center justify-between gap-2 rounded-full border border-white/45 bg-white/90 px-2.5 py-2 shadow-lg ring-1 ring-black/5 md:hidden">
             <button
               type="button"
-              onClick={() => {
-                if (typeof window !== 'undefined' && window.history.length > 1) {
-                  router.back()
-                  return
-                }
-                router.push(`/properties/${propertyId}/ob`)
-              }}
+              onClick={handleBackToInspections}
               aria-label="Tillbaka"
               title="Tillbaka"
               className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
@@ -536,13 +533,7 @@ export default function InspectionDetailPage() {
                 <div className="mb-2 flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (typeof window !== 'undefined' && window.history.length > 1) {
-                        router.back()
-                        return
-                      }
-                      router.push(`/properties/${propertyId}/ob`)
-                    }}
+                    onClick={handleBackToInspections}
                     aria-label="Tillbaka"
                     title="Tillbaka"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
