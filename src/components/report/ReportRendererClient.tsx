@@ -28,185 +28,26 @@ type ReportRendererClientProps = {
 }
 
 const PHOTO_POLICY = {
-  maxLongSidePx: 1600,
-  quality: 0.7,
-  loadTimeoutMs: 12000,
+  digitalMaxLongSidePx: 1600,
+  pdfMaxLongSidePx: 900,
+  digitalQuality: 72,
+  pdfQuality: 68,
 }
 
 const TRANSPARENT_PIXEL =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='
 
-const resizedImageCache = new Map<string, string>()
-
-const getImageCacheKey = (src: string) =>
-  `${src}|max=${PHOTO_POLICY.maxLongSidePx}|q=${PHOTO_POLICY.quality}`
-
-const toProxyUrl = (src: string) => {
+const toProxyUrl = (src: string, maxLongSidePx: number, quality: number) => {
   if (!src) return src
   if (src.startsWith('data:')) return src
   if (src.startsWith('/')) return src
   if (typeof window !== 'undefined' && src.startsWith(window.location.origin)) return src
-  return `/api/image-proxy?url=${encodeURIComponent(src)}`
-}
-
-const createTimeoutError = () => new Error('REPORT_IMAGE_TIMEOUT')
-
-const withClientTimeout = async <T,>(
-  promise: Promise<T>,
-  timeoutMs: number
-): Promise<T> => {
-  let timeoutHandle: ReturnType<typeof setTimeout> | null = null
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(() => reject(createTimeoutError()), timeoutMs)
+  const params = new URLSearchParams({
+    url: src,
+    max: String(maxLongSidePx),
+    q: String(quality),
   })
-
-  try {
-    return await Promise.race([promise, timeoutPromise])
-  } finally {
-    if (timeoutHandle) clearTimeout(timeoutHandle)
-  }
-}
-
-const fetchImageWithTimeout = async (url: string) => {
-  const controller = new AbortController()
-  let timeoutHandle: ReturnType<typeof setTimeout> | null = setTimeout(
-    () => controller.abort(),
-    PHOTO_POLICY.loadTimeoutMs
-  )
-  try {
-    return await fetch(url, {
-      mode: 'cors',
-      credentials: 'omit',
-      signal: controller.signal,
-    })
-  } finally {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle)
-      timeoutHandle = null
-    }
-  }
-}
-
-const resizeImage = async (src: string): Promise<string> => {
-  const cacheKey = getImageCacheKey(src)
-  const cached = resizedImageCache.get(cacheKey)
-  if (cached) return cached
-
-  const renderToCanvas = (
-    width: number,
-    height: number,
-    draw: (ctx: CanvasRenderingContext2D) => void
-  ) => {
-    const longestSide = Math.max(width, height)
-    const shouldResize = longestSide > PHOTO_POLICY.maxLongSidePx
-    const scale = shouldResize ? PHOTO_POLICY.maxLongSidePx / longestSide : 1
-    const targetWidth = Math.max(1, Math.round(width * scale))
-    const targetHeight = Math.max(1, Math.round(height * scale))
-
-    const canvas = document.createElement('canvas')
-    canvas.width = targetWidth
-    canvas.height = targetHeight
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return src
-
-    draw(ctx)
-    const dataUrl = canvas.toDataURL('image/jpeg', PHOTO_POLICY.quality)
-    resizedImageCache.set(cacheKey, dataUrl)
-    return dataUrl
-  }
-
-  try {
-    const fetchSrc = toProxyUrl(src)
-    const response = await fetchImageWithTimeout(fetchSrc)
-    if (response.ok) {
-      const blob = await response.blob()
-      const bitmap = await withClientTimeout(
-        createImageBitmap(blob),
-        PHOTO_POLICY.loadTimeoutMs
-      )
-      const dataUrl = renderToCanvas(bitmap.width, bitmap.height, (ctx) => {
-        ctx.drawImage(bitmap, 0, 0, ctx.canvas.width, ctx.canvas.height)
-      })
-      if (typeof bitmap.close === 'function') bitmap.close()
-      return dataUrl
-    }
-  } catch {
-    // fallback below
-  }
-
-  return new Promise((resolve) => {
-    const img = new Image()
-    let timeoutHandle: ReturnType<typeof setTimeout> | null = null
-    const finish = (value: string) => {
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle)
-        timeoutHandle = null
-      }
-      img.onload = null
-      img.onerror = null
-      resolve(value)
-    }
-    img.crossOrigin = 'anonymous'
-    img.onload = () => {
-      const width = img.naturalWidth || img.width
-      const height = img.naturalHeight || img.height
-      if (!width || !height) {
-        finish(TRANSPARENT_PIXEL)
-        return
-      }
-      try {
-        finish(
-          renderToCanvas(width, height, (ctx) => {
-            ctx.drawImage(img, 0, 0, ctx.canvas.width, ctx.canvas.height)
-          })
-        )
-      } catch {
-        finish(TRANSPARENT_PIXEL)
-      }
-    }
-    img.onerror = () => finish(TRANSPARENT_PIXEL)
-    timeoutHandle = setTimeout(
-      () => finish(TRANSPARENT_PIXEL),
-      PHOTO_POLICY.loadTimeoutMs
-    )
-    img.src = toProxyUrl(src)
-  })
-}
-
-const useResizedImage = (src: string | null) => {
-  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null)
-
-  useLayoutEffect(() => {
-    let isActive = true
-    if (!src) {
-      setResolvedSrc(null)
-      return () => {
-        isActive = false
-      }
-    }
-
-    setResolvedSrc(null)
-
-    const cacheKey = getImageCacheKey(src)
-    const cached = resizedImageCache.get(cacheKey)
-    if (cached) {
-      setResolvedSrc(cached)
-      return () => {
-        isActive = false
-      }
-    }
-
-    resizeImage(src).then((dataUrl) => {
-      if (!isActive) return
-      setResolvedSrc(dataUrl)
-    })
-
-    return () => {
-      isActive = false
-    }
-  }, [src])
-
-  return resolvedSrc
+  return `/api/image-proxy?${params.toString()}`
 }
 
 const ReportPhoto = ({
@@ -214,20 +55,39 @@ const ReportPhoto = ({
   alt,
   className,
   style,
+  maxLongSidePx = PHOTO_POLICY.digitalMaxLongSidePx,
+  quality = PHOTO_POLICY.digitalQuality,
 }: {
   src: string
   alt: string
   className?: string
   style?: CSSProperties
+  maxLongSidePx?: number
+  quality?: number
 }) => {
-  const resizedSrc = useResizedImage(src)
-  const ready = Boolean(resizedSrc)
+  const imageSrc = useMemo(
+    () => toProxyUrl(src, maxLongSidePx, quality),
+    [maxLongSidePx, quality, src]
+  )
+  const [ready, setReady] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  useLayoutEffect(() => {
+    setReady(false)
+    setFailed(false)
+  }, [imageSrc])
+
   return (
     <img
-      src={resizedSrc ?? TRANSPARENT_PIXEL}
+      src={failed ? TRANSPARENT_PIXEL : imageSrc}
       alt={alt}
       className={className}
       style={style}
+      onLoad={() => setReady(true)}
+      onError={() => {
+        setFailed(true)
+        setReady(true)
+      }}
       data-report-track="1"
       data-report-ready={ready ? '1' : '0'}
     />
@@ -1394,6 +1254,8 @@ export default function ReportRendererClient({
                       alt={`Foto ${urlIndex + 1}`}
                       className="h-auto object-contain bg-white"
                       style={{ width: '58mm', maxHeight: '75mm' }}
+                      maxLongSidePx={PHOTO_POLICY.pdfMaxLongSidePx}
+                      quality={PHOTO_POLICY.pdfQuality}
                     />
                   ))}
                 </div>
