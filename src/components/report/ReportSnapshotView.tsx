@@ -241,12 +241,20 @@ function renderBlocks(items: SnapshotInspectionBlock[]) {
             {photos.length > 0 ? (
               <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {photos.map((photoUrl, photoIndex) => (
-                  <img
+                  <a
                     key={`${title}-${index}-photo-${photoIndex}`}
-                    src={photoUrl}
-                    alt={`Foto ${photoIndex + 1}`}
-                    className="h-36 w-full rounded-md border border-gray-200 object-cover"
-                  />
+                    href={photoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                    title="Öppna bilden i ny flik"
+                  >
+                    <img
+                      src={photoUrl}
+                      alt={`Foto ${photoIndex + 1}`}
+                      className="h-36 w-full rounded-md border border-gray-200 object-cover transition hover:brightness-95"
+                    />
+                  </a>
                 ))}
               </div>
             ) : null}
@@ -446,11 +454,19 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
         ) : null}
 
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <img
-            src={coverImageUrl}
-            alt="Omslagsbild"
-            className="h-56 w-full bg-slate-100 object-contain sm:h-64"
-          />
+          <a
+            href={coverImageUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="block focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            title="Öppna omslagsbilden i ny flik"
+          >
+            <img
+              src={coverImageUrl}
+              alt="Omslagsbild"
+              className="h-56 w-full bg-slate-100 object-contain transition hover:brightness-95 sm:h-64"
+            />
+          </a>
           {isApartment ? (
             <div className="grid gap-2 border-t border-slate-200 px-4 py-3 text-sm text-slate-700 sm:grid-cols-2">
               <div>
@@ -470,63 +486,84 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
         </section>
 
         <section className="grid items-start gap-4 lg:grid-cols-3">
-          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Objekt</h2>
-            <dl className="mt-3 space-y-2 text-sm text-slate-700">
-              {isApartment ? (
-                <>
-                  <div>
-                    <dt className="text-xs text-slate-500">Bostadsrättsförening</dt>
-                    <dd>{getTextByPath(mock, 'properties.brf_name')}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-slate-500">Lägenhetsnummer</dt>
-                    <dd>{getTextByPath(mock, 'properties.apartment_number')}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-slate-500">Bostadsrättsinnehavare</dt>
-                    <dd>{getTextByPath(mock, 'properties.apartment_holder_name')}</dd>
-                  </div>
-                </>
-              ) : (
-                <>
+          <div className="space-y-4">
+            <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Objekt</h2>
+              <dl className="mt-3 space-y-2 text-sm text-slate-700">
+                {isApartment ? (
+                  <>
+                    <div>
+                      <dt className="text-xs text-slate-500">Bostadsrättsförening</dt>
+                      <dd>{getTextByPath(mock, 'properties.brf_name')}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-slate-500">Lägenhetsnummer</dt>
+                      <dd>{getTextByPath(mock, 'properties.apartment_number')}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-slate-500">Bostadsrättsinnehavare</dt>
+                      <dd>{getTextByPath(mock, 'properties.apartment_holder_name')}</dd>
+                    </div>
+                  </>
+                ) : (
                   <div>
                     <dt className="text-xs text-slate-500">Fastighetsbeteckning</dt>
                     <dd>{getTextByPath(mock, 'properties.cadastral_id')}</dd>
                   </div>
-                </>
-              )}
-              <div>
-                <dt className="text-xs text-slate-500">Adress</dt>
-                <dd>{getTextByPath(mock, 'properties.address')}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">Kommun</dt>
-                <dd>{getTextByPath(mock, 'properties.municipality')}</dd>
-              </div>
-              {!isApartment ? (
+                )}
                 <div>
-                  <dt className="text-xs text-slate-500">Fastighetsägare</dt>
-                  <dd>{getTextByPath(mock, 'properties.owner_name')}</dd>
+                  <dt className="text-xs text-slate-500">Adress</dt>
+                  <dd>{getTextByPath(mock, 'properties.address')}</dd>
                 </div>
-              ) : null}
-            </dl>
-          </article>
+                <div>
+                  <dt className="text-xs text-slate-500">Kommun</dt>
+                  <dd>{getTextByPath(mock, 'properties.municipality')}</dd>
+                </div>
+                {!isApartment ? (
+                  <div>
+                    <dt className="text-xs text-slate-500">Fastighetsägare</dt>
+                    <dd>{getTextByPath(mock, 'properties.owner_name')}</dd>
+                  </div>
+                ) : null}
+              </dl>
+            </article>
+
+            <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+                Uppdragsgivare
+              </h2>
+              <dl className="mt-3 space-y-2 text-sm text-slate-700">
+                <div>
+                  <dt className="text-xs text-slate-500">Namn</dt>
+                  <dd>{getTextByPath(mock, 'inspections.client_name')}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Uppdragsnummer</dt>
+                  <dd>{getTextByPath(mock, 'inspections.assignment_number')}</dd>
+                </div>
+              </dl>
+            </article>
+          </div>
 
           <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-              Uppdragsgivare
+              Besiktningsuppdrag
             </h2>
             <dl className="mt-3 space-y-2 text-sm text-slate-700">
               <div>
-                <dt className="text-xs text-slate-500">Namn</dt>
-                <dd>{getTextByPath(mock, 'inspections.client_name')}</dd>
+                <dt className="text-xs text-slate-500">Omfattning</dt>
+                <dd className="whitespace-pre-wrap">{getTextByPath(mock, 'inspections.scope_text')}</dd>
               </div>
               <div>
-                <dt className="text-xs text-slate-500">Uppdragsnummer</dt>
-                <dd>{getTextByPath(mock, 'inspections.assignment_number')}</dd>
+                <dt className="text-xs text-slate-500">Besiktningsdag</dt>
+                <dd>{getTextByPath(mock, 'inspections.date_time')}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Närvarande</dt>
+                <dd className="whitespace-pre-wrap">{attendeesText}</dd>
               </div>
             </dl>
+            <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{assignmentNoticeText}</p>
           </article>
 
           <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -563,27 +600,6 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
               Besiktningsmannen är medlem i Svenska Byggingenjörers Riksförbund (SBR) och är registrerad i SBR:s förteckning över besiktningsmän med därtill hörande förpliktelser.
             </p>
           </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-              Besiktningsuppdrag
-            </h2>
-            <dl className="mt-3 space-y-2 text-sm text-slate-700">
-              <div>
-                <dt className="text-xs text-slate-500">Omfattning</dt>
-                <dd className="whitespace-pre-wrap">{getTextByPath(mock, 'inspections.scope_text')}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">Besiktningsdag</dt>
-                <dd>{getTextByPath(mock, 'inspections.date_time')}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">Närvarande</dt>
-                <dd className="whitespace-pre-wrap">{attendeesText}</dd>
-              </div>
-            </dl>
-            <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{assignmentNoticeText}</p>
-          </article>
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -600,6 +616,19 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
                   {providedDocuments.map((line, idx) => (
                     <li key={`provided-${idx}`}>{line}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-sm text-slate-600">--</p>
+              )}
+
+              <h3 className="mt-4 text-xs font-semibold uppercase text-slate-500">
+                Upplysningar om fel i fastigheten
+              </h3>
+              {faults.length > 0 ? (
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                  {faults.map((line, idx) => (
+                    <li key={`fault-${idx}`}>{line}</li>
                   ))}
                 </ul>
               ) : (
@@ -631,20 +660,6 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
             </article>
           </div>
 
-          <div className="mt-4">
-            <h3 className="text-xs font-semibold uppercase text-slate-500">
-              Upplysningar om fel i fastigheten
-            </h3>
-            {faults.length > 0 ? (
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-                {faults.map((line, idx) => (
-                  <li key={`fault-${idx}`}>{line}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-2 text-sm text-slate-600">--</p>
-            )}
-          </div>
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
