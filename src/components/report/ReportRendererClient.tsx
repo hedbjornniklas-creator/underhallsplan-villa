@@ -839,7 +839,8 @@ export default function ReportRendererClient({
                 label: row.label,
                 value: row.value,
                 marginTopMm: rowIndex === 0 ? block.marginTopMm : 0,
-                marginBottomMm: rowIndex === rows.length - 1 ? block.marginBottomMm : 0,
+                marginBottomMm:
+                  rowIndex === rows.length - 1 ? block.marginBottomMm : 1.4,
               },
             })
           })
