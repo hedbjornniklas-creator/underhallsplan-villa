@@ -994,8 +994,9 @@ export default function ReportRendererClient({
     const paddingTopPx = mmToPxNumber(PAGE_PADDING_MM.top)
     const paddingBottomPx = mmToPxNumber(PAGE_PADDING_MM.bottom)
     const footerMarkPx = mmToPxNumber(FOOTER_MARK_HEIGHT_MM)
-    // Extra safety in PDF mode to avoid late-page collisions with fixed footer artwork.
-    const safetyMm = isPdfMode ? 22 : 0
+    // The page padding already reserves space for the footer. Keep only a small
+    // buffer for browser rounding so short trailing rows are not pushed to a new page.
+    const safetyMm = isPdfMode ? 8 : 0
     const availableHeight =
       pageHeightPx -
       paddingTopPx -
