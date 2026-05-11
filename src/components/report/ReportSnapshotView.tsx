@@ -386,14 +386,6 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
   const coverImageUrl =
     toImageUrl(getTextByPath(mock, 'properties.cover_path', '')) ?? defaultCoverIllustrationSrc
 
-  const companyAddress = [
-    getTextByPath(mock, 'profile.company_address', ''),
-    getTextByPath(mock, 'profile.company_postal_code', ''),
-    getTextByPath(mock, 'profile.company_city', ''),
-  ]
-    .filter((part) => part && part !== '--')
-    .join(' ')
-
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-6 md:py-8">
       <div className="mx-auto max-w-6xl space-y-4">
