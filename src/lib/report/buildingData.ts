@@ -162,16 +162,47 @@ const COMPONENT_DEFS: Array<{
   },
 ]
 
-const FLOOR_LABELS: Record<string, string> = {
-  'k\u00e4llare': 'k\u00e4llare',
-  'k\u00e4llare_delvis': 'K\u00e4llare (delvis)',
-  'entr\u00e9plan': 'Plan 1',
-  'plan1': 'Plan 1',
-  'plan2': 'Plan 2',
-  'plan3': 'Plan 3',
+const normalizeFloorKey = (value: string | null | undefined) =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+
+const floorNumberFromKey = (value: string | null | undefined) => {
+  const normalized = normalizeFloorKey(value)
+  const match = normalized.match(/^plan(\d+)$/)
+  if (!match) return null
+  const floorNumber = Number(match[1])
+  return Number.isFinite(floorNumber) && floorNumber > 0 ? floorNumber : null
 }
 
-const FLOOR_ORDER = ['k\u00e4llare', 'k\u00e4llare_delvis', 'entr\u00e9plan', 'plan1', 'plan2', 'plan3']
+const floorLabelFromKey = (value: string | null | undefined) => {
+  const normalized = normalizeFloorKey(value)
+  if (!normalized) return ''
+  if (normalized === 'k\u00e4llare' || normalized === 'kallare') return 'K\u00e4llare'
+  if (normalized === 'k\u00e4llare_delvis' || normalized === 'kallare_delvis') {
+    return 'K\u00e4llare (delvis)'
+  }
+  if (normalized === 'entr\u00e9plan' || normalized === 'entreplan') return 'Plan 1'
+
+  const floorNumber = floorNumberFromKey(normalized)
+  if (floorNumber !== null) return `Plan ${floorNumber}`
+
+  return String(value ?? '').trim()
+}
+
+const floorSortRank = (value: string | null | undefined) => {
+  const normalized = normalizeFloorKey(value)
+  if (!normalized) return 9998
+  if (normalized === 'k\u00e4llare' || normalized === 'kallare') return 0
+  if (normalized === 'k\u00e4llare_delvis' || normalized === 'kallare_delvis') return 1
+  if (normalized === 'entr\u00e9plan' || normalized === 'entreplan') return 11
+
+  const floorNumber = floorNumberFromKey(normalized)
+  if (floorNumber !== null) return 10 + floorNumber
+
+  return 9999
+}
 
 const valueOrFallback = (value: string | number | null | undefined, fallback = '--') => {
   if (value === null || value === undefined) return fallback
@@ -228,11 +259,21 @@ const renderFloorsText = (raw: unknown) => {
   if (raw === null || raw === undefined) return '--'
   const value = String(raw).trim()
   if (!value) return '--'
-  if (value === '1') return '1 v\u00e5ningsplan'
-  if (value === '1.5' || value === '1_5' || value === '1,5') return '1\u00bd v\u00e5ningsplan'
-  if (value === '2') return '2 v\u00e5ningsplan'
-  if (value === '3') return '3 v\u00e5ningsplan'
+  const numericValue = Number(value.replace('_', '.').replace(',', '.'))
+  if (numericValue === 1.5) return '1\u00bd v\u00e5ningsplan'
+  if (Number.isInteger(numericValue) && numericValue > 0) {
+    return `${numericValue} v\u00e5ningsplan`
+  }
   return value
+}
+
+const joinValueAndNote = (base: string, note: string) => {
+  const baseText = base.trim()
+  const noteText = note.trim()
+  if (!baseText) return noteText
+  if (!noteText) return baseText
+  const separator = /[.!?]$/.test(baseText) ? ' ' : '. '
+  return `${baseText}${separator}${noteText}`
 }
 
 const renderBasementText = (raw: unknown) => {
@@ -307,13 +348,13 @@ const formatSelectionRow = (
   if (!base && noteText) {
     base = noteText
   } else if (base && noteText) {
-    base = `${base} ${noteText}`
+    base = joinValueAndNote(base, noteText)
   }
 
   if (!base) return ''
 
   if (row.floor_key) {
-    const label = FLOOR_LABELS[row.floor_key] ?? row.floor_key
+    const label = floorLabelFromKey(row.floor_key)
     return `${label}: ${base}`
   }
   return base
@@ -377,9 +418,12 @@ const createBuildingDataContext = ({
 
 const sortSelectionRows = (rows: OverviewSelection[]) =>
   rows.slice().sort((a, b) => {
-    const floorA = FLOOR_ORDER.indexOf(a.floor_key ?? '')
-    const floorB = FLOOR_ORDER.indexOf(b.floor_key ?? '')
+    const floorA = floorSortRank(a.floor_key)
+    const floorB = floorSortRank(b.floor_key)
     if (floorA !== floorB) return floorA - floorB
+    const floorKeyA = normalizeFloorKey(a.floor_key)
+    const floorKeyB = normalizeFloorKey(b.floor_key)
+    if (floorKeyA !== floorKeyB) return floorKeyA.localeCompare(floorKeyB, 'sv')
     return (a.set_index ?? 0) - (b.set_index ?? 0)
   })
 
@@ -473,7 +517,7 @@ export function buildBuildingDataMap({
         )
         const noteText = (rows[0].note ?? '').trim()
         if (noteText) {
-          selectionValue = `${selectionValue} ${noteText}`
+          selectionValue = joinValueAndNote(selectionValue, noteText)
         }
       } else {
         const rowTexts = rows
