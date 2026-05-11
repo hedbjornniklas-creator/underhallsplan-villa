@@ -841,10 +841,7 @@ export async function GET(
       hasStoredPdf: pdfState.hasStoredPdf,
       pdfStatus: pdfState.pdfStatus,
       pdfError: pdfState.pdfError,
-      canDownloadPdf:
-        inspectionStatus === 'completed' &&
-        pdfState.hasStoredPdf &&
-        pdfState.pdfStatus === 'ready',
+      canDownloadPdf: pdfState.hasStoredPdf && pdfState.pdfStatus === 'ready',
       history,
       activityLog,
     })

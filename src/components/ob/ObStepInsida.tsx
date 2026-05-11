@@ -2679,10 +2679,22 @@ function RoomControlPointsSection({
       bucket.push(ci)
       map.set(cpId, bucket)
     }
-    return Array.from(map.entries()).map(([controlPointId, list]) => ({
-      controlPointId,
-      items: list.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
-    }))
+    return Array.from(map.entries())
+      .map(([controlPointId, list]) => ({
+        controlPointId,
+        items: [...list].sort(
+          (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+        ),
+      }))
+      .sort((a, b) => {
+        const aSort = a.items[0]?.sort_order ?? 0
+        const bSort = b.items[0]?.sort_order ?? 0
+        if (aSort !== bSort) return aSort - bSort
+        return String(a.items[0]?.title ?? '').localeCompare(
+          String(b.items[0]?.title ?? ''),
+          'sv'
+        )
+      })
   }, [items])
   const freeNoteItems = useMemo(
     () =>

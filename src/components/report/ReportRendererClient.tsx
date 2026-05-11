@@ -1957,11 +1957,18 @@ export default function ReportRendererClient({
 
       const infoBlocks = [
         { text: block.infoDisclaimer, marginBottomMm: 3 },
-        { text: acquisitionText, marginBottomMm: 3 },
         {
-          text: block.renovationsLabel,
-          marginBottomMm: renovations.length > 0 ? 1.5 : 0,
+          text: acquisitionText,
+          marginBottomMm: renovations.length > 0 ? 3 : 0,
         },
+        ...(renovations.length > 0
+          ? [
+              {
+                text: block.renovationsLabel,
+                marginBottomMm: 1.5,
+              },
+            ]
+          : []),
       ]
 
       const rowStyle = {

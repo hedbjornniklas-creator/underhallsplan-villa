@@ -256,6 +256,12 @@ export default function ObWizard({
   const isCurrentlyLocked = Boolean(
     (normalizedInspection as ObWizardInspection & { locked_at?: string | null }).locked_at
   )
+  const reportPdfDownloadHref = inspectionId ? `/api/report-v2/${inspectionId}/pdf` : null
+  const canDownloadGeneratedPdf = Boolean(
+    reportPdfDownloadHref &&
+      deliveryMeta?.hasStoredPdf &&
+      deliveryMeta.pdfStatus === 'ready'
+  )
 
   useEffect(() => {
     if (activeSection !== 'delivery' || !hasValidIds || !inspectionId) return
@@ -737,14 +743,28 @@ export default function ObWizard({
 
                   {deliveryMeta ? (
                     <div className="rounded-md border border-gray-200 bg-white p-2 text-xs text-gray-700">
-                      <span className="font-semibold">PDF-status:</span>{' '}
-                      {deliveryMeta.pdfStatus === 'ready'
-                        ? 'Klar'
-                        : deliveryMeta.pdfStatus === 'processing'
-                          ? 'Genereras'
-                          : deliveryMeta.pdfStatus === 'failed'
-                            ? 'Misslyckades'
-                            : 'Väntar på generering'}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <span className="font-semibold">PDF-status:</span>{' '}
+                          {deliveryMeta.pdfStatus === 'ready'
+                            ? 'Klar'
+                            : deliveryMeta.pdfStatus === 'processing'
+                              ? 'Genereras'
+                              : deliveryMeta.pdfStatus === 'failed'
+                                ? 'Misslyckades'
+                                : 'Väntar på generering'}
+                        </div>
+                        {canDownloadGeneratedPdf && reportPdfDownloadHref ? (
+                          <a
+                            href={reportPdfDownloadHref}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                          >
+                            Ladda ner PDF
+                          </a>
+                        ) : null}
+                      </div>
                       {deliveryMeta.pdfError ? (
                         <div className="mt-1 text-red-700">Fel: {deliveryMeta.pdfError}</div>
                       ) : null}

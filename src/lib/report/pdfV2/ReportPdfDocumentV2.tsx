@@ -259,7 +259,7 @@ const renderBlock = (
     const infoParts = [
       block.infoDisclaimer,
       acquisitionText,
-      block.renovationsLabel,
+      ...(renovations.length > 0 ? [block.renovationsLabel] : []),
       ...renovations,
     ].filter((value) => value && value.length > 0)
 
