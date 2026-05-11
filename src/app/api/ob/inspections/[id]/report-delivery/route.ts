@@ -19,6 +19,15 @@ export const maxDuration = 300
 const PDF_RENDER_TIMEOUT_MS = Number(process.env.REPORT_PDF_RENDER_TIMEOUT_MS ?? 60000)
 const REPORT_PDF_STORAGE_BUCKET = process.env.REPORT_PDF_STORAGE_BUCKET?.trim() || 'inspection-reports'
 const REPORT_TIMING_LOGS = process.env.REPORT_TIMING_LOGS !== '0'
+const PDF_JOB_STALE_AFTER_MS = readPositiveIntegerEnv(
+  'REPORT_PDF_STALE_AFTER_MS',
+  10 * 60 * 1000,
+  60_000
+)
+const PDF_JOB_MAX_ATTEMPTS = readPositiveIntegerEnv('REPORT_PDF_MAX_ATTEMPTS', 2, 1)
+const PDF_JOB_RETRY_DELAY_MS = readPositiveIntegerEnv('REPORT_PDF_RETRY_DELAY_MS', 5_000, 0)
+const PDF_JOB_ALERT_EMAIL =
+  process.env.REPORT_PDF_ALERT_EMAIL?.trim() || 'jn@hedbjorn.se'
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 type DeliveryStatus = 'pending' | 'sent' | 'failed'
@@ -59,6 +68,7 @@ type ReportLinkLogRow = {
   created_at: string
   pdf_status: string | null
   pdf_error: string | null
+  pdf_started_at?: string | null
   pdf_storage_bucket: string | null
   pdf_storage_path: string | null
   pdf_base64: string | null
@@ -94,6 +104,13 @@ type TimingLogger = {
 }
 
 type PdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
+
+function readPositiveIntegerEnv(name: string, fallback: number, min: number) {
+  const raw = process.env[name]
+  const parsed = raw == null || raw.trim() === '' ? fallback : Number(raw)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.round(parsed))
+}
 type DeliveryAction = 'send_and_complete' | 'send_open' | 'complete_only'
 
 function normalizedText(value: unknown): string | null {
@@ -152,6 +169,11 @@ function normalizePdfStatus(value: unknown): PdfStatus {
 function truncateErrorMessage(input: string, maxLength = 1200) {
   if (input.length <= maxLength) return input
   return `${input.slice(0, maxLength - 3)}...`
+}
+
+function sleep(ms: number) {
+  if (ms <= 0) return Promise.resolve()
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function isMissingInspectionLockColumnsError(message: string) {
@@ -293,6 +315,66 @@ function getMailFromAddress() {
   return value
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
+
+async function sendPdfJobAlert(input: {
+  inspectionId: string
+  linkId: string | null
+  kind: 'failed' | 'stuck'
+  message: string
+  traceId?: string | null
+}) {
+  if (!PDF_JOB_ALERT_EMAIL) return
+
+  const subject =
+    input.kind === 'stuck'
+      ? `Hushub-larm: PDF-jobb har fastnat (${input.inspectionId})`
+      : `Hushub-larm: PDF-generering misslyckades (${input.inspectionId})`
+  const text = [
+    subject,
+    '',
+    `inspection_id: ${input.inspectionId}`,
+    `report_link_id: ${input.linkId ?? '-'}`,
+    `trace_id: ${input.traceId ?? '-'}`,
+    `tidpunkt: ${new Date().toISOString()}`,
+    '',
+    input.message,
+  ].join('\n')
+  const html = `
+    <p><strong>${escapeHtml(subject)}</strong></p>
+    <ul>
+      <li><strong>inspection_id:</strong> ${escapeHtml(input.inspectionId)}</li>
+      <li><strong>report_link_id:</strong> ${escapeHtml(input.linkId ?? '-')}</li>
+      <li><strong>trace_id:</strong> ${escapeHtml(input.traceId ?? '-')}</li>
+      <li><strong>tidpunkt:</strong> ${escapeHtml(new Date().toISOString())}</li>
+    </ul>
+    <p>${escapeHtml(input.message)}</p>
+  `
+
+  try {
+    await sendAssignmentEmail({
+      to: PDF_JOB_ALERT_EMAIL,
+      from: getMailFromAddress(),
+      subject,
+      html,
+      text,
+    })
+  } catch (error) {
+    console.error('[inspections.report-delivery.pdf-job] failed to send alert email', {
+      inspectionId: input.inspectionId,
+      linkId: input.linkId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
 async function ensureReportPdfBucket(admin: AdminClient) {
   const { error } = await admin.storage.getBucket(REPORT_PDF_STORAGE_BUCKET)
   if (!error) return
@@ -414,6 +496,7 @@ async function runReportPdfJobInBackground(input: {
 }) {
   const admin = createSupabaseAdminClient()
   const timing = createTimingLogger('inspections.report-delivery.pdf-job', input.traceId)
+  let attemptNumber = 0
   timing.mark('job_start', {
     linkId: input.linkId,
     inspectionId: input.inspectionId,
@@ -435,6 +518,7 @@ async function runReportPdfJobInBackground(input: {
     }
 
     const nextAttempts = Number((link as Record<string, unknown>).pdf_attempts ?? 0) + 1
+    attemptNumber = nextAttempts
     await setPdfJobStatus(admin, input.linkId, {
       pdf_status: 'processing',
       pdf_error: null,
@@ -481,8 +565,34 @@ async function runReportPdfJobInBackground(input: {
     console.error('[inspections.report-delivery.pdf-job] failed', {
       linkId: input.linkId,
       inspectionId: input.inspectionId,
+      attempt: attemptNumber,
+      maxAttempts: PDF_JOB_MAX_ATTEMPTS,
       error: message,
     })
+    if (attemptNumber > 0 && attemptNumber < PDF_JOB_MAX_ATTEMPTS) {
+      const retryMessage = `PDF-generering misslyckades på försök ${attemptNumber} av ${PDF_JOB_MAX_ATTEMPTS}. Nytt försök startas automatiskt. Senaste fel: ${message}`
+      try {
+        await setPdfJobStatus(admin, input.linkId, {
+          pdf_status: 'pending',
+          pdf_error: truncateErrorMessage(retryMessage),
+        })
+      } catch (updateError) {
+        console.error('[inspections.report-delivery.pdf-job] failed to mark retry status', {
+          linkId: input.linkId,
+          error: updateError instanceof Error ? updateError.message : String(updateError),
+        })
+      }
+      timing.mark('job_retry_scheduled', {
+        attempt: attemptNumber,
+        maxAttempts: PDF_JOB_MAX_ATTEMPTS,
+        retryDelayMs: PDF_JOB_RETRY_DELAY_MS,
+        error: message,
+      })
+      await sleep(PDF_JOB_RETRY_DELAY_MS)
+      await runReportPdfJobInBackground(input)
+      return
+    }
+
     try {
       await setPdfJobStatus(admin, input.linkId, {
         pdf_status: 'failed',
@@ -494,6 +604,13 @@ async function runReportPdfJobInBackground(input: {
         error: updateError instanceof Error ? updateError.message : String(updateError),
       })
     }
+    await sendPdfJobAlert({
+      inspectionId: input.inspectionId,
+      linkId: input.linkId,
+      kind: 'failed',
+      message,
+      traceId: input.traceId,
+    })
     timing.mark('job_failed', { error: message })
   }
 }
@@ -569,7 +686,7 @@ async function getDeliveryHistory(admin: AdminClient, assignmentId: string) {
 async function getReportPdfState(admin: AdminClient, inspectionId: string): Promise<ReportPdfState> {
   const { data, error } = await admin
     .from('inspection_report_links')
-    .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,pdf_error,revoked_at,created_at')
+    .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,pdf_error,pdf_started_at,revoked_at,created_at')
     .eq('inspection_id', inspectionId)
     .is('revoked_at', null)
     .order('created_at', { ascending: false })
@@ -597,10 +714,48 @@ async function getReportPdfState(admin: AdminClient, inspectionId: string): Prom
 
   const hasStoredPdf = Boolean(readyRow)
   const statusFromDb = normalizePdfStatus(latestRow?.pdf_status)
-  const pdfStatus: PdfStatus = hasStoredPdf ? 'ready' : statusFromDb
-  const pdfError = hasStoredPdf
+  let pdfStatus: PdfStatus = hasStoredPdf ? 'ready' : statusFromDb
+  let pdfError = hasStoredPdf
     ? null
     : String(latestRow?.pdf_error ?? '').trim() || null
+
+  if (!hasStoredPdf && latestRow && statusFromDb === 'processing') {
+    const startedAt = toTimestampValue(String(latestRow.pdf_started_at ?? latestRow.created_at ?? ''))
+    const isStale = startedAt > 0 && Date.now() - startedAt > PDF_JOB_STALE_AFTER_MS
+    if (isStale) {
+      const staleMessage = `PDF-jobbet har fastnat i status processing längre än ${Math.round(
+        PDF_JOB_STALE_AFTER_MS / 60000
+      )} minuter. Ingen PDF-fil har lagrats.`
+      const linkId = String(latestRow.id ?? '')
+      const { error: updateError } = await admin
+        .from('inspection_report_links')
+        .update({
+          pdf_status: 'failed',
+          pdf_error: truncateErrorMessage(staleMessage),
+        })
+        .eq('id', linkId)
+        .is('revoked_at', null)
+        .eq('pdf_status', 'processing')
+
+      if (updateError) {
+        console.error('[inspections.report-delivery] failed to mark stale PDF job', {
+          inspectionId,
+          linkId,
+          error: updateError.message ?? updateError,
+        })
+      } else {
+        pdfStatus = 'failed'
+        pdfError = staleMessage
+        await sendPdfJobAlert({
+          inspectionId,
+          linkId,
+          kind: 'stuck',
+          message: staleMessage,
+        })
+      }
+    }
+  }
+
   return {
     hasStoredPdf,
     latestLinkId: (readyRow?.id as string | undefined) ?? (latestRow?.id as string | undefined) ?? null,

@@ -291,6 +291,14 @@ type FtuItemEntry = {
   marginBottomMm: number
 }
 
+type BuildingDataRowEntry = {
+  type: 'buildingDataRow'
+  label: string
+  value: string
+  marginTopMm: number
+  marginBottomMm: number
+}
+
 type ExtendedReportBlock =
   | ReportBlock
   | InspectionBlockItemEntry
@@ -298,6 +306,7 @@ type ExtendedReportBlock =
   | InspectionRoomGroupItemEntry
   | RiskItemEntry
   | FtuItemEntry
+  | BuildingDataRowEntry
 
 type Entry =
   | {
@@ -806,6 +815,31 @@ export default function ReportRendererClient({
                 marginTopMm: itemIndex === 0 ? block.marginTopMm : 0,
                 marginBottomMm:
                   itemIndex === items.length - 1 ? block.marginBottomMm : 0,
+              },
+            })
+          })
+          return
+        }
+
+        if (
+          block.type === 'text' &&
+          block.source.kind === 'mock' &&
+          block.source.path === 'mock.buildingData.text'
+        ) {
+          const rows = parseBuildingDataLines(resolveText(block.source, mockData))
+          rows.forEach((row, rowIndex) => {
+            entries.push({
+              kind: 'block',
+              id: `${section.id}-building-data-row-${blockIndex}-${rowIndex}`,
+              sectionId: section.id,
+              sectionStartOnNewPage:
+                section.startOnNewPage && blockIndex === 0 && rowIndex === 0,
+              block: {
+                type: 'buildingDataRow',
+                label: row.label,
+                value: row.value,
+                marginTopMm: rowIndex === 0 ? block.marginTopMm : 0,
+                marginBottomMm: rowIndex === rows.length - 1 ? block.marginBottomMm : 0,
               },
             })
           })
@@ -2030,6 +2064,27 @@ export default function ReportRendererClient({
               {faults.length > 0 ? renderLines(faults, 1.5) : null}
             </div>
           </div>
+        </div>
+      )
+    }
+
+    if (block.type === 'buildingDataRow') {
+      return (
+        <div
+          key={`${sectionId}-building-data-row-${index}`}
+          style={{
+            ...blockMargins(block),
+            display: 'grid',
+            gridTemplateColumns: `${mmToPx(50)} 1fr`,
+            columnGap: mmToPx(4),
+            rowGap: mmToPx(4),
+            fontSize: REPORT_STYLES.BODY.fontSize,
+            color: REPORT_STYLES.BODY.color,
+            lineHeight: 1.15,
+          }}
+        >
+          <div style={{ fontWeight: 400 }}>{block.label}</div>
+          <div style={{ whiteSpace: 'pre-wrap' }}>{block.value}</div>
         </div>
       )
     }
