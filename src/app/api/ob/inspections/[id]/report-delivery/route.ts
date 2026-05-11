@@ -112,6 +112,7 @@ function readPositiveIntegerEnv(name: string, fallback: number, min: number) {
   return Math.max(min, Math.round(parsed))
 }
 type DeliveryAction = 'send_and_complete' | 'send_open' | 'complete_only'
+type ReportDeliveryPostAction = DeliveryAction | 'regenerate_pdf'
 
 function normalizedText(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -259,6 +260,16 @@ function parseDeliveryAction(actionInput: unknown, markAsCompletedInput: unknown
   }
 
   return parseMarkAsCompleted(markAsCompletedInput) ? 'send_and_complete' : 'send_open'
+}
+
+function parseReportDeliveryPostAction(
+  actionInput: unknown,
+  markAsCompletedInput: unknown
+): ReportDeliveryPostAction {
+  if (typeof actionInput === 'string' && actionInput.trim().toLowerCase() === 'regenerate_pdf') {
+    return 'regenerate_pdf'
+  }
+  return parseDeliveryAction(actionInput, markAsCompletedInput)
 }
 
 async function markInspectionCompletedAndLocked(input: {
@@ -764,6 +775,33 @@ async function getReportPdfState(admin: AdminClient, inspectionId: string): Prom
   }
 }
 
+async function getLatestActiveReportLinkForPdfRetry(admin: AdminClient, inspectionId: string) {
+  const { data, error } = await admin
+    .from('inspection_report_links')
+    .select('id,org_id,inspection_id,token_hash,pdf_status,revoked_at,created_at')
+    .eq('inspection_id', inspectionId)
+    .is('revoked_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa senaste rapportlänk för PDF-generering.')
+  }
+
+  return data as
+    | {
+        id: string
+        org_id: string
+        inspection_id: string
+        token_hash: string
+        pdf_status: string | null
+        revoked_at: string | null
+        created_at: string
+      }
+    | null
+}
+
 function pdfStatusLabel(value: unknown) {
   const status = normalizePdfStatus(value)
   if (status === 'ready') return 'Klar'
@@ -1048,7 +1086,87 @@ export async function POST(
     }
 
     const fallbackOrdererEmail = assignment?.customer_email?.trim().toLowerCase() ?? null
-    const action = parseDeliveryAction(body?.action, body?.mark_as_completed)
+    const action = parseReportDeliveryPostAction(body?.action, body?.mark_as_completed)
+
+    if (action === 'regenerate_pdf') {
+      const propertyId = assignment?.property_id ?? inspection.property_id
+      if (!propertyId) {
+        return jsonError('Besiktningen saknar kopplad fastighet.', 400)
+      }
+
+      const latestLink = await getLatestActiveReportLinkForPdfRetry(admin, id)
+      if (!latestLink) {
+        return jsonError('Det finns ingen rapportlänk att generera PDF för.', 400)
+      }
+      if (latestLink.org_id !== org.orgId) {
+        return jsonError('Rapportlänken tillhör inte din organisation.', 403)
+      }
+      const tokenHash = String(latestLink.token_hash ?? '').trim()
+      if (!tokenHash) {
+        return jsonError('Rapportlänken saknar token för PDF-generering.', 500)
+      }
+
+      const latestStatus = normalizePdfStatus(latestLink.pdf_status)
+      const shouldSchedulePdfJob = latestStatus !== 'pending' && latestStatus !== 'processing'
+      if (shouldSchedulePdfJob) {
+        await setPdfJobStatus(admin, latestLink.id, {
+          pdf_status: 'pending',
+          pdf_error: null,
+          pdf_attempts: 0,
+          pdf_started_at: null,
+          pdf_generated_at: null,
+          pdf_storage_bucket: null,
+          pdf_storage_path: null,
+          pdf_size_bytes: null,
+          pdf_sha256: null,
+          pdf_base64: null,
+        })
+      }
+
+      if (shouldSchedulePdfJob) {
+        const previewReportUrl = `${resolvePublicBaseUrl(request)}/utlatande/${propertyId}/${id}?embed=1&pdf=1`
+        const requestCookieHeader = request.headers.get('cookie')
+        after(async () => {
+          await runReportPdfJobInBackground({
+            traceId: `${traceId}:pdf-regenerate:${latestLink.id}`,
+            linkId: latestLink.id,
+            orgId: org.orgId,
+            inspectionId: id,
+            propertyId,
+            tokenHash,
+            previewReportUrl,
+            cookieHeader: requestCookieHeader,
+          })
+        })
+        timing.mark('pdf_regeneration_scheduled', { linkId: latestLink.id })
+      } else {
+        timing.mark('pdf_regeneration_already_running', { linkId: latestLink.id })
+      }
+
+      const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
+      const pdfState = await getReportPdfState(admin, id)
+      const activityLog = await buildDeliveryActivityLog({
+        admin,
+        orgId: org.orgId,
+        inspectionId: id,
+        history,
+      })
+
+      return NextResponse.json({
+        inspectionId: id,
+        inspectionStatus,
+        canSend: inspectionStatus !== 'archived',
+        reason: null,
+        defaultRecipientEmail: fallbackOrdererEmail,
+        ordererEmail: fallbackOrdererEmail,
+        hasStoredPdf: pdfState.hasStoredPdf,
+        pdfStatus: pdfState.pdfStatus,
+        pdfError: pdfState.pdfError,
+        canDownloadPdf: pdfState.hasStoredPdf && pdfState.pdfStatus === 'ready',
+        history,
+        activityLog,
+      })
+    }
 
     if (action === 'complete_only') {
       const inspectionLockedAt = await markInspectionCompletedAndLocked({

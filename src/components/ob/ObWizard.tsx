@@ -135,6 +135,7 @@ type ReportDeliverySendResponse = {
 
 type SendCompletionChoice = 'lock' | 'send_open' | 'complete_only' | 'cancel'
 type DeliveryAction = 'send_and_complete' | 'send_open' | 'complete_only'
+type RegeneratePdfResponse = ReportDeliveryMeta & { error?: string }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const isValidUuid = (value?: string | null) => !!value && UUID_RE.test(value)
@@ -248,6 +249,7 @@ export default function ObWizard({
   const [primaryRecipientInput, setPrimaryRecipientInput] = useState('')
   const [extraRecipientsInput, setExtraRecipientsInput] = useState('')
   const [sendingReport, setSendingReport] = useState(false)
+  const [regeneratingPdf, setRegeneratingPdf] = useState(false)
   const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false)
   const [deliveryError, setDeliveryError] = useState<string | null>(null)
   const [deliveryResult, setDeliveryResult] = useState<string | null>(null)
@@ -479,6 +481,38 @@ export default function ObWizard({
       setDeliveryError(message)
     } finally {
       setSendingReport(false)
+    }
+  }
+
+  const handleRegeneratePdf = async () => {
+    if (!hasValidIds || !inspectionId) return
+
+    setRegeneratingPdf(true)
+    setDeliveryError(null)
+    setDeliveryResult(null)
+
+    try {
+      const response = await fetch(`/api/ob/inspections/${inspectionId}/report-delivery`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'regenerate_pdf' }),
+      })
+
+      const payload = (await response.json().catch(() => null)) as RegeneratePdfResponse | null
+      if (!response.ok || !payload) {
+        throw new Error(payload?.error ?? 'Kunde inte starta om PDF-genereringen.')
+      }
+
+      setDeliveryMeta(normalizeDeliveryMeta(payload))
+      setDeliveryResult('PDF-genereringen har startats om. Statusen uppdateras automatiskt.')
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Kunde inte starta om PDF-genereringen.'
+      setDeliveryError(message)
+    } finally {
+      setRegeneratingPdf(false)
     }
   }
 
@@ -766,7 +800,19 @@ export default function ObWizard({
                         ) : null}
                       </div>
                       {deliveryMeta.pdfError ? (
-                        <div className="mt-1 text-red-700">Fel: {deliveryMeta.pdfError}</div>
+                        <div className="mt-2 space-y-2">
+                          <div className="text-red-700">Fel: {deliveryMeta.pdfError}</div>
+                          {deliveryMeta.pdfStatus === 'failed' ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleRegeneratePdf()}
+                              disabled={regeneratingPdf || sendingReport}
+                              className="inline-flex items-center rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {regeneratingPdf ? 'Startar om PDF...' : 'Generera PDF igen'}
+                            </button>
+                          ) : null}
+                        </div>
                       ) : null}
                     </div>
                   ) : null}
