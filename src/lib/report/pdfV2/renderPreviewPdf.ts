@@ -39,6 +39,10 @@ function createRenderTimingLogger(traceId: string) {
 }
 
 const isReportReady = () => {
+  const root = document.querySelector('.report-root')
+  if (!root) return false
+  if (root.getAttribute('data-report-pagination-ready') !== '1') return false
+
   const images = Array.from(document.querySelectorAll('img[data-report-track="1"]'))
   if (images.length === 0) return true
   return images.every((img) => {

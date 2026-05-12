@@ -1,6 +1,14 @@
 'use client'
 
-import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 import AppendixPage from '@/components/report/AppendixPage'
 import ReportCoverPage from '@/components/report/ReportCoverPage'
 import ReportPage from '@/components/report/ReportPage'
@@ -57,6 +65,7 @@ const ReportPhoto = ({
   style,
   maxLongSidePx = PHOTO_POLICY.digitalMaxLongSidePx,
   quality = PHOTO_POLICY.digitalQuality,
+  onSettled,
 }: {
   src: string
   alt: string
@@ -64,6 +73,7 @@ const ReportPhoto = ({
   style?: CSSProperties
   maxLongSidePx?: number
   quality?: number
+  onSettled?: () => void
 }) => {
   const imageSrc = useMemo(
     () => toProxyUrl(src, maxLongSidePx, quality),
@@ -83,10 +93,18 @@ const ReportPhoto = ({
       alt={alt}
       className={className}
       style={style}
-      onLoad={() => setReady(true)}
+      onLoad={() => {
+        setReady((wasReady) => {
+          if (!wasReady) onSettled?.()
+          return true
+        })
+      }}
       onError={() => {
         setFailed(true)
-        setReady(true)
+        setReady((wasReady) => {
+          if (!wasReady) onSettled?.()
+          return true
+        })
       }}
       data-report-track="1"
       data-report-ready={ready ? '1' : '0'}
@@ -582,10 +600,17 @@ export default function ReportRendererClient({
     pages: PagePlan[]
     sectionPageMap: Map<string, number>
   } | null>(null)
+  const [imageSettledVersion, setImageSettledVersion] = useState(0)
+  const [paginationImageVersion, setPaginationImageVersion] = useState(-1)
 
   const measureContainerRef = useRef<HTMLDivElement | null>(null)
   const headerMeasureRef = useRef<HTMLDivElement | null>(null)
   const entryRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
+  const notifyReportImageSettled = useCallback(() => {
+    if (!isPdfMode) return
+    setImageSettledVersion((version) => version + 1)
+  }, [isPdfMode])
 
   const coverSection = useMemo(
     () => spec.find(section => section.type === 'cover') ?? null,
@@ -1127,7 +1152,10 @@ export default function ReportRendererClient({
       pages: [...coverPages, ...pages, ...appendixPages, ...postAppendixPages],
       sectionPageMap,
     })
-  }, [appendices, contentEntries, coverSection, mockData, isPdfMode])
+    setPaginationImageVersion((version) =>
+      version === imageSettledVersion ? version : imageSettledVersion
+    )
+  }, [appendices, contentEntries, coverSection, mockData, isPdfMode, imageSettledVersion])
 
   const companyLogoValue = getMockValue(mockData, 'mock.company.logo_url')
   const companyLogoUrl = companyLogoValue === 'saknas' ? null : companyLogoValue
@@ -1257,6 +1285,7 @@ export default function ReportRendererClient({
                       style={{ width: '58mm', maxHeight: '75mm' }}
                       maxLongSidePx={PHOTO_POLICY.pdfMaxLongSidePx}
                       quality={PHOTO_POLICY.pdfQuality}
+                      onSettled={notifyReportImageSettled}
                     />
                   ))}
                 </div>
@@ -1307,6 +1336,7 @@ export default function ReportRendererClient({
                             : 'h-auto rounded border border-gray-200 object-contain bg-white'
                         }
                         style={{ width: '60mm' }}
+                        onSettled={notifyReportImageSettled}
                       />
                     ))
                   : photoUrls.map((url, urlIndex) => (
@@ -1323,6 +1353,7 @@ export default function ReportRendererClient({
                           alt={`Foto ${urlIndex + 1}`}
                           className="max-h-full max-w-full object-contain"
                           style={{ width: '100%', height: '100%' }}
+                          onSettled={notifyReportImageSettled}
                         />
                       </div>
                     ))}
@@ -2242,7 +2273,15 @@ export default function ReportRendererClient({
   }
 
   return (
-    <div className={rootClasses} style={{ backgroundColor: '#f1f5f9', padding: mmToPx(6) }}>
+    <div
+      className={rootClasses}
+      data-report-pagination-ready={
+        pagePlan && paginationImageVersion === imageSettledVersion ? '1' : '0'
+      }
+      data-report-image-version={imageSettledVersion}
+      data-report-pagination-image-version={paginationImageVersion}
+      style={{ backgroundColor: '#f1f5f9', padding: mmToPx(6) }}
+    >
       <div
         ref={measureContainerRef}
         style={{
