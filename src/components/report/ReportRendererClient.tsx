@@ -149,6 +149,20 @@ type InspectionRoomGroupItemEntry = {
   marginBottomMm: number
 }
 
+type InspectionItemSegmentKind = 'note' | 'photos' | 'risk' | 'ftu'
+
+type InspectionRoomGroupItemSegmentEntry = {
+  type: 'inspectionRoomGroupItemSegment'
+  title: string
+  item: InspectionBlockItem
+  segment: InspectionItemSegmentKind
+  photoUrls: string[]
+  isFirstInGroup: boolean
+  isLastInGroup: boolean
+  marginTopMm: number
+  marginBottomMm: number
+}
+
 type InspectionFloorHeaderEntry = {
   type: 'inspectionFloorHeader'
   title: string
@@ -189,6 +203,7 @@ type ExtendedReportBlock =
   | InspectionBlockItemEntry
   | InspectionRoomGroupEntry
   | InspectionRoomGroupItemEntry
+  | InspectionRoomGroupItemSegmentEntry
   | InspectionFloorHeaderEntry
   | RiskItemEntry
   | FtuItemEntry
@@ -339,6 +354,43 @@ function ReportIcon({ name }: { name: ReportIconName }) {
       </span>
     </span>
   )
+}
+
+const PDF_PHOTOS_PER_SEGMENT = 2
+
+const getInspectionPhotoUrls = (item: InspectionBlockItem) =>
+  Array.isArray(item.photoUrls)
+    ? item.photoUrls.filter(
+        (url): url is string => typeof url === 'string' && url.trim().length > 0
+      )
+    : []
+
+const chunkItems = <T,>(items: T[], size: number) => {
+  const chunks: T[][] = []
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size))
+  }
+  return chunks
+}
+
+const buildPdfInspectionSegments = (item: InspectionBlockItem) => {
+  const segments: Array<{ segment: InspectionItemSegmentKind; photoUrls: string[] }> = [
+    { segment: 'note', photoUrls: [] },
+  ]
+
+  chunkItems(getInspectionPhotoUrls(item), PDF_PHOTOS_PER_SEGMENT).forEach((photoUrls) => {
+    segments.push({ segment: 'photos', photoUrls })
+  })
+
+  if (String(item.riskText ?? '').trim().length > 0) {
+    segments.push({ segment: 'risk', photoUrls: [] })
+  }
+
+  if (String(item.ftuText ?? '').trim().length > 0) {
+    segments.push({ segment: 'ftu', photoUrls: [] })
+  }
+
+  return segments
 }
 
 const mmToPxNumber = (mm: number) => (mm * 96) / 25.4
@@ -802,30 +854,43 @@ export default function ReportRendererClient({
                   }
 
                   group.items.forEach((item, itemIndex) => {
-                    entries.push({
-                      kind: 'block',
-                      id: `${section.id}-room-group-${blockIndex}-${groupIndex}-${itemIndex}`,
-                      sectionId: section.id,
-                      sectionStartOnNewPage:
-                        section.id !== 'notes-interior' &&
-                        section.startOnNewPage &&
-                        blockIndex === 0 &&
-                        groupIndex === 0 &&
-                        itemIndex === 0,
-                      block: {
-                        type: 'inspectionRoomGroupItem',
-                        title: roomTitle,
-                        item,
-                        isFirstInGroup: itemIndex === 0,
-                        isLastInGroup: itemIndex === group.items.length - 1,
-                        marginTopMm:
-                          groupIndex === 0 && itemIndex === 0 ? block.marginTopMm : 0,
-                        marginBottomMm:
-                          groupIndex === groups.length - 1 &&
-                          itemIndex === group.items.length - 1
-                            ? block.marginBottomMm
-                            : 0,
-                      },
+                    const itemSegments = buildPdfInspectionSegments(item)
+                    itemSegments.forEach((segment, segmentIndex) => {
+                      const isFirstSegment = segmentIndex === 0
+                      const isLastSegment = segmentIndex === itemSegments.length - 1
+
+                      entries.push({
+                        kind: 'block',
+                        id: `${section.id}-room-group-${blockIndex}-${groupIndex}-${itemIndex}-${segment.segment}-${segmentIndex}`,
+                        sectionId: section.id,
+                        sectionStartOnNewPage:
+                          section.id !== 'notes-interior' &&
+                          section.startOnNewPage &&
+                          blockIndex === 0 &&
+                          groupIndex === 0 &&
+                          itemIndex === 0 &&
+                          isFirstSegment,
+                        block: {
+                          type: 'inspectionRoomGroupItemSegment',
+                          title: roomTitle,
+                          item,
+                          segment: segment.segment,
+                          photoUrls: segment.photoUrls,
+                          isFirstInGroup: itemIndex === 0 && isFirstSegment,
+                          isLastInGroup:
+                            itemIndex === group.items.length - 1 && isLastSegment,
+                          marginTopMm:
+                            groupIndex === 0 && itemIndex === 0 && isFirstSegment
+                              ? block.marginTopMm
+                              : 0,
+                          marginBottomMm:
+                            groupIndex === groups.length - 1 &&
+                            itemIndex === group.items.length - 1 &&
+                            isLastSegment
+                              ? block.marginBottomMm
+                              : 0,
+                        },
+                      })
                     })
                   })
                 } else {
@@ -1213,9 +1278,7 @@ export default function ReportRendererClient({
     const noteText = String(item.noteText ?? '').trim()
     const riskText = String(item.riskText ?? '').trim()
     const ftuText = String(item.ftuText ?? '').trim()
-    const photoUrls = Array.isArray(item.photoUrls)
-      ? item.photoUrls.filter((url) => typeof url === 'string')
-      : []
+    const photoUrls = getInspectionPhotoUrls(item)
 
     if (isPdfMode) {
       const labelWidth = mmToPx(30)
@@ -1402,6 +1465,151 @@ export default function ReportRendererClient({
           </div>
         )}
       </>
+    )
+  }
+
+  const renderPdfInspectionSegmentContent = (
+    block: InspectionRoomGroupItemSegmentEntry,
+    keyPrefix: string
+  ) => {
+    const labelWidth = mmToPx(30)
+    const noteText = String(block.item.noteText ?? '').trim()
+    const riskText = String(block.item.riskText ?? '').trim()
+    const ftuText = String(block.item.ftuText ?? '').trim()
+
+    const renderPdfRow = (
+      label: string,
+      body: ReactNode,
+      tone: 'default' | 'risk' | 'ftu' = 'default'
+    ) => (
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `${labelWidth} 1fr`,
+          columnGap: mmToPx(3),
+          marginTop: mmToPx(1.5),
+          alignItems: 'start',
+        }}
+      >
+        <div
+          style={{
+            fontSize: '9pt',
+            fontWeight: 700,
+            color:
+              tone === 'risk'
+                ? '#b45309'
+                : tone === 'ftu'
+                  ? '#334155'
+                  : '#475569',
+            lineHeight: 1.2,
+          }}
+        >
+          {label}
+        </div>
+        <div
+          style={{
+            fontSize: '10.5pt',
+            color: '#111827',
+            lineHeight: 1.25,
+            whiteSpace: 'pre-line',
+          }}
+        >
+          {body}
+        </div>
+      </div>
+    )
+
+    if (block.segment === 'photos') {
+      if (block.photoUrls.length === 0) return null
+      return renderPdfRow(
+        'Bilder',
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: mmToPx(3),
+            marginTop: mmToPx(1),
+          }}
+        >
+          {block.photoUrls.map((url, urlIndex) => (
+            <ReportPhoto
+              key={`${keyPrefix}-photo-${urlIndex}`}
+              src={url}
+              alt={`Foto ${urlIndex + 1}`}
+              className="h-auto object-contain bg-white"
+              style={{ width: '58mm', maxHeight: '75mm' }}
+              maxLongSidePx={PHOTO_POLICY.pdfMaxLongSidePx}
+              quality={PHOTO_POLICY.pdfQuality}
+              onSettled={notifyReportImageSettled}
+            />
+          ))}
+        </div>
+      )
+    }
+
+    if (block.segment === 'risk') {
+      return riskText.length > 0
+        ? renderPdfRow('Riskanalys', riskText, 'risk')
+        : null
+    }
+
+    if (block.segment === 'ftu') {
+      return ftuText.length > 0 ? renderPdfRow('FTU', ftuText, 'ftu') : null
+    }
+
+    return renderPdfRow('Notering', noteText || '--')
+  }
+
+  const renderPdfInspectionSegment = (
+    block: InspectionRoomGroupItemSegmentEntry,
+    key: string
+  ) => {
+    const rowTitle = block.title.trim()
+    const content = renderPdfInspectionSegmentContent(block, key)
+    if (!content) return null
+
+    return (
+      <article
+        key={key}
+        className="ob-block bg-white"
+        style={blockMargins({
+          marginTopMm: block.marginTopMm,
+          marginBottomMm: block.marginBottomMm,
+        } as ReportBlock)}
+      >
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `${mmToPx(46)} 1fr`,
+            columnGap: mmToPx(4),
+          }}
+        >
+          <div
+            style={{
+              borderTop: block.isFirstInGroup ? '1px solid #cbd5e1' : 'none',
+              fontSize: '10.5pt',
+              fontWeight: 700,
+              color: '#111827',
+              lineHeight: 1.2,
+              paddingTop: mmToPx(2.5),
+              paddingBottom: mmToPx(2.5),
+              paddingRight: mmToPx(2),
+              wordBreak: 'break-word',
+            }}
+          >
+            {block.isFirstInGroup ? rowTitle : null}
+          </div>
+          <div
+            style={{
+              borderTop: '1px solid #cbd5e1',
+              paddingTop: mmToPx(2.5),
+              paddingBottom: mmToPx(2.5),
+            }}
+          >
+            {content}
+          </div>
+        </div>
+      </article>
     )
   }
 
@@ -1785,6 +1993,13 @@ export default function ReportRendererClient({
         block.marginTopMm,
         block.marginBottomMm,
         block.isFirstInGroup
+      )
+    }
+
+    if (block.type === 'inspectionRoomGroupItemSegment') {
+      return renderPdfInspectionSegment(
+        block,
+        `${sectionId}-room-group-item-segment-${index}`
       )
     }
 
