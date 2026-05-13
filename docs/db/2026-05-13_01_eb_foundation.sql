@@ -262,6 +262,7 @@ set
 create table if not exists public.eb_projects (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references public.organizations (id) on delete cascade,
+  property_id uuid references public.properties (id) on delete set null,
   owner_profile_id uuid not null references public.profiles (id) on delete restrict,
   created_by uuid references public.profiles (id) on delete set null,
   title text not null,
@@ -280,10 +281,16 @@ create table if not exists public.eb_projects (
   constraint eb_projects_status_check check (status in ('draft', 'active', 'completed', 'archived'))
 );
 
+alter table public.eb_projects
+  add column if not exists property_id uuid references public.properties (id) on delete set null;
+
 create index if not exists eb_projects_org_idx
   on public.eb_projects (org_id, updated_at desc);
 create index if not exists eb_projects_owner_profile_idx
   on public.eb_projects (owner_profile_id, updated_at desc);
+create index if not exists eb_projects_property_idx
+  on public.eb_projects (property_id)
+  where property_id is not null;
 
 drop trigger if exists trg_eb_projects_set_updated_at on public.eb_projects;
 create trigger trg_eb_projects_set_updated_at
@@ -295,7 +302,9 @@ create table if not exists public.eb_inspection_details (
   inspection_id uuid primary key references public.inspections (id) on delete cascade,
   org_id uuid not null references public.organizations (id) on delete cascade,
   eb_project_id uuid not null references public.eb_projects (id) on delete cascade,
+  parent_inspection_id uuid references public.inspections (id) on delete set null,
   inspection_variant text not null default 'SB',
+  sequence_no integer not null default 1,
   contract_form text,
   meeting_place text,
   start_meeting_time time,
@@ -311,10 +320,19 @@ create table if not exists public.eb_inspection_details (
     check (inspection_variant in ('SB', 'FB', 'EB', 'GB', 'KSB', 'SAB'))
 );
 
+alter table public.eb_inspection_details
+  add column if not exists parent_inspection_id uuid references public.inspections (id) on delete set null,
+  add column if not exists sequence_no integer not null default 1;
+
 create index if not exists eb_inspection_details_org_idx
   on public.eb_inspection_details (org_id, updated_at desc);
 create index if not exists eb_inspection_details_project_idx
   on public.eb_inspection_details (eb_project_id, updated_at desc);
+create index if not exists eb_inspection_details_project_sequence_idx
+  on public.eb_inspection_details (eb_project_id, sequence_no, created_at);
+create index if not exists eb_inspection_details_parent_idx
+  on public.eb_inspection_details (parent_inspection_id)
+  where parent_inspection_id is not null;
 
 drop trigger if exists trg_eb_inspection_details_set_updated_at
   on public.eb_inspection_details;
@@ -384,6 +402,7 @@ create table if not exists public.eb_notes (
   eb_project_id uuid not null references public.eb_projects (id) on delete cascade,
   inspection_id uuid not null references public.inspections (id) on delete cascade,
   discipline_id uuid references public.eb_disciplines (id) on delete set null,
+  source_note_id uuid references public.eb_notes (id) on delete set null,
   note_number integer,
   location text,
   marker_key text,
@@ -398,10 +417,16 @@ create table if not exists public.eb_notes (
   updated_at timestamptz not null default now()
 );
 
+alter table public.eb_notes
+  add column if not exists source_note_id uuid references public.eb_notes (id) on delete set null;
+
 create index if not exists eb_notes_inspection_idx
   on public.eb_notes (inspection_id, sort_order, created_at);
 create index if not exists eb_notes_project_idx
   on public.eb_notes (eb_project_id, sort_order, created_at);
+create index if not exists eb_notes_source_note_idx
+  on public.eb_notes (source_note_id)
+  where source_note_id is not null;
 create index if not exists eb_notes_org_text_idx
   on public.eb_notes using gin (to_tsvector('simple', coalesce(note_text, '')));
 
