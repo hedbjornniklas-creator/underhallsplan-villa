@@ -20,7 +20,6 @@ type Inspection = {
 }
 
 type InspectionSide = 'buyer' | 'seller' | 'apartment'
-type RoundMode = 'site' | 'process'
 type RoundArea = 'interior' | 'exterior'
 type ValueMap = Record<string, unknown>
 
@@ -337,7 +336,6 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   const isInspectionLocked = Boolean(inspection?.locked_at)
   const inspectionSide = normalizeInspectionSide(inspection?.inspection_side)
 
-  const [mode, setMode] = useState<RoundMode>('site')
   const [area, setArea] = useState<RoundArea>('interior')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -350,6 +348,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   const [derivedFloors, setDerivedFloors] = useState<string[]>([])
   const [activeFloor, setActiveFloor] = useState('')
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null)
+  const [roomDialogOpen, setRoomDialogOpen] = useState(false)
   const [newRoomTypeKey, setNewRoomTypeKey] = useState('')
   const [newRoomLabel, setNewRoomLabel] = useState('')
 
@@ -373,13 +372,8 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   const [searching, setSearching] = useState(false)
   const [searchResults, setSearchResults] = useState<ControlPointLite[]>([])
 
-  const [cameraOpen, setCameraOpen] = useState(false)
-  const [cameraLoading, setCameraLoading] = useState(false)
-  const [cameraError, setCameraError] = useState<string | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const videoRef = useRef<HTMLVideoElement | null>(null)
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const cameraInputRef = useRef<HTMLInputElement | null>(null)
+  const galleryInputRef = useRef<HTMLInputElement | null>(null)
   const ensuredInteriorRoomIdsRef = useRef<Set<string>>(new Set())
   const ensuredExteriorItemIdsRef = useRef<Set<string>>(new Set())
 
@@ -410,9 +404,20 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     () =>
       rooms
         .filter(room => normalizeFloorKey(room.floor_label) === normalizeFloorKey(activeFloor))
-        .sort(sortRooms),
+        .sort((a, b) => (b.order_index ?? 0) - (a.order_index ?? 0)),
     [rooms, activeFloor]
   )
+
+  const activeRoomImages = useMemo(() => {
+    if (!activeRoom?.id) return []
+    return images
+      .filter(image => image.origin_interior_room_id === activeRoom.id)
+      .sort((a, b) => {
+        const left = new Date(a.captured_at ?? a.created_at ?? 0).getTime()
+        const right = new Date(b.captured_at ?? b.created_at ?? 0).getTime()
+        return right - left
+      })
+  }, [activeRoom, images])
 
   const activeTargetLabel = useMemo(() => {
     if (area === 'interior') {
@@ -532,10 +537,6 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     void ensureExteriorObservationAndDefaults(activeExteriorItem)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeExteriorItem?.id])
-
-  useEffect(() => {
-    return () => stopCamera()
-  }, [])
 
   const loadAll = async () => {
     setLoading(true)
@@ -1526,63 +1527,6 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       return cp.scope === 'exterior' && cp.exterior_item_key === activeExteriorItem.key
     })
 
-  const startCamera = async () => {
-    setCameraError(null)
-    setCameraLoading(true)
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        fileInputRef.current?.click()
-        return
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
-        audio: false,
-      })
-      streamRef.current = stream
-      setCameraOpen(true)
-      window.setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          void videoRef.current.play()
-        }
-      }, 0)
-    } catch (e: unknown) {
-      console.error('start camera failed:', e)
-      setCameraError('Kameran kunde inte öppnas. Använd filväljaren i stället.')
-      fileInputRef.current?.click()
-    } finally {
-      setCameraLoading(false)
-    }
-  }
-
-  const stopCamera = () => {
-    streamRef.current?.getTracks().forEach(track => track.stop())
-    streamRef.current = null
-    if (videoRef.current) videoRef.current.srcObject = null
-    setCameraOpen(false)
-  }
-
-  const takeCameraShot = async () => {
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    if (!video || !canvas) return
-    const width = video.videoWidth || 1280
-    const height = video.videoHeight || 720
-    canvas.width = width
-    canvas.height = height
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.drawImage(video, 0, 0, width, height)
-    const blob = await new Promise<Blob | null>(resolve =>
-      canvas.toBlob(result => resolve(result), 'image/jpeg', 0.88)
-    )
-    if (!blob) {
-      setError('Kunde inte skapa bild från kameran.')
-      return
-    }
-    await uploadImage(blob, 'camera.jpg')
-  }
-
   const toggleImageSelection = (imageId: string) => {
     setSelectedImageIds(prev => {
       const next = new Set(prev)
@@ -1607,55 +1551,27 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-gray-950">ÖB-runda</h2>
-            <div className="mt-1 text-xs text-gray-600">{activeTargetLabel}</div>
-          </div>
-          <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
-            <button
-              type="button"
-              onClick={() => setMode('site')}
-              className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
-                mode === 'site' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-white'
-              }`}
-            >
-              På plats
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('process')}
-              className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
-                mode === 'process' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-white'
-              }`}
-            >
-              Bearbeta
-            </button>
-          </div>
+      {isInspectionLocked ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Besiktningen är låst. ÖB-rundan kan läsas men inte ändras.
         </div>
+      ) : null}
 
-        {isInspectionLocked ? (
-          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            Besiktningen är låst. ÖB-rundan kan läsas men inte ändras.
-          </div>
-        ) : null}
+      {(error || message) ? (
+        <div
+          className={`flex items-start justify-between gap-3 rounded-lg border px-3 py-2 text-xs ${
+            error ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+          }`}
+        >
+          <span>{error ?? message}</span>
+          <button type="button" onClick={clearNotice} aria-label="Stäng" className="text-current">
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
 
-        {(error || message) ? (
-          <div
-            className={`mt-3 flex items-start justify-between gap-3 rounded-lg border px-3 py-2 text-xs ${
-              error ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-            }`}
-          >
-            <span>{error ?? message}</span>
-            <button type="button" onClick={clearNotice} aria-label="Stäng" className="text-current">
-              <X size={14} />
-            </button>
-          </div>
-        ) : null}
-      </div>
-
-      {mode === 'site' ? renderSiteMode() : renderProcessMode()}
+      {renderRoundSurface()}
+      {roomDialogOpen && activeRoom ? renderRoomDialog() : null}
 
       <ControlPointSearchDialog
         open={searchOpen}
@@ -1679,10 +1595,21 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       />
 
       <input
-        ref={fileInputRef}
+        ref={cameraInputRef}
         type="file"
         accept="image/*"
         capture="environment"
+        className="hidden"
+        onChange={event => {
+          const files = event.target.files
+          if (files) void uploadFiles(files)
+          event.currentTarget.value = ''
+        }}
+      />
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*"
         multiple
         className="hidden"
         onChange={event => {
@@ -1691,9 +1618,36 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
           event.currentTarget.value = ''
         }}
       />
-      <canvas ref={canvasRef} className="hidden" />
     </div>
   )
+
+  function primaryButtonClass(extra = '') {
+    return `inline-flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50 ${extra}`
+  }
+
+  function activeTileClass(isActive: boolean) {
+    return isActive
+      ? 'border-sky-300 bg-sky-50 text-sky-950 ring-1 ring-sky-200'
+      : 'border-gray-200 bg-white text-gray-900 hover:bg-sky-50/60'
+  }
+
+  function renderRoundSurface() {
+    return (
+      <section className="space-y-4 rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:p-4">
+        {renderAreaTabs()}
+        {area === 'interior' ? renderInteriorPicker() : (
+          <div className="space-y-4">
+            {renderExteriorPicker()}
+            {renderQuickNote()}
+            {renderControlItemsPanel(false)}
+            <div className="rounded-xl border border-gray-200 bg-white p-3">
+              {renderCameraPanel()}
+            </div>
+          </div>
+        )}
+      </section>
+    )
+  }
 
   function renderAreaTabs() {
     return (
@@ -1701,22 +1655,14 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         <button
           type="button"
           onClick={() => setArea('interior')}
-          className={`rounded-xl border px-3 py-3 text-sm font-semibold ${
-            area === 'interior'
-              ? 'border-gray-900 bg-gray-900 text-white'
-              : 'border-gray-200 bg-white text-gray-800'
-          }`}
+          className={`rounded-xl border px-3 py-3 text-sm font-semibold ${activeTileClass(area === 'interior')}`}
         >
           Insida
         </button>
         <button
           type="button"
           onClick={() => setArea('exterior')}
-          className={`rounded-xl border px-3 py-3 text-sm font-semibold ${
-            area === 'exterior'
-              ? 'border-gray-900 bg-gray-900 text-white'
-              : 'border-gray-200 bg-white text-gray-800'
-          }`}
+          className={`rounded-xl border px-3 py-3 text-sm font-semibold ${activeTileClass(area === 'exterior')}`}
         >
           Utsida
         </button>
@@ -1724,7 +1670,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     )
   }
 
-  function renderInteriorPicker(compact = false) {
+  function renderInteriorPicker() {
     return (
       <div className="space-y-3">
         <div className="flex gap-2 overflow-x-auto pb-1">
@@ -1733,11 +1679,9 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               key={floor}
               type="button"
               onClick={() => setActiveFloor(floor)}
-              className={`shrink-0 rounded-full border px-3 py-2 text-sm font-semibold ${
+              className={`shrink-0 rounded-full border px-3 py-2 text-sm font-semibold ${activeTileClass(
                 normalizeFloorKey(activeFloor) === normalizeFloorKey(floor)
-                  ? 'border-gray-900 bg-gray-900 text-white'
-                  : 'border-gray-200 bg-white text-gray-800'
-              }`}
+              )}`}
             >
               {floorLabelFromKey(floor)}
             </button>
@@ -1745,32 +1689,12 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         </div>
 
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {roomsForActiveFloor.map(room => (
-            <button
-              key={room.id}
-              type="button"
-              onClick={() => setActiveRoomId(room.id ?? null)}
-              className={`rounded-xl border px-3 py-3 text-left text-sm ${
-                activeRoomId === room.id
-                  ? 'border-gray-900 bg-gray-900 text-white'
-                  : 'border-gray-200 bg-white text-gray-900 hover:bg-gray-50'
-              }`}
-            >
-              <div className="font-semibold">{room.room_label}</div>
-              <div className={`text-xs ${activeRoomId === room.id ? 'text-gray-200' : 'text-gray-500'}`}>
-                {roomTypes.find(type => type.key === room.room_type_key)?.label ?? room.room_type_key}
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {!compact ? (
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-            <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+          <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
+            <div className="space-y-2">
               <select
                 value={newRoomTypeKey}
                 onChange={event => setNewRoomTypeKey(event.target.value)}
-                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm text-gray-900"
                 disabled={isInspectionLocked}
               >
                 <option value="">Rumstyp</option>
@@ -1784,21 +1708,38 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 value={newRoomLabel}
                 onChange={event => setNewRoomLabel(event.target.value)}
                 placeholder="Rumsnamn, valfritt"
-                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm text-gray-900"
                 disabled={isInspectionLocked}
               />
               <button
                 type="button"
                 onClick={() => void addRoom()}
                 disabled={isInspectionLocked || saving}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                className={primaryButtonClass('min-h-11 w-full')}
               >
                 <Plus size={16} />
-                Lägg till
+                Lägg till rum
               </button>
             </div>
           </div>
-        ) : null}
+          {roomsForActiveFloor.map(room => (
+            <button
+              key={room.id}
+              type="button"
+              onClick={() => {
+                setActiveRoomId(room.id ?? null)
+                setRoomDialogOpen(true)
+              }}
+              className={`min-h-[112px] rounded-xl border px-3 py-3 text-left text-sm ${activeTileClass(activeRoomId === room.id)}`}
+            >
+              <div className="font-semibold">{room.room_label}</div>
+              <div className="mt-1 text-xs text-gray-500">
+                {roomTypes.find(type => type.key === room.room_type_key)?.label ?? room.room_type_key}
+              </div>
+              <div className="mt-3 text-xs font-medium text-sky-700">Öppna rum</div>
+            </button>
+          ))}
+        </div>
       </div>
     )
   }
@@ -1809,11 +1750,9 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         <button
           type="button"
           onClick={() => setActiveExteriorItemId(UNCLASSIFIED_EXTERIOR)}
-          className={`rounded-xl border px-3 py-3 text-left text-sm font-semibold ${
+          className={`rounded-xl border px-3 py-3 text-left text-sm font-semibold ${activeTileClass(
             activeExteriorItemId === UNCLASSIFIED_EXTERIOR
-              ? 'border-gray-900 bg-gray-900 text-white'
-              : 'border-gray-200 bg-white text-gray-900 hover:bg-gray-50'
-          }`}
+          )}`}
         >
           Oklassad utsida
         </button>
@@ -1822,11 +1761,9 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
             key={item.id}
             type="button"
             onClick={() => setActiveExteriorItemId(item.id)}
-            className={`rounded-xl border px-3 py-3 text-left text-sm font-semibold ${
+            className={`rounded-xl border px-3 py-3 text-left text-sm font-semibold ${activeTileClass(
               activeExteriorItemId === item.id
-                ? 'border-gray-900 bg-gray-900 text-white'
-                : 'border-gray-200 bg-white text-gray-900 hover:bg-gray-50'
-            }`}
+            )}`}
           >
             {item.label}
           </button>
@@ -1855,43 +1792,108 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     )
   }
 
-  function renderSiteMode() {
+  function renderRoomDialog() {
     return (
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="space-y-4 rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:p-4">
-          {renderAreaTabs()}
-          {area === 'interior' ? renderInteriorPicker() : renderExteriorPicker()}
-          {renderQuickNote()}
-          {renderControlItemsPanel(false)}
-        </section>
-        <aside className="space-y-3 rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:p-4 lg:sticky lg:top-24">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Kamera</div>
-            <div className="mt-1 text-sm font-semibold text-gray-950">{activeTargetLabel}</div>
+      <div className="fixed inset-0 z-[80] bg-white md:bg-black/35" role="dialog" aria-modal="true">
+        <div className="flex h-full flex-col bg-white md:mx-auto md:my-4 md:h-[calc(100%-2rem)] md:max-w-4xl md:rounded-2xl md:shadow-2xl">
+          <div className="border-b border-gray-200 px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  {activeRoom ? floorLabelFromKey(activeRoom.floor_label) : 'Rum'}
+                </div>
+                <h2 className="text-lg font-semibold text-gray-950">{activeRoom?.room_label}</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRoomDialogOpen(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700"
+                aria-label="Stäng rum"
+                title="Stäng rum"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="mt-3 grid grid-cols-4 gap-2">
+              <button
+                type="button"
+                onClick={openSearch}
+                disabled={isInspectionLocked}
+                className={primaryButtonClass('min-h-12 flex-col gap-1 px-2 text-xs')}
+              >
+                <Search size={17} />
+                Kontrollpunkt
+              </button>
+              <button
+                type="button"
+                onClick={() => void createFreeNote('')}
+                disabled={isInspectionLocked}
+                className={primaryButtonClass('min-h-12 flex-col gap-1 px-2 text-xs')}
+              >
+                <Plus size={17} />
+                Notering
+              </button>
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                disabled={isInspectionLocked || uploading}
+                className={primaryButtonClass('min-h-12 flex-col gap-1 px-2 text-xs')}
+              >
+                <Camera size={17} />
+                Kamera
+              </button>
+              <button
+                type="button"
+                onClick={() => galleryInputRef.current?.click()}
+                disabled={isInspectionLocked || uploading}
+                className={primaryButtonClass('min-h-12 flex-col gap-1 px-2 text-xs')}
+              >
+                <ImageIcon size={17} />
+                Bilder
+              </button>
+            </div>
           </div>
-          {renderCameraPanel()}
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
-            Bilder sparas som obehandlade minnesbilder. De går inte till rapporten förrän de kopplas i Bearbeta-läget.
+
+          <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
+            <div className="space-y-4">
+              {renderControlItemsPanel(false, false)}
+              {renderRoomImageStrip()}
+              {renderQuickNote()}
+            </div>
           </div>
-        </aside>
+        </div>
       </div>
     )
   }
 
-  function renderProcessMode() {
+  function renderRoomImageStrip() {
+    if (!activeRoom) return null
     return (
-      <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_320px]">
-        <aside className="space-y-4 rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:p-4 xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:overflow-auto">
-          {renderAreaTabs()}
-          {area === 'interior' ? renderInteriorPicker(true) : renderExteriorPicker()}
-        </aside>
-        <section className="space-y-4 rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:p-4">
-          {renderQuickNote()}
-          {renderControlItemsPanel(true)}
-        </section>
-        <aside className="rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:p-4 xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:overflow-auto">
-          {renderImageRail()}
-        </aside>
+      <div className="rounded-xl border border-gray-200 bg-white p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-sm font-semibold text-gray-950">Bilder i rummet</div>
+          <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800">
+            {activeRoomImages.length}
+          </span>
+        </div>
+        {activeRoomImages.length > 0 ? (
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {activeRoomImages.map(image => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={image.id}
+                src={getImagePublicUrl(image.file_path)}
+                alt=""
+                className="h-20 w-20 shrink-0 rounded-lg border border-gray-200 object-cover"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="mt-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-sm text-gray-600">
+            Inga bilder tagna i rummet ännu.
+          </div>
+        )}
       </div>
     )
   }
@@ -1899,64 +1901,31 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   function renderCameraPanel() {
     return (
       <div className="space-y-3">
-        {cameraOpen ? (
-          <div className="space-y-3">
-            <div className="overflow-hidden rounded-2xl bg-black">
-              <video ref={videoRef} playsInline muted className="aspect-[3/4] w-full object-cover" />
-            </div>
-            <div className="grid grid-cols-[1fr_auto] gap-2">
-              <button
-                type="button"
-                onClick={() => void takeCameraShot()}
-                disabled={uploading || isInspectionLocked}
-                className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-gray-900 px-4 py-3 text-base font-semibold text-white disabled:opacity-50"
-              >
-                {uploading ? <Loader2 size={20} className="animate-spin" /> : <Camera size={22} />}
-                Ta bild
-              </button>
-              <button
-                type="button"
-                onClick={stopCamera}
-                className="inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-gray-300 bg-white text-gray-700"
-                aria-label="Stäng kamera"
-                title="Stäng kamera"
-              >
-                <X size={22} />
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="grid gap-2">
-            <button
-              type="button"
-              onClick={() => void startCamera()}
-              disabled={cameraLoading || uploading || isInspectionLocked}
-              className="inline-flex min-h-16 items-center justify-center gap-2 rounded-2xl bg-gray-900 px-4 py-4 text-base font-semibold text-white disabled:opacity-50"
-            >
-              {cameraLoading ? <Loader2 size={22} className="animate-spin" /> : <Camera size={24} />}
-              Öppna kamera
-            </button>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading || isInspectionLocked}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-800 disabled:opacity-50"
-            >
-              <ImageIcon size={18} />
-              Välj bild
-            </button>
-          </div>
-        )}
-        {cameraError ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            {cameraError}
-          </div>
-        ) : null}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            disabled={uploading || isInspectionLocked}
+            className={primaryButtonClass('min-h-12')}
+          >
+            {uploading ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
+            Kamera
+          </button>
+          <button
+            type="button"
+            onClick={() => galleryInputRef.current?.click()}
+            disabled={uploading || isInspectionLocked}
+            className={primaryButtonClass('min-h-12')}
+          >
+            <ImageIcon size={18} />
+            Bilder
+          </button>
+        </div>
       </div>
     )
   }
 
-  function renderControlItemsPanel(processMode: boolean) {
+  function renderControlItemsPanel(processMode: boolean, showHeaderActions = true) {
     const canHaveControlItems = area === 'interior' ? !!activeRoom : !!activeExteriorItem
     return (
       <div className="space-y-3">
@@ -1965,12 +1934,13 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
             <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Kontrollpunkter</div>
             <div className="text-sm font-semibold text-gray-950">{activeTargetLabel}</div>
           </div>
+          {showHeaderActions ? (
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={openSearch}
               disabled={!canHaveControlItems || isInspectionLocked}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 disabled:opacity-50"
+              className={primaryButtonClass()}
             >
               <Search size={16} />
               Lägg till
@@ -1979,12 +1949,13 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               type="button"
               onClick={() => void createFreeNote('')}
               disabled={!canHaveControlItems || isInspectionLocked}
-              className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              className={primaryButtonClass()}
             >
               <Plus size={16} />
               Fri notering
             </button>
           </div>
+          ) : null}
         </div>
 
         {!canHaveControlItems ? (
@@ -2027,7 +1998,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <div className="font-semibold text-gray-950">{baseItem.title}</div>
-            {meta?.description ? <div className="mt-1 text-xs text-gray-600">{meta.description}</div> : null}
+            {processMode && meta?.description ? <div className="mt-1 text-xs text-gray-600">{meta.description}</div> : null}
           </div>
           <div className="flex flex-wrap gap-2">
             {selectedForImages.map(item => (
@@ -2038,7 +2009,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 disabled={!item.id}
                 className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
                   item.id && selectedControlItemId === item.id
-                    ? 'border-gray-900 bg-gray-900 text-white'
+                    ? 'border-sky-300 bg-sky-50 text-sky-900'
                     : 'border-gray-300 bg-white text-gray-700'
                 }`}
               >
@@ -2077,7 +2048,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
             }}
             disabled={isInspectionLocked || !baseItem.id}
             className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
-              isOk ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 bg-white text-gray-800'
+              isOk ? 'border-sky-300 bg-sky-50 text-sky-900' : 'border-gray-300 bg-white text-gray-800'
             }`}
           >
             Inget att notera
@@ -2119,7 +2090,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 disabled={isInspectionLocked || !baseItem.id}
                 className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
                   activeItem
-                    ? 'border-gray-900 bg-gray-900 text-white'
+                    ? 'border-sky-300 bg-sky-50 text-sky-900'
                     : 'border-gray-300 bg-white text-gray-800'
                 }`}
               >
@@ -2129,11 +2100,13 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
           })}
         </div>
 
-        <div className="mt-3 space-y-3">
-          {(selectedItems.length > 0 ? selectedItems : [baseItem]).map(item =>
-            renderControlItemCard(item, outcomes, processMode, false)
-          )}
-        </div>
+        {processMode ? (
+          <div className="mt-3 space-y-3">
+            {(selectedItems.length > 0 ? selectedItems : [baseItem]).map(item =>
+              renderControlItemCard(item, outcomes, processMode, false)
+            )}
+          </div>
+        ) : null}
       </div>
     )
   }
@@ -2152,7 +2125,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       <div
         key={item.id ?? `${item.title}-${item.sort_order}`}
         className={`rounded-lg border bg-white p-3 ${
-          item.id && selectedControlItemId === item.id ? 'border-gray-900 ring-2 ring-gray-900/10' : 'border-gray-200'
+          item.id && selectedControlItemId === item.id ? 'border-sky-300 ring-2 ring-sky-100' : 'border-gray-200'
         }`}
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2171,7 +2144,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 onClick={() => setSelectedControlItemId(item.id ?? null)}
                 className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
                   selectedControlItemId === item.id
-                    ? 'border-gray-900 bg-gray-900 text-white'
+                    ? 'border-sky-300 bg-sky-50 text-sky-900'
                     : 'border-gray-300 bg-white text-gray-700'
                 }`}
               >
@@ -2209,6 +2182,8 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     )
   }
 
+  // Bearbeta-vyn är pausad i UI:t, men bildbankslogiken ligger kvar för nästa steg.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function renderImageRail() {
     const filters: Array<{ key: ImageFilter; label: string }> = [
       { key: 'unprocessed', label: 'Obehandlade' },
