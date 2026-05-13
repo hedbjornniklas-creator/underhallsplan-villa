@@ -3027,53 +3027,32 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       activeRoomIndex >= 0 && activeRoomIndex < filteredRooms.length - 1
         ? filteredRooms[activeRoomIndex + 1]
         : null
+    const closePanel = () => setActiveHybridRoomId(null)
     const mobileSplitStyle = {
       '--mobile-image-panel-height': `${mobileImagePanelHeight}%`,
     } as CSSProperties
 
     const panelContent = activeRoom ? (
       <>
-        <header className="border-b border-gray-200 px-4 py-3 md:px-6">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                Insida
-              </div>
-              <h3 className="mt-1 truncate text-lg font-semibold text-gray-900">
-                {getRoomHeading(activeRoom)}
-              </h3>
-              <p className="mt-1 text-sm text-gray-600">
-                {getRoomSummary(activeRoom)}
-              </p>
+        <header className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-4 md:px-6">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Insida
             </div>
-            <button
-              type="button"
-              onClick={() => setActiveHybridRoomId(null)}
-              className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
-            >
-              Stäng
-            </button>
+            <h3 className="mt-1 truncate text-xl font-semibold text-gray-900">
+              {getRoomHeading(activeRoom)}
+            </h3>
+            <p className="mt-1 text-xs text-gray-500">
+              {getRoomSummary(activeRoom)}
+            </p>
           </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => startEditRoom(activeRoom)}
-              disabled={isInspectionLocked}
-              className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Redigera rum
-            </button>
-            {!isSystemOtherRoom(activeRoom) && !isInspectionLocked && (
-              <button
-                type="button"
-                onClick={() => removeRoom(activeRoom.id)}
-                className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50"
-              >
-                Ta bort rum
-              </button>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={closePanel}
+            className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+          >
+            Stäng
+          </button>
         </header>
 
         <div
@@ -3130,17 +3109,9 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       <div className="space-y-5">
         <section className="rounded-2xl border border-gray-200 bg-white p-4 md:p-5 space-y-4">
           <header className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-xl font-semibold text-gray-900">
-                Byggnad – insida
-              </h2>
-              <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
-                Paneltest
-              </span>
-            </div>
-            <p className="text-sm text-gray-700">
-              Testvy. Sparning, låsning och kontrollpunkter använder samma logik som ordinarie vy.
-            </p>
+            <h2 className="text-xl font-semibold text-gray-900">
+              Byggnad – insida
+            </h2>
           </header>
 
           {isInspectionLocked && (
@@ -3249,7 +3220,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
         {activeRoom && panelContent && (
           <>
-            <aside className="fixed inset-y-0 right-0 z-50 hidden w-full max-w-[1280px] flex-col border-l border-gray-200 bg-white shadow-2xl lg:flex">
+            <div className="fixed inset-0 z-50 hidden bg-black/20 lg:block" onClick={closePanel} />
+            <aside className="fixed inset-y-0 right-0 z-50 hidden w-full max-w-[1280px] border-l border-gray-200 bg-white shadow-2xl lg:flex lg:flex-col">
               {panelContent}
             </aside>
             <section className="fixed inset-0 z-50 flex flex-col bg-white lg:hidden">
@@ -3386,15 +3358,16 @@ function ControlItemImagesSection({
   controlItem,
   images,
   onUpload,
-  onDelete,
   onDropImage,
   onUnlink,
   disabled = false,
 }: ControlItemImagesSectionProps) {
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const libraryInputRef = useRef<HTMLInputElement | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    if (disabled) return
     const files = Array.from(e.target.files ?? [])
     if (files.length === 0) return
     for (const file of files) {
@@ -3403,26 +3376,44 @@ function ControlItemImagesSection({
     e.target.value = ''
   }
 
-  const handleDrop = (event: DragEvent<HTMLElement>) => {
-    if (disabled) return
+  const canDropImage = (event: DragEvent<HTMLElement>) =>
+    !disabled &&
+    Array.from(event.dataTransfer.types).includes(IMAGE_DRAG_DATA_TYPE)
+
+  const handleDragOver = (event: DragEvent<HTMLElement>) => {
+    if (!canDropImage(event)) return
     event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = () => {
+    setIsDragOver(false)
+  }
+
+  const handleDrop = (event: DragEvent<HTMLElement>) => {
+    if (!canDropImage(event)) return
+    event.preventDefault()
+    setIsDragOver(false)
     const imageId = event.dataTransfer.getData(IMAGE_DRAG_DATA_TYPE)
     if (!imageId) return
     void onDropImage(controlItem, imageId)
   }
 
   return (
-    <section
-      className="space-y-2 border-t pt-2 mt-2"
-      onDragOver={event => {
-        if (disabled) return
-        event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
-      }}
-      onDrop={handleDrop}
-    >
-      <div className="flex items-center justify-between">
-        <h5 className="flex items-center gap-1.5 text-xs md:text-[11px] font-semibold text-gray-900">
+    <section className="space-y-2 border-t pt-2">
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`rounded-lg border border-dashed p-2 transition ${
+          isDragOver
+            ? 'border-sky-400 bg-sky-50 ring-2 ring-sky-100'
+            : 'border-gray-200 bg-white/70'
+        }`}
+      >
+      <header className="flex items-center justify-between">
+        <h5 className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-900">
           <span aria-hidden="true">{'\u{1F4F7}'}</span>
           <span>Bilder (denna kontrollpunkt)</span>
         </h5>
@@ -3430,21 +3421,21 @@ function ControlItemImagesSection({
           <button
             type="button"
             onClick={() => cameraInputRef.current?.click()}
+            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-800 hover:bg-gray-50"
             disabled={disabled}
-            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
           >
             Kamera
           </button>
           <button
             type="button"
             onClick={() => libraryInputRef.current?.click()}
+            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-800 hover:bg-gray-50"
             disabled={disabled}
-            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
           >
             Fil
           </button>
         </div>
-      </div>
+      </header>
 
       <input
         ref={cameraInputRef}
@@ -3464,8 +3455,8 @@ function ControlItemImagesSection({
       />
 
       {images.length === 0 && (
-        <p className="rounded-lg border border-dashed border-gray-300 bg-white px-3 py-2 text-xs md:text-[11px] text-gray-600">
-          Inga bilder ännu. Lägg till en bild eller dra hit en bild från bildbanken.
+        <p className="text-[10px] text-gray-500">
+          Inga bilder ännu för denna kontrollpunkt.
         </p>
       )}
 
@@ -3496,28 +3487,18 @@ function ControlItemImagesSection({
                 <button
                   type="button"
                   onClick={() => void onUnlink(img.id)}
-                  disabled={disabled}
                   className="absolute inset-x-1 bottom-1 rounded-full bg-black/75 px-1.5 py-0.5 text-[0px] font-semibold text-white"
                   title="Koppla loss"
                   aria-label="Koppla loss bild"
                 >
-                  <span className="text-[9px]">Loss</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onDelete(img.id)}
-                  disabled={disabled}
-                  className="absolute right-0.5 top-0.5 rounded-full bg-black/70 px-1 text-[9px] font-medium text-white"
-                  title="Radera bild"
-                  aria-label="Radera bild"
-                >
-                  ×
+                  <span className="text-[9px]">Koppla loss</span>
                 </button>
               </div>
             )
           })}
         </div>
       )}
+      </div>
     </section>
   )
 }
