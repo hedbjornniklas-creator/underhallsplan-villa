@@ -1,7 +1,7 @@
 'use client'
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { Camera, Check, Image as ImageIcon, Loader2, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Camera, Check, Image as ImageIcon, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import DebouncedTextarea from './DebouncedTextarea'
 import ControlPointSearchDialog, {
@@ -146,7 +146,6 @@ type ObStepRundaProps = {
 
 const IMAGE_BUCKET = 'inspection-images' as const
 const RED_STATUS: InspectionControlItem['status'] = null
-const UNCLASSIFIED_EXTERIOR = '__unclassified_exterior__'
 const OTHER_ROOM_TYPE_KEY = 'ovrigt'
 const OTHER_ROOM_DISPLAY_LABEL = 'Allmänt'
 
@@ -359,7 +358,8 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
   const [exteriorItems, setExteriorItems] = useState<SettingsExteriorItem[]>([])
   const [exteriorObservations, setExteriorObservations] = useState<InspectionExteriorObservation[]>([])
-  const [activeExteriorItemId, setActiveExteriorItemId] = useState<string>(UNCLASSIFIED_EXTERIOR)
+  const [activeExteriorItemId, setActiveExteriorItemId] = useState<string>('')
+  const [exteriorDialogOpen, setExteriorDialogOpen] = useState(false)
 
   const [controlItems, setControlItems] = useState<InspectionControlItem[]>([])
   const [outcomesByControlPointId, setOutcomesByControlPointId] = useState<Record<string, ControlPointOutcome[]>>({})
@@ -383,6 +383,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   const galleryInputRef = useRef<HTMLInputElement | null>(null)
   const pendingImageControlItemIdRef = useRef<string | null>(null)
   const lastScrollYRef = useRef(0)
+  const overlayHistoryPushedRef = useRef(false)
   const ensuredInteriorRoomIdsRef = useRef<Set<string>>(new Set())
   const ensuredExteriorItemIdsRef = useRef<Set<string>>(new Set())
 
@@ -425,7 +426,8 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     const existingOnFloor = rooms.filter(
       room => normalizeFloorKey(room.floor_label) === floor && room.room_type_key === roomTypeKey
     ).length
-    return `${getRoomTypeLabel(roomTypeKey)} ${existingOnFloor + 1}`
+    const roomTypeLabel = getRoomTypeLabel(roomTypeKey)
+    return existingOnFloor === 0 ? roomTypeLabel : `${roomTypeLabel} ${existingOnFloor + 1}`
   }
 
   const floorOptions = useMemo(() => {
@@ -472,7 +474,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       return `${floorLabelFromKey(activeRoom.floor_label)} > ${roomName}`
     }
     if (activeExteriorItem) return `Utsida > ${activeExteriorItem.label}`
-    return 'Utsida > Oklassad'
+    return 'Välj komponent'
   }, [area, activeRoom, activeExteriorItem, roomTypeLabelByKey])
 
   const activeQuickNote = useMemo(() => {
@@ -552,12 +554,58 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     () => images.filter(image => selectedImageIds.has(image.id)),
     [images, selectedImageIds]
   )
+  const overlayOpen = searchOpen || Boolean(freeNoteDialogId) || exteriorDialogOpen || roomDialogOpen
+
+  const closeTopOverlay = useCallback(() => {
+    if (searchOpen) {
+      setSearchOpen(false)
+      setSearchTerm('')
+      setSearchResults([])
+      setAiSearchHasRun(false)
+      return true
+    }
+    if (freeNoteDialogId) {
+      setFreeNoteDialogId(null)
+      return true
+    }
+    if (exteriorDialogOpen) {
+      setExteriorDialogOpen(false)
+      return true
+    }
+    if (roomDialogOpen) {
+      setRoomDialogOpen(false)
+      return true
+    }
+    return false
+  }, [searchOpen, freeNoteDialogId, exteriorDialogOpen, roomDialogOpen])
 
   useEffect(() => {
     if (!inspection?.id) return
     void loadAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inspection?.id])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (overlayOpen && !overlayHistoryPushedRef.current) {
+      window.history.pushState({ obRoundOverlay: true }, '', window.location.href)
+      overlayHistoryPushedRef.current = true
+    }
+    if (!overlayOpen) overlayHistoryPushedRef.current = false
+  }, [overlayOpen])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const handlePopState = () => {
+      if (!overlayHistoryPushedRef.current) return
+      const closed = closeTopOverlay()
+      if (closed) overlayHistoryPushedRef.current = false
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [closeTopOverlay])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -708,8 +756,8 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       if (!activeRoomId) {
         setActiveRoomId(normalizedRooms.find(room => room.id)?.id ?? null)
       }
-      if (activeExteriorItemId === UNCLASSIFIED_EXTERIOR && (exteriorRows ?? []).length > 0) {
-        setActiveExteriorItemId(((exteriorRows ?? []) as SettingsExteriorItem[])[0]?.id ?? UNCLASSIFIED_EXTERIOR)
+      if (!activeExteriorItemId && (exteriorRows ?? []).length > 0) {
+        setActiveExteriorItemId(((exteriorRows ?? []) as SettingsExteriorItem[])[0]?.id ?? '')
       }
     } catch (e: unknown) {
       console.error('load OB round failed:', e)
@@ -1186,7 +1234,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       interiorRoomId = activeRoom.id
     } else {
       if (!activeExteriorItem) {
-        setError('Välj komponent först. Oklassad utsida kan inte få kontrollpunkter.')
+        setError('Välj komponent först.')
         return
       }
       const observation = await ensureExteriorObservationAndDefaults(activeExteriorItem)
@@ -1242,7 +1290,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       interiorRoomId = activeRoom.id
     } else {
       if (!activeExteriorItem) {
-        setError('Välj komponent först. Oklassad utsida kan inte få notering.')
+        setError('Välj komponent först.')
         return null
       }
       const observation = await ensureExteriorObservationAndDefaults(activeExteriorItem)
@@ -1725,6 +1773,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
       {renderRoundSurface()}
       {roomDialogOpen && activeRoom ? renderRoomDialog() : null}
+      {exteriorDialogOpen && activeExteriorItem ? renderExteriorDialog() : null}
       {freeNoteDialogId ? renderFreeNoteDialog() : null}
 
       <ControlPointSearchDialog
@@ -1817,15 +1866,6 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
         {area === 'interior' ? renderRoomListBox() : renderExteriorPicker()}
 
-        {area === 'exterior' ? (
-          <div className="space-y-4">
-            {renderQuickNote()}
-            {renderControlItemsPanel(false)}
-            <div className="rounded-xl border border-gray-200 bg-white p-3">
-              {renderCameraPanel()}
-            </div>
-          </div>
-        ) : null}
       </section>
     )
   }
@@ -1878,7 +1918,11 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
             <div className="space-y-2">
               <select
                 value={newRoomTypeKey}
-                onChange={event => setNewRoomTypeKey(event.target.value)}
+                onChange={event => {
+                  const nextRoomTypeKey = event.target.value
+                  setNewRoomTypeKey(nextRoomTypeKey)
+                  setNewRoomLabel(nextRoomTypeKey ? getSuggestedRoomLabel(nextRoomTypeKey) : '')
+                }}
                 className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm text-gray-900"
                 disabled={isInspectionLocked}
               >
@@ -1892,7 +1936,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               <input
                 value={newRoomLabel}
                 onChange={event => setNewRoomLabel(event.target.value)}
-                placeholder={newRoomTypeKey ? getSuggestedRoomLabel(newRoomTypeKey) : 'Rumsnamn, valfritt'}
+                placeholder="Rumsnamn"
                 className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm text-gray-900"
                 disabled={isInspectionLocked}
               />
@@ -1928,21 +1972,15 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   function renderExteriorPicker() {
     return (
       <div className="grid gap-2 rounded-2xl border border-sky-200 bg-white p-3 shadow-lg ring-1 ring-sky-100 sm:grid-cols-2 md:p-4 lg:grid-cols-3">
-        <button
-          type="button"
-          onClick={() => setActiveExteriorItemId(UNCLASSIFIED_EXTERIOR)}
-          className={`rounded-xl border px-3 py-3 text-left text-sm font-semibold ${activeTileClass(
-            activeExteriorItemId === UNCLASSIFIED_EXTERIOR
-          )}`}
-        >
-          Oklassad utsida
-        </button>
         {exteriorItems.map(item => (
           <button
             key={item.id}
             type="button"
-            onClick={() => setActiveExteriorItemId(item.id)}
-            className={`rounded-xl border px-3 py-3 text-left text-sm font-semibold ${activeTileClass(
+            onClick={() => {
+              setActiveExteriorItemId(item.id)
+              setExteriorDialogOpen(true)
+            }}
+            className={`min-h-[94px] rounded-xl border-2 px-3 py-3 text-left text-base font-semibold shadow-sm ${activeTileClass(
               activeExteriorItemId === item.id
             )}`}
           >
@@ -2048,6 +2086,78 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     )
   }
 
+  function renderExteriorDialog() {
+    return (
+      <div className="fixed inset-0 z-[80] bg-white md:bg-black/35" role="dialog" aria-modal="true">
+        <div className="flex h-full flex-col bg-white md:mx-auto md:my-4 md:h-[calc(100%-2rem)] md:max-w-4xl md:rounded-2xl md:shadow-2xl">
+          <div className="border-b border-gray-200 px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Utsida</div>
+                <h2 className="text-lg font-semibold text-gray-950">{activeExteriorItem?.label}</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExteriorDialogOpen(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700"
+                aria-label="Stäng komponent"
+                title="Stäng komponent"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="mt-3 grid grid-cols-4 gap-2">
+              <button
+                type="button"
+                onClick={openSearch}
+                disabled={isInspectionLocked}
+                className={primaryButtonClass('min-h-12 flex-col gap-1 px-2 text-xs')}
+              >
+                <Search size={17} />
+                Kontrollpunkt
+              </button>
+              <button
+                type="button"
+                onClick={() => void createAndOpenFreeNote()}
+                disabled={isInspectionLocked}
+                className={primaryButtonClass('min-h-12 flex-col gap-1 px-2 text-xs')}
+              >
+                <Plus size={17} />
+                Notering
+              </button>
+              <button
+                type="button"
+                onClick={() => openCameraCapture()}
+                disabled={isInspectionLocked || uploading}
+                className={primaryButtonClass('min-h-12 flex-col gap-1 px-2 text-xs')}
+              >
+                <Camera size={17} />
+                Kamera
+              </button>
+              <button
+                type="button"
+                onClick={() => openGalleryPicker()}
+                disabled={isInspectionLocked || uploading}
+                className={primaryButtonClass('min-h-12 flex-col gap-1 px-2 text-xs')}
+              >
+                <ImageIcon size={17} />
+                Bilder
+              </button>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
+            <div className="space-y-4">
+              {renderControlItemsPanel(false, false)}
+              {renderQuickNote()}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   function renderRoomImageStrip() {
     if (!activeRoom) return null
     return (
@@ -2075,33 +2185,6 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
             Inga bilder tagna i rummet ännu.
           </div>
         )}
-      </div>
-    )
-  }
-
-  function renderCameraPanel() {
-    return (
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => openCameraCapture()}
-            disabled={uploading || isInspectionLocked}
-            className={primaryButtonClass('min-h-12')}
-          >
-            {uploading ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
-            Kamera
-          </button>
-          <button
-            type="button"
-            onClick={() => openGalleryPicker()}
-            disabled={uploading || isInspectionLocked}
-            className={primaryButtonClass('min-h-12')}
-          >
-            <ImageIcon size={18} />
-            Bilder
-          </button>
-        </div>
       </div>
     )
   }
@@ -2437,6 +2520,8 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       ? outcomes.find(outcome => outcome.id === item.selected_outcome_id)
       : null
     const linkedImages = images.filter(image => image.control_item_id === item.id)
+    const hasRiskText = Boolean(item.risk_text?.trim())
+    const hasFtuText = Boolean(item.ftu_text?.trim())
     return (
       <div
         key={item.id ?? `${item.title}-${item.sort_order}`}
@@ -2449,6 +2534,16 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
             {isFreeNote ? 'Fri notering' : selectedOutcome?.label ?? 'Notering'}
           </div>
           <div className="flex items-center gap-2">
+            {isFreeNote && hasRiskText ? (
+              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-amber-200 bg-amber-50 px-1.5 text-xs font-semibold text-amber-800">
+                R
+              </span>
+            ) : null}
+            {isFreeNote && hasFtuText ? (
+              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-sky-200 bg-sky-50 px-1.5 text-xs font-semibold text-sky-800">
+                F
+              </span>
+            ) : null}
             {linkedImages.length > 0 ? (
               <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-600">
                 {linkedImages.length} bild{linkedImages.length === 1 ? '' : 'er'}
