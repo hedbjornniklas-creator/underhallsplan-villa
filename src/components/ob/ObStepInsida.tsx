@@ -1,6 +1,15 @@
 ﻿'use client'
 
-import { useEffect, useMemo, useState, ChangeEvent, useRef } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useState,
+  ChangeEvent,
+  useRef,
+  type CSSProperties,
+  type DragEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import DebouncedTextarea from './DebouncedTextarea'
 import ControlPointSearchDialog, {
@@ -118,6 +127,47 @@ type InspectionImage = {
   label: string | null
   sort_order: number
   created_at?: string | null
+  capture_source?: string | null
+  source_area?: string | null
+  origin_interior_room_id?: string | null
+  origin_exterior_observation_id?: string | null
+  origin_exterior_item_id?: string | null
+  origin_floor_label?: string | null
+  origin_room_label?: string | null
+  origin_room_type_key?: string | null
+  origin_exterior_item_key?: string | null
+  captured_at?: string | null
+  processing_status?: string | null
+  ignored_at?: string | null
+}
+
+type SettingsExteriorItemLite = {
+  id: string
+  key: string
+  label: string
+}
+
+type InteriorPanelFilter = 'current' | 'floor' | 'interior' | 'all'
+type InteriorImageViewCount = 15 | 9 | 1
+type PanelTab = 'images' | 'quick_notes'
+type QuickNoteFilter = InteriorPanelFilter
+type MobileSplitDragState = {
+  pointerId: number
+  startY: number
+  startHeight: number
+  containerHeight: number
+}
+
+type RoundQuickNote = {
+  id: string
+  inspection_id: string
+  source_area: 'interior' | 'exterior'
+  interior_room_id: string | null
+  exterior_observation_id: string | null
+  exterior_item_id: string | null
+  note: string
+  created_at?: string | null
+  updated_at?: string | null
 }
 
 type ObStepInsidaProps = {
@@ -137,11 +187,58 @@ const normalizeInspectionStatus = (value: string | null | undefined) => {
 
 // Storage-bucket för bilder
 const IMAGE_BUCKET = 'inspection-images' as const
+const IMAGE_DRAG_DATA_TYPE = 'application/x-ob-insida-image-id'
 
 const getImagePublicUrl = (filePath: string) => {
   const { data } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(filePath)
   return data.publicUrl
 }
+
+const sortAttachedImages = (imageList: InspectionImage[]) =>
+  [...imageList].sort((a, b) => {
+    const sortCompare = (a.sort_order ?? 0) - (b.sort_order ?? 0)
+    if (sortCompare !== 0) return sortCompare
+    const left = new Date(a.created_at ?? 0).getTime()
+    const right = new Date(b.created_at ?? 0).getTime()
+    return left - right
+  })
+
+const removeImageFromImageMap = (
+  map: Record<string, InspectionImage[]>,
+  imageId: string
+) => {
+  const next: Record<string, InspectionImage[]> = {}
+  for (const [key, images] of Object.entries(map)) {
+    const filtered = images.filter(image => image.id !== imageId)
+    if (filtered.length > 0) next[key] = filtered
+  }
+  return next
+}
+
+const addImageToImageMap = (
+  map: Record<string, InspectionImage[]>,
+  targetId: string,
+  image: InspectionImage
+) => {
+  const next = removeImageFromImageMap(map, image.id)
+  next[targetId] = sortAttachedImages([...(next[targetId] ?? []), image])
+  return next
+}
+
+const removeImagesFromImageMap = (
+  map: Record<string, InspectionImage[]>,
+  imageIds: Set<string>
+) => {
+  const next: Record<string, InspectionImage[]> = {}
+  for (const [key, images] of Object.entries(map)) {
+    const filtered = images.filter(image => !imageIds.has(image.id))
+    if (filtered.length > 0) next[key] = filtered
+  }
+  return next
+}
+
+const isImageLinkedToNote = (image: InspectionImage) =>
+  Boolean(image.control_item_id || image.exterior_observation_id)
 
 // -----------------------------
 // Hjälpfunktion: bygg våningsnycklar från Förutsättningar (Byggnadstyp)
@@ -379,6 +476,17 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   const [imagesByControlItemId, setImagesByControlItemId] = useState<
     Record<string, InspectionImage[]>
   >({})
+  const [allInspectionImages, setAllInspectionImages] = useState<InspectionImage[]>([])
+  const [panelTab, setPanelTab] = useState<PanelTab>('images')
+  const [imageFilter, setImageFilter] = useState<InteriorPanelFilter>('current')
+  const [imageViewCount, setImageViewCount] = useState<InteriorImageViewCount>(9)
+  const [showLinkedImages, setShowLinkedImages] = useState(false)
+  const [selectedPanelImageIds, setSelectedPanelImageIds] = useState<Set<string>>(() => new Set())
+  const [quickNoteFilter, setQuickNoteFilter] = useState<QuickNoteFilter>('current')
+  const [quickNotes, setQuickNotes] = useState<RoundQuickNote[]>([])
+  const [exteriorItems, setExteriorItems] = useState<SettingsExteriorItemLite[]>([])
+  const [mobileImagePanelHeight, setMobileImagePanelHeight] = useState(42)
+  const [previewImage, setPreviewImage] = useState<InspectionImage | null>(null)
 
   // Våningar hämtade från Förutsättningar → Byggnadstyp
   const [derivedFloors, setDerivedFloors] = useState<string[]>([])
@@ -403,6 +511,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   const otherRoomEnsuredRef = useRef(false)
   const otherRoomItemsEnsuredRef = useRef(false)
   const hasLoadedCollapsedRoomsRef = useRef(false)
+  const mobileSplitContainerRef = useRef<HTMLDivElement | null>(null)
+  const mobileSplitDragRef = useRef<MobileSplitDragState | null>(null)
   const collapsedRoomsStorageKey = `ob:insida:collapsed:${inspection.id}:rooms`
 
   useEffect(() => {
@@ -447,6 +557,21 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   }, [collapsedRoomIds, collapsedRoomsStorageKey])
 
   useEffect(() => {
+    setImageFilter('current')
+    setQuickNoteFilter('current')
+    setPreviewImage(null)
+    setSelectedPanelImageIds(new Set())
+  }, [activeHybridRoomId])
+
+  useEffect(() => {
+    setSelectedPanelImageIds(prev => {
+      const existingIds = new Set(allInspectionImages.map(image => image.id))
+      const next = new Set(Array.from(prev).filter(imageId => existingIds.has(imageId)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [allInspectionImages])
+
+  useEffect(() => {
     if (!inspection?.id) return
 
     const loadAll = async () => {
@@ -459,6 +584,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           { data: gData, error: gErr },
           { data: oData, error: oErr },
           { data: rData, error: rErr },
+          { data: exteriorItemData, error: exteriorItemErr },
+          { data: quickNoteData, error: quickNoteErr },
         ] = await Promise.all([
           supabase
             .from('settings_interior_room_types')
@@ -481,12 +608,24 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             .eq('inspection_id', inspection.id)
             .order('floor_label', { ascending: true })
             .order('order_index', { ascending: true }),
+          supabase
+            .from('settings_exterior_items')
+            .select('id,key,label')
+            .eq('is_active', true)
+            .order('sort_order', { ascending: true }),
+          supabase
+            .from('inspection_round_quick_notes')
+            .select('*')
+            .eq('inspection_id', inspection.id)
+            .order('updated_at', { ascending: false }),
         ])
 
         if (rtErr) throw rtErr
         if (gErr) throw gErr
         if (oErr) throw oErr
         if (rErr) throw rErr
+        if (exteriorItemErr) throw exteriorItemErr
+        if (quickNoteErr) throw quickNoteErr
 
         const roomTypesArr = (rtData ?? []) as RoomType[]
         const filteredRoomTypes = roomTypesArr.filter(rt => {
@@ -497,6 +636,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
         setRoomTypes(sortRoomTypesByLabel(filteredRoomTypes))
         setGroups((gData ?? []) as InteriorGroup[])
         setOptions((oData ?? []) as InteriorOption[])
+        setExteriorItems((exteriorItemData ?? []) as SettingsExteriorItemLite[])
+        setQuickNotes((quickNoteData ?? []) as RoundQuickNote[])
 
         const roomsArr = (rData ?? []) as Array<InteriorRoom & { values?: unknown }>
         const normalizedRooms: InteriorRoom[] = roomsArr.map(r => ({
@@ -688,6 +829,16 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           imgMap[key].push(img)
         }
         setImagesByControlItemId(imgMap)
+
+        const { data: allImgData, error: allImgErr } = await supabase
+          .from('inspection_images')
+          .select('*')
+          .eq('inspection_id', inspection.id)
+          .order('created_at', { ascending: false })
+
+        if (allImgErr) throw allImgErr
+
+        setAllInspectionImages((allImgData ?? []) as InspectionImage[])
 
         // 5) Sätt aktivt plan
         if (floorsFromConditions.length) {
@@ -1178,6 +1329,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
         if (imgDeleteErr) {
           console.error('delete inspection_images (insida) failed:', imgDeleteErr)
         }
+
+        setAllInspectionImages(prev => prev.filter(img => !imageIds.includes(img.id)))
       }
 
       const { error } = await supabase
@@ -1538,6 +1691,9 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           file_path: path,
           label: null,
           sort_order: maxSort + 10,
+          capture_source: 'legacy_upload',
+          source_area: 'interior',
+          origin_interior_room_id: controlItem.interior_room_id,
         })
         .select('*')
         .single()
@@ -1558,6 +1714,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           ),
         }
       })
+      setAllInspectionImages(prev => [img, ...prev.filter(image => image.id !== img.id)])
     } catch (e: unknown) {
       console.error('handleUploadImageForControlItem (insida) failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte ladda upp bild.')
@@ -1602,12 +1759,245 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           [targetControlId!]: prevArr.filter(img => img.id !== imageId),
         }
       })
+      setAllInspectionImages(prev => prev.filter(img => img.id !== imageId))
     } catch (e: unknown) {
       console.error('handleDeleteImage (insida) failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte ta bort bild.')
     } finally {
       setSaving(false)
     }
+  }
+
+  const updateImageInAllImages = (updatedImage: InspectionImage) => {
+    setAllInspectionImages(prev =>
+      prev.some(image => image.id === updatedImage.id)
+        ? prev.map(image => (image.id === updatedImage.id ? updatedImage : image))
+        : [updatedImage, ...prev]
+    )
+  }
+
+  const buildUnlinkedInteriorImagePatch = (image: InspectionImage) => {
+    const linkedControlItem = image.control_item_id
+      ? controlItems.find(item => item.id === image.control_item_id) ?? null
+      : null
+    const isOriginallyExterior =
+      Boolean(image.origin_exterior_item_id || image.origin_exterior_observation_id) ||
+      (image.source_area === 'exterior' &&
+        !image.origin_interior_room_id &&
+        !image.interior_room_id)
+
+    if (isOriginallyExterior) {
+      return {
+        control_item_id: null,
+        exterior_observation_id: null,
+        interior_room_id: null,
+        source_area: 'exterior',
+        origin_exterior_item_id: image.origin_exterior_item_id ?? null,
+        origin_exterior_observation_id: image.origin_exterior_observation_id ?? null,
+        origin_exterior_item_key: image.origin_exterior_item_key ?? null,
+      }
+    }
+
+    const sourceRoomId =
+      image.origin_interior_room_id ??
+      image.interior_room_id ??
+      linkedControlItem?.interior_room_id ??
+      null
+    const sourceRoom = sourceRoomId
+      ? rooms.find(room => room.id === sourceRoomId) ?? null
+      : null
+
+    return {
+      control_item_id: null,
+      exterior_observation_id: null,
+      interior_room_id: null,
+      source_area: 'interior',
+      origin_interior_room_id: sourceRoomId,
+      origin_floor_label: image.origin_floor_label ?? sourceRoom?.floor_label ?? null,
+      origin_room_label: image.origin_room_label ?? sourceRoom?.room_label ?? null,
+      origin_room_type_key: image.origin_room_type_key ?? sourceRoom?.room_type_key ?? null,
+    }
+  }
+
+  const moveImageToControlItem = async (
+    imageId: string,
+    controlItem: InspectionControlItem
+  ) => {
+    if (isInspectionLocked) return
+    if (!controlItem.id) return
+
+    const sourceImage = allInspectionImages.find(image => image.id === imageId)
+    if (!sourceImage) {
+      setError('Bilden hittades inte. Uppdatera sidan och försök igen.')
+      return
+    }
+
+    if (sourceImage.control_item_id === controlItem.id) return
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const targetImages = (imagesByControlItemId[controlItem.id] || []).filter(
+        image => image.id !== imageId
+      )
+      const maxSort =
+        targetImages.length > 0
+          ? Math.max(...targetImages.map(image => image.sort_order || 0))
+          : 0
+
+      const { data, error: updateError } = await supabase
+        .from('inspection_images')
+        .update({
+          control_item_id: controlItem.id,
+          interior_room_id: controlItem.interior_room_id,
+          exterior_observation_id: null,
+          sort_order: maxSort + 10,
+        })
+        .eq('id', imageId)
+        .eq('inspection_id', inspection.id)
+        .select('*')
+        .single()
+
+      if (updateError) throw updateError
+
+      const updatedImage = data as InspectionImage
+      setImagesByControlItemId(prev => addImageToImageMap(prev, controlItem.id!, updatedImage))
+      updateImageInAllImages(updatedImage)
+    } catch (e: unknown) {
+      console.error('moveImageToControlItem failed', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte koppla bilden till noteringen.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const unlinkImageFromNote = async (imageId: string) => {
+    if (isInspectionLocked) return
+
+    const sourceImage = allInspectionImages.find(image => image.id === imageId)
+    if (!sourceImage) {
+      setError('Bilden hittades inte. Uppdatera sidan och försök igen.')
+      return
+    }
+
+    if (!isImageLinkedToNote(sourceImage)) return
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const { data, error: updateError } = await supabase
+        .from('inspection_images')
+        .update(buildUnlinkedInteriorImagePatch(sourceImage))
+        .eq('id', imageId)
+        .eq('inspection_id', inspection.id)
+        .select('*')
+        .single()
+
+      if (updateError) throw updateError
+
+      const updatedImage = data as InspectionImage
+      setImagesByControlItemId(prev => removeImageFromImageMap(prev, imageId))
+      updateImageInAllImages(updatedImage)
+    } catch (e: unknown) {
+      console.error('unlinkImageFromNote failed', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte koppla loss bilden.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const togglePanelImageSelection = (imageId: string) => {
+    setSelectedPanelImageIds(prev => {
+      const next = new Set(prev)
+      if (next.has(imageId)) next.delete(imageId)
+      else next.add(imageId)
+      return next
+    })
+  }
+
+  const deleteSelectedPanelImages = async () => {
+    if (isInspectionLocked) return
+    const selectedIds = Array.from(selectedPanelImageIds)
+    if (selectedIds.length === 0) return
+    if (!confirm(`Radera ${selectedIds.length} bild${selectedIds.length === 1 ? '' : 'er'}?`)) return
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const selectedIdSet = new Set(selectedIds)
+      const selectedImages = allInspectionImages.filter(image => selectedIdSet.has(image.id))
+
+      const { error: deleteError } = await supabase
+        .from('inspection_images')
+        .delete()
+        .eq('inspection_id', inspection.id)
+        .in('id', selectedIds)
+
+      if (deleteError) throw deleteError
+
+      const storagePaths = selectedImages.map(image => image.file_path).filter(Boolean)
+      if (storagePaths.length > 0) {
+        const { error: storageError } = await supabase.storage.from(IMAGE_BUCKET).remove(storagePaths)
+        if (storageError) console.error('delete selected interior images from storage failed:', storageError)
+      }
+
+      setImagesByControlItemId(prev => removeImagesFromImageMap(prev, selectedIdSet))
+      setAllInspectionImages(prev => prev.filter(image => !selectedIdSet.has(image.id)))
+      setSelectedPanelImageIds(new Set())
+    } catch (e: unknown) {
+      console.error('deleteSelectedPanelImages failed', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte radera markerade bilder.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleImageDragStart = (
+    event: DragEvent<HTMLButtonElement>,
+    image: InspectionImage
+  ) => {
+    if (isInspectionLocked) {
+      event.preventDefault()
+      return
+    }
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData(IMAGE_DRAG_DATA_TYPE, image.id)
+  }
+
+  const handleMobileSplitPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const container = mobileSplitContainerRef.current
+    if (!container) return
+
+    const rect = container.getBoundingClientRect()
+    if (rect.height <= 0) return
+
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    mobileSplitDragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startHeight: mobileImagePanelHeight,
+      containerHeight: rect.height,
+    }
+  }
+
+  const handleMobileSplitPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = mobileSplitDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+
+    const deltaY = event.clientY - drag.startY
+    const nextHeight = drag.startHeight - (deltaY / drag.containerHeight) * 100
+    setMobileImagePanelHeight(Math.min(72, Math.max(24, nextHeight)))
+  }
+
+  const handleMobileSplitPointerEnd = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = mobileSplitDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    mobileSplitDragRef.current = null
+    event.currentTarget.releasePointerCapture(event.pointerId)
   }
 
   // -----------------------------
@@ -1875,6 +2265,461 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     )
   }
 
+  const sortImagesNewestFirst = (imageList: InspectionImage[]) =>
+    [...imageList].sort((a, b) => {
+      const left = new Date(a.captured_at ?? a.created_at ?? 0).getTime()
+      const right = new Date(b.captured_at ?? b.created_at ?? 0).getTime()
+      if (left !== right) return right - left
+      return (b.sort_order ?? 0) - (a.sort_order ?? 0)
+    })
+
+  const uniqueImages = (imageList: InspectionImage[]) => {
+    const seen = new Set<string>()
+    return imageList.filter(image => {
+      if (seen.has(image.id)) return false
+      seen.add(image.id)
+      return true
+    })
+  }
+
+  const isInteriorImage = (image: InspectionImage) =>
+    image.source_area === 'interior' ||
+    Boolean(image.origin_interior_room_id) ||
+    Boolean(image.interior_room_id) ||
+    Boolean(
+      image.control_item_id &&
+        controlItems.some(
+          item => item.id === image.control_item_id && Boolean(item.interior_room_id)
+        )
+    )
+
+  const getRoomIdsForFloor = (floorLabel: string | null | undefined) => {
+    const targetFloor = normalizeFloorKey(floorLabel)
+    return new Set(
+      rooms
+        .filter(room => normalizeFloorKey(room.floor_label) === targetFloor)
+        .map(room => room.id)
+        .filter((id): id is string => !!id)
+    )
+  }
+
+  const getImagesForRoom = (room: InteriorRoom) => {
+    if (!room.id) return []
+    const roomControlItemIds = new Set(
+      (controlItemsByRoomId[room.id] || [])
+        .map(item => item.id)
+        .filter((id): id is string => !!id)
+    )
+
+    return sortImagesNewestFirst(
+      uniqueImages(
+        allInspectionImages.filter(
+          image =>
+            image.origin_interior_room_id === room.id ||
+            image.interior_room_id === room.id ||
+            (image.control_item_id ? roomControlItemIds.has(image.control_item_id) : false)
+        )
+      )
+    )
+  }
+
+  const getImagesForFloor = (room: InteriorRoom) => {
+    const roomIds = getRoomIdsForFloor(room.floor_label)
+    const floorControlItemIds = new Set(
+      Array.from(roomIds).flatMap(roomId =>
+        (controlItemsByRoomId[roomId] || [])
+          .map(item => item.id)
+          .filter((id): id is string => !!id)
+      )
+    )
+
+    return sortImagesNewestFirst(
+      uniqueImages(
+        allInspectionImages.filter(
+          image =>
+            (image.origin_interior_room_id
+              ? roomIds.has(image.origin_interior_room_id)
+              : false) ||
+            (image.interior_room_id ? roomIds.has(image.interior_room_id) : false) ||
+            (image.control_item_id ? floorControlItemIds.has(image.control_item_id) : false)
+        )
+      )
+    )
+  }
+
+  const getFilteredPanelImages = (room: InteriorRoom) => {
+    const rawImages =
+      imageFilter === 'current'
+        ? getImagesForRoom(room)
+        : imageFilter === 'floor'
+          ? getImagesForFloor(room)
+          : imageFilter === 'interior'
+            ? sortImagesNewestFirst(uniqueImages(allInspectionImages.filter(isInteriorImage)))
+            : sortImagesNewestFirst(uniqueImages(allInspectionImages))
+
+    return showLinkedImages ? rawImages : rawImages.filter(image => !isImageLinkedToNote(image))
+  }
+
+  const quickNoteHasText = (note: RoundQuickNote) => note.note.trim().length > 0
+
+  const getQuickNoteContext = (note: RoundQuickNote) => {
+    if (note.source_area === 'exterior') {
+      const exteriorItem = note.exterior_item_id
+        ? exteriorItems.find(item => item.id === note.exterior_item_id)
+        : null
+      return `Utsida > ${exteriorItem?.label ?? 'Komponent'}`
+    }
+
+    const room = note.interior_room_id
+      ? rooms.find(interiorRoom => interiorRoom.id === note.interior_room_id)
+      : null
+    const floorLabel = getFloorLabel(room?.floor_label ?? '')
+    const roomLabel = room?.room_label?.trim() || room?.room_type_key?.trim() || 'Rum'
+    return `Insida > ${floorLabel} > ${roomLabel}`
+  }
+
+  const getFilteredQuickNotes = (
+    room: InteriorRoom,
+    filter: QuickNoteFilter = quickNoteFilter
+  ) => {
+    const visibleNotes = quickNotes.filter(quickNoteHasText)
+    const floorRoomIds = getRoomIdsForFloor(room.floor_label)
+
+    if (filter === 'current') {
+      return visibleNotes.filter(
+        note => note.source_area === 'interior' && note.interior_room_id === room.id
+      )
+    }
+
+    if (filter === 'floor') {
+      return visibleNotes.filter(
+        note =>
+          note.source_area === 'interior' &&
+          Boolean(note.interior_room_id && floorRoomIds.has(note.interior_room_id))
+      )
+    }
+
+    if (filter === 'interior') {
+      return visibleNotes.filter(note => note.source_area === 'interior')
+    }
+
+    return visibleNotes
+  }
+
+  const deleteQuickNote = async (noteId: string) => {
+    if (isInspectionLocked) return
+    if (!confirm('Radera snabbanteckningen?')) return
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const { error: deleteError } = await supabase
+        .from('inspection_round_quick_notes')
+        .delete()
+        .eq('inspection_id', inspection.id)
+        .eq('id', noteId)
+
+      if (deleteError) throw deleteError
+
+      setQuickNotes(prev => prev.filter(note => note.id !== noteId))
+    } catch (e: unknown) {
+      console.error('deleteQuickNote failed', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte radera snabbanteckningen.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const renderImageProcessingPanel = (room: InteriorRoom) => {
+    const currentImages = getImagesForRoom(room)
+    const floorImages = getImagesForFloor(room)
+    const interiorImages = sortImagesNewestFirst(uniqueImages(allInspectionImages.filter(isInteriorImage)))
+    const filteredImages = getFilteredPanelImages(room)
+    const filteredQuickNotes = getFilteredQuickNotes(room)
+    const countVisibleImages = (imageList: InspectionImage[]) =>
+      showLinkedImages ? imageList.length : imageList.filter(image => !isImageLinkedToNote(image)).length
+    const filters: Array<{ key: InteriorPanelFilter; label: string; count: number }> = [
+      { key: 'current', label: 'Aktuell', count: countVisibleImages(currentImages) },
+      { key: 'floor', label: 'Plan', count: countVisibleImages(floorImages) },
+      { key: 'interior', label: 'Insida', count: countVisibleImages(interiorImages) },
+      { key: 'all', label: 'Alla', count: countVisibleImages(allInspectionImages) },
+    ]
+    const quickNoteFilters: Array<{ key: QuickNoteFilter; label: string; count: number }> = [
+      { key: 'current', label: 'Aktuell', count: getFilteredQuickNotes(room, 'current').length },
+      { key: 'floor', label: 'Plan', count: getFilteredQuickNotes(room, 'floor').length },
+      { key: 'interior', label: 'Insida', count: getFilteredQuickNotes(room, 'interior').length },
+      { key: 'all', label: 'Alla', count: getFilteredQuickNotes(room, 'all').length },
+    ]
+    const panelTabs: Array<{ key: PanelTab; label: string }> = [
+      { key: 'images', label: 'Bilder' },
+      { key: 'quick_notes', label: 'Snabbanteckningar' },
+    ]
+    const imageViewCounts: InteriorImageViewCount[] = [15, 9, 1]
+    const imageGridClass =
+      imageViewCount === 1
+        ? 'grid grid-cols-1 gap-3'
+        : imageViewCount === 15
+          ? 'grid grid-cols-5 gap-1.5 sm:gap-2'
+          : 'grid grid-cols-3 gap-2'
+    const imageClass =
+      imageViewCount === 1
+        ? 'max-h-[65vh] w-full object-contain bg-gray-100'
+        : 'aspect-square w-full object-cover transition group-hover:scale-[1.02]'
+
+    return (
+      <aside className="flex min-h-0 flex-col border-t border-gray-200 bg-gray-50/70 lg:h-auto lg:border-l lg:border-t-0">
+        <div className="border-b border-gray-200 bg-white">
+          <div className="flex gap-1 border-b border-gray-200 px-4 pt-3" role="tablist" aria-label="Panelinnehåll">
+            {panelTabs.map(tab => (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                onClick={() => setPanelTab(tab.key)}
+                className={`rounded-t-lg border border-b-0 px-3 py-2 text-xs font-semibold transition ${
+                  panelTab === tab.key
+                    ? 'border-gray-200 bg-gray-50 text-gray-900'
+                    : 'border-transparent bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-800'
+                }`}
+                aria-selected={panelTab === tab.key}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {panelTab === 'images' ? (
+            <div className="px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Bilder</div>
+                <div className="flex flex-wrap gap-2">
+                  {filters.map(filter => (
+                    <button
+                      key={filter.key}
+                      type="button"
+                      onClick={() => {
+                        setImageFilter(filter.key)
+                        setSelectedPanelImageIds(new Set())
+                      }}
+                      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                        imageFilter === filter.key
+                          ? 'border-gray-900 bg-gray-900 text-white'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      {filter.label} <span className="ml-1 opacity-70">{filter.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowLinkedImages(prev => !prev)
+                      setSelectedPanelImageIds(new Set())
+                    }}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                      showLinkedImages
+                        ? 'border-rose-700 bg-rose-700 text-white'
+                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    Visa kopplade
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteSelectedPanelImages()}
+                    disabled={isInspectionLocked || selectedPanelImageIds.size === 0}
+                    className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Radera{selectedPanelImageIds.size > 0 ? ` ${selectedPanelImageIds.size}` : ''}
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {imageViewCounts.map(count => (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => setImageViewCount(count)}
+                      className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition ${
+                        imageViewCount === count
+                          ? 'border-sky-700 bg-sky-700 text-white'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                      aria-label={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
+                      title={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={
+                          count === 15
+                            ? 'grid h-5 w-5 grid-cols-3 gap-0.5'
+                            : count === 9
+                              ? 'grid h-5 w-5 grid-cols-2 gap-0.5'
+                              : 'grid h-5 w-5 grid-cols-1 gap-0.5'
+                        }
+                      >
+                        {Array.from({ length: count === 15 ? 9 : count === 9 ? 4 : 1 }).map((_, index) => (
+                          <span
+                            key={index}
+                            className={`rounded-[1px] ${imageViewCount === count ? 'bg-white' : 'bg-gray-600'}`}
+                          />
+                        ))}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Snabbanteckningar
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {quickNoteFilters.map(filter => (
+                    <button
+                      key={filter.key}
+                      type="button"
+                      onClick={() => setQuickNoteFilter(filter.key)}
+                      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                        quickNoteFilter === filter.key
+                          ? 'border-gray-900 bg-gray-900 text-white'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      {filter.label} <span className="ml-1 opacity-70">{filter.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {panelTab === 'images' ? (
+            filteredImages.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-white px-3 py-8 text-center text-sm text-gray-600">
+                Inga bilder i valt filter.
+              </div>
+            ) : (
+              <div className={imageGridClass}>
+                {filteredImages.map(image => {
+                  const isLinked = isImageLinkedToNote(image)
+                  const isSelected = selectedPanelImageIds.has(image.id)
+                  return (
+                    <div
+                      key={image.id}
+                      className={`relative overflow-hidden rounded-xl border bg-white shadow-sm transition ${
+                        isLinked
+                          ? 'border-rose-400 opacity-75 ring-2 ring-rose-100'
+                          : isSelected
+                            ? 'border-gray-900 ring-2 ring-gray-900/10'
+                            : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setPreviewImage(image)}
+                        draggable={!isInspectionLocked}
+                        onDragStart={event => handleImageDragStart(event, image)}
+                        className="group block w-full cursor-grab overflow-hidden text-left focus:outline-none focus:ring-2 focus:ring-sky-300 active:cursor-grabbing"
+                        aria-label="Visa bild"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={getImagePublicUrl(image.file_path)} alt="" className={imageClass} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => togglePanelImageSelection(image.id)}
+                        disabled={isInspectionLocked}
+                        className={`absolute left-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded border text-[11px] font-bold shadow-sm ${
+                          isSelected
+                            ? 'border-gray-900 bg-gray-900 text-white'
+                            : 'border-white/80 bg-white/90 text-transparent'
+                        }`}
+                        aria-label={isSelected ? 'Avmarkera bild' : 'Markera bild'}
+                        title={isSelected ? 'Avmarkera bild' : 'Markera bild'}
+                      >
+                        ✓
+                      </button>
+                      {isLinked ? (
+                        <span className="absolute bottom-1.5 left-1.5 rounded-full bg-rose-700 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
+                          Kopplad
+                        </span>
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          ) : filteredQuickNotes.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-white px-3 py-8 text-center text-sm text-gray-600">
+              Inga snabbanteckningar i valt filter.
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200 rounded-xl border border-gray-200 bg-white">
+              {filteredQuickNotes.map(note => (
+                <article key={note.id} className="px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                        {getQuickNoteContext(note)}
+                      </div>
+                      <p className="whitespace-pre-wrap break-words text-sm leading-6 text-gray-900">
+                        {note.note}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void deleteQuickNote(note.id)}
+                      disabled={isInspectionLocked}
+                      className="shrink-0 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Radera
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      </aside>
+    )
+  }
+
+  const renderImagePreview = () => {
+    if (!previewImage) return null
+    return (
+      <div className="fixed inset-0 z-[80] bg-black/85 p-4" role="dialog" aria-modal="true">
+        <div className="flex h-full flex-col">
+          <div className="mb-3 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setPreviewImage(null)}
+              className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+            >
+              Stäng
+            </button>
+          </div>
+          <div className="min-h-0 flex-1">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={getImagePublicUrl(previewImage.file_path)}
+              alt=""
+              className="h-full w-full object-contain"
+            />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const renderRoomCard = (
     room: InteriorRoom,
     options: { forceExpanded?: boolean; embedded?: boolean; hideHeader?: boolean } = {}
@@ -2050,6 +2895,10 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                 imagesByControlItemId={imagesByControlItemId}
                 onUploadImage={handleUploadImageForControlItem}
                 onDeleteImage={handleDeleteImage}
+                onDropImage={(controlItem, imageId) => {
+                  void moveImageToControlItem(imageId, controlItem)
+                }}
+                onUnlinkImage={unlinkImageFromNote}
               />
             )}
           </>
@@ -2178,6 +3027,9 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       activeRoomIndex >= 0 && activeRoomIndex < filteredRooms.length - 1
         ? filteredRooms[activeRoomIndex + 1]
         : null
+    const mobileSplitStyle = {
+      '--mobile-image-panel-height': `${mobileImagePanelHeight}%`,
+    } as CSSProperties
 
     const panelContent = activeRoom ? (
       <>
@@ -2224,12 +3076,33 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
-          {renderRoomCard(activeRoom, {
-            forceExpanded: true,
-            embedded: true,
-            hideHeader: true,
-          })}
+        <div
+          ref={mobileSplitContainerRef}
+          className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_460px]"
+          style={mobileSplitStyle}
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
+            {renderRoomCard(activeRoom, {
+              forceExpanded: true,
+              embedded: true,
+              hideHeader: true,
+            })}
+          </div>
+          <button
+            type="button"
+            onPointerDown={handleMobileSplitPointerDown}
+            onPointerMove={handleMobileSplitPointerMove}
+            onPointerUp={handleMobileSplitPointerEnd}
+            onPointerCancel={handleMobileSplitPointerEnd}
+            className="flex h-5 shrink-0 touch-none items-center justify-center border-y border-gray-200 bg-gray-50 text-gray-400 lg:hidden"
+            aria-label="Ändra höjd på bildbanken"
+            title="Dra för att ändra höjd på bildbanken"
+          >
+            <span className="h-1 w-12 rounded-full bg-gray-300" />
+          </button>
+          <div className="h-[var(--mobile-image-panel-height)] min-h-0 shrink-0 lg:contents">
+            {renderImageProcessingPanel(activeRoom)}
+          </div>
         </div>
 
         <footer className="flex items-center justify-between gap-2 border-t border-gray-200 px-4 py-3 md:px-6">
@@ -2390,6 +3263,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             Sparar…
           </div>
         )}
+        {renderImagePreview()}
       </div>
     )
   }
@@ -2503,6 +3377,9 @@ type ControlItemImagesSectionProps = {
   images: InspectionImage[]
   onUpload: (ci: InspectionControlItem, file: File) => void | Promise<void>
   onDelete: (imageId: string) => void
+  onDropImage: (ci: InspectionControlItem, imageId: string) => void | Promise<void>
+  onUnlink: (imageId: string) => void | Promise<void>
+  disabled?: boolean
 }
 
 function ControlItemImagesSection({
@@ -2510,6 +3387,9 @@ function ControlItemImagesSection({
   images,
   onUpload,
   onDelete,
+  onDropImage,
+  onUnlink,
+  disabled = false,
 }: ControlItemImagesSectionProps) {
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const libraryInputRef = useRef<HTMLInputElement | null>(null)
@@ -2523,8 +3403,24 @@ function ControlItemImagesSection({
     e.target.value = ''
   }
 
+  const handleDrop = (event: DragEvent<HTMLElement>) => {
+    if (disabled) return
+    event.preventDefault()
+    const imageId = event.dataTransfer.getData(IMAGE_DRAG_DATA_TYPE)
+    if (!imageId) return
+    void onDropImage(controlItem, imageId)
+  }
+
   return (
-    <section className="space-y-2 border-t pt-2 mt-2">
+    <section
+      className="space-y-2 border-t pt-2 mt-2"
+      onDragOver={event => {
+        if (disabled) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+      }}
+      onDrop={handleDrop}
+    >
       <div className="flex items-center justify-between">
         <h5 className="flex items-center gap-1.5 text-xs md:text-[11px] font-semibold text-gray-900">
           <span aria-hidden="true">{'\u{1F4F7}'}</span>
@@ -2534,6 +3430,7 @@ function ControlItemImagesSection({
           <button
             type="button"
             onClick={() => cameraInputRef.current?.click()}
+            disabled={disabled}
             className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
           >
             Kamera
@@ -2541,6 +3438,7 @@ function ControlItemImagesSection({
           <button
             type="button"
             onClick={() => libraryInputRef.current?.click()}
+            disabled={disabled}
             className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
           >
             Fil
@@ -2566,8 +3464,8 @@ function ControlItemImagesSection({
       />
 
       {images.length === 0 && (
-        <p className="text-xs md:text-[11px] text-gray-600">
-          Inga bilder ännu. Lägg till en bild från kamera eller galleri.
+        <p className="rounded-lg border border-dashed border-gray-300 bg-white px-3 py-2 text-xs md:text-[11px] text-gray-600">
+          Inga bilder ännu. Lägg till en bild eller dra hit en bild från bildbanken.
         </p>
       )}
 
@@ -2578,8 +3476,18 @@ function ControlItemImagesSection({
             return (
               <div
                 key={img.id}
+                draggable={!disabled}
+                onDragStart={event => {
+                  if (disabled) {
+                    event.preventDefault()
+                    return
+                  }
+                  event.dataTransfer.effectAllowed = 'move'
+                  event.dataTransfer.setData(IMAGE_DRAG_DATA_TYPE, img.id)
+                }}
                 className="relative h-16 w-16 overflow-hidden rounded-lg border bg-gray-100"
               >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={url}
                   alt={img.label || 'Bild'}
@@ -2587,8 +3495,21 @@ function ControlItemImagesSection({
                 />
                 <button
                   type="button"
+                  onClick={() => void onUnlink(img.id)}
+                  disabled={disabled}
+                  className="absolute inset-x-1 bottom-1 rounded-full bg-black/75 px-1.5 py-0.5 text-[0px] font-semibold text-white"
+                  title="Koppla loss"
+                  aria-label="Koppla loss bild"
+                >
+                  <span className="text-[9px]">Loss</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => onDelete(img.id)}
+                  disabled={disabled}
                   className="absolute right-0.5 top-0.5 rounded-full bg-black/70 px-1 text-[9px] font-medium text-white"
+                  title="Radera bild"
+                  aria-label="Radera bild"
                 >
                   ×
                 </button>
@@ -2624,6 +3545,8 @@ type RoomControlPointsSectionProps = {
   imagesByControlItemId: Record<string, InspectionImage[]>
   onUploadImage: (ci: InspectionControlItem, file: File) => void
   onDeleteImage: (imageId: string) => void
+  onDropImage: (ci: InspectionControlItem, imageId: string) => void
+  onUnlinkImage: (imageId: string) => void
 }
 
 function RoomControlPointsSection({
@@ -2643,6 +3566,8 @@ function RoomControlPointsSection({
   imagesByControlItemId,
   onUploadImage,
   onDeleteImage,
+  onDropImage,
+  onUnlinkImage,
 }: RoomControlPointsSectionProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState<ControlPointLite[]>([])
@@ -3159,6 +4084,9 @@ function RoomControlPointsSection({
                       images={ciImages}
                       onUpload={onUploadImage}
                       onDelete={onDeleteImage}
+                      onDropImage={onDropImage}
+                      onUnlink={onUnlinkImage}
+                      disabled={isInspectionLocked}
                     />
                   )}
                 </>
@@ -3406,6 +4334,9 @@ function RoomControlPointsSection({
                       images={imagesByControlItemId[baseItem.id] || []}
                       onUpload={onUploadImage}
                       onDelete={onDeleteImage}
+                      onDropImage={onDropImage}
+                      onUnlink={onUnlinkImage}
+                      disabled={isInspectionLocked}
                     />
                   )}
                 </div>
@@ -3497,6 +4428,9 @@ function RoomControlPointsSection({
                             images={ciImages}
                             onUpload={onUploadImage}
                             onDelete={onDeleteImage}
+                            onDropImage={onDropImage}
+                            onUnlink={onUnlinkImage}
+                            disabled={isInspectionLocked}
                           />
                         )}
                       </div>
