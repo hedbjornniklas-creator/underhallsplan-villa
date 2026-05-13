@@ -3249,7 +3249,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
         {activeRoom && panelContent && (
           <>
-            <aside className="fixed inset-y-0 right-0 z-50 hidden w-full max-w-4xl flex-col border-l border-gray-200 bg-white shadow-2xl lg:flex">
+            <aside className="fixed inset-y-0 right-0 z-50 hidden w-full max-w-[1280px] flex-col border-l border-gray-200 bg-white shadow-2xl lg:flex">
               {panelContent}
             </aside>
             <section className="fixed inset-0 z-50 flex flex-col bg-white lg:hidden">
