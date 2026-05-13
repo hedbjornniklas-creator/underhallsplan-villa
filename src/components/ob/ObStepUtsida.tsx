@@ -6,6 +6,7 @@ import {
   ChangeEvent,
   useRef,
   useMemo,
+  useCallback,
   type CSSProperties,
   type DragEvent,
   type PointerEvent as ReactPointerEvent,
@@ -158,6 +159,17 @@ type MobileSplitDragState = {
   startHeight: number
   containerHeight: number
 }
+type ImageBankTarget =
+  | {
+      type: 'control_item'
+      controlItem: InspectionControlItem
+      title: string
+    }
+  | {
+      type: 'observation'
+      observation: InspectionExteriorObservation
+      title: string
+    }
 
 type InteriorRoomLite = {
   id: string
@@ -299,12 +311,15 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   const [imageViewCount, setImageViewCount] = useState<ExteriorImageViewCount>(9)
   const [showLinkedImages, setShowLinkedImages] = useState(false)
   const [selectedPanelImageIds, setSelectedPanelImageIds] = useState<Set<string>>(() => new Set())
+  const [imageBankTarget, setImageBankTarget] = useState<ImageBankTarget | null>(null)
+  const [selectedImageBankIds, setSelectedImageBankIds] = useState<Set<string>>(() => new Set())
   const [quickNoteFilter, setQuickNoteFilter] = useState<QuickNoteFilter>('current')
   const [quickNotes, setQuickNotes] = useState<RoundQuickNote[]>([])
   const [interiorRooms, setInteriorRooms] = useState<InteriorRoomLite[]>([])
   const [mobileImagePanelHeight, setMobileImagePanelHeight] = useState(42)
   const [previewImage, setPreviewImage] = useState<InspectionImage | null>(null)
   const supportsIsFreeNoteRef = useRef<boolean | null>(null)
+  const overlayHistoryPushedRef = useRef(false)
   const mobileSplitContainerRef = useRef<HTMLDivElement | null>(null)
   const mobileSplitDragRef = useRef<MobileSplitDragState | null>(null)
 
@@ -326,6 +341,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     setQuickNoteFilter('current')
     setPreviewImage(null)
     setSelectedPanelImageIds(new Set())
+    setImageBankTarget(null)
+    setSelectedImageBankIds(new Set())
   }, [activeHybridItemId])
 
   useEffect(() => {
@@ -335,6 +352,62 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       return next.size === prev.size ? prev : next
     })
   }, [allInspectionImages])
+
+  useEffect(() => {
+    setSelectedImageBankIds(prev => {
+      const availableIds = new Set(
+        allInspectionImages
+          .filter(image => !isImageLinkedToNote(image))
+          .map(image => image.id)
+      )
+      const next = new Set(Array.from(prev).filter(imageId => availableIds.has(imageId)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [allInspectionImages])
+
+  const closeImageBank = useCallback(() => {
+    setImageBankTarget(null)
+    setSelectedImageBankIds(new Set())
+  }, [])
+
+  const closeTopOverlay = useCallback(() => {
+    if (previewImage) {
+      setPreviewImage(null)
+      return true
+    }
+    if (imageBankTarget) {
+      closeImageBank()
+      return true
+    }
+    if (activeHybridItemId) {
+      setActiveHybridItemId(null)
+      return true
+    }
+    return false
+  }, [activeHybridItemId, closeImageBank, imageBankTarget, previewImage])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const overlayOpen = Boolean(previewImage || imageBankTarget || activeHybridItemId)
+    if (!overlayOpen) {
+      overlayHistoryPushedRef.current = false
+      return
+    }
+
+    if (!overlayHistoryPushedRef.current) {
+      window.history.pushState({ obStepUtsidaOverlay: true }, '', window.location.href)
+      overlayHistoryPushedRef.current = true
+    }
+
+    const handlePopState = () => {
+      if (closeTopOverlay()) {
+        overlayHistoryPushedRef.current = false
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [activeHybridItemId, closeTopOverlay, imageBankTarget, previewImage])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -2054,6 +2127,145 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     }
   }
 
+  const openImageBankForControlItem = (controlItem: InspectionControlItem) => {
+    if (isInspectionLocked || !controlItem.id) return
+    setSelectedImageBankIds(new Set())
+    setImageBankTarget({
+      type: 'control_item',
+      controlItem,
+      title: controlItem.title || 'Kontrollpunkt',
+    })
+  }
+
+  const openImageBankForObservation = (observation: InspectionExteriorObservation) => {
+    if (isInspectionLocked || !observation.id) return
+    setSelectedImageBankIds(new Set())
+    setImageBankTarget({
+      type: 'observation',
+      observation,
+      title: observation.part_label?.trim() || 'Fri notering',
+    })
+  }
+
+  const toggleImageBankSelection = (imageId: string) => {
+    setSelectedImageBankIds(prev => {
+      const next = new Set(prev)
+      if (next.has(imageId)) next.delete(imageId)
+      else next.add(imageId)
+      return next
+    })
+  }
+
+  const linkSelectedImageBankImages = async () => {
+    if (!imageBankTarget || selectedImageBankIds.size === 0) return
+
+    const selectedIds = new Set(selectedImageBankIds)
+    const selectedImages = sortImagesNewestFirst(
+      allInspectionImages.filter(
+        image => selectedIds.has(image.id) && !isImageLinkedToNote(image)
+      )
+    )
+
+    for (const image of selectedImages) {
+      if (imageBankTarget.type === 'control_item') {
+        await moveImageToControlItem(image.id, imageBankTarget.controlItem)
+      } else {
+        await moveImageToObservation(image.id, imageBankTarget.observation)
+      }
+    }
+
+    closeImageBank()
+  }
+
+  const renderImageBankPicker = () => {
+    if (!imageBankTarget) return null
+    const imageBankImages = sortImagesNewestFirst(
+      uniqueImages(allInspectionImages.filter(image => !isImageLinkedToNote(image)))
+    )
+    const selectedCount = selectedImageBankIds.size
+
+    return (
+      <div className="fixed inset-0 z-[90] bg-black/45 p-3" role="dialog" aria-modal="true">
+        <div className="mx-auto flex h-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <header className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Bildbank
+              </div>
+              <h3 className="mt-0.5 truncate text-base font-semibold text-gray-900">
+                Lägg till bilder i {imageBankTarget.title}
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={closeImageBank}
+              className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              Stäng
+            </button>
+          </header>
+
+          <div className="min-h-0 flex-1 overflow-y-auto bg-gray-50 p-3">
+            {imageBankImages.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-white px-3 py-10 text-center text-sm text-gray-600">
+                Inga okopplade bilder i bildbanken.
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
+                {imageBankImages.map(image => {
+                  const isSelected = selectedImageBankIds.has(image.id)
+                  return (
+                    <button
+                      key={image.id}
+                      type="button"
+                      onClick={() => toggleImageBankSelection(image.id)}
+                      className={`relative overflow-hidden rounded-xl border bg-white text-left shadow-sm transition ${
+                        isSelected
+                          ? 'border-gray-900 ring-2 ring-gray-900/20'
+                          : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
+                      }`}
+                      aria-pressed={isSelected}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={getImagePublicUrl(image.file_path)}
+                        alt=""
+                        className="aspect-square w-full object-cover"
+                      />
+                      <span
+                        className={`absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded border text-[9px] font-bold shadow-sm ${
+                          isSelected
+                            ? 'border-gray-900 bg-gray-900 text-white'
+                            : 'border-white/80 bg-white/90 text-transparent'
+                        }`}
+                      >
+                        ✓
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          <footer className="flex items-center justify-between gap-3 border-t border-gray-200 px-4 py-3">
+            <div className="text-xs text-gray-600">
+              {selectedCount > 0 ? `${selectedCount} markerad${selectedCount === 1 ? '' : 'e'}` : 'Välj en eller flera bilder'}
+            </div>
+            <button
+              type="button"
+              onClick={() => void linkSelectedImageBankImages()}
+              disabled={isInspectionLocked || selectedCount === 0}
+              className="rounded-full bg-gray-900 px-4 py-2 text-xs font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Lägg till
+            </button>
+          </footer>
+        </div>
+      </div>
+    )
+  }
+
   const renderImageProcessingPanel = (item: ItemBundle) => {
     const currentImages = getImagesForItem(item)
     const exteriorImages = sortImagesNewestFirst(uniqueImages(allInspectionImages.filter(isExteriorImage)))
@@ -2268,7 +2480,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                       type="button"
                       onClick={() => togglePanelImageSelection(image.id)}
                       disabled={isInspectionLocked}
-                      className={`absolute left-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded border text-[11px] font-bold shadow-sm ${
+                      className={`absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded border text-[9px] font-bold shadow-sm ${
                         isSelected
                           ? 'border-gray-900 bg-gray-900 text-white'
                           : 'border-white/80 bg-white/90 text-transparent'
@@ -2454,6 +2666,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               imagesByControlItemId={imagesByControlItemId}
               onUploadImageForControlItem={handleUploadImageForControlItem}
               onDropImageOnControlItem={moveImageToControlItem}
+              onOpenImageBankForControlItem={openImageBankForControlItem}
               onUnlinkImageFromNote={unlinkImageFromNote}
             />
 
@@ -2470,6 +2683,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               onDeleteFreeNote={(rowId) => deleteFreeNoteRow(item.id, rowId)}
               onUploadImageForObservation={handleUploadImageForObservation}
               onDropImageOnObservation={moveImageToObservation}
+              onOpenImageBankForObservation={openImageBankForObservation}
               onUnlinkImageFromNote={unlinkImageFromNote}
               onAddControlFromCatalog={cp =>
                 addControlItemFromCatalog(item, mainRow, cp)
@@ -2660,6 +2874,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           </>
         ) : null}
         {renderImagePreview()}
+        {renderImageBankPicker()}
       </div>
     )
   }
@@ -2706,6 +2921,7 @@ type ControlPointImagesSectionProps = {
   images: InspectionImage[]
   onUpload: (file: File) => void | Promise<void>
   onDropImage?: (imageId: string) => void | Promise<void>
+  onOpenImageBank?: () => void
   onUnlink: (imageId: string) => void | Promise<void>
   title?: string
   disabled?: boolean
@@ -2715,6 +2931,7 @@ function ControlPointImagesSection({
   images,
   onUpload,
   onDropImage,
+  onOpenImageBank,
   onUnlink,
   title,
   disabled = false,
@@ -2794,6 +3011,16 @@ function ControlPointImagesSection({
           >
             Fil
           </button>
+          {onOpenImageBank ? (
+            <button
+              type="button"
+              onClick={onOpenImageBank}
+              className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-800 hover:bg-gray-50"
+              disabled={disabled}
+            >
+              Bildbank
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -2887,6 +3114,7 @@ type ExteriorControlPointsSectionProps = {
     imageId: string,
     controlItem: InspectionControlItem
   ) => void
+  onOpenImageBankForControlItem: (controlItem: InspectionControlItem) => void
   onUnlinkImageFromNote: (imageId: string) => void | Promise<void>
 }
 
@@ -2904,6 +3132,7 @@ function ExteriorControlPointsSection({
   imagesByControlItemId,
   onUploadImageForControlItem,
   onDropImageOnControlItem,
+  onOpenImageBankForControlItem,
   onUnlinkImageFromNote,
 }: ExteriorControlPointsSectionProps) {
   const groupedItems = useMemo(() => {
@@ -3164,6 +3393,7 @@ function ExteriorControlPointsSection({
                       images={ciImages}
                       onUpload={file => onUploadImageForControlItem(ci, file)}
                       onDropImage={imageId => onDropImageOnControlItem(imageId, ci)}
+                      onOpenImageBank={() => onOpenImageBankForControlItem(ci)}
                       onUnlink={onUnlinkImageFromNote}
                       title="Bilder"
                       disabled={isInspectionLocked}
@@ -3227,9 +3457,9 @@ function ExteriorControlPointsSection({
                         if (isGreen) expandOkGroup(groupId)
                         expandGroup(groupId)
                       }}
-                      className="text-[11px] text-gray-700 hover:underline"
+                      className="rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
                     >
-                      Visa
+                      Öppna kontrollpunkt
                     </button>
                     {baseItem.id && (
                       <button
@@ -3411,6 +3641,7 @@ function ExteriorControlPointsSection({
                       images={imagesByControlItemId[baseItem.id] || []}
                       onUpload={file => onUploadImageForControlItem(baseItem, file)}
                       onDropImage={imageId => onDropImageOnControlItem(imageId, baseItem)}
+                      onOpenImageBank={() => onOpenImageBankForControlItem(baseItem)}
                       onUnlink={onUnlinkImageFromNote}
                       disabled={isInspectionLocked}
                     />
@@ -3503,6 +3734,7 @@ function ExteriorControlPointsSection({
                             images={ciImages}
                             onUpload={file => onUploadImageForControlItem(ci, file)}
                             onDropImage={imageId => onDropImageOnControlItem(imageId, ci)}
+                            onOpenImageBank={() => onOpenImageBankForControlItem(ci)}
                             onUnlink={onUnlinkImageFromNote}
                             disabled={isInspectionLocked}
                           />
@@ -3541,6 +3773,7 @@ type FreeNotesSectionProps = {
     imageId: string,
     observation: InspectionExteriorObservation
   ) => void
+  onOpenImageBankForObservation: (observation: InspectionExteriorObservation) => void
   onUnlinkImageFromNote: (imageId: string) => void | Promise<void>
   onAddControlFromCatalog: (cp: ControlPointLite) => void
 }
@@ -3556,6 +3789,7 @@ function FreeNotesSection({
   onDeleteFreeNote,
   onUploadImageForObservation,
   onDropImageOnObservation,
+  onOpenImageBankForObservation,
   onUnlinkImageFromNote,
   onAddControlFromCatalog,
 }: FreeNotesSectionProps) {
@@ -3909,6 +4143,7 @@ function FreeNotesSection({
                         images={imagesByObservationId[row.id] || []}
                         onUpload={file => onUploadImageForObservation(row, file)}
                         onDropImage={imageId => onDropImageOnObservation(imageId, row)}
+                        onOpenImageBank={() => onOpenImageBankForObservation(row)}
                         onUnlink={onUnlinkImageFromNote}
                         title="Bilder"
                         disabled={isInspectionLocked}
