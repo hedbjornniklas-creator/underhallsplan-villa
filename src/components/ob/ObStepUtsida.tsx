@@ -130,7 +130,16 @@ type InspectionImage = {
   label: string | null
   sort_order: number
   created_at?: string | null
+  capture_source?: string | null
+  source_area?: string | null
+  origin_exterior_item_id?: string | null
+  origin_exterior_observation_id?: string | null
+  origin_exterior_item_key?: string | null
+  captured_at?: string | null
+  processing_status?: string | null
 }
+
+type ExteriorImageFilter = 'current' | 'exterior' | 'all'
 
 // Storage-bucket för bilder
 const IMAGE_BUCKET = 'inspection-images' as const
@@ -196,9 +205,12 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   const [imagesByObservationId, setImagesByObservationId] = useState<
     Record<string, InspectionImage[]>
   >({})
+  const [allInspectionImages, setAllInspectionImages] = useState<InspectionImage[]>([])
   const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(() => new Set())
   const [useHybridLayout] = useState(true)
   const [activeHybridItemId, setActiveHybridItemId] = useState<string | null>(null)
+  const [imageFilter, setImageFilter] = useState<ExteriorImageFilter>('current')
+  const [previewImage, setPreviewImage] = useState<InspectionImage | null>(null)
   const supportsIsFreeNoteRef = useRef<boolean | null>(null)
 
   useEffect(() => {
@@ -213,6 +225,11 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       console.warn('Kunde inte läsa sparat visningsläge för utsida:', e)
     }
   }, [collapsedStorageKey])
+
+  useEffect(() => {
+    setImageFilter('current')
+    setPreviewImage(null)
+  }, [activeHybridItemId])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -362,6 +379,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           setControlPointMetaById({})
           setOutcomesByControlPointId({})
           setImagesByControlItemId({})
+          setImagesByObservationId({})
+          setAllInspectionImages([])
           return
         }
 
@@ -719,6 +738,19 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           imgObsMap[key].push(img)
         }
         setImagesByObservationId(imgObsMap)
+
+        const { data: imgAllData, error: imgAllErr } = await supabase
+          .from('inspection_images')
+          .select('*')
+          .eq('inspection_id', inspection.id)
+          .order('created_at', { ascending: false })
+
+        if (imgAllErr) {
+          console.error('inspection_images (alla) error:', imgAllErr)
+          throw new Error(imgAllErr.message)
+        }
+
+        setAllInspectionImages((imgAllData ?? []) as InspectionImage[])
       } catch (e: unknown) {
         console.error('loadAll utsida failed:', e)
         setError(e instanceof Error ? e.message : 'Kunde inte ladda Utsida-data.')
@@ -883,6 +915,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         delete next[rowId]
         return next
       })
+      setAllInspectionImages(prev =>
+        prev.filter(image => !(image.exterior_observation_id === rowId && !image.control_item_id))
+      )
     } catch (e: unknown) {
       console.error('deleteFreeNoteRow utsida failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte ta bort fri notering.')
@@ -1028,6 +1063,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         delete clone[itemId]
         return clone
       })
+      setAllInspectionImages(prev => prev.filter(image => image.control_item_id !== itemId))
     } catch (e: unknown) {
       console.error('deleteControlItem (utsida) failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte ta bort kontrollpunkt.')
@@ -1221,6 +1257,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           ),
         }
       })
+      setAllInspectionImages(prev => [img, ...prev])
     } catch (e: unknown) {
       console.error('handleUploadImageForControlItem failed', e)
       setError(e instanceof Error ? e.message : 'Kunde inte ladda upp bild för kontrollpunkt.')
@@ -1264,6 +1301,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           [targetControlId!]: prevArr.filter(img => img.id !== imageId),
         }
       })
+      setAllInspectionImages(prev => prev.filter(img => img.id !== imageId))
     } catch (e: unknown) {
       console.error('handleDeleteControlItemImage failed', e)
       setError(e instanceof Error ? e.message : 'Kunde inte ta bort bild för kontrollpunkt.')
@@ -1339,6 +1377,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           ),
         }
       })
+      setAllInspectionImages(prev => [img, ...prev])
     } catch (e: unknown) {
       console.error('handleUploadImageForObservation failed', e)
       setError(e instanceof Error ? e.message : 'Kunde inte ladda upp bild för fri notering.')
@@ -1381,6 +1420,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           [targetObservationId!]: prevArr.filter(img => img.id !== imageId),
         }
       })
+      setAllInspectionImages(prev => prev.filter(img => img.id !== imageId))
     } catch (e: unknown) {
       console.error('handleDeleteObservationImage failed', e)
       setError(e instanceof Error ? e.message : 'Kunde inte ta bort bild för fri notering.')
@@ -1397,9 +1437,15 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     grundmur_sockel: '\u{1F9F1}',
     fasad: '\u{1F3E0}',
     dorrar_fonster: '\u{1F6AA}',
+    fonster: '\u{1FA9F}',
+    ytterdorrar_portar: '\u{1F6AA}',
+    platarbeten: '\u{1F527}',
+    balkonger_altaner: '\u{1F3D7}\uFE0F',
     yttertak: '\u{1F3E1}',
     ovrigt: '\u2795',
   }
+  const getItemEmoji = (itemKey: string | null | undefined) =>
+    itemEmoji[String(itemKey ?? '').trim()] || '\u{1F3D8}\uFE0F'
   const scrollToItemAnchor = (itemKey: string) => {
     if (!itemKey) return
     const element = document.getElementById(`utsida-${itemKey}`)
@@ -1461,6 +1507,151 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     return parts.join(' · ')
   }
 
+  const sortImagesNewestFirst = (imageList: InspectionImage[]) =>
+    [...imageList].sort((a, b) => {
+      const left = new Date(a.captured_at ?? a.created_at ?? 0).getTime()
+      const right = new Date(b.captured_at ?? b.created_at ?? 0).getTime()
+      if (left !== right) return right - left
+      return (b.sort_order ?? 0) - (a.sort_order ?? 0)
+    })
+
+  const uniqueImages = (imageList: InspectionImage[]) => {
+    const seen = new Set<string>()
+    return imageList.filter(image => {
+      if (seen.has(image.id)) return false
+      seen.add(image.id)
+      return true
+    })
+  }
+
+  const isExteriorImage = (image: InspectionImage) =>
+    image.source_area === 'exterior' ||
+    Boolean(image.origin_exterior_item_id) ||
+    Boolean(image.origin_exterior_observation_id) ||
+    Boolean(image.exterior_observation_id) ||
+    Boolean(image.control_item_id && controlItems.some(item => item.id === image.control_item_id && item.exterior_observation_id))
+
+  const getImagesForItem = (item: ItemBundle) => {
+    const rows = getItemRows(item.id)
+    const observationIds = new Set(rows.map(row => row.id).filter((id): id is string => !!id))
+    const controlItemIds = new Set(
+      Array.from(observationIds).flatMap(id => (controlItemsByObservationId[id] || []).map(ci => ci.id).filter((ciId): ciId is string => !!ciId))
+    )
+    return sortImagesNewestFirst(
+      uniqueImages(
+        allInspectionImages.filter(image =>
+          image.origin_exterior_item_id === item.id ||
+          image.origin_exterior_item_key === item.key ||
+          (image.origin_exterior_observation_id ? observationIds.has(image.origin_exterior_observation_id) : false) ||
+          (image.exterior_observation_id ? observationIds.has(image.exterior_observation_id) : false) ||
+          (image.control_item_id ? controlItemIds.has(image.control_item_id) : false)
+        )
+      )
+    )
+  }
+
+  const getFilteredPanelImages = (item: ItemBundle) => {
+    if (imageFilter === 'current') return getImagesForItem(item)
+    if (imageFilter === 'exterior') {
+      return sortImagesNewestFirst(uniqueImages(allInspectionImages.filter(isExteriorImage)))
+    }
+    return sortImagesNewestFirst(uniqueImages(allInspectionImages))
+  }
+
+  const renderImageProcessingPanel = (item: ItemBundle) => {
+    const currentImages = getImagesForItem(item)
+    const exteriorImages = sortImagesNewestFirst(uniqueImages(allInspectionImages.filter(isExteriorImage)))
+    const filteredImages = getFilteredPanelImages(item)
+    const filters: Array<{ key: ExteriorImageFilter; label: string; count: number }> = [
+      { key: 'current', label: 'Aktuell', count: currentImages.length },
+      { key: 'exterior', label: 'Utsida', count: exteriorImages.length },
+      { key: 'all', label: 'Alla', count: allInspectionImages.length },
+    ]
+
+    return (
+      <aside className="flex min-h-0 flex-col border-t border-gray-200 bg-gray-50/70 lg:border-l lg:border-t-0">
+        <div className="border-b border-gray-200 bg-white px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Bilder</div>
+              <div className="text-sm font-semibold text-gray-950">{filteredImages.length} visas</div>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {filters.map(filter => (
+              <button
+                key={filter.key}
+                type="button"
+                onClick={() => setImageFilter(filter.key)}
+                className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                  imageFilter === filter.key
+                    ? 'border-gray-900 bg-gray-900 text-white'
+                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {filter.label} <span className="ml-1 opacity-70">{filter.count}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {filteredImages.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-white px-3 py-8 text-center text-sm text-gray-600">
+              Inga bilder i valt filter.
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2 xl:grid-cols-4">
+              {filteredImages.map(image => (
+                <button
+                  key={image.id}
+                  type="button"
+                  onClick={() => setPreviewImage(image)}
+                  className="group overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm transition hover:border-gray-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-300"
+                  aria-label="Visa bild"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={getImagePublicUrl(image.file_path)}
+                    alt=""
+                    className="aspect-square w-full object-cover transition group-hover:scale-[1.02]"
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </aside>
+    )
+  }
+
+  const renderImagePreview = () => {
+    if (!previewImage) return null
+    return (
+      <div className="fixed inset-0 z-[80] bg-black/85 p-4" role="dialog" aria-modal="true">
+        <div className="flex h-full flex-col">
+          <div className="mb-3 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setPreviewImage(null)}
+              className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+            >
+              Stäng
+            </button>
+          </div>
+          <div className="min-h-0 flex-1">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={getImagePublicUrl(previewImage.file_path)}
+              alt=""
+              className="h-full w-full object-contain"
+            />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const renderItemCard = (
     item: ItemBundle,
     options: { forceExpanded?: boolean; embedded?: boolean; hideHeader?: boolean } = {}
@@ -1482,7 +1673,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           {!options.hideHeader ? (
             <header className="flex min-w-0 max-w-full items-center justify-between gap-2">
               <h3 className="min-w-0 text-base font-semibold text-gray-900">
-                <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
+                <span className="mr-2">{getItemEmoji(item.key)}</span>
                 {item.label}
               </h3>
               {!options.forceExpanded ? (
@@ -1532,7 +1723,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         {!options.hideHeader ? (
           <header className="flex min-w-0 max-w-full items-center justify-between gap-2">
             <h3 className="min-w-0 text-base font-semibold text-gray-900">
-              <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
+              <span className="mr-2">{getItemEmoji(item.key)}</span>
               {item.label}
             </h3>
             {!options.forceExpanded ? (
@@ -1634,7 +1825,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               Utsida
             </div>
             <h3 className="mt-1 truncate text-xl font-semibold text-gray-900">
-              <span className="mr-2">{itemEmoji[activeItem.key] || '•'}</span>
+              <span className="mr-2">{getItemEmoji(activeItem.key)}</span>
               {activeItem.label}
             </h3>
             <p className="mt-1 text-xs text-gray-500">{getItemSummary(activeItem)}</p>
@@ -1648,12 +1839,15 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6">
-          {renderItemCard(activeItem, {
-            forceExpanded: true,
-            embedded: true,
-            hideHeader: true,
-          })}
+        <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_460px]">
+          <div className="min-h-0 overflow-y-auto px-4 py-4 md:px-6">
+            {renderItemCard(activeItem, {
+              forceExpanded: true,
+              embedded: true,
+              hideHeader: true,
+            })}
+          </div>
+          {renderImageProcessingPanel(activeItem)}
         </div>
 
         <footer className="flex items-center justify-between gap-2 border-t border-gray-200 px-4 py-3 md:px-6">
@@ -1678,18 +1872,10 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     ) : null
 
     return (
-      <div className="w-full min-w-0 max-w-full overflow-x-hidden space-y-5">
-        <section className="w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-gray-200 bg-white/95 p-4 md:p-5 space-y-3">
-          <header className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-xl font-semibold text-gray-900">Byggnad – utsida</h2>
-              <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
-                Paneltest
-              </span>
-            </div>
-            <p className="text-xs text-gray-600">
-              Testvy. Sparning, låsning och rapportdata använder samma logik som ordinarie vy.
-            </p>
+      <div className="w-full min-w-0 max-w-full space-y-3 overflow-x-hidden">
+        <section className="w-full min-w-0 max-w-full space-y-3 overflow-hidden">
+          <header>
+            <h2 className="text-xl font-semibold text-gray-900">Byggnad – utsida</h2>
           </header>
 
           {isInspectionLocked ? (
@@ -1699,16 +1885,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           ) : null}
         </section>
 
-        <section className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-gray-200 md:p-4">
-          <div className="mb-3 flex items-center justify-between gap-3 px-1">
-            <div className="text-xs font-semibold uppercase text-gray-500">
-              Delar
-            </div>
-            <div className="text-xs text-gray-500">
-              Klicka för att öppna arbetsfönster
-            </div>
-          </div>
-          <div className="divide-y divide-gray-200 overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <section className="bg-white">
+          <div className="divide-y divide-gray-200 border-y border-gray-200">
             {items.map(item => {
               const isActive = activeItem?.id === item.id
               return (
@@ -1716,20 +1894,20 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                   key={item.id}
                   type="button"
                   onClick={() => setActiveHybridItemId(item.id)}
-                  className={`flex w-full items-center gap-3 px-3 py-3 text-left transition ${
+                  className={`flex w-full items-center gap-3 py-4 text-left transition ${
                     isActive
-                      ? 'bg-gray-900 text-white'
+                      ? 'bg-gray-50 text-gray-950'
                       : 'bg-white text-gray-900 hover:bg-gray-50'
                   }`}
                 >
-                  <span aria-hidden="true" className="shrink-0">
-                    {itemEmoji[item.key] || '•'}
+                  <span aria-hidden="true" className="w-7 shrink-0 text-center">
+                    {getItemEmoji(item.key)}
                   </span>
                   <div className="grid min-w-0 flex-1 gap-1 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
                     <div className="truncate text-sm font-semibold">{item.label}</div>
                     <div
                       className={`truncate text-xs md:text-sm ${
-                        isActive ? 'text-gray-200' : 'text-gray-500'
+                        isActive ? 'text-gray-600' : 'text-gray-500'
                       }`}
                     >
                       {getItemSummary(item)}
@@ -1738,7 +1916,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                   <span
                     aria-hidden="true"
                     className={`shrink-0 text-lg leading-none ${
-                      isActive ? 'text-gray-200' : 'text-gray-400'
+                      isActive ? 'text-gray-500' : 'text-gray-400'
                     }`}
                   >
                     ›
@@ -1751,7 +1929,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
 
         {activeItem && panelContent ? (
           <>
-            <aside className="fixed inset-y-0 right-0 z-50 hidden w-full max-w-4xl border-l border-gray-200 bg-white shadow-2xl lg:flex lg:flex-col">
+            <div className="fixed inset-0 z-50 hidden bg-black/20 lg:block" onClick={closePanel} />
+            <aside className="fixed inset-y-0 right-0 z-50 hidden w-full max-w-[1280px] border-l border-gray-200 bg-white shadow-2xl lg:flex lg:flex-col">
               {panelContent}
             </aside>
             <section className="fixed inset-0 z-50 flex flex-col bg-white lg:hidden">
@@ -1759,6 +1938,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             </section>
           </>
         ) : null}
+        {renderImagePreview()}
       </div>
     )
   }
@@ -1784,7 +1964,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               onClick={() => scrollToItemAnchor(item.key)}
               className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs text-gray-800 hover:bg-gray-50"
             >
-              <span className="mr-1">{itemEmoji[item.key] || '•'}</span>
+              <span className="mr-1">{getItemEmoji(item.key)}</span>
               {item.label}
             </button>
           ))}
