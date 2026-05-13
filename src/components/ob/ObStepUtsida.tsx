@@ -2667,6 +2667,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               onUploadImageForControlItem={handleUploadImageForControlItem}
               onDropImageOnControlItem={moveImageToControlItem}
               onOpenImageBankForControlItem={openImageBankForControlItem}
+              onPreviewImage={setPreviewImage}
               onUnlinkImageFromNote={unlinkImageFromNote}
             />
 
@@ -2684,6 +2685,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               onUploadImageForObservation={handleUploadImageForObservation}
               onDropImageOnObservation={moveImageToObservation}
               onOpenImageBankForObservation={openImageBankForObservation}
+              onPreviewImage={setPreviewImage}
               onUnlinkImageFromNote={unlinkImageFromNote}
               onAddControlFromCatalog={cp =>
                 addControlItemFromCatalog(item, mainRow, cp)
@@ -2922,6 +2924,7 @@ type ControlPointImagesSectionProps = {
   onUpload: (file: File) => void | Promise<void>
   onDropImage?: (imageId: string) => void | Promise<void>
   onOpenImageBank?: () => void
+  onPreviewImage: (image: InspectionImage) => void
   onUnlink: (imageId: string) => void | Promise<void>
   title?: string
   disabled?: boolean
@@ -2932,6 +2935,7 @@ function ControlPointImagesSection({
   onUpload,
   onDropImage,
   onOpenImageBank,
+  onPreviewImage,
   onUnlink,
   title,
   disabled = false,
@@ -3065,16 +3069,25 @@ function ControlPointImagesSection({
                 }}
                 className="relative h-16 w-16 overflow-hidden rounded-lg border bg-gray-100"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={url}
-                  alt={img.label || 'Bild'}
-                  className="h-full w-full object-cover"
-                />
+                <button
+                  type="button"
+                  onClick={() => onPreviewImage(img)}
+                  className="block h-full w-full"
+                  aria-label="Visa bild"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt={img.label || 'Bild'}
+                    className="h-full w-full object-cover"
+                  />
+                </button>
                 <button
                   type="button"
                   onClick={() => void onUnlink(img.id)}
                   className="absolute inset-x-1 bottom-1 rounded-full bg-black/75 px-1.5 py-0.5 text-[0px] font-semibold text-white"
+                  title="Koppla loss"
+                  aria-label="Koppla loss bild"
                 >
                   <span className="text-[9px]">Koppla loss</span>
                   ×
@@ -3115,6 +3128,7 @@ type ExteriorControlPointsSectionProps = {
     controlItem: InspectionControlItem
   ) => void
   onOpenImageBankForControlItem: (controlItem: InspectionControlItem) => void
+  onPreviewImage: (image: InspectionImage) => void
   onUnlinkImageFromNote: (imageId: string) => void | Promise<void>
 }
 
@@ -3133,6 +3147,7 @@ function ExteriorControlPointsSection({
   onUploadImageForControlItem,
   onDropImageOnControlItem,
   onOpenImageBankForControlItem,
+  onPreviewImage,
   onUnlinkImageFromNote,
 }: ExteriorControlPointsSectionProps) {
   const groupedItems = useMemo(() => {
@@ -3394,6 +3409,7 @@ function ExteriorControlPointsSection({
                       onUpload={file => onUploadImageForControlItem(ci, file)}
                       onDropImage={imageId => onDropImageOnControlItem(imageId, ci)}
                       onOpenImageBank={() => onOpenImageBankForControlItem(ci)}
+                      onPreviewImage={onPreviewImage}
                       onUnlink={onUnlinkImageFromNote}
                       title="Bilder"
                       disabled={isInspectionLocked}
@@ -3642,6 +3658,7 @@ function ExteriorControlPointsSection({
                       onUpload={file => onUploadImageForControlItem(baseItem, file)}
                       onDropImage={imageId => onDropImageOnControlItem(imageId, baseItem)}
                       onOpenImageBank={() => onOpenImageBankForControlItem(baseItem)}
+                      onPreviewImage={onPreviewImage}
                       onUnlink={onUnlinkImageFromNote}
                       disabled={isInspectionLocked}
                     />
@@ -3735,6 +3752,7 @@ function ExteriorControlPointsSection({
                             onUpload={file => onUploadImageForControlItem(ci, file)}
                             onDropImage={imageId => onDropImageOnControlItem(imageId, ci)}
                             onOpenImageBank={() => onOpenImageBankForControlItem(ci)}
+                            onPreviewImage={onPreviewImage}
                             onUnlink={onUnlinkImageFromNote}
                             disabled={isInspectionLocked}
                           />
@@ -3774,6 +3792,7 @@ type FreeNotesSectionProps = {
     observation: InspectionExteriorObservation
   ) => void
   onOpenImageBankForObservation: (observation: InspectionExteriorObservation) => void
+  onPreviewImage: (image: InspectionImage) => void
   onUnlinkImageFromNote: (imageId: string) => void | Promise<void>
   onAddControlFromCatalog: (cp: ControlPointLite) => void
 }
@@ -3790,6 +3809,7 @@ function FreeNotesSection({
   onUploadImageForObservation,
   onDropImageOnObservation,
   onOpenImageBankForObservation,
+  onPreviewImage,
   onUnlinkImageFromNote,
   onAddControlFromCatalog,
 }: FreeNotesSectionProps) {
@@ -4144,6 +4164,7 @@ function FreeNotesSection({
                         onUpload={file => onUploadImageForObservation(row, file)}
                         onDropImage={imageId => onDropImageOnObservation(imageId, row)}
                         onOpenImageBank={() => onOpenImageBankForObservation(row)}
+                        onPreviewImage={onPreviewImage}
                         onUnlink={onUnlinkImageFromNote}
                         title="Bilder"
                         disabled={isInspectionLocked}

@@ -3089,6 +3089,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                   void moveImageToControlItem(imageId, controlItem)
                 }}
                 onOpenImageBank={openImageBankForControlItem}
+                onPreviewImage={setPreviewImage}
                 onUnlinkImage={unlinkImageFromNote}
               />
             )}
@@ -3550,6 +3551,7 @@ type ControlItemImagesSectionProps = {
   onDelete: (imageId: string) => void
   onDropImage: (ci: InspectionControlItem, imageId: string) => void | Promise<void>
   onOpenImageBank?: () => void
+  onPreviewImage: (image: InspectionImage) => void
   onUnlink: (imageId: string) => void | Promise<void>
   disabled?: boolean
 }
@@ -3560,6 +3562,7 @@ function ControlItemImagesSection({
   onUpload,
   onDropImage,
   onOpenImageBank,
+  onPreviewImage,
   onUnlink,
   disabled = false,
 }: ControlItemImagesSectionProps) {
@@ -3689,12 +3692,19 @@ function ControlItemImagesSection({
                 }}
                 className="relative h-16 w-16 overflow-hidden rounded-lg border bg-gray-100"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={url}
-                  alt={img.label || 'Bild'}
-                  className="h-full w-full object-cover"
-                />
+                <button
+                  type="button"
+                  onClick={() => onPreviewImage(img)}
+                  className="block h-full w-full"
+                  aria-label="Visa bild"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt={img.label || 'Bild'}
+                    className="h-full w-full object-cover"
+                  />
+                </button>
                 <button
                   type="button"
                   onClick={() => void onUnlink(img.id)}
@@ -3739,6 +3749,7 @@ type RoomControlPointsSectionProps = {
   onDeleteImage: (imageId: string) => void
   onDropImage: (ci: InspectionControlItem, imageId: string) => void
   onOpenImageBank: (ci: InspectionControlItem) => void
+  onPreviewImage: (image: InspectionImage) => void
   onUnlinkImage: (imageId: string) => void
 }
 
@@ -3761,6 +3772,7 @@ function RoomControlPointsSection({
   onDeleteImage,
   onDropImage,
   onOpenImageBank,
+  onPreviewImage,
   onUnlinkImage,
 }: RoomControlPointsSectionProps) {
   const [searchTerm, setSearchTerm] = useState('')
@@ -4280,6 +4292,7 @@ function RoomControlPointsSection({
                       onDelete={onDeleteImage}
                       onDropImage={onDropImage}
                       onOpenImageBank={() => onOpenImageBank(ci)}
+                      onPreviewImage={onPreviewImage}
                       onUnlink={onUnlinkImage}
                       disabled={isInspectionLocked}
                     />
@@ -4531,6 +4544,7 @@ function RoomControlPointsSection({
                       onDelete={onDeleteImage}
                       onDropImage={onDropImage}
                       onOpenImageBank={() => onOpenImageBank(baseItem)}
+                      onPreviewImage={onPreviewImage}
                       onUnlink={onUnlinkImage}
                       disabled={isInspectionLocked}
                     />
@@ -4626,6 +4640,7 @@ function RoomControlPointsSection({
                             onDelete={onDeleteImage}
                             onDropImage={onDropImage}
                             onOpenImageBank={() => onOpenImageBank(ci)}
+                            onPreviewImage={onPreviewImage}
                             onUnlink={onUnlinkImage}
                             disabled={isInspectionLocked}
                           />
