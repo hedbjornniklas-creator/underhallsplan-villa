@@ -1189,7 +1189,7 @@ export async function sendAssignmentOrderReceipt(input: {
       .eq('id', input.assignment.id)
       .eq('org_id', input.assignment.org_id)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'OkÃ¤nt fel vid mejlutskick.'
+    const message = error instanceof Error ? error.message : 'Okänt fel vid mejlutskick.'
     await admin
       .from('outbound_messages')
       .update({

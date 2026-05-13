@@ -50,10 +50,10 @@ export async function GET(
 
     return NextResponse.json({ assignment, addonOrders })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
+    const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
-    return jsonError('Kunde inte hÃ¤mta uppdrag.', 500)
+    return jsonError('Kunde inte hämta uppdrag.', 500)
   }
 }
 
@@ -286,7 +286,7 @@ export async function PATCH(
           isArchiveSetValue &&
           (effectiveStatus === 'sent' || effectiveStatus === 'ordered' || effectiveStatus === 'booked')
         ) {
-          return jsonError('Skickad, godkand och bokad uppdragsbekraftelse kan inte arkiveras.', 409)
+          return jsonError('Skickad, godkänd och bokad uppdragsbekräftelse kan inte arkiveras.', 409)
         }
         const parsed = new Date(archiveValue)
         if (Number.isNaN(parsed.getTime())) {
@@ -332,7 +332,7 @@ export async function PATCH(
 
     return NextResponse.json({ assignment, bookingEmailSent })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
+    const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     return jsonError('Kunde inte uppdatera uppdrag.', 500)

@@ -109,9 +109,9 @@ function resolvePublicMediaUrl(path: string | null | undefined) {
 }
 
 function roleToLabel(role: OrdererRole) {
-  if (role === 'buyer') return 'KÃ¶pare'
-  if (role === 'seller') return 'SÃ¤ljare'
-  if (role === 'apartment') return 'LÃ¤genhet'
+  if (role === 'buyer') return 'Köpare'
+  if (role === 'seller') return 'Säljare'
+  if (role === 'apartment') return 'Lägenhet'
   return ''
 }
 
@@ -298,7 +298,7 @@ export default function NewAssignmentClient({
       return
     }
     if (!form.ordererRole) {
-      setError('Valj uppdragsgivare (SÃ¤ljare, KÃ¶pare eller LÃ¤genhet) innan du skickar.')
+      setError('Välj uppdragsgivare (Säljare, Köpare eller Lägenhet) innan du skickar.')
       return
     }
 
@@ -361,7 +361,7 @@ export default function NewAssignmentClient({
               >
                 <ArrowLeft size={16} strokeWidth={2} />
               </button>
-              <h1 className="text-2xl font-semibold text-slate-950">UPPDRAGSBEKRÃ„FTELSE</h1>
+              <h1 className="text-2xl font-semibold text-slate-950">UPPDRAGSBEKRÄFTELSE</h1>
               <div className="ml-auto flex items-center gap-2">
                 <button
                   type="button"
@@ -402,20 +402,20 @@ export default function NewAssignmentClient({
           <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-sky-50 px-4 py-3 shadow-sm md:gap-3">
               <p className="pr-1 text-base font-bold uppercase tracking-wide text-indigo-900 md:text-lg">
-                Ã–VERLÃ…TELSEBESIKTNING FÃ–R *
+                ÖVERLÅTELSEBESIKTNING FÖR *
               </p>
               <RoleChip
-                label="SÃ¤ljare"
+                label="Säljare"
                 active={form.ordererRole === 'seller'}
                 onClick={() => updateField('ordererRole', 'seller')}
               />
               <RoleChip
-                label="KÃ¶pare"
+                label="Köpare"
                 active={form.ordererRole === 'buyer'}
                 onClick={() => updateField('ordererRole', 'buyer')}
               />
               <RoleChip
-                label="LÃ¤genhet"
+                label="Lägenhet"
                 active={form.ordererRole === 'apartment'}
                 onClick={() => updateField('ordererRole', 'apartment')}
               />
@@ -426,17 +426,17 @@ export default function NewAssignmentClient({
                 {form.ordererRole === 'apartment' ? (
                   <>
                     <Field
-                      label="BostadsrÃ¤ttsfÃ¶rening"
+                      label="Bostadsrättsförening"
                       value={form.brfName}
                       onChange={(value) => updateField('brfName', value)}
                     />
                     <Field
-                      label="LÃ¤genhetsnummer"
+                      label="Lägenhetsnummer"
                       value={form.apartmentNumber}
                       onChange={(value) => updateField('apartmentNumber', value)}
                     />
                     <Field
-                      label="BostadsrÃ¤ttsinnehavare"
+                      label="Bostadsrättsinnehavare"
                       value={form.apartmentHolderName}
                       onChange={(value) => updateField('apartmentHolderName', value)}
                     />
@@ -493,7 +493,7 @@ export default function NewAssignmentClient({
                       onChange={(value) => updateField('propertyMunicipality', value)}
                     />
                     <Field
-                      label="FastighetsÃ¤gare"
+                      label="Fastighetsägare"
                       value={form.propertyOwnerName}
                       onChange={(value) => updateField('propertyOwnerName', value)}
                     />
@@ -609,12 +609,12 @@ export default function NewAssignmentClient({
 
           <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Villkor fÃ¶r besiktning</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Villkor för besiktning</h2>
             </div>
 
             <div className="rounded-xl border border-gray-200 bg-white p-3">
               <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-gray-700">
-                {activeTemplate || 'Valj uppdragsgivare for att visa villkorstexten.'}
+                {activeTemplate || 'Välj uppdragsgivare för att visa villkorstexten.'}
               </pre>
             </div>
           </section>

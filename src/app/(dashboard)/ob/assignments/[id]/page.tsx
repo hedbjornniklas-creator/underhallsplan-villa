@@ -107,27 +107,36 @@ function jsonToErrorMessage(payload: unknown, fallback: string) {
   return fallback
 }
 
+function normalizeSearchText(value: string) {
+  return value
+    .replace(/\u00c3\u00a4/g, 'ä')
+    .replace(/\u00c3\u00a5/g, 'å')
+    .replace(/\u00c3\u00b6/g, 'ö')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
+
 function normalizeRole(value: string | null): OrdererRole {
   if (!value) return ''
-  const lowered = value.toLowerCase()
+  const lowered = normalizeSearchText(value)
   if (
     lowered.includes('lgh') ||
-    lowered.includes('lÃ¤gen') ||
     lowered.includes('lagen') ||
     lowered.includes('apt') ||
     lowered.includes('apart')
   ) {
     return 'apartment'
   }
-  if (lowered.includes('kÃ¶p') || lowered.includes('kop') || lowered.includes('buy')) return 'buyer'
-  if (lowered.includes('sÃ¤lj') || lowered.includes('salj') || lowered.includes('sell')) return 'seller'
+  if (lowered.includes('kop') || lowered.includes('buy')) return 'buyer'
+  if (lowered.includes('salj') || lowered.includes('sell')) return 'seller'
   return ''
 }
 
 function roleToLabel(role: OrdererRole) {
-  if (role === 'apartment') return 'LÃ¤genhet'
-  if (role === 'buyer') return 'KÃ¶pare'
-  if (role === 'seller') return 'SÃ¤ljare'
+  if (role === 'apartment') return 'Lägenhet'
+  if (role === 'buyer') return 'Köpare'
+  if (role === 'seller') return 'Säljare'
   return ''
 }
 
@@ -138,7 +147,7 @@ function assignmentStatusToLabel(status: AssignmentStatus) {
     case 'sent':
       return 'Skickad'
     case 'ordered':
-      return 'BestÃ¤lld'
+      return 'Beställd'
     case 'booked':
       return 'Bokad'
     case 'completed':
@@ -234,7 +243,7 @@ export default function AssignmentDetailsPage() {
       const response = await fetch(`/api/ob/assignments/${id}`, { cache: 'no-store' })
       const payload = await response.json().catch(() => null)
       if (!response.ok) {
-        throw new Error(jsonToErrorMessage(payload, 'Kunde inte hÃ¤mta uppdraget.'))
+        throw new Error(jsonToErrorMessage(payload, 'Kunde inte hämta uppdraget.'))
       }
 
       const typedPayload = payload as {
@@ -249,7 +258,7 @@ export default function AssignmentDetailsPage() {
       lastSavedFingerprintRef.current = formFingerprint(nextForm)
       setSaveState('idle')
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Kunde inte hÃ¤mta uppdraget.')
+      setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta uppdraget.')
     } finally {
       setLoading(false)
     }
@@ -263,7 +272,7 @@ export default function AssignmentDetailsPage() {
     if (!assignment) return null
     const approvedByCustomerAt = assignment.accepted_at
       ? new Date(assignment.accepted_at).toLocaleString('sv-SE')
-      : 'Inte godkÃ¤nd'
+      : 'Inte godkänd'
     const acceptedByInspectorAt = assignment.booked_at
       ? new Date(assignment.booked_at).toLocaleString('sv-SE')
       : 'Inte accepterad'
@@ -399,13 +408,13 @@ export default function AssignmentDetailsPage() {
       const response = await fetch(`/api/ob/assignments/${id}/send`, { method: 'POST' })
       const payload = await response.json().catch(() => null)
       if (!response.ok) {
-        throw new Error(jsonToErrorMessage(payload, 'Kunde inte skicka uppdragsbekrÃ¤ftelsen.'))
+        throw new Error(jsonToErrorMessage(payload, 'Kunde inte skicka uppdragsbekräftelsen.'))
       }
       await loadAssignment()
-      setSuccess('UppdragsbekrÃ¤ftelse skickad.')
+      setSuccess('Uppdragsbekräftelse skickad.')
     } catch (sendError) {
       setError(
-        sendError instanceof Error ? sendError.message : 'Kunde inte skicka uppdragsbekrÃ¤ftelsen.'
+        sendError instanceof Error ? sendError.message : 'Kunde inte skicka uppdragsbekräftelsen.'
       )
     } finally {
       setSending(false)
@@ -431,9 +440,9 @@ export default function AssignmentDetailsPage() {
       const typedPayload = payload as { bookingEmailSent?: boolean } | null
       await loadAssignment()
       if (typedPayload?.bookingEmailSent === false) {
-        setSuccess('Uppdraget Ã¤r nu bokat. Mejlet kunde inte skickas automatiskt.')
+        setSuccess('Uppdraget är nu bokat. Mejlet kunde inte skickas automatiskt.')
       } else {
-        setSuccess('Uppdraget Ã¤r nu bokat och bekrÃ¤ftelsemejl har skickats.')
+        setSuccess('Uppdraget är nu bokat och bekräftelsemejl har skickats.')
       }
     } catch (bookError) {
       setError(bookError instanceof Error ? bookError.message : 'Kunde inte boka uppdraget.')
@@ -480,7 +489,7 @@ export default function AssignmentDetailsPage() {
 
       const body = payload as { assignmentId?: string }
       if (!body.assignmentId) {
-        throw new Error('Saknar id fÃ¶r ny uppdragsbekrÃ¤ftelse.')
+        throw new Error('Saknar id för ny uppdragsbekräftelse.')
       }
       router.push(`/ob/assignments/${body.assignmentId}`)
     } catch (reissueError) {
@@ -521,7 +530,7 @@ export default function AssignmentDetailsPage() {
               >
                 <ArrowLeft size={16} strokeWidth={2} />
               </button>
-              <h1 className="text-2xl font-semibold text-slate-950">UppdragsbekrÃ¤ftelse</h1>
+              <h1 className="text-2xl font-semibold text-slate-950">Uppdragsbekräftelse</h1>
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 <span className="px-2 text-xs font-medium text-white/95">
                   {saveState === 'saving' ? 'Sparar...' : saveState === 'saved' ? 'Sparat' : ''}
@@ -531,10 +540,10 @@ export default function AssignmentDetailsPage() {
                     type="button"
                     onClick={() => void handleSend()}
                     disabled={!canSend || sending || booking || converting || reissuing || saving || loading}
-                    title="Skickar uppdragsbekrÃ¤ftelsen till kunden fÃ¶r godkÃ¤nnande."
+                    title="Skickar uppdragsbekräftelsen till kunden för godkännande."
                     className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-[0_10px_20px_-14px_rgba(255,255,255,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {sending ? 'Skickar...' : 'Skicka uppdragsbekrÃ¤ftelse'}
+                    {sending ? 'Skickar...' : 'Skicka uppdragsbekräftelse'}
                   </button>
                 ) : null}
                 {canReissue ? (
@@ -542,17 +551,17 @@ export default function AssignmentDetailsPage() {
                     type="button"
                     onClick={() => void handleReissue()}
                     disabled={reissuing || sending || booking || converting || saving || loading}
-                    title="Skapar en ny utkastversion baserad pÃ¥ befintliga uppgifter. Du kan redigera den och sedan skicka fÃ¶r nytt godkÃ¤nnande."
+                    title="Skapar en ny utkastversion baserad på befintliga uppgifter. Du kan redigera den och sedan skicka för nytt godkännande."
                     className="rounded-lg border border-amber-200 bg-amber-500/20 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-amber-500/30 hover:shadow-[0_10px_20px_-12px_rgba(245,158,11,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {reissuing ? 'Skapar ny...' : 'Skicka om uppdragsbekrÃ¤ftelse'}
+                    {reissuing ? 'Skapar ny...' : 'Skicka om uppdragsbekräftelse'}
                   </button>
                 ) : null}
                 <button
                   type="button"
                   onClick={() => void handleBook()}
                   disabled={!canBook || booking || sending || converting || reissuing || saving || loading}
-                  title="BekrÃ¤ftar uppdraget som bokat och skickar full bestÃ¤llningsbekrÃ¤ftelse."
+                  title="Bekräftar uppdraget som bokat och skickar full beställningsbekräftelse."
                   className="rounded-lg border border-emerald-300 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-emerald-500/35 hover:shadow-[0_12px_24px_-12px_rgba(16,185,129,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {booking ? 'Accepterar...' : 'Acceptera uppdrag'}
@@ -561,7 +570,7 @@ export default function AssignmentDetailsPage() {
                   type="button"
                   onClick={() => void handleConvert()}
                   disabled={!canConvert || converting || booking || sending || reissuing || saving || loading}
-                  title="Startar besiktningen och Ã¶ppnar besiktningsvyn."
+                  title="Startar besiktningen och öppnar besiktningsvyn."
                   className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-[0_10px_20px_-12px_rgba(79,70,229,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 disabled:cursor-not-allowed disabled:bg-indigo-300"
                 >
                   {converting ? 'Startar...' : 'Starta besiktning'}
@@ -580,15 +589,15 @@ export default function AssignmentDetailsPage() {
           ) : null}
           {isBookedLocked ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              UppdragsbekrÃ¤ftelsen Ã¤r bokad och lÃ¥st fÃ¶r redigering. Klicka pÃ¥ Starta besiktning fÃ¶r att gÃ¥ vidare.
+              Uppdragsbekräftelsen är bokad och låst för redigering. Klicka på Starta besiktning för att gå vidare.
             </div>
           ) : isOrdered ? (
             <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800">
-              UppdragsbekrÃ¤ftelsen Ã¤r bestÃ¤lld och lÃ¥st fÃ¶r redigering. Klicka pÃ¥ Acceptera uppdrag eller Skicka om uppdragsbekrÃ¤ftelse.
+              Uppdragsbekräftelsen är beställd och låst för redigering. Klicka på Acceptera uppdrag eller Skicka om uppdragsbekräftelse.
             </div>
           ) : isSent ? (
             <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
-              UppdragsbekrÃ¤ftelsen Ã¤r skickad och lÃ¥st fÃ¶r redigering. Klicka pÃ¥ Skicka om uppdragsbekrÃ¤ftelse fÃ¶r att skapa en ny redigerbar version.
+              Uppdragsbekräftelsen är skickad och låst för redigering. Klicka på Skicka om uppdragsbekräftelse för att skapa en ny redigerbar version.
             </div>
           ) : null}
 
@@ -602,7 +611,7 @@ export default function AssignmentDetailsPage() {
                 <div className="grid gap-2 md:grid-cols-4">
                   <ReadOnly compact label="Status" value={assignmentStatusToLabel(assignment.status)} />
                   <ReadOnly compact label="Skickad" value={summary?.sentAt ?? '-'} />
-                  <ReadOnly compact label="GodkÃ¤nd (kund)" value={summary?.approvedByCustomerAt ?? '-'} />
+                  <ReadOnly compact label="Godkänd (kund)" value={summary?.approvedByCustomerAt ?? '-'} />
                   <ReadOnly
                     compact
                     label="Accepterad (besiktningsman)"
@@ -641,17 +650,17 @@ export default function AssignmentDetailsPage() {
                     {form.ordererRole === 'apartment' ? (
                       <>
                         <Field
-                          label="BostadsrÃ¤ttsfÃ¶rening"
+                          label="Bostadsrättsförening"
                           value={form.brfName}
                           onChange={(value) => updateField('brfName', value)}
                         />
                         <Field
-                          label="LÃ¤genhetsnummer"
+                          label="Lägenhetsnummer"
                           value={form.apartmentNumber}
                           onChange={(value) => updateField('apartmentNumber', value)}
                         />
                         <Field
-                          label="BostadsrÃ¤ttsinnehavare"
+                          label="Bostadsrättsinnehavare"
                           value={form.apartmentHolderName}
                           onChange={(value) => updateField('apartmentHolderName', value)}
                         />
@@ -664,7 +673,7 @@ export default function AssignmentDetailsPage() {
                           onChange={(value) => updateField('cadastralId', value)}
                         />
                         <Field
-                          label="FastighetsÃ¤gare"
+                          label="Fastighetsägare"
                           value={form.propertyOwnerName}
                           onChange={(value) => updateField('propertyOwnerName', value)}
                         />
@@ -677,17 +686,17 @@ export default function AssignmentDetailsPage() {
                       <h3 className="text-sm font-semibold text-gray-900">Uppdragsgivare</h3>
                       <div className="flex items-center gap-2">
                         <RoleChip
-                          label="SÃ¤ljare"
+                          label="Säljare"
                           active={form.ordererRole === 'seller'}
                           onClick={() => updateField('ordererRole', 'seller')}
                         />
                         <RoleChip
-                          label="KÃ¶pare"
+                          label="Köpare"
                           active={form.ordererRole === 'buyer'}
                           onClick={() => updateField('ordererRole', 'buyer')}
                         />
                         <RoleChip
-                          label="LÃ¤genhet"
+                          label="Lägenhet"
                           active={form.ordererRole === 'apartment'}
                           onClick={() => updateField('ordererRole', 'apartment')}
                         />
@@ -756,16 +765,16 @@ export default function AssignmentDetailsPage() {
                 </SectionCard>
                 </fieldset>
 
-                <SectionCard title="BestÃ¤llda tillÃ¤ggsuppdrag">
+                <SectionCard title="Beställda tilläggsuppdrag">
                   {addonOrders.length === 0 ? (
-                    <p className="text-sm text-gray-600">Inga tillÃ¤ggsuppdrag Ã¤r valda Ã¤nnu.</p>
+                    <p className="text-sm text-gray-600">Inga tilläggsuppdrag är valda ännu.</p>
                   ) : (
                     <div className="space-y-3">
                       <div className="overflow-hidden rounded-lg border border-gray-200">
                         <table className="min-w-full text-sm">
                           <thead>
                             <tr className="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-600">
-                              <th className="px-3 py-2">TjÃ¤nst</th>
+                              <th className="px-3 py-2">Tjänst</th>
                               <th className="px-3 py-2">Pris</th>
                             </tr>
                           </thead>
@@ -787,8 +796,8 @@ export default function AssignmentDetailsPage() {
                       </div>
 
                       <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
-                        Valda tillÃ¤ggsuppdrag: <strong>{addonSummary.count}</strong>
-                        {' Â· '}
+                        Valda tilläggsuppdrag: <strong>{addonSummary.count}</strong>
+                        {' · '}
                         Summa:{' '}
                         <strong>
                           {addonSummary.total.toLocaleString('sv-SE', {
