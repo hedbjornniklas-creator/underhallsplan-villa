@@ -1270,6 +1270,43 @@ export default function ReportRendererClient({
     '© 2025 SBR Byggingenjörerna. Version 2025.1',
   ]
 
+  const renderPdfLabel = (
+    label: string,
+    tone: 'default' | 'risk' | 'ftu' | 'photo' = 'default'
+  ) => {
+    const iconName: ReportIconName =
+      tone === 'risk'
+        ? 'risk'
+        : tone === 'ftu'
+          ? 'ftu'
+          : tone === 'photo'
+            ? 'photo'
+            : 'note'
+    const color =
+      tone === 'risk'
+        ? '#b45309'
+        : tone === 'ftu'
+          ? '#334155'
+          : '#475569'
+
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: mmToPx(1.2),
+          fontSize: '9pt',
+          fontWeight: 700,
+          color,
+          lineHeight: 1.2,
+        }}
+      >
+        <ReportIcon name={iconName} />
+        <span>{label}</span>
+      </div>
+    )
+  }
+
   const renderInspectionItemContent = (
     item: InspectionBlockItem,
     keyPrefix: string,
@@ -1296,21 +1333,7 @@ export default function ReportRendererClient({
             alignItems: 'start',
           }}
         >
-          <div
-            style={{
-              fontSize: '9pt',
-              fontWeight: 700,
-              color:
-                tone === 'risk'
-                  ? '#b45309'
-                  : tone === 'ftu'
-                    ? '#334155'
-                    : '#475569',
-              lineHeight: 1.2,
-            }}
-          >
-            {label}
-          </div>
+          {renderPdfLabel(label, tone)}
           <div
             style={{
               fontSize: '10.5pt',
@@ -1324,36 +1347,50 @@ export default function ReportRendererClient({
         </div>
       )
 
+      const renderPdfImageRow = (urls: string[]) => (
+        <div
+          style={{
+            marginTop: mmToPx(1.8),
+          }}
+        >
+          {renderPdfLabel('Bilder', 'photo')}
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: mmToPx(3),
+              justifyContent: 'center',
+              marginTop: mmToPx(2),
+              width: '100%',
+            }}
+          >
+            {urls.map((url, urlIndex) => {
+              const isSingle = urls.length === 1
+              return (
+                <ReportPhoto
+                  key={`${keyPrefix}-photo-${urlIndex}`}
+                  src={url}
+                  alt={`Foto ${urlIndex + 1}`}
+                  className="h-auto object-contain bg-white"
+                  style={{
+                    width: isSingle ? '90mm' : '60mm',
+                    maxHeight: isSingle ? '105mm' : '75mm',
+                  }}
+                  maxLongSidePx={PHOTO_POLICY.pdfMaxLongSidePx}
+                  quality={PHOTO_POLICY.pdfQuality}
+                  onSettled={notifyReportImageSettled}
+                />
+              )
+            })}
+          </div>
+        </div>
+      )
+
       return (
         <>
           {renderPdfRow('Notering', noteText || '--')}
 
-          {photoUrls.length > 0
-            ? renderPdfRow(
-                'Bilder',
-                <div
-                  style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: mmToPx(3),
-                    marginTop: mmToPx(1),
-                  }}
-                >
-                  {photoUrls.map((url, urlIndex) => (
-                    <ReportPhoto
-                      key={`${keyPrefix}-photo-${urlIndex}`}
-                      src={url}
-                      alt={`Foto ${urlIndex + 1}`}
-                      className="h-auto object-contain bg-white"
-                      style={{ width: '58mm', maxHeight: '75mm' }}
-                      maxLongSidePx={PHOTO_POLICY.pdfMaxLongSidePx}
-                      quality={PHOTO_POLICY.pdfQuality}
-                      onSettled={notifyReportImageSettled}
-                    />
-                  ))}
-                </div>
-              )
-            : null}
+          {photoUrls.length > 0 ? renderPdfImageRow(photoUrls) : null}
 
           {riskText.length > 0
             ? renderPdfRow('Riskanalys', riskText, 'risk')
@@ -1491,21 +1528,7 @@ export default function ReportRendererClient({
           alignItems: 'start',
         }}
       >
-        <div
-          style={{
-            fontSize: '9pt',
-            fontWeight: 700,
-            color:
-              tone === 'risk'
-                ? '#b45309'
-                : tone === 'ftu'
-                  ? '#334155'
-                  : '#475569',
-            lineHeight: 1.2,
-          }}
-        >
-          {label}
-        </div>
+        {renderPdfLabel(label, tone)}
         <div
           style={{
             fontSize: '10.5pt',
@@ -1519,32 +1542,48 @@ export default function ReportRendererClient({
       </div>
     )
 
-    if (block.segment === 'photos') {
-      if (block.photoUrls.length === 0) return null
-      return renderPdfRow(
-        'Bilder',
+    const renderPdfImageRow = (urls: string[]) => (
+      <div
+        style={{
+          marginTop: mmToPx(1.8),
+        }}
+      >
+        {renderPdfLabel('Bilder', 'photo')}
         <div
           style={{
             display: 'flex',
             flexWrap: 'wrap',
             gap: mmToPx(3),
-            marginTop: mmToPx(1),
+            justifyContent: 'center',
+            marginTop: mmToPx(2),
+            width: '100%',
           }}
         >
-          {block.photoUrls.map((url, urlIndex) => (
-            <ReportPhoto
-              key={`${keyPrefix}-photo-${urlIndex}`}
-              src={url}
-              alt={`Foto ${urlIndex + 1}`}
-              className="h-auto object-contain bg-white"
-              style={{ width: '58mm', maxHeight: '75mm' }}
-              maxLongSidePx={PHOTO_POLICY.pdfMaxLongSidePx}
-              quality={PHOTO_POLICY.pdfQuality}
-              onSettled={notifyReportImageSettled}
-            />
-          ))}
+          {urls.map((url, urlIndex) => {
+            const isSingle = urls.length === 1
+            return (
+              <ReportPhoto
+                key={`${keyPrefix}-photo-${urlIndex}`}
+                src={url}
+                alt={`Foto ${urlIndex + 1}`}
+                className="h-auto object-contain bg-white"
+                style={{
+                  width: isSingle ? '90mm' : '60mm',
+                  maxHeight: isSingle ? '105mm' : '75mm',
+                }}
+                maxLongSidePx={PHOTO_POLICY.pdfMaxLongSidePx}
+                quality={PHOTO_POLICY.pdfQuality}
+                onSettled={notifyReportImageSettled}
+              />
+            )
+          })}
         </div>
-      )
+      </div>
+    )
+
+    if (block.segment === 'photos') {
+      if (block.photoUrls.length === 0) return null
+      return renderPdfImageRow(block.photoUrls)
     }
 
     if (block.segment === 'risk') {
