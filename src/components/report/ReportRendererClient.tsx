@@ -157,10 +157,19 @@ type InspectionRoomGroupItemSegmentEntry = {
   item: InspectionBlockItem
   segment: InspectionItemSegmentKind
   photoUrls: string[]
+  photoStartIndex: number
+  photoTotal: number
   isFirstInGroup: boolean
   isLastInGroup: boolean
   marginTopMm: number
   marginBottomMm: number
+}
+
+type PdfInspectionSegment = {
+  segment: InspectionItemSegmentKind
+  photoUrls: string[]
+  photoStartIndex: number
+  photoTotal: number
 }
 
 type InspectionFloorHeaderEntry = {
@@ -357,6 +366,8 @@ function ReportIcon({ name }: { name: ReportIconName }) {
 }
 
 const PDF_PHOTOS_PER_SEGMENT = 2
+const PDF_PHOTO_FRAME_WIDTH_MM = 60
+const PDF_PHOTO_FRAME_HEIGHT_MM = 72
 
 const getInspectionPhotoUrls = (item: InspectionBlockItem) =>
   Array.isArray(item.photoUrls)
@@ -374,20 +385,29 @@ const chunkItems = <T,>(items: T[], size: number) => {
 }
 
 const buildPdfInspectionSegments = (item: InspectionBlockItem) => {
-  const segments: Array<{ segment: InspectionItemSegmentKind; photoUrls: string[] }> = [
-    { segment: 'note', photoUrls: [] },
+  const allPhotoUrls = getInspectionPhotoUrls(item)
+  const photoTotal = allPhotoUrls.length
+  const segments: PdfInspectionSegment[] = [
+    { segment: 'note', photoUrls: [], photoStartIndex: 0, photoTotal },
   ]
 
-  chunkItems(getInspectionPhotoUrls(item), PDF_PHOTOS_PER_SEGMENT).forEach((photoUrls) => {
-    segments.push({ segment: 'photos', photoUrls })
-  })
+  chunkItems(allPhotoUrls, PDF_PHOTOS_PER_SEGMENT).forEach(
+    (photoUrls, chunkIndex) => {
+      segments.push({
+        segment: 'photos',
+        photoUrls,
+        photoStartIndex: chunkIndex * PDF_PHOTOS_PER_SEGMENT + 1,
+        photoTotal,
+      })
+    }
+  )
 
   if (String(item.riskText ?? '').trim().length > 0) {
-    segments.push({ segment: 'risk', photoUrls: [] })
+    segments.push({ segment: 'risk', photoUrls: [], photoStartIndex: 0, photoTotal })
   }
 
   if (String(item.ftuText ?? '').trim().length > 0) {
-    segments.push({ segment: 'ftu', photoUrls: [] })
+    segments.push({ segment: 'ftu', photoUrls: [], photoStartIndex: 0, photoTotal })
   }
 
   return segments
@@ -876,6 +896,8 @@ export default function ReportRendererClient({
                           item,
                           segment: segment.segment,
                           photoUrls: segment.photoUrls,
+                          photoStartIndex: segment.photoStartIndex,
+                          photoTotal: segment.photoTotal,
                           isFirstInGroup: itemIndex === 0 && isFirstSegment,
                           isLastInGroup:
                             itemIndex === group.items.length - 1 && isLastSegment,
@@ -1307,6 +1329,19 @@ export default function ReportRendererClient({
     )
   }
 
+  const formatPdfPhotoLabel = (
+    title: string,
+    startIndex: number,
+    count: number,
+    total: number
+  ) => {
+    const base = title.trim() ? `${title.trim()} - Bilder` : 'Bilder'
+    if (total <= 0 || count <= 0) return base
+    const start = Math.max(1, startIndex)
+    const end = Math.min(total, start + count - 1)
+    return `${base} ${start}-${end} av ${total}`
+  }
+
   const renderInspectionItemContent = (
     item: InspectionBlockItem,
     keyPrefix: string,
@@ -1353,7 +1388,10 @@ export default function ReportRendererClient({
             marginTop: mmToPx(1.8),
           }}
         >
-          {renderPdfLabel('Bilder', 'photo')}
+          {renderPdfLabel(
+            formatPdfPhotoLabel('', 1, urls.length, urls.length),
+            'photo'
+          )}
           <div
             style={{
               display: 'flex',
@@ -1364,24 +1402,33 @@ export default function ReportRendererClient({
               width: '100%',
             }}
           >
-            {urls.map((url, urlIndex) => {
-              const isSingle = urls.length === 1
-              return (
+            {urls.map((url, urlIndex) => (
+              <div
+                key={`${keyPrefix}-photo-frame-${urlIndex}`}
+                style={{
+                  width: mmToPx(PDF_PHOTO_FRAME_WIDTH_MM),
+                  height: mmToPx(PDF_PHOTO_FRAME_HEIGHT_MM),
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: '#ffffff',
+                }}
+              >
                 <ReportPhoto
-                  key={`${keyPrefix}-photo-${urlIndex}`}
                   src={url}
                   alt={`Foto ${urlIndex + 1}`}
-                  className="h-auto object-contain bg-white"
+                  className="object-contain bg-white"
                   style={{
-                    width: isSingle ? '90mm' : '60mm',
-                    maxHeight: isSingle ? '105mm' : '75mm',
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
                   }}
                   maxLongSidePx={PHOTO_POLICY.pdfMaxLongSidePx}
                   quality={PHOTO_POLICY.pdfQuality}
                   onSettled={notifyReportImageSettled}
                 />
-              )
-            })}
+              </div>
+            ))}
           </div>
         </div>
       )
@@ -1548,7 +1595,15 @@ export default function ReportRendererClient({
           marginTop: mmToPx(1.8),
         }}
       >
-        {renderPdfLabel('Bilder', 'photo')}
+        {renderPdfLabel(
+          formatPdfPhotoLabel(
+            block.title,
+            block.photoStartIndex,
+            urls.length,
+            block.photoTotal
+          ),
+          'photo'
+        )}
         <div
           style={{
             display: 'flex',
@@ -1559,24 +1614,33 @@ export default function ReportRendererClient({
             width: '100%',
           }}
         >
-          {urls.map((url, urlIndex) => {
-            const isSingle = urls.length === 1
-            return (
+          {urls.map((url, urlIndex) => (
+            <div
+              key={`${keyPrefix}-photo-frame-${urlIndex}`}
+              style={{
+                width: mmToPx(PDF_PHOTO_FRAME_WIDTH_MM),
+                height: mmToPx(PDF_PHOTO_FRAME_HEIGHT_MM),
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#ffffff',
+              }}
+            >
               <ReportPhoto
-                key={`${keyPrefix}-photo-${urlIndex}`}
                 src={url}
                 alt={`Foto ${urlIndex + 1}`}
-                className="h-auto object-contain bg-white"
+                className="object-contain bg-white"
                 style={{
-                  width: isSingle ? '90mm' : '60mm',
-                  maxHeight: isSingle ? '105mm' : '75mm',
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
                 }}
                 maxLongSidePx={PHOTO_POLICY.pdfMaxLongSidePx}
                 quality={PHOTO_POLICY.pdfQuality}
                 onSettled={notifyReportImageSettled}
               />
-            )
-          })}
+            </div>
+          ))}
         </div>
       </div>
     )
