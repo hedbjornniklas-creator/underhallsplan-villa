@@ -1,6 +1,15 @@
 'use client'
 
-import { useEffect, useState, ChangeEvent, useRef, useMemo, type DragEvent } from 'react'
+import {
+  useEffect,
+  useState,
+  ChangeEvent,
+  useRef,
+  useMemo,
+  type CSSProperties,
+  type DragEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import DebouncedTextarea from './DebouncedTextarea'
 import ControlPointSearchDialog, {
@@ -141,6 +150,34 @@ type InspectionImage = {
 
 type ExteriorImageFilter = 'current' | 'exterior' | 'all'
 type ExteriorImageViewCount = 15 | 9 | 1
+type PanelTab = 'images' | 'quick_notes'
+type QuickNoteFilter = ExteriorImageFilter
+type MobileSplitDragState = {
+  pointerId: number
+  startY: number
+  startHeight: number
+  containerHeight: number
+}
+
+type InteriorRoomLite = {
+  id: string
+  floor_label: string
+  room_label: string | null
+  room_type_key: string | null
+  order_index?: number | null
+}
+
+type RoundQuickNote = {
+  id: string
+  inspection_id: string
+  source_area: 'interior' | 'exterior'
+  interior_room_id: string | null
+  exterior_observation_id: string | null
+  exterior_item_id: string | null
+  note: string
+  created_at?: string | null
+  updated_at?: string | null
+}
 
 // Storage-bucket för bilder
 const IMAGE_BUCKET = 'inspection-images' as const
@@ -257,12 +294,19 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(() => new Set())
   const [useHybridLayout] = useState(true)
   const [activeHybridItemId, setActiveHybridItemId] = useState<string | null>(null)
+  const [panelTab, setPanelTab] = useState<PanelTab>('images')
   const [imageFilter, setImageFilter] = useState<ExteriorImageFilter>('current')
   const [imageViewCount, setImageViewCount] = useState<ExteriorImageViewCount>(9)
   const [showLinkedImages, setShowLinkedImages] = useState(false)
   const [selectedPanelImageIds, setSelectedPanelImageIds] = useState<Set<string>>(() => new Set())
+  const [quickNoteFilter, setQuickNoteFilter] = useState<QuickNoteFilter>('current')
+  const [quickNotes, setQuickNotes] = useState<RoundQuickNote[]>([])
+  const [interiorRooms, setInteriorRooms] = useState<InteriorRoomLite[]>([])
+  const [mobileImagePanelHeight, setMobileImagePanelHeight] = useState(42)
   const [previewImage, setPreviewImage] = useState<InspectionImage | null>(null)
   const supportsIsFreeNoteRef = useRef<boolean | null>(null)
+  const mobileSplitContainerRef = useRef<HTMLDivElement | null>(null)
+  const mobileSplitDragRef = useRef<MobileSplitDragState | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -279,6 +323,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
 
   useEffect(() => {
     setImageFilter('current')
+    setQuickNoteFilter('current')
     setPreviewImage(null)
     setSelectedPanelImageIds(new Set())
   }, [activeHybridItemId])
@@ -441,6 +486,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           setImagesByControlItemId({})
           setImagesByObservationId({})
           setAllInspectionImages([])
+          setQuickNotes([])
+          setInteriorRooms([])
           return
         }
 
@@ -474,6 +521,35 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         }
 
         const optionsArr = (optionsData ?? []) as SettingsExteriorOption[]
+
+        const [
+          { data: roomRows, error: roomsErr },
+          { data: quickNoteRows, error: quickNotesErr },
+        ] = await Promise.all([
+          supabase
+            .from('inspection_interior_rooms')
+            .select('id,floor_label,room_label,room_type_key,order_index')
+            .eq('inspection_id', inspection.id)
+            .order('floor_label', { ascending: true })
+            .order('order_index', { ascending: true }),
+          supabase
+            .from('inspection_round_quick_notes')
+            .select('*')
+            .eq('inspection_id', inspection.id)
+            .order('updated_at', { ascending: false }),
+        ])
+
+        if (roomsErr) {
+          console.error('inspection_interior_rooms (quick notes context) error:', roomsErr)
+          throw new Error(roomsErr.message)
+        }
+        if (quickNotesErr) {
+          console.error('inspection_round_quick_notes (utsida) error:', quickNotesErr)
+          throw new Error(quickNotesErr.message)
+        }
+
+        setInteriorRooms((roomRows ?? []) as InteriorRoomLite[])
+        setQuickNotes((quickNoteRows ?? []) as RoundQuickNote[])
 
         // 4) Befintliga observationer för denna besiktning
         const { data: obsData, error: obsErr } = await supabase
@@ -1737,6 +1813,39 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     event.dataTransfer.setData(IMAGE_DRAG_DATA_TYPE, image.id)
   }
 
+  const handleMobileSplitPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const container = mobileSplitContainerRef.current
+    if (!container) return
+
+    const rect = container.getBoundingClientRect()
+    if (rect.height <= 0) return
+
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    mobileSplitDragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startHeight: mobileImagePanelHeight,
+      containerHeight: rect.height,
+    }
+  }
+
+  const handleMobileSplitPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = mobileSplitDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+
+    const deltaY = event.clientY - drag.startY
+    const nextHeight = drag.startHeight - (deltaY / drag.containerHeight) * 100
+    setMobileImagePanelHeight(Math.min(72, Math.max(24, nextHeight)))
+  }
+
+  const handleMobileSplitPointerEnd = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = mobileSplitDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    mobileSplitDragRef.current = null
+    event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+
   // -----------------------------
   // UI HELPERS
   // -----------------------------
@@ -1869,10 +1978,87 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     return showLinkedImages ? rawImages : rawImages.filter(image => !isImageLinkedToNote(image))
   }
 
+  const quickNoteHasText = (note: RoundQuickNote) => note.note.trim().length > 0
+
+  const floorLabelFromQuickNoteKey = (floorLabel: string | null | undefined) => {
+    const raw = (floorLabel ?? '').trim()
+    if (!raw) return 'Plan'
+
+    const normalized = raw.toLowerCase()
+    const planMatch = normalized.match(/^plan[\s_-]*(\d+)$/)
+    if (planMatch) return `Plan ${planMatch[1]}`
+    if (normalized === 'kallare' || normalized === 'källare') return 'Källare'
+    if (normalized === 'vind') return 'Vind'
+    if (normalized === 'ovrigt' || normalized === 'övrigt') return 'Övrigt'
+
+    return raw
+  }
+
+  const getQuickNoteContext = (note: RoundQuickNote) => {
+    if (note.source_area === 'exterior') {
+      const exteriorItem = note.exterior_item_id
+        ? items.find(item => item.id === note.exterior_item_id)
+        : null
+      return `Utsida > ${exteriorItem?.label ?? 'Komponent'}`
+    }
+
+    const room = note.interior_room_id
+      ? interiorRooms.find(interiorRoom => interiorRoom.id === note.interior_room_id)
+      : null
+    const floorLabel = floorLabelFromQuickNoteKey(room?.floor_label)
+    const roomLabel = room?.room_label?.trim() || room?.room_type_key?.trim() || 'Rum'
+    return `Insida > ${floorLabel} > ${roomLabel}`
+  }
+
+  const getFilteredQuickNotes = (
+    item: ItemBundle,
+    filter: QuickNoteFilter = quickNoteFilter
+  ) => {
+    const visibleNotes = quickNotes.filter(quickNoteHasText)
+
+    if (filter === 'current') {
+      return visibleNotes.filter(
+        note => note.source_area === 'exterior' && note.exterior_item_id === item.id
+      )
+    }
+
+    if (filter === 'exterior') {
+      return visibleNotes.filter(note => note.source_area === 'exterior')
+    }
+
+    return visibleNotes
+  }
+
+  const deleteQuickNote = async (noteId: string) => {
+    if (isInspectionLocked) return
+    if (!confirm('Radera snabbanteckningen?')) return
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const { error: deleteError } = await supabase
+        .from('inspection_round_quick_notes')
+        .delete()
+        .eq('inspection_id', inspection.id)
+        .eq('id', noteId)
+
+      if (deleteError) throw deleteError
+
+      setQuickNotes(prev => prev.filter(note => note.id !== noteId))
+    } catch (e: unknown) {
+      console.error('deleteQuickNote failed', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte radera snabbanteckningen.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const renderImageProcessingPanel = (item: ItemBundle) => {
     const currentImages = getImagesForItem(item)
     const exteriorImages = sortImagesNewestFirst(uniqueImages(allInspectionImages.filter(isExteriorImage)))
     const filteredImages = getFilteredPanelImages(item)
+    const filteredQuickNotes = getFilteredQuickNotes(item)
     const countVisibleImages = (imageList: InspectionImage[]) =>
       showLinkedImages ? imageList.length : imageList.filter(image => !isImageLinkedToNote(image)).length
     const filters: Array<{ key: ExteriorImageFilter; label: string; count: number }> = [
@@ -1880,12 +2066,21 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       { key: 'exterior', label: 'Utsida', count: countVisibleImages(exteriorImages) },
       { key: 'all', label: 'Alla', count: countVisibleImages(allInspectionImages) },
     ]
+    const quickNoteFilters: Array<{ key: QuickNoteFilter; label: string; count: number }> = [
+      { key: 'current', label: 'Aktuell', count: getFilteredQuickNotes(item, 'current').length },
+      { key: 'exterior', label: 'Utsida', count: getFilteredQuickNotes(item, 'exterior').length },
+      { key: 'all', label: 'Alla', count: getFilteredQuickNotes(item, 'all').length },
+    ]
+    const panelTabs: Array<{ key: PanelTab; label: string }> = [
+      { key: 'images', label: 'Bilder' },
+      { key: 'quick_notes', label: 'Snabbanteckningar' },
+    ]
     const imageViewCounts: ExteriorImageViewCount[] = [15, 9, 1]
     const imageGridClass =
       imageViewCount === 1
         ? 'grid grid-cols-1 gap-3'
         : imageViewCount === 15
-          ? 'grid grid-cols-3 gap-2 xl:grid-cols-5'
+          ? 'grid grid-cols-5 gap-1.5 sm:gap-2'
           : 'grid grid-cols-3 gap-2'
     const imageClass =
       imageViewCount === 1
@@ -1893,101 +2088,153 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         : 'aspect-square w-full object-cover transition group-hover:scale-[1.02]'
 
     return (
-      <aside className="flex min-h-0 flex-col border-t border-gray-200 bg-gray-50/70 lg:border-l lg:border-t-0">
-        <div className="border-b border-gray-200 bg-white px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Bilder</div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {filters.map(filter => (
-                <button
-                  key={filter.key}
-                  type="button"
-                  onClick={() => {
-                    setImageFilter(filter.key)
-                    setSelectedPanelImageIds(new Set())
-                  }}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                    imageFilter === filter.key
-                      ? 'border-gray-900 bg-gray-900 text-white'
-                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  {filter.label} <span className="ml-1 opacity-70">{filter.count}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap gap-2">
+      <aside className="flex min-h-0 flex-col border-t border-gray-200 bg-gray-50/70 lg:h-auto lg:border-l lg:border-t-0">
+        <div className="border-b border-gray-200 bg-white">
+          <div
+            className="flex gap-1 border-b border-gray-200 px-4 pt-3"
+            role="tablist"
+            aria-label="Panelinnehåll"
+          >
+            {panelTabs.map(tab => (
               <button
+                key={tab.key}
                 type="button"
-                onClick={() => {
-                  setShowLinkedImages(prev => !prev)
-                  setSelectedPanelImageIds(new Set())
-                }}
-                className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                  showLinkedImages
-                    ? 'border-rose-700 bg-rose-700 text-white'
-                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                role="tab"
+                onClick={() => setPanelTab(tab.key)}
+                className={`rounded-t-lg border border-b-0 px-3 py-2 text-xs font-semibold transition ${
+                  panelTab === tab.key
+                    ? 'border-gray-200 bg-gray-50 text-gray-900'
+                    : 'border-transparent bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-800'
                 }`}
+                aria-selected={panelTab === tab.key}
               >
-                Visa kopplade
+                {tab.label}
               </button>
-              <button
-                type="button"
-                onClick={() => void deleteSelectedPanelImages()}
-                disabled={isInspectionLocked || selectedPanelImageIds.size === 0}
-                className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Radera{selectedPanelImageIds.size > 0 ? ` ${selectedPanelImageIds.size}` : ''}
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {imageViewCounts.map(count => (
-                <button
-                  key={count}
-                  type="button"
-                  onClick={() => setImageViewCount(count)}
-                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition ${
-                    imageViewCount === count
-                      ? 'border-sky-700 bg-sky-700 text-white'
-                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                  }`}
-                  aria-label={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
-                  title={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={
-                      count === 15
-                        ? 'grid h-5 w-5 grid-cols-3 gap-0.5'
-                        : count === 9
-                          ? 'grid h-5 w-5 grid-cols-2 gap-0.5'
-                          : 'grid h-5 w-5 grid-cols-1 gap-0.5'
-                    }
-                  >
-                    {Array.from({ length: count === 15 ? 9 : count === 9 ? 4 : 1 }).map((_, index) => (
-                      <span
-                        key={index}
-                        className={`rounded-[1px] ${imageViewCount === count ? 'bg-white' : 'bg-gray-600'}`}
-                      />
-                    ))}
-                  </span>
-                </button>
-              ))}
-            </div>
+            ))}
           </div>
+
+          {panelTab === 'images' ? (
+            <div className="px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Bilder
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {filters.map(filter => (
+                    <button
+                      key={filter.key}
+                      type="button"
+                      onClick={() => {
+                        setImageFilter(filter.key)
+                        setSelectedPanelImageIds(new Set())
+                      }}
+                      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                        imageFilter === filter.key
+                          ? 'border-gray-900 bg-gray-900 text-white'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      {filter.label} <span className="ml-1 opacity-70">{filter.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowLinkedImages(prev => !prev)
+                      setSelectedPanelImageIds(new Set())
+                    }}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                      showLinkedImages
+                        ? 'border-rose-700 bg-rose-700 text-white'
+                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    Visa kopplade
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteSelectedPanelImages()}
+                    disabled={isInspectionLocked || selectedPanelImageIds.size === 0}
+                    className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Radera{selectedPanelImageIds.size > 0 ? ` ${selectedPanelImageIds.size}` : ''}
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {imageViewCounts.map(count => (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => setImageViewCount(count)}
+                      className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition ${
+                        imageViewCount === count
+                          ? 'border-sky-700 bg-sky-700 text-white'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                      aria-label={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
+                      title={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={
+                          count === 15
+                            ? 'grid h-5 w-5 grid-cols-3 gap-0.5'
+                            : count === 9
+                              ? 'grid h-5 w-5 grid-cols-2 gap-0.5'
+                              : 'grid h-5 w-5 grid-cols-1 gap-0.5'
+                        }
+                      >
+                        {Array.from({ length: count === 15 ? 9 : count === 9 ? 4 : 1 }).map((_, index) => (
+                          <span
+                            key={index}
+                            className={`rounded-[1px] ${imageViewCount === count ? 'bg-white' : 'bg-gray-600'}`}
+                          />
+                        ))}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Snabbanteckningar
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {quickNoteFilters.map(filter => (
+                    <button
+                      key={filter.key}
+                      type="button"
+                      onClick={() => setQuickNoteFilter(filter.key)}
+                      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                        quickNoteFilter === filter.key
+                          ? 'border-gray-900 bg-gray-900 text-white'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      {filter.label} <span className="ml-1 opacity-70">{filter.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          {filteredImages.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-gray-300 bg-white px-3 py-8 text-center text-sm text-gray-600">
-              Inga bilder i valt filter.
-            </div>
-          ) : (
-            <div className={imageGridClass}>
+          {panelTab === 'images' ? (
+            filteredImages.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-white px-3 py-8 text-center text-sm text-gray-600">
+                Inga bilder i valt filter.
+              </div>
+            ) : (
+              <div className={imageGridClass}>
               {filteredImages.map(image => {
                 const isLinked = isImageLinkedToNote(image)
                 const isSelected = selectedPanelImageIds.has(image.id)
@@ -2039,6 +2286,36 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                   </div>
                 )
               })}
+              </div>
+            )
+          ) : filteredQuickNotes.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-white px-3 py-8 text-center text-sm text-gray-600">
+              Inga snabbanteckningar i valt filter.
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200 rounded-xl border border-gray-200 bg-white">
+              {filteredQuickNotes.map(note => (
+                <article key={note.id} className="px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                        {getQuickNoteContext(note)}
+                      </div>
+                      <p className="whitespace-pre-wrap break-words text-sm leading-6 text-gray-900">
+                        {note.note}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void deleteQuickNote(note.id)}
+                      disabled={isInspectionLocked}
+                      className="shrink-0 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Radera
+                    </button>
+                  </div>
+                </article>
+              ))}
             </div>
           )}
         </div>
@@ -2240,6 +2517,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     const nextItem =
       activeIndex >= 0 && activeIndex < items.length - 1 ? items[activeIndex + 1] : null
     const closePanel = () => setActiveHybridItemId(null)
+    const mobileSplitStyle = {
+      '--mobile-image-panel-height': `${mobileImagePanelHeight}%`,
+    } as CSSProperties
     const panelContent = activeItem ? (
       <>
         <header className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-4 md:px-6">
@@ -2262,15 +2542,33 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
           </button>
         </header>
 
-        <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_460px]">
-          <div className="min-h-0 overflow-y-auto px-4 py-4 md:px-6">
+        <div
+          ref={mobileSplitContainerRef}
+          className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_460px]"
+          style={mobileSplitStyle}
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
             {renderItemCard(activeItem, {
               forceExpanded: true,
               embedded: true,
               hideHeader: true,
             })}
           </div>
-          {renderImageProcessingPanel(activeItem)}
+          <button
+            type="button"
+            onPointerDown={handleMobileSplitPointerDown}
+            onPointerMove={handleMobileSplitPointerMove}
+            onPointerUp={handleMobileSplitPointerEnd}
+            onPointerCancel={handleMobileSplitPointerEnd}
+            className="flex h-5 shrink-0 touch-none items-center justify-center border-y border-gray-200 bg-gray-50 text-gray-400 lg:hidden"
+            aria-label="Ändra höjd på bildbanken"
+            title="Dra för att ändra höjd på bildbanken"
+          >
+            <span className="h-1 w-12 rounded-full bg-gray-300" />
+          </button>
+          <div className="h-[var(--mobile-image-panel-height)] min-h-0 shrink-0 lg:contents">
+            {renderImageProcessingPanel(activeItem)}
+          </div>
         </div>
 
         <footer className="flex items-center justify-between gap-2 border-t border-gray-200 px-4 py-3 md:px-6">
@@ -2540,6 +2838,7 @@ function ControlPointImagesSection({
                 }}
                 className="relative h-16 w-16 overflow-hidden rounded-lg border bg-gray-100"
               >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={url}
                   alt={img.label || 'Bild'}
