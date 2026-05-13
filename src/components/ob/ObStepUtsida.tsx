@@ -1584,42 +1584,58 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     return (
       <aside className="flex min-h-0 flex-col border-t border-gray-200 bg-gray-50/70 lg:border-l lg:border-t-0">
         <div className="border-b border-gray-200 bg-white px-4 py-3">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Bilder</div>
-              <div className="text-sm font-semibold text-gray-950">{filteredImages.length} visas</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {filters.map(filter => (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={() => setImageFilter(filter.key)}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                    imageFilter === filter.key
+                      ? 'border-gray-900 bg-gray-900 text-white'
+                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {filter.label} <span className="ml-1 opacity-70">{filter.count}</span>
+                </button>
+              ))}
             </div>
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {filters.map(filter => (
-              <button
-                key={filter.key}
-                type="button"
-                onClick={() => setImageFilter(filter.key)}
-                className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                  imageFilter === filter.key
-                    ? 'border-gray-900 bg-gray-900 text-white'
-                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                {filter.label} <span className="ml-1 opacity-70">{filter.count}</span>
-              </button>
-            ))}
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-gray-500">Visning</span>
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
             {imageViewCounts.map(count => (
               <button
                 key={count}
                 type="button"
                 onClick={() => setImageViewCount(count)}
-                className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition ${
                   imageViewCount === count
                     ? 'border-sky-700 bg-sky-700 text-white'
                     : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
                 }`}
+                aria-label={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
+                title={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
               >
-                {count} bild{count === 1 ? '' : 'er'}
+                <span
+                  aria-hidden="true"
+                  className={
+                    count === 15
+                      ? 'grid h-5 w-5 grid-cols-3 gap-0.5'
+                      : count === 9
+                        ? 'grid h-5 w-5 grid-cols-2 gap-0.5'
+                        : 'grid h-5 w-5 grid-cols-1 gap-0.5'
+                  }
+                >
+                  {Array.from({ length: count === 15 ? 9 : count === 9 ? 4 : 1 }).map((_, index) => (
+                    <span
+                      key={index}
+                      className={`rounded-[1px] ${imageViewCount === count ? 'bg-white' : 'bg-gray-600'}`}
+                    />
+                  ))}
+                </span>
               </button>
             ))}
           </div>
