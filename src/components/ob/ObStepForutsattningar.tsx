@@ -684,11 +684,14 @@ export default function ObStepForutsattningar({
         .filter((label): label is string => Boolean(label))
     )
     const hasNote = rows.some(row => (row.note ?? '').trim().length > 0)
+    const firstNote = rows
+      .map(row => (row.note ?? '').trim())
+      .find(note => note.length > 0)
     const uniqueValues = Array.from(new Set(values))
     const summary = uniqueValues.slice(0, 3).join(', ')
     if (summary && hasNote) return `${summary} · notering`
     if (summary) return summary
-    if (hasNote) return 'Notering finns'
+    if (firstNote) return firstNote.length > 90 ? `${firstNote.slice(0, 90).trim()}...` : firstNote
     return 'Ej ifyllt'
   }
 
@@ -1120,6 +1123,7 @@ export default function ObStepForutsattningar({
 
         {panelEntry && panelContent ? (
           <>
+            <div className="fixed inset-0 z-50 hidden bg-black/20 lg:block" onClick={closePanel} />
             <aside className="fixed inset-y-0 right-0 z-50 hidden w-full max-w-3xl border-l border-gray-200 bg-white shadow-2xl lg:flex lg:flex-col">
               {panelContent}
             </aside>

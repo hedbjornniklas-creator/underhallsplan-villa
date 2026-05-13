@@ -1012,7 +1012,7 @@ export default function OverlatelsebesiktningPage() {
           className="pointer-events-none absolute inset-0"
           style={{
             backgroundImage:
-              'linear-gradient(135deg, #f8fafc 0%, #ffffff 52%, #f8fafc 100%)',
+              'linear-gradient(135deg, #f7fbff 0%, #ffffff 52%, #f3f9ff 100%)',
           }}
         />
         <div className="pointer-events-none absolute inset-0 bg-transparent" />
@@ -1060,5 +1060,6 @@ export default function OverlatelsebesiktningPage() {
     </Protected>
   )
 }
+
 
 
