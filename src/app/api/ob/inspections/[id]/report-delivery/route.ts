@@ -4,7 +4,10 @@ import { createHash, randomUUID } from 'node:crypto'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { requireOrgContext, getProfileContact } from '@/lib/assignments/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
-import { renderPreviewPdf } from '@/lib/report/pdfV2/renderPreviewPdf'
+import {
+  getPdfRenderDiagnostics,
+  renderPreviewPdf,
+} from '@/lib/report/pdfV2/renderPreviewPdf'
 import {
   createReportSnapshotPayloadV1,
   type ReportSnapshotPayloadV1,
@@ -335,38 +338,61 @@ function escapeHtml(value: string) {
     .replaceAll("'", '&#039;')
 }
 
+function stringifyAlertDiagnostics(diagnostics: Record<string, unknown> | null | undefined) {
+  if (!diagnostics) return null
+  try {
+    const json = JSON.stringify(diagnostics, null, 2)
+    if (json.length <= 20_000) return json
+    return `${json.slice(0, 20_000)}\n... [diagnostik avkortad]`
+  } catch (error) {
+    return `Kunde inte serialisera diagnostik: ${error instanceof Error ? error.message : String(error)}`
+  }
+}
+
 async function sendPdfJobAlert(input: {
   inspectionId: string
   linkId: string | null
   kind: 'failed' | 'stuck'
   message: string
   traceId?: string | null
+  diagnostics?: Record<string, unknown> | null
 }) {
   if (!PDF_JOB_ALERT_EMAIL) return
 
+  const timestamp = new Date().toISOString()
+  const diagnosticsText = stringifyAlertDiagnostics(input.diagnostics)
   const subject =
     input.kind === 'stuck'
       ? `Hushub-larm: PDF-jobb har fastnat (${input.inspectionId})`
       : `Hushub-larm: PDF-generering misslyckades (${input.inspectionId})`
-  const text = [
+  const textParts = [
     subject,
     '',
     `inspection_id: ${input.inspectionId}`,
     `report_link_id: ${input.linkId ?? '-'}`,
     `trace_id: ${input.traceId ?? '-'}`,
-    `tidpunkt: ${new Date().toISOString()}`,
+    `tidpunkt: ${timestamp}`,
     '',
     input.message,
-  ].join('\n')
+  ]
+  if (diagnosticsText) {
+    textParts.push('', 'Diagnostik:', diagnosticsText)
+  }
+  const text = textParts.join('\n')
   const html = `
     <p><strong>${escapeHtml(subject)}</strong></p>
     <ul>
       <li><strong>inspection_id:</strong> ${escapeHtml(input.inspectionId)}</li>
       <li><strong>report_link_id:</strong> ${escapeHtml(input.linkId ?? '-')}</li>
       <li><strong>trace_id:</strong> ${escapeHtml(input.traceId ?? '-')}</li>
-      <li><strong>tidpunkt:</strong> ${escapeHtml(new Date().toISOString())}</li>
+      <li><strong>tidpunkt:</strong> ${escapeHtml(timestamp)}</li>
     </ul>
     <p>${escapeHtml(input.message)}</p>
+    ${
+      diagnosticsText
+        ? `<p><strong>Diagnostik</strong></p><pre style="white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.4;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px;">${escapeHtml(diagnosticsText)}</pre>`
+        : ''
+    }
   `
 
   try {
@@ -573,12 +599,14 @@ async function runReportPdfJobInBackground(input: {
     timing.mark('job_completed')
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel vid PDF-jobb.'
+    const diagnostics = getPdfRenderDiagnostics(error)
     console.error('[inspections.report-delivery.pdf-job] failed', {
       linkId: input.linkId,
       inspectionId: input.inspectionId,
       attempt: attemptNumber,
       maxAttempts: PDF_JOB_MAX_ATTEMPTS,
       error: message,
+      diagnostics,
     })
     if (attemptNumber > 0 && attemptNumber < PDF_JOB_MAX_ATTEMPTS) {
       const retryMessage = `PDF-generering misslyckades på försök ${attemptNumber} av ${PDF_JOB_MAX_ATTEMPTS}. Nytt försök startas automatiskt. Senaste fel: ${message}`
@@ -621,6 +649,7 @@ async function runReportPdfJobInBackground(input: {
       kind: 'failed',
       message,
       traceId: input.traceId,
+      diagnostics,
     })
     timing.mark('job_failed', { error: message })
   }

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import chromium from '@sparticuz/chromium'
-import puppeteer from 'puppeteer-core'
+import puppeteer, { type Page } from 'puppeteer-core'
 
 const DEFAULT_TIMEOUT_MS = 60000
 const BROWSER_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
@@ -19,6 +19,32 @@ type LaunchConfig = {
   executablePath: string
   args: string[]
   source: 'env' | 'sparticuz'
+}
+
+export class PdfRenderReadinessTimeoutError extends Error {
+  diagnostics: Record<string, unknown>
+
+  constructor(message: string, diagnostics: Record<string, unknown>, cause?: unknown) {
+    super(message)
+    this.name = 'PdfRenderReadinessTimeoutError'
+    this.diagnostics = diagnostics
+    if (cause !== undefined) {
+      this.cause = cause
+    }
+  }
+}
+
+export function getPdfRenderDiagnostics(error: unknown): Record<string, unknown> | null {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'diagnostics' in error &&
+    typeof (error as { diagnostics?: unknown }).diagnostics === 'object' &&
+    (error as { diagnostics?: unknown }).diagnostics !== null
+  ) {
+    return (error as { diagnostics: Record<string, unknown> }).diagnostics
+  }
+  return null
 }
 
 function createRenderTimingLogger(traceId: string) {
@@ -51,8 +77,116 @@ const isReportReady = () => {
   })
 }
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function compactUrlForLog(value: string) {
+  try {
+    const parsed = new URL(value)
+    if (parsed.pathname === '/api/image-proxy') {
+      const target = parsed.searchParams.get('url')
+      let targetSummary = '<missing>'
+      if (target) {
+        try {
+          const targetUrl = new URL(target)
+          targetSummary = `${targetUrl.host}${targetUrl.pathname}`
+        } catch {
+          targetSummary = target.slice(0, 180)
+        }
+      }
+      return `${parsed.host}${parsed.pathname}?target=${targetSummary}&max=${parsed.searchParams.get('max') ?? ''}`
+    }
+    return `${parsed.host}${parsed.pathname}`
+  } catch {
+    return value.slice(0, 220)
+  }
+}
+
+async function collectReportReadinessDiagnostics(page: Page): Promise<Record<string, unknown>> {
+  try {
+    return await page.evaluate(() => {
+      const describeUrl = (value: string) => {
+        try {
+          const parsed = new URL(value, window.location.href)
+          if (parsed.pathname === '/api/image-proxy') {
+            const target = parsed.searchParams.get('url')
+            let targetHost: string | null = null
+            let targetPath: string | null = null
+            if (target) {
+              try {
+                const targetUrl = new URL(target)
+                targetHost = targetUrl.host
+                targetPath = targetUrl.pathname
+              } catch {
+                targetPath = target.slice(0, 180)
+              }
+            }
+            return {
+              host: parsed.host,
+              path: parsed.pathname,
+              max: parsed.searchParams.get('max'),
+              q: parsed.searchParams.get('q'),
+              targetHost,
+              targetPath,
+            }
+          }
+          return {
+            host: parsed.host,
+            path: parsed.pathname,
+          }
+        } catch {
+          return {
+            raw: value.slice(0, 220),
+          }
+        }
+      }
+
+      const root = document.querySelector('.report-root')
+      const images = Array.from(
+        document.querySelectorAll('img[data-report-track="1"]')
+      )
+      const imageStates = images.map((img, index) => {
+        const htmlImage = img instanceof HTMLImageElement ? img : null
+        return {
+          index,
+          alt: img.getAttribute('alt'),
+          ready: img.getAttribute('data-report-ready'),
+          complete: htmlImage ? htmlImage.complete : null,
+          naturalWidth: htmlImage ? htmlImage.naturalWidth : null,
+          naturalHeight: htmlImage ? htmlImage.naturalHeight : null,
+          src: htmlImage ? describeUrl(htmlImage.currentSrc || htmlImage.src) : null,
+        }
+      })
+      const notReadyImages = imageStates.filter(
+        (img) => img.ready !== '1' || img.complete === false
+      )
+
+      return {
+        hasRoot: Boolean(root),
+        rootClassName: root?.getAttribute('class') ?? null,
+        paginationReady: root?.getAttribute('data-report-pagination-ready') ?? null,
+        imageVersion: root?.getAttribute('data-report-image-version') ?? null,
+        paginationImageVersion:
+          root?.getAttribute('data-report-pagination-image-version') ?? null,
+        trackedImageCount: images.length,
+        notReadyImageCount: notReadyImages.length,
+        incompleteImageCount: imageStates.filter((img) => img.complete === false).length,
+        zeroNaturalSizeCount: imageStates.filter(
+          (img) => img.naturalWidth === 0 || img.naturalHeight === 0
+        ).length,
+        notReadyImages: notReadyImages.slice(0, 8),
+      }
+    })
+  } catch (error) {
+    return {
+      diagnosticsError: errorMessage(error),
+    }
+  }
+}
+
 function isNoSpaceError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error)
+  const message = errorMessage(error)
   return message.includes('ENOSPC') || message.toLowerCase().includes('no space left on device')
 }
 
@@ -235,6 +369,49 @@ export async function renderPreviewPdf(params: {
     try {
       const page = await browser.newPage()
       mark('page_created')
+      const browserEvents: Array<Record<string, unknown>> = []
+      const rememberBrowserEvent = (step: string, extra: Record<string, unknown>) => {
+        browserEvents.push({
+          step,
+          ...extra,
+        })
+        if (browserEvents.length > 30) {
+          browserEvents.splice(0, browserEvents.length - 30)
+        }
+        mark(step, extra)
+      }
+      page.on('console', (message) => {
+        const type = message.type()
+        if (type !== 'error' && type !== 'warn') return
+        rememberBrowserEvent('browser_console', {
+          type,
+          text: message.text().slice(0, 1200),
+        })
+      })
+      page.on('pageerror', (error) => {
+        rememberBrowserEvent('browser_pageerror', {
+          message: errorMessage(error),
+          stack: error instanceof Error ? (error.stack?.slice(0, 1800) ?? null) : null,
+        })
+      })
+      page.on('requestfailed', (request) => {
+        rememberBrowserEvent('browser_request_failed', {
+          method: request.method(),
+          resourceType: request.resourceType(),
+          url: compactUrlForLog(request.url()),
+          errorText: request.failure()?.errorText ?? null,
+        })
+      })
+      page.on('response', (response) => {
+        const status = response.status()
+        if (status < 400) return
+        const request = response.request()
+        rememberBrowserEvent('browser_response_error', {
+          status,
+          resourceType: request.resourceType(),
+          url: compactUrlForLog(response.url()),
+        })
+      })
       page.setDefaultTimeout(timeoutMs)
 
       if (params.cookieHeader) {
@@ -266,7 +443,19 @@ export async function renderPreviewPdf(params: {
         REPORT_READY_TIMEOUT_MS,
         Math.max(5000, timeoutMs - 5000)
       )
-      await page.waitForFunction(isReportReady, { timeout: reportReadyTimeoutMs })
+      try {
+        await page.waitForFunction(isReportReady, { timeout: reportReadyTimeoutMs })
+      } catch (error) {
+        const diagnostics = await collectReportReadinessDiagnostics(page)
+        const timeoutDiagnostics = {
+          timeoutMs: reportReadyTimeoutMs,
+          error: errorMessage(error),
+          browserEvents,
+          ...diagnostics,
+        }
+        mark('report_ready_timeout_diagnostics', timeoutDiagnostics)
+        throw new PdfRenderReadinessTimeoutError(errorMessage(error), timeoutDiagnostics, error)
+      }
       mark('report_ready', { timeoutMs: reportReadyTimeoutMs })
 
       const pdf = await page.pdf({
