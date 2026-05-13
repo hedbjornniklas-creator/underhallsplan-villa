@@ -160,6 +160,8 @@ type InspectionRoomGroupItemSegmentEntry = {
   photoStartIndex: number
   photoTotal: number
   isFirstInGroup: boolean
+  isFirstSegmentInItem: boolean
+  suppressTopBorder: boolean
   isLastInGroup: boolean
   marginTopMm: number
   marginBottomMm: number
@@ -391,6 +393,14 @@ const buildPdfInspectionSegments = (item: InspectionBlockItem) => {
     { segment: 'note', photoUrls: [], photoStartIndex: 0, photoTotal },
   ]
 
+  if (String(item.riskText ?? '').trim().length > 0) {
+    segments.push({ segment: 'risk', photoUrls: [], photoStartIndex: 0, photoTotal })
+  }
+
+  if (String(item.ftuText ?? '').trim().length > 0) {
+    segments.push({ segment: 'ftu', photoUrls: [], photoStartIndex: 0, photoTotal })
+  }
+
   chunkItems(allPhotoUrls, PDF_PHOTOS_PER_SEGMENT).forEach(
     (photoUrls, chunkIndex) => {
       segments.push({
@@ -401,14 +411,6 @@ const buildPdfInspectionSegments = (item: InspectionBlockItem) => {
       })
     }
   )
-
-  if (String(item.riskText ?? '').trim().length > 0) {
-    segments.push({ segment: 'risk', photoUrls: [], photoStartIndex: 0, photoTotal })
-  }
-
-  if (String(item.ftuText ?? '').trim().length > 0) {
-    segments.push({ segment: 'ftu', photoUrls: [], photoStartIndex: 0, photoTotal })
-  }
 
   return segments
 }
@@ -852,11 +854,11 @@ export default function ReportRendererClient({
                     section.id === 'notes-interior' && titleParts.context
                       ? titleParts.label
                       : group.title
-                  if (
+                  const startsNewInteriorFloor =
                     section.id === 'notes-interior' &&
                     titleParts.context &&
                     titleParts.context !== previousInteriorFloor
-                  ) {
+                  if (startsNewInteriorFloor) {
                     entries.push({
                       kind: 'block',
                       id: `${section.id}-floor-header-${blockIndex}-${groupIndex}`,
@@ -899,6 +901,11 @@ export default function ReportRendererClient({
                           photoStartIndex: segment.photoStartIndex,
                           photoTotal: segment.photoTotal,
                           isFirstInGroup: itemIndex === 0 && isFirstSegment,
+                          isFirstSegmentInItem: isFirstSegment,
+                          suppressTopBorder:
+                            Boolean(startsNewInteriorFloor) &&
+                            itemIndex === 0 &&
+                            isFirstSegment,
                           isLastInGroup:
                             itemIndex === group.items.length - 1 && isLastSegment,
                           marginTopMm:
@@ -1329,17 +1336,11 @@ export default function ReportRendererClient({
     )
   }
 
-  const formatPdfPhotoLabel = (
-    title: string,
-    startIndex: number,
-    count: number,
-    total: number
-  ) => {
-    const base = title.trim() ? `${title.trim()} - Bilder` : 'Bilder'
-    if (total <= 0 || count <= 0) return base
+  const formatPdfPhotoLabel = (startIndex: number, count: number) => {
+    if (count <= 0) return 'Bilder'
     const start = Math.max(1, startIndex)
-    const end = Math.min(total, start + count - 1)
-    return `${base} ${start}-${end} av ${total}`
+    const end = start + count - 1
+    return start === end ? `Bilder ${start}` : `Bilder ${start}-${end}`
   }
 
   const renderInspectionItemContent = (
@@ -1388,16 +1389,13 @@ export default function ReportRendererClient({
             marginTop: mmToPx(1.8),
           }}
         >
-          {renderPdfLabel(
-            formatPdfPhotoLabel('', 1, urls.length, urls.length),
-            'photo'
-          )}
+          {renderPdfLabel(formatPdfPhotoLabel(1, urls.length), 'photo')}
           <div
             style={{
               display: 'flex',
               flexWrap: 'wrap',
               gap: mmToPx(3),
-              justifyContent: 'center',
+              justifyContent: urls.length === 1 ? 'flex-start' : 'center',
               marginTop: mmToPx(2),
               width: '100%',
             }}
@@ -1437,8 +1435,6 @@ export default function ReportRendererClient({
         <>
           {renderPdfRow('Notering', noteText || '--')}
 
-          {photoUrls.length > 0 ? renderPdfImageRow(photoUrls) : null}
-
           {riskText.length > 0
             ? renderPdfRow('Riskanalys', riskText, 'risk')
             : null}
@@ -1446,6 +1442,8 @@ export default function ReportRendererClient({
           {ftuText.length > 0
             ? renderPdfRow('FTU', ftuText, 'ftu')
             : null}
+
+          {photoUrls.length > 0 ? renderPdfImageRow(photoUrls) : null}
         </>
       )
     }
@@ -1596,12 +1594,7 @@ export default function ReportRendererClient({
         }}
       >
         {renderPdfLabel(
-          formatPdfPhotoLabel(
-            block.title,
-            block.photoStartIndex,
-            urls.length,
-            block.photoTotal
-          ),
+          formatPdfPhotoLabel(block.photoStartIndex, urls.length),
           'photo'
         )}
         <div
@@ -1609,7 +1602,7 @@ export default function ReportRendererClient({
             display: 'flex',
             flexWrap: 'wrap',
             gap: mmToPx(3),
-            justifyContent: 'center',
+            justifyContent: urls.length === 1 ? 'flex-start' : 'center',
             marginTop: mmToPx(2),
             width: '100%',
           }}
@@ -1670,6 +1663,12 @@ export default function ReportRendererClient({
     const rowTitle = block.title.trim()
     const content = renderPdfInspectionSegmentContent(block, key)
     if (!content) return null
+    const topBorder =
+      block.isFirstSegmentInItem && !block.suppressTopBorder
+        ? block.isFirstInGroup
+          ? `${mmToPx(0.35)} solid #94a3b8`
+          : '1px solid #d1d9e6'
+        : 'none'
 
     return (
       <article
@@ -1689,7 +1688,7 @@ export default function ReportRendererClient({
         >
           <div
             style={{
-              borderTop: block.isFirstInGroup ? '1px solid #cbd5e1' : 'none',
+              borderTop: topBorder,
               fontSize: '10.5pt',
               fontWeight: 700,
               color: '#111827',
@@ -1704,7 +1703,7 @@ export default function ReportRendererClient({
           </div>
           <div
             style={{
-              borderTop: '1px solid #cbd5e1',
+              borderTop: topBorder,
               paddingTop: mmToPx(2.5),
               paddingBottom: mmToPx(2.5),
             }}
@@ -1811,8 +1810,6 @@ export default function ReportRendererClient({
           style={{
             ...blockMargins(block),
             backgroundColor: '#eaf2fb',
-            borderLeft: `${mmToPx(1)} solid ${ACCENT_COLOR}`,
-            borderTop: `1px solid ${ACCENT_COLOR}`,
             color: '#111827',
             fontSize: '12pt',
             fontWeight: 700,
