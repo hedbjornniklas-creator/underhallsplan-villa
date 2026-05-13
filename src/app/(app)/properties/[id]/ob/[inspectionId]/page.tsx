@@ -150,6 +150,7 @@ const SECTIONS: { key: ObSectionKey; label: string }[] = [
   { key: 'grunddata', label: 'Grunddata' },
   { key: 'handlingar', label: 'Handlingar & upplysningar' },
   { key: 'forutsattningar', label: 'Förutsättningar' },
+  { key: 'runda', label: 'ÖB-runda' },
   { key: 'utsida', label: 'Byggnad - utsida' },
   { key: 'insida', label: 'Byggnad - insida' },
 ]
@@ -566,6 +567,7 @@ export default function InspectionDetailPage() {
               className={`${
                 activeSection === 'insida' ||
                 activeSection === 'utsida' ||
+                activeSection === 'runda' ||
                 activeSection === 'areamatning' ||
                 activeSection === 'fuktkontroll'
                   ? 'p-0 md:p-0'

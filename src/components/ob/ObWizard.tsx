@@ -7,6 +7,7 @@ import ObStepHandlingar from './ObStepHandlingar'
 import ObStepForutsattningar from './ObStepForutsattningar'
 import ObStepUtsida from './ObStepUtsida'
 import ObStepInsida from './ObStepInsida'
+import ObStepRunda from './ObStepRunda'
 import ObStepAreamatning from './ObStepAreamatning'
 import ObStepFuktkontroll from './ObStepFuktkontroll'
 import type { Tables } from '@/types/supabase'
@@ -63,6 +64,7 @@ export type ObSectionKey =
   | 'grunddata'
   | 'handlingar'
   | 'forutsattningar'
+  | 'runda'
   | 'utsida'
   | 'insida'
   | 'areamatning'
@@ -920,6 +922,9 @@ export default function ObWizard({
           inspection={normalizedInspection}
         />
       )
+
+    case 'runda':
+      return <ObStepRunda inspection={normalizedInspection} />
 
     case 'utsida':
       return <ObStepUtsida inspection={normalizedInspection} />
