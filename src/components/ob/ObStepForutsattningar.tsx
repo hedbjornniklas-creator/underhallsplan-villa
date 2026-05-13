@@ -164,20 +164,12 @@ export default function ObStepForutsattningar({
   const [items, setItems] = useState<ItemBundle[]>([])
   const [selections, setSelections] = useState<Record<string, InspectionOverviewSelection[]>>({})
   const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(() => new Set())
-  const [usePanelLayout, setUsePanelLayout] = useState(false)
+  const [usePanelLayout] = useState(true)
   const [activePanelKey, setActivePanelKey] = useState<string | null>(null)
   const isSpecialConditionsCollapsed = collapsedItemIds.has(SPECIAL_CONDITIONS_COLLAPSE_KEY)
 
   // Ignore stale save responses if the same note is saved again before Supabase responds.
   const noteSaveVersions = useRef<Record<string, number>>({})
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const params = new URLSearchParams(window.location.search)
-    const layout = params.get('forutsattningarLayout')
-    const sharedLayout = params.get('obLayout')
-    setUsePanelLayout(layout === 'panel' || layout === 'hybrid' || sharedLayout === 'hybrid')
-  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1071,17 +1063,9 @@ export default function ObStepForutsattningar({
     ) : null
 
     return (
-      <div className="space-y-4">
-        <header className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-xl font-semibold text-gray-900">Förutsättningar</h2>
-            <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
-              Paneltest
-            </span>
-          </div>
-          <p className="text-xs text-gray-600">
-            Testvy. Sparning, låsning och rapportdata använder samma logik som ordinarie vy.
-          </p>
+      <div className="space-y-3">
+        <header>
+          <h2 className="text-xl font-semibold text-gray-900">Förutsättningar</h2>
         </header>
 
         {isInspectionLocked ? (
@@ -1090,16 +1074,8 @@ export default function ObStepForutsattningar({
           </div>
         ) : null}
 
-        <section className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-gray-200 md:p-4">
-          <div className="mb-3 flex items-center justify-between gap-3 px-1">
-            <div className="text-xs font-semibold uppercase text-gray-500">
-              Delar
-            </div>
-            <div className="text-xs text-gray-500">
-              Klicka för att öppna arbetsfönster
-            </div>
-          </div>
-          <div className="divide-y divide-gray-200 overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <section className="bg-white">
+          <div className="divide-y divide-gray-200 border-y border-gray-200">
             {panelEntries.map(entry => {
               const isActive = panelEntry?.key === entry.key
               return (
@@ -1107,13 +1083,13 @@ export default function ObStepForutsattningar({
                   key={entry.key}
                   type="button"
                   onClick={() => setActivePanelKey(entry.key)}
-                  className={`flex w-full items-center gap-3 px-3 py-3 text-left transition ${
+                  className={`flex w-full items-center gap-3 py-4 text-left transition ${
                     isActive
-                      ? 'bg-gray-900 text-white'
+                      ? 'bg-gray-50 text-gray-950'
                       : 'bg-white text-gray-900 hover:bg-gray-50'
                   }`}
                 >
-                  <span aria-hidden="true" className="shrink-0">
+                  <span aria-hidden="true" className="w-7 shrink-0 text-center">
                     {entry.emoji}
                   </span>
                   <div className="grid min-w-0 flex-1 gap-1 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
@@ -1122,7 +1098,7 @@ export default function ObStepForutsattningar({
                     </div>
                     <div
                       className={`truncate text-xs md:text-sm ${
-                        isActive ? 'text-gray-200' : 'text-gray-500'
+                        isActive ? 'text-gray-600' : 'text-gray-500'
                       }`}
                     >
                       {getPanelEntrySummary(entry)}
@@ -1131,7 +1107,7 @@ export default function ObStepForutsattningar({
                   <span
                     aria-hidden="true"
                     className={`shrink-0 text-lg leading-none ${
-                      isActive ? 'text-gray-200' : 'text-gray-400'
+                      isActive ? 'text-gray-500' : 'text-gray-400'
                     }`}
                   >
                     ›

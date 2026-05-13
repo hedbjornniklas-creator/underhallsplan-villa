@@ -398,18 +398,12 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   const [collapsedRoomIds, setCollapsedRoomIds] = useState<Set<string>>(
     () => new Set()
   )
-  const [useHybridLayout, setUseHybridLayout] = useState(false)
+  const [useHybridLayout] = useState(true)
   const [activeHybridRoomId, setActiveHybridRoomId] = useState<string | null>(null)
   const otherRoomEnsuredRef = useRef(false)
   const otherRoomItemsEnsuredRef = useRef(false)
   const hasLoadedCollapsedRoomsRef = useRef(false)
   const collapsedRoomsStorageKey = `ob:insida:collapsed:${inspection.id}:rooms`
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const params = new URLSearchParams(window.location.search)
-    setUseHybridLayout(params.get('obLayout') === 'hybrid')
-  }, [])
 
   useEffect(() => {
     otherRoomEnsuredRef.current = false

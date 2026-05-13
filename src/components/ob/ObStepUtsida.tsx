@@ -197,15 +197,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     Record<string, InspectionImage[]>
   >({})
   const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(() => new Set())
-  const [useHybridLayout, setUseHybridLayout] = useState(false)
+  const [useHybridLayout] = useState(true)
   const [activeHybridItemId, setActiveHybridItemId] = useState<string | null>(null)
   const supportsIsFreeNoteRef = useRef<boolean | null>(null)
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const params = new URLSearchParams(window.location.search)
-    setUseHybridLayout(params.get('obLayout') === 'hybrid')
-  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
