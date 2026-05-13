@@ -369,6 +369,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
   const [selectedControlItemId, setSelectedControlItemId] = useState<string | null>(null)
   const [freeNoteDialogId, setFreeNoteDialogId] = useState<string | null>(null)
+  const [previewImage, setPreviewImage] = useState<InspectionImage | null>(null)
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(() => new Set())
   const [imageFilter, setImageFilter] = useState<ImageFilter>('unprocessed')
 
@@ -463,6 +464,17 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       })
   }, [activeRoom, images])
 
+  const activeExteriorImages = useMemo(() => {
+    if (!activeExteriorItem?.id) return []
+    return images
+      .filter(image => image.origin_exterior_item_id === activeExteriorItem.id)
+      .sort((a, b) => {
+        const left = new Date(a.captured_at ?? a.created_at ?? 0).getTime()
+        const right = new Date(b.captured_at ?? b.created_at ?? 0).getTime()
+        return right - left
+      })
+  }, [activeExteriorItem, images])
+
   const activeTargetLabel = useMemo(() => {
     if (area === 'interior') {
       if (!activeRoom) return 'Välj rum'
@@ -554,9 +566,13 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     () => images.filter(image => selectedImageIds.has(image.id)),
     [images, selectedImageIds]
   )
-  const overlayOpen = searchOpen || Boolean(freeNoteDialogId) || exteriorDialogOpen || roomDialogOpen
+  const overlayOpen = Boolean(previewImage) || searchOpen || Boolean(freeNoteDialogId) || exteriorDialogOpen || roomDialogOpen
 
   const closeTopOverlay = useCallback(() => {
+    if (previewImage) {
+      setPreviewImage(null)
+      return true
+    }
     if (searchOpen) {
       setSearchOpen(false)
       setSearchTerm('')
@@ -577,7 +593,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       return true
     }
     return false
-  }, [searchOpen, freeNoteDialogId, exteriorDialogOpen, roomDialogOpen])
+  }, [previewImage, searchOpen, freeNoteDialogId, exteriorDialogOpen, roomDialogOpen])
 
   useEffect(() => {
     if (!inspection?.id) return
@@ -1194,6 +1210,31 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     )
   }
 
+  const deleteRoom = async () => {
+    if (isInspectionLocked || !activeRoom?.id) return
+    if (!confirm('Ta bort rummet från besiktningen?')) return
+    const roomId = activeRoom.id
+    const { error: deleteError } = await supabase
+      .from('inspection_interior_rooms')
+      .delete()
+      .eq('id', roomId)
+    if (deleteError) {
+      setError(deleteError.message)
+      return
+    }
+    setRooms(prev => prev.filter(room => room.id !== roomId))
+    setControlItems(prev => prev.filter(item => item.interior_room_id !== roomId))
+    setImages(prev =>
+      prev.map(image =>
+        image.origin_interior_room_id === roomId || image.interior_room_id === roomId
+          ? { ...image, origin_interior_room_id: null, interior_room_id: null }
+          : image
+      )
+    )
+    setActiveRoomId(null)
+    setRoomDialogOpen(false)
+  }
+
   const addOutcomeControlItem = async (
     baseItem: InspectionControlItem,
     outcome: ControlPointOutcome
@@ -1751,7 +1792,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="-m-2 min-h-[calc(100vh-10rem)] space-y-4 rounded-3xl bg-sky-50/60 p-2 md:-m-4 md:p-4">
       {isInspectionLocked ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           Besiktningen är låst. ÖB-rundan kan läsas men inte ändras.
@@ -1775,6 +1816,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       {roomDialogOpen && activeRoom ? renderRoomDialog() : null}
       {exteriorDialogOpen && activeExteriorItem ? renderExteriorDialog() : null}
       {freeNoteDialogId ? renderFreeNoteDialog() : null}
+      {previewImage ? renderImagePreviewDialog() : null}
 
       <ControlPointSearchDialog
         open={searchOpen}
@@ -1914,7 +1956,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     return (
       <div className="space-y-3 rounded-2xl border-2 border-sky-200 bg-white p-3 shadow-lg ring-1 ring-sky-100 md:p-4">
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="rounded-xl border border-sky-300 bg-sky-50/70 p-3 shadow-sm">
+          <div className="rounded-xl border border-sky-300 bg-sky-50/70 p-2.5 shadow-sm">
             <div className="space-y-2">
               <select
                 value={newRoomTypeKey}
@@ -1923,7 +1965,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                   setNewRoomTypeKey(nextRoomTypeKey)
                   setNewRoomLabel(nextRoomTypeKey ? getSuggestedRoomLabel(nextRoomTypeKey) : '')
                 }}
-                className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm text-gray-900"
+                className="w-full rounded-lg border border-sky-200 bg-white px-3 py-1.5 text-sm text-gray-900"
                 disabled={isInspectionLocked}
               >
                 <option value="">Rumstyp</option>
@@ -1937,14 +1979,14 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 value={newRoomLabel}
                 onChange={event => setNewRoomLabel(event.target.value)}
                 placeholder="Rumsnamn"
-                className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm text-gray-900"
+                className="w-full rounded-lg border border-sky-200 bg-white px-3 py-1.5 text-sm text-gray-900"
                 disabled={isInspectionLocked}
               />
               <button
                 type="button"
                 onClick={() => void addRoom()}
                 disabled={isInspectionLocked || saving}
-                className={primaryButtonClass('min-h-11 w-full')}
+                className={primaryButtonClass('min-h-10 w-full')}
               >
                 <Plus size={16} />
                 Lägg till rum
@@ -1959,9 +2001,9 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 setActiveRoomId(room.id ?? null)
                 setRoomDialogOpen(true)
               }}
-              className={`min-h-[94px] rounded-xl border-2 px-3 py-3 text-left text-base shadow-sm ${activeTileClass(activeRoomId === room.id)}`}
+              className={`min-h-[58px] rounded-xl border-2 px-3 py-2 text-left text-base shadow-sm ${activeTileClass(activeRoomId === room.id)}`}
             >
-              <div className="text-lg font-semibold leading-snug">{getRoomDisplayName(room)}</div>
+              <div className="text-base font-semibold leading-snug">{getRoomDisplayName(room)}</div>
             </button>
           ))}
         </div>
@@ -1980,7 +2022,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               setActiveExteriorItemId(item.id)
               setExteriorDialogOpen(true)
             }}
-            className={`min-h-[94px] rounded-xl border-2 px-3 py-3 text-left text-base font-semibold shadow-sm ${activeTileClass(
+            className={`min-h-[58px] rounded-xl border-2 px-3 py-2 text-left text-base font-semibold shadow-sm ${activeTileClass(
               activeExteriorItemId === item.id
             )}`}
           >
@@ -2081,6 +2123,18 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               {renderQuickNote()}
             </div>
           </div>
+
+          <div className="border-t border-gray-200 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => void deleteRoom()}
+              disabled={isInspectionLocked}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 disabled:opacity-50 sm:w-auto"
+            >
+              <Trash2 size={16} />
+              Ta bort rum
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -2150,6 +2204,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
           <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
             <div className="space-y-4">
               {renderControlItemsPanel(false, false)}
+              {renderExteriorImageStrip()}
               {renderQuickNote()}
             </div>
           </div>
@@ -2171,13 +2226,20 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         {activeRoomImages.length > 0 ? (
           <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
             {activeRoomImages.map(image => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <button
                 key={image.id}
-                src={getImagePublicUrl(image.file_path)}
-                alt=""
-                className="h-20 w-20 shrink-0 rounded-lg border border-gray-200 object-cover"
-              />
+                type="button"
+                onClick={() => setPreviewImage(image)}
+                className="shrink-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-300"
+                aria-label="Visa bild"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={getImagePublicUrl(image.file_path)}
+                  alt=""
+                  className="h-20 w-20 rounded-lg border border-gray-200 object-cover"
+                />
+              </button>
             ))}
           </div>
         ) : (
@@ -2185,6 +2247,73 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
             Inga bilder tagna i rummet ännu.
           </div>
         )}
+      </div>
+    )
+  }
+
+  function renderExteriorImageStrip() {
+    if (!activeExteriorItem) return null
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-sm font-semibold text-gray-950">Bilder i komponenten</div>
+          <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800">
+            {activeExteriorImages.length}
+          </span>
+        </div>
+        {activeExteriorImages.length > 0 ? (
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {activeExteriorImages.map(image => (
+              <button
+                key={image.id}
+                type="button"
+                onClick={() => setPreviewImage(image)}
+                className="shrink-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-300"
+                aria-label="Visa bild"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={getImagePublicUrl(image.file_path)}
+                  alt=""
+                  className="h-20 w-20 rounded-lg border border-gray-200 object-cover"
+                />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-sm text-gray-600">
+            Inga bilder tagna i komponenten ännu.
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  function renderImagePreviewDialog() {
+    if (!previewImage) return null
+    return (
+      <div className="fixed inset-0 z-[130] bg-black/85 p-3" role="dialog" aria-modal="true">
+        <div className="flex h-full flex-col">
+          <div className="mb-3 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setPreviewImage(null)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-white/10 text-white"
+              aria-label="Stäng bild"
+              title="Stäng bild"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={getImagePublicUrl(previewImage.file_path)}
+              alt=""
+              className="h-full w-full object-contain"
+            />
+          </div>
+        </div>
       </div>
     )
   }
@@ -2288,13 +2417,20 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 {linkedImages.length > 0 ? (
                   <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
                     {linkedImages.map(image => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <button
                         key={image.id}
-                        src={getImagePublicUrl(image.file_path)}
-                        alt=""
-                        className="aspect-square rounded-lg border border-gray-200 object-cover"
-                      />
+                        type="button"
+                        onClick={() => setPreviewImage(image)}
+                        className="rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-300"
+                        aria-label="Visa bild"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={getImagePublicUrl(image.file_path)}
+                          alt=""
+                          className="aspect-square rounded-lg border border-gray-200 object-cover"
+                        />
+                      </button>
                     ))}
                   </div>
                 ) : (
@@ -2607,13 +2743,20 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         {processMode && linkedImages.length > 0 ? (
           <div className="mt-3 grid grid-cols-3 gap-2">
             {linkedImages.slice(0, 6).map(image => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <button
                 key={image.id}
-                src={getImagePublicUrl(image.file_path)}
-                alt=""
-                className="aspect-square rounded-lg border border-gray-200 object-cover"
-              />
+                type="button"
+                onClick={() => setPreviewImage(image)}
+                className="rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-300"
+                aria-label="Visa bild"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={getImagePublicUrl(image.file_path)}
+                  alt=""
+                  className="aspect-square rounded-lg border border-gray-200 object-cover"
+                />
+              </button>
             ))}
           </div>
         ) : null}
