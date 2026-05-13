@@ -211,6 +211,21 @@ const addImageToImageMap = (
   return next
 }
 
+const removeImagesFromImageMap = (
+  map: Record<string, InspectionImage[]>,
+  imageIds: Set<string>
+) => {
+  const next: Record<string, InspectionImage[]> = {}
+  for (const [key, images] of Object.entries(map)) {
+    const filtered = images.filter(image => !imageIds.has(image.id))
+    if (filtered.length > 0) next[key] = filtered
+  }
+  return next
+}
+
+const isImageLinkedToNote = (image: InspectionImage) =>
+  Boolean(image.control_item_id || image.exterior_observation_id)
+
 export default function ObStepUtsida({ inspection }: { inspection: Inspection }) {
   const collapsedStorageKey = `ob:utsida:collapsed:${inspection.id}`
   const [loading, setLoading] = useState(true)
@@ -244,6 +259,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   const [activeHybridItemId, setActiveHybridItemId] = useState<string | null>(null)
   const [imageFilter, setImageFilter] = useState<ExteriorImageFilter>('current')
   const [imageViewCount, setImageViewCount] = useState<ExteriorImageViewCount>(9)
+  const [showLinkedImages, setShowLinkedImages] = useState(false)
+  const [selectedPanelImageIds, setSelectedPanelImageIds] = useState<Set<string>>(() => new Set())
   const [previewImage, setPreviewImage] = useState<InspectionImage | null>(null)
   const supportsIsFreeNoteRef = useRef<boolean | null>(null)
 
@@ -263,7 +280,16 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   useEffect(() => {
     setImageFilter('current')
     setPreviewImage(null)
+    setSelectedPanelImageIds(new Set())
   }, [activeHybridItemId])
+
+  useEffect(() => {
+    setSelectedPanelImageIds(prev => {
+      const existingIds = new Set(allInspectionImages.map(image => image.id))
+      const next = new Set(Array.from(prev).filter(imageId => existingIds.has(imageId)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [allInspectionImages])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1300,7 +1326,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     }
   }
 
-  const handleDeleteControlItemImage = async (imageId: string) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _handleDeleteControlItemImage = async (imageId: string) => {
     if (isInspectionLocked) return
     try {
       setSaving(true)
@@ -1420,7 +1447,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     }
   }
 
-  const handleDeleteObservationImage = async (imageId: string) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _handleDeleteObservationImage = async (imageId: string) => {
     if (isInspectionLocked) return
     try {
       setSaving(true)
@@ -1469,6 +1497,39 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         ? prev.map(image => (image.id === updatedImage.id ? updatedImage : image))
         : [updatedImage, ...prev]
     )
+  }
+
+  const getObservationById = (observationId: string | null | undefined) => {
+    if (!observationId) return null
+    for (const rows of Object.values(observations)) {
+      const row = rows.find(observation => observation.id === observationId)
+      if (row) return row
+    }
+    return null
+  }
+
+  const buildUnlinkedExteriorImagePatch = (image: InspectionImage) => {
+    const linkedControlItem = image.control_item_id
+      ? controlItems.find(item => item.id === image.control_item_id) ?? null
+      : null
+    const sourceObservationId =
+      image.origin_exterior_observation_id ??
+      image.exterior_observation_id ??
+      linkedControlItem?.exterior_observation_id ??
+      null
+    const sourceObservation = getObservationById(sourceObservationId)
+    const sourceItemId = image.origin_exterior_item_id ?? sourceObservation?.exterior_item_id ?? null
+    const sourceItem = sourceItemId ? items.find(item => item.id === sourceItemId) ?? null : null
+
+    return {
+      control_item_id: null,
+      exterior_observation_id: null,
+      interior_room_id: null,
+      source_area: 'exterior',
+      origin_exterior_observation_id: image.origin_exterior_observation_id ?? sourceObservationId,
+      origin_exterior_item_id: sourceItemId,
+      origin_exterior_item_key: image.origin_exterior_item_key ?? sourceItem?.key ?? null,
+    }
   }
 
   const moveImageToControlItem = async (
@@ -1574,6 +1635,91 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     } catch (e: unknown) {
       console.error('moveImageToObservation failed', e)
       setError(e instanceof Error ? e.message : 'Kunde inte koppla bilden till den fria noteringen.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const unlinkImageFromNote = async (imageId: string) => {
+    if (isInspectionLocked) return
+
+    const sourceImage = allInspectionImages.find(image => image.id === imageId)
+    if (!sourceImage) {
+      setError('Bilden hittades inte. Uppdatera sidan och försök igen.')
+      return
+    }
+
+    if (!isImageLinkedToNote(sourceImage)) return
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const { data, error: updateError } = await supabase
+        .from('inspection_images')
+        .update(buildUnlinkedExteriorImagePatch(sourceImage))
+        .eq('id', imageId)
+        .eq('inspection_id', inspection.id)
+        .select('*')
+        .single()
+
+      if (updateError) throw updateError
+
+      const updatedImage = data as InspectionImage
+      setImagesByControlItemId(prev => removeImageFromImageMap(prev, imageId))
+      setImagesByObservationId(prev => removeImageFromImageMap(prev, imageId))
+      updateImageInAllImages(updatedImage)
+    } catch (e: unknown) {
+      console.error('unlinkImageFromNote failed', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte koppla loss bilden.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const togglePanelImageSelection = (imageId: string) => {
+    setSelectedPanelImageIds(prev => {
+      const next = new Set(prev)
+      if (next.has(imageId)) next.delete(imageId)
+      else next.add(imageId)
+      return next
+    })
+  }
+
+  const deleteSelectedPanelImages = async () => {
+    if (isInspectionLocked) return
+    const selectedIds = Array.from(selectedPanelImageIds)
+    if (selectedIds.length === 0) return
+    if (!confirm(`Radera ${selectedIds.length} bild${selectedIds.length === 1 ? '' : 'er'}?`)) return
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const selectedIdSet = new Set(selectedIds)
+      const selectedImages = allInspectionImages.filter(image => selectedIdSet.has(image.id))
+
+      const { error: deleteError } = await supabase
+        .from('inspection_images')
+        .delete()
+        .eq('inspection_id', inspection.id)
+        .in('id', selectedIds)
+
+      if (deleteError) throw deleteError
+
+      const storagePaths = selectedImages.map(image => image.file_path).filter(Boolean)
+      if (storagePaths.length > 0) {
+        const { error: storageError } = await supabase.storage.from(IMAGE_BUCKET).remove(storagePaths)
+        if (storageError) console.error('delete selected exterior images from storage failed:', storageError)
+      }
+
+      setImagesByControlItemId(prev => removeImagesFromImageMap(prev, selectedIdSet))
+      setImagesByObservationId(prev => removeImagesFromImageMap(prev, selectedIdSet))
+      setAllInspectionImages(prev => prev.filter(image => !selectedIdSet.has(image.id)))
+      setSelectedPanelImageIds(new Set())
+    } catch (e: unknown) {
+      console.error('deleteSelectedPanelImages failed', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte radera markerade bilder.')
     } finally {
       setSaving(false)
     }
@@ -1713,21 +1859,26 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   }
 
   const getFilteredPanelImages = (item: ItemBundle) => {
-    if (imageFilter === 'current') return getImagesForItem(item)
-    if (imageFilter === 'exterior') {
-      return sortImagesNewestFirst(uniqueImages(allInspectionImages.filter(isExteriorImage)))
-    }
-    return sortImagesNewestFirst(uniqueImages(allInspectionImages))
+    const rawImages =
+      imageFilter === 'current'
+        ? getImagesForItem(item)
+        : imageFilter === 'exterior'
+          ? sortImagesNewestFirst(uniqueImages(allInspectionImages.filter(isExteriorImage)))
+          : sortImagesNewestFirst(uniqueImages(allInspectionImages))
+
+    return showLinkedImages ? rawImages : rawImages.filter(image => !isImageLinkedToNote(image))
   }
 
   const renderImageProcessingPanel = (item: ItemBundle) => {
     const currentImages = getImagesForItem(item)
     const exteriorImages = sortImagesNewestFirst(uniqueImages(allInspectionImages.filter(isExteriorImage)))
     const filteredImages = getFilteredPanelImages(item)
+    const countVisibleImages = (imageList: InspectionImage[]) =>
+      showLinkedImages ? imageList.length : imageList.filter(image => !isImageLinkedToNote(image)).length
     const filters: Array<{ key: ExteriorImageFilter; label: string; count: number }> = [
-      { key: 'current', label: 'Aktuell', count: currentImages.length },
-      { key: 'exterior', label: 'Utsida', count: exteriorImages.length },
-      { key: 'all', label: 'Alla', count: allInspectionImages.length },
+      { key: 'current', label: 'Aktuell', count: countVisibleImages(currentImages) },
+      { key: 'exterior', label: 'Utsida', count: countVisibleImages(exteriorImages) },
+      { key: 'all', label: 'Alla', count: countVisibleImages(allInspectionImages) },
     ]
     const imageViewCounts: ExteriorImageViewCount[] = [15, 9, 1]
     const imageGridClass =
@@ -1753,7 +1904,10 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                 <button
                   key={filter.key}
                   type="button"
-                  onClick={() => setImageFilter(filter.key)}
+                  onClick={() => {
+                    setImageFilter(filter.key)
+                    setSelectedPanelImageIds(new Set())
+                  }}
                   className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
                     imageFilter === filter.key
                       ? 'border-gray-900 bg-gray-900 text-white'
@@ -1765,39 +1919,65 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               ))}
             </div>
           </div>
-          <div className="mt-3 flex flex-wrap justify-end gap-2">
-            {imageViewCounts.map(count => (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
-                key={count}
                 type="button"
-                onClick={() => setImageViewCount(count)}
-                className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition ${
-                  imageViewCount === count
-                    ? 'border-sky-700 bg-sky-700 text-white'
+                onClick={() => {
+                  setShowLinkedImages(prev => !prev)
+                  setSelectedPanelImageIds(new Set())
+                }}
+                className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                  showLinkedImages
+                    ? 'border-rose-700 bg-rose-700 text-white'
                     : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
                 }`}
-                aria-label={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
-                title={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
               >
-                <span
-                  aria-hidden="true"
-                  className={
-                    count === 15
-                      ? 'grid h-5 w-5 grid-cols-3 gap-0.5'
-                      : count === 9
-                        ? 'grid h-5 w-5 grid-cols-2 gap-0.5'
-                        : 'grid h-5 w-5 grid-cols-1 gap-0.5'
-                  }
-                >
-                  {Array.from({ length: count === 15 ? 9 : count === 9 ? 4 : 1 }).map((_, index) => (
-                    <span
-                      key={index}
-                      className={`rounded-[1px] ${imageViewCount === count ? 'bg-white' : 'bg-gray-600'}`}
-                    />
-                  ))}
-                </span>
+                Visa kopplade
               </button>
-            ))}
+              <button
+                type="button"
+                onClick={() => void deleteSelectedPanelImages()}
+                disabled={isInspectionLocked || selectedPanelImageIds.size === 0}
+                className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Radera{selectedPanelImageIds.size > 0 ? ` ${selectedPanelImageIds.size}` : ''}
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {imageViewCounts.map(count => (
+                <button
+                  key={count}
+                  type="button"
+                  onClick={() => setImageViewCount(count)}
+                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition ${
+                    imageViewCount === count
+                      ? 'border-sky-700 bg-sky-700 text-white'
+                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                  aria-label={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
+                  title={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={
+                      count === 15
+                        ? 'grid h-5 w-5 grid-cols-3 gap-0.5'
+                        : count === 9
+                          ? 'grid h-5 w-5 grid-cols-2 gap-0.5'
+                          : 'grid h-5 w-5 grid-cols-1 gap-0.5'
+                    }
+                  >
+                    {Array.from({ length: count === 15 ? 9 : count === 9 ? 4 : 1 }).map((_, index) => (
+                      <span
+                        key={index}
+                        className={`rounded-[1px] ${imageViewCount === count ? 'bg-white' : 'bg-gray-600'}`}
+                      />
+                    ))}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -1808,24 +1988,57 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             </div>
           ) : (
             <div className={imageGridClass}>
-              {filteredImages.map(image => (
-                <button
-                  key={image.id}
-                  type="button"
-                  onClick={() => setPreviewImage(image)}
-                  draggable={!isInspectionLocked}
-                  onDragStart={event => handleImageDragStart(event, image)}
-                  className="group cursor-grab overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm transition hover:border-gray-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-300 active:cursor-grabbing"
-                  aria-label="Visa bild"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={getImagePublicUrl(image.file_path)}
-                    alt=""
-                    className={imageClass}
-                  />
-                </button>
-              ))}
+              {filteredImages.map(image => {
+                const isLinked = isImageLinkedToNote(image)
+                const isSelected = selectedPanelImageIds.has(image.id)
+                return (
+                  <div
+                    key={image.id}
+                    className={`relative overflow-hidden rounded-xl border bg-white shadow-sm transition ${
+                      isLinked
+                        ? 'border-rose-400 opacity-75 ring-2 ring-rose-100'
+                        : isSelected
+                          ? 'border-gray-900 ring-2 ring-gray-900/10'
+                          : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setPreviewImage(image)}
+                      draggable={!isInspectionLocked}
+                      onDragStart={event => handleImageDragStart(event, image)}
+                      className="group block w-full cursor-grab overflow-hidden text-left focus:outline-none focus:ring-2 focus:ring-sky-300 active:cursor-grabbing"
+                      aria-label="Visa bild"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={getImagePublicUrl(image.file_path)}
+                        alt=""
+                        className={imageClass}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => togglePanelImageSelection(image.id)}
+                      disabled={isInspectionLocked}
+                      className={`absolute left-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded border text-[11px] font-bold shadow-sm ${
+                        isSelected
+                          ? 'border-gray-900 bg-gray-900 text-white'
+                          : 'border-white/80 bg-white/90 text-transparent'
+                      }`}
+                      aria-label={isSelected ? 'Avmarkera bild' : 'Markera bild'}
+                      title={isSelected ? 'Avmarkera bild' : 'Markera bild'}
+                    >
+                      ✓
+                    </button>
+                    {isLinked ? (
+                      <span className="absolute bottom-1.5 left-1.5 rounded-full bg-rose-700 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
+                        Kopplad
+                      </span>
+                    ) : null}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
@@ -1964,7 +2177,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               imagesByControlItemId={imagesByControlItemId}
               onUploadImageForControlItem={handleUploadImageForControlItem}
               onDropImageOnControlItem={moveImageToControlItem}
-              onDeleteControlItemImage={handleDeleteControlItemImage}
+              onUnlinkImageFromNote={unlinkImageFromNote}
             />
 
             {/* Fria noteringar + knapp för ytterligare kontrollpunkt */}
@@ -1980,7 +2193,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               onDeleteFreeNote={(rowId) => deleteFreeNoteRow(item.id, rowId)}
               onUploadImageForObservation={handleUploadImageForObservation}
               onDropImageOnObservation={moveImageToObservation}
-              onDeleteObservationImage={handleDeleteObservationImage}
+              onUnlinkImageFromNote={unlinkImageFromNote}
               onAddControlFromCatalog={cp =>
                 addControlItemFromCatalog(item, mainRow, cp)
               }
@@ -2195,7 +2408,7 @@ type ControlPointImagesSectionProps = {
   images: InspectionImage[]
   onUpload: (file: File) => void | Promise<void>
   onDropImage?: (imageId: string) => void | Promise<void>
-  onDelete: (imageId: string) => void
+  onUnlink: (imageId: string) => void | Promise<void>
   title?: string
   disabled?: boolean
 }
@@ -2204,7 +2417,7 @@ function ControlPointImagesSection({
   images,
   onUpload,
   onDropImage,
-  onDelete,
+  onUnlink,
   title,
   disabled = false,
 }: ControlPointImagesSectionProps) {
@@ -2316,6 +2529,15 @@ function ControlPointImagesSection({
             return (
               <div
                 key={img.id}
+                draggable={!disabled}
+                onDragStart={event => {
+                  if (disabled) {
+                    event.preventDefault()
+                    return
+                  }
+                  event.dataTransfer.effectAllowed = 'move'
+                  event.dataTransfer.setData(IMAGE_DRAG_DATA_TYPE, img.id)
+                }}
                 className="relative h-16 w-16 overflow-hidden rounded-lg border bg-gray-100"
               >
                 <img
@@ -2325,9 +2547,10 @@ function ControlPointImagesSection({
                 />
                 <button
                   type="button"
-                  onClick={() => onDelete(img.id)}
-                  className="absolute right-0.5 top-0.5 rounded-full bg-black/70 px-1 text-[8px] font-medium text-white"
+                  onClick={() => void onUnlink(img.id)}
+                  className="absolute inset-x-1 bottom-1 rounded-full bg-black/75 px-1.5 py-0.5 text-[0px] font-semibold text-white"
                 >
+                  <span className="text-[9px]">Koppla loss</span>
                   ×
                 </button>
               </div>
@@ -2365,7 +2588,7 @@ type ExteriorControlPointsSectionProps = {
     imageId: string,
     controlItem: InspectionControlItem
   ) => void
-  onDeleteControlItemImage: (imageId: string) => void
+  onUnlinkImageFromNote: (imageId: string) => void | Promise<void>
 }
 
 function ExteriorControlPointsSection({
@@ -2382,7 +2605,7 @@ function ExteriorControlPointsSection({
   imagesByControlItemId,
   onUploadImageForControlItem,
   onDropImageOnControlItem,
-  onDeleteControlItemImage,
+  onUnlinkImageFromNote,
 }: ExteriorControlPointsSectionProps) {
   const groupedItems = useMemo(() => {
     const map = new Map<string, InspectionControlItem[]>()
@@ -2642,7 +2865,7 @@ function ExteriorControlPointsSection({
                       images={ciImages}
                       onUpload={file => onUploadImageForControlItem(ci, file)}
                       onDropImage={imageId => onDropImageOnControlItem(imageId, ci)}
-                      onDelete={onDeleteControlItemImage}
+                      onUnlink={onUnlinkImageFromNote}
                       title="Bilder"
                       disabled={isInspectionLocked}
                     />
@@ -2889,7 +3112,7 @@ function ExteriorControlPointsSection({
                       images={imagesByControlItemId[baseItem.id] || []}
                       onUpload={file => onUploadImageForControlItem(baseItem, file)}
                       onDropImage={imageId => onDropImageOnControlItem(imageId, baseItem)}
-                      onDelete={onDeleteControlItemImage}
+                      onUnlink={onUnlinkImageFromNote}
                       disabled={isInspectionLocked}
                     />
                   )}
@@ -2981,7 +3204,7 @@ function ExteriorControlPointsSection({
                             images={ciImages}
                             onUpload={file => onUploadImageForControlItem(ci, file)}
                             onDropImage={imageId => onDropImageOnControlItem(imageId, ci)}
-                            onDelete={onDeleteControlItemImage}
+                            onUnlink={onUnlinkImageFromNote}
                             disabled={isInspectionLocked}
                           />
                         )}
@@ -3019,7 +3242,7 @@ type FreeNotesSectionProps = {
     imageId: string,
     observation: InspectionExteriorObservation
   ) => void
-  onDeleteObservationImage: (imageId: string) => void
+  onUnlinkImageFromNote: (imageId: string) => void | Promise<void>
   onAddControlFromCatalog: (cp: ControlPointLite) => void
 }
 
@@ -3034,7 +3257,7 @@ function FreeNotesSection({
   onDeleteFreeNote,
   onUploadImageForObservation,
   onDropImageOnObservation,
-  onDeleteObservationImage,
+  onUnlinkImageFromNote,
   onAddControlFromCatalog,
 }: FreeNotesSectionProps) {
   const [showSearch, setShowSearch] = useState(false)
@@ -3387,7 +3610,7 @@ function FreeNotesSection({
                         images={imagesByObservationId[row.id] || []}
                         onUpload={file => onUploadImageForObservation(row, file)}
                         onDropImage={imageId => onDropImageOnObservation(imageId, row)}
-                        onDelete={onDeleteObservationImage}
+                        onUnlink={onUnlinkImageFromNote}
                         title="Bilder"
                         disabled={isInspectionLocked}
                       />
