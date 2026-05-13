@@ -64,13 +64,14 @@ type DashboardRow = {
 
 const UI_RULES: Record<ProductKey, { modules: string[]; roles: string[] }> = {
   renoapp: { modules: ['board_portal'], roles: ['board_member', 'renoapp_admin'] },
-  dashboard: { modules: ['inspections'], roles: ['inspector'] },
+  dashboard: { modules: ['inspections', 'construction_inspections'], roles: ['inspector'] },
   hushub_admin: { modules: [], roles: ['hushub_superadmin'] },
 }
 
 function isDashboardAssignmentForCurrentUi(assignment: UserAssignment) {
   if (assignment.productKey !== 'dashboard') return false
   if (assignment.moduleKey === 'inspections' && assignment.roleKey === 'inspector') return true
+  if (assignment.moduleKey === 'construction_inspections' && assignment.roleKey === 'inspector') return true
   if (!assignment.moduleKey && (assignment.roleKey === 'inspector' || assignment.roleKey === 'dashboard_admin')) {
     return true
   }
@@ -87,6 +88,7 @@ function trim(value: string | null | undefined) {
 
 function dashboardModuleLabel(key: string, fallback: string) {
   if (key === 'inspections') return 'Överlåtelsebesiktning'
+  if (key === 'construction_inspections') return 'Entreprenadbesiktning'
   return fallback
 }
 
@@ -217,7 +219,7 @@ export default function AccessManagementClient() {
     void load()
   }, [])
 
-  const rawProducts = data?.products ?? []
+  const rawProducts = useMemo(() => data?.products ?? [], [data?.products])
   const products = useMemo(
     () =>
       rawProducts.map((product) => ({
@@ -314,7 +316,9 @@ export default function AccessManagementClient() {
         (byKey.get('dashboard')?.modules ?? []).map((module) => {
           const assignment =
             activeUser.uiAssignments.dashboard.find((item) => item.moduleId === module.id) ??
-            (module.key === 'inspections' ? legacyDashboardAssignment : null)
+            ((module.key === 'inspections' || module.key === 'construction_inspections')
+              ? legacyDashboardAssignment
+              : null)
           return {
             moduleId: module.id,
             label: dashboardModuleLabel(module.key, module.label),
@@ -511,11 +515,11 @@ export default function AccessManagementClient() {
           await deleteAssignment(assignment.id)
         }
       } else {
-        for (const module of product.modules) {
+        for (const productModule of product.modules) {
           await postAssignment({
             profileId: activeUser.id,
             productId: product.id,
-            moduleId: module.id,
+            moduleId: productModule.id,
             roleId,
             scopeType: 'global',
             scopeId: null,

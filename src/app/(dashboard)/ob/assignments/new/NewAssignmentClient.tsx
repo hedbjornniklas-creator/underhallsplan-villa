@@ -7,7 +7,7 @@ import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 
-type AssignmentType = 'OB' | 'STATUS' | 'UHP'
+type AssignmentType = 'OB' | 'STATUS' | 'UHP' | 'EB'
 type OrdererRole = 'buyer' | 'seller' | 'apartment' | ''
 
 type NewAssignmentClientProps = {

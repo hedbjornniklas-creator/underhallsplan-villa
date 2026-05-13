@@ -7,6 +7,7 @@ export type BesiktAppAdminTab =
   | 'certifications'
   | 'forutsattningar'
   | 'addon-services'
+  | 'eb'
 
 export const BESIKTAPP_ADMIN_TABS: {
   key: BesiktAppAdminTab
@@ -37,6 +38,11 @@ export const BESIKTAPP_ADMIN_TABS: {
     key: 'addon-services',
     label: 'Tilläggsuppdrag',
     description: 'Konfigurera tilläggstjänster och extra uppdrag som kan kopplas till arbetet.',
+  },
+  {
+    key: 'eb',
+    label: 'Entreprenadbesiktning',
+    description: 'Styr gemensamma EB-val som besiktningstyper, fack, noteringsstatusar och beteckningar.',
   },
   {
     key: 'certifications',

@@ -1,7 +1,7 @@
 ﻿import 'server-only'
 
 type TermsRole = 'seller' | 'buyer' | 'apartment'
-type AssignmentType = 'OB' | 'STATUS' | 'UHP'
+type AssignmentType = 'OB' | 'STATUS' | 'UHP' | 'EB'
 
 type AssignmentForEmail = {
   assignment_type: AssignmentType
@@ -141,6 +141,7 @@ function formatPriceAmount(value: number | null, currency: string | null) {
 function assignmentTypeToLabel(type: AssignmentType) {
   if (type === 'STATUS') return 'Statusbesiktning'
   if (type === 'UHP') return 'Underhållsplan'
+  if (type === 'EB') return 'Entreprenadbesiktning'
   return 'Överlåtelsebesiktning'
 }
 

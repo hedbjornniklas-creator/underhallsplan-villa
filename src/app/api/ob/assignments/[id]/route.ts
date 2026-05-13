@@ -251,7 +251,7 @@ export async function PATCH(
     const typeRaw = safeString(body.assignment_type ?? body.assignmentType)
     if (typeRaw) {
       const normalized = typeRaw.toUpperCase()
-      if (!['OB', 'STATUS', 'UHP'].includes(normalized)) return jsonError('Ogiltig uppdragstyp.', 400)
+      if (!['OB', 'STATUS', 'UHP', 'EB'].includes(normalized)) return jsonError('Ogiltig uppdragstyp.', 400)
       patch.assignment_type = normalized as AssignmentType
     }
 

@@ -23,7 +23,7 @@ export type AssignmentStatus =
   | 'expired'
   | 'cancelled'
 
-export type AssignmentType = 'OB' | 'STATUS' | 'UHP'
+export type AssignmentType = 'OB' | 'STATUS' | 'UHP' | 'EB'
 
 type AuthUserLite = {
   id: string

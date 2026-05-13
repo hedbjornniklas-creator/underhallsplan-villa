@@ -86,9 +86,21 @@ export default function Topbar() {
   const isAdminContext = normalizedPath.startsWith('/admin')
   const isDashboardLanding = normalizedPath === '/dashboard-v1'
   const isObHome = normalizedPath === '/ob'
+  const isEbHome = normalizedPath === '/eb'
   const isObContext = normalizedPath.includes('/ob')
+  const isEbContext = normalizedPath.includes('/eb')
 
-  const logoHref = isAdminContext ? '/admin' : isDashboardLanding ? '/' : isObHome ? '/dashboard-v1' : isObContext ? '/ob' : '/'
+  const logoHref = isAdminContext
+    ? '/admin'
+    : isDashboardLanding
+      ? '/'
+      : isObHome || isEbHome
+        ? '/dashboard-v1'
+        : isEbContext
+          ? '/eb'
+          : isObContext
+            ? '/ob'
+            : '/'
   const logoSrc = isAdminContext || isDashboardLanding ? '/landing/Hushub-check2.png' : '/report-assets/BesiktApp.png'
   const logoAlt = isAdminContext || isDashboardLanding ? 'HusHub' : 'BesiktApp'
   const srLabel = isAdminContext ? 'HusHub Admin' : isDashboardLanding ? 'HusHub' : 'BesiktApp'

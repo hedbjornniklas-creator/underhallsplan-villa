@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
 
     const assignmentTypeRaw = String(body.assignmentType ?? 'OB').toUpperCase()
-    const assignmentType = (['OB', 'STATUS', 'UHP'].includes(assignmentTypeRaw)
+    const assignmentType = (['OB', 'STATUS', 'UHP', 'EB'].includes(assignmentTypeRaw)
       ? assignmentTypeRaw
       : 'OB') as AssignmentType
     const customerEmail = String(body.customerEmail ?? '').trim().toLowerCase()

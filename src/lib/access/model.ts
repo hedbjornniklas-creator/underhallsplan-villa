@@ -8,7 +8,14 @@ export type PlatformScopeType = (typeof PLATFORM_SCOPE_TYPES)[number]
 
 export const PLATFORM_MODULE_KEYS = {
   renoapp: ['board_portal', 'case_review', 'admin'] as const,
-  dashboard: ['home', 'inspections', 'maintenance_plan', 'reports', 'admin'] as const,
+  dashboard: [
+    'home',
+    'inspections',
+    'construction_inspections',
+    'maintenance_plan',
+    'reports',
+    'admin',
+  ] as const,
   hushub_admin: ['landing', 'besiktapp_admin', 'renoapp_admin', 'access_management'] as const,
 } as const
 

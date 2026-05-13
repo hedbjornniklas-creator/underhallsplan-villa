@@ -13,7 +13,7 @@ type AssignmentStatus =
   | 'completed'
   | 'expired'
   | 'cancelled'
-type AssignmentType = 'OB' | 'STATUS' | 'UHP'
+type AssignmentType = 'OB' | 'STATUS' | 'UHP' | 'EB'
 type OrdererRole = 'buyer' | 'seller' | 'apartment' | ''
 
 type AssignmentDetails = {

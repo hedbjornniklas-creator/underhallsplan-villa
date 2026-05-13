@@ -1,6 +1,5 @@
-import { redirect } from 'next/navigation'
+import ObSettingsPage from '@/app/(dashboard)/ob/settings/page'
 
-export default function LegacySettingsRedirectPage() {
-  redirect('/ob/settings')
+export default function SharedBesiktAppSettingsPage() {
+  return <ObSettingsPage />
 }
-
