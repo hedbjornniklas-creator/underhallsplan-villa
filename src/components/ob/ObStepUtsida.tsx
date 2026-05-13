@@ -140,6 +140,7 @@ type InspectionImage = {
 }
 
 type ExteriorImageFilter = 'current' | 'exterior' | 'all'
+type ExteriorImageViewCount = 15 | 9 | 1
 
 // Storage-bucket för bilder
 const IMAGE_BUCKET = 'inspection-images' as const
@@ -210,6 +211,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   const [useHybridLayout] = useState(true)
   const [activeHybridItemId, setActiveHybridItemId] = useState<string | null>(null)
   const [imageFilter, setImageFilter] = useState<ExteriorImageFilter>('current')
+  const [imageViewCount, setImageViewCount] = useState<ExteriorImageViewCount>(9)
   const [previewImage, setPreviewImage] = useState<InspectionImage | null>(null)
   const supportsIsFreeNoteRef = useRef<boolean | null>(null)
 
@@ -1567,6 +1569,17 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       { key: 'exterior', label: 'Utsida', count: exteriorImages.length },
       { key: 'all', label: 'Alla', count: allInspectionImages.length },
     ]
+    const imageViewCounts: ExteriorImageViewCount[] = [15, 9, 1]
+    const imageGridClass =
+      imageViewCount === 1
+        ? 'grid grid-cols-1 gap-3'
+        : imageViewCount === 15
+          ? 'grid grid-cols-3 gap-2 xl:grid-cols-5'
+          : 'grid grid-cols-3 gap-2'
+    const imageClass =
+      imageViewCount === 1
+        ? 'max-h-[65vh] w-full object-contain bg-gray-100'
+        : 'aspect-square w-full object-cover transition group-hover:scale-[1.02]'
 
     return (
       <aside className="flex min-h-0 flex-col border-t border-gray-200 bg-gray-50/70 lg:border-l lg:border-t-0">
@@ -1593,6 +1606,23 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               </button>
             ))}
           </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-gray-500">Visning</span>
+            {imageViewCounts.map(count => (
+              <button
+                key={count}
+                type="button"
+                onClick={() => setImageViewCount(count)}
+                className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                  imageViewCount === count
+                    ? 'border-sky-700 bg-sky-700 text-white'
+                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {count} bild{count === 1 ? '' : 'er'}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -1601,7 +1631,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               Inga bilder i valt filter.
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-2 xl:grid-cols-4">
+            <div className={imageGridClass}>
               {filteredImages.map(image => (
                 <button
                   key={image.id}
@@ -1614,7 +1644,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                   <img
                     src={getImagePublicUrl(image.file_path)}
                     alt=""
-                    className="aspect-square w-full object-cover transition group-hover:scale-[1.02]"
+                    className={imageClass}
                   />
                 </button>
               ))}
