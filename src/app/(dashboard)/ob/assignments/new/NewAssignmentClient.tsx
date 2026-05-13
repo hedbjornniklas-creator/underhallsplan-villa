@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
@@ -109,9 +109,9 @@ function resolvePublicMediaUrl(path: string | null | undefined) {
 }
 
 function roleToLabel(role: OrdererRole) {
-  if (role === 'buyer') return 'Köpare'
-  if (role === 'seller') return 'Säljare'
-  if (role === 'apartment') return 'Lägenhet'
+  if (role === 'buyer') return 'KÃ¶pare'
+  if (role === 'seller') return 'SÃ¤ljare'
+  if (role === 'apartment') return 'LÃ¤genhet'
   return ''
 }
 
@@ -298,7 +298,7 @@ export default function NewAssignmentClient({
       return
     }
     if (!form.ordererRole) {
-      setError('Valj uppdragsgivare (Säljare, Köpare eller Lägenhet) innan du skickar.')
+      setError('Valj uppdragsgivare (SÃ¤ljare, KÃ¶pare eller LÃ¤genhet) innan du skickar.')
       return
     }
 
@@ -336,20 +336,20 @@ export default function NewAssignmentClient({
           className="pointer-events-none absolute inset-0"
           style={{
             backgroundImage:
-              'radial-gradient(100% 70% at 50% 0%, rgba(219,234,254,0.5) 0%, rgba(219,234,254,0) 60%), linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 42%, #60a5fa 100%)',
+              'linear-gradient(135deg, #f8fafc 0%, #ffffff 52%, #f8fafc 100%)',
           }}
         />
-        <div className="pointer-events-none absolute inset-0 bg-white/10 backdrop-blur-[1px]" />
+        <div className="pointer-events-none absolute inset-0 bg-transparent" />
 
         <div className="relative mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
-          <header className="rounded-2xl border border-white/30 bg-white/10 p-4 shadow-sm backdrop-blur-sm md:p-5">
+          <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm backdrop-blur-sm md:p-5">
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={() => router.push('/ob')}
                 aria-label="Till huvudsidan"
                 title="Till huvudsidan"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
               >
                 <ChevronsLeft size={15} strokeWidth={2.2} />
               </button>
@@ -357,11 +357,11 @@ export default function NewAssignmentClient({
                 type="button"
                 onClick={() => router.push('/ob/assignments')}
                 aria-label="Tillbaka"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
               >
                 <ArrowLeft size={16} strokeWidth={2} />
               </button>
-              <h1 className="text-2xl font-semibold text-white drop-shadow-sm">UPPDRAGSBEKRÄFTELSE</h1>
+              <h1 className="text-2xl font-semibold text-slate-950">UPPDRAGSBEKRÃ„FTELSE</h1>
               <div className="ml-auto flex items-center gap-2">
                 <button
                   type="button"
@@ -369,7 +369,7 @@ export default function NewAssignmentClient({
                   disabled={isBusy || !canCreate}
                   aria-label="Spara utkast"
                   title="Spara utkast"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-white/15"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-white/15"
                 >
                   {savingDraft ? (
                     <Loader2 size={16} className="animate-spin" />
@@ -383,7 +383,7 @@ export default function NewAssignmentClient({
                   disabled={isBusy || !canCreate || !form.ordererRole}
                   aria-label="Skicka"
                   title="Skicka"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/70 bg-white/25 text-white shadow-sm transition hover:bg-white/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-white/25"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/70 bg-white/25 text-white shadow-sm transition hover:bg-white/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-slate-50"
                 >
                   {sending ? (
                     <Loader2 size={16} className="animate-spin" />
@@ -402,20 +402,20 @@ export default function NewAssignmentClient({
           <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-sky-50 px-4 py-3 shadow-sm md:gap-3">
               <p className="pr-1 text-base font-bold uppercase tracking-wide text-indigo-900 md:text-lg">
-                ÖVERLÅTELSEBESIKTNING FÖR *
+                Ã–VERLÃ…TELSEBESIKTNING FÃ–R *
               </p>
               <RoleChip
-                label="Säljare"
+                label="SÃ¤ljare"
                 active={form.ordererRole === 'seller'}
                 onClick={() => updateField('ordererRole', 'seller')}
               />
               <RoleChip
-                label="Köpare"
+                label="KÃ¶pare"
                 active={form.ordererRole === 'buyer'}
                 onClick={() => updateField('ordererRole', 'buyer')}
               />
               <RoleChip
-                label="Lägenhet"
+                label="LÃ¤genhet"
                 active={form.ordererRole === 'apartment'}
                 onClick={() => updateField('ordererRole', 'apartment')}
               />
@@ -426,17 +426,17 @@ export default function NewAssignmentClient({
                 {form.ordererRole === 'apartment' ? (
                   <>
                     <Field
-                      label="Bostadsrättsförening"
+                      label="BostadsrÃ¤ttsfÃ¶rening"
                       value={form.brfName}
                       onChange={(value) => updateField('brfName', value)}
                     />
                     <Field
-                      label="Lägenhetsnummer"
+                      label="LÃ¤genhetsnummer"
                       value={form.apartmentNumber}
                       onChange={(value) => updateField('apartmentNumber', value)}
                     />
                     <Field
-                      label="Bostadsrättsinnehavare"
+                      label="BostadsrÃ¤ttsinnehavare"
                       value={form.apartmentHolderName}
                       onChange={(value) => updateField('apartmentHolderName', value)}
                     />
@@ -493,7 +493,7 @@ export default function NewAssignmentClient({
                       onChange={(value) => updateField('propertyMunicipality', value)}
                     />
                     <Field
-                      label="Fastighetsägare"
+                      label="FastighetsÃ¤gare"
                       value={form.propertyOwnerName}
                       onChange={(value) => updateField('propertyOwnerName', value)}
                     />
@@ -609,7 +609,7 @@ export default function NewAssignmentClient({
 
           <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Villkor för besiktning</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Villkor fÃ¶r besiktning</h2>
             </div>
 
             <div className="rounded-xl border border-gray-200 bg-white p-3">
@@ -687,4 +687,5 @@ function Field({
     </label>
   )
 }
+
 

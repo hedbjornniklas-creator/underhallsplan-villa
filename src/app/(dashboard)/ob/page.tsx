@@ -1012,23 +1012,23 @@ export default function OverlatelsebesiktningPage() {
           className="pointer-events-none absolute inset-0"
           style={{
             backgroundImage:
-              'radial-gradient(100% 70% at 50% 0%, rgba(219,234,254,0.5) 0%, rgba(219,234,254,0) 60%), linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 42%, #60a5fa 100%)',
+              'linear-gradient(135deg, #f8fafc 0%, #ffffff 52%, #f8fafc 100%)',
           }}
         />
-        <div className="pointer-events-none absolute inset-0 bg-white/10 backdrop-blur-[1px]" />
+        <div className="pointer-events-none absolute inset-0 bg-transparent" />
 
         <div className="relative mx-auto w-full max-w-7xl p-4 md:p-6">
-          <header className="mx-auto w-full max-w-7xl rounded-2xl border border-white/30 bg-white/10 p-4 shadow-sm backdrop-blur-sm md:p-5">
+          <header className="mx-auto w-full max-w-7xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm backdrop-blur-sm md:p-5">
             <div className="flex items-center gap-3">
               <Link
                 href="/dashboard-v1"
                 aria-label="Tillbaka"
                 title="Tillbaka"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
               >
                 <ArrowLeft size={16} strokeWidth={2} />
               </Link>
-              <h1 className="text-2xl font-semibold text-white drop-shadow-sm">{'\u00d6verl\u00e5telsebesiktning'}</h1>
+              <h1 className="text-2xl font-semibold text-slate-950">{'\u00d6verl\u00e5telsebesiktning'}</h1>
             </div>
           </header>
 
@@ -1060,4 +1060,5 @@ export default function OverlatelsebesiktningPage() {
     </Protected>
   )
 }
+
 

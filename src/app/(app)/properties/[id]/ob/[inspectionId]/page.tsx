@@ -494,7 +494,7 @@ export default function InspectionDetailPage() {
           className="pointer-events-none absolute inset-0"
           style={{
             backgroundImage:
-              'radial-gradient(100% 70% at 50% 0%, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 58%), linear-gradient(135deg, #5a86dc 0%, #6eaeea 45%, #87CEFA 100%)',
+              'linear-gradient(135deg, #f8fafc 0%, #ffffff 52%, #f8fafc 100%)',
           }}
         />
         <div className="pointer-events-none absolute inset-0 bg-white/8" />
@@ -503,12 +503,12 @@ export default function InspectionDetailPage() {
           <div className="flex items-center justify-between gap-2 rounded-full border border-white/45 bg-white/90 px-2.5 py-2 shadow-lg ring-1 ring-black/5 md:hidden">
             <button
               type="button"
-              onClick={handleBackToInspections}
-              aria-label="Tillbaka"
-              title="Tillbaka"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Öppna stegmeny"
+              title="Öppna stegmeny"
               className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
-              <ArrowLeft size={17} strokeWidth={2} />
+              <Menu size={18} strokeWidth={2.25} />
             </button>
             <div className="min-w-0 flex-1 text-center">
               <div className="truncate text-[11px] font-semibold uppercase tracking-wide text-gray-500">
@@ -528,41 +528,7 @@ export default function InspectionDetailPage() {
             </div>
           </div>
 
-          <div className="grid min-w-0 items-start gap-6 md:grid-cols-[240px_minmax(0,1fr)]">
-            <div className="hidden md:block md:w-[240px]">
-              <nav className="space-y-2 rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:sticky md:top-24 md:max-h-[calc(100vh-7rem)] md:w-[240px] md:overflow-auto">
-                <div className="mb-2 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleBackToInspections}
-                    aria-label="Tillbaka"
-                    title="Tillbaka"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                  >
-                    <ArrowLeft size={16} strokeWidth={2} />
-                  </button>
-                  <div className="text-sm font-semibold text-gray-900">Överlåtelsebesiktning</div>
-                </div>
-
-                {visibleSections.map((section) => (
-                  <div key={section.key}>
-                    <button
-                      onClick={() => setActiveSection(section.key)}
-                      className={`w-full rounded-md px-3 py-2 text-left text-sm ${
-                        activeSection === section.key
-                          ? 'bg-indigo-600 text-white'
-                          : 'text-gray-700 hover:bg-gray-100'
-                      }`}
-                    >
-                      {section.label}
-                    </button>
-
-                  </div>
-                ))}
-
-              </nav>
-            </div>
-
+          <div className="grid min-w-0 items-start">
             <div
               className={`${
                 activeSection === 'insida' ||
@@ -602,21 +568,21 @@ export default function InspectionDetailPage() {
           onClick={() => setMobileMenuOpen(true)}
           aria-label="Öppna stegmeny"
           title="Öppna stegmeny"
-          className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 inline-flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-2xl shadow-indigo-950/30 ring-1 ring-white/50 transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 md:hidden"
+          className="fixed left-4 top-[calc(1rem+env(safe-area-inset-top))] z-40 hidden h-12 w-12 items-center justify-center rounded-full bg-indigo-600 text-white shadow-2xl shadow-indigo-950/30 ring-1 ring-white/50 transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 md:inline-flex"
         >
           <Menu size={25} strokeWidth={2.35} />
         </button>
 
         {mobileMenuOpen ? (
-          <div className="fixed inset-0 z-[70] md:hidden" role="dialog" aria-modal="true">
+          <div className="fixed inset-0 z-[70]" role="dialog" aria-modal="true">
             <button
               type="button"
               aria-label="Stäng stegmeny"
               className="absolute inset-0 h-full w-full bg-black/40"
               onClick={() => setMobileMenuOpen(false)}
             />
-            <div className="absolute inset-x-0 bottom-0 rounded-t-[2rem] border border-white/40 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl">
-              <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-gray-300" />
+            <div className="absolute inset-x-0 bottom-0 rounded-t-[2rem] border border-white/40 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl md:inset-y-0 md:left-0 md:right-auto md:w-[320px] md:rounded-none md:border-r md:p-5">
+              <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-gray-300 md:hidden" />
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Steg</div>
@@ -631,6 +597,14 @@ export default function InspectionDetailPage() {
                   <X size={20} strokeWidth={2.25} />
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={handleBackToInspections}
+                className="mb-3 inline-flex w-full items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50"
+              >
+                <ArrowLeft size={17} strokeWidth={2} />
+                Tillbaka till besiktningar
+              </button>
               <div className="grid max-h-[62vh] gap-2 overflow-auto pr-1">
                 {visibleSections.map((section, index) => (
                   <button
@@ -663,3 +637,4 @@ export default function InspectionDetailPage() {
     </Protected>
   )
 }
+

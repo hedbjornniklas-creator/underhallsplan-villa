@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -112,22 +112,22 @@ function normalizeRole(value: string | null): OrdererRole {
   const lowered = value.toLowerCase()
   if (
     lowered.includes('lgh') ||
-    lowered.includes('lägen') ||
+    lowered.includes('lÃ¤gen') ||
     lowered.includes('lagen') ||
     lowered.includes('apt') ||
     lowered.includes('apart')
   ) {
     return 'apartment'
   }
-  if (lowered.includes('köp') || lowered.includes('kop') || lowered.includes('buy')) return 'buyer'
-  if (lowered.includes('sälj') || lowered.includes('salj') || lowered.includes('sell')) return 'seller'
+  if (lowered.includes('kÃ¶p') || lowered.includes('kop') || lowered.includes('buy')) return 'buyer'
+  if (lowered.includes('sÃ¤lj') || lowered.includes('salj') || lowered.includes('sell')) return 'seller'
   return ''
 }
 
 function roleToLabel(role: OrdererRole) {
-  if (role === 'apartment') return 'Lägenhet'
-  if (role === 'buyer') return 'Köpare'
-  if (role === 'seller') return 'Säljare'
+  if (role === 'apartment') return 'LÃ¤genhet'
+  if (role === 'buyer') return 'KÃ¶pare'
+  if (role === 'seller') return 'SÃ¤ljare'
   return ''
 }
 
@@ -138,7 +138,7 @@ function assignmentStatusToLabel(status: AssignmentStatus) {
     case 'sent':
       return 'Skickad'
     case 'ordered':
-      return 'Beställd'
+      return 'BestÃ¤lld'
     case 'booked':
       return 'Bokad'
     case 'completed':
@@ -234,7 +234,7 @@ export default function AssignmentDetailsPage() {
       const response = await fetch(`/api/ob/assignments/${id}`, { cache: 'no-store' })
       const payload = await response.json().catch(() => null)
       if (!response.ok) {
-        throw new Error(jsonToErrorMessage(payload, 'Kunde inte hämta uppdraget.'))
+        throw new Error(jsonToErrorMessage(payload, 'Kunde inte hÃ¤mta uppdraget.'))
       }
 
       const typedPayload = payload as {
@@ -249,7 +249,7 @@ export default function AssignmentDetailsPage() {
       lastSavedFingerprintRef.current = formFingerprint(nextForm)
       setSaveState('idle')
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta uppdraget.')
+      setError(loadError instanceof Error ? loadError.message : 'Kunde inte hÃ¤mta uppdraget.')
     } finally {
       setLoading(false)
     }
@@ -263,7 +263,7 @@ export default function AssignmentDetailsPage() {
     if (!assignment) return null
     const approvedByCustomerAt = assignment.accepted_at
       ? new Date(assignment.accepted_at).toLocaleString('sv-SE')
-      : 'Inte godkänd'
+      : 'Inte godkÃ¤nd'
     const acceptedByInspectorAt = assignment.booked_at
       ? new Date(assignment.booked_at).toLocaleString('sv-SE')
       : 'Inte accepterad'
@@ -399,13 +399,13 @@ export default function AssignmentDetailsPage() {
       const response = await fetch(`/api/ob/assignments/${id}/send`, { method: 'POST' })
       const payload = await response.json().catch(() => null)
       if (!response.ok) {
-        throw new Error(jsonToErrorMessage(payload, 'Kunde inte skicka uppdragsbekräftelsen.'))
+        throw new Error(jsonToErrorMessage(payload, 'Kunde inte skicka uppdragsbekrÃ¤ftelsen.'))
       }
       await loadAssignment()
-      setSuccess('Uppdragsbekräftelse skickad.')
+      setSuccess('UppdragsbekrÃ¤ftelse skickad.')
     } catch (sendError) {
       setError(
-        sendError instanceof Error ? sendError.message : 'Kunde inte skicka uppdragsbekräftelsen.'
+        sendError instanceof Error ? sendError.message : 'Kunde inte skicka uppdragsbekrÃ¤ftelsen.'
       )
     } finally {
       setSending(false)
@@ -431,9 +431,9 @@ export default function AssignmentDetailsPage() {
       const typedPayload = payload as { bookingEmailSent?: boolean } | null
       await loadAssignment()
       if (typedPayload?.bookingEmailSent === false) {
-        setSuccess('Uppdraget är nu bokat. Mejlet kunde inte skickas automatiskt.')
+        setSuccess('Uppdraget Ã¤r nu bokat. Mejlet kunde inte skickas automatiskt.')
       } else {
-        setSuccess('Uppdraget är nu bokat och bekräftelsemejl har skickats.')
+        setSuccess('Uppdraget Ã¤r nu bokat och bekrÃ¤ftelsemejl har skickats.')
       }
     } catch (bookError) {
       setError(bookError instanceof Error ? bookError.message : 'Kunde inte boka uppdraget.')
@@ -480,7 +480,7 @@ export default function AssignmentDetailsPage() {
 
       const body = payload as { assignmentId?: string }
       if (!body.assignmentId) {
-        throw new Error('Saknar id för ny uppdragsbekräftelse.')
+        throw new Error('Saknar id fÃ¶r ny uppdragsbekrÃ¤ftelse.')
       }
       router.push(`/ob/assignments/${body.assignmentId}`)
     } catch (reissueError) {
@@ -496,20 +496,20 @@ export default function AssignmentDetailsPage() {
           className="pointer-events-none absolute inset-0"
           style={{
             backgroundImage:
-              'radial-gradient(100% 70% at 50% 0%, rgba(219,234,254,0.5) 0%, rgba(219,234,254,0) 60%), linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 42%, #60a5fa 100%)',
+              'linear-gradient(135deg, #f8fafc 0%, #ffffff 52%, #f8fafc 100%)',
           }}
         />
-        <div className="pointer-events-none absolute inset-0 bg-white/10 backdrop-blur-[1px]" />
+        <div className="pointer-events-none absolute inset-0 bg-transparent" />
 
         <div className="relative mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
-          <header className="rounded-2xl border border-white/30 bg-white/10 p-4 shadow-sm backdrop-blur-sm md:p-5">
+          <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm backdrop-blur-sm md:p-5">
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={() => router.push('/ob')}
                 aria-label="Till huvudsidan"
                 title="Till huvudsidan"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
               >
                 <ChevronsLeft size={15} strokeWidth={2.2} />
               </button>
@@ -517,11 +517,11 @@ export default function AssignmentDetailsPage() {
                 type="button"
                 onClick={() => router.push('/ob/assignments')}
                 aria-label="Tillbaka"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
               >
                 <ArrowLeft size={16} strokeWidth={2} />
               </button>
-              <h1 className="text-2xl font-semibold text-white drop-shadow-sm">Uppdragsbekräftelse</h1>
+              <h1 className="text-2xl font-semibold text-slate-950">UppdragsbekrÃ¤ftelse</h1>
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 <span className="px-2 text-xs font-medium text-white/95">
                   {saveState === 'saving' ? 'Sparar...' : saveState === 'saved' ? 'Sparat' : ''}
@@ -531,10 +531,10 @@ export default function AssignmentDetailsPage() {
                     type="button"
                     onClick={() => void handleSend()}
                     disabled={!canSend || sending || booking || converting || reissuing || saving || loading}
-                    title="Skickar uppdragsbekräftelsen till kunden för godkännande."
-                    className="rounded-lg border border-white/60 bg-white/15 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-white/25 hover:shadow-[0_10px_20px_-14px_rgba(255,255,255,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:cursor-not-allowed disabled:opacity-60"
+                    title="Skickar uppdragsbekrÃ¤ftelsen till kunden fÃ¶r godkÃ¤nnande."
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-[0_10px_20px_-14px_rgba(255,255,255,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {sending ? 'Skickar...' : 'Skicka uppdragsbekräftelse'}
+                    {sending ? 'Skickar...' : 'Skicka uppdragsbekrÃ¤ftelse'}
                   </button>
                 ) : null}
                 {canReissue ? (
@@ -542,17 +542,17 @@ export default function AssignmentDetailsPage() {
                     type="button"
                     onClick={() => void handleReissue()}
                     disabled={reissuing || sending || booking || converting || saving || loading}
-                    title="Skapar en ny utkastversion baserad på befintliga uppgifter. Du kan redigera den och sedan skicka för nytt godkännande."
+                    title="Skapar en ny utkastversion baserad pÃ¥ befintliga uppgifter. Du kan redigera den och sedan skicka fÃ¶r nytt godkÃ¤nnande."
                     className="rounded-lg border border-amber-200 bg-amber-500/20 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-amber-500/30 hover:shadow-[0_10px_20px_-12px_rgba(245,158,11,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {reissuing ? 'Skapar ny...' : 'Skicka om uppdragsbekräftelse'}
+                    {reissuing ? 'Skapar ny...' : 'Skicka om uppdragsbekrÃ¤ftelse'}
                   </button>
                 ) : null}
                 <button
                   type="button"
                   onClick={() => void handleBook()}
                   disabled={!canBook || booking || sending || converting || reissuing || saving || loading}
-                  title="Bekräftar uppdraget som bokat och skickar full beställningsbekräftelse."
+                  title="BekrÃ¤ftar uppdraget som bokat och skickar full bestÃ¤llningsbekrÃ¤ftelse."
                   className="rounded-lg border border-emerald-300 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-emerald-500/35 hover:shadow-[0_12px_24px_-12px_rgba(16,185,129,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {booking ? 'Accepterar...' : 'Acceptera uppdrag'}
@@ -561,7 +561,7 @@ export default function AssignmentDetailsPage() {
                   type="button"
                   onClick={() => void handleConvert()}
                   disabled={!canConvert || converting || booking || sending || reissuing || saving || loading}
-                  title="Startar besiktningen och öppnar besiktningsvyn."
+                  title="Startar besiktningen och Ã¶ppnar besiktningsvyn."
                   className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-[0_10px_20px_-12px_rgba(79,70,229,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 disabled:cursor-not-allowed disabled:bg-indigo-300"
                 >
                   {converting ? 'Startar...' : 'Starta besiktning'}
@@ -580,15 +580,15 @@ export default function AssignmentDetailsPage() {
           ) : null}
           {isBookedLocked ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              Uppdragsbekräftelsen är bokad och låst för redigering. Klicka på Starta besiktning för att gå vidare.
+              UppdragsbekrÃ¤ftelsen Ã¤r bokad och lÃ¥st fÃ¶r redigering. Klicka pÃ¥ Starta besiktning fÃ¶r att gÃ¥ vidare.
             </div>
           ) : isOrdered ? (
             <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800">
-              Uppdragsbekräftelsen är beställd och låst för redigering. Klicka på Acceptera uppdrag eller Skicka om uppdragsbekräftelse.
+              UppdragsbekrÃ¤ftelsen Ã¤r bestÃ¤lld och lÃ¥st fÃ¶r redigering. Klicka pÃ¥ Acceptera uppdrag eller Skicka om uppdragsbekrÃ¤ftelse.
             </div>
           ) : isSent ? (
             <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
-              Uppdragsbekräftelsen är skickad och låst för redigering. Klicka på Skicka om uppdragsbekräftelse för att skapa en ny redigerbar version.
+              UppdragsbekrÃ¤ftelsen Ã¤r skickad och lÃ¥st fÃ¶r redigering. Klicka pÃ¥ Skicka om uppdragsbekrÃ¤ftelse fÃ¶r att skapa en ny redigerbar version.
             </div>
           ) : null}
 
@@ -602,7 +602,7 @@ export default function AssignmentDetailsPage() {
                 <div className="grid gap-2 md:grid-cols-4">
                   <ReadOnly compact label="Status" value={assignmentStatusToLabel(assignment.status)} />
                   <ReadOnly compact label="Skickad" value={summary?.sentAt ?? '-'} />
-                  <ReadOnly compact label="Godkänd (kund)" value={summary?.approvedByCustomerAt ?? '-'} />
+                  <ReadOnly compact label="GodkÃ¤nd (kund)" value={summary?.approvedByCustomerAt ?? '-'} />
                   <ReadOnly
                     compact
                     label="Accepterad (besiktningsman)"
@@ -641,17 +641,17 @@ export default function AssignmentDetailsPage() {
                     {form.ordererRole === 'apartment' ? (
                       <>
                         <Field
-                          label="Bostadsrättsförening"
+                          label="BostadsrÃ¤ttsfÃ¶rening"
                           value={form.brfName}
                           onChange={(value) => updateField('brfName', value)}
                         />
                         <Field
-                          label="Lägenhetsnummer"
+                          label="LÃ¤genhetsnummer"
                           value={form.apartmentNumber}
                           onChange={(value) => updateField('apartmentNumber', value)}
                         />
                         <Field
-                          label="Bostadsrättsinnehavare"
+                          label="BostadsrÃ¤ttsinnehavare"
                           value={form.apartmentHolderName}
                           onChange={(value) => updateField('apartmentHolderName', value)}
                         />
@@ -664,7 +664,7 @@ export default function AssignmentDetailsPage() {
                           onChange={(value) => updateField('cadastralId', value)}
                         />
                         <Field
-                          label="Fastighetsägare"
+                          label="FastighetsÃ¤gare"
                           value={form.propertyOwnerName}
                           onChange={(value) => updateField('propertyOwnerName', value)}
                         />
@@ -677,17 +677,17 @@ export default function AssignmentDetailsPage() {
                       <h3 className="text-sm font-semibold text-gray-900">Uppdragsgivare</h3>
                       <div className="flex items-center gap-2">
                         <RoleChip
-                          label="Säljare"
+                          label="SÃ¤ljare"
                           active={form.ordererRole === 'seller'}
                           onClick={() => updateField('ordererRole', 'seller')}
                         />
                         <RoleChip
-                          label="Köpare"
+                          label="KÃ¶pare"
                           active={form.ordererRole === 'buyer'}
                           onClick={() => updateField('ordererRole', 'buyer')}
                         />
                         <RoleChip
-                          label="Lägenhet"
+                          label="LÃ¤genhet"
                           active={form.ordererRole === 'apartment'}
                           onClick={() => updateField('ordererRole', 'apartment')}
                         />
@@ -756,16 +756,16 @@ export default function AssignmentDetailsPage() {
                 </SectionCard>
                 </fieldset>
 
-                <SectionCard title="Beställda tilläggsuppdrag">
+                <SectionCard title="BestÃ¤llda tillÃ¤ggsuppdrag">
                   {addonOrders.length === 0 ? (
-                    <p className="text-sm text-gray-600">Inga tilläggsuppdrag är valda ännu.</p>
+                    <p className="text-sm text-gray-600">Inga tillÃ¤ggsuppdrag Ã¤r valda Ã¤nnu.</p>
                   ) : (
                     <div className="space-y-3">
                       <div className="overflow-hidden rounded-lg border border-gray-200">
                         <table className="min-w-full text-sm">
                           <thead>
                             <tr className="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-600">
-                              <th className="px-3 py-2">Tjänst</th>
+                              <th className="px-3 py-2">TjÃ¤nst</th>
                               <th className="px-3 py-2">Pris</th>
                             </tr>
                           </thead>
@@ -787,8 +787,8 @@ export default function AssignmentDetailsPage() {
                       </div>
 
                       <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
-                        Valda tilläggsuppdrag: <strong>{addonSummary.count}</strong>
-                        {' · '}
+                        Valda tillÃ¤ggsuppdrag: <strong>{addonSummary.count}</strong>
+                        {' Â· '}
                         Summa:{' '}
                         <strong>
                           {addonSummary.total.toLocaleString('sv-SE', {
@@ -899,3 +899,4 @@ function ReadOnly({
     </div>
   )
 }
+
