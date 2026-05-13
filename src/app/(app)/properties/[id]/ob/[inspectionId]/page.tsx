@@ -503,12 +503,12 @@ export default function InspectionDetailPage() {
           <div className="flex items-center justify-between gap-2 rounded-full border border-white/45 bg-white/90 px-2.5 py-2 shadow-lg ring-1 ring-black/5 md:hidden">
             <button
               type="button"
-              onClick={() => setMobileMenuOpen(true)}
-              aria-label="Öppna stegmeny"
-              title="Öppna stegmeny"
+              onClick={handleBackToInspections}
+              aria-label="Tillbaka"
+              title="Tillbaka"
               className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
-              <Menu size={18} strokeWidth={2.25} />
+              <ArrowLeft size={17} strokeWidth={2} />
             </button>
             <div className="min-w-0 flex-1 text-center">
               <div className="truncate text-[11px] font-semibold uppercase tracking-wide text-gray-500">
@@ -568,7 +568,17 @@ export default function InspectionDetailPage() {
           onClick={() => setMobileMenuOpen(true)}
           aria-label="Öppna stegmeny"
           title="Öppna stegmeny"
-          className="fixed left-4 top-[calc(1rem+env(safe-area-inset-top))] z-40 hidden h-12 w-12 items-center justify-center rounded-full bg-indigo-600 text-white shadow-2xl shadow-indigo-950/30 ring-1 ring-white/50 transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 md:inline-flex"
+          className="fixed left-4 top-28 z-[60] hidden h-12 w-12 items-center justify-center rounded-full bg-indigo-600 text-white shadow-2xl shadow-indigo-950/30 ring-1 ring-white/50 transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 md:inline-flex"
+        >
+          <Menu size={25} strokeWidth={2.35} />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen(true)}
+          aria-label="Öppna stegmeny"
+          title="Öppna stegmeny"
+          className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 inline-flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-2xl shadow-indigo-950/30 ring-1 ring-white/50 transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 md:hidden"
         >
           <Menu size={25} strokeWidth={2.35} />
         </button>
