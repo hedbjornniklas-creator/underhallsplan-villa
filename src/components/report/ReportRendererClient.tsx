@@ -1664,10 +1664,8 @@ export default function ReportRendererClient({
     const content = renderPdfInspectionSegmentContent(block, key)
     if (!content) return null
     const topBorder =
-      block.isFirstSegmentInItem && !block.suppressTopBorder
-        ? block.isFirstInGroup
-          ? `${mmToPx(0.35)} solid #94a3b8`
-          : '1px solid #d1d9e6'
+      block.isFirstInGroup && !block.suppressTopBorder
+        ? `${mmToPx(0.35)} solid #94a3b8`
         : 'none'
 
     return (
@@ -1681,6 +1679,7 @@ export default function ReportRendererClient({
       >
         <div
           style={{
+            borderTop: topBorder,
             display: 'grid',
             gridTemplateColumns: `${mmToPx(46)} 1fr`,
             columnGap: mmToPx(4),
@@ -1688,7 +1687,6 @@ export default function ReportRendererClient({
         >
           <div
             style={{
-              borderTop: topBorder,
               fontSize: '10.5pt',
               fontWeight: 700,
               color: '#111827',
@@ -1703,7 +1701,6 @@ export default function ReportRendererClient({
           </div>
           <div
             style={{
-              borderTop: topBorder,
               paddingTop: mmToPx(2.5),
               paddingBottom: mmToPx(2.5),
             }}
