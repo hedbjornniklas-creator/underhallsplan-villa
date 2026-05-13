@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, ChangeEvent, useRef, useMemo } from 'react'
+import { useEffect, useState, ChangeEvent, useRef, useMemo, type DragEvent } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import DebouncedTextarea from './DebouncedTextarea'
 import ControlPointSearchDialog, {
@@ -144,6 +144,7 @@ type ExteriorImageViewCount = 15 | 9 | 1
 
 // Storage-bucket för bilder
 const IMAGE_BUCKET = 'inspection-images' as const
+const IMAGE_DRAG_DATA_TYPE = 'application/x-ob-utsida-image-id'
 const RED_STATUS: InspectionControlItem['status'] = null
 
 const getImagePublicUrl = (filePath: string) => {
@@ -177,6 +178,37 @@ const isUniqueViolationError = (err: unknown) => {
   const e = toErrorLike(err)
   const text = `${e?.message ?? ''} ${e?.details ?? ''}`.toLowerCase()
   return e?.code === '23505' || text.includes('duplicate key') || text.includes('unique')
+}
+
+const sortAttachedImages = (imageList: InspectionImage[]) =>
+  [...imageList].sort((a, b) => {
+    const sortCompare = (a.sort_order ?? 0) - (b.sort_order ?? 0)
+    if (sortCompare !== 0) return sortCompare
+    const left = new Date(a.created_at ?? 0).getTime()
+    const right = new Date(b.created_at ?? 0).getTime()
+    return left - right
+  })
+
+const removeImageFromImageMap = (
+  map: Record<string, InspectionImage[]>,
+  imageId: string
+) => {
+  const next: Record<string, InspectionImage[]> = {}
+  for (const [key, images] of Object.entries(map)) {
+    const filtered = images.filter(image => image.id !== imageId)
+    if (filtered.length > 0) next[key] = filtered
+  }
+  return next
+}
+
+const addImageToImageMap = (
+  map: Record<string, InspectionImage[]>,
+  targetId: string,
+  image: InspectionImage
+) => {
+  const next = removeImageFromImageMap(map, image.id)
+  next[targetId] = sortAttachedImages([...(next[targetId] ?? []), image])
+  return next
 }
 
 export default function ObStepUtsida({ inspection }: { inspection: Inspection }) {
@@ -1431,6 +1463,134 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     }
   }
 
+  const updateImageInAllImages = (updatedImage: InspectionImage) => {
+    setAllInspectionImages(prev =>
+      prev.some(image => image.id === updatedImage.id)
+        ? prev.map(image => (image.id === updatedImage.id ? updatedImage : image))
+        : [updatedImage, ...prev]
+    )
+  }
+
+  const moveImageToControlItem = async (
+    imageId: string,
+    controlItem: InspectionControlItem
+  ) => {
+    if (isInspectionLocked) return
+    if (!controlItem.id) return
+
+    const sourceImage = allInspectionImages.find(image => image.id === imageId)
+    if (!sourceImage) {
+      setError('Bilden hittades inte. Uppdatera sidan och försök igen.')
+      return
+    }
+
+    if (sourceImage.control_item_id === controlItem.id) return
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const targetImages = (imagesByControlItemId[controlItem.id] || []).filter(
+        image => image.id !== imageId
+      )
+      const maxSort =
+        targetImages.length > 0
+          ? Math.max(...targetImages.map(image => image.sort_order || 0))
+          : 0
+
+      const { data, error: updateError } = await supabase
+        .from('inspection_images')
+        .update({
+          control_item_id: controlItem.id,
+          exterior_observation_id: null,
+          interior_room_id: null,
+          sort_order: maxSort + 10,
+        })
+        .eq('id', imageId)
+        .eq('inspection_id', inspection.id)
+        .select('*')
+        .single()
+
+      if (updateError) throw updateError
+
+      const updatedImage = data as InspectionImage
+      setImagesByControlItemId(prev => addImageToImageMap(prev, controlItem.id!, updatedImage))
+      setImagesByObservationId(prev => removeImageFromImageMap(prev, imageId))
+      updateImageInAllImages(updatedImage)
+    } catch (e: unknown) {
+      console.error('moveImageToControlItem failed', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte koppla bilden till noteringen.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const moveImageToObservation = async (
+    imageId: string,
+    observation: InspectionExteriorObservation
+  ) => {
+    if (isInspectionLocked) return
+    if (!observation.id) return
+
+    const sourceImage = allInspectionImages.find(image => image.id === imageId)
+    if (!sourceImage) {
+      setError('Bilden hittades inte. Uppdatera sidan och försök igen.')
+      return
+    }
+
+    if (!sourceImage.control_item_id && sourceImage.exterior_observation_id === observation.id) return
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const targetImages = (imagesByObservationId[observation.id] || []).filter(
+        image => image.id !== imageId
+      )
+      const maxSort =
+        targetImages.length > 0
+          ? Math.max(...targetImages.map(image => image.sort_order || 0))
+          : 0
+
+      const { data, error: updateError } = await supabase
+        .from('inspection_images')
+        .update({
+          control_item_id: null,
+          exterior_observation_id: observation.id,
+          interior_room_id: null,
+          sort_order: maxSort + 10,
+        })
+        .eq('id', imageId)
+        .eq('inspection_id', inspection.id)
+        .select('*')
+        .single()
+
+      if (updateError) throw updateError
+
+      const updatedImage = data as InspectionImage
+      setImagesByControlItemId(prev => removeImageFromImageMap(prev, imageId))
+      setImagesByObservationId(prev => addImageToImageMap(prev, observation.id!, updatedImage))
+      updateImageInAllImages(updatedImage)
+    } catch (e: unknown) {
+      console.error('moveImageToObservation failed', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte koppla bilden till den fria noteringen.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleImageDragStart = (
+    event: DragEvent<HTMLButtonElement>,
+    image: InspectionImage
+  ) => {
+    if (isInspectionLocked) {
+      event.preventDefault()
+      return
+    }
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData(IMAGE_DRAG_DATA_TYPE, image.id)
+  }
+
   // -----------------------------
   // UI HELPERS
   // -----------------------------
@@ -1653,7 +1813,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                   key={image.id}
                   type="button"
                   onClick={() => setPreviewImage(image)}
-                  className="group overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm transition hover:border-gray-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-300"
+                  draggable={!isInspectionLocked}
+                  onDragStart={event => handleImageDragStart(event, image)}
+                  className="group cursor-grab overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm transition hover:border-gray-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-300 active:cursor-grabbing"
                   aria-label="Visa bild"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1801,6 +1963,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               controlPointMetaById={controlPointMetaById}
               imagesByControlItemId={imagesByControlItemId}
               onUploadImageForControlItem={handleUploadImageForControlItem}
+              onDropImageOnControlItem={moveImageToControlItem}
               onDeleteControlItemImage={handleDeleteControlItemImage}
             />
 
@@ -1816,6 +1979,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               }
               onDeleteFreeNote={(rowId) => deleteFreeNoteRow(item.id, rowId)}
               onUploadImageForObservation={handleUploadImageForObservation}
+              onDropImageOnObservation={moveImageToObservation}
               onDeleteObservationImage={handleDeleteObservationImage}
               onAddControlFromCatalog={cp =>
                 addControlItemFromCatalog(item, mainRow, cp)
@@ -2030,6 +2194,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
 type ControlPointImagesSectionProps = {
   images: InspectionImage[]
   onUpload: (file: File) => void | Promise<void>
+  onDropImage?: (imageId: string) => void | Promise<void>
   onDelete: (imageId: string) => void
   title?: string
   disabled?: boolean
@@ -2038,12 +2203,14 @@ type ControlPointImagesSectionProps = {
 function ControlPointImagesSection({
   images,
   onUpload,
+  onDropImage,
   onDelete,
   title,
   disabled = false,
 }: ControlPointImagesSectionProps) {
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const libraryInputRef = useRef<HTMLInputElement | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (disabled) return
@@ -2055,8 +2222,45 @@ function ControlPointImagesSection({
     e.target.value = ''
   }
 
+  const canDropImage = (event: DragEvent<HTMLElement>) =>
+    !disabled &&
+    Boolean(onDropImage) &&
+    Array.from(event.dataTransfer.types).includes(IMAGE_DRAG_DATA_TYPE)
+
+  const handleDragOver = (event: DragEvent<HTMLElement>) => {
+    if (!canDropImage(event)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = () => {
+    setIsDragOver(false)
+  }
+
+  const handleDrop = async (event: DragEvent<HTMLElement>) => {
+    if (!canDropImage(event)) return
+    event.preventDefault()
+    setIsDragOver(false)
+    const imageId = event.dataTransfer.getData(IMAGE_DRAG_DATA_TYPE)
+    if (!imageId || !onDropImage) return
+    await onDropImage(imageId)
+  }
+
   return (
     <section className="space-y-2 border-t pt-2">
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`rounded-lg border border-dashed p-2 transition ${
+          isDragOver
+            ? 'border-sky-400 bg-sky-50 ring-2 ring-sky-100'
+            : onDropImage
+              ? 'border-gray-200 bg-white/70'
+              : 'border-transparent p-0'
+        }`}
+      >
       <header className="flex items-center justify-between">
         <h5 className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-900">
           <span aria-hidden="true">{'\u{1F4F7}'}</span>
@@ -2131,6 +2335,7 @@ function ControlPointImagesSection({
           })}
         </div>
       )}
+      </div>
     </section>
   )
 }
@@ -2156,6 +2361,10 @@ type ExteriorControlPointsSectionProps = {
     controlItem: InspectionControlItem,
     file: File
   ) => void
+  onDropImageOnControlItem: (
+    imageId: string,
+    controlItem: InspectionControlItem
+  ) => void
   onDeleteControlItemImage: (imageId: string) => void
 }
 
@@ -2172,6 +2381,7 @@ function ExteriorControlPointsSection({
   controlPointMetaById,
   imagesByControlItemId,
   onUploadImageForControlItem,
+  onDropImageOnControlItem,
   onDeleteControlItemImage,
 }: ExteriorControlPointsSectionProps) {
   const groupedItems = useMemo(() => {
@@ -2431,6 +2641,7 @@ function ExteriorControlPointsSection({
                     <ControlPointImagesSection
                       images={ciImages}
                       onUpload={file => onUploadImageForControlItem(ci, file)}
+                      onDropImage={imageId => onDropImageOnControlItem(imageId, ci)}
                       onDelete={onDeleteControlItemImage}
                       title="Bilder"
                       disabled={isInspectionLocked}
@@ -2677,6 +2888,7 @@ function ExteriorControlPointsSection({
                     <ControlPointImagesSection
                       images={imagesByControlItemId[baseItem.id] || []}
                       onUpload={file => onUploadImageForControlItem(baseItem, file)}
+                      onDropImage={imageId => onDropImageOnControlItem(imageId, baseItem)}
                       onDelete={onDeleteControlItemImage}
                       disabled={isInspectionLocked}
                     />
@@ -2768,6 +2980,7 @@ function ExteriorControlPointsSection({
                           <ControlPointImagesSection
                             images={ciImages}
                             onUpload={file => onUploadImageForControlItem(ci, file)}
+                            onDropImage={imageId => onDropImageOnControlItem(imageId, ci)}
                             onDelete={onDeleteControlItemImage}
                             disabled={isInspectionLocked}
                           />
@@ -2802,6 +3015,10 @@ type FreeNotesSectionProps = {
     observation: InspectionExteriorObservation,
     file: File
   ) => void
+  onDropImageOnObservation: (
+    imageId: string,
+    observation: InspectionExteriorObservation
+  ) => void
   onDeleteObservationImage: (imageId: string) => void
   onAddControlFromCatalog: (cp: ControlPointLite) => void
 }
@@ -2816,6 +3033,7 @@ function FreeNotesSection({
   onUpdateFreeNote,
   onDeleteFreeNote,
   onUploadImageForObservation,
+  onDropImageOnObservation,
   onDeleteObservationImage,
   onAddControlFromCatalog,
 }: FreeNotesSectionProps) {
@@ -3168,6 +3386,7 @@ function FreeNotesSection({
                       <ControlPointImagesSection
                         images={imagesByObservationId[row.id] || []}
                         onUpload={file => onUploadImageForObservation(row, file)}
+                        onDropImage={imageId => onDropImageOnObservation(imageId, row)}
                         onDelete={onDeleteObservationImage}
                         title="Bilder"
                         disabled={isInspectionLocked}
