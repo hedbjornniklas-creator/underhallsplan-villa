@@ -310,6 +310,8 @@ create table if not exists public.eb_inspection_details (
   start_meeting_time time,
   final_meeting_time time,
   invitation_sent_at timestamptz,
+  invitation_sent_by uuid references public.profiles (id) on delete set null,
+  invitation_message_id uuid references public.outbound_messages (id) on delete set null,
   invitation_subject text,
   invitation_body text,
   report_title text,
@@ -322,7 +324,9 @@ create table if not exists public.eb_inspection_details (
 
 alter table public.eb_inspection_details
   add column if not exists parent_inspection_id uuid references public.inspections (id) on delete set null,
-  add column if not exists sequence_no integer not null default 1;
+  add column if not exists sequence_no integer not null default 1,
+  add column if not exists invitation_sent_by uuid references public.profiles (id) on delete set null,
+  add column if not exists invitation_message_id uuid references public.outbound_messages (id) on delete set null;
 
 create index if not exists eb_inspection_details_org_idx
   on public.eb_inspection_details (org_id, updated_at desc);
@@ -333,6 +337,9 @@ create index if not exists eb_inspection_details_project_sequence_idx
 create index if not exists eb_inspection_details_parent_idx
   on public.eb_inspection_details (parent_inspection_id)
   where parent_inspection_id is not null;
+create index if not exists eb_inspection_details_invitation_sent_at_idx
+  on public.eb_inspection_details (invitation_sent_at desc)
+  where invitation_sent_at is not null;
 
 drop trigger if exists trg_eb_inspection_details_set_updated_at
   on public.eb_inspection_details;
@@ -483,6 +490,21 @@ $$;
 create index if not exists inspection_images_eb_note_id_idx
   on public.inspection_images (eb_note_id)
   where eb_note_id is not null;
+
+-- ---------------------------------------------------------------------
+-- EB invitation mail logging
+-- ---------------------------------------------------------------------
+alter table public.outbound_messages
+  add column if not exists inspection_id uuid references public.inspections (id) on delete set null,
+  add column if not exists eb_project_id uuid references public.eb_projects (id) on delete set null;
+
+create index if not exists outbound_messages_inspection_id_idx
+  on public.outbound_messages (inspection_id)
+  where inspection_id is not null;
+
+create index if not exists outbound_messages_eb_project_id_idx
+  on public.outbound_messages (eb_project_id)
+  where eb_project_id is not null;
 
 -- ---------------------------------------------------------------------
 -- RLS

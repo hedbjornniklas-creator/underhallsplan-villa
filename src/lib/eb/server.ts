@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export type EbInspectionVariant = 'SB' | 'FB' | 'EB' | 'GB' | 'KSB' | 'SAB'
@@ -40,6 +41,45 @@ export type EbProjectListItem = {
   inspections: EbInspectionSummary[]
 }
 
+export type EbInvitationParticipant = {
+  id: string | null
+  roleLabel: string | null
+  companyName: string | null
+  personName: string | null
+  email: string | null
+  phone: string | null
+  receivesInvitation: boolean
+  sortOrder: number
+}
+
+export type EbInvitationContext = {
+  project: EbProjectListItem
+  inspection: EbInspectionSummary
+  participants: EbInvitationParticipant[]
+  subject: string
+  body: string
+}
+
+export type EbInvitationParticipantInput = Omit<EbInvitationParticipant, 'id' | 'sortOrder'> & {
+  id?: string | null
+  sortOrder?: number | null
+}
+
+export type SendEbInvitationInput = {
+  orgId: string
+  requestedByUserId: string
+  projectId: string
+  inspectionId: string
+  subject: string
+  body: string
+  participants: EbInvitationParticipantInput[]
+}
+
+export type SendEbInvitationResult = {
+  sentCount: number
+  project: EbProjectListItem
+}
+
 type EbProjectRow = {
   id: string
   org_id: string
@@ -66,6 +106,8 @@ type EbInspectionDetailRow = {
   inspection_variant: string | null
   sequence_no: number | null
   invitation_sent_at: string | null
+  invitation_subject?: string | null
+  invitation_body?: string | null
   report_locked_at: string | null
   created_at: string | null
 }
@@ -86,6 +128,35 @@ type EbDisciplineSettingRow = {
   label: string
   littera_prefix: string | null
   sort_order: number | null
+}
+
+type EbInvitationDetailRow = {
+  inspection_id: string
+  eb_project_id: string
+  inspection_variant: string | null
+  meeting_place: string | null
+  start_meeting_time: string | null
+  final_meeting_time: string | null
+  invitation_sent_at: string | null
+  invitation_subject: string | null
+  invitation_body: string | null
+}
+
+type EbParticipantRow = {
+  id: string
+  role_label: string | null
+  company_name: string | null
+  person_name: string | null
+  email: string | null
+  phone: string | null
+  receives_invitation: boolean | null
+  sort_order: number | null
+}
+
+type ProfileContactRow = {
+  id: string
+  full_name: string | null
+  email: string | null
 }
 
 export type CreateEbProjectInput = {
@@ -130,6 +201,7 @@ const VARIANT_LABELS: Record<EbInspectionVariant, string> = {
 }
 
 const EB_VARIANTS = Object.keys(VARIANT_LABELS) as EbInspectionVariant[]
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function normalizeText(value: string | null | undefined) {
   const trimmed = String(value ?? '').trim()
@@ -146,6 +218,53 @@ function normalizeTime(value: string | null | undefined) {
   const trimmed = normalizeText(value)
   if (!trimmed) return null
   return /^\d{2}:\d{2}(:\d{2})?$/.test(trimmed) ? trimmed : null
+}
+
+function getMailFromAddress() {
+  const value = process.env.ASSIGNMENTS_MAIL_FROM
+  if (!value || value.trim() === '') {
+    throw new Error('MISSING_ENV:ASSIGNMENTS_MAIL_FROM')
+  }
+  return value.trim()
+}
+
+function normalizeEmail(value: string | null | undefined) {
+  const email = normalizeText(value)?.toLowerCase() ?? null
+  return email && EMAIL_REGEX.test(email) ? email : null
+}
+
+function formatSwedishDate(value: string | null) {
+  if (!value) return 'Ej satt'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' })
+}
+
+function formatTime(value: string | null) {
+  if (!value) return 'Ej satt'
+  return value.slice(0, 5)
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function textToHtml(value: string) {
+  const paragraphs = value
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+
+  if (paragraphs.length === 0) return '<p></p>'
+
+  return paragraphs
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br/>')}</p>`)
+    .join('\n')
 }
 
 export function isEbInspectionVariant(value: string): value is EbInspectionVariant {
@@ -591,5 +710,423 @@ export async function createEbInspectionForProject(
       await admin.from('inspections').delete().eq('id', inspectionId)
     }
     throw error
+  }
+}
+
+async function getEbInspectionDetail(input: {
+  orgId: string
+  projectId: string
+  inspectionId: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('eb_inspection_details')
+    .select(
+      'inspection_id,eb_project_id,inspection_variant,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,invitation_subject,invitation_body'
+    )
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta kallelseunderlag.')
+  }
+
+  return (data ?? null) as EbInvitationDetailRow | null
+}
+
+function mapParticipant(row: EbParticipantRow): EbInvitationParticipant {
+  return {
+    id: row.id,
+    roleLabel: row.role_label ?? null,
+    companyName: row.company_name ?? null,
+    personName: row.person_name ?? null,
+    email: row.email ?? null,
+    phone: row.phone ?? null,
+    receivesInvitation: row.receives_invitation ?? true,
+    sortOrder: row.sort_order ?? 100,
+  }
+}
+
+function buildDefaultParticipants(project: EbProjectListItem): EbInvitationParticipant[] {
+  const rows: EbInvitationParticipant[] = []
+
+  if (project.clientName) {
+    rows.push({
+      id: null,
+      roleLabel: 'Beställare',
+      companyName: project.clientName,
+      personName: null,
+      email: null,
+      phone: null,
+      receivesInvitation: true,
+      sortOrder: 100,
+    })
+  }
+
+  if (project.contractorName) {
+    rows.push({
+      id: null,
+      roleLabel: 'Entreprenör',
+      companyName: project.contractorName,
+      personName: null,
+      email: null,
+      phone: null,
+      receivesInvitation: true,
+      sortOrder: 200,
+    })
+  }
+
+  if (rows.length > 0) return rows
+
+  return [
+    {
+      id: null,
+      roleLabel: 'Mottagare',
+      companyName: null,
+      personName: null,
+      email: null,
+      phone: null,
+      receivesInvitation: true,
+      sortOrder: 100,
+    },
+  ]
+}
+
+async function listParticipantsForInspection(input: {
+  orgId: string
+  projectId: string
+  inspectionId: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('eb_participants')
+    .select('id,role_label,company_name,person_name,email,phone,receives_invitation,sort_order')
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta deltagare.')
+  }
+
+  const rows = (data ?? []) as EbParticipantRow[]
+  return rows.map(mapParticipant)
+}
+
+function buildInvitationSubject(input: {
+  project: EbProjectListItem
+  inspection: EbInspectionSummary
+  detail: EbInvitationDetailRow
+}) {
+  const existingSubject = normalizeText(input.detail.invitation_subject)
+  if (existingSubject) return existingSubject
+
+  return `Kallelse till ${input.inspection.variantLabel} - ${input.project.title}`
+}
+
+function buildInvitationBody(input: {
+  project: EbProjectListItem
+  inspection: EbInspectionSummary
+  detail: EbInvitationDetailRow
+  inspector: ProfileContactRow | null
+}) {
+  const existingBody = normalizeText(input.detail.invitation_body)
+  if (existingBody) return existingBody
+
+  const address = [input.project.address, input.project.postalCode, input.project.city]
+    .filter(Boolean)
+    .join(', ')
+  const inspectorName = normalizeText(input.inspector?.full_name) ?? 'Besiktningsmannen'
+  const inspectorEmail = normalizeText(input.inspector?.email)
+  const contactLine = inspectorEmail ? `${inspectorName}, ${inspectorEmail}` : inspectorName
+
+  return [
+    'Hej,',
+    '',
+    `Härmed kallas ni till ${input.inspection.variantLabel.toLowerCase()}.`,
+    '',
+    `Entreprenad: ${input.project.contractName ?? input.project.title}`,
+    `Fastighet/adress: ${address || input.project.propertyDesignation || 'Ej satt'}`,
+    `Beställare: ${input.project.clientName ?? 'Ej satt'}`,
+    `Entreprenör: ${input.project.contractorName ?? 'Ej satt'}`,
+    `Datum: ${formatSwedishDate(input.inspection.date)}`,
+    `Tid: ${formatTime(input.inspection.inspectionTime)}`,
+    `Samlingsplats: ${input.detail.meeting_place ?? 'Ej satt'}`,
+    `Startmöte: ${formatTime(input.detail.start_meeting_time)}`,
+    `Slutmöte: ${formatTime(input.detail.final_meeting_time)}`,
+    '',
+    'Om tiden inte fungerar, kontakta besiktningsmannen direkt.',
+    '',
+    'Med vänlig hälsning',
+    contactLine,
+    'BesiktApp',
+  ].join('\n')
+}
+
+async function getProfileContact(profileId: string) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('profiles')
+    .select('id,full_name,email')
+    .eq('id', profileId)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta besiktningsman.')
+  }
+
+  return (data ?? null) as ProfileContactRow | null
+}
+
+export async function getEbInvitationContext(input: {
+  orgId: string
+  requestedByUserId: string
+  projectId: string
+  inspectionId: string
+}): Promise<EbInvitationContext> {
+  const project = await getEbProjectById({
+    orgId: input.orgId,
+    projectId: input.projectId,
+  })
+
+  if (!project) {
+    throw new Error('EB_PROJECT_NOT_FOUND')
+  }
+
+  const inspection = project.inspections.find((item) => item.inspectionId === input.inspectionId)
+  if (!inspection) {
+    throw new Error('EB_INSPECTION_NOT_FOUND')
+  }
+
+  const detail = await getEbInspectionDetail(input)
+  if (!detail) {
+    throw new Error('EB_INSPECTION_NOT_FOUND')
+  }
+
+  const inspector = await getProfileContact(input.requestedByUserId)
+  const participants = await listParticipantsForInspection(input)
+  const resolvedParticipants = participants.length > 0 ? participants : buildDefaultParticipants(project)
+
+  return {
+    project,
+    inspection,
+    participants: resolvedParticipants,
+    subject: buildInvitationSubject({ project, inspection, detail }),
+    body: buildInvitationBody({ project, inspection, detail, inspector }),
+  }
+}
+
+function normalizeParticipantInput(
+  participant: EbInvitationParticipantInput,
+  index: number
+): EbInvitationParticipant {
+  return {
+    id: normalizeText(participant.id) ?? null,
+    roleLabel: normalizeText(participant.roleLabel),
+    companyName: normalizeText(participant.companyName),
+    personName: normalizeText(participant.personName),
+    email: normalizeEmail(participant.email),
+    phone: normalizeText(participant.phone),
+    receivesInvitation: Boolean(participant.receivesInvitation),
+    sortOrder: participant.sortOrder ?? (index + 1) * 100,
+  }
+}
+
+function participantHasContent(participant: EbInvitationParticipant) {
+  return Boolean(
+    participant.roleLabel ||
+      participant.companyName ||
+      participant.personName ||
+      participant.email ||
+      participant.phone
+  )
+}
+
+async function replaceInspectionParticipants(input: {
+  orgId: string
+  projectId: string
+  inspectionId: string
+  participants: EbInvitationParticipant[]
+}) {
+  const admin = createSupabaseAdminClient()
+
+  const { error: deleteError } = await admin
+    .from('eb_participants')
+    .delete()
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+
+  if (deleteError) {
+    throw new Error(deleteError.message ?? 'Kunde inte uppdatera deltagare.')
+  }
+
+  const rows = input.participants.filter(participantHasContent)
+  if (rows.length === 0) return
+
+  const { error: insertError } = await admin.from('eb_participants').insert(
+    rows.map((participant, index) => ({
+      org_id: input.orgId,
+      eb_project_id: input.projectId,
+      inspection_id: input.inspectionId,
+      role_label: participant.roleLabel,
+      company_name: participant.companyName,
+      person_name: participant.personName,
+      email: participant.email,
+      phone: participant.phone,
+      receives_invitation: participant.receivesInvitation,
+      sort_order: participant.sortOrder || (index + 1) * 100,
+    }))
+  )
+
+  if (insertError) {
+    throw new Error(insertError.message ?? 'Kunde inte spara deltagare.')
+  }
+}
+
+function resolveRecipientName(participant: EbInvitationParticipant) {
+  return (
+    normalizeText(participant.personName) ??
+    normalizeText(participant.companyName) ??
+    normalizeText(participant.roleLabel) ??
+    'Mottagare'
+  )
+}
+
+export async function sendEbInvitation(input: SendEbInvitationInput): Promise<SendEbInvitationResult> {
+  await getEbInvitationContext(input)
+  const subject = normalizeText(input.subject)
+  const body = normalizeText(input.body)
+
+  if (!subject) {
+    throw new Error('INVITATION_SUBJECT_REQUIRED')
+  }
+  if (!body) {
+    throw new Error('INVITATION_BODY_REQUIRED')
+  }
+
+  const participants = input.participants.map(normalizeParticipantInput).filter(participantHasContent)
+  const recipients = participants.filter(
+    (participant) => participant.receivesInvitation && Boolean(participant.email)
+  )
+
+  if (recipients.length === 0) {
+    throw new Error('INVITATION_RECIPIENT_REQUIRED')
+  }
+
+  await replaceInspectionParticipants({
+    orgId: input.orgId,
+    projectId: input.projectId,
+    inspectionId: input.inspectionId,
+    participants,
+  })
+
+  const admin = createSupabaseAdminClient()
+  const fromAddress = getMailFromAddress()
+  const inspector = await getProfileContact(input.requestedByUserId)
+  const replyTo = normalizeEmail(inspector?.email)
+  const sentMessageIds: string[] = []
+  const failures: string[] = []
+
+  for (const recipient of recipients) {
+    const recipientEmail = recipient.email
+    if (!recipientEmail) continue
+
+    const { data: messageData, error: messageError } = await admin
+      .from('outbound_messages')
+      .insert({
+        org_id: input.orgId,
+        inspection_id: input.inspectionId,
+        eb_project_id: input.projectId,
+        channel: 'email',
+        recipient_email: recipientEmail,
+        subject,
+        template_key: 'eb_invitation',
+        status: 'pending',
+        created_by: input.requestedByUserId,
+        reply_to_email: replyTo,
+      })
+      .select('id')
+      .single()
+
+    if (messageError || !messageData) {
+      failures.push(`${resolveRecipientName(recipient)}: kunde inte skapa mejllogg`)
+      continue
+    }
+
+    const messageId = String(messageData.id)
+
+    try {
+      const sendResult = await sendAssignmentEmail({
+        to: recipientEmail,
+        from: fromAddress,
+        replyTo,
+        subject,
+        html: textToHtml(body),
+        text: body,
+      })
+
+      await admin
+        .from('outbound_messages')
+        .update({
+          status: 'sent',
+          provider: sendResult.provider,
+          provider_message_id: sendResult.providerMessageId,
+          sent_at: new Date().toISOString(),
+        })
+        .eq('id', messageId)
+
+      sentMessageIds.push(messageId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Okänt fel vid mejlutskick.'
+      await admin
+        .from('outbound_messages')
+        .update({
+          status: 'failed',
+          error_message: message,
+        })
+        .eq('id', messageId)
+
+      failures.push(`${resolveRecipientName(recipient)}: ${message}`)
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`INVITATION_SEND_FAILED:${failures.join(' | ')}`)
+  }
+
+  const now = new Date().toISOString()
+  const { error: detailUpdateError } = await admin
+    .from('eb_inspection_details')
+    .update({
+      invitation_sent_at: now,
+      invitation_sent_by: input.requestedByUserId,
+      invitation_message_id: sentMessageIds[0] ?? null,
+      invitation_subject: subject,
+      invitation_body: body,
+    })
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+
+  if (detailUpdateError) {
+    throw new Error(detailUpdateError.message ?? 'Kallelsen skickades men kunde inte sparas på besiktningen.')
+  }
+
+  const updatedProject = await getEbProjectById({
+    orgId: input.orgId,
+    projectId: input.projectId,
+  })
+
+  if (!updatedProject) {
+    throw new Error('Kallelsen skickades men projektet kunde inte läsas tillbaka.')
+  }
+
+  return {
+    sentCount: sentMessageIds.length,
+    project: updatedProject,
   }
 }
