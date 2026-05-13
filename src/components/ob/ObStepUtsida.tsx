@@ -2650,7 +2650,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         ) : null}
 
         {!isCollapsed ? (
-          <>
+          <div className="flex flex-col-reverse gap-4">
+
             {/* Kontrollpunkter för komponenten */}
             <ExteriorControlPointsSection
               item={item}
@@ -2692,7 +2693,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               }
               isInspectionLocked={isInspectionLocked}
             />
-          </>
+          </div>
         ) : null}
       </section>
     )
