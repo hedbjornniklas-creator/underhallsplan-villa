@@ -196,8 +196,8 @@ const normalizeFloorKey = (value: string | null | undefined) => {
 const floorLabelFromKey = (key: string) => {
   const normalized = normalizeFloorKey(key)
   if (normalized === 'källare') return 'Källare'
-  if (normalized === 'källare_delvis') return 'Källare delvis'
-  if (normalized === 'plan1') return 'Entréplan'
+  if (normalized === 'källare_delvis') return 'Källare'
+  if (normalized === 'plan1') return 'Plan 1'
   if (normalized === 'plan2') return 'Plan 2'
   if (normalized === 'plan3') return 'Plan 3'
   if (normalized === 'vind') return 'Vind'
@@ -349,6 +349,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   const [activeFloor, setActiveFloor] = useState('')
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null)
   const [roomDialogOpen, setRoomDialogOpen] = useState(false)
+  const [roundNavVisible, setRoundNavVisible] = useState(true)
   const [newRoomTypeKey, setNewRoomTypeKey] = useState('')
   const [newRoomLabel, setNewRoomLabel] = useState('')
 
@@ -374,6 +375,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const galleryInputRef = useRef<HTMLInputElement | null>(null)
+  const lastScrollYRef = useRef(0)
   const ensuredInteriorRoomIdsRef = useRef<Set<string>>(new Set())
   const ensuredExteriorItemIdsRef = useRef<Set<string>>(new Set())
 
@@ -392,12 +394,42 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     return exteriorObservations.find(obs => obs.exterior_item_id === activeExteriorItem.id) ?? null
   }, [activeExteriorItem, exteriorObservations])
 
+  const roomTypeLabelByKey = useMemo(
+    () =>
+      roomTypes.reduce<Record<string, string>>((acc, type) => {
+        acc[type.key] = type.label || type.key
+        return acc
+      }, {}),
+    [roomTypes]
+  )
+
+  const getRoomTypeLabel = (roomTypeKey: string | null | undefined) => {
+    if (!roomTypeKey) return 'Rum'
+    return roomTypeLabelByKey[roomTypeKey] ?? roomTypeKey
+  }
+
+  const getRoomDisplayName = (room: InteriorRoom | null) => {
+    if (!room) return 'Rum'
+    return room.room_label?.trim() || getRoomTypeLabel(room.room_type_key)
+  }
+
+  const getSuggestedRoomLabel = (roomTypeKey: string, floorKey = activeFloor) => {
+    const floor = normalizeFloorKey(floorKey)
+    const existingOnFloor = rooms.filter(
+      room => normalizeFloorKey(room.floor_label) === floor && room.room_type_key === roomTypeKey
+    ).length
+    return `${getRoomTypeLabel(roomTypeKey)} ${existingOnFloor + 1}`
+  }
+
   const floorOptions = useMemo(() => {
-    const keys = new Set<string>()
-    derivedFloors.forEach(floor => keys.add(normalizeFloorKey(floor)))
-    rooms.forEach(room => keys.add(normalizeFloorKey(room.floor_label)))
-    if (keys.size === 0) keys.add('plan1')
-    return Array.from(keys)
+    const base = derivedFloors.length
+      ? derivedFloors.map(normalizeFloorKey)
+      : Array.from(new Set(rooms.map(room => normalizeFloorKey(room.floor_label))))
+    const extras = rooms
+      .map(room => normalizeFloorKey(room.floor_label))
+      .filter(floor => floor && !base.includes(floor))
+    const floors = [...base, ...extras].filter(Boolean)
+    return floors.length > 0 ? floors : ['plan1']
   }, [derivedFloors, rooms])
 
   const roomsForActiveFloor = useMemo(
@@ -422,11 +454,16 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   const activeTargetLabel = useMemo(() => {
     if (area === 'interior') {
       if (!activeRoom) return 'Välj rum'
-      return `${floorLabelFromKey(activeRoom.floor_label)} > ${activeRoom.room_label}`
+      const roomName =
+        activeRoom.room_label?.trim() ||
+        roomTypeLabelByKey[activeRoom.room_type_key] ||
+        activeRoom.room_type_key ||
+        'Rum'
+      return `${floorLabelFromKey(activeRoom.floor_label)} > ${roomName}`
     }
     if (activeExteriorItem) return `Utsida > ${activeExteriorItem.label}`
     return 'Utsida > Oklassad'
-  }, [area, activeRoom, activeExteriorItem])
+  }, [area, activeRoom, activeExteriorItem, roomTypeLabelByKey])
 
   const activeQuickNote = useMemo(() => {
     if (area === 'interior' && activeRoom?.id) {
@@ -511,6 +548,23 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     void loadAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inspection?.id])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    lastScrollYRef.current = window.scrollY
+
+    const handleScroll = () => {
+      const currentY = window.scrollY
+      const delta = currentY - lastScrollYRef.current
+      if (Math.abs(delta) > 8) {
+        setRoundNavVisible(delta < 0 || currentY < 24)
+      }
+      lastScrollYRef.current = currentY
+    }
+
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
   useEffect(() => {
     if (!activeFloor && floorOptions.length > 0) setActiveFloor(floorOptions[0])
@@ -782,12 +836,8 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       return
     }
 
-    const type = roomTypes.find(roomType => roomType.key === newRoomTypeKey)
     const floor = normalizeFloorKey(activeFloor)
-    const existingOnFloor = rooms.filter(
-      room => normalizeFloorKey(room.floor_label) === floor && room.room_type_key === newRoomTypeKey
-    ).length
-    const roomLabel = newRoomLabel.trim() || `${type?.label ?? newRoomTypeKey} ${existingOnFloor + 1}`
+    const roomLabel = newRoomLabel.trim() || getSuggestedRoomLabel(newRoomTypeKey, floor)
     const maxOrder = rooms
       .filter(room => normalizeFloorKey(room.floor_label) === floor)
       .reduce((max, room) => Math.max(max, room.order_index ?? 0), 0)
@@ -1633,18 +1683,31 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
   function renderRoundSurface() {
     return (
-      <section className="space-y-4 rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 md:p-4">
-        {renderAreaTabs()}
-        {area === 'interior' ? renderInteriorPicker() : (
+      <section className="space-y-4">
+        <div
+          className={`sticky top-3 z-30 transition-all duration-200 ${
+            roundNavVisible
+              ? 'translate-y-0 opacity-100'
+              : 'pointer-events-none -translate-y-[calc(100%+1rem)] opacity-0'
+          }`}
+        >
+          <div className="rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 backdrop-blur md:p-4">
+            {renderAreaTabs()}
+            <div className="mt-3">
+              {area === 'interior' ? renderInteriorPicker() : renderExteriorPicker()}
+            </div>
+          </div>
+        </div>
+
+        {area === 'exterior' ? (
           <div className="space-y-4">
-            {renderExteriorPicker()}
             {renderQuickNote()}
             {renderControlItemsPanel(false)}
             <div className="rounded-xl border border-gray-200 bg-white p-3">
               {renderCameraPanel()}
             </div>
           </div>
-        )}
+        ) : null}
       </section>
     )
   }
@@ -1707,7 +1770,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               <input
                 value={newRoomLabel}
                 onChange={event => setNewRoomLabel(event.target.value)}
-                placeholder="Rumsnamn, valfritt"
+                placeholder={newRoomTypeKey ? getSuggestedRoomLabel(newRoomTypeKey) : 'Rumsnamn, valfritt'}
                 className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm text-gray-900"
                 disabled={isInspectionLocked}
               />
@@ -1730,13 +1793,9 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 setActiveRoomId(room.id ?? null)
                 setRoomDialogOpen(true)
               }}
-              className={`min-h-[112px] rounded-xl border px-3 py-3 text-left text-sm ${activeTileClass(activeRoomId === room.id)}`}
+              className={`min-h-[88px] rounded-xl border px-3 py-3 text-left text-sm ${activeTileClass(activeRoomId === room.id)}`}
             >
-              <div className="font-semibold">{room.room_label}</div>
-              <div className="mt-1 text-xs text-gray-500">
-                {roomTypes.find(type => type.key === room.room_type_key)?.label ?? room.room_type_key}
-              </div>
-              <div className="mt-3 text-xs font-medium text-sky-700">Öppna rum</div>
+              <div className="font-semibold">{getRoomDisplayName(room)}</div>
             </button>
           ))}
         </div>
@@ -1802,7 +1861,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                   {activeRoom ? floorLabelFromKey(activeRoom.floor_label) : 'Rum'}
                 </div>
-                <h2 className="text-lg font-semibold text-gray-950">{activeRoom?.room_label}</h2>
+                <h2 className="text-lg font-semibold text-gray-950">{getRoomDisplayName(activeRoom)}</h2>
               </div>
               <button
                 type="button"
