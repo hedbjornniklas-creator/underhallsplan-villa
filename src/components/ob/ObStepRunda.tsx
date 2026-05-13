@@ -147,6 +147,8 @@ type ObStepRundaProps = {
 const IMAGE_BUCKET = 'inspection-images' as const
 const RED_STATUS: InspectionControlItem['status'] = null
 const UNCLASSIFIED_EXTERIOR = '__unclassified_exterior__'
+const OTHER_ROOM_TYPE_KEY = 'ovrigt'
+const OTHER_ROOM_DISPLAY_LABEL = 'Allmänt'
 
 const normalizeSwedish = (value: string) =>
   value
@@ -190,11 +192,13 @@ const buildFloorsFromAnswers = (answers: ValueMap): string[] => {
 const normalizeFloorKey = (value: string | null | undefined) => {
   const normalized = normalizeSwedish(String(value ?? '')).trim()
   if (normalized === 'entréplan') return 'plan1'
+  if (normalized === 'övrigt' || normalized === 'ovrigt') return OTHER_ROOM_TYPE_KEY
   return normalized
 }
 
 const floorLabelFromKey = (key: string) => {
   const normalized = normalizeFloorKey(key)
+  if (normalized === OTHER_ROOM_TYPE_KEY) return OTHER_ROOM_DISPLAY_LABEL
   if (normalized === 'källare') return 'Källare'
   if (normalized === 'källare_delvis') return 'Källare'
   if (normalized === 'plan1') return 'Plan 1'
@@ -428,11 +432,14 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     const base = derivedFloors.length
       ? derivedFloors.map(normalizeFloorKey)
       : Array.from(new Set(rooms.map(room => normalizeFloorKey(room.floor_label))))
-    const extras = rooms
-      .map(room => normalizeFloorKey(room.floor_label))
-      .filter(floor => floor && !base.includes(floor))
-    const floors = [...base, ...extras].filter(Boolean)
-    return floors.length > 0 ? floors : ['plan1']
+    const extras = rooms.map(room => normalizeFloorKey(room.floor_label))
+    const merged = [...base, ...extras].filter(Boolean)
+    const withoutOther = merged.filter(floor => floor !== OTHER_ROOM_TYPE_KEY)
+    const hasVind = withoutOther.includes('vind')
+    const withoutVind = withoutOther.filter(floor => floor !== 'vind')
+    const ordered = [OTHER_ROOM_TYPE_KEY, ...withoutVind, ...(hasVind ? ['vind'] : [])]
+    const unique = ordered.filter((floor, index) => ordered.indexOf(floor) === index)
+    return unique.length > 0 ? unique : [OTHER_ROOM_TYPE_KEY, 'plan1']
   }, [derivedFloors, rooms])
 
   const roomsForActiveFloor = useMemo(
@@ -570,7 +577,13 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   }, [])
 
   useEffect(() => {
-    if (!activeFloor && floorOptions.length > 0) setActiveFloor(floorOptions[0])
+    if (floorOptions.length === 0) return
+    const normalizedActiveFloor = normalizeFloorKey(activeFloor)
+    if (!activeFloor || !floorOptions.includes(normalizedActiveFloor)) {
+      setActiveFloor(floorOptions[0])
+    } else if (activeFloor !== normalizedActiveFloor) {
+      setActiveFloor(normalizedActiveFloor)
+    }
   }, [activeFloor, floorOptions])
 
   useEffect(() => {
@@ -1781,7 +1794,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   function activeTileClass(isActive: boolean) {
     return isActive
       ? 'border-sky-300 bg-sky-50 text-sky-950 ring-1 ring-sky-200'
-      : 'border-gray-200 bg-white text-gray-900 hover:bg-sky-50/60'
+      : 'border-slate-200 bg-white text-slate-900 hover:bg-sky-50/60'
   }
 
   function renderRoundSurface() {
@@ -1794,13 +1807,15 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               : 'pointer-events-none -translate-y-[calc(100%+1rem)] opacity-0'
           }`}
         >
-          <div className="rounded-2xl border border-white/45 bg-white/95 p-3 shadow-xl ring-1 ring-black/5 backdrop-blur md:p-4">
+          <div className="rounded-2xl border border-sky-100 bg-sky-50/80 p-3 shadow-lg ring-1 ring-white/80 backdrop-blur md:p-4">
             {renderAreaTabs()}
             <div className="mt-3">
-              {area === 'interior' ? renderInteriorPicker() : renderExteriorPicker()}
+              {area === 'interior' ? renderFloorTabs() : null}
             </div>
           </div>
         </div>
+
+        {area === 'interior' ? renderRoomListBox() : renderExteriorPicker()}
 
         {area === 'exterior' ? (
           <div className="space-y-4">
@@ -1836,26 +1851,30 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     )
   }
 
-  function renderInteriorPicker() {
+  function renderFloorTabs() {
     return (
-      <div className="space-y-3">
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {floorOptions.map(floor => (
-            <button
-              key={floor}
-              type="button"
-              onClick={() => setActiveFloor(floor)}
-              className={`shrink-0 rounded-full border px-3 py-2 text-sm font-semibold ${activeTileClass(
-                normalizeFloorKey(activeFloor) === normalizeFloorKey(floor)
-              )}`}
-            >
-              {floorLabelFromKey(floor)}
-            </button>
-          ))}
-        </div>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {floorOptions.map(floor => (
+          <button
+            key={floor}
+            type="button"
+            onClick={() => setActiveFloor(floor)}
+            className={`shrink-0 rounded-full border px-3 py-2 text-sm font-semibold ${activeTileClass(
+              normalizeFloorKey(activeFloor) === normalizeFloorKey(floor)
+            )}`}
+          >
+            {floorLabelFromKey(floor)}
+          </button>
+        ))}
+      </div>
+    )
+  }
 
+  function renderRoomListBox() {
+    return (
+      <div className="space-y-3 rounded-2xl border-2 border-sky-200 bg-white p-3 shadow-lg ring-1 ring-sky-100 md:p-4">
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
+          <div className="rounded-xl border border-sky-300 bg-sky-50/70 p-3 shadow-sm">
             <div className="space-y-2">
               <select
                 value={newRoomTypeKey}
@@ -1896,9 +1915,9 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 setActiveRoomId(room.id ?? null)
                 setRoomDialogOpen(true)
               }}
-              className={`min-h-[88px] rounded-xl border px-3 py-3 text-left text-sm ${activeTileClass(activeRoomId === room.id)}`}
+              className={`min-h-[94px] rounded-xl border-2 px-3 py-3 text-left text-base shadow-sm ${activeTileClass(activeRoomId === room.id)}`}
             >
-              <div className="font-semibold">{getRoomDisplayName(room)}</div>
+              <div className="text-lg font-semibold leading-snug">{getRoomDisplayName(room)}</div>
             </button>
           ))}
         </div>
@@ -1908,7 +1927,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
   function renderExteriorPicker() {
     return (
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-2 rounded-2xl border border-sky-200 bg-white p-3 shadow-lg ring-1 ring-sky-100 sm:grid-cols-2 md:p-4 lg:grid-cols-3">
         <button
           type="button"
           onClick={() => setActiveExteriorItemId(UNCLASSIFIED_EXTERIOR)}
