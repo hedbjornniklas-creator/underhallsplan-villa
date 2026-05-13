@@ -364,6 +364,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   const [images, setImages] = useState<InspectionImage[]>([])
 
   const [selectedControlItemId, setSelectedControlItemId] = useState<string | null>(null)
+  const [freeNoteDialogId, setFreeNoteDialogId] = useState<string | null>(null)
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(() => new Set())
   const [imageFilter, setImageFilter] = useState<ImageFilter>('unprocessed')
 
@@ -372,9 +373,11 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [searching, setSearching] = useState(false)
   const [searchResults, setSearchResults] = useState<ControlPointLite[]>([])
+  const [aiSearchHasRun, setAiSearchHasRun] = useState(false)
 
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const galleryInputRef = useRef<HTMLInputElement | null>(null)
+  const pendingImageControlItemIdRef = useRef<string | null>(null)
   const lastScrollYRef = useRef(0)
   const ensuredInteriorRoomIdsRef = useRef<Set<string>>(new Set())
   const ensuredExteriorItemIdsRef = useRef<Set<string>>(new Set())
@@ -1119,6 +1122,8 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       return
     }
     setControlItems(prev => prev.filter(item => item.id !== itemId))
+    if (selectedControlItemId === itemId) setSelectedControlItemId(null)
+    if (freeNoteDialogId === itemId) setFreeNoteDialogId(null)
     setImages(prev =>
       prev.map(image =>
         image.control_item_id === itemId
@@ -1253,6 +1258,11 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     return saved
   }
 
+  const createAndOpenFreeNote = async () => {
+    const note = await createFreeNote('')
+    if (note?.id) setFreeNoteDialogId(note.id)
+  }
+
   const saveQuickNote = async (value: string) => {
     if (isInspectionLocked) return
     if (area === 'exterior' && !activeExteriorItem) return
@@ -1297,15 +1307,25 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     }
   }
 
-  const uploadFiles = async (files: FileList | File[]) => {
+  const uploadFiles = async (files: FileList | File[], linkToControlItemId: string | null = null) => {
     const fileArray = Array.from(files)
     if (fileArray.length === 0 || isInspectionLocked) return
     for (const file of fileArray) {
-      await uploadImage(file, file.name)
+      await uploadImage(file, file.name, linkToControlItemId)
     }
   }
 
-  const uploadImage = async (blob: Blob, originalName?: string) => {
+  const openCameraCapture = (linkToControlItemId: string | null = null) => {
+    pendingImageControlItemIdRef.current = linkToControlItemId
+    cameraInputRef.current?.click()
+  }
+
+  const openGalleryPicker = (linkToControlItemId: string | null = null) => {
+    pendingImageControlItemIdRef.current = linkToControlItemId
+    galleryInputRef.current?.click()
+  }
+
+  const uploadImage = async (blob: Blob, originalName?: string, linkToControlItemId: string | null = null) => {
     if (isInspectionLocked) return
     setUploading(true)
     setError(null)
@@ -1326,14 +1346,17 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
       const origin = await getCaptureOrigin()
       const maxSort = images.reduce((max, image) => Math.max(max, image.sort_order ?? 0), 0)
+      const linkedControlItem = linkToControlItemId
+        ? controlItems.find(item => item.id === linkToControlItemId) ?? null
+        : null
 
       const { data, error: insertError } = await supabase
         .from('inspection_images')
         .insert({
           inspection_id: inspection.id,
-          interior_room_id: null,
-          exterior_observation_id: null,
-          control_item_id: null,
+          interior_room_id: linkedControlItem?.interior_room_id ?? null,
+          exterior_observation_id: linkedControlItem?.exterior_observation_id ?? null,
+          control_item_id: linkedControlItem?.id ?? null,
           file_path: path,
           label: null,
           sort_order: maxSort + 10,
@@ -1347,7 +1370,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
           origin_room_type_key: origin.origin_room_type_key,
           origin_exterior_item_key: origin.origin_exterior_item_key,
           captured_at: capturedAt,
-          processing_status: 'unprocessed',
+          processing_status: linkedControlItem ? 'linked' : 'unprocessed',
         })
         .select('*')
         .single()
@@ -1355,7 +1378,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       if (insertError) throw insertError
       const saved = data as InspectionImage
       setImages(prev => [saved, ...prev])
-      setMessage('Bild sparad.')
+      setMessage(linkedControlItem ? 'Bild sparad och kopplad.' : 'Bild sparad.')
     } catch (e: unknown) {
       console.error('upload OB round image failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte spara bilden.')
@@ -1505,12 +1528,27 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     setSearchMode('control_points')
     setSearchTerm('')
     setSearchResults([])
+    setAiSearchHasRun(false)
+  }
+
+  const handleSearchModeChange = (mode: ControlPointSearchMode) => {
+    if (mode === searchMode) return
+    setSearchMode(mode)
+    setSearchTerm('')
+    setSearchResults([])
+    setAiSearchHasRun(false)
   }
 
   const handleSearchChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const term = event.target.value
     setSearchTerm(term)
     const trimmed = term.trim()
+    if (searchMode === 'ai') {
+      setAiSearchHasRun(false)
+      setSearchResults([])
+      setSearching(false)
+      return
+    }
     if (trimmed.length < 2) {
       setSearchResults([])
       return
@@ -1555,10 +1593,63 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         .eq('is_active', true)
         .in('id', controlPointIds)
       if (cpError) throw cpError
-      setSearchResults(filterSearchResults((data ?? []) as ControlPointLite[]))
+      const outcomes = (outcomeRows ?? []) as Array<{ control_point_id: string | null; label: string | null }>
+      const outcomeLabelsByControlPointId = outcomes.reduce<Record<string, string[]>>((acc, outcome) => {
+        const controlPointId = outcome.control_point_id
+        const label = (outcome.label ?? '').trim()
+        if (!controlPointId || !label) return acc
+        const current = acc[controlPointId] || []
+        if (!current.includes(label)) current.push(label)
+        acc[controlPointId] = current
+        return acc
+      }, {})
+      setSearchResults(
+        filterSearchResults((data ?? []) as ControlPointLite[]).map(cp => {
+          const outcomeLabels = outcomeLabelsByControlPointId[cp.id] || []
+          return {
+            ...cp,
+            search_hint:
+              outcomeLabels.length > 0
+                ? `Chipträff: ${outcomeLabels.slice(0, 3).join(', ')}`
+                : 'Chipträff',
+          }
+        })
+      )
     } catch (e) {
       console.error('search OB round control points failed:', e)
+      setSearchResults([])
     } finally {
+      setSearching(false)
+    }
+  }
+
+  const handleAiSearch = async () => {
+    const trimmed = searchTerm.trim()
+    if (trimmed.length < 2 || isInspectionLocked || area !== 'interior') return
+
+    setSearching(true)
+    setAiSearchHasRun(false)
+    try {
+      const response = await fetch('/api/ai/search-control-points/interior', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: trimmed, limit: 10 }),
+      })
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string }
+        console.error('AI control point search failed:', payload.error ?? response.statusText)
+        setSearchResults([])
+        return
+      }
+
+      const payload = await response.json() as { results?: ControlPointLite[] }
+      setSearchResults(filterSearchResults(payload.results ?? []))
+    } catch (e) {
+      console.error('AI control point search failed:', e)
+      setSearchResults([])
+    } finally {
+      setAiSearchHasRun(true)
       setSearching(false)
     }
   }
@@ -1569,8 +1660,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         return (
           cp.scope === 'interior' &&
           !!activeRoom &&
-          controlPointAppliesToInspectionSide(cp, inspectionSide) &&
-          controlPointMatchesRoom(cp, activeRoom.room_type_key)
+          controlPointAppliesToInspectionSide(cp, inspectionSide)
         )
       }
       if (!activeExteriorItem) return cp.scope === 'exterior'
@@ -1622,6 +1712,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
       {renderRoundSurface()}
       {roomDialogOpen && activeRoom ? renderRoomDialog() : null}
+      {freeNoteDialogId ? renderFreeNoteDialog() : null}
 
       <ControlPointSearchDialog
         open={searchOpen}
@@ -1634,14 +1725,22 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         disabled={isInspectionLocked}
         controlPointPlaceholder="Sök kontrollpunkt..."
         chipPlaceholder="Sök chip eller malltext..."
-        showAiMode={false}
+        aiPlaceholder="Beskriv vad du ser, t.ex. plåt som släppt på insidan..."
+        showAiMode={area === 'interior'}
+        aiSearchHasRun={aiSearchHasRun}
         scopeLabelForResult={(result) =>
           result.scope === 'exterior' ? `Utsida${result.exterior_item_key ? ` · ${result.exterior_item_key}` : ''}` : 'Insida'
         }
-        onSearchModeChange={setSearchMode}
+        onSearchModeChange={handleSearchModeChange}
         onSearchChange={handleSearchChange}
+        onRunAiSearch={handleAiSearch}
         onSelect={result => void addControlPointFromCatalog(result)}
-        onClose={() => setSearchOpen(false)}
+        onClose={() => {
+          setSearchOpen(false)
+          setSearchTerm('')
+          setSearchResults([])
+          setAiSearchHasRun(false)
+        }}
       />
 
       <input
@@ -1652,7 +1751,9 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         className="hidden"
         onChange={event => {
           const files = event.target.files
-          if (files) void uploadFiles(files)
+          const targetControlItemId = pendingImageControlItemIdRef.current
+          pendingImageControlItemIdRef.current = null
+          if (files) void uploadFiles(files, targetControlItemId)
           event.currentTarget.value = ''
         }}
       />
@@ -1664,7 +1765,9 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         className="hidden"
         onChange={event => {
           const files = event.target.files
-          if (files) void uploadFiles(files)
+          const targetControlItemId = pendingImageControlItemIdRef.current
+          pendingImageControlItemIdRef.current = null
+          if (files) void uploadFiles(files, targetControlItemId)
           event.currentTarget.value = ''
         }}
       />
@@ -1886,7 +1989,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               </button>
               <button
                 type="button"
-                onClick={() => void createFreeNote('')}
+                onClick={() => void createAndOpenFreeNote()}
                 disabled={isInspectionLocked}
                 className={primaryButtonClass('min-h-12 flex-col gap-1 px-2 text-xs')}
               >
@@ -1895,7 +1998,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               </button>
               <button
                 type="button"
-                onClick={() => cameraInputRef.current?.click()}
+                onClick={() => openCameraCapture()}
                 disabled={isInspectionLocked || uploading}
                 className={primaryButtonClass('min-h-12 flex-col gap-1 px-2 text-xs')}
               >
@@ -1904,7 +2007,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               </button>
               <button
                 type="button"
-                onClick={() => galleryInputRef.current?.click()}
+                onClick={() => openGalleryPicker()}
                 disabled={isInspectionLocked || uploading}
                 className={primaryButtonClass('min-h-12 flex-col gap-1 px-2 text-xs')}
               >
@@ -1963,7 +2066,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => cameraInputRef.current?.click()}
+            onClick={() => openCameraCapture()}
             disabled={uploading || isInspectionLocked}
             className={primaryButtonClass('min-h-12')}
           >
@@ -1972,13 +2075,146 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
           </button>
           <button
             type="button"
-            onClick={() => galleryInputRef.current?.click()}
+            onClick={() => openGalleryPicker()}
             disabled={uploading || isInspectionLocked}
             className={primaryButtonClass('min-h-12')}
           >
             <ImageIcon size={18} />
             Bilder
           </button>
+        </div>
+      </div>
+    )
+  }
+
+  function renderFreeNoteDialog() {
+    const item = controlItems.find(row => row.id === freeNoteDialogId)
+    if (!item?.id) return null
+    const linkedImages = images.filter(image => image.control_item_id === item.id)
+
+    return (
+      <div className="fixed inset-0 z-[100] bg-white md:bg-black/35" role="dialog" aria-modal="true">
+        <div className="flex h-full flex-col bg-white md:mx-auto md:my-4 md:h-[calc(100%-2rem)] md:max-w-3xl md:rounded-2xl md:shadow-2xl">
+          <div className="border-b border-gray-200 px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  {activeTargetLabel}
+                </div>
+                <h2 className="text-lg font-semibold text-gray-950">Fri notering</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFreeNoteDialogId(null)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700"
+                aria-label="Stäng notering"
+                title="Stäng notering"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
+            <div className="space-y-4">
+              <div className="rounded-xl border border-gray-200 bg-white p-3">
+                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Notering</label>
+                <DebouncedTextarea
+                  rows={5}
+                  value={item.note ?? ''}
+                  onSave={value => void updateControlItem(item.id!, { note: value })}
+                  readOnly={isInspectionLocked}
+                  placeholder="Skriv noteringen..."
+                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white p-3">
+                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Risk</label>
+                <DebouncedTextarea
+                  rows={4}
+                  value={item.risk_text ?? ''}
+                  onSave={value => void updateControlItem(item.id!, { risk_text: value || null })}
+                  readOnly={isInspectionLocked}
+                  placeholder="Risktext..."
+                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white p-3">
+                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">FTU</label>
+                <DebouncedTextarea
+                  rows={4}
+                  value={item.ftu_text ?? ''}
+                  onSave={value => void updateControlItem(item.id!, { ftu_text: value || null })}
+                  readOnly={isInspectionLocked}
+                  placeholder="Fortsatt teknisk utredning..."
+                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Bilder</div>
+                    <div className="text-sm font-semibold text-gray-950">
+                      {linkedImages.length} kopplad{linkedImages.length === 1 ? '' : 'e'}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openCameraCapture(item.id!)}
+                      disabled={isInspectionLocked || uploading}
+                      className={primaryButtonClass()}
+                    >
+                      <Camera size={16} />
+                      Kamera
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openGalleryPicker(item.id!)}
+                      disabled={isInspectionLocked || uploading}
+                      className={primaryButtonClass()}
+                    >
+                      <ImageIcon size={16} />
+                      Bilder
+                    </button>
+                  </div>
+                </div>
+
+                {linkedImages.length > 0 ? (
+                  <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {linkedImages.map(image => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={image.id}
+                        src={getImagePublicUrl(image.file_path)}
+                        alt=""
+                        className="aspect-square rounded-lg border border-gray-200 object-cover"
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-sm text-gray-600">
+                    Inga bilder kopplade till noteringen.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-200 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => void deleteControlItem(item.id!)}
+              disabled={isInspectionLocked}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 disabled:opacity-50 sm:w-auto"
+            >
+              <Trash2 size={16} />
+              Ta bort notering
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -2006,7 +2242,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
             </button>
             <button
               type="button"
-              onClick={() => void createFreeNote('')}
+              onClick={() => void createAndOpenFreeNote()}
               disabled={!canHaveControlItems || isInspectionLocked}
               className={primaryButtonClass()}
             >
@@ -2060,21 +2296,23 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
             {processMode && meta?.description ? <div className="mt-1 text-xs text-gray-600">{meta.description}</div> : null}
           </div>
           <div className="flex flex-wrap gap-2">
-            {selectedForImages.map(item => (
-              <button
-                key={item.id ?? item.title}
-                type="button"
-                onClick={() => setSelectedControlItemId(item.id ?? null)}
-                disabled={!item.id}
-                className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                  item.id && selectedControlItemId === item.id
-                    ? 'border-sky-300 bg-sky-50 text-sky-900'
-                    : 'border-gray-300 bg-white text-gray-700'
-                }`}
-              >
-                Välj
-              </button>
-            ))}
+            {processMode
+              ? selectedForImages.map(item => (
+                <button
+                  key={item.id ?? item.title}
+                  type="button"
+                  onClick={() => setSelectedControlItemId(item.id ?? null)}
+                  disabled={!item.id}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                    item.id && selectedControlItemId === item.id
+                      ? 'border-sky-300 bg-sky-50 text-sky-900'
+                      : 'border-gray-300 bg-white text-gray-700'
+                  }`}
+                >
+                  Välj
+                </button>
+              ))
+              : null}
             {baseItem.id ? (
               <button
                 type="button"
@@ -2197,7 +2435,25 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 {linkedImages.length} bild{linkedImages.length === 1 ? '' : 'er'}
               </span>
             ) : null}
-            {item.id ? (
+            {isFreeNote && item.id ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setFreeNoteDialogId(item.id ?? null)}
+                  className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-900"
+                >
+                  Öppna
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void deleteControlItem(item.id!)}
+                  disabled={isInspectionLocked}
+                  className="rounded-full border border-red-200 bg-white px-2.5 py-1 text-xs font-semibold text-red-700 disabled:opacity-50"
+                >
+                  Ta bort
+                </button>
+              </>
+            ) : item.id ? (
               <button
                 type="button"
                 onClick={() => setSelectedControlItemId(item.id ?? null)}
@@ -2213,16 +2469,26 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
           </div>
         </div>
 
-        <DebouncedTextarea
-          rows={2}
-          value={item.note ?? ''}
-          onSave={value => {
-            if (item.id) void updateControlItem(item.id, { note: value })
-          }}
-          readOnly={isInspectionLocked}
-          placeholder="Notering..."
-          className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-        />
+        {isFreeNote ? (
+          <button
+            type="button"
+            onClick={() => item.id && setFreeNoteDialogId(item.id)}
+            className="mt-2 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 text-left text-sm text-gray-700"
+          >
+            {item.note?.trim() || 'Öppna för att skriva notering, risk och FTU.'}
+          </button>
+        ) : (
+          <DebouncedTextarea
+            rows={2}
+            value={item.note ?? ''}
+            onSave={value => {
+              if (item.id) void updateControlItem(item.id, { note: value })
+            }}
+            readOnly={isInspectionLocked}
+            placeholder="Notering..."
+            className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+          />
+        )}
 
         {processMode && linkedImages.length > 0 ? (
           <div className="mt-3 grid grid-cols-3 gap-2">

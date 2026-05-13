@@ -285,7 +285,7 @@ export default function ControlPointSearchDialog<T extends ControlPointSearchRes
   const aiResultKey = searchResults.map(result => result.id).join('|')
 
   return (
-    <div className="fixed inset-0 z-50 bg-white md:bg-black/35">
+    <div className="fixed inset-0 z-[120] bg-white md:bg-black/35">
       <div
         className="flex h-dvh w-full flex-col bg-white md:absolute md:left-1/2 md:top-1/2 md:h-[min(760px,88vh)] md:max-h-[88vh] md:w-[min(720px,calc(100vw-32px))] md:-translate-x-1/2 md:-translate-y-1/2 md:overflow-hidden md:rounded-2xl md:shadow-2xl"
         role="dialog"
