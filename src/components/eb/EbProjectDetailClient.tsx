@@ -610,6 +610,12 @@ export default function EbProjectDetailClient({ project }: EbProjectDetailClient
   const addressLine = [currentProject.address, currentProject.postalCode, currentProject.city]
     .filter(Boolean)
     .join(', ')
+  const agreementLine = [currentProject.standardAgreement, currentProject.contractForm]
+    .filter(Boolean)
+    .join(' - ')
+  const propertyLine = [currentProject.propertyDesignation, currentProject.municipality]
+    .filter(Boolean)
+    .join(' - ')
 
   const handleCreated = (updatedProject: EbProjectListItem) => {
     setCurrentProject(updatedProject)
@@ -623,10 +629,10 @@ export default function EbProjectDetailClient({ project }: EbProjectDetailClient
           className="pointer-events-none absolute inset-0"
           style={{
             backgroundImage:
-              'radial-gradient(100% 72% at 50% 0%, rgba(220,252,231,0.18) 0%, rgba(220,252,231,0) 62%), linear-gradient(135deg, #fbfefc 0%, #f8fdf9 52%, #f6fbf7 100%)',
+              'radial-gradient(100% 72% at 50% 0%, rgba(220,252,231,0.08) 0%, rgba(220,252,231,0) 62%), linear-gradient(135deg, #ffffff 0%, #fbfefc 52%, #fafdfb 100%)',
           }}
         />
-        <div className="pointer-events-none absolute inset-0 bg-white/55 backdrop-blur-[1px]" />
+        <div className="pointer-events-none absolute inset-0 bg-white/62 backdrop-blur-[1px]" />
 
         <div className="relative mx-auto w-full max-w-7xl p-4 md:p-6">
           <header className="rounded-lg border border-emerald-100 bg-white/82 p-4 shadow-sm backdrop-blur-sm md:p-5">
@@ -659,22 +665,77 @@ export default function EbProjectDetailClient({ project }: EbProjectDetailClient
             </div>
           </header>
 
-          <section className="mt-4 grid gap-3 md:grid-cols-3">
+          <section className="mt-4 grid gap-3 md:grid-cols-4">
             <div className="rounded-lg border border-emerald-100 bg-white/82 p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Beställare</p>
               <p className="mt-2 truncate text-sm font-semibold text-gray-950">
                 {currentProject.clientName ?? 'Ej satt'}
               </p>
+              {currentProject.clientOrgNo ? (
+                <p className="mt-1 truncate text-xs text-gray-600">{currentProject.clientOrgNo}</p>
+              ) : null}
             </div>
             <div className="rounded-lg border border-emerald-100 bg-white/82 p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Entreprenör</p>
               <p className="mt-2 truncate text-sm font-semibold text-gray-950">
                 {currentProject.contractorName ?? 'Ej satt'}
               </p>
+              {currentProject.contractorOrgNo ? (
+                <p className="mt-1 truncate text-xs text-gray-600">{currentProject.contractorOrgNo}</p>
+              ) : null}
+            </div>
+            <div className="rounded-lg border border-emerald-100 bg-white/82 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Avtal</p>
+              <p className="mt-2 truncate text-sm font-semibold text-gray-950">{agreementLine || 'Ej satt'}</p>
+              <p className="mt-1 truncate text-xs text-gray-600">
+                {currentProject.contractDate ? `Kontrakt ${formatDate(currentProject.contractDate)}` : 'Datum ej satt'}
+              </p>
             </div>
             <div className="rounded-lg border border-emerald-100 bg-white/82 p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Besiktningar</p>
               <p className="mt-2 text-sm font-semibold text-gray-950">{currentProject.inspections.length} st</p>
+              <p className="mt-1 truncate text-xs text-gray-600">Noteringar: {currentProject.notePrefix}</p>
+            </div>
+          </section>
+
+          <section className="mt-4 overflow-hidden rounded-lg border border-emerald-100 bg-white/78 shadow-sm backdrop-blur-sm">
+            <div className="border-b border-emerald-100 px-4 py-3">
+              <h2 className="text-sm font-semibold text-gray-950">Grunduppgifter</h2>
+            </div>
+            <div className="grid gap-4 px-4 py-4 md:grid-cols-[1.1fr_1fr_1fr]">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Kontrakt</p>
+                <p className="mt-2 truncate text-sm font-semibold text-gray-950">
+                  {currentProject.contractName ?? currentProject.title}
+                </p>
+                <p className="mt-1 truncate text-xs text-gray-600">
+                  {currentProject.procurementForm ? `Upphandling: ${currentProject.procurementForm}` : 'Upphandling ej satt'}
+                </p>
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Objekt</p>
+                <p className="mt-2 truncate text-sm font-semibold text-gray-950">
+                  {propertyLine || addressLine || 'Ej satt'}
+                </p>
+                <p className="mt-1 truncate text-xs text-gray-600">{addressLine || 'Adress ej satt'}</p>
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                  Noteringsserie
+                </p>
+                <p className="mt-2 truncate text-sm font-semibold text-gray-950">{currentProject.notePrefix}</p>
+                <p className="mt-1 truncate text-xs text-gray-600">SB1</p>
+              </div>
+              {currentProject.objectDescription ? (
+                <div className="md:col-span-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                    Objektbeskrivning
+                  </p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-700">
+                    {currentProject.objectDescription}
+                  </p>
+                </div>
+              ) : null}
             </div>
           </section>
 

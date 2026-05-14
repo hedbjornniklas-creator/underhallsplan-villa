@@ -267,13 +267,21 @@ create table if not exists public.eb_projects (
   created_by uuid references public.profiles (id) on delete set null,
   title text not null,
   contract_name text,
+  object_description text,
   property_designation text,
   address text,
   postal_code text,
   city text,
   municipality text,
+  standard_agreement text,
+  contract_form text,
+  procurement_form text,
+  contract_date date,
+  note_prefix text not null default 'BES',
   client_name text,
+  client_org_no text,
   contractor_name text,
+  contractor_org_no text,
   status text not null default 'draft',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -282,7 +290,15 @@ create table if not exists public.eb_projects (
 );
 
 alter table public.eb_projects
-  add column if not exists property_id uuid references public.properties (id) on delete set null;
+  add column if not exists property_id uuid references public.properties (id) on delete set null,
+  add column if not exists object_description text,
+  add column if not exists standard_agreement text,
+  add column if not exists contract_form text,
+  add column if not exists procurement_form text,
+  add column if not exists contract_date date,
+  add column if not exists note_prefix text not null default 'BES',
+  add column if not exists client_org_no text,
+  add column if not exists contractor_org_no text;
 
 create index if not exists eb_projects_org_idx
   on public.eb_projects (org_id, updated_at desc);
@@ -356,6 +372,7 @@ create table if not exists public.eb_participants (
   party_key text,
   role_label text,
   company_name text,
+  org_no text,
   person_name text,
   email text,
   phone text,
@@ -364,6 +381,9 @@ create table if not exists public.eb_participants (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.eb_participants
+  add column if not exists org_no text;
 
 create index if not exists eb_participants_project_idx
   on public.eb_participants (eb_project_id, sort_order);

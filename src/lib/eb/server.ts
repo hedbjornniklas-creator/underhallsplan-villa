@@ -28,13 +28,21 @@ export type EbProjectListItem = {
   propertyId: string | null
   title: string
   contractName: string | null
+  objectDescription: string | null
   propertyDesignation: string | null
   address: string | null
   postalCode: string | null
   city: string | null
   municipality: string | null
+  standardAgreement: string | null
+  contractForm: string | null
+  procurementForm: string | null
+  contractDate: string | null
+  notePrefix: string
   clientName: string | null
+  clientOrgNo: string | null
   contractorName: string | null
+  contractorOrgNo: string | null
   status: string
   createdAt: string | null
   updatedAt: string | null
@@ -86,13 +94,21 @@ type EbProjectRow = {
   property_id: string | null
   title: string
   contract_name: string | null
+  object_description: string | null
   property_designation: string | null
   address: string | null
   postal_code: string | null
   city: string | null
   municipality: string | null
+  standard_agreement: string | null
+  contract_form: string | null
+  procurement_form: string | null
+  contract_date: string | null
+  note_prefix: string | null
   client_name: string | null
+  client_org_no: string | null
   contractor_name: string | null
+  contractor_org_no: string | null
   status: string | null
   created_at: string | null
   updated_at: string | null
@@ -164,13 +180,20 @@ export type CreateEbProjectInput = {
   requestedByUserId: string
   title: string
   contractName?: string | null
+  objectDescription?: string | null
   propertyDesignation?: string | null
   address?: string | null
   postalCode?: string | null
   city?: string | null
   municipality?: string | null
+  standardAgreement?: string | null
+  contractForm?: string | null
+  procurementForm?: string | null
+  contractDate?: string | null
   clientName?: string | null
+  clientOrgNo?: string | null
   contractorName?: string | null
+  contractorOrgNo?: string | null
   inspectionDate?: string | null
   inspectionTime?: string | null
   meetingPlace?: string | null
@@ -335,13 +358,21 @@ function mapProject(
     propertyId: project.property_id ?? null,
     title: project.title,
     contractName: project.contract_name ?? null,
+    objectDescription: project.object_description ?? null,
     propertyDesignation: project.property_designation ?? null,
     address: project.address ?? null,
     postalCode: project.postal_code ?? null,
     city: project.city ?? null,
     municipality: project.municipality ?? null,
+    standardAgreement: project.standard_agreement ?? null,
+    contractForm: project.contract_form ?? null,
+    procurementForm: project.procurement_form ?? null,
+    contractDate: project.contract_date ?? null,
+    notePrefix: project.note_prefix ?? 'BES',
     clientName: project.client_name ?? null,
+    clientOrgNo: project.client_org_no ?? null,
     contractorName: project.contractor_name ?? null,
+    contractorOrgNo: project.contractor_org_no ?? null,
     status: project.status ?? 'draft',
     createdAt: project.created_at ?? null,
     updatedAt: project.updated_at ?? null,
@@ -354,7 +385,7 @@ async function fetchProjectsByOrg(orgId: string, projectId?: string) {
   let query = admin
     .from('eb_projects')
     .select(
-      'id,org_id,property_id,title,contract_name,property_designation,address,postal_code,city,municipality,client_name,contractor_name,status,created_at,updated_at'
+      'id,org_id,property_id,title,contract_name,object_description,property_designation,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,contractor_name,contractor_org_no,status,created_at,updated_at'
     )
     .eq('org_id', orgId)
     .order('updated_at', { ascending: false })
@@ -444,6 +475,8 @@ async function seedDisciplinesForInspection(input: {
   orgId: string
   projectId: string
   inspectionId: string
+  variant: EbInspectionVariant
+  sequenceNo: number
 }) {
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
@@ -458,6 +491,7 @@ async function seedDisciplinesForInspection(input: {
 
   const settings = (data ?? []) as EbDisciplineSettingRow[]
   if (settings.length === 0) return
+  const inspectionLitteraSuffix = `${input.variant}${input.sequenceNo}`
 
   const { error: insertError } = await admin.from('eb_disciplines').insert(
     settings.map((setting) => ({
@@ -466,7 +500,9 @@ async function seedDisciplinesForInspection(input: {
       inspection_id: input.inspectionId,
       discipline_key: setting.key,
       label: setting.label,
-      littera: setting.littera_prefix,
+      littera: [normalizeText(setting.littera_prefix), inspectionLitteraSuffix]
+        .filter(Boolean)
+        .join(' '),
       sort_order: setting.sort_order ?? 100,
       is_active: true,
     }))
@@ -494,6 +530,53 @@ async function cleanupCreatedRows(input: {
   }
 }
 
+async function seedInitialProjectParticipants(input: {
+  orgId: string
+  projectId: string
+  inspectionId: string
+  clientName: string | null
+  clientOrgNo: string | null
+  contractorName: string | null
+  contractorOrgNo: string | null
+}) {
+  const rows = [
+    input.clientName || input.clientOrgNo
+      ? {
+          org_id: input.orgId,
+          eb_project_id: input.projectId,
+          inspection_id: input.inspectionId,
+          party_key: 'client',
+          role_label: 'Beställare',
+          company_name: input.clientName,
+          org_no: input.clientOrgNo,
+          receives_invitation: true,
+          sort_order: 100,
+        }
+      : null,
+    input.contractorName || input.contractorOrgNo
+      ? {
+          org_id: input.orgId,
+          eb_project_id: input.projectId,
+          inspection_id: input.inspectionId,
+          party_key: 'contractor',
+          role_label: 'Entreprenör',
+          company_name: input.contractorName,
+          org_no: input.contractorOrgNo,
+          receives_invitation: true,
+          sort_order: 200,
+        }
+      : null,
+  ].filter((row): row is NonNullable<typeof row> => Boolean(row))
+
+  if (rows.length === 0) return
+
+  const admin = createSupabaseAdminClient()
+  const { error } = await admin.from('eb_participants').insert(rows)
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte skapa parter för EB-projektet.')
+  }
+}
+
 export async function createEbProjectWithInitialSb(
   input: CreateEbProjectInput
 ): Promise<EbProjectListItem> {
@@ -501,6 +584,9 @@ export async function createEbProjectWithInitialSb(
   const title = toProjectTitle(input)
   const normalizedAddress = normalizeText(input.address)
   const normalizedClientName = normalizeText(input.clientName)
+  const normalizedClientOrgNo = normalizeText(input.clientOrgNo)
+  const normalizedContractorName = normalizeText(input.contractorName)
+  const normalizedContractorOrgNo = normalizeText(input.contractorOrgNo)
   let propertyId: string | null = null
   let inspectionId: string | null = null
   let projectId: string | null = null
@@ -558,13 +644,21 @@ export async function createEbProjectWithInitialSb(
         created_by: input.requestedByUserId,
         title,
         contract_name: normalizeText(input.contractName),
+        object_description: normalizeText(input.objectDescription),
         property_designation: normalizeText(input.propertyDesignation),
         address: normalizedAddress,
         postal_code: normalizeText(input.postalCode),
         city: normalizeText(input.city),
         municipality: normalizeText(input.municipality),
+        standard_agreement: normalizeText(input.standardAgreement),
+        contract_form: normalizeText(input.contractForm),
+        procurement_form: normalizeText(input.procurementForm),
+        contract_date: normalizeDate(input.contractDate),
+        note_prefix: 'BES',
         client_name: normalizedClientName,
-        contractor_name: normalizeText(input.contractorName),
+        client_org_no: normalizedClientOrgNo,
+        contractor_name: normalizedContractorName,
+        contractor_org_no: normalizedContractorOrgNo,
         status: 'active',
       })
       .select('id')
@@ -596,6 +690,18 @@ export async function createEbProjectWithInitialSb(
       orgId: input.orgId,
       projectId,
       inspectionId,
+      variant: 'SB',
+      sequenceNo: 1,
+    })
+
+    await seedInitialProjectParticipants({
+      orgId: input.orgId,
+      projectId,
+      inspectionId,
+      clientName: normalizedClientName,
+      clientOrgNo: normalizedClientOrgNo,
+      contractorName: normalizedContractorName,
+      contractorOrgNo: normalizedContractorOrgNo,
     })
 
     const created = await getEbProjectById({ orgId: input.orgId, projectId })
@@ -697,6 +803,8 @@ export async function createEbInspectionForProject(
       orgId: input.orgId,
       projectId: project.id,
       inspectionId,
+      variant: input.variant,
+      sequenceNo,
     })
 
     const updated = await getEbProjectById({ orgId: input.orgId, projectId: project.id })

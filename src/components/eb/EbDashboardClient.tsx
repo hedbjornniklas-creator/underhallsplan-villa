@@ -24,13 +24,20 @@ type EbDashboardClientProps = {
 type ProjectFormState = {
   title: string
   contractName: string
+  objectDescription: string
   propertyDesignation: string
   address: string
   postalCode: string
   city: string
   municipality: string
+  standardAgreement: string
+  contractForm: string
+  procurementForm: string
+  contractDate: string
   clientName: string
+  clientOrgNo: string
   contractorName: string
+  contractorOrgNo: string
   inspectionDate: string
   inspectionTime: string
   meetingPlace: string
@@ -46,19 +53,34 @@ type CreateProjectResponse = {
 const INITIAL_FORM: ProjectFormState = {
   title: '',
   contractName: '',
+  objectDescription: '',
   propertyDesignation: '',
   address: '',
   postalCode: '',
   city: '',
   municipality: '',
+  standardAgreement: '',
+  contractForm: '',
+  procurementForm: '',
+  contractDate: '',
   clientName: '',
+  clientOrgNo: '',
   contractorName: '',
+  contractorOrgNo: '',
   inspectionDate: '',
   inspectionTime: '',
   meetingPlace: '',
   startMeetingTime: '',
   finalMeetingTime: '',
 }
+
+const STANDARD_AGREEMENT_OPTIONS = [
+  { value: '', label: 'Välj' },
+  { value: 'AB 04', label: 'AB 04' },
+  { value: 'ABT 06', label: 'ABT 06' },
+  { value: 'ABS 18', label: 'ABS 18' },
+  { value: 'HF17', label: 'HF17' },
+]
 
 function formatDate(value: string | null) {
   if (!value) return 'Ej satt'
@@ -146,11 +168,11 @@ function CreateProjectDialog({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-3">
-      <div className="max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-lg border border-emerald-100 bg-white shadow-2xl">
+      <div className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-lg border border-emerald-100 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">SB</p>
-            <h2 className="text-lg font-semibold text-gray-950">Ny slutbesiktning</h2>
+            <h2 className="text-lg font-semibold text-gray-950">Ny entreprenad</h2>
           </div>
           <button
             type="button"
@@ -164,124 +186,217 @@ function CreateProjectDialog({
         </div>
 
         <form onSubmit={(event) => void handleSubmit(event)} className="max-h-[calc(92vh-70px)] overflow-auto p-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            {fieldLabel(
-              'Projektnamn',
-              <input
-                value={form.title}
-                onChange={(event) => updateField('title', event.target.value)}
-                className={inputClassName()}
-                required
-              />
-            )}
-            {fieldLabel(
-              'Entreprenad',
-              <input
-                value={form.contractName}
-                onChange={(event) => updateField('contractName', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Fastighetsbeteckning',
-              <input
-                value={form.propertyDesignation}
-                onChange={(event) => updateField('propertyDesignation', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Adress',
-              <input
-                value={form.address}
-                onChange={(event) => updateField('address', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Postnummer',
-              <input
-                value={form.postalCode}
-                onChange={(event) => updateField('postalCode', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Ort',
-              <input
-                value={form.city}
-                onChange={(event) => updateField('city', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Kommun',
-              <input
-                value={form.municipality}
-                onChange={(event) => updateField('municipality', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Beställare',
-              <input
-                value={form.clientName}
-                onChange={(event) => updateField('clientName', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Entreprenör',
-              <input
-                value={form.contractorName}
-                onChange={(event) => updateField('contractorName', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Besiktningsdatum',
-              <input
-                type="date"
-                value={form.inspectionDate}
-                onChange={(event) => updateField('inspectionDate', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Besiktningstid',
-              <input
-                type="time"
-                value={form.inspectionTime}
-                onChange={(event) => updateField('inspectionTime', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Samlingsplats',
-              <input
-                value={form.meetingPlace}
-                onChange={(event) => updateField('meetingPlace', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Startmöte',
-              <input
-                type="time"
-                value={form.startMeetingTime}
-                onChange={(event) => updateField('startMeetingTime', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Slutmöte',
-              <input
-                type="time"
-                value={form.finalMeetingTime}
-                onChange={(event) => updateField('finalMeetingTime', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
+          <div className="space-y-5">
+            <section>
+              <h3 className="text-sm font-semibold text-gray-950">Entreprenad</h3>
+              <div className="mt-3 grid gap-4 md:grid-cols-2">
+                {fieldLabel(
+                  'Projektnamn',
+                  <input
+                    value={form.title}
+                    onChange={(event) => updateField('title', event.target.value)}
+                    className={inputClassName()}
+                    required
+                  />
+                )}
+                {fieldLabel(
+                  'Kontraktsnamn',
+                  <input
+                    value={form.contractName}
+                    onChange={(event) => updateField('contractName', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Fastighetsbeteckning',
+                  <input
+                    value={form.propertyDesignation}
+                    onChange={(event) => updateField('propertyDesignation', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Kommun',
+                  <input
+                    value={form.municipality}
+                    onChange={(event) => updateField('municipality', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                <div className="md:col-span-2">
+                  {fieldLabel(
+                    'Objektbeskrivning',
+                    <textarea
+                      value={form.objectDescription}
+                      onChange={(event) => updateField('objectDescription', event.target.value)}
+                      rows={3}
+                      className={`${inputClassName()} resize-y leading-6`}
+                    />
+                  )}
+                </div>
+                {fieldLabel(
+                  'Adress',
+                  <input
+                    value={form.address}
+                    onChange={(event) => updateField('address', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                <div className="grid grid-cols-[0.7fr_1fr] gap-3">
+                  {fieldLabel(
+                    'Postnummer',
+                    <input
+                      value={form.postalCode}
+                      onChange={(event) => updateField('postalCode', event.target.value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                  {fieldLabel(
+                    'Ort',
+                    <input
+                      value={form.city}
+                      onChange={(event) => updateField('city', event.target.value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <section>
+              <h3 className="text-sm font-semibold text-gray-950">Avtal</h3>
+              <div className="mt-3 grid gap-4 md:grid-cols-2">
+                {fieldLabel(
+                  'Standardavtal',
+                  <select
+                    value={form.standardAgreement}
+                    onChange={(event) => updateField('standardAgreement', event.target.value)}
+                    className={inputClassName()}
+                  >
+                    {STANDARD_AGREEMENT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {fieldLabel(
+                  'Kontraktsdatum',
+                  <input
+                    type="date"
+                    value={form.contractDate}
+                    onChange={(event) => updateField('contractDate', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Entreprenadform',
+                  <input
+                    value={form.contractForm}
+                    onChange={(event) => updateField('contractForm', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Upphandlingsform',
+                  <input
+                    value={form.procurementForm}
+                    onChange={(event) => updateField('procurementForm', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+              </div>
+            </section>
+
+            <section>
+              <h3 className="text-sm font-semibold text-gray-950">Parter</h3>
+              <div className="mt-3 grid gap-4 md:grid-cols-2">
+                {fieldLabel(
+                  'Beställare',
+                  <input
+                    value={form.clientName}
+                    onChange={(event) => updateField('clientName', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Beställare org.nr',
+                  <input
+                    value={form.clientOrgNo}
+                    onChange={(event) => updateField('clientOrgNo', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Entreprenör',
+                  <input
+                    value={form.contractorName}
+                    onChange={(event) => updateField('contractorName', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Entreprenör org.nr',
+                  <input
+                    value={form.contractorOrgNo}
+                    onChange={(event) => updateField('contractorOrgNo', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+              </div>
+            </section>
+
+            <section>
+              <h3 className="text-sm font-semibold text-gray-950">Första SB</h3>
+              <div className="mt-3 grid gap-4 md:grid-cols-2">
+                {fieldLabel(
+                  'Besiktningsdatum',
+                  <input
+                    type="date"
+                    value={form.inspectionDate}
+                    onChange={(event) => updateField('inspectionDate', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Besiktningstid',
+                  <input
+                    type="time"
+                    value={form.inspectionTime}
+                    onChange={(event) => updateField('inspectionTime', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Samlingsplats',
+                  <input
+                    value={form.meetingPlace}
+                    onChange={(event) => updateField('meetingPlace', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  {fieldLabel(
+                    'Försammanträde',
+                    <input
+                      type="time"
+                      value={form.startMeetingTime}
+                      onChange={(event) => updateField('startMeetingTime', event.target.value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                  {fieldLabel(
+                    'Slutsammanträde',
+                    <input
+                      type="time"
+                      value={form.finalMeetingTime}
+                      onChange={(event) => updateField('finalMeetingTime', event.target.value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                </div>
+              </div>
+            </section>
           </div>
 
           {error ? (
@@ -305,7 +420,7 @@ function CreateProjectDialog({
               className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
             >
               {submitting ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-              {submitting ? 'Skapar...' : 'Skapa SB'}
+              {submitting ? 'Skapar...' : 'Skapa entreprenad'}
             </button>
           </div>
         </form>
@@ -317,6 +432,7 @@ function CreateProjectDialog({
 function ProjectRow({ project }: { project: EbProjectListItem }) {
   const primaryInspection = getPrimaryInspection(project)
   const address = [project.address, project.postalCode, project.city].filter(Boolean).join(', ')
+  const agreement = [project.standardAgreement, project.contractForm].filter(Boolean).join(' · ')
 
   return (
     <Link
@@ -332,6 +448,7 @@ function ProjectRow({ project }: { project: EbProjectListItem }) {
       <div className="min-w-0 text-xs text-gray-600">
         <p className="truncate font-medium text-gray-800">{project.clientName ?? 'Beställare ej satt'}</p>
         <p className="truncate">{project.contractorName ?? 'Entreprenör ej satt'}</p>
+        {agreement ? <p className="mt-0.5 truncate text-emerald-800">{agreement}</p> : null}
       </div>
       <div className="text-xs text-gray-700">
         <p className="font-semibold text-emerald-800">
@@ -378,10 +495,10 @@ export default function EbDashboardClient({
           className="pointer-events-none absolute inset-0"
           style={{
             backgroundImage:
-              'radial-gradient(100% 72% at 50% 0%, rgba(220,252,231,0.18) 0%, rgba(220,252,231,0) 62%), linear-gradient(135deg, #fbfefc 0%, #f8fdf9 52%, #f6fbf7 100%)',
+              'radial-gradient(100% 72% at 50% 0%, rgba(220,252,231,0.08) 0%, rgba(220,252,231,0) 62%), linear-gradient(135deg, #ffffff 0%, #fbfefc 52%, #fafdfb 100%)',
           }}
         />
-        <div className="pointer-events-none absolute inset-0 bg-white/55 backdrop-blur-[1px]" />
+        <div className="pointer-events-none absolute inset-0 bg-white/62 backdrop-blur-[1px]" />
 
         <div className="relative mx-auto w-full max-w-7xl p-4 md:p-6">
           <header className="rounded-lg border border-emerald-100 bg-white/82 p-4 shadow-sm backdrop-blur-sm md:p-5">
@@ -414,7 +531,7 @@ export default function EbDashboardClient({
                   className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
                 >
                   <Plus size={16} />
-                  Ny SB
+                  Ny entreprenad
                 </button>
               </div>
             </div>
@@ -473,7 +590,7 @@ export default function EbDashboardClient({
                   className="mt-4 inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
                 >
                   <Plus size={16} />
-                  Ny SB
+                  Ny entreprenad
                 </button>
               </div>
             ) : (
