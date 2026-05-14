@@ -3,14 +3,10 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import {
   ArrowLeft,
   Camera,
-  CheckCircle2,
-  ChevronRight,
-  ClipboardCheck,
   Image as ImageIcon,
   Loader2,
   Pencil,
@@ -19,10 +15,9 @@ import {
   Save,
   Settings,
   Trash2,
-  X,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
-import type { EbDiscipline, EbInspectionRound, EbNote, EbNoteImage } from '@/lib/eb/server'
+import type { EbInspectionRound, EbNote, EbNoteImage } from '@/lib/eb/server'
 
 type EbInspectionMobileRoundClientProps = {
   initialRound: EbInspectionRound
@@ -62,7 +57,7 @@ type ImageResponse = {
 }
 
 function inputClassName() {
-  return 'w-full rounded-md border border-emerald-200 bg-white px-3 py-3 text-base text-gray-950 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 md:text-sm'
+  return 'w-full rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-950 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100'
 }
 
 function formatDate(value: string | null) {
@@ -130,6 +125,18 @@ function sortImages(images: EbNoteImage[]) {
   })
 }
 
+function filterSuggestions(value: string, candidates: string[]) {
+  const normalizedValue = value.trim().toLocaleLowerCase('sv-SE')
+  if (normalizedValue.length < 1) return []
+  return candidates
+    .filter((candidate) => {
+      const normalizedCandidate = candidate.toLocaleLowerCase('sv-SE')
+      return normalizedCandidate.startsWith(normalizedValue) && normalizedCandidate !== normalizedValue
+    })
+    .slice(0, 5)
+}
+
+/*
 function DisciplineSheet({
   open,
   activeDisciplineId,
@@ -214,22 +221,22 @@ function DisciplineSheet({
   )
 }
 
+*/
+
 export default function EbInspectionMobileRoundClient({
   initialRound,
   initialDisciplineId,
 }: EbInspectionMobileRoundClientProps) {
-  const router = useRouter()
-  const pathname = usePathname()
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const galleryInputRef = useRef<HTMLInputElement | null>(null)
+  const noteHistoryOpenRef = useRef(false)
   const initialDiscipline = initialRound.disciplines.find(
     (discipline) => discipline.id === initialDisciplineId
   )
   const [round, setRound] = useState(initialRound)
   const [activeDisciplineId, setActiveDisciplineId] = useState<string | null>(
-    initialDiscipline?.id ?? null
+    initialDiscipline?.id ?? initialRound.disciplines[0]?.id ?? null
   )
-  const [disciplineSheetOpen, setDisciplineSheetOpen] = useState(!initialDiscipline)
   const [noteSheetOpen, setNoteSheetOpen] = useState(false)
   const [editingNote, setEditingNote] = useState<EbNote | null>(null)
   const [form, setForm] = useState<NoteFormState>(() => createInitialForm(initialRound))
@@ -275,16 +282,42 @@ export default function EbInspectionMobileRoundClient({
     }
     return Array.from(unique.values())
   }, [round.notes, round.suggestions])
-  const visibleSuggestions = useMemo(() => {
-    const value = form.noteText.trim().toLocaleLowerCase('sv-SE')
-    if (value.length < 1) return []
-    return suggestionCandidates
-      .filter((candidate) => {
-        const normalized = candidate.toLocaleLowerCase('sv-SE')
-        return normalized.startsWith(value) && normalized !== value
-      })
-      .slice(0, 5)
-  }, [form.noteText, suggestionCandidates])
+  const roomSuggestionCandidates = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          round.notes
+            .map((note) => note.room?.trim())
+            .filter((value): value is string => Boolean(value))
+            .map((value) => [value.toLocaleLowerCase('sv-SE'), value])
+        ).values()
+      ),
+    [round.notes]
+  )
+  const locationSuggestionCandidates = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          round.notes
+            .map((note) => note.location?.trim())
+            .filter((value): value is string => Boolean(value))
+            .map((value) => [value.toLocaleLowerCase('sv-SE'), value])
+        ).values()
+      ),
+    [round.notes]
+  )
+  const visibleSuggestions = useMemo(
+    () => filterSuggestions(form.noteText, suggestionCandidates),
+    [form.noteText, suggestionCandidates]
+  )
+  const visibleRoomSuggestions = useMemo(
+    () => filterSuggestions(form.room, roomSuggestionCandidates),
+    [form.room, roomSuggestionCandidates]
+  )
+  const visibleLocationSuggestions = useMemo(
+    () => filterSuggestions(form.location, locationSuggestionCandidates),
+    [form.location, locationSuggestionCandidates]
+  )
 
   const roundPath = `/api/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/round`
   const notesBasePath = `/api/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/notes`
@@ -292,43 +325,57 @@ export default function EbInspectionMobileRoundClient({
     activeDisciplineId ? `?disciplineId=${activeDisciplineId}` : ''
   }`
 
-  const selectDiscipline = (disciplineId: string) => {
-    setActiveDisciplineId(disciplineId)
-    setEditingNote(null)
-    setForm(createInitialForm(round))
-    setError(null)
-    setDisciplineSheetOpen(false)
-    router.replace(`${pathname}?disciplineId=${disciplineId}`, { scroll: false })
-  }
+  useEffect(() => {
+    const handlePopState = () => {
+      if (!noteHistoryOpenRef.current) return
+      noteHistoryOpenRef.current = false
+      setNoteSheetOpen(false)
+      setEditingNote(null)
+      setForm(createInitialForm(round))
+      setError(null)
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [round])
 
   const updateField = <K extends keyof NoteFormState>(field: K, value: NoteFormState[K]) => {
     setForm((current) => ({ ...current, [field]: value }))
   }
 
+  const openNoteSheet = () => {
+    if (!noteHistoryOpenRef.current) {
+      window.history.pushState({ ebNoteSheet: true }, '', window.location.href)
+      noteHistoryOpenRef.current = true
+    }
+    setNoteSheetOpen(true)
+  }
+
   const openNewNote = () => {
     if (!activeDisciplineId) {
-      setDisciplineSheetOpen(true)
+      setError('Fack saknas för rundan.')
       return
     }
     setEditingNote(null)
     setForm(createInitialForm(round))
     setError(null)
-    setNoteSheetOpen(true)
+    openNoteSheet()
   }
 
   const handleEdit = (note: EbNote) => {
     setEditingNote(note)
     setActiveDisciplineId(note.disciplineId)
-    if (note.disciplineId) {
-      router.replace(`${pathname}?disciplineId=${note.disciplineId}`, { scroll: false })
-    }
     setForm(formFromNote(note))
     setError(null)
-    setNoteSheetOpen(true)
+    openNoteSheet()
   }
 
   const closeNoteSheet = () => {
     if (saving) return
+    if (noteHistoryOpenRef.current) {
+      noteHistoryOpenRef.current = false
+      window.history.back()
+    }
     setNoteSheetOpen(false)
     setEditingNote(null)
     setForm(createInitialForm(round))
@@ -511,42 +558,45 @@ export default function EbInspectionMobileRoundClient({
 
   return (
     <Protected>
-      <main className="min-h-dvh bg-[#fbfefc] pb-24 text-gray-950">
+      <main className="min-h-dvh bg-[#fbfefc] pb-16 text-gray-950">
         <header className="sticky top-0 z-40 border-b border-emerald-100 bg-white/95 backdrop-blur">
-          <div className="mx-auto w-full max-w-4xl px-3 py-3">
+          <div className="mx-auto w-full max-w-4xl px-3 py-2.5">
             <div className="flex items-start gap-3">
               <Link
                 href={`/eb/projects/${round.project.id}`}
                 aria-label="Tillbaka"
                 title="Tillbaka"
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
               >
-                <ArrowLeft size={18} strokeWidth={2} />
+                <ArrowLeft size={17} strokeWidth={2} />
               </Link>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="inline-flex rounded-full bg-emerald-700 px-2.5 py-1 text-xs font-semibold text-white">
                     {inspectionTitle(round)}
                   </span>
-                  <span className="truncate text-xs font-medium text-gray-600">
+                  <span className="truncate text-xs font-semibold text-emerald-800">
+                    {activeDiscipline?.label ?? 'Fack saknas'}
+                  </span>
+                  <span className="truncate text-xs text-gray-600">
                     {formatDate(round.inspection.date)}
                     {round.inspection.inspectionTime ? ` ${formatTime(round.inspection.inspectionTime)}` : ''}
                   </span>
                 </div>
-                <h1 className="mt-1 truncate text-lg font-semibold text-gray-950">{round.project.title}</h1>
+                <h1 className="mt-1 truncate text-base font-semibold text-gray-950">{round.project.title}</h1>
                 <button
                   type="button"
-                  onClick={() => setDisciplineSheetOpen(true)}
-                  className="mt-2 inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-900"
+                  onClick={undefined}
+                  className="hidden"
                 >
-                  <ClipboardCheck size={15} />
+                  {null}
                   <span className="truncate">{activeDiscipline ? activeDiscipline.label : 'Välj fack'}</span>
                 </button>
               </div>
             </div>
           </div>
 
-          <div className="mx-auto w-full max-w-4xl overflow-x-auto px-3 pb-3">
+          <div className="hidden">
             <div className="flex min-w-max gap-2">
               {round.disciplines.map((discipline) => {
                 const count = round.notes.filter((note) => note.disciplineId === discipline.id).length
@@ -555,7 +605,7 @@ export default function EbInspectionMobileRoundClient({
                   <button
                     key={discipline.id}
                     type="button"
-                    onClick={() => selectDiscipline(discipline.id)}
+                    onClick={undefined}
                     className={
                       active
                         ? 'inline-flex items-center gap-2 rounded-full bg-emerald-700 px-3 py-2 text-sm font-semibold text-white shadow-sm'
@@ -579,36 +629,37 @@ export default function EbInspectionMobileRoundClient({
           </div>
         </header>
 
-        <div className="mx-auto w-full max-w-4xl px-3 py-4">
-          <section className="grid grid-cols-3 gap-2">
+        <div className="mx-auto w-full max-w-4xl px-3 py-3">
+          <section className="grid grid-cols-[1fr_auto_auto] gap-2">
             <button
               type="button"
               onClick={openNewNote}
-              className="inline-flex min-h-20 flex-col items-center justify-center gap-2 rounded-lg bg-emerald-700 px-3 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800"
             >
-              <Plus size={20} />
+              <Plus size={16} />
               Notering
             </button>
             <button
               type="button"
-              onClick={() => setDisciplineSheetOpen(true)}
-              className="inline-flex min-h-20 flex-col items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm font-semibold text-emerald-900 shadow-sm transition hover:bg-emerald-50"
+              onClick={undefined}
+              className="hidden"
             >
-              <ClipboardCheck size={20} />
+              {null}
               Fack
             </button>
             <button
               type="button"
               onClick={() => void refreshRound()}
               disabled={refreshing}
-              className="inline-flex min-h-20 flex-col items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-3 text-sm font-semibold text-emerald-900 shadow-sm transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 shadow-sm transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="Uppdatera"
+              title="Uppdatera"
             >
-              {refreshing ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={20} />}
-              Uppdatera
+              {refreshing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
             </button>
           </section>
 
-          <section className="mt-3 grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg border border-emerald-100 bg-white px-4 py-3 shadow-sm">
+          <section className="mt-2 grid grid-cols-[1fr_auto] items-center gap-3 rounded-md border border-emerald-100 bg-white px-3 py-2 shadow-sm">
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-gray-950">
                 {activeDiscipline ? activeDiscipline.label : 'Inget fack valt'}
@@ -619,11 +670,11 @@ export default function EbInspectionMobileRoundClient({
             </div>
             <Link
               href={adminHref}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50"
               aria-label="Admin"
               title="Admin"
             >
-              <Settings size={18} />
+              <Settings size={16} />
             </Link>
           </section>
 
@@ -640,11 +691,11 @@ export default function EbInspectionMobileRoundClient({
               </div>
             ) : (
               filteredNotes.map((note) => (
-                <article key={note.id} className="overflow-hidden rounded-lg border border-emerald-100 bg-white shadow-sm">
+                <article key={note.id} className="overflow-hidden rounded-md border border-emerald-100 bg-white shadow-sm">
                   <button
                     type="button"
                     onClick={() => handleEdit(note)}
-                    className="block w-full p-4 text-left transition hover:bg-emerald-50/35"
+                    className="block w-full p-3 text-left transition hover:bg-emerald-50/35"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -661,13 +712,13 @@ export default function EbInspectionMobileRoundClient({
                             {note.statusLabel ?? note.statusKey}
                           </span>
                         </div>
-                        <p className="mt-3 whitespace-pre-wrap text-base leading-7 text-gray-950">
+                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-950">
                           {note.noteText}
                         </p>
                       </div>
-                      <Pencil size={17} className="mt-1 shrink-0 text-emerald-700" />
+                      <Pencil size={15} className="mt-1 shrink-0 text-emerald-700" />
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
                       {note.room ? <span>Rum: {note.room}</span> : null}
                       {note.location ? <span>Plats: {note.location}</span> : null}
                       {note.placeDetail ? <span>Detalj: {note.placeDetail}</span> : null}
@@ -676,13 +727,13 @@ export default function EbInspectionMobileRoundClient({
                     </div>
                   </button>
                   {(imagesByNoteId.get(note.id)?.length ?? 0) > 0 ? (
-                    <div className="flex gap-2 overflow-x-auto border-t border-emerald-100 px-4 py-3">
+                    <div className="flex gap-2 overflow-x-auto border-t border-emerald-100 px-3 py-2">
                       {(imagesByNoteId.get(note.id) ?? []).slice(0, 8).map((image) => (
                         <img
                           key={image.id}
                           src={image.publicUrl}
                           alt={image.label ?? 'Bild'}
-                          className="h-16 w-16 shrink-0 rounded-md border border-emerald-100 object-cover"
+                          className="h-14 w-14 shrink-0 rounded-md border border-emerald-100 object-cover"
                         />
                       ))}
                     </div>
@@ -693,24 +744,15 @@ export default function EbInspectionMobileRoundClient({
           </section>
         </div>
 
-        <div className="fixed inset-x-0 bottom-0 z-50 border-t border-emerald-100 bg-white/95 px-3 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur md:hidden">
-          <div className="mx-auto grid max-w-4xl grid-cols-[1fr_auto] gap-2">
+        <div className="fixed inset-x-0 bottom-0 z-50 border-t border-emerald-100 bg-white/95 px-3 py-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur md:hidden">
+          <div className="mx-auto max-w-4xl">
             <button
               type="button"
               onClick={openNewNote}
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white"
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white"
             >
-              <Plus size={18} />
+              <Plus size={16} />
               Ny notering
-            </button>
-            <button
-              type="button"
-              onClick={() => setDisciplineSheetOpen(true)}
-              className="inline-flex h-12 w-12 items-center justify-center rounded-lg border border-emerald-200 bg-white text-emerald-800"
-              aria-label="Fack"
-              title="Fack"
-            >
-              <ClipboardCheck size={18} />
             </button>
           </div>
         </div>
@@ -718,12 +760,12 @@ export default function EbInspectionMobileRoundClient({
         {noteSheetOpen ? (
           <div className="fixed inset-0 z-[110] bg-white md:bg-slate-950/50 md:p-4">
             <div className="flex h-full flex-col bg-white md:mx-auto md:max-w-3xl md:overflow-hidden md:rounded-lg md:shadow-2xl">
-              <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
+              <div className="flex items-center justify-between border-b border-emerald-100 px-3 py-2.5">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
                     {editingNote ? 'Redigera' : 'Ny notering'}
                   </p>
-                  <h2 className="text-lg font-semibold text-gray-950">
+                  <h2 className="text-base font-semibold text-gray-950">
                     {getNoteLabel(round, editingNote, nextNoteNumber)}
                   </h2>
                 </div>
@@ -732,14 +774,14 @@ export default function EbInspectionMobileRoundClient({
                   onClick={closeNoteSheet}
                   aria-label="Stäng"
                   title="Stäng"
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
                 >
-                  <X size={18} />
+                  <ArrowLeft size={17} />
                 </button>
               </div>
 
               <form onSubmit={(event) => void handleSubmit(event)} className="flex min-h-0 flex-1 flex-col">
-                <div className="flex-1 space-y-4 overflow-auto p-4">
+                <div className="flex-1 space-y-3 overflow-auto p-3">
                   <div className="grid grid-cols-2 gap-3">
                     <label className="block">
                       <span className="block text-xs font-semibold text-gray-700">Beteckning</span>
@@ -779,6 +821,20 @@ export default function EbInspectionMobileRoundClient({
                         onChange={(event) => updateField('room', event.target.value)}
                         className={`${inputClassName()} mt-1`}
                       />
+                      {visibleRoomSuggestions.length > 0 ? (
+                        <span className="mt-1 block space-y-1">
+                          {visibleRoomSuggestions.map((suggestion) => (
+                            <button
+                              key={suggestion}
+                              type="button"
+                              onClick={() => updateField('room', suggestion)}
+                              className="block w-full rounded-md border border-emerald-100 bg-emerald-50 px-2 py-1.5 text-left text-xs text-emerald-950"
+                            >
+                              {suggestion}
+                            </button>
+                          ))}
+                        </span>
+                      ) : null}
                     </label>
                     <label className="block">
                       <span className="block text-xs font-semibold text-gray-700">Plats</span>
@@ -787,6 +843,20 @@ export default function EbInspectionMobileRoundClient({
                         onChange={(event) => updateField('location', event.target.value)}
                         className={`${inputClassName()} mt-1`}
                       />
+                      {visibleLocationSuggestions.length > 0 ? (
+                        <span className="mt-1 block space-y-1">
+                          {visibleLocationSuggestions.map((suggestion) => (
+                            <button
+                              key={suggestion}
+                              type="button"
+                              onClick={() => updateField('location', suggestion)}
+                              className="block w-full rounded-md border border-emerald-100 bg-emerald-50 px-2 py-1.5 text-left text-xs text-emerald-950"
+                            >
+                              {suggestion}
+                            </button>
+                          ))}
+                        </span>
+                      ) : null}
                     </label>
                   </div>
 
@@ -804,9 +874,9 @@ export default function EbInspectionMobileRoundClient({
                     <textarea
                       value={form.noteText}
                       onChange={(event) => updateField('noteText', event.target.value)}
-                      rows={7}
+                      rows={5}
                       required
-                      className={`${inputClassName()} mt-1 min-h-44 resize-y leading-7`}
+                      className={`${inputClassName()} mt-1 min-h-32 resize-y leading-6`}
                     />
                   </label>
 
@@ -817,7 +887,7 @@ export default function EbInspectionMobileRoundClient({
                           key={suggestion}
                           type="button"
                           onClick={() => updateField('noteText', suggestion)}
-                          className="block w-full rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-3 text-left text-sm text-emerald-950 transition hover:bg-emerald-100"
+                          className="block w-full rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-left text-sm text-emerald-950 transition hover:bg-emerald-100"
                         >
                           {suggestion}
                         </button>
@@ -826,7 +896,7 @@ export default function EbInspectionMobileRoundClient({
                   ) : null}
 
                   {editingNote ? (
-                    <section className="rounded-lg border border-emerald-100 bg-emerald-50/25 p-3">
+                    <section className="rounded-md border border-emerald-100 bg-emerald-50/25 p-2.5">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
@@ -841,7 +911,7 @@ export default function EbInspectionMobileRoundClient({
                             type="button"
                             onClick={() => cameraInputRef.current?.click()}
                             disabled={uploadingImage}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                             aria-label="Kamera"
                             title="Kamera"
                           >
@@ -851,7 +921,7 @@ export default function EbInspectionMobileRoundClient({
                             type="button"
                             onClick={() => galleryInputRef.current?.click()}
                             disabled={uploadingImage}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
                             aria-label="Bild"
                             title="Bild"
                           >
@@ -932,14 +1002,14 @@ export default function EbInspectionMobileRoundClient({
                   ) : null}
                 </div>
 
-                <div className="border-t border-emerald-100 bg-white p-3">
+                <div className="border-t border-emerald-100 bg-white p-2">
                   <div className="flex gap-2">
                     {editingNote ? (
                       <button
                         type="button"
                         onClick={() => void handleDelete(editingNote)}
                         disabled={deletingId === editingNote.id}
-                        className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                         aria-label="Radera"
                         title="Radera"
                       >
@@ -953,7 +1023,7 @@ export default function EbInspectionMobileRoundClient({
                     <button
                       type="submit"
                       disabled={saving || !activeDisciplineId}
-                      className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                      className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                     >
                       {saving ? (
                         <Loader2 size={18} className="animate-spin" />
@@ -971,15 +1041,6 @@ export default function EbInspectionMobileRoundClient({
           </div>
         ) : null}
 
-        <DisciplineSheet
-          open={disciplineSheetOpen}
-          activeDisciplineId={activeDisciplineId}
-          disciplines={round.disciplines}
-          notes={round.notes}
-          canClose={Boolean(activeDisciplineId)}
-          onClose={() => setDisciplineSheetOpen(false)}
-          onSelect={selectDiscipline}
-        />
       </main>
     </Protected>
   )
