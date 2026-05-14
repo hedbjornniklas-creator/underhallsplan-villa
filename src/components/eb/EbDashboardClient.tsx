@@ -99,7 +99,7 @@ function getStatusLabel(status: string | null) {
 }
 
 function getPrimaryInspection(project: EbProjectListItem) {
-  return project.inspections.find((inspection) => inspection.variant === 'SB') ?? project.inspections[0] ?? null
+  return project.inspections.find((inspection) => inspection.variant === 'SLB') ?? project.inspections[0] ?? null
 }
 
 function inputClassName() {
@@ -171,7 +171,7 @@ function CreateProjectDialog({
       <div className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-lg border border-emerald-100 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">SB</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">SLB</p>
             <h2 className="text-lg font-semibold text-gray-950">Ny entreprenad</h2>
           </div>
           <button
@@ -347,7 +347,7 @@ function CreateProjectDialog({
             </section>
 
             <section>
-              <h3 className="text-sm font-semibold text-gray-950">Första SB</h3>
+              <h3 className="text-sm font-semibold text-gray-950">Första slutbesiktning</h3>
               <div className="mt-3 grid gap-4 md:grid-cols-2">
                 {fieldLabel(
                   'Besiktningsdatum',

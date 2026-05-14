@@ -340,6 +340,8 @@ function CreateInspectionCard({
         .insert({
           property_id: sourceProperty.id,
           type: 'OB',
+          inspection_family: 'OB',
+          inspection_variant: 'OB',
           status: 'draft',
         })
         .select('id')
@@ -939,6 +941,7 @@ export default function OverlatelsebesiktningPage() {
             .from('inspections')
             .select('id,property_id,status,client_name')
             .in('property_id', propertyIds)
+            .eq('inspection_family', 'OB')
             .order('date', { ascending: false, nullsFirst: false })
             .order('created_at', { ascending: false })
             .limit(24)

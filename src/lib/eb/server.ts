@@ -3,7 +3,7 @@ import 'server-only'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
-export type EbInspectionVariant = 'SB' | 'FB' | 'EB' | 'GB' | 'KSB' | 'SAB'
+export type EbInspectionVariant = 'SLB' | 'FB' | 'EB' | 'GB' | 'KSB' | 'SAB'
 
 export type EbInspectionSummary = {
   inspectionId: string
@@ -404,7 +404,7 @@ export type DeleteEbNoteInput = {
 }
 
 const VARIANT_LABELS: Record<EbInspectionVariant, string> = {
-  SB: 'Slutbesiktning',
+  SLB: 'Slutbesiktning',
   FB: 'Förbesiktning',
   EB: 'Efterbesiktning',
   GB: 'Garantibesiktning',
@@ -497,7 +497,7 @@ export function getEbInspectionVariantLabel(variant: EbInspectionVariant) {
 
 function toVariant(value: string | null | undefined): EbInspectionVariant {
   const normalized = String(value ?? '').trim().toUpperCase()
-  return isEbInspectionVariant(normalized) ? normalized : 'SB'
+  return isEbInspectionVariant(normalized) ? normalized : 'SLB'
 }
 
 function toProjectTitle(input: CreateEbProjectInput) {
@@ -1098,7 +1098,7 @@ async function seedInitialProjectParticipants(input: {
   }
 }
 
-export async function createEbProjectWithInitialSb(
+export async function createEbProjectWithInitialSlb(
   input: CreateEbProjectInput
 ): Promise<EbProjectListItem> {
   const admin = createSupabaseAdminClient()
@@ -1141,17 +1141,19 @@ export async function createEbProjectWithInitialSb(
       .insert({
         property_id: propertyId,
         type: 'EB',
+        inspection_family: 'EB',
+        inspection_variant: 'SLB',
         status: 'draft',
         date: normalizeDate(input.inspectionDate),
         inspection_time: normalizeTime(input.inspectionTime),
         client_name: normalizedClientName,
-        scope: getEbInspectionVariantLabel('SB'),
+        scope: getEbInspectionVariantLabel('SLB'),
       })
       .select('id')
       .single()
 
     if (inspectionError || !inspection) {
-      throw new Error(inspectionError?.message ?? 'Kunde inte skapa SB.')
+      throw new Error(inspectionError?.message ?? 'Kunde inte skapa slutbesiktning.')
     }
 
     inspectionId = String(inspection.id)
@@ -1195,23 +1197,23 @@ export async function createEbProjectWithInitialSb(
       inspection_id: inspectionId,
       org_id: input.orgId,
       eb_project_id: projectId,
-      inspection_variant: 'SB',
+      inspection_variant: 'SLB',
       sequence_no: 1,
       meeting_place: normalizeText(input.meetingPlace),
       start_meeting_time: normalizeTime(input.startMeetingTime),
       final_meeting_time: normalizeTime(input.finalMeetingTime),
-      report_title: `Utlåtande ${getEbInspectionVariantLabel('SB')}`,
+      report_title: `Utlåtande ${getEbInspectionVariantLabel('SLB')}`,
     })
 
     if (detailError) {
-      throw new Error(detailError.message ?? 'Kunde inte koppla SB till EB-projektet.')
+      throw new Error(detailError.message ?? 'Kunde inte koppla slutbesiktningen till EB-projektet.')
     }
 
     await seedDisciplinesForInspection({
       orgId: input.orgId,
       projectId,
       inspectionId,
-      variant: 'SB',
+      variant: 'SLB',
       sequenceNo: 1,
     })
 
@@ -1288,6 +1290,8 @@ export async function createEbInspectionForProject(
       .insert({
         property_id: propertyId,
         type: 'EB',
+        inspection_family: 'EB',
+        inspection_variant: input.variant,
         status: 'draft',
         date: normalizeDate(input.inspectionDate),
         inspection_time: normalizeTime(input.inspectionTime),

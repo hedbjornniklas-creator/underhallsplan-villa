@@ -230,6 +230,7 @@ export default function InspectionDetailPage() {
         `
         )
         .eq('id', inspectionId)
+        .eq('inspection_family', 'OB')
         .single()
 
       if (inspErr || !inspData) {

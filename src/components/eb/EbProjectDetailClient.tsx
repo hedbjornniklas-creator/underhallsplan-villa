@@ -728,7 +728,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                   Noteringsserie
                 </p>
                 <p className="mt-2 truncate text-sm font-semibold text-gray-950">{currentProject.notePrefix}</p>
-                <p className="mt-1 truncate text-xs text-gray-600">SB1</p>
+                <p className="mt-1 truncate text-xs text-gray-600">SLB1</p>
               </div>
               {currentProject.objectDescription ? (
                 <div className="md:col-span-3">

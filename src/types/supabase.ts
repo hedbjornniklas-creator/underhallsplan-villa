@@ -1164,8 +1164,10 @@ export type Database = {
           date: string | null
           defect_disclosures: string | null
           id: string
+          inspection_family: string
           inspection_side: string | null
           inspection_time: string | null
+          inspection_variant: string
           inspector_name: string | null
           property_id: string
           scope: string | null
@@ -1184,8 +1186,10 @@ export type Database = {
           date?: string | null
           defect_disclosures?: string | null
           id?: string
+          inspection_family?: string
           inspection_side?: string | null
           inspection_time?: string | null
+          inspection_variant?: string
           inspector_name?: string | null
           property_id: string
           scope?: string | null
@@ -1204,8 +1208,10 @@ export type Database = {
           date?: string | null
           defect_disclosures?: string | null
           id?: string
+          inspection_family?: string
           inspection_side?: string | null
           inspection_time?: string | null
+          inspection_variant?: string
           inspector_name?: string | null
           property_id?: string
           scope?: string | null

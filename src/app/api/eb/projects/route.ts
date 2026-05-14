@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
-import { createEbProjectWithInitialSb, listEbProjects } from '@/lib/eb/server'
+import { createEbProjectWithInitialSlb, listEbProjects } from '@/lib/eb/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
       return jsonError('Ange projektnamn.', 400)
     }
 
-    const project = await createEbProjectWithInitialSb({
+    const project = await createEbProjectWithInitialSlb({
       orgId: context.orgId,
       requestedByUserId: context.userId,
       title,

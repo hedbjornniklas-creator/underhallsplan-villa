@@ -1525,6 +1525,19 @@ function normalizeAssignmentRoleToInspectionSide(
   return 'buyer'
 }
 
+function getInspectionClassificationForAssignment(type: AssignmentType) {
+  if (type === 'STATUS') {
+    return { inspectionFamily: 'OB', inspectionVariant: 'SB' }
+  }
+  if (type === 'EB') {
+    return { inspectionFamily: 'EB', inspectionVariant: 'SLB' }
+  }
+  if (type === 'UHP') {
+    return { inspectionFamily: 'UHP', inspectionVariant: 'UHP' }
+  }
+  return { inspectionFamily: 'OB', inspectionVariant: 'OB' }
+}
+
 function toAddonPrice(value: unknown): number {
   const parsed = typeof value === 'number' ? value : Number(String(value ?? '0'))
   if (!Number.isFinite(parsed) || parsed < 0) return 0
@@ -1625,6 +1638,7 @@ export async function convertAssignmentToInspection(input: {
       .from('inspections')
       .select('assignment_number')
       .eq('date', assignment.preferred_date)
+      .eq('inspection_family', 'OB')
 
     if (assignmentNumberError) {
       throw new Error(
@@ -1663,12 +1677,15 @@ export async function convertAssignmentToInspection(input: {
 
   const contactParts = [assignment.customer_phone, assignment.customer_email].filter(Boolean)
   const clientContact = contactParts.length > 0 ? contactParts.join(' | ') : null
+  const inspectionClassification = getInspectionClassificationForAssignment(assignment.assignment_type)
 
   const { data: inspectionData, error: inspectionError } = await admin
     .from('inspections')
     .insert({
       property_id: propertyData.id,
       type: assignment.assignment_type,
+      inspection_family: inspectionClassification.inspectionFamily,
+      inspection_variant: inspectionClassification.inspectionVariant,
       status: 'draft',
       inspection_side: normalizeAssignmentRoleToInspectionSide(assignment.orderer_role),
       date: assignment.preferred_date,

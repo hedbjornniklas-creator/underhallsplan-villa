@@ -71,6 +71,7 @@ export default function PropertyInspectionsPage() {
         .from('inspections')
         .select('id, property_id, date, type, status, inspector_name, created_at')
         .eq('property_id', propertyId)
+        .eq('inspection_family', 'OB')
         .order('date', { ascending: false })
 
       if (inspectionsError) {
@@ -98,6 +99,8 @@ export default function PropertyInspectionsPage() {
       .insert({
         property_id: propertyId,
         type: 'OB',
+        inspection_family: 'OB',
+        inspection_variant: 'OB',
         status: 'draft',
       })
       .select('id')

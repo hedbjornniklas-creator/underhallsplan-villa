@@ -489,6 +489,7 @@ export default function InspectionsPage() {
             'id,property_id,date,type,status,inspector_name,created_at,client_name,client_contact,assignment_number,locked_at,locked_by'
           )
           .in('property_id', propertyIds)
+          .eq('inspection_family', 'OB')
           .order('date', { ascending: false, nullsFirst: false })
           .order('created_at', { ascending: false })
 
@@ -749,6 +750,8 @@ export default function InspectionsPage() {
         .insert({
           property_id: sourceProperty.id,
           type: 'OB',
+          inspection_family: 'OB',
+          inspection_variant: 'OB',
           status: 'draft',
         })
         .select('id')

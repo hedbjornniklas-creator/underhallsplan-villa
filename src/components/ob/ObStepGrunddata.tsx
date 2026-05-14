@@ -652,6 +652,7 @@ export default function ObStepGrunddata({
           .from('inspections')
           .select('assignment_number, date')
           .eq('date', inspection.date)
+          .eq('inspection_family', 'OB')
 
         if (error) {
           console.error('Kunde inte generera uppdragsnummer:', error)

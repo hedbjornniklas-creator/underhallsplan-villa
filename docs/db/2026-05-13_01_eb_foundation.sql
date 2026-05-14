@@ -3,7 +3,7 @@
 -- Scope:
 -- 1) Dashboard access module for Entreprenadbesiktning
 -- 2) Allow assignment_type = EB
--- 3) Global EB settings for SB and future inspection variants
+-- 3) Global EB settings for SLB and future inspection variants
 -- 4) EB project, inspection detail, participant, discipline and note foundation
 
 create extension if not exists pgcrypto;
@@ -26,7 +26,7 @@ select
   p.id,
   'construction_inspections',
   'Entreprenadbesiktning',
-  'EB module for construction inspections, starting with SB.',
+  'EB module for construction inspections, starting with SLB.',
   true,
   250
 from public.platform_products p
@@ -196,7 +196,7 @@ to authenticated;
 
 insert into public.settings_eb_inspection_types (key, label, description, sort_order, is_active, is_default)
 values
-  ('SB', 'Slutbesiktning', 'Första entreprenadbesiktningstypen i EB-modulen.', 100, true, true),
+  ('SLB', 'Slutbesiktning', 'Första entreprenadbesiktningstypen i EB-modulen.', 100, true, true),
   ('FB', 'Förbesiktning', 'Planerad framtida besiktningstyp.', 200, true, false),
   ('EB', 'Efterbesiktning', 'Planerad framtida besiktningstyp.', 300, true, false),
   ('GB', 'Garantibesiktning', 'Planerad framtida besiktningstyp.', 400, true, false)
@@ -319,7 +319,7 @@ create table if not exists public.eb_inspection_details (
   org_id uuid not null references public.organizations (id) on delete cascade,
   eb_project_id uuid not null references public.eb_projects (id) on delete cascade,
   parent_inspection_id uuid references public.inspections (id) on delete set null,
-  inspection_variant text not null default 'SB',
+  inspection_variant text not null default 'SLB',
   sequence_no integer not null default 1,
   contract_form text,
   meeting_place text,
@@ -335,7 +335,7 @@ create table if not exists public.eb_inspection_details (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint eb_inspection_details_variant_check
-    check (inspection_variant in ('SB', 'FB', 'EB', 'GB', 'KSB', 'SAB'))
+    check (inspection_variant in ('SLB', 'FB', 'EB', 'GB', 'KSB', 'SAB'))
 );
 
 alter table public.eb_inspection_details

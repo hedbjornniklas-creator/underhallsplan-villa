@@ -176,7 +176,7 @@ export default function EbSettingsPanel() {
           <div>
             <h2 className="text-lg font-semibold">EB-grundinställningar</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-emerald-900">
-              Första versionen delar BesiktApp-admin med ÖB och visar de val som SB-flödet bygger på.
+              Första versionen delar BesiktApp-admin med ÖB och visar de val som SLB-flödet bygger på.
             </p>
           </div>
           <button

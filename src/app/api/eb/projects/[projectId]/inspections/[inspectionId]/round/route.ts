@@ -48,6 +48,6 @@ export async function GET(
 
     return NextResponse.json({ round })
   } catch (error) {
-    return mapError(error, 'Kunde inte hämta SB-rundan.')
+    return mapError(error, 'Kunde inte hämta SLB-rundan.')
   }
 }
