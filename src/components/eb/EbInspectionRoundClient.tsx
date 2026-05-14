@@ -176,7 +176,7 @@ export default function EbInspectionRoundClient({
   const [activeDisciplineId, setActiveDisciplineId] = useState<string | null>(
     initialDiscipline?.id ?? null
   )
-  const [startDialogOpen, setStartDialogOpen] = useState(!initialDiscipline)
+  const [startDialogOpen] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
   const [form, setForm] = useState<NoteFormState>(() => createInitialForm(initialRound))
   const [editingNote, setEditingNote] = useState<EbNote | null>(null)
@@ -191,7 +191,7 @@ export default function EbInspectionRoundClient({
     () =>
       activeDisciplineId
         ? sortNotes(round.notes.filter((note) => note.disciplineId === activeDisciplineId))
-        : [],
+        : sortNotes(round.notes),
     [activeDisciplineId, round.notes]
   )
   const imagesByNoteId = useMemo(() => {
@@ -242,8 +242,13 @@ export default function EbInspectionRoundClient({
   const selectDiscipline = (disciplineId: string) => {
     setActiveDisciplineId(disciplineId)
     setEditingNote(null)
-    setStartDialogOpen(false)
     router.replace(`${pathname}?disciplineId=${disciplineId}`, { scroll: false })
+  }
+
+  const showAllDisciplines = () => {
+    setActiveDisciplineId(null)
+    setEditingNote(null)
+    router.replace(pathname, { scroll: false })
   }
 
   const updateField = <K extends keyof NoteFormState>(field: K, value: NoteFormState[K]) => {
@@ -301,7 +306,9 @@ export default function EbInspectionRoundClient({
   }
 
   const saveCurrentNote = async () => {
-    if (saving || !activeDisciplineId) return null
+    const disciplineId =
+      editingNote?.disciplineId ?? activeDisciplineId ?? round.disciplines[0]?.id ?? null
+    if (saving || !disciplineId) return null
 
     setSaving(true)
     const response = await fetch(editingNote ? `${notesBasePath}/${editingNote.id}` : notesBasePath, {
@@ -309,7 +316,7 @@ export default function EbInspectionRoundClient({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...form,
-        disciplineId: activeDisciplineId,
+        disciplineId,
       }),
     })
     const payload = (await response.json().catch(() => ({}))) as NoteResponse
@@ -325,7 +332,7 @@ export default function EbInspectionRoundClient({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (saving || !activeDisciplineId) return
+    if (saving) return
 
     try {
       setError(null)
@@ -351,6 +358,7 @@ export default function EbInspectionRoundClient({
 
   const handleNewNote = () => {
     setEditingNote(null)
+    setActiveDisciplineId((current) => current ?? round.disciplines[0]?.id ?? null)
     setForm(createInitialForm(round))
     setError(null)
     setEditorOpen(true)
@@ -491,19 +499,31 @@ export default function EbInspectionRoundClient({
                 <Smartphone size={16} />
                 Mobil runda
               </Link>
-              <button
-                type="button"
-                onClick={() => setStartDialogOpen(true)}
-                className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-              >
-                <ClipboardCheck size={16} />
-                {activeDiscipline ? activeDiscipline.label : 'Välj fack'}
-              </button>
             </div>
           </header>
 
           <section className="mt-3 overflow-x-auto border-y border-emerald-100 bg-white/70 px-2 py-2">
             <div className="flex min-w-max gap-2">
+              <button
+                type="button"
+                onClick={showAllDisciplines}
+                className={
+                  activeDisciplineId === null
+                    ? 'inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white'
+                    : 'inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-50'
+                }
+              >
+                Alla
+                <span
+                  className={
+                    activeDisciplineId === null
+                      ? 'rounded-full bg-white/20 px-2 py-0.5 text-xs text-white'
+                      : 'rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-800'
+                  }
+                >
+                  {round.notes.length}
+                </span>
+              </button>
               {round.disciplines.map((discipline) => {
                 const count = round.notes.filter((note) => note.disciplineId === discipline.id).length
                 const active = discipline.id === activeDisciplineId
@@ -534,8 +554,8 @@ export default function EbInspectionRoundClient({
             </div>
           </section>
 
-          <div className="mt-3 grid min-h-[62vh] gap-0 xl:grid-cols-[minmax(0,1fr)_18rem]">
-            <section className="min-w-0 border-y border-emerald-100 bg-white/82 backdrop-blur-sm xl:border-r">
+          <div className="mt-3 min-h-[62vh]">
+            <section className="min-w-0 border-y border-emerald-100 bg-white/82 backdrop-blur-sm">
               <div className="grid grid-cols-[6rem_7rem_8rem_8rem_1fr_5rem_3rem] items-center gap-3 border-b border-emerald-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
                 <span>Nr</span>
                 <span>Status</span>
@@ -548,16 +568,15 @@ export default function EbInspectionRoundClient({
               <div className="flex items-center justify-between border-b border-emerald-100 px-3 py-2">
                 <div>
                   <h2 className="text-sm font-semibold text-gray-950">
-                    {activeDiscipline ? activeDiscipline.label : 'Noteringar'}
+                    {activeDiscipline ? activeDiscipline.label : 'Alla noteringar'}
                   </h2>
-                  <p className="text-xs text-gray-600">{activeDiscipline?.littera ?? 'Välj fack för rundan'}</p>
+                  <p className="text-xs text-gray-600">{activeDiscipline?.littera ?? 'Samtliga fack'}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-medium text-gray-500">{filteredNotes.length} st</span>
                   <button
                     type="button"
                     onClick={handleNewNote}
-                    disabled={!activeDisciplineId}
                     className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-emerald-700 px-3 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                   >
                     <Plus size={14} />
@@ -567,7 +586,7 @@ export default function EbInspectionRoundClient({
               </div>
 
               {filteredNotes.length === 0 ? (
-                <div className="px-4 py-10 text-center text-sm text-gray-600">Inga noteringar i detta fack.</div>
+                <div className="px-4 py-10 text-center text-sm text-gray-600">Inga noteringar.</div>
               ) : (
                 <div className="divide-y divide-emerald-100">
                   {filteredNotes.map((note) => (
@@ -616,38 +635,6 @@ export default function EbInspectionRoundClient({
               )}
             </section>
 
-            <aside className="min-w-0 border-y border-emerald-100 bg-white/72 xl:border-l-0">
-              <div className="flex items-center justify-between">
-                <div className="border-b border-emerald-100 px-3 py-2">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Bildbank</p>
-                  <h2 className="text-sm font-semibold text-gray-950">{allImages.length} bilder</h2>
-                </div>
-              </div>
-              <div className="grid max-h-[62vh] grid-cols-2 gap-1 overflow-y-auto p-2">
-                {allImages.length === 0 ? (
-                  <p className="col-span-2 px-2 py-6 text-sm text-gray-600">Inga bilder i denna besiktning.</p>
-                ) : (
-                  allImages.map((image) => {
-                    const note = round.notes.find((item) => item.id === image.noteId) ?? null
-                    return (
-                      <button
-                        key={image.id}
-                        type="button"
-                        onClick={() => {
-                          if (note) handleEdit(note)
-                        }}
-                        className="group overflow-hidden border border-emerald-100 bg-white text-left transition hover:border-emerald-300"
-                      >
-                        <img src={image.publicUrl} alt={image.label ?? 'Bild'} className="aspect-square w-full object-cover" />
-                        <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-gray-700">
-                          {note ? `${round.project.notePrefix} ${note.noteNumber}` : 'Bild'}
-                        </span>
-                      </button>
-                    )
-                  })
-                )}
-              </div>
-            </aside>
           </div>
         </div>
 
@@ -817,6 +804,44 @@ export default function EbInspectionRoundClient({
                   ) : null}
                 </section>
 
+                <section className="border-b border-emerald-100 pb-3">
+                  <div className="mb-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Bildbank</p>
+                    <p className="text-sm font-semibold text-gray-950">{allImages.length} bilder i besiktningen</p>
+                  </div>
+                  {allImages.length === 0 ? (
+                    <p className="rounded-md border border-emerald-100 bg-emerald-50/40 px-3 py-3 text-sm text-gray-600">
+                      Inga bilder i denna besiktning.
+                    </p>
+                  ) : (
+                    <div className="grid max-h-72 grid-cols-3 gap-2 overflow-y-auto pr-1">
+                      {allImages.map((image) => {
+                        const note = round.notes.find((item) => item.id === image.noteId) ?? null
+                        const active = editingNote?.id === note?.id
+                        return (
+                          <button
+                            key={image.id}
+                            type="button"
+                            onClick={() => {
+                              if (note) handleEdit(note)
+                            }}
+                            className={
+                              active
+                                ? 'overflow-hidden border-2 border-emerald-600 bg-white text-left'
+                                : 'overflow-hidden border border-emerald-100 bg-white text-left transition hover:border-emerald-300'
+                            }
+                          >
+                            <img src={image.publicUrl} alt={image.label ?? 'Bild'} className="aspect-square w-full object-cover" />
+                            <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-gray-700">
+                              {note ? `${round.project.notePrefix} ${note.noteNumber}` : 'Bild'}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </section>
+
                 <div className="grid grid-cols-2 gap-3">
                   <label className="block">
                     <span className="block text-xs font-semibold text-gray-700">Ansvarig</span>
@@ -856,7 +881,7 @@ export default function EbInspectionRoundClient({
 
                 <button
                   type="submit"
-                  disabled={saving || !activeDisciplineId}
+                  disabled={saving || round.disciplines.length === 0}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 >
                   {saving ? <Loader2 size={16} className="animate-spin" /> : editingNote ? <Save size={16} /> : <Plus size={16} />}
