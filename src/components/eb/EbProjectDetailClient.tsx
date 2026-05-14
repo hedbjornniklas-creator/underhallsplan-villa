@@ -9,7 +9,6 @@ import {
   ClipboardCheck,
   Loader2,
   Mail,
-  Play,
   Plus,
   Send,
   Smartphone,
@@ -807,8 +806,8 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                         href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/perform`}
                         className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                       >
-                        <Play size={16} />
-                        Utför
+                        <ClipboardCheck size={16} />
+                        Granska
                       </Link>
                       <button
                         type="button"

@@ -1,11 +1,15 @@
 'use client'
 
+/* eslint-disable @next/next/no-img-element */
+
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import {
   ArrowLeft,
+  Camera,
   ClipboardCheck,
+  Image as ImageIcon,
   Loader2,
   Pencil,
   Plus,
@@ -15,7 +19,7 @@ import {
   X,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
-import type { EbDiscipline, EbInspectionRound, EbNote } from '@/lib/eb/server'
+import type { EbDiscipline, EbInspectionRound, EbNote, EbNoteImage } from '@/lib/eb/server'
 
 type EbInspectionRoundClientProps = {
   initialRound: EbInspectionRound
@@ -39,6 +43,12 @@ type NoteResponse = {
 }
 
 type DeleteResponse = {
+  ok?: boolean
+  error?: string
+}
+
+type ImageResponse = {
+  image?: EbNoteImage
   ok?: boolean
   error?: string
 }
@@ -94,6 +104,24 @@ function getNoteLabel(round: EbInspectionRound, note: EbNote | null, nextNumber:
   return `${round.project.notePrefix} ${note?.noteNumber ?? nextNumber}`
 }
 
+function sortNotes(notes: EbNote[]) {
+  return [...notes].sort((left, right) => {
+    if ((left.noteNumber ?? 0) !== (right.noteNumber ?? 0)) {
+      return (left.noteNumber ?? 0) - (right.noteNumber ?? 0)
+    }
+    return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
+  })
+}
+
+function sortImages(images: EbNoteImage[]) {
+  return [...images].sort((left, right) => {
+    if ((left.sortOrder ?? 0) !== (right.sortOrder ?? 0)) {
+      return (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
+    }
+    return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
+  })
+}
+
 function StartDisciplineDialog({
   open,
   disciplines,
@@ -139,6 +167,8 @@ export default function EbInspectionRoundClient({
 }: EbInspectionRoundClientProps) {
   const router = useRouter()
   const pathname = usePathname()
+  const cameraInputRef = useRef<HTMLInputElement | null>(null)
+  const galleryInputRef = useRef<HTMLInputElement | null>(null)
   const [round, setRound] = useState(initialRound)
   const initialDiscipline = initialRound.disciplines.find(
     (discipline) => discipline.id === initialDisciplineId
@@ -147,20 +177,34 @@ export default function EbInspectionRoundClient({
     initialDiscipline?.id ?? null
   )
   const [startDialogOpen, setStartDialogOpen] = useState(!initialDiscipline)
+  const [editorOpen, setEditorOpen] = useState(false)
   const [form, setForm] = useState<NoteFormState>(() => createInitialForm(initialRound))
   const [editingNote, setEditingNote] = useState<EbNote | null>(null)
   const [saving, setSaving] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const activeDiscipline = round.disciplines.find((discipline) => discipline.id === activeDisciplineId) ?? null
   const filteredNotes = useMemo(
     () =>
       activeDisciplineId
-        ? round.notes.filter((note) => note.disciplineId === activeDisciplineId)
+        ? sortNotes(round.notes.filter((note) => note.disciplineId === activeDisciplineId))
         : [],
     [activeDisciplineId, round.notes]
   )
+  const imagesByNoteId = useMemo(() => {
+    const map = new Map<string, EbNoteImage[]>()
+    for (const image of round.images) {
+      map.set(image.noteId, [...(map.get(image.noteId) ?? []), image])
+    }
+    for (const [noteId, images] of map) {
+      map.set(noteId, sortImages(images))
+    }
+    return map
+  }, [round.images])
+  const allImages = useMemo(() => sortImages(round.images), [round.images])
   const nextNoteNumber = useMemo(
     () => round.notes.reduce((max, note) => Math.max(max, note.noteNumber ?? 0), 0) + 1,
     [round.notes]
@@ -212,6 +256,11 @@ export default function EbInspectionRoundClient({
     setError(null)
   }
 
+  const closeEditor = () => {
+    resetForm()
+    setEditorOpen(false)
+  }
+
   const upsertNoteInState = (note: EbNote) => {
     setRound((current) => {
       const withoutSame = current.notes.filter((item) => item.id !== note.id)
@@ -244,32 +293,44 @@ export default function EbInspectionRoundClient({
     })
   }
 
+  const upsertImageInState = (image: EbNoteImage) => {
+    setRound((current) => ({
+      ...current,
+      images: sortImages([...current.images.filter((item) => item.id !== image.id), image]),
+    }))
+  }
+
+  const saveCurrentNote = async () => {
+    if (saving || !activeDisciplineId) return null
+
+    setSaving(true)
+    const response = await fetch(editingNote ? `${notesBasePath}/${editingNote.id}` : notesBasePath, {
+      method: editingNote ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...form,
+        disciplineId: activeDisciplineId,
+      }),
+    })
+    const payload = (await response.json().catch(() => ({}))) as NoteResponse
+    if (!response.ok || !payload.note) {
+      throw new Error(payload.error ?? 'Kunde inte spara noteringen.')
+    }
+
+    upsertNoteInState(payload.note)
+    setEditingNote(payload.note)
+    setForm(formFromNote(payload.note))
+    return payload.note
+  }
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (saving || !activeDisciplineId) return
 
     try {
-      setSaving(true)
       setError(null)
-      const response = await fetch(
-        editingNote ? `${notesBasePath}/${editingNote.id}` : notesBasePath,
-        {
-          method: editingNote ? 'PATCH' : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...form,
-            disciplineId: activeDisciplineId,
-          }),
-        }
-      )
-      const payload = (await response.json().catch(() => ({}))) as NoteResponse
-      if (!response.ok || !payload.note) {
-        throw new Error(payload.error ?? 'Kunde inte spara noteringen.')
-      }
-
-      upsertNoteInState(payload.note)
-      setEditingNote(null)
-      setForm(createInitialForm(round))
+      await saveCurrentNote()
+      closeEditor()
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Kunde inte spara noteringen.')
     } finally {
@@ -279,12 +340,84 @@ export default function EbInspectionRoundClient({
 
   const handleEdit = (note: EbNote) => {
     setEditingNote(note)
+    setEditorOpen(true)
     setActiveDisciplineId(note.disciplineId)
     if (note.disciplineId) {
       router.replace(`${pathname}?disciplineId=${note.disciplineId}`, { scroll: false })
     }
     setForm(formFromNote(note))
     setError(null)
+  }
+
+  const handleNewNote = () => {
+    setEditingNote(null)
+    setForm(createInitialForm(round))
+    setError(null)
+    setEditorOpen(true)
+  }
+
+  const uploadImage = async (file: File) => {
+    if (uploadingImage) return
+
+    try {
+      setUploadingImage(true)
+      setError(null)
+      const note = editingNote ?? (await saveCurrentNote())
+      if (!note) return
+      setSaving(false)
+
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await fetch(`${notesBasePath}/${note.id}/images`, {
+        method: 'POST',
+        body: formData,
+      })
+      const payload = (await response.json().catch(() => ({}))) as ImageResponse
+      if (!response.ok || !payload.image) {
+        throw new Error(payload.error ?? 'Kunde inte ladda upp bild.')
+      }
+      upsertImageInState(payload.image)
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp bild.')
+    } finally {
+      setSaving(false)
+      setUploadingImage(false)
+    }
+  }
+
+  const handleImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+    await uploadImage(file)
+  }
+
+  const deleteImage = async (image: EbNoteImage) => {
+    if (!editingNote || deletingImageId) return
+    const confirmed = window.confirm('Radera bilden?')
+    if (!confirmed) return
+
+    try {
+      setDeletingImageId(image.id)
+      setError(null)
+      const response = await fetch(`${notesBasePath}/${editingNote.id}/images`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageId: image.id }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as ImageResponse
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? 'Kunde inte radera bilden.')
+      }
+      setRound((current) => ({
+        ...current,
+        images: current.images.filter((item) => item.id !== image.id),
+      }))
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera bilden.')
+    } finally {
+      setDeletingImageId(null)
+    }
   }
 
   const handleDelete = async (note: EbNote) => {
@@ -369,7 +502,7 @@ export default function EbInspectionRoundClient({
             </div>
           </header>
 
-          <section className="mt-4 overflow-x-auto rounded-lg border border-emerald-100 bg-white/80 p-2 shadow-sm">
+          <section className="mt-3 overflow-x-auto border-y border-emerald-100 bg-white/70 px-2 py-2">
             <div className="flex min-w-max gap-2">
               {round.disciplines.map((discipline) => {
                 const count = round.notes.filter((note) => note.disciplineId === discipline.id).length
@@ -401,16 +534,36 @@ export default function EbInspectionRoundClient({
             </div>
           </section>
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_24rem]">
-            <section className="overflow-hidden rounded-lg border border-emerald-100 bg-white/82 shadow-sm backdrop-blur-sm">
-              <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
+          <div className="mt-3 grid min-h-[62vh] gap-0 xl:grid-cols-[minmax(0,1fr)_18rem]">
+            <section className="min-w-0 border-y border-emerald-100 bg-white/82 backdrop-blur-sm xl:border-r">
+              <div className="grid grid-cols-[6rem_7rem_8rem_8rem_1fr_5rem_3rem] items-center gap-3 border-b border-emerald-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                <span>Nr</span>
+                <span>Status</span>
+                <span>Rum</span>
+                <span>Plats</span>
+                <span>Notering</span>
+                <span>Bilder</span>
+                <span />
+              </div>
+              <div className="flex items-center justify-between border-b border-emerald-100 px-3 py-2">
                 <div>
                   <h2 className="text-sm font-semibold text-gray-950">
                     {activeDiscipline ? activeDiscipline.label : 'Noteringar'}
                   </h2>
                   <p className="text-xs text-gray-600">{activeDiscipline?.littera ?? 'Välj fack för rundan'}</p>
                 </div>
-                <span className="text-xs font-medium text-gray-500">{filteredNotes.length} st</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-medium text-gray-500">{filteredNotes.length} st</span>
+                  <button
+                    type="button"
+                    onClick={handleNewNote}
+                    disabled={!activeDisciplineId}
+                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-emerald-700 px-3 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                  >
+                    <Plus size={14} />
+                    Ny notering
+                  </button>
+                </div>
               </div>
 
               {filteredNotes.length === 0 ? (
@@ -418,52 +571,44 @@ export default function EbInspectionRoundClient({
               ) : (
                 <div className="divide-y divide-emerald-100">
                   {filteredNotes.map((note) => (
-                    <article key={note.id} className="bg-white/86 px-4 py-4">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex rounded-full bg-emerald-700 px-2.5 py-1 text-xs font-semibold text-white">
-                              {round.project.notePrefix} {note.noteNumber}
-                            </span>
-                            {note.markerKey ? (
-                              <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900">
-                                {note.markerKey}
-                              </span>
-                            ) : null}
-                            <span className="inline-flex rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
-                              {note.statusLabel ?? note.statusKey}
-                            </span>
-                          </div>
-                          <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-gray-950">{note.noteText}</p>
-                          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
-                            {note.room ? <span>Rum: {note.room}</span> : null}
-                            {note.location ? <span>Plats: {note.location}</span> : null}
-                            {note.placeDetail ? <span>Detalj: {note.placeDetail}</span> : null}
-                            {note.tradeGroup ? <span>Yrkesgrupp: {note.tradeGroup}</span> : null}
-                            {note.responsibleParty ? <span>Ansvarig: {note.responsibleParty}</span> : null}
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
+                    <article
+                      key={note.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleEdit(note)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') handleEdit(note)
+                      }}
+                      className="grid cursor-pointer grid-cols-[6rem_7rem_8rem_8rem_1fr_5rem_3rem] items-center gap-3 px-3 py-2 text-sm transition hover:bg-emerald-50/70"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-emerald-900">
+                          {round.project.notePrefix} {note.noteNumber}
+                        </span>
+                        {note.markerKey ? (
+                          <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-900">
+                            {note.markerKey}
+                          </span>
+                        ) : null}
+                      </div>
+                      <span className="truncate text-xs font-medium text-gray-700">{note.statusLabel ?? note.statusKey}</span>
+                      <span className="truncate text-gray-700">{note.room || '-'}</span>
+                      <span className="truncate text-gray-700">{note.location || '-'}</span>
+                      <span className="truncate text-gray-950">{note.noteText}</span>
+                      <span className="text-xs font-medium text-gray-600">{imagesByNoteId.get(note.id)?.length ?? 0} st</span>
+                      <div className="flex justify-end">
                           <button
                             type="button"
-                            onClick={() => handleEdit(note)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              handleEdit(note)
+                            }}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-emerald-800 transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                             aria-label="Redigera"
                             title="Redigera"
                           >
                             <Pencil size={16} />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleDelete(note)}
-                            disabled={deletingId === note.id}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
-                            aria-label="Radera"
-                            title="Radera"
-                          >
-                            {deletingId === note.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-                          </button>
-                        </div>
                       </div>
                     </article>
                   ))}
@@ -471,8 +616,48 @@ export default function EbInspectionRoundClient({
               )}
             </section>
 
-            <aside className="rounded-lg border border-emerald-100 bg-white/86 p-4 shadow-sm backdrop-blur-sm">
+            <aside className="min-w-0 border-y border-emerald-100 bg-white/72 xl:border-l-0">
               <div className="flex items-center justify-between">
+                <div className="border-b border-emerald-100 px-3 py-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Bildbank</p>
+                  <h2 className="text-sm font-semibold text-gray-950">{allImages.length} bilder</h2>
+                </div>
+              </div>
+              <div className="grid max-h-[62vh] grid-cols-2 gap-1 overflow-y-auto p-2">
+                {allImages.length === 0 ? (
+                  <p className="col-span-2 px-2 py-6 text-sm text-gray-600">Inga bilder i denna besiktning.</p>
+                ) : (
+                  allImages.map((image) => {
+                    const note = round.notes.find((item) => item.id === image.noteId) ?? null
+                    return (
+                      <button
+                        key={image.id}
+                        type="button"
+                        onClick={() => {
+                          if (note) handleEdit(note)
+                        }}
+                        className="group overflow-hidden border border-emerald-100 bg-white text-left transition hover:border-emerald-300"
+                      >
+                        <img src={image.publicUrl} alt={image.label ?? 'Bild'} className="aspect-square w-full object-cover" />
+                        <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-gray-700">
+                          {note ? `${round.project.notePrefix} ${note.noteNumber}` : 'Bild'}
+                        </span>
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            </aside>
+          </div>
+        </div>
+
+        {editorOpen ? (
+          <div className="fixed inset-0 z-[100] flex justify-end bg-slate-950/25" onClick={closeEditor}>
+            <aside
+              className="flex h-full w-full max-w-xl flex-col bg-white shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
                     {editingNote ? 'Redigera' : 'Ny notering'}
@@ -481,20 +666,18 @@ export default function EbInspectionRoundClient({
                     {getNoteLabel(round, editingNote, nextNoteNumber)}
                   </h2>
                 </div>
-                {editingNote ? (
-                  <button
+                <button
                     type="button"
-                    onClick={resetForm}
+                    onClick={closeEditor}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50"
-                    aria-label="Avbryt"
-                    title="Avbryt"
+                    aria-label="Stäng"
+                    title="Stäng"
                   >
                     <X size={16} />
                   </button>
-                ) : null}
               </div>
 
-              <form onSubmit={(event) => void handleSubmit(event)} className="mt-4 space-y-3">
+              <form onSubmit={(event) => void handleSubmit(event)} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
                 <div className="grid grid-cols-2 gap-3">
                   <label className="block">
                     <span className="block text-xs font-semibold text-gray-700">Beteckning</span>
@@ -580,6 +763,60 @@ export default function EbInspectionRoundClient({
                   </div>
                 ) : null}
 
+                <section className="border-y border-emerald-100 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Bilder</p>
+                      <p className="text-sm font-semibold text-gray-950">
+                        {editingNote ? (imagesByNoteId.get(editingNote.id)?.length ?? 0) : 0} st
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => cameraInputRef.current?.click()}
+                        disabled={uploadingImage}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                        aria-label="Kamera"
+                        title="Kamera"
+                      >
+                        {uploadingImage ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => galleryInputRef.current?.click()}
+                        disabled={uploadingImage}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        aria-label="Bild"
+                        title="Bild"
+                      >
+                        <ImageIcon size={18} />
+                      </button>
+                    </div>
+                  </div>
+                  <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={(event) => void handleImageSelected(event)} className="hidden" />
+                  <input ref={galleryInputRef} type="file" accept="image/*" onChange={(event) => void handleImageSelected(event)} className="hidden" />
+                  {editingNote && (imagesByNoteId.get(editingNote.id)?.length ?? 0) > 0 ? (
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      {(imagesByNoteId.get(editingNote.id) ?? []).map((image) => (
+                        <div key={image.id} className="relative overflow-hidden border border-emerald-100 bg-white">
+                          <img src={image.publicUrl} alt={image.label ?? 'Bild'} className="aspect-square w-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => void deleteImage(image)}
+                            disabled={deletingImageId === image.id}
+                            className="absolute right-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                            aria-label="Radera bild"
+                            title="Radera bild"
+                          >
+                            {deletingImageId === image.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+
                 <div className="grid grid-cols-2 gap-3">
                   <label className="block">
                     <span className="block text-xs font-semibold text-gray-700">Ansvarig</span>
@@ -605,6 +842,18 @@ export default function EbInspectionRoundClient({
                   </div>
                 ) : null}
 
+                {editingNote ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleDelete(editingNote)}
+                    disabled={deletingId === editingNote.id}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-rose-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deletingId === editingNote.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                    Radera notering
+                  </button>
+                ) : null}
+
                 <button
                   type="submit"
                   disabled={saving || !activeDisciplineId}
@@ -616,7 +865,7 @@ export default function EbInspectionRoundClient({
               </form>
             </aside>
           </div>
-        </div>
+        ) : null}
 
         <StartDisciplineDialog
           open={startDialogOpen}
