@@ -12,6 +12,7 @@ import {
   Play,
   Plus,
   Send,
+  Smartphone,
   Trash2,
   UserPlus,
   X,
@@ -796,8 +797,15 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                     </div>
                     <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
                       <Link
-                        href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/perform`}
+                        href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/round`}
                         className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                      >
+                        <Smartphone size={16} />
+                        Runda
+                      </Link>
+                      <Link
+                        href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/perform`}
+                        className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                       >
                         <Play size={16} />
                         Utför

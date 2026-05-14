@@ -96,6 +96,17 @@ export type EbNote = {
   statusLabel: string | null
 }
 
+export type EbNoteImage = {
+  id: string
+  noteId: string
+  inspectionId: string
+  filePath: string
+  label: string | null
+  sortOrder: number
+  publicUrl: string
+  createdAt: string | null
+}
+
 export type EbNoteSuggestion = {
   id: string
   phrase: string
@@ -128,6 +139,7 @@ export type EbInspectionRound = {
   markers: EbNoteMarker[]
   statuses: EbNoteStatus[]
   notes: EbNote[]
+  images: EbNoteImage[]
   suggestions: EbNoteSuggestion[]
 }
 
@@ -298,6 +310,16 @@ type EbNoteSuggestionRow = {
   last_used_at: string | null
 }
 
+type EbNoteImageRow = {
+  id: string
+  inspection_id: string
+  eb_note_id: string | null
+  file_path: string
+  label: string | null
+  sort_order: number | null
+  created_at: string | null
+}
+
 type EbProjectAttachmentRow = {
   id: string
   eb_project_id: string
@@ -393,6 +415,7 @@ const VARIANT_LABELS: Record<EbInspectionVariant, string> = {
 const EB_VARIANTS = Object.keys(VARIANT_LABELS) as EbInspectionVariant[]
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export const EB_PROJECT_ATTACHMENTS_BUCKET = 'eb-project-attachments'
+export const EB_NOTE_IMAGE_BUCKET = 'inspection-images'
 const EB_ATTACHMENT_SIGNED_URL_SECONDS = 60 * 60
 
 function normalizeText(value: string | null | undefined) {
@@ -778,6 +801,19 @@ function mapNote(
   }
 }
 
+function mapNoteImage(row: EbNoteImageRow, publicUrl: string): EbNoteImage {
+  return {
+    id: row.id,
+    noteId: row.eb_note_id ?? '',
+    inspectionId: row.inspection_id,
+    filePath: row.file_path,
+    label: row.label ?? null,
+    sortOrder: row.sort_order ?? 100,
+    publicUrl,
+    createdAt: row.created_at ?? null,
+  }
+}
+
 async function getEbInspectionRoundBase(input: {
   orgId: string
   projectId: string
@@ -879,6 +915,27 @@ async function listEbNotes(input: {
   )
 }
 
+async function listEbNoteImages(input: { inspectionId: string }) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('inspection_images')
+    .select('id,inspection_id,eb_note_id,file_path,label,sort_order,created_at')
+    .eq('inspection_id', input.inspectionId)
+    .not('eb_note_id', 'is', null)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta EB-bilder.')
+  }
+
+  return ((data ?? []) as EbNoteImageRow[])
+    .map((row) =>
+      mapNoteImage(row, admin.storage.from(EB_NOTE_IMAGE_BUCKET).getPublicUrl(row.file_path).data.publicUrl)
+    )
+    .filter((image) => image.noteId)
+}
+
 async function listEbNoteSuggestions(input: {
   orgId: string
   profileId: string
@@ -913,12 +970,15 @@ export async function getEbInspectionRound(input: {
     listEbNoteStatuses(),
     listEbNoteSuggestions({ orgId: input.orgId, profileId: input.requestedByUserId }),
   ])
-  const notes = await listEbNotes({
-    ...input,
-    disciplines,
-    markers,
-    statuses,
-  })
+  const [notes, images] = await Promise.all([
+    listEbNotes({
+      ...input,
+      disciplines,
+      markers,
+      statuses,
+    }),
+    listEbNoteImages({ inspectionId: input.inspectionId }),
+  ])
 
   return {
     project,
@@ -927,6 +987,7 @@ export async function getEbInspectionRound(input: {
     markers,
     statuses,
     notes,
+    images,
     suggestions,
   }
 }
