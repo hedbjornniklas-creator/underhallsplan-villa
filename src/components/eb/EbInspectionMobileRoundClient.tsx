@@ -417,15 +417,48 @@ export default function EbInspectionMobileRoundClient({
     }))
   }
 
+  const saveCurrentNote = async () => {
+    if (!activeDisciplineId) {
+      throw new Error('Fack saknas för rundan.')
+    }
+    if (!form.noteText.trim()) {
+      throw new Error('Skriv en noteringstext innan du tar bild.')
+    }
+
+    setSaving(true)
+    const response = await fetch(
+      editingNote ? `${notesBasePath}/${editingNote.id}` : notesBasePath,
+      {
+        method: editingNote ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...form,
+          disciplineId: activeDisciplineId,
+        }),
+      }
+    )
+    const payload = (await response.json().catch(() => ({}))) as NoteResponse
+    if (!response.ok || !payload.note) {
+      throw new Error(payload.error ?? 'Kunde inte spara noteringen.')
+    }
+
+    upsertNoteInState(payload.note)
+    setEditingNote(payload.note)
+    setForm(formFromNote(payload.note))
+    setNoteSheetOpen(true)
+    return payload.note
+  }
+
   const uploadImage = async (file: File) => {
-    if (!editingNote || uploadingImage) return
+    if (uploadingImage) return
 
     try {
       setUploadingImage(true)
       setError(null)
+      const note = editingNote ?? (await saveCurrentNote())
       const formData = new FormData()
       formData.append('file', file)
-      const response = await fetch(`${notesBasePath}/${editingNote.id}/images`, {
+      const response = await fetch(`${notesBasePath}/${note.id}/images`, {
         method: 'POST',
         body: formData,
       })
@@ -437,6 +470,7 @@ export default function EbInspectionMobileRoundClient({
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp bild.')
     } finally {
+      setSaving(false)
       setUploadingImage(false)
     }
   }
@@ -500,28 +534,8 @@ export default function EbInspectionMobileRoundClient({
     if (saving || !activeDisciplineId) return
 
     try {
-      setSaving(true)
       setError(null)
-      const response = await fetch(
-        editingNote ? `${notesBasePath}/${editingNote.id}` : notesBasePath,
-        {
-          method: editingNote ? 'PATCH' : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...form,
-            disciplineId: activeDisciplineId,
-          }),
-        }
-      )
-      const payload = (await response.json().catch(() => ({}))) as NoteResponse
-      if (!response.ok || !payload.note) {
-        throw new Error(payload.error ?? 'Kunde inte spara noteringen.')
-      }
-
-      upsertNoteInState(payload.note)
-      setEditingNote(payload.note)
-      setForm(formFromNote(payload.note))
-      setNoteSheetOpen(true)
+      await saveCurrentNote()
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Kunde inte spara noteringen.')
     } finally {
@@ -895,15 +909,14 @@ export default function EbInspectionMobileRoundClient({
                     </div>
                   ) : null}
 
-                  {editingNote ? (
-                    <section className="rounded-md border border-emerald-100 bg-emerald-50/25 p-2.5">
+                  <section className="rounded-md border border-emerald-100 bg-emerald-50/25 p-2.5">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
                             Bilder
                           </p>
                           <p className="text-sm font-semibold text-gray-950">
-                            {(imagesByNoteId.get(editingNote.id)?.length ?? 0)} st
+                            {editingNote ? (imagesByNoteId.get(editingNote.id)?.length ?? 0) : 0} st
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -946,7 +959,7 @@ export default function EbInspectionMobileRoundClient({
                         className="hidden"
                       />
 
-                      {(imagesByNoteId.get(editingNote.id)?.length ?? 0) > 0 ? (
+                      {editingNote && (imagesByNoteId.get(editingNote.id)?.length ?? 0) > 0 ? (
                         <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
                           {(imagesByNoteId.get(editingNote.id) ?? []).map((image) => (
                             <div key={image.id} className="relative overflow-hidden rounded-md border border-emerald-100 bg-white">
@@ -974,7 +987,6 @@ export default function EbInspectionMobileRoundClient({
                         </div>
                       ) : null}
                     </section>
-                  ) : null}
 
                   <div className="grid grid-cols-2 gap-3">
                     <label className="block">
