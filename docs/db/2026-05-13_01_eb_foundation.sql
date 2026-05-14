@@ -432,10 +432,13 @@ create table if not exists public.eb_notes (
   source_note_id uuid references public.eb_notes (id) on delete set null,
   note_number integer,
   location text,
+  room text,
+  place_detail text,
   marker_key text,
   status_key text not null default 'open',
   note_text text not null default '',
   responsible_party text,
+  trade_group text,
   due_date date,
   sort_order integer not null default 100,
   created_by uuid references public.profiles (id) on delete set null,
@@ -445,7 +448,10 @@ create table if not exists public.eb_notes (
 );
 
 alter table public.eb_notes
-  add column if not exists source_note_id uuid references public.eb_notes (id) on delete set null;
+  add column if not exists source_note_id uuid references public.eb_notes (id) on delete set null,
+  add column if not exists room text,
+  add column if not exists place_detail text,
+  add column if not exists trade_group text;
 
 create index if not exists eb_notes_inspection_idx
   on public.eb_notes (inspection_id, sort_order, created_at);
@@ -454,6 +460,9 @@ create index if not exists eb_notes_project_idx
 create index if not exists eb_notes_source_note_idx
   on public.eb_notes (source_note_id)
   where source_note_id is not null;
+create unique index if not exists eb_notes_inspection_note_number_idx
+  on public.eb_notes (inspection_id, note_number)
+  where note_number is not null;
 create index if not exists eb_notes_org_text_idx
   on public.eb_notes using gin (to_tsvector('simple', coalesce(note_text, '')));
 

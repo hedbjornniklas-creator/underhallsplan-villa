@@ -49,6 +49,71 @@ export type EbProjectListItem = {
   inspections: EbInspectionSummary[]
 }
 
+export type EbDiscipline = {
+  id: string
+  key: string
+  label: string
+  littera: string | null
+  sortOrder: number
+  isActive: boolean
+}
+
+export type EbNoteMarker = {
+  key: string
+  label: string
+  colorToken: string
+  sortOrder: number
+}
+
+export type EbNoteStatus = {
+  key: string
+  label: string
+  colorToken: string
+  sortOrder: number
+  isDefault: boolean
+}
+
+export type EbNote = {
+  id: string
+  projectId: string
+  inspectionId: string
+  disciplineId: string | null
+  noteNumber: number | null
+  location: string | null
+  room: string | null
+  placeDetail: string | null
+  markerKey: string | null
+  statusKey: string
+  noteText: string
+  responsibleParty: string | null
+  tradeGroup: string | null
+  sortOrder: number
+  createdAt: string | null
+  updatedAt: string | null
+  disciplineLabel: string | null
+  disciplineLittera: string | null
+  markerLabel: string | null
+  statusLabel: string | null
+}
+
+export type EbNoteSuggestion = {
+  id: string
+  phrase: string
+  normalizedPrefix: string
+  useCount: number
+  lastUsedAt: string | null
+}
+
+export type EbInspectionRound = {
+  project: EbProjectListItem
+  inspection: EbInspectionSummary
+  disciplines: EbDiscipline[]
+  markers: EbNoteMarker[]
+  statuses: EbNoteStatus[]
+  notes: EbNote[]
+  suggestions: EbNoteSuggestion[]
+}
+
 export type EbInvitationParticipant = {
   id: string | null
   roleLabel: string | null
@@ -169,6 +234,53 @@ type EbParticipantRow = {
   sort_order: number | null
 }
 
+type EbDisciplineRow = {
+  id: string
+  discipline_key: string
+  label: string
+  littera: string | null
+  sort_order: number | null
+  is_active: boolean | null
+}
+
+type EbNoteRow = {
+  id: string
+  eb_project_id: string
+  inspection_id: string
+  discipline_id: string | null
+  note_number: number | null
+  location: string | null
+  room: string | null
+  place_detail: string | null
+  marker_key: string | null
+  status_key: string | null
+  note_text: string | null
+  responsible_party: string | null
+  trade_group: string | null
+  sort_order: number | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+type EbMarkerRow = {
+  key: string
+  label: string
+  color_token: string | null
+  sort_order: number | null
+}
+
+type EbStatusRow = EbMarkerRow & {
+  is_default: boolean | null
+}
+
+type EbNoteSuggestionRow = {
+  id: string
+  phrase: string
+  normalized_prefix: string
+  use_count: number | null
+  last_used_at: string | null
+}
+
 type ProfileContactRow = {
   id: string
   full_name: string | null
@@ -214,6 +326,30 @@ export type CreateEbInspectionInput = {
   finalMeetingTime?: string | null
 }
 
+export type SaveEbNoteInput = {
+  orgId: string
+  requestedByUserId: string
+  projectId: string
+  inspectionId: string
+  noteId?: string | null
+  disciplineId?: string | null
+  location?: string | null
+  room?: string | null
+  placeDetail?: string | null
+  markerKey?: string | null
+  statusKey?: string | null
+  noteText?: string | null
+  responsibleParty?: string | null
+  tradeGroup?: string | null
+}
+
+export type DeleteEbNoteInput = {
+  orgId: string
+  projectId: string
+  inspectionId: string
+  noteId: string
+}
+
 const VARIANT_LABELS: Record<EbInspectionVariant, string> = {
   SB: 'Slutbesiktning',
   FB: 'Förbesiktning',
@@ -254,6 +390,11 @@ function getMailFromAddress() {
 function normalizeEmail(value: string | null | undefined) {
   const email = normalizeText(value)?.toLowerCase() ?? null
   return email && EMAIL_REGEX.test(email) ? email : null
+}
+
+function normalizeSuggestionPrefix(value: string | null | undefined) {
+  const normalized = normalizeText(value)?.toLocaleLowerCase('sv-SE') ?? null
+  return normalized ? normalized.slice(0, 1) : null
 }
 
 function formatSwedishDate(value: string | null) {
@@ -469,6 +610,231 @@ export async function getEbProjectById(input: {
   if (projects.length === 0) return null
   const [project] = await buildProjectItems(projects)
   return project ?? null
+}
+
+function mapDiscipline(row: EbDisciplineRow): EbDiscipline {
+  return {
+    id: row.id,
+    key: row.discipline_key,
+    label: row.label,
+    littera: row.littera ?? null,
+    sortOrder: row.sort_order ?? 100,
+    isActive: row.is_active ?? true,
+  }
+}
+
+function mapMarker(row: EbMarkerRow): EbNoteMarker {
+  return {
+    key: row.key,
+    label: row.label,
+    colorToken: row.color_token ?? 'gray',
+    sortOrder: row.sort_order ?? 100,
+  }
+}
+
+function mapStatus(row: EbStatusRow): EbNoteStatus {
+  return {
+    ...mapMarker(row),
+    isDefault: row.is_default ?? false,
+  }
+}
+
+function mapSuggestion(row: EbNoteSuggestionRow): EbNoteSuggestion {
+  return {
+    id: row.id,
+    phrase: row.phrase,
+    normalizedPrefix: row.normalized_prefix,
+    useCount: row.use_count ?? 1,
+    lastUsedAt: row.last_used_at ?? null,
+  }
+}
+
+function mapNote(
+  row: EbNoteRow,
+  disciplinesById: Map<string, EbDiscipline>,
+  markersByKey: Map<string, EbNoteMarker>,
+  statusesByKey: Map<string, EbNoteStatus>
+): EbNote {
+  const discipline = row.discipline_id ? disciplinesById.get(row.discipline_id) : null
+  const marker = row.marker_key ? markersByKey.get(row.marker_key) : null
+  const statusKey = row.status_key ?? 'open'
+  const status = statusesByKey.get(statusKey)
+
+  return {
+    id: row.id,
+    projectId: row.eb_project_id,
+    inspectionId: row.inspection_id,
+    disciplineId: row.discipline_id ?? null,
+    noteNumber: row.note_number ?? null,
+    location: row.location ?? null,
+    room: row.room ?? null,
+    placeDetail: row.place_detail ?? null,
+    markerKey: row.marker_key ?? null,
+    statusKey,
+    noteText: row.note_text ?? '',
+    responsibleParty: row.responsible_party ?? null,
+    tradeGroup: row.trade_group ?? null,
+    sortOrder: row.sort_order ?? 100,
+    createdAt: row.created_at ?? null,
+    updatedAt: row.updated_at ?? null,
+    disciplineLabel: discipline?.label ?? null,
+    disciplineLittera: discipline?.littera ?? null,
+    markerLabel: marker?.label ?? null,
+    statusLabel: status?.label ?? null,
+  }
+}
+
+async function getEbInspectionRoundBase(input: {
+  orgId: string
+  projectId: string
+  inspectionId: string
+}) {
+  const project = await getEbProjectById({ orgId: input.orgId, projectId: input.projectId })
+  if (!project) {
+    throw new Error('EB_PROJECT_NOT_FOUND')
+  }
+
+  const inspection = project.inspections.find((item) => item.inspectionId === input.inspectionId)
+  if (!inspection) {
+    throw new Error('EB_INSPECTION_NOT_FOUND')
+  }
+
+  return { project, inspection }
+}
+
+async function listEbDisciplines(input: {
+  orgId: string
+  projectId: string
+  inspectionId: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('eb_disciplines')
+    .select('id,discipline_key,label,littera,sort_order,is_active')
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta fack.')
+  }
+
+  return ((data ?? []) as EbDisciplineRow[]).map(mapDiscipline)
+}
+
+async function listEbNoteMarkers() {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('settings_eb_note_markers')
+    .select('key,label,color_token,sort_order')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta beteckningar.')
+  }
+
+  return ((data ?? []) as EbMarkerRow[]).map(mapMarker)
+}
+
+async function listEbNoteStatuses() {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('settings_eb_note_statuses')
+    .select('key,label,color_token,sort_order,is_default')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta noteringsstatusar.')
+  }
+
+  return ((data ?? []) as EbStatusRow[]).map(mapStatus)
+}
+
+async function listEbNotes(input: {
+  orgId: string
+  projectId: string
+  inspectionId: string
+  disciplines: EbDiscipline[]
+  markers: EbNoteMarker[]
+  statuses: EbNoteStatus[]
+}) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('eb_notes')
+    .select(
+      'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,sort_order,created_at,updated_at'
+    )
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+    .order('note_number', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta EB-noteringar.')
+  }
+
+  const disciplinesById = new Map(input.disciplines.map((discipline) => [discipline.id, discipline]))
+  const markersByKey = new Map(input.markers.map((marker) => [marker.key, marker]))
+  const statusesByKey = new Map(input.statuses.map((status) => [status.key, status]))
+  return ((data ?? []) as EbNoteRow[]).map((row) =>
+    mapNote(row, disciplinesById, markersByKey, statusesByKey)
+  )
+}
+
+async function listEbNoteSuggestions(input: {
+  orgId: string
+  profileId: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('eb_note_suggestions')
+    .select('id,phrase,normalized_prefix,use_count,last_used_at')
+    .eq('org_id', input.orgId)
+    .or(`profile_id.eq.${input.profileId},profile_id.is.null`)
+    .order('use_count', { ascending: false })
+    .order('last_used_at', { ascending: false })
+    .limit(120)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta textförslag.')
+  }
+
+  return ((data ?? []) as EbNoteSuggestionRow[]).map(mapSuggestion)
+}
+
+export async function getEbInspectionRound(input: {
+  orgId: string
+  requestedByUserId: string
+  projectId: string
+  inspectionId: string
+}): Promise<EbInspectionRound> {
+  const { project, inspection } = await getEbInspectionRoundBase(input)
+  const [disciplines, markers, statuses, suggestions] = await Promise.all([
+    listEbDisciplines(input),
+    listEbNoteMarkers(),
+    listEbNoteStatuses(),
+    listEbNoteSuggestions({ orgId: input.orgId, profileId: input.requestedByUserId }),
+  ])
+  const notes = await listEbNotes({
+    ...input,
+    disciplines,
+    markers,
+    statuses,
+  })
+
+  return {
+    project,
+    inspection,
+    disciplines,
+    markers,
+    statuses,
+    notes,
+    suggestions,
+  }
 }
 
 async function seedDisciplinesForInspection(input: {
@@ -818,6 +1184,290 @@ export async function createEbInspectionForProject(
       await admin.from('inspections').delete().eq('id', inspectionId)
     }
     throw error
+  }
+}
+
+async function getNextEbNoteNumber(input: {
+  orgId: string
+  projectId: string
+  inspectionId: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('eb_notes')
+    .select('note_number')
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+    .not('note_number', 'is', null)
+    .order('note_number', { ascending: false })
+    .limit(1)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte räkna fram nästa noteringsnummer.')
+  }
+
+  const current = Number((data?.[0] as { note_number?: unknown } | undefined)?.note_number ?? 0)
+  return Number.isFinite(current) ? current + 1 : 1
+}
+
+async function saveEbNoteSuggestion(input: {
+  orgId: string
+  profileId: string
+  sourceNoteId: string
+  phrase: string | null
+}) {
+  const phrase = normalizeText(input.phrase)
+  const normalizedPrefix = normalizeSuggestionPrefix(phrase)
+  if (!phrase || !normalizedPrefix || phrase.length < 3) return
+
+  const admin = createSupabaseAdminClient()
+  const { data: existing, error: selectError } = await admin
+    .from('eb_note_suggestions')
+    .select('id,use_count')
+    .eq('org_id', input.orgId)
+    .eq('profile_id', input.profileId)
+    .eq('phrase', phrase)
+    .maybeSingle()
+
+  if (selectError) {
+    throw new Error(selectError.message ?? 'Kunde inte läsa textförslag.')
+  }
+
+  const now = new Date().toISOString()
+  if (existing?.id) {
+    const useCount = Number((existing as { use_count?: unknown }).use_count ?? 1)
+    const { error: updateError } = await admin
+      .from('eb_note_suggestions')
+      .update({
+        source_note_id: input.sourceNoteId,
+        normalized_prefix: normalizedPrefix,
+        use_count: Number.isFinite(useCount) ? useCount + 1 : 2,
+        last_used_at: now,
+      })
+      .eq('id', String(existing.id))
+
+    if (updateError) {
+      throw new Error(updateError.message ?? 'Kunde inte uppdatera textförslag.')
+    }
+    return
+  }
+
+  const { error: insertError } = await admin.from('eb_note_suggestions').insert({
+    org_id: input.orgId,
+    profile_id: input.profileId,
+    source_note_id: input.sourceNoteId,
+    phrase,
+    normalized_prefix: normalizedPrefix,
+    use_count: 1,
+    last_used_at: now,
+  })
+
+  if (insertError) {
+    throw new Error(insertError.message ?? 'Kunde inte spara textförslag.')
+  }
+}
+
+function resolveEbNoteOptions(input: {
+  disciplineId: string | null
+  markerKey: string | null
+  statusKey: string | null
+  disciplines: EbDiscipline[]
+  markers: EbNoteMarker[]
+  statuses: EbNoteStatus[]
+}) {
+  const disciplineId = normalizeText(input.disciplineId)
+  if (!disciplineId || !input.disciplines.some((discipline) => discipline.id === disciplineId)) {
+    throw new Error('EB_DISCIPLINE_REQUIRED')
+  }
+
+  const firstMarker = input.markers[0]?.key ?? null
+  const markerKey = input.markers.some((marker) => marker.key === input.markerKey)
+    ? input.markerKey
+    : firstMarker
+  const defaultStatus =
+    input.statuses.find((status) => status.isDefault)?.key ?? input.statuses[0]?.key ?? 'open'
+  const statusKey = input.statuses.some((status) => status.key === input.statusKey)
+    ? input.statusKey
+    : defaultStatus
+
+  return {
+    disciplineId,
+    markerKey,
+    statusKey,
+  }
+}
+
+async function buildEbNoteContext(input: {
+  orgId: string
+  requestedByUserId?: string
+  projectId: string
+  inspectionId: string
+}) {
+  await getEbInspectionRoundBase(input)
+  const [disciplines, markers, statuses] = await Promise.all([
+    listEbDisciplines(input),
+    listEbNoteMarkers(),
+    listEbNoteStatuses(),
+  ])
+  const disciplinesById = new Map(disciplines.map((discipline) => [discipline.id, discipline]))
+  const markersByKey = new Map(markers.map((marker) => [marker.key, marker]))
+  const statusesByKey = new Map(statuses.map((status) => [status.key, status]))
+
+  return {
+    disciplines,
+    markers,
+    statuses,
+    disciplinesById,
+    markersByKey,
+    statusesByKey,
+  }
+}
+
+export async function createEbNote(input: SaveEbNoteInput): Promise<EbNote> {
+  const admin = createSupabaseAdminClient()
+  const context = await buildEbNoteContext(input)
+  const noteText = normalizeText(input.noteText)
+  if (!noteText) {
+    throw new Error('EB_NOTE_TEXT_REQUIRED')
+  }
+
+  const options = resolveEbNoteOptions({
+    disciplineId: input.disciplineId ?? null,
+    markerKey: normalizeText(input.markerKey),
+    statusKey: normalizeText(input.statusKey),
+    disciplines: context.disciplines,
+    markers: context.markers,
+    statuses: context.statuses,
+  })
+  const noteNumber = await getNextEbNoteNumber(input)
+
+  const { data, error } = await admin
+    .from('eb_notes')
+    .insert({
+      org_id: input.orgId,
+      eb_project_id: input.projectId,
+      inspection_id: input.inspectionId,
+      discipline_id: options.disciplineId,
+      note_number: noteNumber,
+      location: normalizeText(input.location),
+      room: normalizeText(input.room),
+      place_detail: normalizeText(input.placeDetail),
+      marker_key: options.markerKey,
+      status_key: options.statusKey,
+      note_text: noteText,
+      responsible_party: normalizeText(input.responsibleParty),
+      trade_group: normalizeText(input.tradeGroup),
+      sort_order: noteNumber * 100,
+      created_by: input.requestedByUserId,
+      updated_by: input.requestedByUserId,
+    })
+    .select(
+      'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,sort_order,created_at,updated_at'
+    )
+    .single()
+
+  if (error || !data) {
+    throw new Error(error?.message ?? 'Kunde inte skapa EB-notering.')
+  }
+
+  const note = mapNote(
+    data as EbNoteRow,
+    context.disciplinesById,
+    context.markersByKey,
+    context.statusesByKey
+  )
+
+  await saveEbNoteSuggestion({
+    orgId: input.orgId,
+    profileId: input.requestedByUserId,
+    sourceNoteId: note.id,
+    phrase: noteText,
+  })
+
+  return note
+}
+
+export async function updateEbNote(input: SaveEbNoteInput & { noteId: string }): Promise<EbNote> {
+  const admin = createSupabaseAdminClient()
+  const context = await buildEbNoteContext(input)
+  const noteText = normalizeText(input.noteText)
+  if (!noteText) {
+    throw new Error('EB_NOTE_TEXT_REQUIRED')
+  }
+
+  const options = resolveEbNoteOptions({
+    disciplineId: input.disciplineId ?? null,
+    markerKey: normalizeText(input.markerKey),
+    statusKey: normalizeText(input.statusKey),
+    disciplines: context.disciplines,
+    markers: context.markers,
+    statuses: context.statuses,
+  })
+
+  const { data, error } = await admin
+    .from('eb_notes')
+    .update({
+      discipline_id: options.disciplineId,
+      location: normalizeText(input.location),
+      room: normalizeText(input.room),
+      place_detail: normalizeText(input.placeDetail),
+      marker_key: options.markerKey,
+      status_key: options.statusKey,
+      note_text: noteText,
+      responsible_party: normalizeText(input.responsibleParty),
+      trade_group: normalizeText(input.tradeGroup),
+      updated_by: input.requestedByUserId,
+    })
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('id', input.noteId)
+    .select(
+      'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,sort_order,created_at,updated_at'
+    )
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte uppdatera EB-notering.')
+  }
+  if (!data) {
+    throw new Error('EB_NOTE_NOT_FOUND')
+  }
+
+  const note = mapNote(
+    data as EbNoteRow,
+    context.disciplinesById,
+    context.markersByKey,
+    context.statusesByKey
+  )
+
+  await saveEbNoteSuggestion({
+    orgId: input.orgId,
+    profileId: input.requestedByUserId,
+    sourceNoteId: note.id,
+    phrase: noteText,
+  })
+
+  return note
+}
+
+export async function deleteEbNote(input: DeleteEbNoteInput) {
+  await getEbInspectionRoundBase(input)
+  const admin = createSupabaseAdminClient()
+  const { error, count } = await admin
+    .from('eb_notes')
+    .delete({ count: 'exact' })
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('id', input.noteId)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte radera EB-notering.')
+  }
+  if (count === 0) {
+    throw new Error('EB_NOTE_NOT_FOUND')
   }
 }
 
