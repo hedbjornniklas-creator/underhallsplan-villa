@@ -56,6 +56,10 @@ type ImageResponse = {
   error?: string
 }
 
+const IMAGE_UPLOAD_MAX_EDGE = 1600
+const IMAGE_UPLOAD_JPEG_QUALITY = 0.72
+const IMAGE_UPLOAD_REENCODE_THRESHOLD_BYTES = 900 * 1024
+
 function inputClassName() {
   return 'w-full rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-950 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100'
 }
@@ -134,6 +138,81 @@ function filterSuggestions(value: string, candidates: string[]) {
       return normalizedCandidate.startsWith(normalizedValue) && normalizedCandidate !== normalizedValue
     })
     .slice(0, 5)
+}
+
+function imageFileNameAsJpeg(name: string) {
+  const baseName = name.replace(/\.[^.]+$/, '').trim()
+  return `${baseName || 'bild'}.jpg`
+}
+
+function loadImageFromFile(file: File) {
+  return new Promise<{ image: HTMLImageElement; objectUrl: string }>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file)
+    const image = new Image()
+    image.onload = () => resolve({ image, objectUrl })
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('Kunde inte läsa bilden.'))
+    }
+    image.src = objectUrl
+  })
+}
+
+function canvasToJpegBlob(canvas: HTMLCanvasElement) {
+  return new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, 'image/jpeg', IMAGE_UPLOAD_JPEG_QUALITY)
+  })
+}
+
+async function prepareImageForUpload(file: File) {
+  const contentType = file.type.toLowerCase()
+  if (
+    typeof document === 'undefined' ||
+    typeof URL === 'undefined' ||
+    !contentType.startsWith('image/') ||
+    contentType === 'image/gif' ||
+    contentType === 'image/svg+xml'
+  ) {
+    return file
+  }
+
+  let objectUrl: string | null = null
+
+  try {
+    const loaded = await loadImageFromFile(file)
+    objectUrl = loaded.objectUrl
+    const { image } = loaded
+    const sourceWidth = image.naturalWidth
+    const sourceHeight = image.naturalHeight
+    if (sourceWidth <= 0 || sourceHeight <= 0) return file
+
+    const scale = Math.min(1, IMAGE_UPLOAD_MAX_EDGE / Math.max(sourceWidth, sourceHeight))
+    const shouldResize = scale < 1
+    const shouldReencode =
+      file.size > IMAGE_UPLOAD_REENCODE_THRESHOLD_BYTES || contentType !== 'image/jpeg'
+    if (!shouldResize && !shouldReencode) return file
+
+    const targetWidth = Math.max(1, Math.round(sourceWidth * scale))
+    const targetHeight = Math.max(1, Math.round(sourceHeight * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = targetWidth
+    canvas.height = targetHeight
+    const context = canvas.getContext('2d')
+    if (!context) return file
+
+    context.drawImage(image, 0, 0, targetWidth, targetHeight)
+    const blob = await canvasToJpegBlob(canvas)
+    if (!blob || blob.size >= file.size * 0.98) return file
+
+    return new File([blob], imageFileNameAsJpeg(file.name), {
+      type: 'image/jpeg',
+      lastModified: file.lastModified,
+    })
+  } catch {
+    return file
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
+  }
 }
 
 /*
@@ -243,6 +322,7 @@ export default function EbInspectionMobileRoundClient({
   const [saving, setSaving] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [imageUploadStatus, setImageUploadStatus] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -454,10 +534,15 @@ export default function EbInspectionMobileRoundClient({
 
     try {
       setUploadingImage(true)
+      setImageUploadStatus(editingNote ? 'Optimerar bild...' : 'Sparar notering...')
       setError(null)
       const note = editingNote ?? (await saveCurrentNote())
+      setSaving(false)
+      setImageUploadStatus('Optimerar bild...')
+      const uploadFile = await prepareImageForUpload(file)
+      setImageUploadStatus('Laddar upp bild...')
       const formData = new FormData()
-      formData.append('file', file)
+      formData.append('file', uploadFile)
       const response = await fetch(`${notesBasePath}/${note.id}/images`, {
         method: 'POST',
         body: formData,
@@ -472,6 +557,7 @@ export default function EbInspectionMobileRoundClient({
     } finally {
       setSaving(false)
       setUploadingImage(false)
+      setImageUploadStatus(null)
     }
   }
 
@@ -975,6 +1061,11 @@ export default function EbInspectionMobileRoundClient({
                         onChange={(event) => void handleImageSelected(event)}
                         className="hidden"
                       />
+                      {uploadingImage ? (
+                        <p className="mt-2 text-xs font-medium text-emerald-800">
+                          {imageUploadStatus ?? 'Laddar upp bild...'}
+                        </p>
+                      ) : null}
 
                       {editingNote && (imagesByNoteId.get(editingNote.id)?.length ?? 0) > 0 ? (
                         <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
