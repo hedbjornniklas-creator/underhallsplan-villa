@@ -422,7 +422,7 @@ export default function EbInspectionMobileRoundClient({
       throw new Error('Fack saknas för rundan.')
     }
     if (!form.noteText.trim()) {
-      throw new Error('Skriv en noteringstext innan du tar bild.')
+      throw new Error('Skriv en noteringstext innan du sparar.')
     }
 
     setSaving(true)
@@ -536,6 +536,23 @@ export default function EbInspectionMobileRoundClient({
     try {
       setError(null)
       await saveCurrentNote()
+      closeNoteSheet()
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Kunde inte spara noteringen.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSaveAndNew = async () => {
+    if (saving || !activeDisciplineId) return
+
+    try {
+      setError(null)
+      await saveCurrentNote()
+      setEditingNote(null)
+      setForm(createInitialForm(round))
+      setNoteSheetOpen(true)
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Kunde inte spara noteringen.')
     } finally {
@@ -1033,18 +1050,25 @@ export default function EbInspectionMobileRoundClient({
                       </button>
                     ) : null}
                     <button
+                      type="button"
+                      onClick={() => void handleSaveAndNew()}
+                      disabled={saving || !activeDisciplineId}
+                      className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Plus size={16} />
+                      Ny notering
+                    </button>
+                    <button
                       type="submit"
                       disabled={saving || !activeDisciplineId}
                       className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                     >
                       {saving ? (
                         <Loader2 size={18} className="animate-spin" />
-                      ) : editingNote ? (
-                        <Save size={18} />
                       ) : (
-                        <Plus size={18} />
+                        <Save size={18} />
                       )}
-                      {saving ? 'Sparar...' : editingNote ? 'Spara ändring' : 'Skapa notering'}
+                      {saving ? 'Sparar...' : 'Klar'}
                     </button>
                   </div>
                 </div>
