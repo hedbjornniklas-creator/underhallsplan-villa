@@ -1,7 +1,12 @@
 import { notFound, redirect } from 'next/navigation'
 import EbProjectDetailClient from '@/components/eb/EbProjectDetailClient'
 import { requireOrgContext } from '@/lib/assignments/server'
-import { getEbProjectById, type EbProjectListItem } from '@/lib/eb/server'
+import {
+  getEbProjectById,
+  listEbProjectAttachments,
+  type EbProjectAttachment,
+  type EbProjectListItem,
+} from '@/lib/eb/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +17,7 @@ export default async function EbProjectPage({
 }) {
   const { projectId } = await params
   let project: EbProjectListItem | null = null
+  let attachments: EbProjectAttachment[] = []
 
   try {
     const context = await requireOrgContext()
@@ -19,6 +25,12 @@ export default async function EbProjectPage({
       orgId: context.orgId,
       projectId,
     })
+    if (project) {
+      attachments = await listEbProjectAttachments({
+        orgId: context.orgId,
+        projectId,
+      })
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') {
@@ -31,5 +43,5 @@ export default async function EbProjectPage({
     notFound()
   }
 
-  return <EbProjectDetailClient project={project} />
+  return <EbProjectDetailClient project={project} attachments={attachments} />
 }

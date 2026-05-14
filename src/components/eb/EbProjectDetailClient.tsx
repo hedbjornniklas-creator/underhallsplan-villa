@@ -17,7 +17,9 @@ import {
   X,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
+import EbProjectAttachmentsPanel from '@/components/eb/EbProjectAttachmentsPanel'
 import type {
+  EbProjectAttachment,
   EbInspectionSummary,
   EbInspectionVariant,
   EbInvitationContext,
@@ -27,6 +29,7 @@ import type {
 
 type EbProjectDetailClientProps = {
   project: EbProjectListItem
+  attachments: EbProjectAttachment[]
 }
 
 type InspectionFormState = {
@@ -603,7 +606,7 @@ function InvitationDialog({
   )
 }
 
-export default function EbProjectDetailClient({ project }: EbProjectDetailClientProps) {
+export default function EbProjectDetailClient({ project, attachments }: EbProjectDetailClientProps) {
   const router = useRouter()
   const [currentProject, setCurrentProject] = useState(project)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -813,6 +816,8 @@ export default function EbProjectDetailClient({ project }: EbProjectDetailClient
               </div>
             )}
           </section>
+
+          <EbProjectAttachmentsPanel projectId={currentProject.id} initialAttachments={attachments} />
         </div>
 
         <CreateInspectionDialog

@@ -396,6 +396,37 @@ before update on public.eb_participants
 for each row
 execute function public.eb_set_updated_at();
 
+create table if not exists public.eb_project_attachments (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations (id) on delete cascade,
+  eb_project_id uuid not null references public.eb_projects (id) on delete cascade,
+  attachment_type text not null default 'document',
+  title text,
+  storage_bucket text not null default 'eb-project-attachments',
+  file_path text not null,
+  file_name text,
+  content_type text,
+  file_size_bytes bigint,
+  uploaded_by uuid references public.profiles (id) on delete set null,
+  sort_order integer not null default 100,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint eb_project_attachments_type_check check (attachment_type in ('document', 'image')),
+  constraint eb_project_attachments_file_path_check check (btrim(file_path) <> '')
+);
+
+create index if not exists eb_project_attachments_project_idx
+  on public.eb_project_attachments (eb_project_id, attachment_type, created_at desc);
+create index if not exists eb_project_attachments_org_idx
+  on public.eb_project_attachments (org_id, created_at desc);
+
+drop trigger if exists trg_eb_project_attachments_set_updated_at
+  on public.eb_project_attachments;
+create trigger trg_eb_project_attachments_set_updated_at
+before update on public.eb_project_attachments
+for each row
+execute function public.eb_set_updated_at();
+
 create table if not exists public.eb_disciplines (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references public.organizations (id) on delete cascade,
@@ -535,12 +566,38 @@ create index if not exists outbound_messages_eb_project_id_idx
   on public.outbound_messages (eb_project_id)
   where eb_project_id is not null;
 
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+select
+  'eb-project-attachments',
+  'eb-project-attachments',
+  false,
+  26214400,
+  array[
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/plain',
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/heic',
+    'image/heif'
+  ]::text[]
+where not exists (
+  select 1
+  from storage.buckets
+  where id = 'eb-project-attachments'
+);
+
 -- ---------------------------------------------------------------------
 -- RLS
 -- ---------------------------------------------------------------------
 alter table public.eb_projects enable row level security;
 alter table public.eb_inspection_details enable row level security;
 alter table public.eb_participants enable row level security;
+alter table public.eb_project_attachments enable row level security;
 alter table public.eb_disciplines enable row level security;
 alter table public.eb_notes enable row level security;
 alter table public.eb_note_suggestions enable row level security;
@@ -549,6 +606,7 @@ grant select, insert, update, delete on table
   public.eb_projects,
   public.eb_inspection_details,
   public.eb_participants,
+  public.eb_project_attachments,
   public.eb_disciplines,
   public.eb_notes,
   public.eb_note_suggestions
@@ -615,6 +673,14 @@ create policy eb_inspection_details_delete_admin
 drop policy if exists eb_participants_member_all on public.eb_participants;
 create policy eb_participants_member_all
   on public.eb_participants
+  for all
+  to authenticated
+  using (public.is_org_member(org_id))
+  with check (public.is_org_member(org_id));
+
+drop policy if exists eb_project_attachments_member_all on public.eb_project_attachments;
+create policy eb_project_attachments_member_all
+  on public.eb_project_attachments
   for all
   to authenticated
   using (public.is_org_member(org_id))

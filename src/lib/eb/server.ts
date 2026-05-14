@@ -104,6 +104,23 @@ export type EbNoteSuggestion = {
   lastUsedAt: string | null
 }
 
+export type EbAttachmentType = 'document' | 'image'
+
+export type EbProjectAttachment = {
+  id: string
+  projectId: string
+  attachmentType: EbAttachmentType
+  title: string | null
+  storageBucket: string
+  filePath: string
+  fileName: string | null
+  contentType: string | null
+  fileSizeBytes: number | null
+  signedUrl: string | null
+  uploadedBy: string | null
+  createdAt: string | null
+}
+
 export type EbInspectionRound = {
   project: EbProjectListItem
   inspection: EbInspectionSummary
@@ -281,6 +298,20 @@ type EbNoteSuggestionRow = {
   last_used_at: string | null
 }
 
+type EbProjectAttachmentRow = {
+  id: string
+  eb_project_id: string
+  attachment_type: string | null
+  title: string | null
+  storage_bucket: string | null
+  file_path: string
+  file_name: string | null
+  content_type: string | null
+  file_size_bytes: number | null
+  uploaded_by: string | null
+  created_at: string | null
+}
+
 type ProfileContactRow = {
   id: string
   full_name: string | null
@@ -361,6 +392,8 @@ const VARIANT_LABELS: Record<EbInspectionVariant, string> = {
 
 const EB_VARIANTS = Object.keys(VARIANT_LABELS) as EbInspectionVariant[]
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+export const EB_PROJECT_ATTACHMENTS_BUCKET = 'eb-project-attachments'
+const EB_ATTACHMENT_SIGNED_URL_SECONDS = 60 * 60
 
 function normalizeText(value: string | null | undefined) {
   const trimmed = String(value ?? '').trim()
@@ -610,6 +643,67 @@ export async function getEbProjectById(input: {
   if (projects.length === 0) return null
   const [project] = await buildProjectItems(projects)
   return project ?? null
+}
+
+function toAttachmentType(value: string | null | undefined): EbAttachmentType {
+  return value === 'image' ? 'image' : 'document'
+}
+
+async function mapProjectAttachment(row: EbProjectAttachmentRow): Promise<EbProjectAttachment> {
+  const admin = createSupabaseAdminClient()
+  const storageBucket = row.storage_bucket ?? EB_PROJECT_ATTACHMENTS_BUCKET
+  let signedUrl: string | null = null
+
+  if (row.file_path) {
+    const { data, error } = await admin.storage
+      .from(storageBucket)
+      .createSignedUrl(row.file_path, EB_ATTACHMENT_SIGNED_URL_SECONDS)
+
+    if (!error) {
+      signedUrl = data?.signedUrl ?? null
+    }
+  }
+
+  return {
+    id: row.id,
+    projectId: row.eb_project_id,
+    attachmentType: toAttachmentType(row.attachment_type),
+    title: row.title ?? null,
+    storageBucket,
+    filePath: row.file_path,
+    fileName: row.file_name ?? null,
+    contentType: row.content_type ?? null,
+    fileSizeBytes: row.file_size_bytes ?? null,
+    signedUrl,
+    uploadedBy: row.uploaded_by ?? null,
+    createdAt: row.created_at ?? null,
+  }
+}
+
+export async function listEbProjectAttachments(input: {
+  orgId: string
+  projectId: string
+}): Promise<EbProjectAttachment[]> {
+  const project = await getEbProjectById({ orgId: input.orgId, projectId: input.projectId })
+  if (!project) {
+    throw new Error('EB_PROJECT_NOT_FOUND')
+  }
+
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('eb_project_attachments')
+    .select(
+      'id,eb_project_id,attachment_type,title,storage_bucket,file_path,file_name,content_type,file_size_bytes,uploaded_by,created_at'
+    )
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta EB-bilagor.')
+  }
+
+  return Promise.all(((data ?? []) as EbProjectAttachmentRow[]).map(mapProjectAttachment))
 }
 
 function mapDiscipline(row: EbDisciplineRow): EbDiscipline {
