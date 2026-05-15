@@ -15,7 +15,9 @@ export default function Topbar() {
   const [email, setEmail] = useState<string | null>(null)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [isMobileCompact, setIsMobileCompact] = useState(false)
+  const [moduleMenuOpen, setModuleMenuOpen] = useState(false)
   const lastScrollYRef = useRef(0)
+  const moduleMenuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -80,6 +82,27 @@ export default function Topbar() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!moduleMenuOpen) return
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (moduleMenuRef.current?.contains(event.target as Node)) return
+      setModuleMenuOpen(false)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setModuleMenuOpen(false)
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [moduleMenuOpen])
+
   const displayName = profile?.full_name?.trim() || null
   const hasUser = isLoggedIn
   const normalizedPath = (pathname || '').toLowerCase()
@@ -91,6 +114,20 @@ export default function Topbar() {
   const isEbContext = normalizedPath.includes('/eb')
   const showModuleSwitcher =
     hasUser && !isDashboardLanding && (isObContext || isEbContext || normalizedPath.startsWith('/inspections'))
+  const modules = [
+    {
+      label: 'Överlåtelsebesiktning',
+      description: 'ÖB / insida och utsida',
+      href: '/ob',
+      active: isObContext || normalizedPath.startsWith('/inspections'),
+    },
+    {
+      label: 'Entreprenadbesiktning',
+      description: 'EB / projekt och utlåtanden',
+      href: '/eb',
+      active: isEbContext,
+    },
+  ]
 
   const logoHref = isAdminContext
     ? '/admin'
@@ -178,17 +215,44 @@ export default function Topbar() {
 
         <div className="flex items-center justify-end gap-2">
           {showModuleSwitcher ? (
-            <Link
-              href="/dashboard-v1"
-              className={`inline-flex items-center justify-center gap-1.5 rounded-full border border-emerald-200 bg-white px-3 text-xs font-semibold text-emerald-800 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 md:h-10 md:px-4 md:text-sm ${
-                isMobileCompact ? 'h-8 px-2' : 'h-10'
-              }`}
-              aria-label="Byt modul"
-              title="Byt modul"
-            >
-              <LayoutGrid size={isMobileCompact ? 14 : 16} aria-hidden strokeWidth={2.25} />
-              <span className={isMobileCompact ? 'hidden sm:inline' : 'hidden sm:inline'}>Moduler</span>
-            </Link>
+            <div ref={moduleMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setModuleMenuOpen((current) => !current)}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-full border border-emerald-200 bg-white px-3 text-xs font-semibold text-emerald-800 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 md:h-10 md:px-4 md:text-sm ${
+                  isMobileCompact ? 'h-8 px-2' : 'h-10'
+                }`}
+                aria-label="Välj modul"
+                aria-expanded={moduleMenuOpen}
+                aria-haspopup="menu"
+                title="Välj modul"
+              >
+                <LayoutGrid size={isMobileCompact ? 14 : 16} aria-hidden strokeWidth={2.25} />
+                <span className={isMobileCompact ? 'hidden sm:inline' : 'hidden sm:inline'}>Moduler</span>
+              </button>
+
+              {moduleMenuOpen ? (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full mt-2 w-72 overflow-hidden rounded-lg border border-emerald-100 bg-white py-1 text-left shadow-xl ring-1 ring-black/5"
+                >
+                  {modules.map((module) => (
+                    <Link
+                      key={module.href}
+                      href={module.href}
+                      role="menuitem"
+                      onClick={() => setModuleMenuOpen(false)}
+                      className={`block px-4 py-3 transition hover:bg-emerald-50 ${
+                        module.active ? 'bg-emerald-50 text-emerald-950' : 'text-gray-900'
+                      }`}
+                    >
+                      <span className="block text-sm font-semibold">{module.label}</span>
+                      <span className="mt-0.5 block text-xs text-gray-500">{module.description}</span>
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           ) : null}
           <button
             onClick={handleLogout}

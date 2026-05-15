@@ -10,6 +10,7 @@ import {
   Camera,
   ChevronDown,
   ChevronUp,
+  FileText,
   Grid2X2,
   Grid3X3,
   Image as ImageIcon,
@@ -185,13 +186,20 @@ export default function EbInspectionRoundClient({
     () => allImages.filter((image) => showLinkedImages || !image.noteId),
     [allImages, showLinkedImages]
   )
+  const orderedNotes = useMemo(() => sortNotes(round.notes), [round.notes])
+  const editingNoteIndex = editingNote ? orderedNotes.findIndex((note) => note.id === editingNote.id) : -1
+  const previousEditingNote = editingNoteIndex > 0 ? orderedNotes[editingNoteIndex - 1] : null
+  const nextEditingNote =
+    editingNoteIndex >= 0 && editingNoteIndex < orderedNotes.length - 1
+      ? orderedNotes[editingNoteIndex + 1]
+      : null
   const displayNumberByNoteId = useMemo(() => {
     const map = new Map<string, number>()
-    sortNotes(round.notes).forEach((note, index) => {
+    orderedNotes.forEach((note, index) => {
       map.set(note.id, index + 1)
     })
     return map
-  }, [round.notes])
+  }, [orderedNotes])
   const nextNoteNumber = useMemo(
     () => round.notes.reduce((max, note) => Math.max(max, note.noteNumber ?? 0), 0) + 1,
     [round.notes]
@@ -531,15 +539,24 @@ export default function EbInspectionRoundClient({
                   </p>
                 </div>
               </div>
-              <Link
-                href={`/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/round${
-                  activeDisciplineId ? `?disciplineId=${activeDisciplineId}` : ''
-                }`}
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-              >
-                <Smartphone size={16} />
-                Mobil runda
-              </Link>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={`/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/report`}
+                  className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                >
+                  <FileText size={16} />
+                  Utlåtande
+                </Link>
+                <Link
+                  href={`/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/round${
+                    activeDisciplineId ? `?disciplineId=${activeDisciplineId}` : ''
+                  }`}
+                  className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                >
+                  <Smartphone size={16} />
+                  Mobil runda
+                </Link>
+              </div>
             </div>
           </header>
 
@@ -710,7 +727,7 @@ export default function EbInspectionRoundClient({
         {editorOpen ? (
           <div className="fixed inset-0 z-[100] flex justify-end bg-slate-950/25" onClick={closeEditor}>
             <aside
-              className="flex h-full w-full max-w-5xl flex-col bg-white shadow-2xl"
+              className="flex h-full w-full max-w-7xl flex-col bg-white shadow-2xl"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
@@ -722,6 +739,31 @@ export default function EbInspectionRoundClient({
                     {getNoteLabel(round, editingNote, nextNoteNumber)}
                   </h2>
                 </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (previousEditingNote) handleEdit(previousEditingNote)
+                    }}
+                    disabled={!previousEditingNote}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-base font-semibold text-gray-800 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
+                    aria-label="Föregående notering"
+                    title="Föregående notering"
+                  >
+                    &lt;
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (nextEditingNote) handleEdit(nextEditingNote)
+                    }}
+                    disabled={!nextEditingNote}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-base font-semibold text-gray-800 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
+                    aria-label="Nästa notering"
+                    title="Nästa notering"
+                  >
+                    &gt;
+                  </button>
                 <button
                     type="button"
                     onClick={closeEditor}
@@ -731,10 +773,14 @@ export default function EbInspectionRoundClient({
                   >
                     <X size={16} />
                   </button>
+                </div>
               </div>
 
-              <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_24rem]">
+              <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_32rem]">
               <form onSubmit={(event) => void handleSubmit(event)} className="min-h-0 space-y-3 overflow-y-auto p-4">
+                <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={(event) => void handleImageSelected(event)} className="hidden" />
+                <input ref={galleryInputRef} type="file" accept="image/*" onChange={(event) => void handleImageSelected(event)} className="hidden" />
+
                 <div className="grid grid-cols-2 gap-3">
                   <label className="block">
                     <span className="block text-xs font-semibold text-gray-700">Beteckning</span>
@@ -820,6 +866,74 @@ export default function EbInspectionRoundClient({
                   </div>
                 ) : null}
 
+                <section
+                  className="rounded-md border border-dashed border-emerald-300 bg-white p-3"
+                  onDragOver={(event) => {
+                    if (!editingNote) return
+                    event.preventDefault()
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    const imageId = event.dataTransfer.getData('application/x-eb-image-id')
+                    if (imageId) void attachImage(imageId)
+                  }}
+                >
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Noteringens bilder</p>
+                      <p className="text-sm font-semibold text-gray-950">
+                        {editingNote ? (imagesByNoteId.get(editingNote.id)?.length ?? 0) : 0} st
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => cameraInputRef.current?.click()}
+                        disabled={uploadingImage || !editingNote}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                        aria-label="Kamera"
+                        title="Kamera"
+                      >
+                        {uploadingImage ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => galleryInputRef.current?.click()}
+                        disabled={uploadingImage || !editingNote}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        aria-label="Bild"
+                        title="Bild"
+                      >
+                        <ImageIcon size={18} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {editingNote && (imagesByNoteId.get(editingNote.id)?.length ?? 0) > 0 ? (
+                    <div className={imageViewCount === 1 ? 'grid grid-cols-1 gap-2' : imageViewCount === 4 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-2'}>
+                      {(imagesByNoteId.get(editingNote.id) ?? []).slice(0, imageViewCount).map((image) => (
+                        <div key={image.id} className="relative overflow-hidden rounded-md border border-emerald-100 bg-white">
+                          <img src={image.publicUrl} alt={image.label ?? 'Bild'} className="aspect-square w-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => void detachImage(image)}
+                            disabled={deletingImageId === image.id}
+                            className="absolute right-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                            aria-label="Koppla loss bild"
+                            title="Koppla loss"
+                          >
+                            {deletingImageId === image.id ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="rounded-md bg-emerald-50 px-3 py-4 text-sm text-gray-600">
+                      Dra in bilder från bildbanken eller lägg till en ny bild.
+                    </p>
+                  )}
+                </section>
+
 
                 <div className="grid grid-cols-2 gap-3">
                   <label className="block">
@@ -868,78 +982,7 @@ export default function EbInspectionRoundClient({
                 </button>
               </form>
               <aside className="min-h-0 border-l border-emerald-100 bg-emerald-50/20 p-4">
-                <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={(event) => void handleImageSelected(event)} className="hidden" />
-                <input ref={galleryInputRef} type="file" accept="image/*" onChange={(event) => void handleImageSelected(event)} className="hidden" />
-
                 <div className="flex h-full min-h-0 flex-col gap-4">
-                  <section
-                    className="rounded-md border border-dashed border-emerald-300 bg-white p-3"
-                    onDragOver={(event) => {
-                      if (!editingNote) return
-                      event.preventDefault()
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault()
-                      const imageId = event.dataTransfer.getData('application/x-eb-image-id')
-                      if (imageId) void attachImage(imageId)
-                    }}
-                  >
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Noteringens bilder</p>
-                        <p className="text-sm font-semibold text-gray-950">
-                          {editingNote ? (imagesByNoteId.get(editingNote.id)?.length ?? 0) : 0} st
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => cameraInputRef.current?.click()}
-                          disabled={uploadingImage || !editingNote}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                          aria-label="Kamera"
-                          title="Kamera"
-                        >
-                          {uploadingImage ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => galleryInputRef.current?.click()}
-                          disabled={uploadingImage || !editingNote}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                          aria-label="Bild"
-                          title="Bild"
-                        >
-                          <ImageIcon size={18} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {editingNote && (imagesByNoteId.get(editingNote.id)?.length ?? 0) > 0 ? (
-                      <div className={imageViewCount === 1 ? 'grid grid-cols-1 gap-2' : imageViewCount === 4 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-2'}>
-                        {(imagesByNoteId.get(editingNote.id) ?? []).slice(0, imageViewCount).map((image) => (
-                          <div key={image.id} className="relative overflow-hidden rounded-md border border-emerald-100 bg-white">
-                            <img src={image.publicUrl} alt={image.label ?? 'Bild'} className="aspect-square w-full object-cover" />
-                            <button
-                              type="button"
-                              onClick={() => void detachImage(image)}
-                              disabled={deletingImageId === image.id}
-                              className="absolute right-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-                              aria-label="Koppla loss bild"
-                              title="Koppla loss"
-                            >
-                              {deletingImageId === image.id ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="rounded-md bg-emerald-50 px-3 py-4 text-sm text-gray-600">
-                        Dra in bilder från bildbanken eller lägg till en ny bild.
-                      </p>
-                    )}
-                  </section>
-
                   <section className="flex min-h-0 flex-1 flex-col rounded-md border border-emerald-100 bg-white">
                     <div className="border-b border-emerald-100 p-3">
                       <div className="flex items-start justify-between gap-3">

@@ -639,8 +639,8 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
         />
         <div className="pointer-events-none absolute inset-0 bg-white/62 backdrop-blur-[1px]" />
 
-        <div className="relative mx-auto w-full max-w-[88rem] px-4 py-5 md:px-6">
-          <header className="border-b border-emerald-100 pb-5">
+        <div className="relative mx-auto w-full max-w-6xl px-4 py-5 md:px-6">
+          <header className="rounded-lg border border-emerald-100 bg-white/90 p-4 shadow-sm md:p-5">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div className="flex min-w-0 items-start gap-3">
                 <Link
@@ -652,7 +652,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                   <ArrowLeft size={17} strokeWidth={2} />
                 </Link>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">EB</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">EB-projekt</p>
                   <h1 className="truncate text-2xl font-semibold text-gray-950">{currentProject.title}</h1>
                   <p className="mt-1 truncate text-sm text-gray-600">
                     {addressLine || currentProject.propertyDesignation || 'Adress ej satt'}
@@ -668,171 +668,157 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                 Ny besiktning
               </button>
             </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-md border border-emerald-100 bg-emerald-50/45 px-3 py-2">
+                <p className="text-xs font-medium text-gray-500">Besiktningar</p>
+                <p className="mt-1 text-lg font-semibold text-gray-950">{currentProject.inspections.length} st</p>
+              </div>
+              <div className="rounded-md border border-emerald-100 bg-white px-3 py-2">
+                <p className="text-xs font-medium text-gray-500">Noteringsserie</p>
+                <p className="mt-1 text-lg font-semibold text-gray-950">{currentProject.notePrefix}</p>
+              </div>
+              <div className="rounded-md border border-emerald-100 bg-white px-3 py-2">
+                <p className="text-xs font-medium text-gray-500">Avtal</p>
+                <p className="mt-1 truncate text-sm font-semibold text-gray-950">{agreementLine || 'Ej satt'}</p>
+              </div>
+            </div>
           </header>
 
-          <section className="grid gap-x-8 gap-y-5 border-b border-emerald-100 py-5 md:grid-cols-4">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">BestÃ¤llare</p>
-              <p className="mt-2 truncate text-sm font-semibold text-gray-950">
-                {currentProject.clientName ?? 'Ej satt'}
-              </p>
-              {currentProject.clientOrgNo ? (
-                <p className="mt-1 truncate text-xs text-gray-600">{currentProject.clientOrgNo}</p>
-              ) : null}
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">EntreprenÃ¶r</p>
-              <p className="mt-2 truncate text-sm font-semibold text-gray-950">
-                {currentProject.contractorName ?? 'Ej satt'}
-              </p>
-              {currentProject.contractorOrgNo ? (
-                <p className="mt-1 truncate text-xs text-gray-600">{currentProject.contractorOrgNo}</p>
-              ) : null}
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Avtal</p>
-              <p className="mt-2 truncate text-sm font-semibold text-gray-950">{agreementLine || 'Ej satt'}</p>
-              <p className="mt-1 truncate text-xs text-gray-600">
-                {currentProject.contractDate ? `Kontrakt ${formatDate(currentProject.contractDate)}` : 'Datum ej satt'}
-              </p>
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Besiktningar</p>
-              <p className="mt-2 text-sm font-semibold text-gray-950">{currentProject.inspections.length} st</p>
-              <p className="mt-1 truncate text-xs text-gray-600">Noteringar: {currentProject.notePrefix}</p>
-            </div>
-          </section>
+          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+            <section className="min-w-0 rounded-lg border border-emerald-100 bg-white/90 shadow-sm">
+              <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
+                <div>
+                  <h2 className="text-base font-semibold text-gray-950">Besiktningar</h2>
+                  <p className="text-xs text-gray-500">Välj arbetsläge för respektive besiktning.</p>
+                </div>
+                <span className="text-xs font-medium text-gray-500">{currentProject.inspections.length} st</span>
+              </div>
 
-          <section className="border-b border-emerald-100 py-5">
-            <div className="mb-4">
-              <h2 className="text-sm font-semibold text-gray-950">Grunduppgifter</h2>
-            </div>
-            <div className="grid gap-x-8 gap-y-5 md:grid-cols-[1.1fr_1fr_1fr]">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Kontrakt</p>
-                <p className="mt-2 truncate text-sm font-semibold text-gray-950">
-                  {currentProject.contractName ?? currentProject.title}
-                </p>
-                <p className="mt-1 truncate text-xs text-gray-600">
-                  {currentProject.procurementForm ? `Upphandling: ${currentProject.procurementForm}` : 'Upphandling ej satt'}
-                </p>
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Objekt</p>
-                <p className="mt-2 truncate text-sm font-semibold text-gray-950">
-                  {propertyLine || addressLine || 'Ej satt'}
-                </p>
-                <p className="mt-1 truncate text-xs text-gray-600">{addressLine || 'Adress ej satt'}</p>
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-                  Noteringsserie
-                </p>
-                <p className="mt-2 truncate text-sm font-semibold text-gray-950">{currentProject.notePrefix}</p>
-                <p className="mt-1 truncate text-xs text-gray-600">SLB1</p>
-              </div>
+              {currentProject.inspections.length === 0 ? (
+                <div className="px-4 py-10 text-center text-sm text-gray-600">Ingen besiktning skapad.</div>
+              ) : (
+                <div className="divide-y divide-emerald-100">
+                  {currentProject.inspections.map((inspection) => {
+                    const parentInspection = inspection.parentInspectionId
+                      ? currentProject.inspections.find((item) => item.inspectionId === inspection.parentInspectionId)
+                      : null
+
+                    return (
+                      <article key={inspection.inspectionId} className="p-4">
+                        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                          <div className="flex min-w-0 items-start gap-3">
+                            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-emerald-700">
+                              <ClipboardCheck size={18} />
+                            </span>
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="truncate text-base font-semibold text-gray-950">
+                                  {inspectionTitle(inspection)}
+                                </h3>
+                                <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                                  {inspection.variant}
+                                </span>
+                                <span className="inline-flex rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
+                                  {getStatusLabel(inspection.status)}
+                                </span>
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+                                <span className="inline-flex items-center gap-1.5">
+                                  <CalendarDays size={14} className="text-emerald-700" />
+                                  {formatDate(inspection.date)}
+                                  {inspection.inspectionTime ? ` ${formatTime(inspection.inspectionTime)}` : ''}
+                                </span>
+                                <span>Koppling: {parentInspection?.variantLabel ?? 'Grundbesiktning'}</span>
+                                <span>
+                                  Kallelse: {inspection.invitationSentAt ? formatDate(inspection.invitationSentAt) : 'Ej skickad'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+                            <Link
+                              href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/round`}
+                              className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                            >
+                              <Smartphone size={16} />
+                              Runda
+                            </Link>
+                            <Link
+                              href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/perform`}
+                              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                            >
+                              <ClipboardCheck size={16} />
+                              Granska
+                            </Link>
+                            <Link
+                              href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/report`}
+                              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                            >
+                              <FileText size={16} />
+                              Utlåtande
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => setInvitationInspection(inspection)}
+                              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                            >
+                              <Mail size={16} />
+                              Kallelse
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+
+            <aside className="space-y-4">
+              <section className="rounded-lg border border-emerald-100 bg-white/90 p-4 shadow-sm">
+                <h2 className="text-base font-semibold text-gray-950">Projektfakta</h2>
+                <dl className="mt-4 space-y-4">
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Beställare</dt>
+                    <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.clientName ?? 'Ej satt'}</dd>
+                    {currentProject.clientOrgNo ? <dd className="text-xs text-gray-600">{currentProject.clientOrgNo}</dd> : null}
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Entreprenör</dt>
+                    <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.contractorName ?? 'Ej satt'}</dd>
+                    {currentProject.contractorOrgNo ? <dd className="text-xs text-gray-600">{currentProject.contractorOrgNo}</dd> : null}
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Kontrakt</dt>
+                    <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.contractName ?? currentProject.title}</dd>
+                    <dd className="text-xs text-gray-600">
+                      {currentProject.procurementForm ? `Upphandling: ${currentProject.procurementForm}` : 'Upphandling ej satt'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Objekt</dt>
+                    <dd className="mt-1 text-sm font-semibold text-gray-950">{propertyLine || addressLine || 'Ej satt'}</dd>
+                    <dd className="text-xs text-gray-600">{addressLine || 'Adress ej satt'}</dd>
+                  </div>
+                </dl>
+              </section>
+
               {currentProject.objectDescription ? (
-                <div className="md:col-span-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-                    Objektbeskrivning
-                  </p>
+                <section className="rounded-lg border border-emerald-100 bg-white/90 p-4 shadow-sm">
+                  <h2 className="text-base font-semibold text-gray-950">Objektbeskrivning</h2>
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-700">
                     {currentProject.objectDescription}
                   </p>
-                </div>
+                </section>
               ) : null}
-            </div>
+            </aside>
+          </div>
+
+          <section className="mt-4 rounded-lg border border-emerald-100 bg-white/90 p-4 shadow-sm">
+            <EbProjectAttachmentsPanel projectId={currentProject.id} initialAttachments={attachments} />
           </section>
-
-          <section className="border-b border-emerald-100 py-5">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-950">Besiktningar</h2>
-              <span className="text-xs font-medium text-gray-500">{currentProject.inspections.length} st</span>
-            </div>
-
-            {currentProject.inspections.length === 0 ? (
-              <div className="py-10 text-center text-sm text-gray-600">Ingen besiktning skapad.</div>
-            ) : (
-              <div className="divide-y divide-emerald-100">
-                {currentProject.inspections.map((inspection) => (
-                  <div
-                    key={inspection.inspectionId}
-                    className="grid gap-3 py-3 md:grid-cols-[0.75fr_1.05fr_0.75fr_0.55fr_0.7fr]"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
-                        <ClipboardCheck size={17} />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-gray-950">
-                          {inspectionTitle(inspection)}
-                        </p>
-                        <p className="text-xs text-gray-600">{getStatusLabel(inspection.status)}</p>
-                      </div>
-                    </div>
-                    <div className="min-w-0 text-xs text-gray-600">
-                      <p className="truncate">
-                        Koppling:{' '}
-                        {inspection.parentInspectionId
-                          ? currentProject.inspections.find(
-                              (item) => item.inspectionId === inspection.parentInspectionId
-                            )?.variantLabel ?? 'Tidigare besiktning'
-                          : 'Grundbesiktning'}
-                      </p>
-                      <p className="truncate">
-                        Kallelse: {inspection.invitationSentAt ? formatDate(inspection.invitationSentAt) : 'Ej skickad'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-gray-700">
-                      <CalendarDays size={15} className="text-emerald-700" />
-                      <span>
-                        {formatDate(inspection.date)}
-                        {inspection.inspectionTime ? ` ${formatTime(inspection.inspectionTime)}` : ''}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-start md:justify-end">
-                      <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-                        {inspection.variant}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
-                      <Link
-                        href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/round`}
-                        className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-                      >
-                        <Smartphone size={16} />
-                        Runda
-                      </Link>
-                      <Link
-                        href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/perform`}
-                        className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-                      >
-                        <ClipboardCheck size={16} />
-                        Granska
-                      </Link>
-                      <Link
-                        href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/report`}
-                        className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-                      >
-                        <FileText size={16} />
-                        UtlÃ¥tande
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => setInvitationInspection(inspection)}
-                        className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-                      >
-                        <Mail size={16} />
-                        Kallelse
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <EbProjectAttachmentsPanel projectId={currentProject.id} initialAttachments={attachments} />
         </div>
 
         <CreateInspectionDialog
