@@ -143,6 +143,10 @@ export type EbInspectionRound = {
   suggestions: EbNoteSuggestion[]
 }
 
+export type EbInspectionReport = EbInspectionRound & {
+  participants: EbInvitationParticipant[]
+}
+
 export type EbInvitationParticipant = {
   id: string | null
   roleLabel: string | null
@@ -992,6 +996,21 @@ export async function getEbInspectionRound(input: {
     notes,
     images,
     suggestions,
+  }
+}
+
+export async function getEbInspectionReport(input: {
+  orgId: string
+  requestedByUserId: string
+  projectId: string
+  inspectionId: string
+}): Promise<EbInspectionReport> {
+  const round = await getEbInspectionRound(input)
+  const participants = await listParticipantsForInspection(input)
+
+  return {
+    ...round,
+    participants: participants.length > 0 ? participants : buildDefaultParticipants(round.project),
   }
 }
 

@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   CalendarDays,
   ClipboardCheck,
+  FileText,
   Loader2,
   Mail,
   Plus,
@@ -808,6 +809,13 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                       >
                         <ClipboardCheck size={16} />
                         Granska
+                      </Link>
+                      <Link
+                        href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/report`}
+                        className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                      >
+                        <FileText size={16} />
+                        Utlåtande
                       </Link>
                       <button
                         type="button"
