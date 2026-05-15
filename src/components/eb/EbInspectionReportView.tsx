@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from 'next/link'
-import { ArrowLeft, ClipboardCheck, Printer } from 'lucide-react'
+import { ArrowLeft, ClipboardCheck, FileText, Printer } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { EbInspectionReport, EbNote, EbNoteImage } from '@/lib/eb/server'
 
@@ -82,6 +82,9 @@ function InfoGrid({
 
 export default function EbInspectionReportView({ report }: EbInspectionReportViewProps) {
   const notes = sortNotes(report.notes)
+  const reportSections = report.reportDraft.sections.filter(
+    (section) => section.isRelevant && section.key !== 'notes' && section.text.trim()
+  )
   const imagesByNoteId = new Map<string, EbNoteImage[]>()
   for (const image of report.images) {
     if (!image.noteId) continue
@@ -103,6 +106,13 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
             Till entreprenaden
           </Link>
           <div className="flex items-center gap-2">
+            <Link
+              href={`/eb/projects/${report.project.id}/inspections/${report.inspection.inspectionId}/report/draft`}
+              className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
+            >
+              <FileText size={16} />
+              Redigera utkast
+            </Link>
             <Link
               href={`/eb/projects/${report.project.id}/inspections/${report.inspection.inspectionId}/perform`}
               className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
@@ -200,6 +210,26 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
               ))}
             </div>
           )}
+        </Section>
+
+        <Section title="Utlåtandesektioner">
+          <div className="space-y-5">
+            {reportSections.map((section) => (
+              <article key={section.key} className="break-inside-avoid">
+                <div className="flex items-baseline gap-3">
+                  {section.sbrPoint ? (
+                    <span className="text-xs font-bold uppercase tracking-[0.14em] text-gray-500">
+                      {section.sbrPoint}
+                    </span>
+                  ) : null}
+                  <h3 className="text-sm font-bold uppercase tracking-[0.12em] text-gray-950">
+                    {section.title}
+                  </h3>
+                </div>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-800">{section.text}</p>
+              </article>
+            ))}
+          </div>
         </Section>
 
         <Section title="Noteringar">

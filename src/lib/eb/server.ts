@@ -143,8 +143,35 @@ export type EbInspectionRound = {
   suggestions: EbNoteSuggestion[]
 }
 
+export type EbReportSectionStatus = 'draft' | 'complete' | 'missing' | 'not_applicable'
+
+export type EbReportSectionSource =
+  | 'project'
+  | 'inspection'
+  | 'participants'
+  | 'notes'
+  | 'standard_text'
+  | 'manual'
+
+export type EbReportDraftSection = {
+  key: string
+  title: string
+  sbrPoint: string | null
+  source: EbReportSectionSource
+  status: EbReportSectionStatus
+  isRelevant: boolean
+  text: string
+  updatedAt: string | null
+}
+
+export type EbReportDraft = {
+  sections: EbReportDraftSection[]
+  updatedAt: string | null
+}
+
 export type EbInspectionReport = EbInspectionRound & {
   participants: EbInvitationParticipant[]
+  reportDraft: EbReportDraft
 }
 
 export type EbInvitationParticipant = {
@@ -186,6 +213,14 @@ export type SendEbInvitationResult = {
   project: EbProjectListItem
 }
 
+export type SaveEbReportDraftInput = {
+  orgId: string
+  requestedByUserId: string
+  projectId: string
+  inspectionId: string
+  sections: EbReportDraftSection[]
+}
+
 type EbProjectRow = {
   id: string
   org_id: string
@@ -223,6 +258,8 @@ type EbInspectionDetailRow = {
   invitation_subject?: string | null
   invitation_body?: string | null
   report_locked_at: string | null
+  report_draft?: unknown
+  report_draft_updated_at?: string | null
   created_at: string | null
 }
 
@@ -1007,11 +1044,92 @@ export async function getEbInspectionReport(input: {
 }): Promise<EbInspectionReport> {
   const round = await getEbInspectionRound(input)
   const participants = await listParticipantsForInspection(input)
+  const resolvedParticipants = participants.length > 0 ? participants : buildDefaultParticipants(round.project)
+  const storedDraft = await fetchEbReportDraft(input)
 
   return {
     ...round,
-    participants: participants.length > 0 ? participants : buildDefaultParticipants(round.project),
+    participants: resolvedParticipants,
+    reportDraft: buildEbReportDraft({
+      round,
+      participants: resolvedParticipants,
+      storedDraft,
+    }),
   }
+}
+
+async function fetchEbReportDraft(input: {
+  orgId: string
+  projectId: string
+  inspectionId: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('eb_inspection_details')
+    .select('report_draft,report_draft_updated_at')
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta utlåtandeutkast.')
+  }
+
+  const row = (data ?? null) as Pick<EbInspectionDetailRow, 'report_draft' | 'report_draft_updated_at'> | null
+  return normalizeEbReportDraft(row?.report_draft, row?.report_draft_updated_at ?? null)
+}
+
+function normalizeEbReportDraft(value: unknown, updatedAt: string | null): EbReportDraft {
+  if (!value || typeof value !== 'object') {
+    return { sections: [], updatedAt }
+  }
+
+  const rawSections = Array.isArray((value as { sections?: unknown }).sections)
+    ? (value as { sections: unknown[] }).sections
+    : []
+
+  return {
+    updatedAt: typeof (value as { updatedAt?: unknown }).updatedAt === 'string'
+      ? (value as { updatedAt: string }).updatedAt
+      : updatedAt,
+    sections: rawSections.map(normalizeEbReportDraftSection).filter(Boolean) as EbReportDraftSection[],
+  }
+}
+
+function normalizeEbReportDraftSection(value: unknown): EbReportDraftSection | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Partial<EbReportDraftSection>
+  const key = normalizeText(raw.key)
+  const title = normalizeText(raw.title)
+  const text = typeof raw.text === 'string' ? raw.text : ''
+  if (!key || !title) return null
+
+  return {
+    key,
+    title,
+    sbrPoint: normalizeText(raw.sbrPoint),
+    source: isEbReportSource(raw.source) ? raw.source : 'manual',
+    status: isEbReportStatus(raw.status) ? raw.status : 'draft',
+    isRelevant: raw.isRelevant !== false,
+    text,
+    updatedAt: normalizeText(raw.updatedAt),
+  }
+}
+
+function isEbReportStatus(value: unknown): value is EbReportSectionStatus {
+  return value === 'draft' || value === 'complete' || value === 'missing' || value === 'not_applicable'
+}
+
+function isEbReportSource(value: unknown): value is EbReportSectionSource {
+  return (
+    value === 'project' ||
+    value === 'inspection' ||
+    value === 'participants' ||
+    value === 'notes' ||
+    value === 'standard_text' ||
+    value === 'manual'
+  )
 }
 
 async function seedDisciplinesForInspection(input: {
@@ -1792,6 +1910,331 @@ function buildDefaultParticipants(project: EbProjectListItem): EbInvitationParti
       sortOrder: 100,
     },
   ]
+}
+
+function reportLine(label: string, value: string | null | undefined) {
+  return `${label}: ${normalizeText(value) ?? 'Ej angivet'}`
+}
+
+function reportList(values: Array<string | null | undefined>) {
+  const lines = values.map(normalizeText).filter(Boolean)
+  return lines.length > 0 ? lines.join('\n') : 'Ej angivet'
+}
+
+function hasText(value: string | null | undefined) {
+  return Boolean(normalizeText(value))
+}
+
+function buildEbReportDraft(input: {
+  round: EbInspectionRound
+  participants: EbInvitationParticipant[]
+  storedDraft: EbReportDraft
+}): EbReportDraft {
+  const { round, participants, storedDraft } = input
+  const now = new Date().toISOString()
+  const existingByKey = new Map(storedDraft.sections.map((section) => [section.key, section]))
+  const noteCount = round.notes.length
+  const notAccessibleNotes = round.notes.filter((note) => note.statusKey === 'not_accessible')
+  const participantRows = participants.map((participant) =>
+    reportList([
+      participant.roleLabel,
+      participant.companyName,
+      participant.personName,
+      participant.email,
+      participant.phone,
+    ])
+  )
+  const attachments = round.project.objectDescription
+    ? `Objektbeskrivning: ${round.project.objectDescription}`
+    : 'Handlingar anges eller kompletteras i utlåtandeutkastet.'
+
+  const defaults: EbReportDraftSection[] = [
+    {
+      key: 'inspection_type',
+      title: 'Typ av besiktning',
+      sbrPoint: '1',
+      source: 'inspection',
+      status: 'complete',
+      isRelevant: true,
+      text: `${round.inspection.variantLabel} ${round.inspection.sequenceNo}.`,
+      updatedAt: null,
+    },
+    {
+      key: 'scope',
+      title: 'Besiktningens omfattning',
+      sbrPoint: '2',
+      source: 'standard_text',
+      status: hasText(round.project.objectDescription) ? 'complete' : 'missing',
+      isRelevant: true,
+      text: reportList([
+        round.project.objectDescription,
+        'Besiktningen omfattar de delar av entreprenaden som omfattas av uppdraget och som varit åtkomliga vid besiktningstillfället.',
+      ]),
+      updatedAt: null,
+    },
+    {
+      key: 'inspection_time',
+      title: 'Tid för besiktningen',
+      sbrPoint: '3',
+      source: 'inspection',
+      status: round.inspection.date ? 'complete' : 'missing',
+      isRelevant: true,
+      text: reportList([
+        reportLine('Datum', round.inspection.date),
+        reportLine('Tid', round.inspection.inspectionTime),
+      ]),
+      updatedAt: null,
+    },
+    {
+      key: 'contract_parties',
+      title: 'Entreprenaden samt parterna',
+      sbrPoint: '4',
+      source: 'project',
+      status: round.project.clientName && round.project.contractorName ? 'complete' : 'missing',
+      isRelevant: true,
+      text: reportList([
+        reportLine('Entreprenad', round.project.contractName),
+        reportLine('Beställare', round.project.clientName),
+        reportLine('Beställare org.nr', round.project.clientOrgNo),
+        reportLine('Entreprenör', round.project.contractorName),
+        reportLine('Entreprenör org.nr', round.project.contractorOrgNo),
+        reportLine('Standardavtal', round.project.standardAgreement),
+        reportLine('Entreprenadform', round.project.contractForm),
+        reportLine('Upphandlingsform', round.project.procurementForm),
+        reportLine('Kontraktsdatum', round.project.contractDate),
+      ]),
+      updatedAt: null,
+    },
+    {
+      key: 'inspectors',
+      title: 'Besiktningsman och biträdande besiktningsmän',
+      sbrPoint: '5',
+      source: 'manual',
+      status: 'missing',
+      isRelevant: true,
+      text: 'Besiktningsman, vem som utsett besiktningsmannen samt eventuella biträdande besiktningsmän anges här.',
+      updatedAt: null,
+    },
+    {
+      key: 'participants',
+      title: 'Närvarande',
+      sbrPoint: '6',
+      source: 'participants',
+      status: participants.length > 0 ? 'complete' : 'missing',
+      isRelevant: true,
+      text: participantRows.length > 0 ? participantRows.join('\n') : 'Inga närvarande är registrerade.',
+      updatedAt: null,
+    },
+    {
+      key: 'summons',
+      title: 'Sättet för kallelse',
+      sbrPoint: '7',
+      source: 'inspection',
+      status: round.inspection.invitationSentAt ? 'complete' : 'missing',
+      isRelevant: true,
+      text: round.inspection.invitationSentAt
+        ? `Kallelse skickades ${round.inspection.invitationSentAt}.`
+        : 'Ange hur kallelse har skett och när den skickades.',
+      updatedAt: null,
+    },
+    {
+      key: 'conflict_of_interest',
+      title: 'Fråga om jäv',
+      sbrPoint: '8',
+      source: 'standard_text',
+      status: 'draft',
+      isRelevant: true,
+      text: 'Fråga om jäv behandlades vid besiktningen. Eventuella invändningar eller anmärkningar anges här.',
+      updatedAt: null,
+    },
+    {
+      key: 'previous_inspections_tests',
+      title: 'Tidigare besiktningar och provningar',
+      sbrPoint: '9',
+      source: 'manual',
+      status: 'missing',
+      isRelevant: true,
+      text: 'Ange tidigare besiktningar, provningar och relevanta resultat som ska beaktas i utlåtandet.',
+      updatedAt: null,
+    },
+    {
+      key: 'contract_documents',
+      title: 'Entreprenadhandlingar och andra överenskommelser',
+      sbrPoint: '10',
+      source: 'project',
+      status: 'missing',
+      isRelevant: true,
+      text: attachments,
+      updatedAt: null,
+    },
+    {
+      key: 'not_accessible',
+      title: 'Delar som inte varit åtkomliga',
+      sbrPoint: '11',
+      source: 'notes',
+      status: notAccessibleNotes.length > 0 ? 'complete' : 'draft',
+      isRelevant: true,
+      text:
+        notAccessibleNotes.length > 0
+          ? notAccessibleNotes.map((note) => `${note.disciplineLabel ?? 'Fack'}: ${note.noteText}`).join('\n')
+          : 'Inga ej åtkomliga delar är registrerade. Komplettera om något inte kunde besiktigas.',
+      updatedAt: null,
+    },
+    {
+      key: 'documentation_only',
+      title: 'Delar besiktigade endast genom handling',
+      sbrPoint: '12',
+      source: 'manual',
+      status: 'draft',
+      isRelevant: true,
+      text: 'Ange delar som endast bedömts utifrån handlingar, foton eller annan dokumentation.',
+      updatedAt: null,
+    },
+    {
+      key: 'appendices',
+      title: 'Bilagor och littera',
+      sbrPoint: null,
+      source: 'manual',
+      status: 'missing',
+      isRelevant: true,
+      text: 'Ange bilagor, fotobilagor, ritningar, kontrollintyg och annan dokumentation som bifogas utlåtandet.',
+      updatedAt: null,
+    },
+    {
+      key: 'notes',
+      title: 'Noteringar',
+      sbrPoint: null,
+      source: 'notes',
+      status: noteCount > 0 ? 'complete' : 'missing',
+      isRelevant: true,
+      text: noteCount > 0 ? `${noteCount} noteringar finns registrerade i besiktningen.` : 'Inga noteringar är registrerade.',
+      updatedAt: null,
+    },
+    {
+      key: 'approval_decision',
+      title: 'Besked om godkännande',
+      sbrPoint: '18',
+      source: 'manual',
+      status: 'missing',
+      isRelevant: true,
+      text: 'Ange om entreprenaden godkänns, inte godkänns eller om beslut lämnas för viss del.',
+      updatedAt: null,
+    },
+    {
+      key: 'continued_final_inspection',
+      title: 'Fortsatt eller ny slutbesiktning',
+      sbrPoint: '19',
+      source: 'standard_text',
+      status: 'draft',
+      isRelevant: true,
+      text: 'Ange om fortsatt eller ny slutbesiktning krävs och i så fall för vilka delar.',
+      updatedAt: null,
+    },
+    {
+      key: 'warranty_end',
+      title: 'Garantitidens slut',
+      sbrPoint: '20',
+      source: 'manual',
+      status: 'missing',
+      isRelevant: true,
+      text: 'Ange garantitid och slutdatum för garantitiden enligt avtal.',
+      updatedAt: null,
+    },
+    {
+      key: 'remedy_deadline',
+      title: 'När fel ska vara avhjälpta',
+      sbrPoint: '24',
+      source: 'manual',
+      status: 'missing',
+      isRelevant: true,
+      text: 'Ange när noterade fel ska vara avhjälpta och om särskilda tider gäller för vissa fel.',
+      updatedAt: null,
+    },
+    {
+      key: 'distribution_list',
+      title: 'Sändlista',
+      sbrPoint: '25',
+      source: 'participants',
+      status: participants.some((participant) => participant.email) ? 'complete' : 'missing',
+      isRelevant: true,
+      text: participantRows.length > 0 ? participantRows.join('\n') : 'Ange mottagare av utlåtandet.',
+      updatedAt: null,
+    },
+    {
+      key: 'signature_certificate',
+      title: 'Underskrift och certifiering',
+      sbrPoint: null,
+      source: 'manual',
+      status: 'missing',
+      isRelevant: true,
+      text: 'Ange besiktningsman, ort, datum, certifiering och eventuell SBR-anslutning.',
+      updatedAt: null,
+    },
+  ]
+
+  return {
+    updatedAt: storedDraft.updatedAt,
+    sections: defaults.map((section) => {
+      const existing = existingByKey.get(section.key)
+      return existing
+        ? {
+            ...section,
+            status: existing.status,
+            isRelevant: existing.isRelevant,
+            text: existing.text,
+            updatedAt: existing.updatedAt ?? storedDraft.updatedAt ?? now,
+          }
+        : section
+    }),
+  }
+}
+
+export async function saveEbReportDraft(input: SaveEbReportDraftInput): Promise<EbReportDraft> {
+  const round = await getEbInspectionRound(input)
+  const participants = await listParticipantsForInspection(input)
+  const resolvedParticipants = participants.length > 0 ? participants : buildDefaultParticipants(round.project)
+  const baseDraft = buildEbReportDraft({
+    round,
+    participants: resolvedParticipants,
+    storedDraft: await fetchEbReportDraft(input),
+  })
+  const now = new Date().toISOString()
+  const allowedKeys = new Set(baseDraft.sections.map((section) => section.key))
+  const sanitizedSections = input.sections
+    .map(normalizeEbReportDraftSection)
+    .filter((section): section is EbReportDraftSection => Boolean(section && allowedKeys.has(section.key)))
+    .map((section) => ({ ...section, updatedAt: now }))
+
+  if (sanitizedSections.length === 0) {
+    throw new Error('EB_REPORT_DRAFT_EMPTY')
+  }
+
+  const byKey = new Map(baseDraft.sections.map((section) => [section.key, section]))
+  for (const section of sanitizedSections) {
+    byKey.set(section.key, section)
+  }
+
+  const savedDraft: EbReportDraft = {
+    updatedAt: now,
+    sections: baseDraft.sections.map((section) => byKey.get(section.key) ?? section),
+  }
+
+  const admin = createSupabaseAdminClient()
+  const { error } = await admin
+    .from('eb_inspection_details')
+    .update({
+      report_draft: savedDraft,
+      report_draft_updated_at: now,
+    })
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte spara utlåtandeutkast.')
+  }
+
+  return savedDraft
 }
 
 async function listParticipantsForInspection(input: {
