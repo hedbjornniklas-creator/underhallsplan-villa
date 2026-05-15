@@ -1,0 +1,579 @@
+﻿SBR EB-gruppens dokumentmall för entreprenadbesiktning
+2-3-1 Utlåtande SB AB 04, ABT 06
+-SBR
+-
+202
+4
+Denna mall är avsett att användas som utlåtande över slutbesiktning av entreprenader upphandlade med AB 04 eller ABT 06. 
+Notera att denna mall har hjälpmedel till författaren av dokumentet.
+Anvisningar
+
+för tillämpning av mallarna 
+finns i dokumentet ”Anvisningar för SBR-dokumentmallar”.
+Blå markerad text
+ är inskriftsfält – klicka på markerad text – skriv in önskad text.
+Gul markerad text
+ är information som ska raderas när du har tagit del av det.
+OBSERVERA att denna mall är copyright-skyddad för medlemmar inom 
+SBRs
+ Entreprenad-besiktningsgrupp.
+Denna ruta med text skall naturligtvis raderas i ditt dokument!! 
+SBR EB-gruppens dokumentmall för entreprenadbesiktning
+2-3-1 Utlåtande SB AB 04, ABT 06
+-SBR
+-
+202
+4
+Denna mall är avsett att användas som utlåtande över slutbesiktning av entreprenader upphandlade med AB 04 eller ABT 06. 
+Notera att denna mall har hjälpmedel till författaren av dokumentet.
+Anvisningar
+
+för tillämpning av mallarna 
+finns i dokumentet ”Anvisningar för SBR-dokumentmallar”.
+Blå markerad text
+ är inskriftsfält – klicka på markerad text – skriv in önskad text.
+Gul markerad text
+ är information som ska raderas när du har tagit del av det.
+OBSERVERA att denna mall är copyright-skyddad för medlemmar inom 
+SBRs
+ Entreprenad-besiktningsgrupp.
+Denna ruta med text skall naturligtvis raderas i ditt dokument!! 
+[Ange
+:
+
+F
+astighetsbeteckning inkl kommun
+K
+ontraktsnamn
+Vid upphandling 
+i
+ huvuddelar – ange vilken huvuddel som avses
+Vid delad entreprenad - ange också vilken delentreprenad som avses]
+UTLÅTANDE ÖVER SLUTBESIKTNING
+Rubriker med 
+siffermarkering
+ inom parentes 
+( )
+ hänför sig till 
+Välj i lista här.
+ 7:14.
+Typ av besiktning (1)
+Slutbesiktning
+Besiktningens omfattning (2)
+Besiktningen omfattar 
+Välj
+ huvuddelen eller entreprenaden
+.
+ i dess helhet. 
+Alternativ vid besiktning med undantagna delar:
+Besiktningen omfattar 
+entreprenaden
+ med undantag för följande arbeten som parterna har träffat överenskommelse om att slutbesiktiga vid senare tillfälle:
+[
+Ange undantagna delar i entreprenaden/huvuddelen pga parternas överenskommelse. Delar som inte är åtkomliga för besiktning pga hinder skall redovisas under rubrik (11
+]
+Alternativ vid besiktning av del av entreprenaden
+ enligt kap 7§2, som 
+beställaren ska 
+ta i bruk
+:
+Besiktningen omfattar
+
+[
+Ange 
+omfattning och eventuella avgränsningar så noggrant som möjligt.
+]
+Ange nedanstående om tidigare förbesiktning har verkställts och om slutbesiktningen omfattar avhjälpande av fel noterade vid tidigare FB
+Besiktningen omfattar även 
+avhjälpande 
+av 
+fel noterade i utlåtande över 
+förbesiktning. 
+Tid för besiktningen (3)
+Klicka här för att ange datum
+.
+Alternativt om besiktning har verkställts under några dagar:
+Besiktningen påbörjades 
+Klicka här för att ange datum.
+ och avslutades 
+Klicka här för att ange datum
+.
+Entreprenaden samt parterna (4)
+Entreprenaden:
+Objektet:
+[
+Ange objektet 
+utöver vad som framgår av rubrik, dvs mer detaljerat vad objektet avser, om entreprenaden är uppdelad i etapper eller huvuddelar. Ange även delarna i omfattning och antal. Ange också om sidoentreprenader förekommer och/ eller om det är delad entreprenad. Exempel på skrivning ”Att på rubricerad fastighet uppföra nybyggnad av flerbostadshus med 52 lägenheter inklusive garage och markanläggning. Entreprenaden är uppdelad i två huvuddelar, A och B”.
+]
+Entreprenadform:
+V
+älj standardavtal
+.
+Upphandlingsform:
+Välj upphandlingsform
+.
+Parterna:
+Beställare:
+Företagsnamn eller organisation
+Org.nr: 
+organisationsnummer
+Entreprenör:
+Företagsnamn
+Org.nr: 
+organisationsnummer
+Besiktningsman (5)
+Besiktningsman:
+Namn
+
+Utsedd
+ av?
+Biträdande besiktningsmän 
+utsedda av?
+- 
+Bygg
+:
+Namn
+- 
+Plåt
+:
+Namn
+- 
+Rör
+:
+Namn
+- 
+Luft
+:
+Namn
+- 
+El
+:
+Namn
+- 
+Styr
+:
+Namn
+- 
+Mark
+:
+Namn
+- Fack ?
+Namn
+Närvarande (6)
+I utlåtandet kan med fördel som beskrivs nedan enbart anges vilka som närvara vid slutsammanträdet och sedan hänvisa till respektive bilaga för närvarande vid de olika besiktningstillfällena. Endast om de närvarande är likvärdigt vid samtliga besiktningstillfällen enligt bilagor, kan närvarande 
+vid besiktningen 
+anges här i utlåtandet
+. Om slutbesiktningen avbryts kan här 
+istället
+ anges vilka som närvara vid försammanträde
+.
+Vid
+ slutsammanträdet 
+Klicka här - ange datum
+.
+ var parterna representerade av: 
+för beställaren:
+N
+amn
+för entreprenören:
+N
+amn
+vilka utsetts att föra respektive parts talan.
+Övriga närvarande
+:
+för beställaren:
+N
+amn
+för entreprenören:
+N
+amn
+A
+lternativt till att a
+nge 
+övriga närvarande förutom partsombuden, kan hänvisning ske till 
+separat närvarolistan 
+enligt nedan
+:
+
+Övriga närvarande framgår av bifogad närvarolista.
+Närvarande och vilka som erhållit parternas uppdrag att föra talan vid de olika besiktningstillfällena har angivits i respektive bilaga.
+Sättet för kallelse till besiktningen (7)
+Besiktningsmannen har 
+Klicka här - ange datum.
+
+kallat parterna per e-post.
+Fråga om jäv (8)
+Parterna och besiktningsmannen / biträdande besiktningsmännen förklarade sig inte känna till jäv mot besiktningsmannen eller biträdande besiktningsmän.
+Denna rubrik och text är ENDAST aktuell om BM är utsedd av parterna gemensamt. TA 
+BORT  rubrik
+ och text om BM är utsedd av beställaren.
+Tidigare besiktningar och provningar (9)
+Tidigare 
+för
+besiktningar
+Tidigare besiktningar finns förtecknade i respektive bilaga.
+Alternativt till att hänvisa till bilagor- förtecknas tidigare besiktningar i tabell nedan.
+
+Littera
+Besiktningsdag
+Omfattning
+Tidigare s
+lutbesiktning
+Anges om utlåtande har avgivits på tidigare del, alternativt tidigare SB vid FSB eller Ny SB
+Slutbesiktning av del av entreprenaden enligt utlåtande avgivet 20
+??-??-?? 
+
+Välj med eller med inte
+ godkännande
+.
+Provningar
+Följande provningar har utförts av beställaren:
+Ange provningar utförda av beställaren eller annat oberoende organ. Provningar som entreprenören har redovisat ska anges under rubrik 12.
+Därutöver har provningar inom respektive fackområde förtecknats i respektive bilaga.
+Alternativt till att ange 
+provningar 
+som 
+har utförts av beställaren
+ i utlåtandet
+, så 
+ange 
+istället
+ för ovanstående tre stycken nedanstående text med att 
+hänvisa enbart om det förekommer redovisade provningar i bilagor
+:
+Provningar inom respektive fackområde har förtecknats i respektive bilaga.
+Entreprenadhandlingar och andra överenskommelser 
+rörande entreprenadens omfattning och utförande 
+(10)
+Entreprenadens omfattning framgår av 
+Välj alternativ
+ undertecknat 
+20
+??-??-?? 
+Utöver kontraktshandlingar har för besiktning
+en
+ följande handlingar och överenskommelser 
+rörande entreprenadens omfattning och utförande 
+utgjort underlag:
+Ange handlingar och andra överenskommelser utöver kontrakt som legat till grund för besiktningen
+I övrigt enligt handlingar och överenskommelser angivna i
+ respektive bilaga.
+Delar som inte är åtkomliga för besiktning (11)
+Följande delar är ej åtkomliga för besiktning:
+
+[
+Ange delar som pga hinder inte är tillgängliga (snö, låsta utrymmen som beställaren tagit i bruk etc. Vissa av dessa delar görs till föremål för kompletterande slutbesiktning, KSB, se under rubrik (15).
+Inbyggda ej åtkomliga delar ska INTE anges här.
+Undantagna delar, som är överenskomna av parterna, anges under rubriken (2)
+]
+Årstidsberoende funktioner vid sommar- och vinterdriftfall.
+Alternativ text till ovan
+:
+Delar som vid de olika besiktningstillfällena ej varit åtkomliga för besiktning har angivits i respektive bilaga.
+Parterna har överenskommit att kontroll av funktioner vid sommar- och vinterdriftfall utförs som kompletterande slutbesiktning (KSB).
+Delar som inte besiktigas okulärt, utan endast på grundval av entreprenörens dokumentation över avtalade kvalitets- och miljöåtgärder (12) 
+Följande delar har besiktigats endast på grundval av entreprenörens nedan redovisade dokumentation över avtalade kvalitetsåtgärder: 
+Ange de delar och den dokumentation, som endast har besiktigats på grundval av entreprenören redovisad skriftliga dokumentation
+.
+ Dokumentation över kvalitetsåtgärder som vid SB är dolda arbeten, ska inte anges.
+Exempel:
+Samordnade installationsfunktioner – sam
+ordnad 
+provning daterad 
+20
+??-??-?? 
+Alternativ
+ text till ovanstående stycken
+:
+Arbeten
+, som vid de olika besiktningstillfällena har besiktigats endast på grundval av entreprenörens dokumentation över avtalade kvalitetsåtgärder, har angivits i respektive bilaga. 
+Alternativ skrivning där det är för omfattande att lista all egenkontroll:
+Besiktningsmannen har vid besiktningen bedömt att av entreprenören upprättad skriftlig dokumentation över redovisade egenkontroller, som visar att arbetena i fråga är kontraktsenligt utförd
+a
+, har utgjort tillräckligt underlag för bedömning av entreprenaden för aktuell del i fråga. Besiktningsmannen har för aktuell del gått igenom den skriftliga dokumentationen och därutöver gjort urvalsvis okulär kontroll av arbete i fråga, för att klarlägga riktigheten av dokumentationen.
+Den dokumentation som avses ovan är all dokumentation, avseende egenkontroller, som entreprenören överlämnat för respektive del av entreprenaden
+.
+Fel, bristfälligheter, anmärkningar och förhållanden (13–17, 23)
+I bilagor enligt förteckning nedan har under denna rubrik antecknats samtliga vid besiktningen konstaterade fel, bristfälligheter, anmärkningar och förhållanden.
+
+Bilaga littera
+Besiktningsdag
+Notering
+BYGG SB1
+I kolumn ”Notering” kan anges exempelvis om vad bilagan omfattar behövs tydliggöras, eller om det är något rättelse av något som är fel, alternativt om en reviderad
+
+bilaga har sänds ut
+RÖR SB1
+LUFT SB1
+EL SB1
+STYR SB
+1
+BRANDLARM SB1
+SPRINKLER SB1
+HISS SB
+1
+MARK SB
+1
+I det fall besiktningen pågått i flera dagar, har i förteckningen ovan angivits den senaste besiktningsdagen.
+I bilagor har antecknats fel, bristfälligheter eller anmärkningar och förhållanden med följande beteckningar:
+E
+Ange om aktuell eller inte
+B
+
+Ange om aktuell eller inte
+S
+
+Ange om aktuell eller inte
+U
+
+Ange om aktuell eller inte
+Ange nedanstående om utredning är aktuell– annars stryk texterna
+Ange 
+VAD som hänskjuts till särskild utredning (klipp in 
+resp
+ från bilagor)
+. Ange
+ VEM som utför utredning och när den beräknas vara slutförd. Ange utöver vad som framgår av AB, 
+VEM som ska BEKOSTA utredningen
+, om inte beslut om detta måste avvaktas utredningens resultat
+.
+Till särskild utredning hänskjuts: 
+Ange vad som hänskjutits till särskild utredning
+Utredningen utförs av 
+Part
+ och beräknas vara slutförd 
+datum
+.
+Utredningen skall bekostas av 
+Part
+Enligt AB 7:13 skall besiktningsmannen ta ställning till utredningen. 
+T ex
+ att tydligt ange E:s ansvar eller ej. Ange därför nedanstående textrad.
+Besiktningsmannen kommer att ta ställning till utredningen och avge utlåtande.
+N
+
+Ange om aktuell eller inte
+Ange om nedsättning av entreprenadsumman är tillämpbar enligt AB kap 5 § 18, 
+resp
+ enligt ABT 5 § 19, uppskattad nedsättning enligt nedan. Beloppet ska motsvara skillnaden mellan värdet på entreprenaden i kontraktsenligt respektive felaktigt utförande. Om ej aktuellt så stryk text.
+Uppskattad nedsättning av entreprenadsumman är för nedan angivna fel:
+Ange ex N 12
+i bilaga 
+Ange littera för bilaga
+belopp
+ kronor
+Ange ex N 14
+i bilaga 
+Ange littera för bilaga
+belopp
+ kronor
+A
+
+Ange om aktuell eller inte
+Besked om godkännande (18)
+VID GODKÄNNANDE:
+Ange nedanstående stycke vid godkännande kompletterat med de 3 efterföljande styckena om det är aktuella. Godkännandedag = Dag för slutsammanträde. Godkännande gäller med verkan från dagen för slutsammanträdet.
+Välj alternativ
+.
+ godkänns 
+Klicka här - ange datum
+.
+.
+Besked om godkännandet lämnades vid slutsammanträdet.
+Godkännandet omfattar även ej åtkomliga delar enligt rubrik (11) ovan.
+Godkännandet omfattar även delar som inte har besiktigats okulärt, utan endast på grundval av entreprenörens dokumentation över avtalade kvalitets- och miljöåtgärder enligt rubrik (12) ovan.
+Godkännandet
+ omfattar även del av
+ entreprenad som görs till föremål för kompletterande slutbesiktning (KSB). 
+VID ICKE GODKÄNNANDE:
+Alternativt till ovan vid ej godkännande. Om entreprenaden
+/ huvuddelen eller den besiktigade delen av entreprenaden 
+inte godkänns ska besiktningsmannen motivera beslutet (7:14 p 18). 
+Vid motivering av beslut om icke godkännande bör tydlighet eftersträvas, till vägledning vid den fortsatta 
+slutbesiktningen. Det räcker således inte att skriva att huvuddelen alt entreprenaden godkänns inte på grund av noterade fel inte anses vara av mindre betydelse
+.
+ Använd något av nedanstående tre alternativ
+”
+:
+Alternativ 
+1
+:
+Välj alternativ.
+
+godkänns inte
+.
+
+Följande skäl utgör hinder för godkännande: 
+Mängden fel 
+Ange om det är inom specifikt fackområde
+ anses inte vara fel av mindre betydelse som förekommer i begränsad omfattning.
+Alternativ
+ 2:
+Välj alternativ.
+
+godkänns inte
+.
+
+Följande skäl utgör hinder för godkännande: 
+Ange skälet preciserat
+Alternativ 
+3 - 
+vid flera skäl som vart och ett är hinder för godkännande:
+Välj alternativ.
+
+godkänns inte
+.
+
+Följande skäl 
+är vart och ett hinder 
+för godkännande:
+Ange skäl preciserat
+Ange skäl preciserat
+Ange skäl preciserat
+Alternativt till ovan vid avbruten slutbesiktning
+. Kap 7 § 12 anger att utlåtande ska upprättas för avbruten slutbesiktning
+:
+Besiktningen avbryts på grund av 
+Ange skälet - eller skälen 
+.
+Föreskrift om fortsatt eller ny slutbesiktning (19)
+Denna rubrik och text används enbart vid ej godkännande eller avbruten slutbesiktning
+Välj alternativ text.
+ föreskrivs och verkställs 
+Klicka här - ange datum
+.
+, 
+kl
+ 
+??.??
+.
+
+Tidpunkt för garantitidens slut (20)
+Ange nedanstående stycke vid godkänd del av entreprenad
+, då det förekommer delar som 
+slutbesiktigas
+ senare
+:
+Garantitiden för den besiktigade delen av entreprenaden löper från godkännandet av delen intill utgången av garantitiden för den sist godkända delen i entreprenaden.
+Ange nedanstående stycke vid upphandling enligt täckbestämmelse i 
+AB 04
+.
+ Garantitiden enligt 4:7 är fem år för entreprenörens arbetsprestation och tvår år för material och varor. Garantitiden slutar samma kalenderdag som godkännandedagen
+:
+
+Garantitiden för 
+Välj alternativ
+.
+
+gäller till och med 20
+?-??-?? FEM ÅR
+ för entreprenörens arbetsprestation och till och med 20
+?-??-??  TVÅ ÅR
+ för material och varor.
+Ange nedanstående stycke vid upphandling enligt täckbestämmelse i 
+ABT 06
+. 
+Garantitiden slutar samma kalenderdag som godkännandedagen
+:
+
+Garantitiden
+ för 
+Välj alternativ
+.
+
+gäller till och med 20
+?-??-?? FEM ÅR
+. För av beställaren föreskrivet särskilt material eller särskild vara (fabrikat) gäller dock garantitid till och med 20
+?-??-?? TVÅ ÅR
+ om inte längre särskild varugaranti har erhållits från materialtillverkaren.  
+Ange nedanstående stycke vid upphandling enligt 
+ABT 06 med föreskriven 5 års garantitid även för av B föreskrivet särskilt material/vara.
+
+Garantitiden slutar samma kalenderdag som godkännandedagen
+:
+
+Garantitiden
+ för 
+Välj alternativ
+.
+ gäller till och med 20
+?-??-?? FEM ÅR
+. 
+Enligt kontraktshandlingarna gäller garantitid fem år även f
+ör av beställaren föreskrivet särskilt material eller särskild vara (fabrikat)
+
+om inte längre särskild varugaranti har erhållits från materialtillverkaren.
+Ange nedanstående styck
+e om förlängd garantitid för arbete där åtagande enligt den avtalade kvalitetsplanen eller miljöplanen, inte har utförts och dokumenterats.
+Förlängd garantitid 
+föreskrivs med stöd av kap 4 § 9 att 
+gäll
+a
+
+till och med 
+20
+??-??-?? HÖGST TVÅ ÅR
+, för följande arbete där åtagande enligt avtalad kvalitetsplan inte har utförts och dokumenterats:
+Ange för vilket / vilka arbeten
+Särskild varugaranti enligt nedan gäller till och 
+med :
+
+Ange till och med vilket datum och vilken separat vara som varugarantin gäller
+Parternas överenskommelse om när fel skall vara avhjälpta (24)
+Ange rubrik och nedanstående stycke endast om överenskommelse har träffat om tid för avhjälpande som avviker från kap 5 § 17
+ (utan dröjsmål o inom två månader)
+, kompletterat med om part har påkallat efterbesiktning
+.
+Parterna har överenskommit att fel skall avhjälpas utan dröjsmål, dock senast till 
+Klicka här - ange datum.
+Av part påkallad e
+fterbesiktning 
+verkställs 
+Klicka här - ange datum.
+,
+
+kl
+
+??.??
+
+Denna notering gäller som kallelse.
+Övriga noteringar
+Rubriken är ett tillägg till kap 7 § 14. 
+Här kan noteringar av annat slag införas som service åt parterna, exempelvis tidpunkter för service under garantitiden, tidpunkt för KSB 
+etc
+Sändlista (25)
+Undertecknat utlåtande 
+har 
+Klicka här - ange datum.
+ sänts 
+per 
+e-post till
+ parterna 
+och övriga
+ enligt nedan.
+ Bilagor enligt rubrik (
+13-17
+, 23) ovan har sänts tidigare.
+Företag
+Namn
+Adress
+Företag
+Namn
+E-postadress
+Företag
+Namn
+E-postadress
+Företag
+Namn
+E-postadress
+Namn
+Välj alternativ
+.
+Välj alternativ
+.
+ c
+ertifikatn
+umme
+r: 
+certifikatnummer
+medlem i SBR:s entreprenadbesiktningsgrupp

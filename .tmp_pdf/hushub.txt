@@ -1,0 +1,376 @@
+S L U T B E S I K T N I N G
+Utlåtande
+
+Hedmoratäppan 2
+
+Hedmoratäppan 2
+
+Stockholm
+
+Besiktning
+SLB1
+
+Datum
+2026-05-14
+
+Tid
+12:15
+
+Noteringsserie
+BES
+
+G R U N D U P P G I F T E R
+
+Entreprenad
+Mattias Lööw
+Objekt
+-
+
+Objektsbeskrivning
+-
+Standardavtal
+HF17
+
+Entreprenadform
+Totalenteprenad
+Upphandlingsform
+-
+
+Kontraktsdatum
+-
+
+PA R T E R
+
+Beställare
+Mattias Lööw
+Beställare org.nr
+-
+
+Entreprenör
+Husskötsel pm AB
+Entreprenör org.nr
+556938-5627
+
+N Ä R VA R A N D E
+
+Beställare
+Mattias Lööw
+-
+
+Entreprenör
+Husskötsel pm AB
+-
+
+U T L Å TA N D E S E K T I O N E R
+
+1
+TYP AV BESIKTNING
+
+Slutbesiktning 1.
+
+2
+BESIKTNINGENS OMFATTNING
+
+Besiktningen omfattar de delar av entreprenaden som omfattas av uppdraget och som varit åtkomliga vid 
+
+besiktningstillfället.
+
+3
+TID FÖR BESIKTNINGEN
+
+Datum: 2026-05-14
+
+Tid: 12:15
+
+4
+ENTREPRENADEN SAMT PARTERNA
+
+Entreprenad: Mattias Lööw
+
+Beställare: Mattias Lööw
+
+Beställare org.nr: Ej angivet
+
+Entreprenör: Husskötsel pm AB
+
+Entreprenör org.nr: 556938-5627
+
+Standardavtal: HF17
+
+Entreprenadform: Totalenteprenad
+
+Upphandlingsform: Ej angivet
+
+Kontraktsdatum: Ej angivet
+
+5
+BESIKTNINGSMAN OCH BITRÄDANDE BESIKTNINGSMÄN
+
+Besiktningsman, vem som utsett besiktningsmannen samt eventuella biträdande besiktningsmän anges här.
+
+6
+NÄRVARANDE
+
+Beställare
+
+Mattias Lööw
+
+Entreprenör
+
+Husskötsel pm AB
+
+7
+SÄTTET FÖR KALLELSE
+
+Ange hur kallelse har skett och när den skickades.
+
+8
+FRÅGA OM JÄV
+
+Fråga om jäv behandlades vid besiktningen. Eventuella invändningar eller anmärkningar anges här.
+
+9
+TIDIGARE BESIKTNINGAR OCH PROVNINGAR
+
+Ange tidigare besiktningar, provningar och relevanta resultat som ska beaktas i utlåtandet.
+
+10
+ENTREPRENADHANDLINGAR OCH ANDRA ÖVERENSKOMMELSER
+
+Handlingar anges eller kompletteras i utlåtandeutkastet.
+
+11
+DELAR SOM INTE VARIT ÅTKOMLIGA
+
+Inga ej åtkomliga delar är registrerade. Komplettera om något inte kunde besiktigas.
+
+12
+DELAR BESIKTIGADE ENDAST GENOM HANDLING
+
+Ange delar som endast bedömts utifrån handlingar, foton eller annan dokumentation.
+
+BILAGOR OCH LITTERA
+
+Ange bilagor, fotobilagor, ritningar, kontrollintyg och annan dokumentation som bifogas utlåtandet.
+
+18
+BESKED OM GODKÄNNANDE
+
+Ange om entreprenaden godkänns, inte godkänns eller om beslut lämnas för viss del.
+
+19
+FORTSATT ELLER NY SLUTBESIKTNING
+
+Ange om fortsatt eller ny slutbesiktning krävs och i så fall för vilka delar.
+
+20
+GARANTITIDENS SLUT
+
+Ange garantitid och slutdatum för garantitiden enligt avtal.
+
+24
+NÄR FEL SKA VARA AVHJÄLPTA
+
+Ange när noterade fel ska vara avhjälpta och om särskilda tider gäller för vissa fel.
+
+25
+SÄNDLISTA
+
+Beställare
+
+Mattias Lööw
+
+Entreprenör
+
+Husskötsel pm AB
+
+UNDERSKRIFT OCH CERTIFIERING
+
+Ange besiktningsman, ort, datum, certifiering och eventuell SBR-anslutning.
+
+N O T E R I N G A R
+
+BET.
+
+E
+
+NR
+
+1
+
+BYGG, KÖK, VÄGG 3, KÖKSBLANDARE
+
+Spärr saknas på blandare.
+
+STATUS
+
+Kvarstår
+
+BET.
+
+E
+
+NR
+
+2
+
+BYGG, SOVRUM, VÄGG 4
+
+Underarbete för målning undermåligt. Hela väggen
+
+STATUS
+
+Kvarstår
+
+BET.
+
+E
+
+NR
+
+3
+
+BYGG, SOVRUM, VÄGG 1, FÖNSTER
+
+Färg på glas
+
+STATUS
+
+Kvarstår
+
+BET.
+
+E
+
+NR
+
+4
+
+BYGG, SOVRUM, VÄGG 3
+
+Spricka i vägg
+
+STATUS
+
+Kvarstår
+
+BET.
+
+E
+
+NR
+
+5
+
+BYGG, KLÄDKAMMARE, VÄGG 5
+
+Färgen släpper från väggen på skorstensstocken. Detta är 
+
+åtgärdat en gång innan av E. Nu är det på gång att hända igen.
+
+STATUS
+
+Kvarstår
+
+BET.
+
+E
+
+NR
+
+6
+
+BYGG, BADRUM, VÄGG 3
+
+Genomföring av vatten i våtzon.
+
+STATUS
+
+Kvarstår
+
+BET.
+
+E
+
+NR
+
+7
+
+BYGG, ALLRUM, TAK, ANSLUTNING MELLAN VÄGG OCH
+TAK
+
+Sprickor
+
+STATUS
+
+Kvarstår
+
+BET.
+
+E
+
+NR
+
+8
+
+BYGG, DOKUMENT
+
+Inga dokument har inkommit
+
+STATUS
+
+Kvarstår
+
+BET.
+
+E
+
+NR
+
+9
+
+BYGG, BADRUM, VÄGG 4, DÖRRSMYG
+
+Hål i kakel
+
+STATUS
+
+Kvarstår
+
+BET.
+
+E
+
+NR
+
+10
+
+BYGG, BADRUM, VÄGG 4
+
+Ej avstädat kakel
+
+STATUS
+
+Kvarstår
+
+BET.
+
+E
+
+NR
+
+11
+
+BYGG, HALL, VÄGG 3, TRÖSKEL BADRUM
+
+Glipa mellan tröskel och golv
+
+STATUS
+
+Kvarstår
+
+U N D E R S K R I F T
+
+Besiktningsman
+Datum
+

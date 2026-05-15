@@ -83,7 +83,11 @@ function InfoGrid({
 export default function EbInspectionReportView({ report }: EbInspectionReportViewProps) {
   const notes = sortNotes(report.notes)
   const reportSections = report.reportDraft.sections.filter(
-    (section) => section.isRelevant && section.key !== 'notes' && section.text.trim()
+    (section) =>
+      section.isRelevant &&
+      section.key !== 'notes' &&
+      section.status !== 'missing' &&
+      section.text.trim()
   )
   const imagesByNoteId = new Map<string, EbNoteImage[]>()
   for (const image of report.images) {

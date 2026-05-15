@@ -2192,6 +2192,52 @@ function buildEbReportDraft(input: {
       updatedAt: null,
     },
     {
+      key: 'defects_appendices',
+      title: 'Fel, bristfälligheter, anmärkningar och förhållanden',
+      sbrPoint: '13-17, 23',
+      source: 'notes',
+      status: noteCount > 0 ? 'complete' : 'missing',
+      isRelevant: true,
+      text:
+        noteCount > 0
+          ? `Samtliga vid besiktningen registrerade fel, bristfälligheter, anmärkningar och förhållanden redovisas i noteringsförteckningen. Antal noteringar: ${noteCount}.`
+          : 'Inga fel, bristfälligheter, anmärkningar eller förhållanden är registrerade.',
+      updatedAt: null,
+    },
+    {
+      key: 'marker_legend',
+      title: 'Beteckningar för noteringar',
+      sbrPoint: '13-17, 23',
+      source: 'notes',
+      status: round.markers.length > 0 ? 'complete' : 'missing',
+      isRelevant: true,
+      text:
+        round.markers.length > 0
+          ? round.markers.map((marker) => `${marker.key}: ${marker.label}`).join('\n')
+          : 'Ange vilka beteckningar som används för noteringarna.',
+      updatedAt: null,
+    },
+    {
+      key: 'special_investigation',
+      title: 'Särskild utredning',
+      sbrPoint: '13-17, 23',
+      source: 'manual',
+      status: 'draft',
+      isRelevant: true,
+      text: 'Ange om något hänskjuts till särskild utredning, vem som utför utredningen, när den ska vara klar och vem som bekostar den.',
+      updatedAt: null,
+    },
+    {
+      key: 'deduction',
+      title: 'Nedsättning',
+      sbrPoint: '13-17, 23',
+      source: 'manual',
+      status: 'draft',
+      isRelevant: true,
+      text: 'Ange om nedsättning av entreprenadsumman är aktuell, vilka noteringar den avser och uppskattat belopp.',
+      updatedAt: null,
+    },
+    {
       key: 'notes',
       title: 'Noteringar',
       sbrPoint: null,
@@ -2239,6 +2285,26 @@ function buildEbReportDraft(input: {
       status: 'missing',
       isRelevant: true,
       text: 'Ange när noterade fel ska vara avhjälpta och om särskilda tider gäller för vissa fel.',
+      updatedAt: null,
+    },
+    {
+      key: 'after_inspection',
+      title: 'Efterbesiktning',
+      sbrPoint: '24',
+      source: 'manual',
+      status: 'draft',
+      isRelevant: true,
+      text: 'Ange om efterbesiktning har påkallats, när den ska verkställas och om denna notering ska gälla som kallelse.',
+      updatedAt: null,
+    },
+    {
+      key: 'other_notes',
+      title: 'Övriga noteringar',
+      sbrPoint: null,
+      source: 'manual',
+      status: 'draft',
+      isRelevant: true,
+      text: 'Ange övrig information som ska lämnas som service till parterna, till exempel service under garantitiden eller planerade kompletterande besiktningar.',
       updatedAt: null,
     },
     {
