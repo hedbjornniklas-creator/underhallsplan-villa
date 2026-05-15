@@ -8,7 +8,8 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent 
 import {
   ArrowLeft,
   Camera,
-  ClipboardCheck,
+  ChevronDown,
+  ChevronUp,
   Image as ImageIcon,
   Loader2,
   Pencil,
@@ -19,7 +20,7 @@ import {
   X,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
-import type { EbDiscipline, EbInspectionRound, EbNote, EbNoteImage } from '@/lib/eb/server'
+import type { EbInspectionRound, EbNote, EbNoteImage } from '@/lib/eb/server'
 
 type EbInspectionRoundClientProps = {
   initialRound: EbInspectionRound
@@ -50,6 +51,11 @@ type DeleteResponse = {
 type ImageResponse = {
   image?: EbNoteImage
   ok?: boolean
+  error?: string
+}
+
+type ReorderResponse = {
+  notes?: EbNote[]
   error?: string
 }
 
@@ -106,6 +112,9 @@ function getNoteLabel(round: EbInspectionRound, note: EbNote | null, nextNumber:
 
 function sortNotes(notes: EbNote[]) {
   return [...notes].sort((left, right) => {
+    if ((left.sortOrder ?? 0) !== (right.sortOrder ?? 0)) {
+      return (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
+    }
     if ((left.noteNumber ?? 0) !== (right.noteNumber ?? 0)) {
       return (left.noteNumber ?? 0) - (right.noteNumber ?? 0)
     }
@@ -120,45 +129,6 @@ function sortImages(images: EbNoteImage[]) {
     }
     return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
   })
-}
-
-function StartDisciplineDialog({
-  open,
-  disciplines,
-  onSelect,
-}: {
-  open: boolean
-  disciplines: EbDiscipline[]
-  onSelect: (disciplineId: string) => void
-}) {
-  if (!open) return null
-
-  return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/55 p-3">
-      <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-emerald-100 bg-white shadow-2xl">
-        <div className="border-b border-emerald-100 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Starta runda</p>
-          <h2 className="text-lg font-semibold text-gray-950">Välj ditt fack</h2>
-        </div>
-        <div className="grid gap-2 p-4 sm:grid-cols-2">
-          {disciplines.map((discipline) => (
-            <button
-              key={discipline.id}
-              type="button"
-              onClick={() => onSelect(discipline.id)}
-              className="flex min-h-16 items-center justify-between rounded-md border border-emerald-200 bg-white px-4 py-3 text-left transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-            >
-              <span>
-                <span className="block text-sm font-semibold text-gray-950">{discipline.label}</span>
-                <span className="block text-xs text-gray-600">{discipline.littera ?? discipline.key}</span>
-              </span>
-              <ClipboardCheck size={18} className="text-emerald-700" />
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
 }
 
 export default function EbInspectionRoundClient({
@@ -176,7 +146,6 @@ export default function EbInspectionRoundClient({
   const [activeDisciplineId, setActiveDisciplineId] = useState<string | null>(
     initialDiscipline?.id ?? null
   )
-  const [startDialogOpen] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
   const [form, setForm] = useState<NoteFormState>(() => createInitialForm(initialRound))
   const [editingNote, setEditingNote] = useState<EbNote | null>(null)
@@ -184,6 +153,7 @@ export default function EbInspectionRoundClient({
   const [uploadingImage, setUploadingImage] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
+  const [reorderingId, setReorderingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const activeDiscipline = round.disciplines.find((discipline) => discipline.id === activeDisciplineId) ?? null
@@ -205,6 +175,13 @@ export default function EbInspectionRoundClient({
     return map
   }, [round.images])
   const allImages = useMemo(() => sortImages(round.images), [round.images])
+  const displayNumberByNoteId = useMemo(() => {
+    const map = new Map<string, number>()
+    sortNotes(round.notes).forEach((note, index) => {
+      map.set(note.id, index + 1)
+    })
+    return map
+  }, [round.notes])
   const nextNoteNumber = useMemo(
     () => round.notes.reduce((max, note) => Math.max(max, note.noteNumber ?? 0), 0) + 1,
     [round.notes]
@@ -269,12 +246,7 @@ export default function EbInspectionRoundClient({
   const upsertNoteInState = (note: EbNote) => {
     setRound((current) => {
       const withoutSame = current.notes.filter((item) => item.id !== note.id)
-      const notes = [...withoutSame, note].sort((left, right) => {
-        if ((left.noteNumber ?? 0) !== (right.noteNumber ?? 0)) {
-          return (left.noteNumber ?? 0) - (right.noteNumber ?? 0)
-        }
-        return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
-      })
+      const notes = sortNotes([...withoutSame, note])
       const hasSuggestion = current.suggestions.some(
         (suggestion) =>
           suggestion.phrase.toLocaleLowerCase('sv-SE') === note.noteText.toLocaleLowerCase('sv-SE')
@@ -362,6 +334,27 @@ export default function EbInspectionRoundClient({
     setForm(createInitialForm(round))
     setError(null)
     setEditorOpen(true)
+  }
+
+  const handleMoveNote = async (note: EbNote, direction: 'up' | 'down') => {
+    setReorderingId(note.id)
+    setError(null)
+    try {
+      const response = await fetch(`${notesBasePath}/${note.id}/reorder`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ direction }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as ReorderResponse
+      if (!response.ok || !payload.notes) {
+        throw new Error(payload.error ?? 'Kunde inte flytta notering.')
+      }
+      setRound((current) => ({ ...current, notes: sortNotes(payload.notes ?? []) }))
+    } catch (moveError) {
+      setError(moveError instanceof Error ? moveError.message : 'Kunde inte flytta notering.')
+    } finally {
+      setReorderingId(null)
+    }
   }
 
   const uploadImage = async (file: File) => {
@@ -556,13 +549,15 @@ export default function EbInspectionRoundClient({
 
           <div className="mt-3 min-h-[62vh]">
             <section className="min-w-0 border-y border-emerald-100 bg-white/82 backdrop-blur-sm">
-              <div className="grid grid-cols-[6rem_7rem_8rem_8rem_1fr_5rem_3rem] items-center gap-3 border-b border-emerald-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+              <div className="grid grid-cols-[4rem_4rem_7rem_8rem_8rem_1fr_5rem_5rem_3rem] items-center gap-3 border-b border-emerald-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                <span>Bet.</span>
                 <span>Nr</span>
                 <span>Status</span>
                 <span>Rum</span>
                 <span>Plats</span>
                 <span>Notering</span>
                 <span>Bilder</span>
+                <span>Flytta</span>
                 <span />
               </div>
               <div className="flex items-center justify-between border-b border-emerald-100 px-3 py-2">
@@ -589,33 +584,58 @@ export default function EbInspectionRoundClient({
                 <div className="px-4 py-10 text-center text-sm text-gray-600">Inga noteringar.</div>
               ) : (
                 <div className="divide-y divide-emerald-100">
-                  {filteredNotes.map((note) => (
-                    <article
-                      key={note.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleEdit(note)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') handleEdit(note)
-                      }}
-                      className="grid cursor-pointer grid-cols-[6rem_7rem_8rem_8rem_1fr_5rem_3rem] items-center gap-3 px-3 py-2 text-sm transition hover:bg-emerald-50/70"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-semibold text-emerald-900">
-                          {round.project.notePrefix} {note.noteNumber}
+                  {filteredNotes.map((note, index) => {
+                    const canMoveUp = index > 0
+                    const canMoveDown = index < filteredNotes.length - 1
+                    return (
+                      <article
+                        key={note.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => handleEdit(note)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') handleEdit(note)
+                        }}
+                        className="grid cursor-pointer grid-cols-[4rem_4rem_7rem_8rem_8rem_1fr_5rem_5rem_3rem] items-center gap-3 px-3 py-2 text-sm transition hover:bg-emerald-50/70"
+                      >
+                        <span className="truncate text-sm font-semibold text-amber-900">
+                          {note.markerKey || note.responsibleParty || '-'}
                         </span>
-                        {note.markerKey ? (
-                          <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-900">
-                            {note.markerKey}
-                          </span>
-                        ) : null}
-                      </div>
-                      <span className="truncate text-xs font-medium text-gray-700">{note.statusLabel ?? note.statusKey}</span>
-                      <span className="truncate text-gray-700">{note.room || '-'}</span>
-                      <span className="truncate text-gray-700">{note.location || '-'}</span>
-                      <span className="truncate text-gray-950">{note.noteText}</span>
-                      <span className="text-xs font-medium text-gray-600">{imagesByNoteId.get(note.id)?.length ?? 0} st</span>
-                      <div className="flex justify-end">
+                        <span className="font-semibold text-emerald-900">{displayNumberByNoteId.get(note.id) ?? '-'}</span>
+                        <span className="truncate text-xs font-medium text-gray-700">{note.statusLabel ?? note.statusKey}</span>
+                        <span className="truncate text-gray-700">{note.room || '-'}</span>
+                        <span className="truncate text-gray-700">{note.location || '-'}</span>
+                        <span className="truncate text-gray-950">{note.noteText}</span>
+                        <span className="text-xs font-medium text-gray-600">{imagesByNoteId.get(note.id)?.length ?? 0} st</span>
+                        <div className="flex justify-start gap-1">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              if (canMoveUp) void handleMoveNote(note, 'up')
+                            }}
+                            disabled={!canMoveUp || reorderingId !== null}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                            aria-label="Flytta upp"
+                            title="Flytta upp"
+                          >
+                            {reorderingId === note.id ? <Loader2 size={15} className="animate-spin" /> : <ChevronUp size={16} />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              if (canMoveDown) void handleMoveNote(note, 'down')
+                            }}
+                            disabled={!canMoveDown || reorderingId !== null}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                            aria-label="Flytta ned"
+                            title="Flytta ned"
+                          >
+                            {reorderingId === note.id ? <Loader2 size={15} className="animate-spin" /> : <ChevronDown size={16} />}
+                          </button>
+                        </div>
+                        <div className="flex justify-end">
                           <button
                             type="button"
                             onClick={(event) => {
@@ -630,7 +650,8 @@ export default function EbInspectionRoundClient({
                           </button>
                       </div>
                     </article>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </section>
@@ -891,12 +912,6 @@ export default function EbInspectionRoundClient({
             </aside>
           </div>
         ) : null}
-
-        <StartDisciplineDialog
-          open={startDialogOpen}
-          disciplines={round.disciplines}
-          onSelect={selectDiscipline}
-        />
       </main>
     </Protected>
   )

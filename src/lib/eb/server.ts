@@ -403,6 +403,10 @@ export type DeleteEbNoteInput = {
   noteId: string
 }
 
+export type ReorderEbNoteInput = DeleteEbNoteInput & {
+  direction: 'up' | 'down'
+}
+
 const VARIANT_LABELS: Record<EbInspectionVariant, string> = {
   SLB: 'Slutbesiktning',
   FB: 'Förbesiktning',
@@ -900,6 +904,7 @@ async function listEbNotes(input: {
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
     .eq('inspection_id', input.inspectionId)
+    .order('sort_order', { ascending: true, nullsFirst: false })
     .order('note_number', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true })
 
@@ -1628,6 +1633,76 @@ export async function deleteEbNote(input: DeleteEbNoteInput) {
   if (count === 0) {
     throw new Error('EB_NOTE_NOT_FOUND')
   }
+}
+
+export async function reorderEbNote(input: ReorderEbNoteInput): Promise<EbNote[]> {
+  const context = await buildEbNoteContext(input)
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('eb_notes')
+    .select(
+      'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,sort_order,created_at,updated_at'
+    )
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+    .order('sort_order', { ascending: true, nullsFirst: false })
+    .order('note_number', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa EB-noteringar.')
+  }
+
+  const rows = ((data ?? []) as EbNoteRow[]).sort((left, right) => {
+    const leftSort = left.sort_order ?? (left.note_number ?? 0) * 100
+    const rightSort = right.sort_order ?? (right.note_number ?? 0) * 100
+    if (leftSort !== rightSort) return leftSort - rightSort
+    if ((left.note_number ?? 0) !== (right.note_number ?? 0)) {
+      return (left.note_number ?? 0) - (right.note_number ?? 0)
+    }
+    return String(left.created_at ?? '').localeCompare(String(right.created_at ?? ''))
+  })
+  const currentIndex = rows.findIndex((row) => row.id === input.noteId)
+  if (currentIndex === -1) {
+    throw new Error('EB_NOTE_NOT_FOUND')
+  }
+
+  const targetIndex = input.direction === 'up' ? currentIndex - 1 : currentIndex + 1
+  if (targetIndex < 0 || targetIndex >= rows.length) {
+    return rows.map((row) =>
+      mapNote(row, context.disciplinesById, context.markersByKey, context.statusesByKey)
+    )
+  }
+
+  const reordered = [...rows]
+  const [moved] = reordered.splice(currentIndex, 1)
+  reordered.splice(targetIndex, 0, moved)
+
+  const updateResults = await Promise.all(
+    reordered.map((row, index) =>
+      admin
+        .from('eb_notes')
+        .update({ sort_order: (index + 1) * 100 })
+        .eq('org_id', input.orgId)
+        .eq('eb_project_id', input.projectId)
+        .eq('inspection_id', input.inspectionId)
+        .eq('id', row.id)
+    )
+  )
+  const updateError = updateResults.find((result) => result.error)?.error
+  if (updateError) {
+    throw new Error(updateError.message ?? 'Kunde inte uppdatera noteringsordning.')
+  }
+
+  return reordered.map((row, index) =>
+    mapNote(
+      { ...row, sort_order: (index + 1) * 100 },
+      context.disciplinesById,
+      context.markersByKey,
+      context.statusesByKey
+    )
+  )
 }
 
 async function getEbInspectionDetail(input: {

@@ -638,8 +638,8 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
         />
         <div className="pointer-events-none absolute inset-0 bg-white/62 backdrop-blur-[1px]" />
 
-        <div className="relative mx-auto w-full max-w-7xl p-4 md:p-6">
-          <header className="rounded-lg border border-emerald-100 bg-white/82 p-4 shadow-sm backdrop-blur-sm md:p-5">
+        <div className="relative mx-auto w-full max-w-[88rem] px-4 py-5 md:px-6">
+          <header className="border-b border-emerald-100 pb-5">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div className="flex min-w-0 items-start gap-3">
                 <Link
@@ -669,8 +669,8 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
             </div>
           </header>
 
-          <section className="mt-4 grid gap-3 md:grid-cols-4">
-            <div className="rounded-lg border border-emerald-100 bg-white/82 p-4 shadow-sm">
+          <section className="grid gap-x-8 gap-y-5 border-b border-emerald-100 py-5 md:grid-cols-4">
+            <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Beställare</p>
               <p className="mt-2 truncate text-sm font-semibold text-gray-950">
                 {currentProject.clientName ?? 'Ej satt'}
@@ -679,7 +679,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                 <p className="mt-1 truncate text-xs text-gray-600">{currentProject.clientOrgNo}</p>
               ) : null}
             </div>
-            <div className="rounded-lg border border-emerald-100 bg-white/82 p-4 shadow-sm">
+            <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Entreprenör</p>
               <p className="mt-2 truncate text-sm font-semibold text-gray-950">
                 {currentProject.contractorName ?? 'Ej satt'}
@@ -688,25 +688,25 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                 <p className="mt-1 truncate text-xs text-gray-600">{currentProject.contractorOrgNo}</p>
               ) : null}
             </div>
-            <div className="rounded-lg border border-emerald-100 bg-white/82 p-4 shadow-sm">
+            <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Avtal</p>
               <p className="mt-2 truncate text-sm font-semibold text-gray-950">{agreementLine || 'Ej satt'}</p>
               <p className="mt-1 truncate text-xs text-gray-600">
                 {currentProject.contractDate ? `Kontrakt ${formatDate(currentProject.contractDate)}` : 'Datum ej satt'}
               </p>
             </div>
-            <div className="rounded-lg border border-emerald-100 bg-white/82 p-4 shadow-sm">
+            <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Besiktningar</p>
               <p className="mt-2 text-sm font-semibold text-gray-950">{currentProject.inspections.length} st</p>
               <p className="mt-1 truncate text-xs text-gray-600">Noteringar: {currentProject.notePrefix}</p>
             </div>
           </section>
 
-          <section className="mt-4 overflow-hidden rounded-lg border border-emerald-100 bg-white/78 shadow-sm backdrop-blur-sm">
-            <div className="border-b border-emerald-100 px-4 py-3">
+          <section className="border-b border-emerald-100 py-5">
+            <div className="mb-4">
               <h2 className="text-sm font-semibold text-gray-950">Grunduppgifter</h2>
             </div>
-            <div className="grid gap-4 px-4 py-4 md:grid-cols-[1.1fr_1fr_1fr]">
+            <div className="grid gap-x-8 gap-y-5 md:grid-cols-[1.1fr_1fr_1fr]">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Kontrakt</p>
                 <p className="mt-2 truncate text-sm font-semibold text-gray-950">
@@ -743,20 +743,20 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
             </div>
           </section>
 
-          <section className="mt-4 overflow-hidden rounded-lg border border-emerald-100 bg-white/78 shadow-sm backdrop-blur-sm">
-            <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
+          <section className="border-b border-emerald-100 py-5">
+            <div className="mb-2 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-gray-950">Besiktningar</h2>
               <span className="text-xs font-medium text-gray-500">{currentProject.inspections.length} st</span>
             </div>
 
             {currentProject.inspections.length === 0 ? (
-              <div className="px-4 py-10 text-center text-sm text-gray-600">Ingen besiktning skapad.</div>
+              <div className="py-10 text-center text-sm text-gray-600">Ingen besiktning skapad.</div>
             ) : (
               <div className="divide-y divide-emerald-100">
                 {currentProject.inspections.map((inspection) => (
                   <div
                     key={inspection.inspectionId}
-                    className="grid gap-3 bg-white/82 px-4 py-3 md:grid-cols-[0.75fr_1.05fr_0.75fr_0.55fr_0.7fr]"
+                    className="grid gap-3 py-3 md:grid-cols-[0.75fr_1.05fr_0.75fr_0.55fr_0.7fr]"
                   >
                     <div className="flex items-center gap-3">
                       <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">

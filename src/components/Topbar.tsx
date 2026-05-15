@@ -4,7 +4,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { Power } from 'lucide-react'
+import { LayoutGrid, Power } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useProfile } from '@/hooks/useProfile'
 
@@ -89,6 +89,8 @@ export default function Topbar() {
   const isEbHome = normalizedPath === '/eb'
   const isObContext = normalizedPath.includes('/ob')
   const isEbContext = normalizedPath.includes('/eb')
+  const showModuleSwitcher =
+    hasUser && !isDashboardLanding && (isObContext || isEbContext || normalizedPath.startsWith('/inspections'))
 
   const logoHref = isAdminContext
     ? '/admin'
@@ -174,7 +176,20 @@ export default function Topbar() {
           )}
         </div>
 
-        <div className="flex items-center justify-end">
+        <div className="flex items-center justify-end gap-2">
+          {showModuleSwitcher ? (
+            <Link
+              href="/dashboard-v1"
+              className={`inline-flex items-center justify-center gap-1.5 rounded-full border border-emerald-200 bg-white px-3 text-xs font-semibold text-emerald-800 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 md:h-10 md:px-4 md:text-sm ${
+                isMobileCompact ? 'h-8 px-2' : 'h-10'
+              }`}
+              aria-label="Byt modul"
+              title="Byt modul"
+            >
+              <LayoutGrid size={isMobileCompact ? 14 : 16} aria-hidden strokeWidth={2.25} />
+              <span className={isMobileCompact ? 'hidden sm:inline' : 'hidden sm:inline'}>Moduler</span>
+            </Link>
+          ) : null}
           <button
             onClick={handleLogout}
             className={`inline-flex items-center justify-center rounded-full bg-gradient-to-b from-rose-400 to-red-600 p-[3px] shadow-[0_10px_18px_-10px_rgba(185,28,28,0.95)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_20px_-10px_rgba(185,28,28,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 md:h-10 md:w-10 ${
