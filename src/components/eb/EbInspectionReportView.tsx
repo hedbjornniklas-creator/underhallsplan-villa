@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 /* eslint-disable @next/next/no-img-element */
 
@@ -62,24 +62,6 @@ function Section({
     </section>
   )
 }
-
-function InfoGrid({
-  rows,
-}: {
-  rows: Array<[string, string | null | undefined]>
-}) {
-  return (
-    <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
-      {rows.map(([label, value]) => (
-        <div key={label} className="grid grid-cols-[9rem_1fr] gap-3 text-sm">
-          <dt className="font-semibold text-gray-500">{label}</dt>
-          <dd className="font-medium text-gray-950">{value || '-'}</dd>
-        </div>
-      ))}
-    </dl>
-  )
-}
-
 export default function EbInspectionReportView({ report }: EbInspectionReportViewProps) {
   const notes = sortNotes(report.notes)
   const reportSections = report.reportDraft.sections.filter(
@@ -173,69 +155,14 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
           </div>
         </header>
 
-        <Section title="Grunduppgifter">
-          <InfoGrid
-            rows={[
-              ['Entreprenad', report.project.contractName],
-              ['Objekt', report.project.propertyDesignation],
-              ['Objektsbeskrivning', report.project.objectDescription],
-              ['Standardavtal', report.project.standardAgreement],
-              ['Entreprenadform', report.project.contractForm],
-              ['Upphandlingsform', report.project.procurementForm],
-              ['Kontraktsdatum', formatDate(report.project.contractDate)],
-            ]}
-          />
-        </Section>
-
-        <Section title="Parter">
-          <InfoGrid
-            rows={[
-              ['Beställare', report.project.clientName],
-              ['Beställare org.nr', report.project.clientOrgNo],
-              ['Entreprenör', report.project.contractorName],
-              ['Entreprenör org.nr', report.project.contractorOrgNo],
-            ]}
-          />
-        </Section>
-
-        <Section title="Närvarande">
-          {report.participants.length === 0 ? (
-            <p className="text-sm text-gray-600">Inga deltagare registrerade.</p>
-          ) : (
-            <div className="divide-y divide-gray-200 border-y border-gray-200">
-              {report.participants.map((participant, index) => (
-                <div key={participant.id ?? index} className="grid gap-2 py-3 text-sm sm:grid-cols-[10rem_1fr_1fr]">
-                  <span className="font-semibold text-gray-500">{participant.roleLabel || '-'}</span>
-                  <span className="font-medium text-gray-950">{participant.companyName || '-'}</span>
-                  <span className="text-gray-700">
-                    {detailLine([participant.personName, participant.email, participant.phone])}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </Section>
-
-        <Section title="Utlåtandesektioner">
-          <div className="space-y-5">
-            {reportSections.map((section) => (
-              <article key={section.key} className="break-inside-avoid">
-                <div className="flex items-baseline gap-3">
-                  {section.sbrPoint ? (
-                    <span className="text-xs font-bold uppercase tracking-[0.14em] text-gray-500">
-                      {section.sbrPoint}
-                    </span>
-                  ) : null}
-                  <h3 className="text-sm font-bold uppercase tracking-[0.12em] text-gray-950">
-                    {section.title}
-                  </h3>
-                </div>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-800">{section.text}</p>
-              </article>
-            ))}
-          </div>
-        </Section>
-
+        {reportSections.map((section) => (
+          <Section
+            key={section.key}
+            title={section.sbrPoint ? `${section.title} (${section.sbrPoint})` : section.title}
+          >
+            <p className="whitespace-pre-wrap text-sm leading-6 text-gray-800">{section.text}</p>
+          </Section>
+        ))}
         <Section title="Noteringar">
           {notes.length === 0 ? (
             <p className="text-sm text-gray-600">Inga noteringar registrerade.</p>
@@ -256,7 +183,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                          {detailLine([note.disciplineLabel, note.room, note.location, note.placeDetail])}
+                          {detailLine([note.room, note.location, note.placeDetail])}
                         </p>
                         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-950">{note.noteText}</p>
                       </div>
@@ -291,3 +218,6 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
     </main>
   )
 }
+
+
+

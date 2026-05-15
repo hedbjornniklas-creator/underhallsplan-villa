@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { ArrowLeft, Check, FileText, Save } from 'lucide-react'
@@ -30,6 +30,15 @@ const sourceLabels: Record<EbReportDraftSection['source'], string> = {
   notes: 'Noteringar',
   standard_text: 'Standardtext',
   manual: 'Manuell',
+}
+
+const sourceHints: Record<EbReportDraftSection['source'], string> = {
+  project: 'Grunduppgifter fylls i via Redigera entreprenad på entreprenadsidan.',
+  inspection: 'Besiktningsuppgifter fylls i när besiktningen skapas, i kallelsen eller i runda/granska.',
+  participants: 'Parter, mottagare och närvarande hanteras i kallelsedialogen.',
+  notes: 'Noteringar, beteckningar och bilder hanteras i Granska eller mobil runda.',
+  standard_text: 'Texten är standardtext för utlåtandet och justeras här innan utskrift.',
+  manual: 'Denna punkt fylls i här i utlåtandeutkastet.',
 }
 
 export default function EbInspectionReportDraftClient({ initialReport }: Props) {
@@ -171,6 +180,9 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                   </p>
                   <h2 className="mt-1 text-xl font-bold">{activeSection.title}</h2>
                   <p className="mt-1 text-sm text-gray-500">Källa: {sourceLabels[activeSection.source]}</p>
+                  <p className="mt-2 max-w-2xl rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                    {sourceHints[activeSection.source]}
+                  </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="inline-flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-semibold">
@@ -215,3 +227,4 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
     </main>
   )
 }
+

@@ -132,8 +132,8 @@ function CreateProjectDialog({
           <button
             type="button"
             onClick={onClose}
-            aria-label="StÃ¤ng"
-            title="StÃ¤ng"
+            aria-label="Stäng"
+            title="Stäng"
             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           >
             <X size={18} />
@@ -225,7 +225,7 @@ function CreateProjectDialog({
 function ProjectRow({ project }: { project: EbProjectListItem }) {
   const primaryInspection = getPrimaryInspection(project)
   const address = [project.address, project.postalCode, project.city].filter(Boolean).join(', ')
-  const agreement = [project.standardAgreement, project.contractForm].filter(Boolean).join(' Â· ')
+  const agreement = [project.standardAgreement, project.contractForm].filter(Boolean).join(' · ')
 
   return (
     <Link
@@ -239,8 +239,8 @@ function ProjectRow({ project }: { project: EbProjectListItem }) {
         </p>
       </div>
       <div className="min-w-0 text-xs text-gray-600">
-        <p className="truncate font-medium text-gray-800">{project.clientName ?? 'BestÃ¤llare ej satt'}</p>
-        <p className="truncate">{project.contractorName ?? 'EntreprenÃ¶r ej satt'}</p>
+        <p className="truncate font-medium text-gray-800">{project.clientName ?? 'Beställare ej satt'}</p>
+        <p className="truncate">{project.contractorName ?? 'Entreprenör ej satt'}</p>
         {agreement ? <p className="mt-0.5 truncate text-emerald-800">{agreement}</p> : null}
       </div>
       <div className="text-xs text-gray-700">
@@ -316,7 +316,7 @@ export default function EbDashboardClient({
                   className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                 >
                   <Settings size={16} />
-                  InstÃ¤llningar
+                  Inställningar
                 </Link>
                 <button
                   type="button"
@@ -405,5 +405,6 @@ export default function EbDashboardClient({
     </Protected>
   )
 }
+
 
 

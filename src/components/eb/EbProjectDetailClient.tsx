@@ -75,10 +75,10 @@ type EditableParticipant = EbInvitationParticipant & {
 
 const VARIANT_OPTIONS: Array<{ value: EbInspectionVariant; label: string }> = [
   { value: 'EB', label: 'Efterbesiktning' },
-  { value: 'FB', label: 'FÃ¶rbesiktning' },
+  { value: 'FB', label: 'Förbesiktning' },
   { value: 'GB', label: 'Garantibesiktning' },
   { value: 'KSB', label: 'Kompletterande slutbesiktning' },
-  { value: 'SAB', label: 'SÃ¤rskild besiktning' },
+  { value: 'SAB', label: 'Särskild besiktning' },
 ]
 
 function formatDate(value: string | null) {
@@ -98,7 +98,7 @@ function getStatusLabel(status: string | null) {
   if (normalized === 'draft') return 'Utkast'
   if (normalized === 'completed') return 'Klar'
   if (normalized === 'archived') return 'Arkiverad'
-  return status ?? 'PÃ¥gÃ¥ende'
+  return status ?? 'Pågående'
 }
 
 function inputClassName() {
@@ -214,8 +214,8 @@ function CreateInspectionDialog({
           <button
             type="button"
             onClick={onClose}
-            aria-label="StÃ¤ng"
-            title="StÃ¤ng"
+            aria-label="Stäng"
+            title="Stäng"
             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           >
             <X size={18} />
@@ -280,7 +280,7 @@ function CreateInspectionDialog({
               />
             )}
             {fieldLabel(
-              'StartmÃ¶te',
+              'Startmöte',
               <input
                 type="time"
                 value={form.startMeetingTime}
@@ -289,7 +289,7 @@ function CreateInspectionDialog({
               />
             )}
             {fieldLabel(
-              'SlutmÃ¶te',
+              'Slutmöte',
               <input
                 type="time"
                 value={form.finalMeetingTime}
@@ -394,8 +394,8 @@ function EditProjectDialog({
           <button
             type="button"
             onClick={onClose}
-            aria-label="StÃ¤ng"
-            title="StÃ¤ng"
+            aria-label="Stäng"
+            title="Stäng"
             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           >
             <X size={18} />
@@ -421,7 +421,7 @@ function EditProjectDialog({
               className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={16} />}
-              {submitting ? 'Sparar...' : 'Spara Ã¤ndringar'}
+              {submitting ? 'Sparar...' : 'Spara ändringar'}
             </button>
           </div>
         </form>
@@ -465,7 +465,7 @@ function InvitationDialog({
         const payload = (await response.json().catch(() => ({}))) as InvitationResponse
 
         if (!response.ok) {
-          throw new Error(payload.error ?? 'Kunde inte hÃ¤mta kallelse.')
+          throw new Error(payload.error ?? 'Kunde inte hämta kallelse.')
         }
 
         if (cancelled) return
@@ -475,7 +475,7 @@ function InvitationDialog({
         setParticipants((payload.participants ?? []).map(toLocalParticipant))
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : 'Kunde inte hÃ¤mta kallelse.')
+          setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta kallelse.')
         }
       } finally {
         if (!cancelled) {
@@ -572,8 +572,8 @@ function InvitationDialog({
           <button
             type="button"
             onClick={onClose}
-            aria-label="StÃ¤ng"
-            title="StÃ¤ng"
+            aria-label="Stäng"
+            title="Stäng"
             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           >
             <X size={18} />
@@ -590,7 +590,7 @@ function InvitationDialog({
             <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
               <section className="space-y-4">
                 {fieldLabel(
-                  'Ã„mne',
+                  'Ämne',
                   <input
                     value={subject}
                     onChange={(event) => setSubject(event.target.value)}
@@ -617,7 +617,7 @@ function InvitationDialog({
                     className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                   >
                     <UserPlus size={16} />
-                    LÃ¤gg till
+                    Lägg till
                   </button>
                 </div>
 
@@ -643,7 +643,7 @@ function InvitationDialog({
                         <input
                           value={participant.companyName ?? ''}
                           onChange={(event) => updateParticipant(index, 'companyName', event.target.value)}
-                          placeholder="FÃ¶retag"
+                          placeholder="Företag"
                           className={inputClassName()}
                         />
                         <input
@@ -818,7 +818,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
               <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
                 <div>
                   <h2 className="text-base font-semibold text-gray-950">Besiktningar</h2>
-                  <p className="text-xs text-gray-500">VÃ¤lj arbetslÃ¤ge fÃ¶r respektive besiktning.</p>
+                  <p className="text-xs text-gray-500">Välj arbetsläge för respektive besiktning.</p>
                 </div>
                 <span className="text-xs font-medium text-gray-500">{currentProject.inspections.length} st</span>
               </div>
@@ -885,7 +885,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                               className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                             >
                               <FileText size={16} />
-                              UtlÃ¥tande
+                              Utlåtande
                             </Link>
                             <button
                               type="button"
@@ -919,12 +919,12 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                 </div>
                 <dl className="mt-4 space-y-4">
                   <div>
-                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">BestÃ¤llare</dt>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Beställare</dt>
                     <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.clientName ?? 'Ej satt'}</dd>
                     {currentProject.clientOrgNo ? <dd className="text-xs text-gray-600">{currentProject.clientOrgNo}</dd> : null}
                   </div>
                   <div>
-                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">EntreprenÃ¶r</dt>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Entreprenör</dt>
                     <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.contractorName ?? 'Ej satt'}</dd>
                     {currentProject.contractorOrgNo ? <dd className="text-xs text-gray-600">{currentProject.contractorOrgNo}</dd> : null}
                   </div>
@@ -982,5 +982,6 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
     </Protected>
   )
 }
+
 
 
