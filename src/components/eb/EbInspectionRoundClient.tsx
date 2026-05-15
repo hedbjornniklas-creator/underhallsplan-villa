@@ -55,7 +55,7 @@ type ImageResponse = {
 }
 
 type ReorderResponse = {
-  notes?: EbNote[]
+  ok?: boolean
   error?: string
 }
 
@@ -337,8 +337,21 @@ export default function EbInspectionRoundClient({
   }
 
   const handleMoveNote = async (note: EbNote, direction: 'up' | 'down') => {
+    const previousNotes = round.notes
+    const orderedNotes = sortNotes(previousNotes)
+    const currentIndex = orderedNotes.findIndex((item) => item.id === note.id)
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+    if (currentIndex === -1 || targetIndex < 0 || targetIndex >= orderedNotes.length) return
+
+    const movedNotes = [...orderedNotes]
+    const current = movedNotes[currentIndex]
+    const target = movedNotes[targetIndex]
+    movedNotes[currentIndex] = { ...target, sortOrder: current.sortOrder }
+    movedNotes[targetIndex] = { ...current, sortOrder: target.sortOrder }
+
     setReorderingId(note.id)
     setError(null)
+    setRound((currentRound) => ({ ...currentRound, notes: sortNotes(movedNotes) }))
     try {
       const response = await fetch(`${notesBasePath}/${note.id}/reorder`, {
         method: 'PATCH',
@@ -346,11 +359,11 @@ export default function EbInspectionRoundClient({
         body: JSON.stringify({ direction }),
       })
       const payload = (await response.json().catch(() => ({}))) as ReorderResponse
-      if (!response.ok || !payload.notes) {
+      if (!response.ok || !payload.ok) {
         throw new Error(payload.error ?? 'Kunde inte flytta notering.')
       }
-      setRound((current) => ({ ...current, notes: sortNotes(payload.notes ?? []) }))
     } catch (moveError) {
+      setRound((currentRound) => ({ ...currentRound, notes: previousNotes }))
       setError(moveError instanceof Error ? moveError.message : 'Kunde inte flytta notering.')
     } finally {
       setReorderingId(null)

@@ -46,7 +46,7 @@ export async function PATCH(
       return jsonError('Ogiltig riktning.', 400)
     }
 
-    const notes = await reorderEbNote({
+    await reorderEbNote({
       orgId: org.orgId,
       projectId,
       inspectionId,
@@ -54,7 +54,7 @@ export async function PATCH(
       direction,
     })
 
-    return NextResponse.json({ notes })
+    return NextResponse.json({ ok: true })
   } catch (error) {
     return mapError(error, 'Kunde inte flytta notering.')
   }
