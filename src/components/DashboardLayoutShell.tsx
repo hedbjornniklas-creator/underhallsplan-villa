@@ -1,18 +1,14 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
-import { usePathname } from 'next/navigation'
+import React from 'react'
+import { usePathname, useSearchParams } from 'next/navigation'
 import Topbar from '@/components/Topbar'
 
 export default function DashboardLayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const [isEmbed, setIsEmbed] = useState(false)
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const v = params.get('embed')
-    setIsEmbed(v === '1' || v === 'true')
-  }, [pathname])
+  const searchParams = useSearchParams()
+  const embed = searchParams.get('embed')
+  const isEmbed = embed === '1' || embed === 'true'
 
   const isLandingPage = pathname === '/'
 
@@ -21,10 +17,14 @@ export default function DashboardLayoutShell({ children }: { children: React.Rea
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <div className="flex min-h-0 flex-1 flex-col">
-        <Topbar />
-        <main className="min-h-0 flex-1 overflow-auto">{children}</main>
+    <div className="flex min-h-screen bg-gray-50 print:block print:min-h-0 print:bg-white">
+      <div className="flex min-h-0 flex-1 flex-col print:block print:min-h-0">
+        <div className="print:hidden">
+          <Topbar />
+        </div>
+        <main className="min-h-0 flex-1 overflow-auto print:block print:min-h-0 print:overflow-visible">
+          {children}
+        </main>
       </div>
     </div>
   )

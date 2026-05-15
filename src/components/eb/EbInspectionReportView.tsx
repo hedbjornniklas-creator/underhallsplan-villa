@@ -95,7 +95,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
   }
 
   return (
-    <main className="min-h-screen bg-gray-100 text-gray-950 print:bg-white">
+    <main className="eb-report-print-root min-h-screen bg-gray-100 text-gray-950 print:min-h-0 print:bg-white">
       <div className="mx-auto max-w-5xl px-4 py-5 print:hidden">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
@@ -132,7 +132,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
         </div>
       </div>
 
-      <article className="mx-auto max-w-5xl bg-white px-10 py-12 shadow-sm print:max-w-none print:px-0 print:py-0 print:shadow-none">
+      <article className="eb-report-print-document mx-auto max-w-5xl bg-white px-10 py-12 shadow-sm print:shadow-none">
         <header className="border-b-4 border-gray-950 pb-8">
           <p className="text-sm font-bold uppercase tracking-[0.22em] text-emerald-800">
             {report.inspection.variantLabel}
