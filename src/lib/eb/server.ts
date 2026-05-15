@@ -407,6 +407,19 @@ export type CreateEbProjectInput = {
   finalMeetingTime?: string | null
 }
 
+export type UpdateEbProjectInput = Omit<
+  CreateEbProjectInput,
+  | 'requestedByUserId'
+  | 'inspectionDate'
+  | 'inspectionTime'
+  | 'meetingPlace'
+  | 'startMeetingTime'
+  | 'finalMeetingTime'
+> & {
+  projectId: string
+  notePrefix?: string | null
+}
+
 export type CreateEbInspectionInput = {
   orgId: string
   requestedByUserId: string
@@ -545,7 +558,11 @@ function toVariant(value: string | null | undefined): EbInspectionVariant {
   return isEbInspectionVariant(normalized) ? normalized : 'SLB'
 }
 
-function toProjectTitle(input: CreateEbProjectInput) {
+function toProjectTitle(input: {
+  title?: string | null
+  contractName?: string | null
+  address?: string | null
+}) {
   return (
     normalizeText(input.title) ??
     normalizeText(input.contractName) ??
@@ -554,7 +571,10 @@ function toProjectTitle(input: CreateEbProjectInput) {
   )
 }
 
-function toPropertyName(input: CreateEbProjectInput, title: string) {
+function toPropertyName(input: {
+  address?: string | null
+  propertyDesignation?: string | null
+}, title: string) {
   return normalizeText(input.address) ?? normalizeText(input.propertyDesignation) ?? title
 }
 
@@ -1377,6 +1397,77 @@ export async function createEbProjectWithInitialSlb(
     await cleanupCreatedRows({ projectId, inspectionId, propertyId })
     throw error
   }
+}
+
+export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbProjectListItem> {
+  const existing = await getEbProjectById({ orgId: input.orgId, projectId: input.projectId })
+  if (!existing) {
+    throw new Error('EB_PROJECT_NOT_FOUND')
+  }
+
+  const admin = createSupabaseAdminClient()
+  const title = toProjectTitle(input)
+  const normalizedAddress = normalizeText(input.address)
+  const normalizedClientName = normalizeText(input.clientName)
+  const normalizedClientOrgNo = normalizeText(input.clientOrgNo)
+  const normalizedContractorName = normalizeText(input.contractorName)
+  const normalizedContractorOrgNo = normalizeText(input.contractorOrgNo)
+  const normalizedNotePrefix = normalizeText(input.notePrefix) ?? 'BES'
+
+  const { error } = await admin
+    .from('eb_projects')
+    .update({
+      title,
+      contract_name: normalizeText(input.contractName),
+      object_description: normalizeText(input.objectDescription),
+      property_designation: normalizeText(input.propertyDesignation),
+      address: normalizedAddress,
+      postal_code: normalizeText(input.postalCode),
+      city: normalizeText(input.city),
+      municipality: normalizeText(input.municipality),
+      standard_agreement: normalizeText(input.standardAgreement),
+      contract_form: normalizeText(input.contractForm),
+      procurement_form: normalizeText(input.procurementForm),
+      contract_date: normalizeDate(input.contractDate),
+      note_prefix: normalizedNotePrefix,
+      client_name: normalizedClientName,
+      client_org_no: normalizedClientOrgNo,
+      contractor_name: normalizedContractorName,
+      contractor_org_no: normalizedContractorOrgNo,
+    })
+    .eq('org_id', input.orgId)
+    .eq('id', input.projectId)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte uppdatera EB-projekt.')
+  }
+
+  if (existing.propertyId) {
+    const { error: propertyError } = await admin
+      .from('properties')
+      .update({
+        name: toPropertyName(input, title),
+        address: normalizedAddress,
+        postal_code: normalizeText(input.postalCode),
+        city: normalizeText(input.city),
+        municipality: normalizeText(input.municipality),
+        cadastral_id: normalizeText(input.propertyDesignation),
+        client_name: normalizedClientName,
+        owner_name: normalizedClientName,
+      })
+      .eq('id', existing.propertyId)
+
+    if (propertyError) {
+      throw new Error(propertyError.message ?? 'Kunde inte uppdatera fastighetsuppgifter.')
+    }
+  }
+
+  const updated = await getEbProjectById({ orgId: input.orgId, projectId: input.projectId })
+  if (!updated) {
+    throw new Error('EB_PROJECT_NOT_FOUND')
+  }
+
+  return updated
 }
 
 async function resolveProjectPropertyId(project: EbProjectListItem) {

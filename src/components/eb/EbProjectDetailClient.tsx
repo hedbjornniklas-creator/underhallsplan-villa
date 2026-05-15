@@ -10,6 +10,7 @@ import {
   FileText,
   Loader2,
   Mail,
+  Pencil,
   Plus,
   Send,
   Smartphone,
@@ -44,6 +45,31 @@ type InspectionFormState = {
 }
 
 type CreateInspectionResponse = {
+  project?: EbProjectListItem
+  error?: string
+}
+
+type ProjectFormState = {
+  title: string
+  contractName: string
+  objectDescription: string
+  propertyDesignation: string
+  address: string
+  postalCode: string
+  city: string
+  municipality: string
+  standardAgreement: string
+  contractForm: string
+  procurementForm: string
+  contractDate: string
+  notePrefix: string
+  clientName: string
+  clientOrgNo: string
+  contractorName: string
+  contractorOrgNo: string
+}
+
+type UpdateProjectResponse = {
   project?: EbProjectListItem
   error?: string
 }
@@ -310,6 +336,235 @@ function CreateInspectionDialog({
             >
               {submitting ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
               {submitting ? 'Skapar...' : 'Skapa'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function buildProjectForm(project: EbProjectListItem): ProjectFormState {
+  return {
+    title: project.title ?? '',
+    contractName: project.contractName ?? '',
+    objectDescription: project.objectDescription ?? '',
+    propertyDesignation: project.propertyDesignation ?? '',
+    address: project.address ?? '',
+    postalCode: project.postalCode ?? '',
+    city: project.city ?? '',
+    municipality: project.municipality ?? '',
+    standardAgreement: project.standardAgreement ?? '',
+    contractForm: project.contractForm ?? '',
+    procurementForm: project.procurementForm ?? '',
+    contractDate: project.contractDate ?? '',
+    notePrefix: project.notePrefix ?? 'BES',
+    clientName: project.clientName ?? '',
+    clientOrgNo: project.clientOrgNo ?? '',
+    contractorName: project.contractorName ?? '',
+    contractorOrgNo: project.contractorOrgNo ?? '',
+  }
+}
+
+function EditProjectDialog({
+  open,
+  project,
+  onClose,
+  onUpdated,
+}: {
+  open: boolean
+  project: EbProjectListItem
+  onClose: () => void
+  onUpdated: (project: EbProjectListItem) => void
+}) {
+  const [form, setForm] = useState<ProjectFormState>(() => buildProjectForm(project))
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setForm(buildProjectForm(project))
+    setError(null)
+  }, [open, project])
+
+  if (!open) return null
+
+  const updateField = <K extends keyof ProjectFormState>(field: K, value: ProjectFormState[K]) => {
+    setForm((current) => ({ ...current, [field]: value }))
+  }
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (submitting) return
+
+    try {
+      setSubmitting(true)
+      setError(null)
+
+      const response = await fetch(`/api/eb/projects/${project.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      const payload = (await response.json().catch(() => ({}))) as UpdateProjectResponse
+
+      if (!response.ok || !payload.project) {
+        throw new Error(payload.error ?? 'Kunde inte uppdatera entreprenaden.')
+      }
+
+      onUpdated(payload.project)
+      onClose()
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Kunde inte uppdatera entreprenaden.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-3">
+      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-emerald-100 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">EB</p>
+            <h2 className="text-lg font-semibold text-gray-950">Redigera entreprenad</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Stäng"
+            title="Stäng"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={(event) => void handleSubmit(event)} className="overflow-auto p-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            {fieldLabel(
+              'Projektnamn',
+              <input
+                value={form.title}
+                onChange={(event) => updateField('title', event.target.value)}
+                className={inputClassName()}
+                required
+              />
+            )}
+            {fieldLabel(
+              'Noteringsserie',
+              <input
+                value={form.notePrefix}
+                onChange={(event) => updateField('notePrefix', event.target.value.toUpperCase())}
+                className={inputClassName()}
+                maxLength={12}
+              />
+            )}
+
+            <div className="md:col-span-2">
+              <h3 className="mb-2 text-sm font-semibold text-gray-950">Parter</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                {fieldLabel(
+                  'Beställare',
+                  <input value={form.clientName} onChange={(event) => updateField('clientName', event.target.value)} className={inputClassName()} />
+                )}
+                {fieldLabel(
+                  'Beställare org.nr',
+                  <input value={form.clientOrgNo} onChange={(event) => updateField('clientOrgNo', event.target.value)} className={inputClassName()} />
+                )}
+                {fieldLabel(
+                  'Entreprenör',
+                  <input value={form.contractorName} onChange={(event) => updateField('contractorName', event.target.value)} className={inputClassName()} />
+                )}
+                {fieldLabel(
+                  'Entreprenör org.nr',
+                  <input value={form.contractorOrgNo} onChange={(event) => updateField('contractorOrgNo', event.target.value)} className={inputClassName()} />
+                )}
+              </div>
+            </div>
+
+            <div className="md:col-span-2">
+              <h3 className="mb-2 text-sm font-semibold text-gray-950">Avtal</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                {fieldLabel(
+                  'Kontrakt',
+                  <input value={form.contractName} onChange={(event) => updateField('contractName', event.target.value)} className={inputClassName()} />
+                )}
+                {fieldLabel(
+                  'Kontraktsdatum',
+                  <input type="date" value={form.contractDate} onChange={(event) => updateField('contractDate', event.target.value)} className={inputClassName()} />
+                )}
+                {fieldLabel(
+                  'Standardavtal',
+                  <input value={form.standardAgreement} onChange={(event) => updateField('standardAgreement', event.target.value)} className={inputClassName()} />
+                )}
+                {fieldLabel(
+                  'Entreprenadform',
+                  <input value={form.contractForm} onChange={(event) => updateField('contractForm', event.target.value)} className={inputClassName()} />
+                )}
+                {fieldLabel(
+                  'Upphandlingsform',
+                  <input value={form.procurementForm} onChange={(event) => updateField('procurementForm', event.target.value)} className={inputClassName()} />
+                )}
+              </div>
+            </div>
+
+            <div className="md:col-span-2">
+              <h3 className="mb-2 text-sm font-semibold text-gray-950">Objekt</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                {fieldLabel(
+                  'Fastighetsbeteckning',
+                  <input value={form.propertyDesignation} onChange={(event) => updateField('propertyDesignation', event.target.value)} className={inputClassName()} />
+                )}
+                {fieldLabel(
+                  'Kommun',
+                  <input value={form.municipality} onChange={(event) => updateField('municipality', event.target.value)} className={inputClassName()} />
+                )}
+                {fieldLabel(
+                  'Adress',
+                  <input value={form.address} onChange={(event) => updateField('address', event.target.value)} className={inputClassName()} />
+                )}
+                {fieldLabel(
+                  'Postnummer',
+                  <input value={form.postalCode} onChange={(event) => updateField('postalCode', event.target.value)} className={inputClassName()} />
+                )}
+                {fieldLabel(
+                  'Ort',
+                  <input value={form.city} onChange={(event) => updateField('city', event.target.value)} className={inputClassName()} />
+                )}
+              </div>
+            </div>
+
+            <div className="md:col-span-2">
+              {fieldLabel(
+                'Objektbeskrivning',
+                <textarea
+                  value={form.objectDescription}
+                  onChange={(event) => updateField('objectDescription', event.target.value)}
+                  className={inputClassName()}
+                  rows={5}
+                />
+              )}
+            </div>
+          </div>
+
+          {error ? <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{error}</p> : null}
+
+          <div className="mt-5 flex justify-end gap-2 border-t border-emerald-100 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+            >
+              Avbryt
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {submitting ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={16} />}
+              {submitting ? 'Sparar...' : 'Spara ändringar'}
             </button>
           </div>
         </form>
@@ -611,6 +866,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
   const router = useRouter()
   const [currentProject, setCurrentProject] = useState(project)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [invitationInspection, setInvitationInspection] = useState<EbInspectionSummary | null>(null)
   const addressLine = [currentProject.address, currentProject.postalCode, currentProject.city]
     .filter(Boolean)
@@ -623,6 +879,11 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
     .join(' - ')
 
   const handleCreated = (updatedProject: EbProjectListItem) => {
+    setCurrentProject(updatedProject)
+    router.refresh()
+  }
+
+  const handleUpdated = (updatedProject: EbProjectListItem) => {
     setCurrentProject(updatedProject)
     router.refresh()
   }
@@ -659,14 +920,24 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setDialogOpen(true)}
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
-              >
-                <Plus size={16} />
-                Ny besiktning
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditDialogOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                >
+                  <Pencil size={16} />
+                  Redigera
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDialogOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
+                >
+                  <Plus size={16} />
+                  Ny besiktning
+                </button>
+              </div>
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -778,7 +1049,17 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
 
             <aside className="space-y-4">
               <section className="rounded-lg border border-emerald-100 bg-white/90 p-4 shadow-sm">
-                <h2 className="text-base font-semibold text-gray-950">Projektfakta</h2>
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-base font-semibold text-gray-950">Projektfakta</h2>
+                  <button
+                    type="button"
+                    onClick={() => setEditDialogOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-50"
+                  >
+                    <Pencil size={14} />
+                    Redigera
+                  </button>
+                </div>
                 <dl className="mt-4 space-y-4">
                   <div>
                     <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Beställare</dt>
@@ -826,6 +1107,12 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
           project={currentProject}
           onClose={() => setDialogOpen(false)}
           onCreated={handleCreated}
+        />
+        <EditProjectDialog
+          open={editDialogOpen}
+          project={currentProject}
+          onClose={() => setEditDialogOpen(false)}
+          onUpdated={handleUpdated}
         />
         <InvitationDialog
           open={Boolean(invitationInspection)}
