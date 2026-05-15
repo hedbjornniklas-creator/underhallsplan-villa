@@ -2221,7 +2221,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                       onClick={() => toggleImageBankSelection(image.id)}
                       className={`relative overflow-hidden rounded-xl border bg-white text-left shadow-sm transition ${
                         isSelected
-                          ? 'border-gray-900 ring-2 ring-gray-900/20'
+                          ? 'border-sky-600 ring-2 ring-sky-200'
                           : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
                       }`}
                       aria-pressed={isSelected}
@@ -2235,7 +2235,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                       <span
                         className={`absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded border text-[9px] font-bold shadow-sm ${
                           isSelected
-                            ? 'border-gray-900 bg-gray-900 text-white'
+                            ? 'border-sky-600 bg-sky-600 text-white'
                             : 'border-white/80 bg-white/90 text-transparent'
                         }`}
                       >
@@ -2256,7 +2256,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               type="button"
               onClick={() => void linkSelectedImageBankImages()}
               disabled={isInspectionLocked || selectedCount === 0}
-              className="rounded-full bg-gray-900 px-4 py-2 text-xs font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-full bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-sky-50 disabled:text-sky-700 disabled:ring-1 disabled:ring-sky-200"
             >
               Lägg till
             </button>
@@ -2342,7 +2342,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                       }}
                       className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
                         imageFilter === filter.key
-                          ? 'border-gray-900 bg-gray-900 text-white'
+                          ? 'border-sky-600 bg-sky-600 text-white'
                           : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
                       }`}
                     >
@@ -2426,7 +2426,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                       onClick={() => setQuickNoteFilter(filter.key)}
                       className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
                         quickNoteFilter === filter.key
-                          ? 'border-gray-900 bg-gray-900 text-white'
+                          ? 'border-indigo-600 bg-indigo-600 text-white'
                           : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
                       }`}
                     >
@@ -2457,7 +2457,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                       isLinked
                         ? 'border-rose-400 opacity-75 ring-2 ring-rose-100'
                         : isSelected
-                          ? 'border-gray-900 ring-2 ring-gray-900/10'
+                          ? 'border-sky-600 ring-2 ring-sky-100'
                           : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
                     }`}
                   >
@@ -2482,7 +2482,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                       disabled={isInspectionLocked}
                       className={`absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded border text-[9px] font-bold shadow-sm ${
                         isSelected
-                          ? 'border-gray-900 bg-gray-900 text-white'
+                          ? 'border-sky-600 bg-sky-600 text-white'
                           : 'border-white/80 bg-white/90 text-transparent'
                       }`}
                       aria-label={isSelected ? 'Avmarkera bild' : 'Markera bild'}
@@ -3547,7 +3547,7 @@ function ExteriorControlPointsSection({
                     className={
                       'rounded-full border px-2.5 py-1 text-[11px] ' +
                       (isGreen
-                        ? 'border-gray-900 bg-gray-900 text-white'
+                        ? 'border-emerald-600 bg-emerald-600 text-white'
                         : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
                     }
                     onClick={() => {
@@ -3586,7 +3586,7 @@ function ExteriorControlPointsSection({
                     const chipClass =
                       'rounded-full border px-2.5 py-1 text-[11px] ' +
                       (isActive
-                        ? 'border-gray-900 bg-gray-900 text-white'
+                        ? 'border-amber-600 bg-amber-600 text-white'
                         : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
                     return (
                       <button

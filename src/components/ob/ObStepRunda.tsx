@@ -2802,7 +2802,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               onClick={() => setImageFilter(filter.key)}
               className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
                 imageFilter === filter.key
-                  ? 'border-gray-900 bg-gray-900 text-white'
+                  ? 'border-sky-600 bg-sky-600 text-white'
                   : 'border-gray-200 bg-white text-gray-700'
               }`}
             >
@@ -2816,7 +2816,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
             type="button"
             onClick={() => void linkSelectedImagesToControlItem()}
             disabled={isInspectionLocked || !selectedControlItemId || selectedImageIds.size === 0}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-sky-50 disabled:text-sky-700 disabled:ring-1 disabled:ring-sky-200"
           >
             <Check size={15} />
             Koppla
@@ -2864,7 +2864,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 type="button"
                 onClick={() => toggleImageSelection(image.id)}
                 className={`w-full overflow-hidden rounded-xl border bg-white text-left ${
-                  selected ? 'border-gray-900 ring-2 ring-gray-900/10' : 'border-gray-200'
+                  selected ? 'border-sky-600 ring-2 ring-sky-100' : 'border-gray-200'
                 }`}
               >
                 <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-2 p-2">
@@ -2888,7 +2888,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                         {statusLabel(status)}
                       </span>
                       {selected ? (
-                        <span className="rounded-full bg-gray-900 px-2 py-0.5 text-[11px] font-semibold text-white">
+                        <span className="rounded-full bg-sky-600 px-2 py-0.5 text-[11px] font-semibold text-white">
                           Vald
                         </span>
                       ) : null}

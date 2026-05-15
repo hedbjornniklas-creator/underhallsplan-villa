@@ -196,7 +196,7 @@ function AiResultCarousel<T extends ControlPointSearchResult>({
         <button
           type="button"
           onClick={() => onSelect(activeResult)}
-          className="mt-4 w-full rounded-xl bg-gray-900 px-3 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-4 w-full rounded-xl bg-indigo-600 px-3 py-3 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-50 disabled:text-indigo-700 disabled:ring-1 disabled:ring-indigo-200"
           disabled={disabled}
         >
           Lägg till kontrollpunkt
@@ -315,8 +315,8 @@ export default function ControlPointSearchDialog<T extends ControlPointSearchRes
                 className={
                   'rounded px-3 py-1.5 text-xs font-medium ' +
                   (searchMode === 'control_points'
-                    ? 'bg-gray-900 text-white'
-                    : 'text-gray-700 hover:bg-gray-100')
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-700 hover:bg-slate-100')
                 }
               >
                 Kontrollpunkter
@@ -327,8 +327,8 @@ export default function ControlPointSearchDialog<T extends ControlPointSearchRes
                 className={
                   'rounded px-3 py-1.5 text-xs font-medium ' +
                   (searchMode === 'chips'
-                    ? 'bg-gray-900 text-white'
-                    : 'text-gray-700 hover:bg-gray-100')
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-700 hover:bg-slate-100')
                 }
               >
                 Chips
@@ -340,8 +340,8 @@ export default function ControlPointSearchDialog<T extends ControlPointSearchRes
                   className={
                     'rounded px-3 py-1.5 text-xs font-medium ' +
                     (searchMode === 'ai'
-                      ? 'bg-gray-900 text-white'
-                      : 'text-gray-700 hover:bg-gray-100')
+                      ? 'bg-violet-600 text-white'
+                      : 'text-violet-700 hover:bg-violet-50')
                   }
                 >
                   AI-sök
@@ -350,7 +350,7 @@ export default function ControlPointSearchDialog<T extends ControlPointSearchRes
             </div>
             <input
               ref={inputRef}
-              className="w-full rounded-xl border border-gray-300 bg-white px-3 py-3 text-base text-gray-900 placeholder:text-gray-500 focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+              className="w-full rounded-xl border border-gray-300 bg-white px-3 py-3 text-base text-gray-900 placeholder:text-gray-500 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               placeholder={currentPlaceholder}
               value={searchTerm}
               onChange={onSearchChange}
@@ -361,7 +361,7 @@ export default function ControlPointSearchDialog<T extends ControlPointSearchRes
                 type="button"
                 onClick={handleRunAiSearch}
                 disabled={disabled || searching || searchTerm.trim().length < 2}
-                className="rounded-xl bg-gray-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-xl bg-violet-600 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-violet-50 disabled:text-violet-700 disabled:ring-1 disabled:ring-violet-200"
               >
                 Sök med AI
               </button>

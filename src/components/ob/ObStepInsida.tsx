@@ -2318,7 +2318,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
         onChange={e => onChange(e.target.value)}
         disabled={disabled}
         className="h-9 w-full rounded-lg border border-gray-300 bg-gray-50 px-2 text-sm text-gray-900
-                   focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+                   focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
       >
         <option value="">Välj…</option>
         {options.map(o => (
@@ -2576,7 +2576,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                       onClick={() => toggleImageBankSelection(image.id)}
                       className={`relative overflow-hidden rounded-xl border bg-white text-left shadow-sm transition ${
                         isSelected
-                          ? 'border-gray-900 ring-2 ring-gray-900/20'
+                          ? 'border-sky-600 ring-2 ring-sky-200'
                           : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
                       }`}
                       aria-pressed={isSelected}
@@ -2590,7 +2590,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                       <span
                         className={`absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded border text-[9px] font-bold shadow-sm ${
                           isSelected
-                            ? 'border-gray-900 bg-gray-900 text-white'
+                            ? 'border-sky-600 bg-sky-600 text-white'
                             : 'border-white/80 bg-white/90 text-transparent'
                         }`}
                       >
@@ -2611,7 +2611,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
               type="button"
               onClick={() => void linkSelectedImageBankImages()}
               disabled={isInspectionLocked || selectedCount === 0}
-              className="rounded-full bg-gray-900 px-4 py-2 text-xs font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-full bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-sky-50 disabled:text-sky-700 disabled:ring-1 disabled:ring-sky-200"
             >
               Lägg till
             </button>
@@ -2694,7 +2694,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                       }}
                       className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
                         imageFilter === filter.key
-                          ? 'border-gray-900 bg-gray-900 text-white'
+                          ? 'border-sky-600 bg-sky-600 text-white'
                           : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
                       }`}
                     >
@@ -2778,7 +2778,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                       onClick={() => setQuickNoteFilter(filter.key)}
                       className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
                         quickNoteFilter === filter.key
-                          ? 'border-gray-900 bg-gray-900 text-white'
+                          ? 'border-indigo-600 bg-indigo-600 text-white'
                           : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
                       }`}
                     >
@@ -2809,7 +2809,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                         isLinked
                           ? 'border-rose-400 opacity-75 ring-2 ring-rose-100'
                           : isSelected
-                            ? 'border-gray-900 ring-2 ring-gray-900/10'
+                            ? 'border-sky-600 ring-2 ring-sky-100'
                             : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
                       }`}
                     >
@@ -2830,7 +2830,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                         disabled={isInspectionLocked}
                         className={`absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded border text-[9px] font-bold shadow-sm ${
                           isSelected
-                            ? 'border-gray-900 bg-gray-900 text-white'
+                            ? 'border-sky-600 bg-sky-600 text-white'
                             : 'border-white/80 bg-white/90 text-transparent'
                         }`}
                         aria-label={isSelected ? 'Avmarkera bild' : 'Markera bild'}
@@ -3044,7 +3044,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                 type="button"
                 onClick={saveEditRoom}
                 disabled={isInspectionLocked}
-                className="rounded-md bg-gray-900 px-3 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-50 disabled:text-indigo-700 disabled:ring-1 disabled:ring-indigo-200"
               >
                 Spara
               </button>
@@ -3323,7 +3323,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                 }}
                 className={`rounded-md border px-3 py-1 text-xs ${
                   activeFloor === fl
-                    ? 'bg-gray-900 text-white border-gray-900'
+                    ? 'bg-indigo-600 text-white border-indigo-600'
                     : 'bg-white text-gray-800 border-gray-300 hover:bg-gray-50'
                 }`}
               >
@@ -3461,7 +3461,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
               onClick={() => setActiveFloor(fl)}
               className={`rounded-md border px-3 py-1 text-xs ${
                 activeFloor === fl
-                  ? 'bg-gray-900 text-white border-gray-900'
+                  ? 'bg-indigo-600 text-white border-indigo-600'
                   : 'bg-white text-gray-800 border-gray-300 hover:bg-gray-50'
               }`}
             >
@@ -4426,7 +4426,7 @@ function RoomControlPointsSection({
                     className={
                       'rounded-full border px-2.5 py-1 text-xs md:text-[11px] ' +
                       (isGreen
-                        ? 'border-gray-900 bg-gray-900 text-white'
+                        ? 'border-emerald-600 bg-emerald-600 text-white'
                         : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
                     }
                     onClick={() => {
@@ -4469,7 +4469,7 @@ function RoomControlPointsSection({
                     const chipClass =
                       'rounded-full border px-2.5 py-1 text-xs md:text-[11px] ' +
                       (isActive
-                        ? 'border-gray-900 bg-gray-900 text-white'
+                        ? 'border-amber-600 bg-amber-600 text-white'
                         : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50')
                     return (
                       <button
