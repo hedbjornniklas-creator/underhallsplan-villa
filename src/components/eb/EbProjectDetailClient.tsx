@@ -690,7 +690,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
               <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
                 <div>
                   <h2 className="text-base font-semibold text-gray-950">Besiktningar</h2>
-                  <p className="text-xs text-gray-500">Välj arbetsläge för respektive besiktning.</p>
+                  <p className="text-xs text-gray-500">VÃ¤lj arbetslÃ¤ge fÃ¶r respektive besiktning.</p>
                 </div>
                 <span className="text-xs font-medium text-gray-500">{currentProject.inspections.length} st</span>
               </div>
@@ -757,7 +757,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                               className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                             >
                               <FileText size={16} />
-                              Utlåtande
+                              UtlÃ¥tande
                             </Link>
                             <button
                               type="button"
@@ -781,12 +781,12 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                 <h2 className="text-base font-semibold text-gray-950">Projektfakta</h2>
                 <dl className="mt-4 space-y-4">
                   <div>
-                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Beställare</dt>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">BestÃ¤llare</dt>
                     <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.clientName ?? 'Ej satt'}</dd>
                     {currentProject.clientOrgNo ? <dd className="text-xs text-gray-600">{currentProject.clientOrgNo}</dd> : null}
                   </div>
                   <div>
-                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Entreprenör</dt>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">EntreprenÃ¶r</dt>
                     <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.contractorName ?? 'Ej satt'}</dd>
                     {currentProject.contractorOrgNo ? <dd className="text-xs text-gray-600">{currentProject.contractorOrgNo}</dd> : null}
                   </div>
