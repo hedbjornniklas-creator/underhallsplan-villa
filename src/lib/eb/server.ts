@@ -98,7 +98,7 @@ export type EbNote = {
 
 export type EbNoteImage = {
   id: string
-  noteId: string
+  noteId: string | null
   inspectionId: string
   filePath: string
   label: string | null
@@ -808,7 +808,7 @@ function mapNote(
 function mapNoteImage(row: EbNoteImageRow, publicUrl: string): EbNoteImage {
   return {
     id: row.id,
-    noteId: row.eb_note_id ?? '',
+    noteId: row.eb_note_id ?? null,
     inspectionId: row.inspection_id,
     filePath: row.file_path,
     label: row.label ?? null,
@@ -926,7 +926,7 @@ async function listEbNoteImages(input: { inspectionId: string }) {
     .from('inspection_images')
     .select('id,inspection_id,eb_note_id,file_path,label,sort_order,created_at')
     .eq('inspection_id', input.inspectionId)
-    .not('eb_note_id', 'is', null)
+    .like('file_path', `${input.inspectionId}/eb-notes/%`)
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: true })
 
@@ -934,11 +934,9 @@ async function listEbNoteImages(input: { inspectionId: string }) {
     throw new Error(error.message ?? 'Kunde inte hämta EB-bilder.')
   }
 
-  return ((data ?? []) as EbNoteImageRow[])
-    .map((row) =>
-      mapNoteImage(row, admin.storage.from(EB_NOTE_IMAGE_BUCKET).getPublicUrl(row.file_path).data.publicUrl)
-    )
-    .filter((image) => image.noteId)
+  return ((data ?? []) as EbNoteImageRow[]).map((row) =>
+    mapNoteImage(row, admin.storage.from(EB_NOTE_IMAGE_BUCKET).getPublicUrl(row.file_path).data.publicUrl)
+  )
 }
 
 async function listEbNoteSuggestions(input: {

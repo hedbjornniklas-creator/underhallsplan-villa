@@ -10,6 +10,8 @@ import {
   Camera,
   ChevronDown,
   ChevronUp,
+  Grid2X2,
+  Grid3X3,
   Image as ImageIcon,
   Loader2,
   Pencil,
@@ -154,6 +156,9 @@ export default function EbInspectionRoundClient({
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
   const [reorderingId, setReorderingId] = useState<string | null>(null)
+  const [movingImageId, setMovingImageId] = useState<string | null>(null)
+  const [showLinkedImages, setShowLinkedImages] = useState(false)
+  const [imageViewCount, setImageViewCount] = useState(4)
   const [error, setError] = useState<string | null>(null)
 
   const activeDiscipline = round.disciplines.find((discipline) => discipline.id === activeDisciplineId) ?? null
@@ -167,6 +172,7 @@ export default function EbInspectionRoundClient({
   const imagesByNoteId = useMemo(() => {
     const map = new Map<string, EbNoteImage[]>()
     for (const image of round.images) {
+      if (!image.noteId) continue
       map.set(image.noteId, [...(map.get(image.noteId) ?? []), image])
     }
     for (const [noteId, images] of map) {
@@ -175,6 +181,10 @@ export default function EbInspectionRoundClient({
     return map
   }, [round.images])
   const allImages = useMemo(() => sortImages(round.images), [round.images])
+  const imageBankImages = useMemo(
+    () => allImages.filter((image) => showLinkedImages || !image.noteId),
+    [allImages, showLinkedImages]
+  )
   const displayNumberByNoteId = useMemo(() => {
     const map = new Map<string, number>()
     sortNotes(round.notes).forEach((note, index) => {
@@ -274,6 +284,13 @@ export default function EbInspectionRoundClient({
     setRound((current) => ({
       ...current,
       images: sortImages([...current.images.filter((item) => item.id !== image.id), image]),
+    }))
+  }
+
+  const updateImageInState = (image: EbNoteImage) => {
+    setRound((current) => ({
+      ...current,
+      images: sortImages(current.images.map((item) => (item.id === image.id ? image : item))),
     }))
   }
 
@@ -406,31 +423,49 @@ export default function EbInspectionRoundClient({
     await uploadImage(file)
   }
 
-  const deleteImage = async (image: EbNoteImage) => {
+  const detachImage = async (image: EbNoteImage) => {
     if (!editingNote || deletingImageId) return
-    const confirmed = window.confirm('Radera bilden?')
-    if (!confirmed) return
 
     try {
       setDeletingImageId(image.id)
       setError(null)
       const response = await fetch(`${notesBasePath}/${editingNote.id}/images`, {
-        method: 'DELETE',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageId: image.id }),
+        body: JSON.stringify({ imageId: image.id, action: 'detach' }),
       })
       const payload = (await response.json().catch(() => ({}))) as ImageResponse
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error ?? 'Kunde inte radera bilden.')
+      if (!response.ok || !payload.image) {
+        throw new Error(payload.error ?? 'Kunde inte koppla loss bilden.')
       }
-      setRound((current) => ({
-        ...current,
-        images: current.images.filter((item) => item.id !== image.id),
-      }))
+      updateImageInState(payload.image)
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera bilden.')
+      setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte koppla loss bilden.')
     } finally {
       setDeletingImageId(null)
+    }
+  }
+
+  const attachImage = async (imageId: string) => {
+    if (!editingNote || movingImageId) return
+
+    try {
+      setMovingImageId(imageId)
+      setError(null)
+      const response = await fetch(`${notesBasePath}/${editingNote.id}/images`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageId, action: 'attach' }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as ImageResponse
+      if (!response.ok || !payload.image) {
+        throw new Error(payload.error ?? 'Kunde inte koppla bilden.')
+      }
+      updateImageInState(payload.image)
+    } catch (attachError) {
+      setError(attachError instanceof Error ? attachError.message : 'Kunde inte koppla bilden.')
+    } finally {
+      setMovingImageId(null)
     }
   }
 
@@ -675,7 +710,7 @@ export default function EbInspectionRoundClient({
         {editorOpen ? (
           <div className="fixed inset-0 z-[100] flex justify-end bg-slate-950/25" onClick={closeEditor}>
             <aside
-              className="flex h-full w-full max-w-xl flex-col bg-white shadow-2xl"
+              className="flex h-full w-full max-w-5xl flex-col bg-white shadow-2xl"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
@@ -698,7 +733,8 @@ export default function EbInspectionRoundClient({
                   </button>
               </div>
 
-              <form onSubmit={(event) => void handleSubmit(event)} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+              <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_24rem]">
+              <form onSubmit={(event) => void handleSubmit(event)} className="min-h-0 space-y-3 overflow-y-auto p-4">
                 <div className="grid grid-cols-2 gap-3">
                   <label className="block">
                     <span className="block text-xs font-semibold text-gray-700">Beteckning</span>
@@ -784,97 +820,6 @@ export default function EbInspectionRoundClient({
                   </div>
                 ) : null}
 
-                <section className="border-y border-emerald-100 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Bilder</p>
-                      <p className="text-sm font-semibold text-gray-950">
-                        {editingNote ? (imagesByNoteId.get(editingNote.id)?.length ?? 0) : 0} st
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => cameraInputRef.current?.click()}
-                        disabled={uploadingImage}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                        aria-label="Kamera"
-                        title="Kamera"
-                      >
-                        {uploadingImage ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => galleryInputRef.current?.click()}
-                        disabled={uploadingImage}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                        aria-label="Bild"
-                        title="Bild"
-                      >
-                        <ImageIcon size={18} />
-                      </button>
-                    </div>
-                  </div>
-                  <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={(event) => void handleImageSelected(event)} className="hidden" />
-                  <input ref={galleryInputRef} type="file" accept="image/*" onChange={(event) => void handleImageSelected(event)} className="hidden" />
-                  {editingNote && (imagesByNoteId.get(editingNote.id)?.length ?? 0) > 0 ? (
-                    <div className="mt-3 grid grid-cols-3 gap-2">
-                      {(imagesByNoteId.get(editingNote.id) ?? []).map((image) => (
-                        <div key={image.id} className="relative overflow-hidden border border-emerald-100 bg-white">
-                          <img src={image.publicUrl} alt={image.label ?? 'Bild'} className="aspect-square w-full object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => void deleteImage(image)}
-                            disabled={deletingImageId === image.id}
-                            className="absolute right-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-                            aria-label="Radera bild"
-                            title="Radera bild"
-                          >
-                            {deletingImageId === image.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </section>
-
-                <section className="border-b border-emerald-100 pb-3">
-                  <div className="mb-2">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Bildbank</p>
-                    <p className="text-sm font-semibold text-gray-950">{allImages.length} bilder i besiktningen</p>
-                  </div>
-                  {allImages.length === 0 ? (
-                    <p className="rounded-md border border-emerald-100 bg-emerald-50/40 px-3 py-3 text-sm text-gray-600">
-                      Inga bilder i denna besiktning.
-                    </p>
-                  ) : (
-                    <div className="grid max-h-72 grid-cols-3 gap-2 overflow-y-auto pr-1">
-                      {allImages.map((image) => {
-                        const note = round.notes.find((item) => item.id === image.noteId) ?? null
-                        const active = editingNote?.id === note?.id
-                        return (
-                          <button
-                            key={image.id}
-                            type="button"
-                            onClick={() => {
-                              if (note) handleEdit(note)
-                            }}
-                            className={
-                              active
-                                ? 'overflow-hidden border-2 border-emerald-600 bg-white text-left'
-                                : 'overflow-hidden border border-emerald-100 bg-white text-left transition hover:border-emerald-300'
-                            }
-                          >
-                            <img src={image.publicUrl} alt={image.label ?? 'Bild'} className="aspect-square w-full object-cover" />
-                            <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-gray-700">
-                              {note ? `${round.project.notePrefix} ${note.noteNumber}` : 'Bild'}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </section>
 
                 <div className="grid grid-cols-2 gap-3">
                   <label className="block">
@@ -922,6 +867,162 @@ export default function EbInspectionRoundClient({
                   {saving ? 'Sparar...' : editingNote ? 'Spara ändring' : 'Skapa notering'}
                 </button>
               </form>
+              <aside className="min-h-0 border-l border-emerald-100 bg-emerald-50/20 p-4">
+                <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={(event) => void handleImageSelected(event)} className="hidden" />
+                <input ref={galleryInputRef} type="file" accept="image/*" onChange={(event) => void handleImageSelected(event)} className="hidden" />
+
+                <div className="flex h-full min-h-0 flex-col gap-4">
+                  <section
+                    className="rounded-md border border-dashed border-emerald-300 bg-white p-3"
+                    onDragOver={(event) => {
+                      if (!editingNote) return
+                      event.preventDefault()
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault()
+                      const imageId = event.dataTransfer.getData('application/x-eb-image-id')
+                      if (imageId) void attachImage(imageId)
+                    }}
+                  >
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Noteringens bilder</p>
+                        <p className="text-sm font-semibold text-gray-950">
+                          {editingNote ? (imagesByNoteId.get(editingNote.id)?.length ?? 0) : 0} st
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => cameraInputRef.current?.click()}
+                          disabled={uploadingImage || !editingNote}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                          aria-label="Kamera"
+                          title="Kamera"
+                        >
+                          {uploadingImage ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => galleryInputRef.current?.click()}
+                          disabled={uploadingImage || !editingNote}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          aria-label="Bild"
+                          title="Bild"
+                        >
+                          <ImageIcon size={18} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {editingNote && (imagesByNoteId.get(editingNote.id)?.length ?? 0) > 0 ? (
+                      <div className={imageViewCount === 1 ? 'grid grid-cols-1 gap-2' : imageViewCount === 4 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-2'}>
+                        {(imagesByNoteId.get(editingNote.id) ?? []).slice(0, imageViewCount).map((image) => (
+                          <div key={image.id} className="relative overflow-hidden rounded-md border border-emerald-100 bg-white">
+                            <img src={image.publicUrl} alt={image.label ?? 'Bild'} className="aspect-square w-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => void detachImage(image)}
+                              disabled={deletingImageId === image.id}
+                              className="absolute right-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                              aria-label="Koppla loss bild"
+                              title="Koppla loss"
+                            >
+                              {deletingImageId === image.id ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="rounded-md bg-emerald-50 px-3 py-4 text-sm text-gray-600">
+                        Dra in bilder från bildbanken eller lägg till en ny bild.
+                      </p>
+                    )}
+                  </section>
+
+                  <section className="flex min-h-0 flex-1 flex-col rounded-md border border-emerald-100 bg-white">
+                    <div className="border-b border-emerald-100 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Bildbank</p>
+                          <p className="text-sm font-semibold text-gray-950">{imageBankImages.length} bilder</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowLinkedImages((current) => !current)}
+                          className={`rounded-md border px-2.5 py-1 text-xs font-semibold ${
+                            showLinkedImages
+                              ? 'border-emerald-700 bg-emerald-700 text-white'
+                              : 'border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50'
+                          }`}
+                        >
+                          Visa kopplade
+                        </button>
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        {[1, 4, 9].map((count) => (
+                          <button
+                            key={count}
+                            type="button"
+                            onClick={() => setImageViewCount(count)}
+                            className={`inline-flex h-8 w-8 items-center justify-center rounded-md border ${
+                              imageViewCount === count
+                                ? 'border-emerald-700 bg-emerald-700 text-white'
+                                : 'border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50'
+                            }`}
+                            aria-label={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
+                            title={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
+                          >
+                            {count === 1 ? <ImageIcon size={15} /> : count === 4 ? <Grid2X2 size={15} /> : <Grid3X3 size={15} />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                      {imageBankImages.length === 0 ? (
+                        <p className="rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-8 text-center text-sm text-gray-600">
+                          Inga okopplade bilder i bildbanken.
+                        </p>
+                      ) : (
+                        <div className={imageViewCount === 1 ? 'grid grid-cols-1 gap-2' : imageViewCount === 4 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-2'}>
+                          {imageBankImages.map((image) => {
+                            const note = image.noteId ? round.notes.find((item) => item.id === image.noteId) ?? null : null
+                            const linkedToCurrent = editingNote?.id === image.noteId
+                            return (
+                              <button
+                                key={image.id}
+                                type="button"
+                                draggable={Boolean(editingNote)}
+                                onDragStart={(event) => {
+                                  event.dataTransfer.setData('application/x-eb-image-id', image.id)
+                                  event.dataTransfer.effectAllowed = 'move'
+                                }}
+                                onClick={() => {
+                                  if (!image.noteId) void attachImage(image.id)
+                                  else if (note) handleEdit(note)
+                                }}
+                                disabled={movingImageId === image.id}
+                                className={
+                                  linkedToCurrent
+                                    ? 'relative overflow-hidden rounded-md border-2 border-emerald-600 bg-white text-left'
+                                    : 'relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-300 disabled:cursor-wait disabled:opacity-60'
+                                }
+                              >
+                                <img src={image.publicUrl} alt={image.label ?? 'Bild'} className="aspect-square w-full object-cover" />
+                                <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-gray-700">
+                                  {note ? `${round.project.notePrefix} ${displayNumberByNoteId.get(note.id) ?? note.noteNumber ?? ''}` : 'Okopplad'}
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                </div>
+              </aside>
+              </div>
             </aside>
           </div>
         ) : null}

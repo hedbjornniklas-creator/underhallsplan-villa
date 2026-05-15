@@ -343,6 +343,7 @@ export default function EbInspectionMobileRoundClient({
   const imagesByNoteId = useMemo(() => {
     const map = new Map<string, EbNoteImage[]>()
     for (const image of round.images) {
+      if (!image.noteId) continue
       map.set(image.noteId, [...(map.get(image.noteId) ?? []), image])
     }
     for (const [noteId, images] of map) {

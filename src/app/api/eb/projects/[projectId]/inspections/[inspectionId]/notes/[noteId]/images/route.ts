@@ -21,6 +21,32 @@ function normalizeUuid(value: unknown) {
   return UUID_PATTERN.test(normalized) ? normalized : null
 }
 
+function mapImage(row: {
+  id: string
+  inspection_id: string
+  eb_note_id: string | null
+  file_path: string
+  label: string | null
+  sort_order: number | null
+  created_at: string | null
+}) {
+  const publicUrl = createSupabaseAdminClient()
+    .storage
+    .from(EB_NOTE_IMAGE_BUCKET)
+    .getPublicUrl(row.file_path).data.publicUrl
+
+  return {
+    id: row.id,
+    noteId: row.eb_note_id ?? null,
+    inspectionId: row.inspection_id,
+    filePath: row.file_path,
+    label: row.label,
+    sortOrder: row.sort_order ?? 100,
+    publicUrl,
+    createdAt: row.created_at ?? null,
+  }
+}
+
 function resolveFileExtension(file: File) {
   const fromName = file.name.split('.').pop()?.trim().toLowerCase() ?? ''
   const normalizedNameExt = fromName.replace(/[^a-z0-9]/g, '')
@@ -225,5 +251,68 @@ export async function DELETE(
     return NextResponse.json({ ok: true })
   } catch (error) {
     return mapError(error, 'Kunde inte ta bort bild.')
+  }
+}
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ projectId: string; inspectionId: string; noteId: string }> }
+) {
+  try {
+    const { projectId, inspectionId, noteId } = await context.params
+    const body = (await request.json().catch(() => ({}))) as { imageId?: unknown; action?: unknown }
+    const imageId = normalizeUuid(body.imageId)
+    const action = body.action === 'attach' ? 'attach' : body.action === 'detach' ? 'detach' : null
+    if (!imageId) return jsonError('Ogiltigt imageId.', 400)
+    if (!action) return jsonError('Ogiltig bildåtgärd.', 400)
+
+    const org = await requireEbContext()
+    const admin = createSupabaseAdminClient()
+
+    const { data: noteRow, error: noteError } = await admin
+      .from('eb_notes')
+      .select('id')
+      .eq('id', noteId)
+      .eq('org_id', org.orgId)
+      .eq('eb_project_id', projectId)
+      .eq('inspection_id', inspectionId)
+      .maybeSingle()
+
+    if (noteError) {
+      throw new Error(noteError.message ?? 'Kunde inte verifiera noteringen.')
+    }
+    if (!noteRow?.id) {
+      throw new Error('EB_NOTE_NOT_FOUND')
+    }
+
+    const { data: imageRow, error: imageError } = await admin
+      .from('inspection_images')
+      .select('id,inspection_id,eb_note_id,file_path,label,sort_order,created_at')
+      .eq('id', imageId)
+      .eq('inspection_id', inspectionId)
+      .like('file_path', `${inspectionId}/eb-notes/%`)
+      .maybeSingle()
+
+    if (imageError) {
+      throw new Error(imageError.message ?? 'Kunde inte läsa bildrad.')
+    }
+    if (!imageRow?.id) return jsonError('Bilden hittades inte.', 404)
+
+    const nextNoteId = action === 'attach' ? noteId : null
+    const { data: updatedImage, error: updateError } = await admin
+      .from('inspection_images')
+      .update({ eb_note_id: nextNoteId })
+      .eq('id', imageId)
+      .eq('inspection_id', inspectionId)
+      .select('id,inspection_id,eb_note_id,file_path,label,sort_order,created_at')
+      .single()
+
+    if (updateError || !updatedImage) {
+      throw new Error(updateError?.message ?? 'Kunde inte uppdatera bildkoppling.')
+    }
+
+    return NextResponse.json({ image: mapImage(updatedImage) })
+  } catch (error) {
+    return mapError(error, 'Kunde inte uppdatera bildkoppling.')
   }
 }
