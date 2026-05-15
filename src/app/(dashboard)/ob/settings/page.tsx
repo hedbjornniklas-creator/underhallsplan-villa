@@ -846,7 +846,7 @@ export default function ObSettingsPage() {
                 type="button"
                 onClick={() => void handleSaveCertifications()}
                 disabled={certSaving || certLoading || loading}
-                className="ml-auto rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                className="ml-auto rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-50 disabled:text-indigo-700"
               >
                 {certSaving ? 'Sparar...' : 'Spara certifieringar'}
               </button>
@@ -939,7 +939,7 @@ export default function ObSettingsPage() {
                 type="button"
                 onClick={() => void handleSaveAddons()}
                 disabled={addonSaving || addonLoading || loading}
-                className="ml-auto rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                className="ml-auto rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-50 disabled:text-indigo-700"
               >
                 {addonSaving ? 'Sparar...' : 'Spara tilläggsuppdrag'}
               </button>

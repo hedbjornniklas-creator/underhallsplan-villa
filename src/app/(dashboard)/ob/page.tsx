@@ -427,7 +427,7 @@ function CreateInspectionCard({
           type="button"
           onClick={() => void handleCreateFromScratch()}
           disabled={creating}
-          className="inline-flex w-full items-center justify-center rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+          className="inline-flex w-full items-center justify-center rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-50 disabled:text-indigo-700"
         >
           {creating ? 'Skapar...' : 'Skapa ny tom besiktning'}
         </button>
@@ -514,7 +514,7 @@ function CreateInspectionCard({
                 type="button"
                 onClick={() => void handleConvertFromAssignment()}
                 disabled={Boolean(convertingAssignmentId)}
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-50 disabled:text-indigo-700"
               >
                 {convertingAssignmentId ? 'Startar...' : 'Starta besiktning'}
               </button>
@@ -799,7 +799,7 @@ function AssignmentConfirmationsCard() {
           type="button"
           onClick={() => void handleQuickSend()}
           disabled={isSending}
-          className="mt-3 inline-flex w-full items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+          className="mt-3 inline-flex w-full items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-50 disabled:text-indigo-700"
         >
           <Send size={12} />
           {isSending ? 'Skickar...' : 'Skicka uppdragsbekräftelse'}

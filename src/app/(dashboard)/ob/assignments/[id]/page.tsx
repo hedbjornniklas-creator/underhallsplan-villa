@@ -213,7 +213,12 @@ export default function AssignmentDetailsPage() {
   const [addonOrders, setAddonOrders] = useState<AssignmentAddonOrder[]>([])
   const [form, setForm] = useState<FormState | null>(null)
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const formRef = useRef<FormState | null>(null)
   const lastSavedFingerprintRef = useRef<string>('')
+
+  useEffect(() => {
+    formRef.current = form
+  }, [form])
 
   const hasOrdererRole = Boolean(form?.ordererRole)
   const hasValidPrice = useMemo(() => {
@@ -267,6 +272,13 @@ export default function AssignmentDetailsPage() {
   useEffect(() => {
     void loadAssignment()
   }, [loadAssignment])
+
+  const clearAutosaveTimer = useCallback(() => {
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current)
+      autosaveTimerRef.current = null
+    }
+  }, [])
 
   const summary = useMemo(() => {
     if (!assignment) return null
@@ -360,11 +372,21 @@ export default function AssignmentDetailsPage() {
         }
 
         const updated = (payload as { assignment: AssignmentDetails }).assignment
+        const requestFingerprint = formFingerprint(nextForm)
         const updatedForm = toFormState(updated)
+        const updatedFingerprint = formFingerprint(updatedForm)
+        const currentFingerprint = formRef.current ? formFingerprint(formRef.current) : ''
+
         setAssignment(updated)
-        setForm(updatedForm)
-        lastSavedFingerprintRef.current = formFingerprint(updatedForm)
-        setSaveState('saved')
+        if (currentFingerprint === requestFingerprint) {
+          setForm(updatedForm)
+          formRef.current = updatedForm
+          lastSavedFingerprintRef.current = updatedFingerprint
+          setSaveState('saved')
+        } else {
+          lastSavedFingerprintRef.current = requestFingerprint
+          setSaveState('idle')
+        }
         return true
       } catch (saveError) {
         setSaveState('idle')
@@ -378,14 +400,12 @@ export default function AssignmentDetailsPage() {
   )
 
   useEffect(() => {
-    if (loading || !form || isEditingLocked) return
+    if (loading || !form || isEditingLocked || saving) return
 
     const nextFingerprint = formFingerprint(form)
     if (nextFingerprint === lastSavedFingerprintRef.current) return
 
-    if (autosaveTimerRef.current) {
-      clearTimeout(autosaveTimerRef.current)
-    }
+    clearAutosaveTimer()
 
     setSaveState('idle')
     autosaveTimerRef.current = setTimeout(() => {
@@ -393,18 +413,27 @@ export default function AssignmentDetailsPage() {
     }, 650)
 
     return () => {
-      if (autosaveTimerRef.current) {
-        clearTimeout(autosaveTimerRef.current)
-        autosaveTimerRef.current = null
-      }
+      clearAutosaveTimer()
     }
-  }, [form, loading, saveForm, isEditingLocked])
+  }, [form, loading, saveForm, isEditingLocked, saving, clearAutosaveTimer])
 
   const handleSend = async () => {
     try {
       setSending(true)
       setError(null)
       setSuccess(null)
+      clearAutosaveTimer()
+
+      if (!form) {
+        throw new Error('Uppdraget är inte färdigladdat.')
+      }
+
+      const currentFingerprint = formFingerprint(form)
+      if (currentFingerprint !== lastSavedFingerprintRef.current) {
+        const saved = await saveForm(form)
+        if (!saved) return
+      }
+
       const response = await fetch(`/api/ob/assignments/${id}/send`, { method: 'POST' })
       const payload = await response.json().catch(() => null)
       if (!response.ok) {
@@ -532,7 +561,7 @@ export default function AssignmentDetailsPage() {
               </button>
               <h1 className="text-2xl font-semibold text-slate-950">Uppdragsbekräftelse</h1>
               <div className="ml-auto flex flex-wrap items-center gap-2">
-                <span className="px-2 text-xs font-medium text-white/95">
+                <span className="px-2 text-xs font-medium text-slate-500">
                   {saveState === 'saving' ? 'Sparar...' : saveState === 'saved' ? 'Sparat' : ''}
                 </span>
                 {assignment?.status === 'draft' ? (
@@ -541,7 +570,7 @@ export default function AssignmentDetailsPage() {
                     onClick={() => void handleSend()}
                     disabled={!canSend || sending || booking || converting || reissuing || saving || loading}
                     title="Skickar uppdragsbekräftelsen till kunden för godkännande."
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-[0_10px_20px_-14px_rgba(255,255,255,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-[0_10px_20px_-14px_rgba(15,23,42,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500 disabled:shadow-none"
                   >
                     {sending ? 'Skickar...' : 'Skicka uppdragsbekräftelse'}
                   </button>
@@ -552,7 +581,7 @@ export default function AssignmentDetailsPage() {
                     onClick={() => void handleReissue()}
                     disabled={reissuing || sending || booking || converting || saving || loading}
                     title="Skapar en ny utkastversion baserad på befintliga uppgifter. Du kan redigera den och sedan skicka för nytt godkännande."
-                    className="rounded-lg border border-amber-200 bg-amber-500/20 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-amber-500/30 hover:shadow-[0_10px_20px_-12px_rgba(245,158,11,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950 transition duration-200 hover:-translate-y-0.5 hover:bg-amber-100 hover:shadow-[0_10px_20px_-12px_rgba(245,158,11,0.45)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 disabled:cursor-not-allowed disabled:border-amber-200 disabled:bg-amber-50 disabled:text-amber-600 disabled:shadow-none"
                   >
                     {reissuing ? 'Skapar ny...' : 'Skicka om uppdragsbekräftelse'}
                   </button>
@@ -562,7 +591,7 @@ export default function AssignmentDetailsPage() {
                   onClick={() => void handleBook()}
                   disabled={!canBook || booking || sending || converting || reissuing || saving || loading}
                   title="Bekräftar uppdraget som bokat och skickar full beställningsbekräftelse."
-                  className="rounded-lg border border-emerald-300 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-emerald-500/35 hover:shadow-[0_12px_24px_-12px_rgba(16,185,129,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-lg border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-[0_12px_24px_-12px_rgba(16,185,129,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:cursor-not-allowed disabled:border-emerald-200 disabled:bg-emerald-50 disabled:text-emerald-700 disabled:shadow-none"
                 >
                   {booking ? 'Accepterar...' : 'Acceptera uppdrag'}
                 </button>
@@ -571,7 +600,7 @@ export default function AssignmentDetailsPage() {
                   onClick={() => void handleConvert()}
                   disabled={!canConvert || converting || booking || sending || reissuing || saving || loading}
                   title="Startar besiktningen och öppnar besiktningsvyn."
-                  className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-[0_10px_20px_-12px_rgba(79,70,229,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                  className="rounded-lg border border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-[0_10px_20px_-12px_rgba(79,70,229,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:cursor-not-allowed disabled:border-indigo-200 disabled:bg-indigo-50 disabled:text-indigo-700 disabled:shadow-none"
                 >
                   {converting ? 'Startar...' : 'Starta besiktning'}
                 </button>
@@ -620,7 +649,7 @@ export default function AssignmentDetailsPage() {
                 </div>
                 <fieldset
                   className="space-y-4 border-0 p-0"
-                  disabled={isEditingLocked}
+                  disabled={isEditingLocked || sending}
                   aria-label="Uppdragsdata"
                 >
                 <div className="grid gap-4 md:grid-cols-2">

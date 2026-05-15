@@ -684,7 +684,7 @@ export default function ObWizard({
                         deliveryMetaLoading ||
                         deliveryMeta?.canSend === false
                       }
-                      className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-50 disabled:text-indigo-700 disabled:shadow-none"
                     >
                       {sendingReport
                         ? 'Utför åtgärd...'
@@ -742,7 +742,7 @@ export default function ObWizard({
                             type="button"
                             onClick={() => void handleSendConfirmationChoice('lock')}
                             disabled={!isValidEmail(primaryRecipientInput)}
-                            className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-50 disabled:text-indigo-700 disabled:shadow-none"
                           >
                             {isCurrentlyCompleted
                               ? 'Skicka och behåll låst'

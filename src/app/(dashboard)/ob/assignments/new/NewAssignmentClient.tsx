@@ -383,7 +383,7 @@ export default function NewAssignmentClient({
                   disabled={isBusy || !canCreate || !form.ordererRole}
                   aria-label="Skicka"
                   title="Skicka"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/70 bg-white/25 text-white shadow-sm transition hover:bg-white/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-slate-50"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-indigo-600 bg-indigo-600 text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:cursor-not-allowed disabled:border-indigo-200 disabled:bg-indigo-50 disabled:text-indigo-700 disabled:shadow-none disabled:hover:bg-indigo-50"
                 >
                   {sending ? (
                     <Loader2 size={16} className="animate-spin" />
