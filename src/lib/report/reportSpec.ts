@@ -1114,19 +1114,10 @@ export function buildReportSpec(params?: {
           {
             type: 'text',
             marginTopMm: 0,
-            marginBottomMm: 0.6,
-            source: {
-              kind: 'static',
-              text: 'Fuktkontroll/fuktindikering har utf\u00f6rts med instrument (m\u00e4rke och modell). Kontrollens omfattning och metod framg\u00e5r av resultatredovisningen nedan:',
-            },
-          },
-          {
-            type: 'text',
-            marginTopMm: 0,
             marginBottomMm: 1,
             source: {
               kind: 'mock',
-              path: 'mock.appendices.moisture_control.measurement.instrument',
+              path: 'mock.appendices.moisture_control.measurement.instrument_sentence',
             },
           },
           {
@@ -1232,8 +1223,7 @@ export function buildReportSpec(params?: {
                 value: [
                   {
                     kind: 'static',
-                    text:
-                      'Av SBR Diplomerad fuktkontrollant (F\u00d6R DIG SOM G\u00c5TT SBR:s kurs inom fuktm\u00e4tning)',
+                    text: 'Av SBR Diplomerad fuktkontrollant',
                   },
                   { kind: 'mock', path: 'mock.appendices.moisture_control.signing.secondary_qualification' },
                   { kind: 'mock', path: 'mock.appendices.moisture_control.signing.membership_line' },

@@ -891,6 +891,11 @@ const supabase: any = createSupabaseServerClient()
   const moistureSigningDate = valueOrFallback(
     formatDateOnly(moistureControlHeader?.signed_date ?? inspection?.date ?? null)
   )
+  const moistureInstrument = valueOrFallback(moistureControlHeader?.measurement_instrument ?? null)
+  const moistureInstrumentSentence =
+    moistureInstrument === fallback
+      ? 'Fuktkontroll/fuktindikering har utförts med instrument (märke och modell). Kontrollens omfattning och metod framgår av resultatredovisningen nedan.'
+      : `Fuktkontroll/fuktindikering har utförts med ${moistureInstrument}. Kontrollens omfattning och metod framgår av resultatredovisningen nedan.`
 
   const { data: exteriorItems, error: exteriorItemsError } = await supabase
     .from('settings_exterior_items')
@@ -1506,7 +1511,8 @@ const supabase: any = createSupabaseServerClient()
             object_other: valueOrFallback(moistureControlHeader?.object_other ?? null),
           },
           measurement: {
-            instrument: valueOrFallback(moistureControlHeader?.measurement_instrument ?? null),
+            instrument: moistureInstrument,
+            instrument_sentence: moistureInstrumentSentence,
             comment: valueOrFallback(moistureControlHeader?.comment ?? null),
           },
           rows: moistureControlRowsForReport,

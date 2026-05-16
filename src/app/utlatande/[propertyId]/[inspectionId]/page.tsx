@@ -929,6 +929,13 @@ export default async function Page({
       inspection?.date ??
       null
   )
+  const moistureInstrument = valueOrFallback(
+    (moistureControlHeader?.measurement_instrument as string | null | undefined) ?? null
+  )
+  const moistureInstrumentSentence =
+    moistureInstrument === fallback
+      ? 'Fuktkontroll/fuktindikering har utförts med instrument (märke och modell). Kontrollens omfattning och metod framgår av resultatredovisningen nedan.'
+      : `Fuktkontroll/fuktindikering har utförts med ${moistureInstrument}. Kontrollens omfattning och metod framgår av resultatredovisningen nedan.`
   const conditionBuildingYear =
     inspectionConditions?.building_year === null || inspectionConditions?.building_year === undefined
       ? null
@@ -1549,9 +1556,8 @@ export default async function Page({
             ),
           },
           measurement: {
-            instrument: valueOrFallback(
-              (moistureControlHeader?.measurement_instrument as string | null | undefined) ?? null
-            ),
+            instrument: moistureInstrument,
+            instrument_sentence: moistureInstrumentSentence,
             comment: valueOrFallback(
               (moistureControlHeader?.comment as string | null | undefined) ?? null
             ),

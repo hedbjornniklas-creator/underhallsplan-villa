@@ -852,8 +852,8 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Mätinstrument</div>
-                    <div>{toText(moistureMeasurement.instrument)}</div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Mätning/kontroll</div>
+                    <div>{toText(moistureMeasurement.instrument_sentence)}</div>
                   </div>
                   <div className="space-y-2">
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
