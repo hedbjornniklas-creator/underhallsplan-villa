@@ -1215,7 +1215,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     return map
   }, [controlItems])
 
-  const getRoomSummary = (room: InteriorRoom) => {
+  const getRoomNoteCount = (room: InteriorRoom) => {
     const roomId = room.id ?? ''
     const roomControlItems = roomId ? controlItemsByRoomId[roomId] || [] : []
     const roomNoteCount = (room.note ?? '').trim().length > 0 ? 1 : 0
@@ -1224,6 +1224,13 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
         String(value ?? '').trim().length > 0
       )
     ).length
+    return roomNoteCount + itemNoteCount
+  }
+
+  const getRoomSummary = (room: InteriorRoom) => {
+    const roomId = room.id ?? ''
+    const roomControlItems = roomId ? controlItemsByRoomId[roomId] || [] : []
+    const noteCount = getRoomNoteCount(room)
     const imageCount = roomControlItems.reduce((sum, ci) => {
       if (!ci.id) return sum
       return sum + (imagesByControlItemId[ci.id] || []).length
@@ -1231,8 +1238,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
     return [
       `${roomControlItems.length} kontrollpunkter`,
-      roomNoteCount + itemNoteCount > 0
-        ? `${roomNoteCount + itemNoteCount} noteringar`
+      noteCount > 0
+        ? `${noteCount} noteringar`
         : 'inga noteringar',
       imageCount > 0 ? `${imageCount} bilder` : null,
     ]
@@ -2866,10 +2873,39 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
   const renderImagePreview = () => {
     if (!previewImage) return null
+    const activeRoom = activeHybridRoomId
+      ? rooms.find(room => room.id === activeHybridRoomId) ?? null
+      : null
+    const activeRoomControlItems = activeRoom?.id
+      ? controlItemsByRoomId[activeRoom.id] || []
+      : []
+    const activeRoomAttachedImages = activeRoomControlItems.flatMap(item =>
+      item.id ? imagesByControlItemId[item.id] || [] : []
+    )
+    const previewImages = activeRoom
+      ? sortImagesNewestFirst(
+          uniqueImages([
+            ...getFilteredPanelImages(activeRoom),
+            ...activeRoomAttachedImages,
+            previewImage,
+          ])
+        )
+      : sortImagesNewestFirst(uniqueImages([...allInspectionImages, previewImage]))
+    const currentIndex = previewImages.findIndex(image => image.id === previewImage.id)
+    const canNavigate = previewImages.length > 1 && currentIndex >= 0
+    const showPreviewAtOffset = (offset: number) => {
+      if (!canNavigate) return
+      const nextIndex = (currentIndex + offset + previewImages.length) % previewImages.length
+      setPreviewImage(previewImages[nextIndex])
+    }
+
     return (
       <div className="fixed inset-0 z-[80] bg-black/85 p-4" role="dialog" aria-modal="true">
         <div className="flex h-full flex-col">
-          <div className="mb-3 flex justify-end">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-xs font-semibold text-white/75">
+              {canNavigate ? `${currentIndex + 1} / ${previewImages.length}` : ''}
+            </div>
             <button
               type="button"
               onClick={() => setPreviewImage(null)}
@@ -2878,13 +2914,35 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
               Stäng
             </button>
           </div>
-          <div className="min-h-0 flex-1">
+          <div className="relative min-h-0 flex-1">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={getImagePublicUrl(previewImage.file_path)}
               alt=""
               className="h-full w-full object-contain"
             />
+            {canNavigate ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => showPreviewAtOffset(-1)}
+                  className="absolute left-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-black/40 text-2xl leading-none text-white shadow-lg hover:bg-black/60"
+                  aria-label="Föregående bild"
+                  title="Föregående bild"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  onClick={() => showPreviewAtOffset(1)}
+                  className="absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-black/40 text-2xl leading-none text-white shadow-lg hover:bg-black/60"
+                  aria-label="Nästa bild"
+                  title="Nästa bild"
+                >
+                  ›
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
       </div>
@@ -3369,6 +3427,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             <div className="divide-y divide-gray-200">
               {filteredRooms.map(room => {
                 const isActive = activeRoom?.id === room.id
+                const noteCount = getRoomNoteCount(room)
 
                 return (
                   <button
@@ -3380,8 +3439,15 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                     }`}
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-gray-900">
-                        {getRoomHeading(room)}
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="truncate text-sm font-semibold text-gray-900">
+                          {getRoomHeading(room)}
+                        </span>
+                        {noteCount > 0 ? (
+                          <span className="shrink-0 rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                            ({noteCount})
+                          </span>
+                        ) : null}
                       </span>
                       <span className="mt-0.5 block truncate text-xs text-gray-600">
                         {getRoomSummary(room)}

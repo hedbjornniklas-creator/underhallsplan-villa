@@ -2553,10 +2553,46 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
 
   const renderImagePreview = () => {
     if (!previewImage) return null
+    const activeItem = activeHybridItemId
+      ? items.find(item => item.id === activeHybridItemId) ?? null
+      : null
+    const activeRows = activeItem ? getItemRows(activeItem.id) : []
+    const activeObservationIds = activeRows
+      .map(row => row.id)
+      .filter((id): id is string => !!id)
+    const activeControlItems = activeObservationIds.flatMap(
+      id => controlItemsByObservationId[id] || []
+    )
+    const activeItemAttachedImages = [
+      ...activeControlItems.flatMap(item =>
+        item.id ? imagesByControlItemId[item.id] || [] : []
+      ),
+      ...activeObservationIds.flatMap(id => imagesByObservationId[id] || []),
+    ]
+    const previewImages = activeItem
+      ? sortImagesNewestFirst(
+          uniqueImages([
+            ...getFilteredPanelImages(activeItem),
+            ...activeItemAttachedImages,
+            previewImage,
+          ])
+        )
+      : sortImagesNewestFirst(uniqueImages([...allInspectionImages, previewImage]))
+    const currentIndex = previewImages.findIndex(image => image.id === previewImage.id)
+    const canNavigate = previewImages.length > 1 && currentIndex >= 0
+    const showPreviewAtOffset = (offset: number) => {
+      if (!canNavigate) return
+      const nextIndex = (currentIndex + offset + previewImages.length) % previewImages.length
+      setPreviewImage(previewImages[nextIndex])
+    }
+
     return (
       <div className="fixed inset-0 z-[80] bg-black/85 p-4" role="dialog" aria-modal="true">
         <div className="flex h-full flex-col">
-          <div className="mb-3 flex justify-end">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-xs font-semibold text-white/75">
+              {canNavigate ? `${currentIndex + 1} / ${previewImages.length}` : ''}
+            </div>
             <button
               type="button"
               onClick={() => setPreviewImage(null)}
@@ -2565,13 +2601,35 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
               Stäng
             </button>
           </div>
-          <div className="min-h-0 flex-1">
+          <div className="relative min-h-0 flex-1">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={getImagePublicUrl(previewImage.file_path)}
               alt=""
               className="h-full w-full object-contain"
             />
+            {canNavigate ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => showPreviewAtOffset(-1)}
+                  className="absolute left-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-black/40 text-2xl leading-none text-white shadow-lg hover:bg-black/60"
+                  aria-label="Föregående bild"
+                  title="Föregående bild"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  onClick={() => showPreviewAtOffset(1)}
+                  className="absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-black/40 text-2xl leading-none text-white shadow-lg hover:bg-black/60"
+                  aria-label="Nästa bild"
+                  title="Nästa bild"
+                >
+                  ›
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
       </div>
