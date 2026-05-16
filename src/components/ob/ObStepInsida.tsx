@@ -2460,6 +2460,39 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     return visibleNotes
   }
 
+  const getImageContextLabel = (image: InspectionImage) => {
+    const isExterior =
+      image.source_area === 'exterior' ||
+      Boolean(image.origin_exterior_item_id || image.origin_exterior_observation_id)
+
+    if (isExterior) {
+      const exteriorItem = image.origin_exterior_item_id
+        ? exteriorItems.find(item => item.id === image.origin_exterior_item_id)
+        : image.origin_exterior_item_key
+          ? exteriorItems.find(item => item.key === image.origin_exterior_item_key)
+          : null
+      return `Utsida: ${exteriorItem?.label ?? image.origin_exterior_item_key ?? 'Komponent'}`
+    }
+
+    const linkedControlItem = image.control_item_id
+      ? controlItems.find(item => item.id === image.control_item_id) ?? null
+      : null
+    const roomId =
+      image.origin_interior_room_id ??
+      image.interior_room_id ??
+      linkedControlItem?.interior_room_id ??
+      null
+    const room = roomId ? rooms.find(item => item.id === roomId) ?? null : null
+    const roomLabel =
+      image.origin_room_label?.trim() ||
+      room?.room_label?.trim() ||
+      image.origin_room_type_key?.trim() ||
+      room?.room_type_key?.trim() ||
+      'Rum'
+
+    return `Insida: ${roomLabel}`
+  }
+
   const deleteQuickNote = async (noteId: string) => {
     if (isInspectionLocked) return
     if (!confirm('Radera snabbanteckningen?')) return
@@ -2562,6 +2595,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                       key={image.id}
                       type="button"
                       onClick={() => toggleImageBankSelection(image.id)}
+                      title={getImageContextLabel(image)}
                       className={`relative overflow-hidden rounded-xl border bg-white text-left shadow-sm transition ${
                         isSelected
                           ? 'border-sky-600 ring-2 ring-sky-200'
@@ -2615,6 +2649,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     const interiorImages = sortImagesNewestFirst(uniqueImages(allInspectionImages.filter(isInteriorImage)))
     const filteredImages = getFilteredPanelImages(room)
     const filteredQuickNotes = getFilteredQuickNotes(room)
+    const currentQuickNoteCount = getFilteredQuickNotes(room, 'current').length
     const countVisibleImages = (imageList: InspectionImage[]) =>
       showLinkedImages ? imageList.length : imageList.filter(image => !isImageLinkedToNote(image)).length
     const filters: Array<{ key: InteriorPanelFilter; label: string; count: number }> = [
@@ -2662,7 +2697,14 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                 }`}
                 aria-selected={panelTab === tab.key}
               >
-                {tab.label}
+                <span className="inline-flex items-center gap-1.5">
+                  <span>{tab.label}</span>
+                  {tab.key === 'quick_notes' && currentQuickNoteCount > 0 ? (
+                    <span className="rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                      ({currentQuickNoteCount})
+                    </span>
+                  ) : null}
+                </span>
               </button>
             ))}
           </div>
@@ -2807,7 +2849,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                         draggable={!isInspectionLocked}
                         onDragStart={event => handleImageDragStart(event, image)}
                         className="group block w-full cursor-grab overflow-hidden text-left focus:outline-none focus:ring-2 focus:ring-sky-300 active:cursor-grabbing"
-                        aria-label="Visa bild"
+                        aria-label={`Visa bild, ${getImageContextLabel(image)}`}
+                        title={getImageContextLabel(image)}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={getImagePublicUrl(image.file_path)} alt="" className={imageClass} />
@@ -3427,7 +3470,6 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             <div className="divide-y divide-gray-200">
               {filteredRooms.map(room => {
                 const isActive = activeRoom?.id === room.id
-                const noteCount = getRoomNoteCount(room)
 
                 return (
                   <button
@@ -3439,15 +3481,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                     }`}
                   >
                     <span className="min-w-0">
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className="truncate text-sm font-semibold text-gray-900">
-                          {getRoomHeading(room)}
-                        </span>
-                        {noteCount > 0 ? (
-                          <span className="shrink-0 rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-                            ({noteCount})
-                          </span>
-                        ) : null}
+                      <span className="block truncate text-sm font-semibold text-gray-900">
+                        {getRoomHeading(room)}
                       </span>
                       <span className="mt-0.5 block truncate text-xs text-gray-600">
                         {getRoomSummary(room)}

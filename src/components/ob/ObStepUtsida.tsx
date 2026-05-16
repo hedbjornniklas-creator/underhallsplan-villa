@@ -142,8 +142,12 @@ type InspectionImage = {
   created_at?: string | null
   capture_source?: string | null
   source_area?: string | null
+  origin_interior_room_id?: string | null
   origin_exterior_item_id?: string | null
   origin_exterior_observation_id?: string | null
+  origin_floor_label?: string | null
+  origin_room_label?: string | null
+  origin_room_type_key?: string | null
   origin_exterior_item_key?: string | null
   captured_at?: string | null
   processing_status?: string | null
@@ -2118,6 +2122,44 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     return visibleNotes
   }
 
+  const getImageContextLabel = (image: InspectionImage) => {
+    const linkedControlItem = image.control_item_id
+      ? controlItems.find(item => item.id === image.control_item_id) ?? null
+      : null
+    const linkedObservation = linkedControlItem?.exterior_observation_id
+      ? getObservationById(linkedControlItem.exterior_observation_id)
+      : image.exterior_observation_id
+        ? getObservationById(image.exterior_observation_id)
+        : null
+    const exteriorItem = image.origin_exterior_item_id
+      ? items.find(item => item.id === image.origin_exterior_item_id)
+      : image.origin_exterior_item_key
+        ? items.find(item => item.key === image.origin_exterior_item_key)
+        : linkedObservation?.exterior_item_id
+          ? items.find(item => item.id === linkedObservation.exterior_item_id)
+          : null
+
+    if (
+      image.source_area === 'exterior' ||
+      exteriorItem ||
+      image.origin_exterior_observation_id ||
+      image.exterior_observation_id
+    ) {
+      return `Utsida: ${exteriorItem?.label ?? image.origin_exterior_item_key ?? 'Komponent'}`
+    }
+
+    const roomId = image.origin_interior_room_id ?? image.interior_room_id ?? null
+    const room = roomId ? interiorRooms.find(item => item.id === roomId) ?? null : null
+    const roomLabel =
+      image.origin_room_label?.trim() ||
+      room?.room_label?.trim() ||
+      image.origin_room_type_key?.trim() ||
+      room?.room_type_key?.trim() ||
+      'Rum'
+
+    return `Insida: ${roomLabel}`
+  }
+
   const deleteQuickNote = async (noteId: string) => {
     if (isInspectionLocked) return
     if (!confirm('Radera snabbanteckningen?')) return
@@ -2235,6 +2277,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                       key={image.id}
                       type="button"
                       onClick={() => toggleImageBankSelection(image.id)}
+                      title={getImageContextLabel(image)}
                       className={`relative overflow-hidden rounded-xl border bg-white text-left shadow-sm transition ${
                         isSelected
                           ? 'border-sky-600 ring-2 ring-sky-200'
@@ -2483,7 +2526,8 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
                       draggable={!isInspectionLocked}
                       onDragStart={event => handleImageDragStart(event, image)}
                       className="group block w-full cursor-grab overflow-hidden text-left focus:outline-none focus:ring-2 focus:ring-sky-300 active:cursor-grabbing"
-                      aria-label="Visa bild"
+                      aria-label={`Visa bild, ${getImageContextLabel(image)}`}
+                      title={getImageContextLabel(image)}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
