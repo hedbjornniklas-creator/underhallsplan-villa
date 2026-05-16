@@ -492,7 +492,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   const [quickNoteFilter, setQuickNoteFilter] = useState<QuickNoteFilter>('current')
   const [quickNotes, setQuickNotes] = useState<RoundQuickNote[]>([])
   const [exteriorItems, setExteriorItems] = useState<SettingsExteriorItemLite[]>([])
-  const [mobileImagePanelHeight, setMobileImagePanelHeight] = useState(42)
+  const [mobileImagePanelHeight, setMobileImagePanelHeight] = useState(63)
   const [previewImage, setPreviewImage] = useState<InspectionImage | null>(null)
 
   // Våningar hämtade från Förutsättningar → Byggnadstyp
@@ -3232,18 +3232,28 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
               {getRoomSummary(activeRoom)}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={closePanel}
-            className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
-          >
-            Stäng
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => startEditRoom(activeRoom)}
+              disabled={isInspectionLocked}
+              className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Redigera rum
+            </button>
+            <button
+              type="button"
+              onClick={closePanel}
+              className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              Stäng
+            </button>
+          </div>
         </header>
 
         <div
           ref={mobileSplitContainerRef}
-          className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_460px]"
+          className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_570px] xl:grid-cols-[minmax(0,1fr)_690px]"
           style={mobileSplitStyle}
         >
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">

@@ -316,7 +316,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   const [quickNoteFilter, setQuickNoteFilter] = useState<QuickNoteFilter>('current')
   const [quickNotes, setQuickNotes] = useState<RoundQuickNote[]>([])
   const [interiorRooms, setInteriorRooms] = useState<InteriorRoomLite[]>([])
-  const [mobileImagePanelHeight, setMobileImagePanelHeight] = useState(42)
+  const [mobileImagePanelHeight, setMobileImagePanelHeight] = useState(63)
   const [previewImage, setPreviewImage] = useState<InspectionImage | null>(null)
   const supportsIsFreeNoteRef = useRef<boolean | null>(null)
   const overlayHistoryPushedRef = useRef(false)
@@ -2777,7 +2777,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
 
         <div
           ref={mobileSplitContainerRef}
-          className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_460px]"
+          className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_570px] xl:grid-cols-[minmax(0,1fr)_690px]"
           style={mobileSplitStyle}
         >
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
