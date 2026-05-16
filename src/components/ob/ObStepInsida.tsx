@@ -3918,14 +3918,22 @@ function RoomControlPointsSection({
   const [expandedOkGroupIds, setExpandedOkGroupIds] = useState<Set<string>>(
     () => new Set()
   )
-  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
-    () => new Set()
-  )
-  const [collapsedFreeNoteIds, setCollapsedFreeNoteIds] = useState<Set<string>>(
-    () => new Set()
-  )
-  const hasLoadedCollapsedGroupsRef = useRef(false)
-  const hasLoadedCollapsedFreeNotesRef = useRef(false)
+  const [collapsedGroupsState, setCollapsedGroupsState] = useState<{
+    storageKey: string
+    ids: Set<string>
+  }>(() => ({ storageKey: collapsedStorageKey, ids: new Set() }))
+  const [collapsedFreeNotesState, setCollapsedFreeNotesState] = useState<{
+    storageKey: string
+    ids: Set<string>
+  }>(() => ({ storageKey: collapsedStorageKey, ids: new Set() }))
+  const collapsedGroupIds =
+    collapsedGroupsState.storageKey === collapsedStorageKey
+      ? collapsedGroupsState.ids
+      : new Set<string>()
+  const collapsedFreeNoteIds =
+    collapsedFreeNotesState.storageKey === collapsedStorageKey
+      ? collapsedFreeNotesState.ids
+      : new Set<string>()
   const roomDisplayLabel =
     normalizeSwedish(room.room_label ?? '').trim() ||
     (isOtherRoomKey(room.room_type_key) ? OTHER_ROOM_DISPLAY_LABEL : 'rummet')
@@ -3964,76 +3972,80 @@ function RoomControlPointsSection({
   )
 
   useEffect(() => {
-    hasLoadedCollapsedGroupsRef.current = false
     if (typeof window === 'undefined') return
     try {
       const raw = window.localStorage.getItem(`${collapsedStorageKey}:control-points`)
       if (!raw) {
-        setCollapsedGroupIds(new Set())
-        hasLoadedCollapsedGroupsRef.current = true
+        window.queueMicrotask(() =>
+          setCollapsedGroupsState({ storageKey: collapsedStorageKey, ids: new Set() })
+        )
         return
       }
       const parsed = JSON.parse(raw)
-      setCollapsedGroupIds(
-        Array.isArray(parsed)
-          ? new Set(parsed.filter((value): value is string => typeof value === 'string'))
-          : new Set()
+      const ids = Array.isArray(parsed)
+        ? new Set(parsed.filter((value): value is string => typeof value === 'string'))
+        : new Set<string>()
+      window.queueMicrotask(() =>
+        setCollapsedGroupsState({ storageKey: collapsedStorageKey, ids })
       )
     } catch (e) {
       console.warn('Kunde inte läsa dolda kontrollpunkter för insida:', e)
-      setCollapsedGroupIds(new Set())
-    } finally {
-      hasLoadedCollapsedGroupsRef.current = true
+      window.queueMicrotask(() =>
+        setCollapsedGroupsState({ storageKey: collapsedStorageKey, ids: new Set() })
+      )
     }
   }, [collapsedStorageKey])
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !hasLoadedCollapsedGroupsRef.current) return
+    if (typeof window === 'undefined') return
+    if (collapsedGroupsState.storageKey !== collapsedStorageKey) return
     try {
       window.localStorage.setItem(
         `${collapsedStorageKey}:control-points`,
-        JSON.stringify(Array.from(collapsedGroupIds.values()))
+        JSON.stringify(Array.from(collapsedGroupsState.ids.values()))
       )
     } catch (e) {
       console.warn('Kunde inte spara dolda kontrollpunkter för insida:', e)
     }
-  }, [collapsedGroupIds, collapsedStorageKey])
+  }, [collapsedGroupsState, collapsedStorageKey])
 
   useEffect(() => {
-    hasLoadedCollapsedFreeNotesRef.current = false
     if (typeof window === 'undefined') return
     try {
       const raw = window.localStorage.getItem(`${collapsedStorageKey}:free-notes`)
       if (!raw) {
-        setCollapsedFreeNoteIds(new Set())
-        hasLoadedCollapsedFreeNotesRef.current = true
+        window.queueMicrotask(() =>
+          setCollapsedFreeNotesState({ storageKey: collapsedStorageKey, ids: new Set() })
+        )
         return
       }
       const parsed = JSON.parse(raw)
-      setCollapsedFreeNoteIds(
-        Array.isArray(parsed)
-          ? new Set(parsed.filter((value): value is string => typeof value === 'string'))
-          : new Set()
+      const ids = Array.isArray(parsed)
+        ? new Set(parsed.filter((value): value is string => typeof value === 'string'))
+        : new Set<string>()
+      window.queueMicrotask(() =>
+        setCollapsedFreeNotesState({ storageKey: collapsedStorageKey, ids })
       )
     } catch (e) {
       console.warn('Kunde inte läsa dolda fria noteringar för insida:', e)
-      setCollapsedFreeNoteIds(new Set())
-    } finally {
-      hasLoadedCollapsedFreeNotesRef.current = true
+      window.queueMicrotask(() =>
+        setCollapsedFreeNotesState({ storageKey: collapsedStorageKey, ids: new Set() })
+      )
     }
   }, [collapsedStorageKey])
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !hasLoadedCollapsedFreeNotesRef.current) return
+    if (typeof window === 'undefined') return
+    if (collapsedFreeNotesState.storageKey !== collapsedStorageKey) return
     try {
       window.localStorage.setItem(
         `${collapsedStorageKey}:free-notes`,
-        JSON.stringify(Array.from(collapsedFreeNoteIds.values()))
+        JSON.stringify(Array.from(collapsedFreeNotesState.ids.values()))
       )
     } catch (e) {
       console.warn('Kunde inte spara dolda fria noteringar för insida:', e)
     }
-  }, [collapsedFreeNoteIds, collapsedStorageKey])
+  }, [collapsedFreeNotesState, collapsedStorageKey])
 
   const expandOkGroup = (groupId: string) => {
     setExpandedOkGroupIds(prev => {
@@ -4052,31 +4064,32 @@ function RoomControlPointsSection({
     })
   }
   const collapseGroup = (groupId: string) => {
-    setCollapsedGroupIds(prev => {
-      const next = new Set(prev)
+    setCollapsedGroupsState(prev => {
+      const next = new Set(prev.storageKey === collapsedStorageKey ? prev.ids : [])
       next.add(groupId)
-      return next
+      return { storageKey: collapsedStorageKey, ids: next }
     })
   }
 
   const expandGroup = (groupId: string) => {
-    setCollapsedGroupIds(prev => {
-      if (!prev.has(groupId)) return prev
-      const next = new Set(prev)
+    setCollapsedGroupsState(prev => {
+      const current = prev.storageKey === collapsedStorageKey ? prev.ids : new Set<string>()
+      if (!current.has(groupId)) return prev.storageKey === collapsedStorageKey ? prev : { storageKey: collapsedStorageKey, ids: current }
+      const next = new Set(current)
       next.delete(groupId)
-      return next
+      return { storageKey: collapsedStorageKey, ids: next }
     })
   }
 
   const toggleFreeNoteCollapsed = (itemId: string) => {
-    setCollapsedFreeNoteIds(prev => {
-      const next = new Set(prev)
+    setCollapsedFreeNotesState(prev => {
+      const next = new Set(prev.storageKey === collapsedStorageKey ? prev.ids : [])
       if (next.has(itemId)) {
         next.delete(itemId)
       } else {
         next.add(itemId)
       }
-      return next
+      return { storageKey: collapsedStorageKey, ids: next }
     })
   }
 
