@@ -1104,17 +1104,35 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       setSaving(true)
       setError(null)
 
-      await supabase
+      const { data: imageRows, error: imageFetchError } = await supabase
         .from('inspection_images')
-        .delete()
+        .select('*')
         .eq('inspection_id', inspection.id)
         .eq('exterior_observation_id', rowId)
         .is('control_item_id', null)
 
-      await supabase
+      if (imageFetchError) throw imageFetchError
+
+      const unlinkedImages: InspectionImage[] = []
+      for (const image of (imageRows ?? []) as InspectionImage[]) {
+        const { data: updatedImage, error: updateError } = await supabase
+          .from('inspection_images')
+          .update(buildUnlinkedExteriorImagePatch(image))
+          .eq('id', image.id)
+          .eq('inspection_id', inspection.id)
+          .select('*')
+          .single()
+
+        if (updateError) throw updateError
+        unlinkedImages.push(updatedImage as InspectionImage)
+      }
+
+      const { error: observationDeleteError } = await supabase
         .from('inspection_exterior_observations')
         .delete()
         .eq('id', rowId)
+
+      if (observationDeleteError) throw observationDeleteError
 
       const rows = getItemRows(itemId)
       const filtered = rows.filter(r => r.id !== rowId)
@@ -1124,9 +1142,12 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         delete next[rowId]
         return next
       })
-      setAllInspectionImages(prev =>
-        prev.filter(image => !(image.exterior_observation_id === rowId && !image.control_item_id))
-      )
+      if (unlinkedImages.length > 0) {
+        const unlinkedById = new Map(unlinkedImages.map(image => [image.id, image]))
+        setAllInspectionImages(prev =>
+          prev.map(image => unlinkedById.get(image.id) ?? image)
+        )
+      }
     } catch (e: unknown) {
       console.error('deleteFreeNoteRow utsida failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte ta bort fri notering.')
@@ -1225,35 +1246,25 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
 
       const { data: imgRows, error: imgFetchErr } = await supabase
         .from('inspection_images')
-        .select('id, file_path')
+        .select('*')
+        .eq('inspection_id', inspection.id)
         .eq('control_item_id', itemId)
 
-      if (imgFetchErr) {
-        console.error('fetch inspection_images (utsida) failed:', imgFetchErr)
-      }
+      if (imgFetchErr) throw imgFetchErr
 
-      const imageRows = (imgRows ?? []) as Pick<InspectionImage, 'id' | 'file_path'>[]
-      if (imageRows.length > 0) {
-        const paths = imageRows.map(img => img.file_path).filter(Boolean)
-        if (paths.length > 0) {
-          const { error: storageErr } = await supabase.storage
-            .from(IMAGE_BUCKET)
-            .remove(paths)
-
-          if (storageErr) {
-            console.error('remove storage files (utsida) failed:', storageErr)
-          }
-        }
-
-        const imageIds = imageRows.map(img => img.id)
-        const { error: imgDeleteErr } = await supabase
+      const imageRows = (imgRows ?? []) as InspectionImage[]
+      const unlinkedImages: InspectionImage[] = []
+      for (const image of imageRows) {
+        const { data: updatedImage, error: updateError } = await supabase
           .from('inspection_images')
-          .delete()
-          .in('id', imageIds)
+          .update(buildUnlinkedExteriorImagePatch(image))
+          .eq('id', image.id)
+          .eq('inspection_id', inspection.id)
+          .select('*')
+          .single()
 
-        if (imgDeleteErr) {
-          console.error('delete inspection_images (utsida) failed:', imgDeleteErr)
-        }
+        if (updateError) throw updateError
+        unlinkedImages.push(updatedImage as InspectionImage)
       }
 
       const { error: delErr } = await supabase
@@ -1272,7 +1283,12 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
         delete clone[itemId]
         return clone
       })
-      setAllInspectionImages(prev => prev.filter(image => image.control_item_id !== itemId))
+      if (unlinkedImages.length > 0) {
+        const unlinkedById = new Map(unlinkedImages.map(image => [image.id, image]))
+        setAllInspectionImages(prev =>
+          prev.map(image => unlinkedById.get(image.id) ?? image)
+        )
+      }
     } catch (e: unknown) {
       console.error('deleteControlItem (utsida) failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte ta bort kontrollpunkt.')
@@ -3451,7 +3467,7 @@ function ExteriorControlPointsSection({
             const collapsedBadgeText = isGreen
               ? 'Inget att notera'
               : isYellow
-              ? `${selectedItems.length} vald${selectedItems.length === 1 ? '' : 'a'} chip`
+              ? `${selectedItems.length} vald${selectedItems.length === 1 ? ' notering' : 'a noteringar'}`
               : 'Ej färdig'
             return (
               <div
@@ -3699,7 +3715,7 @@ function ExteriorControlPointsSection({
                           <DebouncedTextarea
                             rows={2}
                             className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
-                            placeholder="Notering för just detta chip…"
+                            placeholder="Noteringstext..."
                             value={ci.note ?? ''}
                             onSave={value => {
                               if (ci.id) onUpdateItem(ci.id, { note: value })
@@ -3998,8 +4014,8 @@ function FreeNotesSection({
             ...cp,
             search_hint:
               labels.length > 0
-                ? `Chipträff: ${labels.slice(0, 3).join(', ')}`
-                : 'Chipträff',
+                ? `Noteringsträff: ${labels.slice(0, 3).join(', ')}`
+                : 'Noteringsträff',
           }
         })
       )
@@ -4052,7 +4068,7 @@ function FreeNotesSection({
         searching={searching}
         disabled={isInspectionLocked}
         controlPointPlaceholder="Sök t.ex. sprickor, rost, avrinning..."
-        chipPlaceholder="Sök chip, t.ex. spricka, fukt, missfärgning..."
+        chipPlaceholder="Sök notering, t.ex. spricka, fukt, missfärgning..."
         scopeLabelForResult={controlPointScopeLabel}
         onSearchModeChange={handleSearchModeChange}
         onSearchChange={handleSearchChange}

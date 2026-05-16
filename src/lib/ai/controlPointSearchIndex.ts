@@ -203,7 +203,7 @@ export const buildControlPointSearchText = (
   const outcomeText = outcomes
     .map((outcome, index) =>
       [
-        `Chip ${index + 1}`,
+        `Notering ${index + 1}`,
         compactPart('Rubrik', outcome.label),
         compactPart('Allvar', outcome.severity),
         compactPart('Notering', outcome.note_template),
@@ -233,7 +233,7 @@ export const buildControlPointSearchText = (
     compactListPart('Risktaggar', controlPoint.risk_tags),
     compactPart('Ar fran', controlPoint.trigger_year_from),
     compactPart('Ar till', controlPoint.trigger_year_to),
-    outcomeText ? `Chips och val:\n${outcomeText}` : '',
+    outcomeText ? `Noteringar och val:\n${outcomeText}` : '',
   ]
     .filter(Boolean)
     .join('\n')
@@ -425,7 +425,7 @@ const fetchControlPointCatalog = async () => {
     : { data: [], error: null }
 
   if (outcomesError) {
-    throw new Error(`Kunde inte hamta chips: ${outcomesError.message}`)
+    throw new Error(`Kunde inte hamta noteringar: ${outcomesError.message}`)
   }
 
   const outcomes = (outcomeRows ?? []) as unknown as ControlPointSearchOutcome[]
@@ -627,7 +627,7 @@ export const searchControlPointIndex = async (
     .order('sort_order', { ascending: true })
 
   if (outcomesError) {
-    throw new Error(`Kunde inte hamta chips for AI-traffar: ${outcomesError.message}`)
+    throw new Error(`Kunde inte hamta noteringar for AI-traffar: ${outcomesError.message}`)
   }
 
   const outcomesByControlPointId = ((outcomeRows ?? []) as unknown as ControlPointSearchOutcome[]).reduce<

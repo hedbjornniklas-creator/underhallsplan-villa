@@ -493,6 +493,9 @@ export default function EbInspectionRoundClient({
       setRound((current) => ({
         ...current,
         notes: current.notes.filter((item) => item.id !== note.id),
+        images: current.images.map((image) =>
+          image.noteId === note.id ? { ...image, noteId: null } : image
+        ),
       }))
       if (editingNote?.id === note.id) {
         resetForm()

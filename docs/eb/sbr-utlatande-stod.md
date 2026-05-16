@@ -29,6 +29,46 @@ Syfte: hålla koll på vilka uppgifter som krävs för ett SBR-likt utlåtande f
 | Handlingar/bilagor som filer | `eb_project_attachments` | Entreprenadsidan | Strukturerat som filer, men inte fullt kopplat till SBR-bilageförteckning. |
 | Utlåtandets formella text | `eb_inspection_details.report_draft` | Utlåtandeutkast | Redigerbart JSON-utkast. |
 
+## Fältprincip
+
+All nödvändig information ska antingen finnas som strukturerat fält eller som redigerbar utlåtandesektion:
+
+- Strukturerade fält används för sådant som återkommer i listor, filter, kallelser och noteringar: entreprenad, parter, objekt, avtal, tider, deltagare, fack, noteringar, bilder och bilagor.
+- Redigerbara utlåtandesektioner används för formella bedömningar och texter som varierar mellan uppdrag: jäv, tidigare besiktningar, handlingar, ej åtkomligt, dokumentationsbesiktning, godkännande, garantitid, avhjälpande, efterbesiktning, sändlista och underskrift.
+- Utlåtandeutkastet sparas i `eb_inspection_details.report_draft`. Det innebär att vi inte behöver hårdkoda nya databaskolumner för varje formell textpunkt innan flödet har satt sig.
+- Om ett redigerbart fält senare behöver statistik, filtrering eller återanvändning ska det brytas ut till egen kolumn/tabell.
+
+## Standardtexter
+
+EB-standardtexter ska inte hårdkodas i React-komponenter eller i `src/lib/eb/server.ts`. De ska ligga som separata textfiler och registreras i `src/content/standardtexts/registry.ts`, på samma sätt som ÖB-utlåtandet.
+
+EB-texterna ligger här:
+
+- `src/content/standardtexts/eb/EB_REPORT_SCOPE.txt`
+- `src/content/standardtexts/eb/EB_REPORT_INSPECTORS.txt`
+- `src/content/standardtexts/eb/EB_REPORT_SUMMONS_MISSING.txt`
+- `src/content/standardtexts/eb/EB_REPORT_CONFLICT_OF_INTEREST.txt`
+- `src/content/standardtexts/eb/EB_REPORT_PREVIOUS_INSPECTIONS_TESTS.txt`
+- `src/content/standardtexts/eb/EB_REPORT_CONTRACT_DOCUMENTS_MISSING.txt`
+- `src/content/standardtexts/eb/EB_REPORT_NOT_ACCESSIBLE_NONE.txt`
+- `src/content/standardtexts/eb/EB_REPORT_DOCUMENTATION_ONLY.txt`
+- `src/content/standardtexts/eb/EB_REPORT_APPENDICES.txt`
+- `src/content/standardtexts/eb/EB_REPORT_DEFECTS_APPENDICES_EMPTY.txt`
+- `src/content/standardtexts/eb/EB_REPORT_MARKER_LEGEND_MISSING.txt`
+- `src/content/standardtexts/eb/EB_REPORT_SPECIAL_INVESTIGATION.txt`
+- `src/content/standardtexts/eb/EB_REPORT_DEDUCTION.txt`
+- `src/content/standardtexts/eb/EB_REPORT_NOTES_EMPTY.txt`
+- `src/content/standardtexts/eb/EB_REPORT_APPROVAL_DECISION.txt`
+- `src/content/standardtexts/eb/EB_REPORT_CONTINUED_FINAL_INSPECTION.txt`
+- `src/content/standardtexts/eb/EB_REPORT_WARRANTY_END.txt`
+- `src/content/standardtexts/eb/EB_REPORT_REMEDY_DEADLINE.txt`
+- `src/content/standardtexts/eb/EB_REPORT_AFTER_INSPECTION.txt`
+- `src/content/standardtexts/eb/EB_REPORT_OTHER_NOTES.txt`
+- `src/content/standardtexts/eb/EB_REPORT_DISTRIBUTION_LIST_MISSING.txt`
+- `src/content/standardtexts/eb/EB_REPORT_SIGNATURE_CERTIFICATE.txt`
+
+Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de ska inte vara en kopia av SBR:s malltext.
+
 ## SBR-punkter
 
 | SBR-punkt | Stöd i Hushub | Källa |

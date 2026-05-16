@@ -1712,8 +1712,8 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
             ...cp,
             search_hint:
               outcomeLabels.length > 0
-                ? `Chipträff: ${outcomeLabels.slice(0, 3).join(', ')}`
-                : 'Chipträff',
+                ? `Noteringsträff: ${outcomeLabels.slice(0, 3).join(', ')}`
+                : 'Noteringsträff',
           }
         })
       )
@@ -1828,7 +1828,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         searching={searching}
         disabled={isInspectionLocked}
         controlPointPlaceholder="Sök kontrollpunkt..."
-        chipPlaceholder="Sök chip eller malltext..."
+        chipPlaceholder="Sök notering eller malltext..."
         aiPlaceholder="Beskriv vad du ser, t.ex. plåt som släppt på insidan..."
         showAiMode={area === 'interior'}
         aiSearchHasRun={aiSearchHasRun}

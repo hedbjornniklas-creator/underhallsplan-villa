@@ -146,7 +146,7 @@ function AiResultCarousel<T extends ControlPointSearchResult>({
 
         <div className="mt-4 space-y-2">
           <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Chips
+            Noteringar
           </div>
           {outcomes.length > 0 ? (
             <div className="space-y-2">
@@ -157,7 +157,7 @@ function AiResultCarousel<T extends ControlPointSearchResult>({
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-semibold text-gray-900">
-                      {outcome.label || outcome.outcome_key || 'Chip'}
+                      {outcome.label || outcome.outcome_key || 'Notering'}
                     </span>
                     {outcome.severity !== null && outcome.severity !== undefined && (
                       <span className="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[10px] text-gray-600">
@@ -188,7 +188,7 @@ function AiResultCarousel<T extends ControlPointSearchResult>({
             </div>
           ) : (
             <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
-              Inga chips kopplade till kontrollpunkten.
+              Inga noteringar kopplade till kontrollpunkten.
             </div>
           )}
         </div>
@@ -331,7 +331,7 @@ export default function ControlPointSearchDialog<T extends ControlPointSearchRes
                     : 'text-slate-700 hover:bg-slate-100')
                 }
               >
-                Chips
+                Noteringar
               </button>
               {showAiMode && (
                 <button
@@ -385,7 +385,7 @@ export default function ControlPointSearchDialog<T extends ControlPointSearchRes
           {!searching && emptyStateEnabled && searchTerm.trim().length >= 2 && searchResults.length === 0 && (
             <div className="rounded-lg border border-gray-200 bg-white px-3 py-3 text-sm text-gray-600">
               {searchMode === 'chips'
-                ? 'Inga chips'
+                ? 'Inga noteringar'
                 : searchMode === 'ai'
                   ? 'Inga AI-träffar'
                   : 'Inga kontrollpunkter'} hittades för &quot;{searchTerm.trim()}&quot;.

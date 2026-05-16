@@ -878,7 +878,7 @@ export default function AdminClient() {
   }
 
   const deleteOutcome = async (id: string) => {
-    if (!confirm('Ta bort chip/utfall?')) return
+    if (!confirm('Ta bort notering/utfall?')) return
     const { error } = await (supabase as any)
       .from('settings_control_point_outcomes')
       .delete()
@@ -901,7 +901,7 @@ export default function AdminClient() {
     }
     const rowsToCopy = outcomes.filter(o => selectedOutcomeIds.includes(o.id))
     if (!rowsToCopy.length) {
-      alert('Välj minst ett chip att kopiera.')
+      alert('Välj minst en notering att kopiera.')
       return
     }
 
@@ -922,7 +922,7 @@ export default function AdminClient() {
       .insert(payload)
     if (error) return alert(error.message)
 
-    alert(`${rowsToCopy.length} chip kopierades.`)
+    alert(`${rowsToCopy.length} noteringar kopierades.`)
   }
 
   const filteredPoints = useMemo(() => {
@@ -2414,7 +2414,7 @@ export default function AdminClient() {
                               onClick={() => openOutcomesPanel(p.id)}
                               className="w-full rounded-md border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100"
                             >
-                              Chips
+                              Noteringar
                             </button>
                             <button
                               onClick={() => openPointModal(p)}
@@ -2953,7 +2953,7 @@ export default function AdminClient() {
           <div className="bg-white w-full max-w-6xl rounded-xl shadow-lg p-4 space-y-3">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <div className="font-semibold">Chips / Utfall</div>
+                <div className="font-semibold">Noteringar / Utfall</div>
                 <div className="text-xs text-gray-500">settings_control_point_outcomes</div>
                 {selectedControlPoint && (
                   <div className="mt-1 text-xs text-gray-600">
@@ -2966,7 +2966,7 @@ export default function AdminClient() {
                   onClick={() => openOutcomeModal()}
                   className="bg-emerald-600 text-white text-sm px-3 py-1.5 rounded"
                 >
-                  + Nytt chip
+                  + Ny notering
                 </button>
                 <button
                   onClick={closeOutcomesPanel}
@@ -2978,7 +2978,7 @@ export default function AdminClient() {
             </div>
 
             <div className="flex items-center gap-2 text-sm">
-              <span className="text-gray-600">Kopiera markerade chip till:</span>
+              <span className="text-gray-600">Kopiera markerade noteringar till:</span>
               <select
                 value={copyTargetControlPointId}
                 onChange={e => setCopyTargetControlPointId(e.target.value)}
@@ -3002,7 +3002,7 @@ export default function AdminClient() {
             </div>
 
             {outcomesLoading ? (
-              <div className="text-sm text-gray-500">Laddar chips...</div>
+              <div className="text-sm text-gray-500">Laddar noteringar...</div>
             ) : (
               <div className="overflow-auto">
                 <table className="w-full text-sm">
@@ -3066,7 +3066,7 @@ export default function AdminClient() {
                     {outcomes.length === 0 && (
                       <tr>
                         <td className="py-4 text-gray-500" colSpan={9}>
-                          Inga chips ännu.
+                          Inga noteringar ännu.
                         </td>
                       </tr>
                     )}
@@ -3084,7 +3084,7 @@ export default function AdminClient() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold">
-                  {outcomeDraft.id ? 'Redigera chip/utfall' : 'Nytt chip/utfall'}
+                  {outcomeDraft.id ? 'Redigera notering/utfall' : 'Ny notering/utfall'}
                 </h3>
                 {outcomeDraft.id && (
                   <div className="text-xs text-gray-500 mt-1">ID: {outcomeDraft.id}</div>
@@ -3347,7 +3347,7 @@ export default function AdminClient() {
                   onChange={e => updatePointDraft({ default_risk_code: e.target.value || null })}
                 />
                 <div className="mt-1 text-[11px] text-gray-500">
-                  Standardtext på kontrollpunkten. Chipsens texter hanteras under Chips/Utfall.
+                  Standardtext på kontrollpunkten. Noteringarnas texter hanteras under Noteringar/Utfall.
                 </div>
               </label>
               <label className="text-sm">
@@ -3358,7 +3358,7 @@ export default function AdminClient() {
                   onChange={e => updatePointDraft({ default_ftu_code: e.target.value || null })}
                 />
                 <div className="mt-1 text-[11px] text-gray-500">
-                  Standardtext på kontrollpunkten. Chipsens texter hanteras under Chips/Utfall.
+                  Standardtext på kontrollpunkten. Noteringarnas texter hanteras under Noteringar/Utfall.
                 </div>
               </label>
               <label className="text-sm">

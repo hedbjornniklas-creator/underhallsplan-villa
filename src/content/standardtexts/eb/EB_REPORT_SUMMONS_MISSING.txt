@@ -1,0 +1,1 @@
+Ange hur kallelse har skett, när den skickades och vilka som kallades.

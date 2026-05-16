@@ -1,0 +1,1 @@
+Ange besiktningsman, ort, datum, certifiering och eventuell SBR-anslutning.

@@ -1,5 +1,7 @@
 import 'server-only'
 
+import { loadStandardText } from '@/content/standardtexts/loadStandardText'
+import type { StandardTextId } from '@/content/standardtexts/registry'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
@@ -1845,6 +1847,17 @@ export async function updateEbNote(input: SaveEbNoteInput & { noteId: string }):
 export async function deleteEbNote(input: DeleteEbNoteInput) {
   await getEbInspectionRoundBase(input)
   const admin = createSupabaseAdminClient()
+  const { error: imageDetachError } = await admin
+    .from('inspection_images')
+    .update({ eb_note_id: null })
+    .eq('inspection_id', input.inspectionId)
+    .eq('eb_note_id', input.noteId)
+    .like('file_path', `${input.inspectionId}/eb-notes/%`)
+
+  if (imageDetachError) {
+    throw new Error(imageDetachError.message ?? 'Kunde inte koppla loss EB-bilder.')
+  }
+
   const { error, count } = await admin
     .from('eb_notes')
     .delete({ count: 'exact' })
@@ -2016,6 +2029,10 @@ function hasText(value: string | null | undefined) {
   return Boolean(normalizeText(value))
 }
 
+function ebStandardText(id: StandardTextId) {
+  return loadStandardText(id).trim()
+}
+
 function buildEbReportDraft(input: {
   round: EbInspectionRound
   participants: EbInvitationParticipant[]
@@ -2037,7 +2054,7 @@ function buildEbReportDraft(input: {
   )
   const attachments = round.project.objectDescription
     ? `Objektbeskrivning: ${round.project.objectDescription}`
-    : 'Handlingar anges eller kompletteras i utlåtandeutkastet.'
+    : ebStandardText('EB_REPORT_CONTRACT_DOCUMENTS_MISSING')
 
   const defaults: EbReportDraftSection[] = [
     {
@@ -2059,7 +2076,7 @@ function buildEbReportDraft(input: {
       isRelevant: true,
       text: reportList([
         round.project.objectDescription,
-        'Besiktningen omfattar de delar av entreprenaden som omfattas av uppdraget och som varit åtkomliga vid besiktningstillfället.',
+        ebStandardText('EB_REPORT_SCOPE'),
       ]),
       updatedAt: null,
     },
@@ -2103,7 +2120,7 @@ function buildEbReportDraft(input: {
       source: 'manual',
       status: 'missing',
       isRelevant: true,
-      text: 'Besiktningsman, vem som utsett besiktningsmannen samt eventuella biträdande besiktningsmän anges här.',
+      text: ebStandardText('EB_REPORT_INSPECTORS'),
       updatedAt: null,
     },
     {
@@ -2125,7 +2142,7 @@ function buildEbReportDraft(input: {
       isRelevant: true,
       text: round.inspection.invitationSentAt
         ? `Kallelse skickades ${round.inspection.invitationSentAt}.`
-        : 'Ange hur kallelse har skett och när den skickades.',
+        : ebStandardText('EB_REPORT_SUMMONS_MISSING'),
       updatedAt: null,
     },
     {
@@ -2135,7 +2152,7 @@ function buildEbReportDraft(input: {
       source: 'standard_text',
       status: 'draft',
       isRelevant: true,
-      text: 'Fråga om jäv behandlades vid besiktningen. Eventuella invändningar eller anmärkningar anges här.',
+      text: ebStandardText('EB_REPORT_CONFLICT_OF_INTEREST'),
       updatedAt: null,
     },
     {
@@ -2145,7 +2162,7 @@ function buildEbReportDraft(input: {
       source: 'manual',
       status: 'missing',
       isRelevant: true,
-      text: 'Ange tidigare besiktningar, provningar och relevanta resultat som ska beaktas i utlåtandet.',
+      text: ebStandardText('EB_REPORT_PREVIOUS_INSPECTIONS_TESTS'),
       updatedAt: null,
     },
     {
@@ -2168,7 +2185,7 @@ function buildEbReportDraft(input: {
       text:
         notAccessibleNotes.length > 0
           ? notAccessibleNotes.map((note) => `${note.disciplineLabel ?? 'Fack'}: ${note.noteText}`).join('\n')
-          : 'Inga ej åtkomliga delar är registrerade. Komplettera om något inte kunde besiktigas.',
+          : ebStandardText('EB_REPORT_NOT_ACCESSIBLE_NONE'),
       updatedAt: null,
     },
     {
@@ -2178,7 +2195,7 @@ function buildEbReportDraft(input: {
       source: 'manual',
       status: 'draft',
       isRelevant: true,
-      text: 'Ange delar som endast bedömts utifrån handlingar, foton eller annan dokumentation.',
+      text: ebStandardText('EB_REPORT_DOCUMENTATION_ONLY'),
       updatedAt: null,
     },
     {
@@ -2188,7 +2205,7 @@ function buildEbReportDraft(input: {
       source: 'manual',
       status: 'missing',
       isRelevant: true,
-      text: 'Ange bilagor, fotobilagor, ritningar, kontrollintyg och annan dokumentation som bifogas utlåtandet.',
+      text: ebStandardText('EB_REPORT_APPENDICES'),
       updatedAt: null,
     },
     {
@@ -2201,7 +2218,7 @@ function buildEbReportDraft(input: {
       text:
         noteCount > 0
           ? `Samtliga vid besiktningen registrerade fel, bristfälligheter, anmärkningar och förhållanden redovisas i noteringsförteckningen. Antal noteringar: ${noteCount}.`
-          : 'Inga fel, bristfälligheter, anmärkningar eller förhållanden är registrerade.',
+          : ebStandardText('EB_REPORT_DEFECTS_APPENDICES_EMPTY'),
       updatedAt: null,
     },
     {
@@ -2214,7 +2231,7 @@ function buildEbReportDraft(input: {
       text:
         round.markers.length > 0
           ? round.markers.map((marker) => `${marker.key}: ${marker.label}`).join('\n')
-          : 'Ange vilka beteckningar som används för noteringarna.',
+          : ebStandardText('EB_REPORT_MARKER_LEGEND_MISSING'),
       updatedAt: null,
     },
     {
@@ -2224,7 +2241,7 @@ function buildEbReportDraft(input: {
       source: 'manual',
       status: 'draft',
       isRelevant: true,
-      text: 'Ange om något hänskjuts till särskild utredning, vem som utför utredningen, när den ska vara klar och vem som bekostar den.',
+      text: ebStandardText('EB_REPORT_SPECIAL_INVESTIGATION'),
       updatedAt: null,
     },
     {
@@ -2234,7 +2251,7 @@ function buildEbReportDraft(input: {
       source: 'manual',
       status: 'draft',
       isRelevant: true,
-      text: 'Ange om nedsättning av entreprenadsumman är aktuell, vilka noteringar den avser och uppskattat belopp.',
+      text: ebStandardText('EB_REPORT_DEDUCTION'),
       updatedAt: null,
     },
     {
@@ -2244,7 +2261,7 @@ function buildEbReportDraft(input: {
       source: 'notes',
       status: noteCount > 0 ? 'complete' : 'missing',
       isRelevant: true,
-      text: noteCount > 0 ? `${noteCount} noteringar finns registrerade i besiktningen.` : 'Inga noteringar är registrerade.',
+      text: noteCount > 0 ? `${noteCount} noteringar finns registrerade i besiktningen.` : ebStandardText('EB_REPORT_NOTES_EMPTY'),
       updatedAt: null,
     },
     {
@@ -2254,7 +2271,7 @@ function buildEbReportDraft(input: {
       source: 'manual',
       status: 'missing',
       isRelevant: true,
-      text: 'Ange om entreprenaden godkänns, inte godkänns eller om beslut lämnas för viss del.',
+      text: ebStandardText('EB_REPORT_APPROVAL_DECISION'),
       updatedAt: null,
     },
     {
@@ -2264,7 +2281,7 @@ function buildEbReportDraft(input: {
       source: 'standard_text',
       status: 'draft',
       isRelevant: true,
-      text: 'Ange om fortsatt eller ny slutbesiktning krävs och i så fall för vilka delar.',
+      text: ebStandardText('EB_REPORT_CONTINUED_FINAL_INSPECTION'),
       updatedAt: null,
     },
     {
@@ -2274,7 +2291,7 @@ function buildEbReportDraft(input: {
       source: 'manual',
       status: 'missing',
       isRelevant: true,
-      text: 'Ange garantitid och slutdatum för garantitiden enligt avtal.',
+      text: ebStandardText('EB_REPORT_WARRANTY_END'),
       updatedAt: null,
     },
     {
@@ -2284,7 +2301,7 @@ function buildEbReportDraft(input: {
       source: 'manual',
       status: 'missing',
       isRelevant: true,
-      text: 'Ange när noterade fel ska vara avhjälpta och om särskilda tider gäller för vissa fel.',
+      text: ebStandardText('EB_REPORT_REMEDY_DEADLINE'),
       updatedAt: null,
     },
     {
@@ -2294,7 +2311,7 @@ function buildEbReportDraft(input: {
       source: 'manual',
       status: 'draft',
       isRelevant: true,
-      text: 'Ange om efterbesiktning har påkallats, när den ska verkställas och om denna notering ska gälla som kallelse.',
+      text: ebStandardText('EB_REPORT_AFTER_INSPECTION'),
       updatedAt: null,
     },
     {
@@ -2304,7 +2321,7 @@ function buildEbReportDraft(input: {
       source: 'manual',
       status: 'draft',
       isRelevant: true,
-      text: 'Ange övrig information som ska lämnas som service till parterna, till exempel service under garantitiden eller planerade kompletterande besiktningar.',
+      text: ebStandardText('EB_REPORT_OTHER_NOTES'),
       updatedAt: null,
     },
     {
@@ -2314,7 +2331,7 @@ function buildEbReportDraft(input: {
       source: 'participants',
       status: participants.some((participant) => participant.email) ? 'complete' : 'missing',
       isRelevant: true,
-      text: participantRows.length > 0 ? participantRows.join('\n') : 'Ange mottagare av utlåtandet.',
+      text: participantRows.length > 0 ? participantRows.join('\n') : ebStandardText('EB_REPORT_DISTRIBUTION_LIST_MISSING'),
       updatedAt: null,
     },
     {
@@ -2324,7 +2341,7 @@ function buildEbReportDraft(input: {
       source: 'manual',
       status: 'missing',
       isRelevant: true,
-      text: 'Ange besiktningsman, ort, datum, certifiering och eventuell SBR-anslutning.',
+      text: ebStandardText('EB_REPORT_SIGNATURE_CERTIFICATE'),
       updatedAt: null,
     },
   ]

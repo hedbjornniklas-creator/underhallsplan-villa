@@ -1366,37 +1366,25 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     try {
       const { data: imgRows, error: imgFetchErr } = await supabase
         .from('inspection_images')
-        .select('id, file_path')
+        .select('*')
+        .eq('inspection_id', inspection.id)
         .eq('control_item_id', itemId)
 
-      if (imgFetchErr) {
-        console.error('fetch inspection_images (insida) failed:', imgFetchErr)
-      }
+      if (imgFetchErr) throw imgFetchErr
 
-      const imageRows = (imgRows ?? []) as Pick<InspectionImage, 'id' | 'file_path'>[]
-      if (imageRows.length > 0) {
-        const paths = imageRows.map(img => img.file_path).filter(Boolean)
-        if (paths.length > 0) {
-          const { error: storageErr } = await supabase.storage
-            .from(IMAGE_BUCKET)
-            .remove(paths)
-
-          if (storageErr) {
-            console.error('remove storage files (insida) failed:', storageErr)
-          }
-        }
-
-        const imageIds = imageRows.map(img => img.id)
-        const { error: imgDeleteErr } = await supabase
+      const imageRows = (imgRows ?? []) as InspectionImage[]
+      const unlinkedImages: InspectionImage[] = []
+      for (const image of imageRows) {
+        const { data: updatedImage, error: updateError } = await supabase
           .from('inspection_images')
-          .delete()
-          .in('id', imageIds)
+          .update(buildUnlinkedInteriorImagePatch(image))
+          .eq('id', image.id)
+          .eq('inspection_id', inspection.id)
+          .select('*')
+          .single()
 
-        if (imgDeleteErr) {
-          console.error('delete inspection_images (insida) failed:', imgDeleteErr)
-        }
-
-        setAllInspectionImages(prev => prev.filter(img => !imageIds.includes(img.id)))
+        if (updateError) throw updateError
+        unlinkedImages.push(updatedImage as InspectionImage)
       }
 
       const { error } = await supabase
@@ -1416,6 +1404,12 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
         delete clone[itemId]
         return clone
       })
+      if (unlinkedImages.length > 0) {
+        const unlinkedById = new Map(unlinkedImages.map(image => [image.id, image]))
+        setAllInspectionImages(prev =>
+          prev.map(image => unlinkedById.get(image.id) ?? image)
+        )
+      }
     } catch (e) {
       console.error('deleteControlItem (insida) failed:', e)
       alert('Kunde inte ta bort kontrollpunkt.')
@@ -4080,8 +4074,8 @@ function RoomControlPointsSection({
             ...cp,
             search_hint:
               outcomeLabels.length > 0
-                ? `Chipträff: ${outcomeLabels.slice(0, 3).join(', ')}`
-                : 'Chipträff',
+                ? `Noteringsträff: ${outcomeLabels.slice(0, 3).join(', ')}`
+                : 'Noteringsträff',
           }
         })
       )
@@ -4146,7 +4140,7 @@ function RoomControlPointsSection({
         searching={searching}
         disabled={isInspectionLocked}
         controlPointPlaceholder="Sök t.ex. golvbrunn, kyl, trinett..."
-        chipPlaceholder="Sök chip, t.ex. spricka, fukt, missfärgning..."
+        chipPlaceholder="Sök notering, t.ex. spricka, fukt, missfärgning..."
         aiPlaceholder="Beskriv vad du ser, t.ex. plåt som släppt på insidan..."
         showAiMode
         aiSearchHasRun={aiSearchHasRun}
@@ -4332,7 +4326,7 @@ function RoomControlPointsSection({
             const collapsedBadgeText = isGreen
               ? 'Inget att notera'
               : isYellow
-              ? `${selectedItems.length} vald${selectedItems.length === 1 ? '' : 'a'} chip`
+              ? `${selectedItems.length} vald${selectedItems.length === 1 ? ' notering' : 'a noteringar'}`
               : 'Ej färdig'
             return (
               <div
@@ -4584,7 +4578,7 @@ function RoomControlPointsSection({
                           <DebouncedTextarea
                             rows={2}
                             className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
-                            placeholder="Notering för just detta chip…"
+                            placeholder="Noteringstext..."
                             value={ci.note ?? ''}
                             onSave={value => {
                               if (ci.id) onUpdateItem(ci.id, { note: value })
