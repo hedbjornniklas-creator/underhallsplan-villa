@@ -1155,24 +1155,11 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     const typeLabel = getRoomTypeLabel(room.room_type_key)
     const roomLabel = normalizeSwedish(room.room_label ?? '').trim()
     if (!roomLabel) return typeLabel
-
-    const normalizedRoomLabel = roomLabel.toLowerCase()
-    const normalizedTypeLabel = normalizeSwedish(typeLabel).trim().toLowerCase()
-    const autoNumberedRoomPattern = new RegExp(
-      `^${normalizedTypeLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+\\d+$`
-    )
-
-    if (autoNumberedRoomPattern.test(normalizedRoomLabel)) {
-      return typeLabel
-    }
-
     return roomLabel
   }
 
   const getRoomHeading = (room: InteriorRoom) => {
-    const floorLabel = getFloorLabel(room.floor_label)
-    const roomLabel = getCompactRoomTypeLabel(room)
-    return floorLabel ? `${floorLabel}, ${roomLabel}` : roomLabel
+    return getCompactRoomTypeLabel(room)
   }
 
   const toggleRoomCollapsed = (roomId: string) => {
