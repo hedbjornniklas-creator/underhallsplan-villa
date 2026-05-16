@@ -11,7 +11,7 @@ type MoistureControlRowInput = {
   id: string | null
   location_label: string
   building_part: string | null
-  measurement_type: 'rf' | 'fk' | 'other'
+  measurement_type: 'rf' | 'fk' | 'indication' | 'other'
   measurement_value: number | null
   temperature_c: number | null
   note: string | null
@@ -429,12 +429,19 @@ function normalizeText(value: unknown) {
   return normalized.length > 0 ? normalized : null
 }
 
-function normalizeMeasurementType(value: unknown): 'rf' | 'fk' | 'other' {
+function normalizeMeasurementType(value: unknown): 'rf' | 'fk' | 'indication' | 'other' {
   const normalized = String(value ?? '')
     .trim()
     .toLowerCase()
   if (normalized === 'rf') return 'rf'
   if (normalized === 'fk') return 'fk'
+  if (
+    normalized === 'indication' ||
+    normalized === 'indicator' ||
+    normalized === 'fuktindikering'
+  ) {
+    return 'indication'
+  }
   return 'other'
 }
 

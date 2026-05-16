@@ -25,7 +25,7 @@ type ObStepFuktkontrollProps = {
   }
 }
 
-type MoistureMeasurementType = 'rf' | 'fk' | 'other'
+type MoistureMeasurementType = 'rf' | 'fk' | 'indication' | 'other'
 type MoistureCriticalLevel = 'under' | 'over'
 
 type MoistureControlRow = {
@@ -190,7 +190,11 @@ function toInitialForm(input: {
   const control = input.control
   const rows: MoistureControlRow[] = input.rows.map((row, index) => {
     const measurementType: MoistureMeasurementType =
-      row.measurement_type === 'fk' || row.measurement_type === 'other' ? row.measurement_type : 'rf'
+      row.measurement_type === 'fk' ||
+      row.measurement_type === 'indication' ||
+      row.measurement_type === 'other'
+        ? row.measurement_type
+        : 'rf'
     const criticalLevel: MoistureCriticalLevel = row.critical_level === 'over' ? 'over' : 'under'
 
     return {
@@ -231,11 +235,26 @@ function formFingerprint(form: MoistureControlForm) {
 function measurementTypeLabel(value: MoistureMeasurementType) {
   if (value === 'rf') return 'RF'
   if (value === 'fk') return 'FK'
+  if (value === 'indication') return 'Fuktindikering'
   return 'Annat'
 }
 
 function criticalLevelLabel(value: MoistureCriticalLevel) {
   return value === 'over' ? 'Över kritisk nivå' : 'Under kritisk nivå'
+}
+
+function isMoistureIndication(row: Pick<MoistureControlRow, 'measurement_type'>) {
+  return row.measurement_type === 'indication'
+}
+
+function moistureAssessmentLabel(row: Pick<MoistureControlRow, 'measurement_type' | 'critical_level'>) {
+  if (isMoistureIndication(row)) {
+    return row.critical_level === 'over'
+      ? 'Förhöjd/avvikande indikering'
+      : 'Normal/ingen avvikande indikering'
+  }
+
+  return criticalLevelLabel(row.critical_level)
 }
 
 export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktkontrollProps) {
@@ -492,6 +511,15 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
   const isDialogImageBusy = dialogRowId ? Boolean(imageBusyByRowId[dialogRowId]) : false
   const isDialogImageDisabled =
     isInspectionLocked || unsupported || !isDialogRowPersisted || isDialogImageBusy
+  const groupedControlRows = useMemo(() => {
+    const rows = form.rows.map((row, index) => ({ row, index }))
+    return {
+      indications: rows.filter((entry) => isMoistureIndication(entry.row)),
+      measurements: rows.filter((entry) => !isMoistureIndication(entry.row)),
+    }
+  }, [form.rows])
+  const isDialogIndication = dialogState.data.measurement_type === 'indication'
+  const isDialogRfMeasurement = dialogState.data.measurement_type === 'rf'
 
   const updateField = (field: Exclude<keyof MoistureControlForm, 'rows'>, value: string) => {
     if (isInspectionLocked) return
@@ -588,6 +616,40 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
       return next
     })
   }
+
+  const renderControlRow = (row: MoistureControlRow, index: number) => (
+    <div
+      key={row.id}
+      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+    >
+      <button
+        type="button"
+        onClick={() => openEditDialog(row)}
+        className="w-full text-left"
+        disabled={isInspectionLocked}
+      >
+        <div className="text-xs font-semibold text-slate-700">Kontrollplats {index + 1}</div>
+        <div className="text-sm text-slate-900">{row.location_label}</div>
+        <div className="text-xs text-slate-600">
+          {row.building_part || '-'} · {measurementTypeLabel(row.measurement_type)}
+          {row.measurement_value ? ` · ${row.measurement_value}` : ''}
+          {row.temperature_c && row.measurement_type === 'rf' ? ` · ${row.temperature_c} °C` : ''}
+        </div>
+        <div className="text-xs text-slate-600">{moistureAssessmentLabel(row)}</div>
+      </button>
+      {!isInspectionLocked ? (
+        <div className="mt-2 flex justify-end">
+          <button
+            type="button"
+            onClick={() => deleteRow(row.id)}
+            className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+          >
+            Ta bort
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
 
   const setRowImageBusy = (rowId: string, isBusy: boolean) => {
     setImageBusyByRowId((prev) => {
@@ -693,7 +755,7 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
         <div className="space-y-1">
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Bilaga</div>
           <h2 className="text-[32px] leading-[1.1] font-semibold text-slate-900 md:text-2xl">
-            Fuktkontroll av riskkonstruktion
+            Fuktkontroll och fuktindikering av riskkonstruktion
           </h2>
         </div>
       </section>
@@ -764,40 +826,28 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
               Kontrollplatser
             </h3>
 
-            <div className="space-y-2">
-              {form.rows.map((row, index) => (
-                <div
-                  key={row.id}
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
-                >
-                  <button
-                    type="button"
-                    onClick={() => openEditDialog(row)}
-                    className="w-full text-left"
-                    disabled={isInspectionLocked}
-                  >
-                    <div className="text-xs font-semibold text-slate-700">Kontrollplats {index + 1}</div>
-                    <div className="text-sm text-slate-900">{row.location_label}</div>
-                    <div className="text-xs text-slate-600">
-                      {row.building_part || '-'} · {measurementTypeLabel(row.measurement_type)}
-                      {row.measurement_value ? ` · ${row.measurement_value}` : ''}
-                      {row.temperature_c ? ` · ${row.temperature_c} °C` : ''}
-                    </div>
-                    <div className="text-xs text-slate-600">{criticalLevelLabel(row.critical_level)}</div>
-                  </button>
-                  {!isInspectionLocked ? (
-                    <div className="mt-2 flex justify-end">
-                      <button
-                        type="button"
-                        onClick={() => deleteRow(row.id)}
-                        className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
-                      >
-                        Ta bort
-                      </button>
-                    </div>
-                  ) : null}
+            <div className="space-y-4">
+              {groupedControlRows.indications.length > 0 ? (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Fuktindikering
+                  </h4>
+                  {groupedControlRows.indications.map(({ row, index }) =>
+                    renderControlRow(row, index)
+                  )}
                 </div>
-              ))}
+              ) : null}
+
+              {groupedControlRows.measurements.length > 0 ? (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Fuktmätning
+                  </h4>
+                  {groupedControlRows.measurements.map(({ row, index }) =>
+                    renderControlRow(row, index)
+                  )}
+                </div>
+              ) : null}
 
               <button
                 type="button"
@@ -812,11 +862,15 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
 
           <section className="rounded-2xl border bg-white p-4 shadow-sm md:p-5">
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
-              Kritiska nivåer
+              Kritiskt värde / bedömningsgrund
             </h3>
             <div className="space-y-1 text-sm text-slate-700">
               <div>Kritiskt värde relativ fuktighet (RF): 75 %</div>
               <div>Kritiskt värde fuktkvot (FK): 17 %</div>
+              <div className="pt-2 text-xs text-slate-600">
+                Vid fuktindikering redovisas normalt bedömningen som normal, förhöjd eller avvikande
+                indikering i stället för ett fast kritiskt värde.
+              </div>
             </div>
           </section>
 
@@ -928,32 +982,43 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
                   onChange={(value) => updateDialogField('building_part', value)}
                 />
                 <label className="space-y-1">
-                  <span className="text-xs font-medium text-slate-600">Mätmetod</span>
+                  <span className="text-xs font-medium text-slate-600">Kontrollmetod</span>
                   <select
                     value={dialogState.data.measurement_type}
-                    onChange={(event) =>
-                      updateDialogField('measurement_type', event.target.value as MoistureMeasurementType)
-                    }
+                    onChange={(event) => {
+                      const measurementType = event.target.value as MoistureMeasurementType
+                      setDialogState((prev) => ({
+                        ...prev,
+                        data: {
+                          ...prev.data,
+                          measurement_type: measurementType,
+                          temperature_c: measurementType === 'rf' ? prev.data.temperature_c : '',
+                        },
+                      }))
+                    }}
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   >
-                    <option value="rf">RF</option>
-                    <option value="fk">FK</option>
-                    <option value="other">Annat</option>
+                    <option value="indication">Fuktindikering</option>
+                    <option value="rf">RF-mätning</option>
+                    <option value="fk">FK-mätning</option>
+                    <option value="other">Annan fuktkontroll</option>
                   </select>
                 </label>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <TextInput
-                    label="Värde"
+                    label={isDialogIndication ? 'Indikationsvärde (valfritt)' : 'Värde'}
                     value={dialogState.data.measurement_value}
                     onChange={(value) => updateDialogField('measurement_value', value)}
                     inputMode="decimal"
                   />
-                  <TextInput
-                    label="Temperatur (°C)"
-                    value={dialogState.data.temperature_c}
-                    onChange={(value) => updateDialogField('temperature_c', value)}
-                    inputMode="decimal"
-                  />
+                  {isDialogRfMeasurement ? (
+                    <TextInput
+                      label="Temperatur (°C)"
+                      value={dialogState.data.temperature_c}
+                      onChange={(value) => updateDialogField('temperature_c', value)}
+                      inputMode="decimal"
+                    />
+                  ) : null}
                 </div>
                 <TextArea
                   label="Anteckning"
@@ -962,7 +1027,9 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
                   rows={2}
                 />
                 <label className="space-y-1">
-                  <span className="text-xs font-medium text-slate-600">Kritisk nivå</span>
+                  <span className="text-xs font-medium text-slate-600">
+                    {isDialogIndication ? 'Indikeringsbedömning' : 'Kritisk nivå'}
+                  </span>
                   <select
                     value={dialogState.data.critical_level}
                     onChange={(event) =>
@@ -970,8 +1037,12 @@ export default function ObStepFuktkontroll({ property, inspection }: ObStepFuktk
                     }
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   >
-                    <option value="under">Under kritisk nivå</option>
-                    <option value="over">Över kritisk nivå</option>
+                    <option value="under">
+                      {isDialogIndication ? 'Normal/ingen avvikande indikering' : 'Under kritisk nivå'}
+                    </option>
+                    <option value="over">
+                      {isDialogIndication ? 'Förhöjd/avvikande indikering' : 'Över kritisk nivå'}
+                    </option>
                   </select>
                 </label>
                 {!isDialogRowPersisted ? (

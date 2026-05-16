@@ -226,11 +226,25 @@ export default async function Page({
     const normalized = String(value ?? '').trim().toLowerCase()
     if (normalized === 'rf') return 'RF'
     if (normalized === 'fk') return 'FK'
+    if (normalized === 'indication') return 'Fuktindikering'
     return 'Annat'
   }
+  const isMoistureIndicationType = (value: string | null | undefined) =>
+    String(value ?? '').trim().toLowerCase() === 'indication'
   const criticalLevelLabel = (value: string | null | undefined) => {
     const normalized = String(value ?? '').trim().toLowerCase()
     return normalized === 'over' ? 'Över kritisk nivå' : 'Under kritisk nivå'
+  }
+  const moistureAssessmentLabel = (
+    measurementType: string | null | undefined,
+    criticalLevel: string | null | undefined
+  ) => {
+    if (isMoistureIndicationType(measurementType)) {
+      return String(criticalLevel ?? '').trim().toLowerCase() === 'over'
+        ? 'Förhöjd/avvikande indikering'
+        : 'Normal/ingen avvikande indikering'
+    }
+    return criticalLevelLabel(criticalLevel)
   }
 
   const resolveInspectionSide = (value: string | null | undefined): InspectionSide => {
@@ -786,28 +800,48 @@ export default async function Page({
     moistureImagesByRowId.set(rowId, bucket)
   }
 
+  const formatMoistureResultText = (row: Record<string, unknown>) => {
+    const measurementType = String(row.measurement_type ?? '')
+    const method = measurementTypeLabel(measurementType)
+    const value = formatMeasurementValue(
+      typeof row.measurement_value === 'number'
+        ? row.measurement_value
+        : Number(row.measurement_value ?? NaN)
+    )
+    if (isMoistureIndicationType(measurementType)) {
+      const assessment = moistureAssessmentLabel(measurementType, String(row.critical_level ?? ''))
+      return value === '--'
+        ? assessment
+        : `Indikationsvärde: ${value}\nBedömning: ${assessment}`
+    }
+
+    const temperatureNumber =
+      typeof row.temperature_c === 'number' ? row.temperature_c : Number(row.temperature_c ?? NaN)
+    const temperatureText =
+      Number.isFinite(temperatureNumber) && method === 'RF'
+        ? ` vid ${Number(temperatureNumber).toFixed(2)} °C`
+        : ''
+    return value === '--' ? `${method}: --` : `${value} % ${method}${temperatureText}`
+  }
+
   const moistureControlBlocks: InspectionBlock[] = moistureControlRows.map((row, index) => {
     const rowId = trimText(String(row.id ?? ''))
     const title = trimText(String(row.location_label ?? '')) || `Kontrollplats ${index + 1}`
     const lines: string[] = []
     const buildingPart = trimText(String(row.building_part ?? ''))
     if (buildingPart) lines.push(`Byggdel/kontrollpunkt: ${buildingPart}`)
-    lines.push(`Mätmetod: ${measurementTypeLabel(String(row.measurement_type ?? ''))}`)
-    lines.push(
-      `Värde: ${formatMeasurementValue(
-        typeof row.measurement_value === 'number'
-          ? row.measurement_value
-          : Number(row.measurement_value ?? NaN)
-      )}`
-    )
+    lines.push(`Kontrollmetod: ${measurementTypeLabel(String(row.measurement_type ?? ''))}`)
+    lines.push(`Resultat: ${formatMoistureResultText(row)}`)
     if (row.temperature_c !== null && row.temperature_c !== undefined && `${row.temperature_c}`.trim()) {
       const temperatureNumber =
         typeof row.temperature_c === 'number' ? row.temperature_c : Number(row.temperature_c ?? NaN)
-      if (Number.isFinite(temperatureNumber)) {
+      if (Number.isFinite(temperatureNumber) && String(row.measurement_type ?? '') === 'rf') {
         lines.push(`Temperatur: ${Number(temperatureNumber).toFixed(2)} °C`)
       }
     }
-    lines.push(`Kritisk nivå: ${criticalLevelLabel(String(row.critical_level ?? ''))}`)
+    lines.push(
+      `${isMoistureIndicationType(String(row.measurement_type ?? '')) ? 'Indikeringsbedömning' : 'Kritisk nivå'}: ${moistureAssessmentLabel(String(row.measurement_type ?? ''), String(row.critical_level ?? ''))}`
+    )
     const note = trimText(String(row.note ?? ''))
     if (note) lines.push(`Anteckning: ${note}`)
 
@@ -831,26 +865,34 @@ export default async function Page({
     const locationLabel = trimText(String(row.location_label ?? '')) || `Kontrollplats ${index + 1}`
     const buildingPart = trimText(String(row.building_part ?? ''))
     const method = measurementTypeLabel(String(row.measurement_type ?? ''))
-    const value = formatMeasurementValue(
-      typeof row.measurement_value === 'number'
-        ? row.measurement_value
-        : Number(row.measurement_value ?? NaN)
-    )
-    const temperatureNumber =
-      typeof row.temperature_c === 'number' ? row.temperature_c : Number(row.temperature_c ?? NaN)
-    const temperatureText =
-      Number.isFinite(temperatureNumber) && method === 'RF'
-        ? ` vid ${Number(temperatureNumber).toFixed(2)} °C`
-        : ''
-    const resultText =
-      value === '--' ? `${method}: --` : `${value} % ${method}${temperatureText}`
+    const resultText = formatMoistureResultText(row)
     const note = trimText(String(row.note ?? ''))
     return {
       location_display: buildingPart ? `${locationLabel}\n${buildingPart}` : locationLabel,
-      result_display: note ? `${resultText}\nAnteckning: ${note}` : resultText,
-      critical_display: criticalLevelLabel(String(row.critical_level ?? '')),
+      method_display: method,
+      result_display: resultText,
+      comment_display: note || '--',
+      critical_display: note
+        ? `${moistureAssessmentLabel(
+            String(row.measurement_type ?? ''),
+            String(row.critical_level ?? '')
+          )}\n${note}`
+        : moistureAssessmentLabel(
+            String(row.measurement_type ?? ''),
+            String(row.critical_level ?? '')
+          ),
+      result_with_note_display: note ? `${resultText}\nAnteckning: ${note}` : resultText,
+      section_kind: isMoistureIndicationType(String(row.measurement_type ?? ''))
+        ? 'indication'
+        : 'measurement',
     }
   })
+  const moistureIndicationRowsForReport = moistureControlRowsForReport.filter(
+    row => row.section_kind === 'indication'
+  )
+  const moistureMeasurementRowsForReport = moistureControlRowsForReport.filter(
+    row => row.section_kind === 'measurement'
+  )
 
   const inspectorNameForSigning = valueOrFallback(
     frozenProfileFromSnapshot?.full_name ?? profile?.full_name ?? null
@@ -1515,6 +1557,8 @@ export default async function Page({
             ),
           },
           rows: moistureControlRowsForReport,
+          indication_rows: moistureIndicationRowsForReport,
+          measurement_rows: moistureMeasurementRowsForReport,
           signing: {
             place_date: composePlaceDate(moistureSigningPlace, moistureSigningDate),
             company_name: companyNameForSigning,

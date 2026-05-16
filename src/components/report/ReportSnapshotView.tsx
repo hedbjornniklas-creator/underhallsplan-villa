@@ -389,7 +389,8 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
   const moistureObject = asRecord(moistureControlAppendix.object)
   const moistureMeasurement = asRecord(moistureControlAppendix.measurement)
   const moistureSigning = asRecord(moistureControlAppendix.signing)
-  const moistureRows = asRecordArray(moistureControlAppendix.rows)
+  const moistureIndicationRows = asRecordArray(moistureControlAppendix.indication_rows)
+  const moistureMeasurementRows = asRecordArray(moistureControlAppendix.measurement_rows)
   const companyLogoUrl = toImageUrl(getTextByPath(mock, 'company.logo_url', ''))
   const coverImageUrl =
     toImageUrl(getTextByPath(mock, 'properties.cover_path', '')) ?? defaultCoverIllustrationSrc
@@ -821,7 +822,7 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
             {moistureControlNumber ? (
               <details className="rounded-md border border-slate-200 p-3">
                 <summary className="cursor-pointer text-sm font-semibold text-slate-900">
-                  Bilaga {moistureControlNumber} - Fuktkontroll av riskkonstruktion
+                  Bilaga {moistureControlNumber} - Fuktkontroll och fuktindikering av riskkonstruktion
                 </summary>
                 <div className="mt-3 space-y-3 text-sm text-slate-700">
                   <div className="grid gap-2 sm:grid-cols-2">
@@ -854,31 +855,83 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                     <div className="text-xs uppercase tracking-wide text-slate-500">Mätinstrument</div>
                     <div>{toText(moistureMeasurement.instrument)}</div>
                   </div>
-                  {moistureRows.length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Fuktindikering
+                    </div>
                     <div className="overflow-x-auto">
                       <table className="w-full border-collapse text-sm">
                         <thead>
                           <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                             <th className="py-1 pr-2 font-semibold">Kontrollplats</th>
                             <th className="py-1 pr-2 font-semibold">Resultat</th>
-                            <th className="py-1 font-semibold">Kritisk nivå</th>
+                            <th className="py-1 font-semibold">Kommentar</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {moistureRows.map((row, index) => (
-                            <tr key={`moisture-row-${index}`} className="border-b border-slate-100 align-top">
-                              <td className="py-1 pr-2 whitespace-pre-wrap">{toText(row.location_display)}</td>
-                              <td className="py-1 pr-2 whitespace-pre-wrap">{toText(row.result_display)}</td>
-                              <td className="py-1">{toText(row.critical_display)}</td>
+                          {moistureIndicationRows.length > 0 ? (
+                            moistureIndicationRows.map((row, index) => (
+                              <tr key={`moisture-indication-row-${index}`} className="border-b border-slate-100 align-top">
+                                <td className="py-1 pr-2 whitespace-pre-wrap">{toText(row.location_display)}</td>
+                                <td className="py-1 pr-2 whitespace-pre-wrap">{toText(row.result_display)}</td>
+                                <td className="py-1 whitespace-pre-wrap">{toText(row.comment_display)}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td className="py-1 text-slate-500" colSpan={3}>Inga fuktindikeringar registrerade</td>
                             </tr>
-                          ))}
+                          )}
                         </tbody>
                       </table>
                     </div>
-                  ) : null}
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Fuktmätning
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                            <th className="py-1 pr-2 font-semibold">Kontrollplats</th>
+                            <th className="py-1 pr-2 font-semibold">Metod</th>
+                            <th className="py-1 pr-2 font-semibold">Resultat</th>
+                            <th className="py-1 font-semibold">Bedömning/kommentar</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {moistureMeasurementRows.length > 0 ? (
+                            moistureMeasurementRows.map((row, index) => (
+                              <tr key={`moisture-measurement-row-${index}`} className="border-b border-slate-100 align-top">
+                                <td className="py-1 pr-2 whitespace-pre-wrap">{toText(row.location_display)}</td>
+                                <td className="py-1 pr-2 whitespace-pre-wrap">{toText(row.method_display)}</td>
+                                <td className="py-1 pr-2 whitespace-pre-wrap">{toText(row.result_display)}</td>
+                                <td className="py-1 whitespace-pre-wrap">{toText(row.critical_display)}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td className="py-1 text-slate-500" colSpan={4}>Inga fuktmätningar registrerade</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                   <div>
                     <div className="text-xs uppercase tracking-wide text-slate-500">Kommentar</div>
                     <div className="whitespace-pre-wrap">{toText(moistureMeasurement.comment)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">
+                      Kritiskt värde / bedömningsgrund
+                    </div>
+                    <div>
+                      Kritiska värden RF 75 % och FK 17 % avser i första hand gran- och furuvirke.
+                      Vid fuktindikering redovisas normalt bedömningen som normal, förhöjd eller
+                      avvikande indikering i stället för ett fast kritiskt värde.
+                    </div>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <div>

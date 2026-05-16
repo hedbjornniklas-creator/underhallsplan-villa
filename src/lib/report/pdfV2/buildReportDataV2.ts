@@ -184,11 +184,25 @@ const supabase: any = createSupabaseServerClient()
     const normalized = String(value ?? '').trim().toLowerCase()
     if (normalized === 'rf') return 'RF'
     if (normalized === 'fk') return 'FK'
+    if (normalized === 'indication') return 'Fuktindikering'
     return 'Annat'
   }
+  const isMoistureIndicationType = (value: string | null | undefined) =>
+    String(value ?? '').trim().toLowerCase() === 'indication'
   const criticalLevelLabel = (value: string | null | undefined) => {
     const normalized = String(value ?? '').trim().toLowerCase()
     return normalized === 'over' ? '\u00d6ver kritisk niv\u00e5' : 'Under kritisk niv\u00e5'
+  }
+  const moistureAssessmentLabel = (
+    measurementType: string | null | undefined,
+    criticalLevel: string | null | undefined
+  ) => {
+    if (isMoistureIndicationType(measurementType)) {
+      return String(criticalLevel ?? '').trim().toLowerCase() === 'over'
+        ? 'F\u00f6rh\u00f6jd/avvikande indikering'
+        : 'Normal/ingen avvikande indikering'
+    }
+    return criticalLevelLabel(criticalLevel)
   }
   const normalizeSwedish = (value: string) =>
     String(value ?? '')
@@ -767,17 +781,38 @@ const supabase: any = createSupabaseServerClient()
     moistureImagesByRowId.set(rowId, bucket)
   }
 
+  const formatMoistureResultText = (row: MoistureControlDataRow) => {
+    const method = measurementTypeLabel(row.measurement_type)
+    const value = formatMeasurementValue(row.measurement_value)
+    if (isMoistureIndicationType(row.measurement_type)) {
+      const assessment = moistureAssessmentLabel(row.measurement_type, row.critical_level)
+      return value === '--'
+        ? assessment
+        : `Indikationsvärde: ${value}\nBedömning: ${assessment}`
+    }
+
+    const temperature =
+      row.temperature_c !== null && row.temperature_c !== undefined && Number.isFinite(row.temperature_c)
+        ? ` vid ${Number(row.temperature_c).toFixed(2)} °C`
+        : ''
+    return value === '--' ? `${method}: --` : `${value} % ${method}${method === 'RF' ? temperature : ''}`
+  }
+
   const moistureControlBlocks: InspectionBlock[] = moistureControlRows.map((row, index) => {
     const title = trimText(row.location_label ?? '') || `Kontrollplats ${index + 1}`
     const lines: string[] = []
     const buildingPart = trimText(row.building_part ?? '')
     if (buildingPart) lines.push(`Byggdel/kontrollpunkt: ${buildingPart}`)
-    lines.push(`Mätmetod: ${measurementTypeLabel(row.measurement_type)}`)
-    lines.push(`Värde: ${formatMeasurementValue(row.measurement_value)}`)
+    lines.push(`Kontrollmetod: ${measurementTypeLabel(row.measurement_type)}`)
+    lines.push(`Resultat: ${formatMoistureResultText(row)}`)
     if (row.temperature_c !== null && row.temperature_c !== undefined && Number.isFinite(row.temperature_c)) {
-      lines.push(`Temperatur: ${Number(row.temperature_c).toFixed(2)} °C`)
+      if (row.measurement_type === 'rf') {
+        lines.push(`Temperatur: ${Number(row.temperature_c).toFixed(2)} °C`)
+      }
     }
-    lines.push(`Kritisk nivå: ${criticalLevelLabel(row.critical_level)}`)
+    lines.push(
+      `${isMoistureIndicationType(row.measurement_type) ? 'Indikeringsbedömning' : 'Kritisk nivå'}: ${moistureAssessmentLabel(row.measurement_type, row.critical_level)}`
+    )
     const note = trimText(row.note ?? '')
     if (note) lines.push(`Anteckning: ${note}`)
 
@@ -800,20 +835,26 @@ const supabase: any = createSupabaseServerClient()
     const locationLabel = trimText(row.location_label ?? '') || `Kontrollplats ${index + 1}`
     const buildingPart = trimText(row.building_part ?? '')
     const method = measurementTypeLabel(row.measurement_type)
-    const value = formatMeasurementValue(row.measurement_value)
-    const temperature =
-      row.temperature_c !== null && row.temperature_c !== undefined && Number.isFinite(row.temperature_c)
-        ? ` vid ${Number(row.temperature_c).toFixed(2)} °C`
-        : ''
-    const resultText =
-      value === '--' ? `${method}: --` : `${value} % ${method}${method === 'RF' ? temperature : ''}`
+    const resultText = formatMoistureResultText(row)
     const note = trimText(row.note ?? '')
     return {
       location_display: buildingPart ? `${locationLabel}\n${buildingPart}` : locationLabel,
-      result_display: note ? `${resultText}\nAnteckning: ${note}` : resultText,
-      critical_display: criticalLevelLabel(row.critical_level),
+      method_display: method,
+      result_display: resultText,
+      comment_display: note || '--',
+      critical_display: note
+        ? `${moistureAssessmentLabel(row.measurement_type, row.critical_level)}\n${note}`
+        : moistureAssessmentLabel(row.measurement_type, row.critical_level),
+      result_with_note_display: note ? `${resultText}\nAnteckning: ${note}` : resultText,
+      section_kind: isMoistureIndicationType(row.measurement_type) ? 'indication' : 'measurement',
     }
   })
+  const moistureIndicationRowsForReport = moistureControlRowsForReport.filter(
+    row => row.section_kind === 'indication'
+  )
+  const moistureMeasurementRowsForReport = moistureControlRowsForReport.filter(
+    row => row.section_kind === 'measurement'
+  )
 
   const inspectorNameForSigning = valueOrFallback(
     (frozenProfileFromSnapshot?.full_name as string | null | undefined) ?? profile?.full_name ?? null
@@ -1469,6 +1510,8 @@ const supabase: any = createSupabaseServerClient()
             comment: valueOrFallback(moistureControlHeader?.comment ?? null),
           },
           rows: moistureControlRowsForReport,
+          indication_rows: moistureIndicationRowsForReport,
+          measurement_rows: moistureMeasurementRowsForReport,
           signing: {
             place_date: composePlaceDate(moistureSigningPlace, moistureSigningDate),
             company_name: companyNameForSigning,

@@ -1021,7 +1021,7 @@ export function buildReportSpec(params?: {
 
     if (includeMoistureControl) {
       const sectionId = `appendix-${appendixNo}-moisture-control`
-      const title = `Bilaga ${appendixNo}: Fuktkontroll av riskkonstruktion`
+      const title = `Bilaga ${appendixNo}: Fuktkontroll och fuktindikering av riskkonstruktion`
       dynamicSections.push({
         id: sectionId,
         title,
@@ -1031,7 +1031,7 @@ export function buildReportSpec(params?: {
           {
             type: 'heading',
             level: 2,
-            text: `BILAGA ${appendixNo}: FUKTKONTROLL`,
+            text: `BILAGA ${appendixNo}: FUKTKONTROLL OCH FUKTINDIKERING`,
             marginTopMm: 0,
             marginBottomMm: 1.2,
             accent: true,
@@ -1050,7 +1050,7 @@ export function buildReportSpec(params?: {
             source: {
               kind: 'static',
               text:
-                'Till\u00e4ggsuppdrag i samband med \u00f6verl\u00e5telsebesiktning. Villkoren f\u00f6r \u00f6verl\u00e5telsebesiktningen g\u00e4ller \u00e4ven denna bilaga.',
+                'Till\u00e4ggsuppdrag i samband med \u00f6verl\u00e5telsebesiktning. Villkoren f\u00f6r \u00f6verl\u00e5telsebesiktningen g\u00e4ller \u00e4ven denna bilaga. Kontrollen kan best\u00e5 av fuktindikering, fuktm\u00e4tning eller annan begr\u00e4nsad fuktrelaterad kontroll beroende p\u00e5 vad som avtalats och vad som varit m\u00f6jligt vid besiktningstillf\u00e4llet.',
             },
             marginTopMm: 0,
             marginBottomMm: 1.2,
@@ -1106,7 +1106,7 @@ export function buildReportSpec(params?: {
           {
             type: 'heading',
             level: 3,
-            text: 'M\u00e4tning',
+            text: 'M\u00e4tning/kontroll',
             marginTopMm: 0.3,
             marginBottomMm: 0.8,
             fontSizePt: 11,
@@ -1117,7 +1117,7 @@ export function buildReportSpec(params?: {
             marginBottomMm: 0.6,
             source: {
               kind: 'static',
-              text: 'Fuktm\u00e4tning utf\u00f6rs med instrument (m\u00e4rke och modell):',
+              text: 'Fuktkontroll/fuktindikering har utf\u00f6rts med instrument (m\u00e4rke och modell). Kontrollens omfattning och metod framg\u00e5r av resultatredovisningen nedan:',
             },
           },
           {
@@ -1132,19 +1132,40 @@ export function buildReportSpec(params?: {
           {
             type: 'heading',
             level: 3,
-            text: 'Resultat',
+            text: 'Resultat - fuktindikering',
             marginTopMm: 0.3,
             marginBottomMm: 0.8,
             fontSizePt: 11,
           },
           {
             type: 'table',
-            rowsPath: 'mock.appendices.moisture_control.rows',
-            emptyPlaceholder: 'Inga kontrollplatser registrerade',
+            rowsPath: 'mock.appendices.moisture_control.indication_rows',
+            emptyPlaceholder: 'Inga fuktindikeringar registrerade',
             columns: [
-              { header: 'Kontrollplats', key: 'location_display', widthPercent: 32 },
-              { header: 'Resultat', key: 'result_display', widthPercent: 48 },
-              { header: 'Kritisk niv\u00e5', key: 'critical_display', align: 'right', widthPercent: 20 },
+              { header: 'Kontrollplats', key: 'location_display', widthPercent: 35 },
+              { header: 'Resultat', key: 'result_display', widthPercent: 30 },
+              { header: 'Kommentar', key: 'comment_display', widthPercent: 35 },
+            ],
+            marginTopMm: 0,
+            marginBottomMm: 1.2,
+          },
+          {
+            type: 'heading',
+            level: 3,
+            text: 'Resultat - fuktm\u00e4tning',
+            marginTopMm: 0.3,
+            marginBottomMm: 0.8,
+            fontSizePt: 11,
+          },
+          {
+            type: 'table',
+            rowsPath: 'mock.appendices.moisture_control.measurement_rows',
+            emptyPlaceholder: 'Inga fuktm\u00e4tningar registrerade',
+            columns: [
+              { header: 'Kontrollplats', key: 'location_display', widthPercent: 28 },
+              { header: 'Metod', key: 'method_display', widthPercent: 14 },
+              { header: 'Resultat', key: 'result_display', widthPercent: 23 },
+              { header: 'Bed\u00f6mning/kommentar', key: 'critical_display', widthPercent: 35 },
             ],
             marginTopMm: 0,
             marginBottomMm: 1.2,
@@ -1164,10 +1185,18 @@ export function buildReportSpec(params?: {
             marginBottomMm: 1,
           },
           {
+            type: 'heading',
+            level: 3,
+            text: 'Kritiskt v\u00e4rde / bed\u00f6mningsgrund',
+            marginTopMm: 0.3,
+            marginBottomMm: 0.8,
+            fontSizePt: 11,
+          },
+          {
             type: 'text',
             source: {
               kind: 'static',
-              text: 'Kritiska v\u00e4rden: RF 75 % och FK 17 %.',
+              text: 'Kritiska v\u00e4rden RF 75 % och FK 17 % avser i f\u00f6rsta hand gran- och furuvirke. Vid kontroll av andra material, exempelvis betong, murverk eller sammansatta konstruktioner, bed\u00f6ms resultatet utifr\u00e5n material, konstruktionens uppbyggnad, ytskikt, temperatur och eventuell f\u00f6rekomst av fuktk\u00e4nsligt material. Vid fuktindikering anges normalt inte ett kritiskt v\u00e4rde p\u00e5 samma s\u00e4tt som vid RF- eller FK-m\u00e4tning. Resultatet redovisas i st\u00e4llet som normal, f\u00f6rh\u00f6jd eller avvikande indikering utifr\u00e5n instrumentets utslag, kontrollplats och j\u00e4mf\u00f6relse med omkringliggande ytor.',
             },
             marginTopMm: 0,
             marginBottomMm: 1.1,
@@ -1215,7 +1244,7 @@ export function buildReportSpec(params?: {
         ],
       })
       dynamicTocEntries.push({
-        label: `BILAGA ${appendixNo}: Fuktkontroll av riskkonstruktion`,
+        label: `BILAGA ${appendixNo}: Fuktkontroll och fuktindikering av riskkonstruktion`,
         sectionId,
       })
       appendixNo += 1

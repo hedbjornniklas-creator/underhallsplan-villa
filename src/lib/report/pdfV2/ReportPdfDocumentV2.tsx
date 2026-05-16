@@ -111,6 +111,33 @@ const styles = StyleSheet.create({
   rowValue: {
     width: '60%',
   },
+  table: {
+    marginBottom: 8,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#cbd5e1',
+  },
+  tableHeaderRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  tableHeaderCell: {
+    fontWeight: 700,
+    paddingVertical: 3,
+    paddingHorizontal: 4,
+  },
+  tableCell: {
+    paddingVertical: 3,
+    paddingHorizontal: 4,
+  },
+  tablePlaceholder: {
+    color: '#475569',
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+  },
   image: {
     width: 220,
     height: 140,
@@ -140,10 +167,13 @@ const repairMojibake = (value: string) =>
     .replace(/\u00c3\u00a9/g, '\u00e9')
     .replace(/\u00c3\u2030/g, '\u00c9')
 
-const getValueAtPath = (obj: any, path: string) =>
-  path.split('.').reduce((acc, key) => (acc ? acc[key] : undefined), obj)
+const getValueAtPath = (obj: unknown, path: string) =>
+  path.split('.').reduce<unknown>((acc, key) => {
+    if (!acc || typeof acc !== 'object') return undefined
+    return (acc as Record<string, unknown>)[key]
+  }, obj)
 
-const getListAtPath = (obj: any, path: string): string[] => {
+const getListAtPath = (obj: unknown, path: string): string[] => {
   const value = getValueAtPath(obj, path)
   if (Array.isArray(value)) {
     return value.map((item) => (item == null ? '' : repairMojibake(String(item)))).filter(Boolean)
@@ -225,7 +255,7 @@ const renderBlock = (
     return (
       <View key={`${block.label}-${block.path}`} style={styles.row}>
         <Text style={styles.rowLabel}>{block.label}</Text>
-        <Text style={styles.rowValue}>{value ?? '--'}</Text>
+        <Text style={styles.rowValue}>{repairMojibake(String(value ?? '--'))}</Text>
       </View>
     )
   }
@@ -300,6 +330,70 @@ const renderBlock = (
     ))
   }
 
+  if (block.type === 'table') {
+    const rows = getValueAtPath(data, block.rowsPath)
+    const tableRows = Array.isArray(rows) ? rows as Array<Record<string, unknown>> : []
+    const configuredWidth = block.columns.reduce(
+      (sum, column) => sum + (column.widthPercent ?? 0),
+      0
+    )
+    const unspecifiedCount = block.columns.filter(
+      (column) => column.widthPercent === undefined
+    ).length
+    const fallbackWidth =
+      unspecifiedCount > 0
+        ? Math.max(0, 100 - configuredWidth) / unspecifiedCount
+        : 0
+    const formatCellValue = (value: unknown) => {
+      if (value === null || value === undefined) return '--'
+      const text = repairMojibake(String(value)).trim()
+      return text.length > 0 ? text : '--'
+    }
+
+    return (
+      <View key={`table-${block.rowsPath}`} style={styles.table}>
+        <View style={styles.tableHeaderRow}>
+          {block.columns.map((column, columnIndex) => (
+            <Text
+              key={`table-head-${block.rowsPath}-${columnIndex}`}
+              style={[
+                styles.tableHeaderCell,
+                {
+                  width: `${column.widthPercent ?? fallbackWidth}%`,
+                  textAlign: column.align ?? 'left',
+                },
+              ]}
+            >
+              {column.header}
+            </Text>
+          ))}
+        </View>
+        {tableRows.length > 0 ? (
+          tableRows.map((row, rowIndex) => (
+            <View key={`table-row-${block.rowsPath}-${rowIndex}`} style={styles.tableRow} wrap={false}>
+              {block.columns.map((column, columnIndex) => (
+                <Text
+                  key={`table-cell-${block.rowsPath}-${rowIndex}-${columnIndex}`}
+                  style={[
+                    styles.tableCell,
+                    {
+                      width: `${column.widthPercent ?? fallbackWidth}%`,
+                      textAlign: column.align ?? 'left',
+                    },
+                  ]}
+                >
+                  {formatCellValue(row[column.key])}
+                </Text>
+              ))}
+            </View>
+          ))
+        ) : (
+          <Text style={styles.tablePlaceholder}>{block.emptyPlaceholder ?? '--'}</Text>
+        )}
+      </View>
+    )
+  }
+
   if (block.type === 'toc') {
     return block.entries.map((entry, index) => (
       <Text key={`${entry.label}-${index}`} style={styles.listItem}>
@@ -359,11 +453,20 @@ export default function ReportPdfDocumentV2({
   data,
   imageMap = {},
 }: ReportPdfDocumentV2Props) {
+  const mock = data.mock as Record<string, unknown>
+  const propertyMock =
+    mock.properties && typeof mock.properties === 'object'
+      ? mock.properties as Record<string, unknown>
+      : {}
+  const inspectionMock =
+    mock.inspections && typeof mock.inspections === 'object'
+      ? mock.inspections as Record<string, unknown>
+      : {}
   const address =
-    (data.mock as any)?.properties?.address ??
-    (data.mock as any)?.properties?.cadastral_id ??
+    propertyMock.address ??
+    propertyMock.cadastral_id ??
     'Report'
-  const inspectionDate = (data.mock as any)?.inspections?.date ?? ''
+  const inspectionDate = inspectionMock.date ?? ''
   const rendererLabel = 'Renderer: pdf-v2'
 
   return (
