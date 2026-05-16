@@ -2009,6 +2009,40 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     }
   }
 
+  const downloadSelectedPanelImages = async () => {
+    const selectedIds = Array.from(selectedPanelImageIds)
+    if (selectedIds.length === 0) return
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const selectedIdSet = new Set(selectedIds)
+      const selectedImages = allInspectionImages.filter(image => selectedIdSet.has(image.id))
+
+      for (const [index, image] of selectedImages.entries()) {
+        const response = await fetch(getImagePublicUrl(image.file_path))
+        if (!response.ok) throw new Error('Kunde inte ladda ner en eller flera bilder.')
+
+        const blob = await response.blob()
+        const objectUrl = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        const fallbackName = `ob-bild-${index + 1}.jpg`
+        link.href = objectUrl
+        link.download = image.file_path.split('/').pop() || fallbackName
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        URL.revokeObjectURL(objectUrl)
+      }
+    } catch (e: unknown) {
+      console.error('downloadSelectedPanelImages failed', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte ladda ner markerade bilder.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleImageDragStart = (
     event: DragEvent<HTMLButtonElement>,
     image: InspectionImage
@@ -2748,6 +2782,14 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                     }`}
                   >
                     Visa kopplade
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void downloadSelectedPanelImages()}
+                    disabled={selectedPanelImageIds.size === 0}
+                    className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Ladda ner{selectedPanelImageIds.size > 0 ? ` ${selectedPanelImageIds.size}` : ''}
                   </button>
                   <button
                     type="button"
