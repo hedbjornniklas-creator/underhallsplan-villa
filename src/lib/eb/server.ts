@@ -2993,13 +2993,29 @@ function buildInvitationBody(input: {
 
 async function getProfileContact(profileId: string) {
   const admin = createSupabaseAdminClient()
+  const baseSelect = 'id,full_name,email'
+  const withCertificationSelect = 'id,full_name,email,certification_number'
   const { data, error } = await admin
     .from('profiles')
-    .select('id,full_name,email,certification_number')
+    .select(withCertificationSelect)
     .eq('id', profileId)
     .maybeSingle()
 
   if (error) {
+    if (isMissingColumnError(error)) {
+      const fallback = await admin
+        .from('profiles')
+        .select(baseSelect)
+        .eq('id', profileId)
+        .maybeSingle()
+
+      if (fallback.error) {
+        throw new Error(fallback.error.message ?? 'Kunde inte hämta besiktningsman.')
+      }
+
+      const fallbackRow = (fallback.data ?? null) as Omit<ProfileContactRow, 'certification_number'> | null
+      return fallbackRow ? { ...fallbackRow, certification_number: null } : null
+    }
     throw new Error(error.message ?? 'Kunde inte hämta besiktningsman.')
   }
 
