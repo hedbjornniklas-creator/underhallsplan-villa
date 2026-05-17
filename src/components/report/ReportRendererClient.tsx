@@ -1752,7 +1752,7 @@ export default function ReportRendererClient({
     const renderPdfImageRow = (urls: string[]) => (
       <div
         style={{
-          marginTop: mmToPx(1.8),
+          marginTop: block.segment === 'photos' ? 0 : mmToPx(1.8),
         }}
       >
         {renderPdfLabel(
@@ -1825,6 +1825,16 @@ export default function ReportRendererClient({
     const rowTitle = block.title.trim()
     const content = renderPdfInspectionSegmentContent(block, key)
     if (!content) return null
+    const isPhotoSegment = block.segment === 'photos'
+    const hasMorePhotoSegments =
+      isPhotoSegment &&
+      block.photoStartIndex + block.photoUrls.length - 1 < block.photoTotal
+    const contentPaddingTopMm = isPhotoSegment ? 0.4 : 2.5
+    const contentPaddingBottomMm = isPhotoSegment
+      ? hasMorePhotoSegments
+        ? 1.2
+        : 5
+      : 2.5
     const topBorder =
       block.isFirstInGroup && !block.suppressTopBorder
         ? `${mmToPx(0.35)} solid #94a3b8`
@@ -1863,8 +1873,8 @@ export default function ReportRendererClient({
           </div>
           <div
             style={{
-              paddingTop: mmToPx(2.5),
-              paddingBottom: mmToPx(2.5),
+              paddingTop: mmToPx(contentPaddingTopMm),
+              paddingBottom: mmToPx(contentPaddingBottomMm),
             }}
           >
             {content}
