@@ -209,6 +209,16 @@ type BuildingDataRowEntry = {
   marginBottomMm: number
 }
 
+type HandlingarRowEntry = {
+  type: 'handlingarRow'
+  label: string
+  value: string
+  labelWidthMm: number
+  marginTopMm: number
+  marginBottomMm: number
+  splittable?: boolean
+}
+
 type ExtendedReportBlock =
   | ReportBlock
   | InspectionBlockItemEntry
@@ -219,6 +229,7 @@ type ExtendedReportBlock =
   | RiskItemEntry
   | FtuItemEntry
   | BuildingDataRowEntry
+  | HandlingarRowEntry
 
 type Entry =
   | {
@@ -518,6 +529,76 @@ function parseBuildingDataLines(content: string) {
     })
 
   return rows
+}
+
+const HANDLINGAR_CHUNK_MAX_LINES = 30
+const HANDLINGAR_CHUNK_APPROX_CHARS_PER_LINE = 72
+
+function estimateHandlingarLineCount(text: string) {
+  const normalized = text.replace(/\r\n/g, '\n')
+  const lines = normalized.split('\n')
+  return Math.max(
+    1,
+    lines.reduce((sum, line) => {
+      const length = line.trim().length
+      return sum + Math.max(1, Math.ceil(length / HANDLINGAR_CHUNK_APPROX_CHARS_PER_LINE))
+    }, 0)
+  )
+}
+
+function splitHandlingarTextForPages(text: string) {
+  const normalized = String(text ?? '').replace(/\r\n/g, '\n').trim()
+  if (!normalized) return ['']
+
+  const chunks: string[] = []
+  let current: string[] = []
+  let currentLines = 0
+
+  const pushCurrent = () => {
+    const value = current.join('\n').trim()
+    if (value) chunks.push(value)
+    current = []
+    currentLines = 0
+  }
+
+  normalized.split('\n').forEach((rawLine) => {
+    const line = rawLine.trimEnd()
+    const lineCount = estimateHandlingarLineCount(line)
+
+    if (lineCount > HANDLINGAR_CHUNK_MAX_LINES) {
+      pushCurrent()
+      const words = line.split(/(\s+)/)
+      let part = ''
+
+      words.forEach((word) => {
+        const next = `${part}${word}`
+        const nextLines = estimateHandlingarLineCount(next)
+        if (part && nextLines > HANDLINGAR_CHUNK_MAX_LINES) {
+          chunks.push(part.trim())
+          part = word.trimStart()
+          return
+        }
+        part = next
+      })
+
+      if (part.trim()) chunks.push(part.trim())
+      currentLines = 0
+      return
+    }
+
+    if (
+      current.length > 0 &&
+      currentLines + lineCount > HANDLINGAR_CHUNK_MAX_LINES
+    ) {
+      pushCurrent()
+    }
+
+    current.push(line)
+    currentLines += lineCount
+  })
+
+  pushCurrent()
+  return chunks.length > 0 ? chunks : [normalized]
 }
 
 function splitInspectionGroupTitle(title: string) {
@@ -828,6 +909,80 @@ export default function ReportRendererClient({
               },
             })
           })
+          return
+        }
+
+        if (block.type === 'handlingarLayout' && isPdfMode) {
+          const labelWidth = block.labelWidthMm ?? 55
+          const rowGap = block.rowGapMm ?? 6
+          const emptyPlaceholder = block.emptyPlaceholder ?? '--'
+          const provided = getMockList(mockData, 'mock.documents.provided')
+          const acquisitionText = getMockValue(
+            mockData,
+            'mock.disclosures.acquisition_text'
+          )
+          const renovations = getMockList(mockData, 'mock.disclosures.renovations')
+          const faults = getMockList(mockData, 'mock.disclosures.property_faults')
+
+          const infoText = [
+            block.infoDisclaimer,
+            acquisitionText,
+            renovations.length > 0
+              ? [block.renovationsLabel, ...renovations].join('\n')
+              : '',
+          ]
+            .map((value) => value.trim())
+            .filter(Boolean)
+            .join('\n\n')
+
+          const appendHandlingarRow = (
+            rowKey: string,
+            label: string,
+            value: string,
+            marginTopMm: number,
+            marginBottomMm: number
+          ) => {
+            const chunks = splitHandlingarTextForPages(value)
+            chunks.forEach((chunk, chunkIndex) => {
+              const isFirstChunk = chunkIndex === 0
+              const isLastChunk = chunkIndex === chunks.length - 1
+              entries.push({
+                kind: 'block',
+                id: `${section.id}-handlingar-${blockIndex}-${rowKey}-${chunkIndex}`,
+                sectionId: section.id,
+                sectionStartOnNewPage:
+                  section.startOnNewPage &&
+                  blockIndex === 0 &&
+                  rowKey === 'provided' &&
+                  isFirstChunk,
+                block: {
+                  type: 'handlingarRow',
+                  label: isFirstChunk ? label : '',
+                  value: chunk,
+                  labelWidthMm: labelWidth,
+                  marginTopMm: isFirstChunk ? marginTopMm : 0,
+                  marginBottomMm: isLastChunk ? marginBottomMm : 1.5,
+                  splittable: chunks.length > 1,
+                },
+              })
+            })
+          }
+
+          appendHandlingarRow(
+            'provided',
+            block.labels.provided,
+            provided.length > 0 ? provided.join('\n') : emptyPlaceholder,
+            block.marginTopMm,
+            rowGap
+          )
+          appendHandlingarRow('info', block.labels.info, infoText, 0, rowGap)
+          appendHandlingarRow(
+            'faults',
+            block.labels.faults,
+            faults.length > 0 ? faults.join('\n') : '',
+            0,
+            block.marginBottomMm
+          )
           return
         }
 
@@ -2258,6 +2413,34 @@ export default function ReportRendererClient({
       )
     }
 
+    if (block.type === 'handlingarRow') {
+      const textStyle = {
+        fontSize: '11pt',
+        color: REPORT_STYLES.BODY.color,
+        whiteSpace: 'pre-wrap',
+        overflowWrap: 'anywhere',
+      } as const
+
+      return (
+        <div
+          key={`${sectionId}-handlingar-row-${index}`}
+          style={{
+            ...blockMargins(block),
+            display: 'grid',
+            gridTemplateColumns: `${mmToPx(block.labelWidthMm)} 1fr`,
+            columnGap: mmToPx(4),
+            breakInside: block.splittable ? 'auto' : 'avoid',
+            pageBreakInside: block.splittable ? 'auto' : 'avoid',
+          }}
+        >
+          <div style={textStyle}>{block.label || '\u00A0'}</div>
+          <div style={{ ...textStyle, minWidth: 0 }}>
+            {block.value || '\u00A0'}
+          </div>
+        </div>
+      )
+    }
+
     if (block.type === 'handlingarLayout') {
       const labelWidth = block.labelWidthMm ?? 55
       const rowGap = block.rowGapMm ?? 6
@@ -2309,10 +2492,19 @@ export default function ReportRendererClient({
         breakInside: 'avoid',
       } as const
 
+      const splittableRowStyle = {
+        display: 'grid',
+        gridTemplateColumns: `${mmToPx(labelWidth)} 1fr`,
+        columnGap: mmToPx(4),
+        breakInside: 'auto',
+        pageBreakInside: 'auto',
+      } as const
+
       const textStyle = {
         fontSize: '11pt',
         color: REPORT_STYLES.BODY.color,
         whiteSpace: 'pre-wrap',
+        overflowWrap: 'anywhere',
       } as const
 
       return (
@@ -2335,9 +2527,9 @@ export default function ReportRendererClient({
             </div>
           </div>
 
-          <div style={rowStyle}>
+          <div style={splittableRowStyle}>
             <div style={textStyle}>{block.labels.info}</div>
-            <div style={textStyle}>
+            <div style={{ ...textStyle, minWidth: 0 }}>
               {infoBlocks.map((entry, entryIndex) => (
                 <div
                   key={`handlingar-info-${entryIndex}`}

@@ -6,11 +6,10 @@ import { requireOrgContext, getProfileContact } from '@/lib/assignments/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import {
   getPdfRenderDiagnostics,
+  renderPreviewPdf,
 } from '@/lib/report/pdfV2/renderPreviewPdf'
 import {
   createReportSnapshotPayloadV1,
-  isReportSnapshotPayloadV1,
-  renderStructuredPdfFromSnapshot,
   type ReportSnapshotPayloadV1,
 } from '@/lib/report/pdfV2/renderStructuredPdfV2'
 import { buildReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
@@ -20,6 +19,7 @@ import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmai
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
+const PDF_RENDER_TIMEOUT_MS = Number(process.env.REPORT_PDF_RENDER_TIMEOUT_MS ?? 60000)
 const REPORT_PDF_STORAGE_BUCKET = process.env.REPORT_PDF_STORAGE_BUCKET?.trim() || 'inspection-reports'
 const REPORT_TIMING_LOGS = process.env.REPORT_TIMING_LOGS !== '0'
 const PDF_JOB_STALE_AFTER_MS = readPositiveIntegerEnv(
@@ -542,7 +542,7 @@ async function runReportPdfJobInBackground(input: {
   try {
     const { data: link, error: linkError } = await admin
       .from('inspection_report_links')
-      .select('id,pdf_attempts,revoked_at,snapshot_payload')
+      .select('id,pdf_attempts,revoked_at')
       .eq('id', input.linkId)
       .maybeSingle()
 
@@ -564,12 +564,12 @@ async function runReportPdfJobInBackground(input: {
     })
     timing.mark('job_marked_processing', { attempts: nextAttempts })
 
-    const snapshotPayload = (link as Record<string, unknown>).snapshot_payload
-    if (!isReportSnapshotPayloadV1(snapshotPayload)) {
-      throw new Error('Rapportlänken saknar giltig rapportsnapshot för PDF-generering.')
-    }
-
-    const rendered = await renderStructuredPdfFromSnapshot(snapshotPayload)
+    const rendered = await renderPreviewPdf({
+      url: input.previewReportUrl,
+      cookieHeader: input.cookieHeader,
+      timeoutMs: PDF_RENDER_TIMEOUT_MS,
+      traceId: `${input.traceId}:render`,
+    })
     const pdfBuffer = Buffer.isBuffer(rendered) ? rendered : Buffer.from(rendered)
     timing.mark('pdf_rendered', { pdfBytes: pdfBuffer.length })
 

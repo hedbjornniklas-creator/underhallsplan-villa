@@ -187,6 +187,74 @@ const getListAtPath = (obj: unknown, path: string): string[] => {
   return []
 }
 
+const HANDLINGAR_PDF_CHUNK_MAX_LINES = 32
+const HANDLINGAR_PDF_APPROX_CHARS_PER_LINE = 74
+
+function estimateHandlingarPdfLineCount(text: string) {
+  const lines = text.replace(/\r\n/g, '\n').split('\n')
+  return Math.max(
+    1,
+    lines.reduce((sum, line) => {
+      const length = line.trim().length
+      return sum + Math.max(1, Math.ceil(length / HANDLINGAR_PDF_APPROX_CHARS_PER_LINE))
+    }, 0)
+  )
+}
+
+function splitHandlingarTextForPdf(text: string) {
+  const normalized = repairMojibake(String(text ?? '')).replace(/\r\n/g, '\n').trim()
+  if (!normalized) return ['']
+
+  const chunks: string[] = []
+  let current: string[] = []
+  let currentLines = 0
+
+  const pushCurrent = () => {
+    const value = current.join('\n').trim()
+    if (value) chunks.push(value)
+    current = []
+    currentLines = 0
+  }
+
+  normalized.split('\n').forEach((rawLine) => {
+    const line = rawLine.trimEnd()
+    const lineCount = estimateHandlingarPdfLineCount(line)
+
+    if (lineCount > HANDLINGAR_PDF_CHUNK_MAX_LINES) {
+      pushCurrent()
+      const words = line.split(/(\s+)/)
+      let part = ''
+
+      words.forEach((word) => {
+        const next = `${part}${word}`
+        if (part && estimateHandlingarPdfLineCount(next) > HANDLINGAR_PDF_CHUNK_MAX_LINES) {
+          chunks.push(part.trim())
+          part = word.trimStart()
+          return
+        }
+        part = next
+      })
+
+      if (part.trim()) chunks.push(part.trim())
+      currentLines = 0
+      return
+    }
+
+    if (
+      current.length > 0 &&
+      currentLines + lineCount > HANDLINGAR_PDF_CHUNK_MAX_LINES
+    ) {
+      pushCurrent()
+    }
+
+    current.push(line)
+    currentLines += lineCount
+  })
+
+  pushCurrent()
+  return chunks.length > 0 ? chunks : [normalized]
+}
+
 const interpolateAssignmentDate = (text: string, data: ReportDataV2) => {
   const assignmentDate = String(
     getValueAtPath(data, 'mock.inspections.assignment_confirmation_date') ?? ''
@@ -299,18 +367,24 @@ const renderBlock = (
     const valueStyle = { width: '73%' } as const
 
     return [
-      <View key={`handlingar-provided`} style={styles.row}>
-        <Text style={labelStyle}>{block.labels.provided}</Text>
-        <Text style={valueStyle}>{providedText}</Text>
-      </View>,
-      <View key={`handlingar-info`} style={styles.row}>
-        <Text style={labelStyle}>{block.labels.info}</Text>
-        <Text style={valueStyle}>{infoParts.join('\n')}</Text>
-      </View>,
-      <View key={`handlingar-faults`} style={styles.row}>
-        <Text style={labelStyle}>{block.labels.faults}</Text>
-        <Text style={valueStyle}>{faultsText}</Text>
-      </View>,
+      ...splitHandlingarTextForPdf(providedText).map((chunk, index) => (
+        <View key={`handlingar-provided-${index}`} style={styles.row} wrap={false}>
+          <Text style={labelStyle}>{index === 0 ? block.labels.provided : '\u00A0'}</Text>
+          <Text style={valueStyle}>{chunk || '\u00A0'}</Text>
+        </View>
+      )),
+      ...splitHandlingarTextForPdf(infoParts.join('\n\n')).map((chunk, index) => (
+        <View key={`handlingar-info-${index}`} style={styles.row} wrap={false}>
+          <Text style={labelStyle}>{index === 0 ? block.labels.info : '\u00A0'}</Text>
+          <Text style={valueStyle}>{chunk || '\u00A0'}</Text>
+        </View>
+      )),
+      ...splitHandlingarTextForPdf(faultsText).map((chunk, index) => (
+        <View key={`handlingar-faults-${index}`} style={styles.row} wrap={false}>
+          <Text style={labelStyle}>{index === 0 ? block.labels.faults : '\u00A0'}</Text>
+          <Text style={valueStyle}>{chunk || '\u00A0'}</Text>
+        </View>
+      )),
     ]
   }
 

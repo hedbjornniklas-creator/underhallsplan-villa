@@ -1322,7 +1322,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     if (!item) return
 
     // Framför allt avsett för fria noteringar, men fungerar för alla
-    if (!skipConfirm && !confirm('Ta bort denna notering/kontrollpunkt?')) return
+    if (!skipConfirm && !confirm('Ta bort denna notering?')) return
 
     try {
       const { data: imgRows, error: imgFetchErr } = await supabase
@@ -1616,7 +1616,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
   const deleteControlItemGroup = async (baseItem: InspectionControlItem) => {
     if (isInspectionLocked) return
-    if (!confirm('Ta bort denna kontrollpunkt?')) return
+    if (!confirm('Ta bort denna notering?')) return
     const group = controlItems.filter(
       ci =>
         ci.interior_room_id === baseItem.interior_room_id &&
@@ -4303,7 +4303,7 @@ function RoomControlPointsSection({
       </header>
 
       {/* Lista med befintliga kontrollpunkter */}
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2">
         {items.length === 0 && (
           <div className="text-xs text-gray-600">
             Inga kontrollpunkter ännu. De kan läggas till automatiskt för rumstypen
@@ -4318,7 +4318,8 @@ function RoomControlPointsSection({
           return (
             <div
               key={ci.id}
-              className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 space-y-2"
+              style={{ order: ci.sort_order ?? 0 }}
+              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 space-y-2"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-semibold text-gray-900">
@@ -4451,6 +4452,7 @@ function RoomControlPointsSection({
             return (
               <div
                 key={group.controlPointId}
+                style={{ order: baseItem.sort_order ?? 0 }}
                 className={`rounded-lg border px-3 py-2 ${rowToneClass}`}
               >
                 <div className="flex min-w-0 items-center gap-2">
@@ -4478,7 +4480,7 @@ function RoomControlPointsSection({
                         className="text-xs md:text-[11px] text-rose-600 hover:underline"
                         disabled={isInspectionLocked}
                       >
-                        Ta bort
+                        Ta bort notering
                       </button>
                     )}
                   </div>
@@ -4490,6 +4492,7 @@ function RoomControlPointsSection({
           return (
             <div
               key={group.controlPointId}
+              style={{ order: baseItem.sort_order ?? 0 }}
               className={`rounded-lg border px-3 py-2 space-y-2 ${rowToneClass}`}
             >
               <div className="flex items-center justify-between gap-2">
@@ -4518,7 +4521,7 @@ function RoomControlPointsSection({
                       className="text-xs md:text-[11px] text-rose-600 hover:underline"
                       disabled={isInspectionLocked}
                     >
-                      Ta bort
+                      Ta bort notering
                     </button>
                   )}
                 </div>

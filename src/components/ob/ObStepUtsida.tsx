@@ -1242,7 +1242,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     if (isInspectionLocked) return
     const item = controlItems.find(ci => ci.id === itemId)
     if (!item) return
-    if (!skipConfirm && !confirm('Ta bort denna kontrollpunkt?')) return
+    if (!skipConfirm && !confirm('Ta bort denna notering?')) return
 
     try {
       setSaving(true)
@@ -1314,7 +1314,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     )
     const sortOrder =
       existingForRow.length > 0
-        ? Math.max(...existingForRow.map(ci => ci.sort_order || 0)) + 10
+        ? Math.min(...existingForRow.map(ci => ci.sort_order || 0)) - 10
         : 10
 
     const newItem: InspectionControlItem = {
@@ -1402,7 +1402,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     baseItem: InspectionControlItem
   ) => {
     if (isInspectionLocked) return
-    if (!confirm('Ta bort denna kontrollpunkt?')) return
+    if (!confirm('Ta bort denna notering?')) return
     const group = controlItems.filter(
       ci =>
         ci.exterior_observation_id === baseItem.exterior_observation_id &&
@@ -3493,7 +3493,7 @@ function ExteriorControlPointsSection({
         </h4>
       </header>
 
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2">
         {groupedItems.length === 0 && freeNoteItems.length === 0 && (
           <div className="text-xs text-gray-500">
             Inga kontrollpunkter ännu. Lägg till via knappen Lägg till ytterligare kontrollpunkt.
@@ -3508,7 +3508,8 @@ function ExteriorControlPointsSection({
           return (
             <div
               key={ci.id}
-              className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 space-y-2"
+              style={{ order: ci.sort_order ?? 0 }}
+              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 space-y-2"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-semibold text-gray-900">
@@ -3531,7 +3532,7 @@ function ExteriorControlPointsSection({
                       className="text-[11px] text-rose-600 hover:underline"
                       disabled={isInspectionLocked}
                     >
-                      Ta bort
+                      Ta bort notering
                     </button>
                   )}
                 </div>
@@ -3639,6 +3640,7 @@ function ExteriorControlPointsSection({
             return (
               <div
                 key={group.controlPointId}
+                style={{ order: baseItem.sort_order ?? 0 }}
                 className={`rounded-lg border px-3 py-2 ${rowToneClass}`}
               >
                 <div className="flex min-w-0 items-center gap-2">
@@ -3668,7 +3670,7 @@ function ExteriorControlPointsSection({
                         className="text-[11px] text-rose-600 hover:underline"
                         disabled={isInspectionLocked}
                       >
-                        Ta bort
+                        Ta bort notering
                       </button>
                     )}
                   </div>
@@ -3680,6 +3682,7 @@ function ExteriorControlPointsSection({
           return (
             <div
               key={group.controlPointId}
+              style={{ order: baseItem.sort_order ?? 0 }}
               className={`rounded-lg border px-3 py-2 space-y-2 ${rowToneClass}`}
             >
               <div className="flex min-w-0 items-center justify-between gap-2">
@@ -3708,7 +3711,7 @@ function ExteriorControlPointsSection({
                       className="text-[11px] text-rose-600 hover:underline"
                       disabled={isInspectionLocked}
                     >
-                      Ta bort
+                      Ta bort notering
                     </button>
                   )}
                 </div>
@@ -4291,7 +4294,7 @@ function FreeNotesSection({
                       className="text-[11px] text-red-600 hover:underline"
                       disabled={isInspectionLocked}
                     >
-                      Ta bort
+                      Ta bort notering
                     </button>
                   </div>
                 </div>
