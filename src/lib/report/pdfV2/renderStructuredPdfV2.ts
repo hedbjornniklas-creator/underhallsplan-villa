@@ -107,8 +107,9 @@ export async function renderStructuredPdfFromSnapshot(
   snapshot: ReportSnapshotPayloadV1
 ): Promise<Buffer> {
   const specInspectionSide = snapshot.inspectionSide === 'seller' ? 'seller' : snapshot.inspectionSide === 'apartment' ? 'apartment' : 'buyer'
+  const compactData = stripPhotoUrls(snapshot.reportData)
   const snapshotAppendices =
-    (snapshot.reportData?.mock?.appendices as Record<string, unknown> | undefined) ?? {}
+    (compactData?.mock?.appendices as Record<string, unknown> | undefined) ?? {}
   const spec =
     Array.isArray(snapshot.reportSpec) && snapshot.reportSpec.length > 0
       ? snapshot.reportSpec
@@ -123,7 +124,7 @@ export async function renderStructuredPdfFromSnapshot(
                 ?.enabled === true,
           },
         })
-  const document = createDocument(spec, snapshot.reportData)
+  const document = createDocument(spec, compactData)
   return await renderDocumentToBuffer(document)
 }
 
@@ -137,12 +138,20 @@ export async function renderStructuredPdfV2(
   const compactData = stripPhotoUrls(data)
   const inspectionSide = await resolveInspectionSide(params.inspectionId)
   const specInspectionSide = inspectionSide === 'seller' ? 'seller' : inspectionSide === 'apartment' ? 'apartment' : 'buyer'
-  const appendices = (compactData.mock?.appendices as Record<string, any> | undefined) ?? {}
+  const appendices = (compactData.mock?.appendices as Record<string, unknown> | undefined) ?? {}
+  const areaMeasurementAppendix =
+    appendices.area_measurement && typeof appendices.area_measurement === 'object'
+      ? (appendices.area_measurement as Record<string, unknown>)
+      : {}
+  const moistureControlAppendix =
+    appendices.moisture_control && typeof appendices.moisture_control === 'object'
+      ? (appendices.moisture_control as Record<string, unknown>)
+      : {}
   const spec = buildReportSpec({
     inspectionSide: specInspectionSide,
     dynamicAppendices: {
-      includeAreaMeasurement: appendices.area_measurement?.enabled === true,
-      includeMoistureControl: appendices.moisture_control?.enabled === true,
+      includeAreaMeasurement: areaMeasurementAppendix.enabled === true,
+      includeMoistureControl: moistureControlAppendix.enabled === true,
     },
   })
   const document = createDocument(spec, compactData)
