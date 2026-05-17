@@ -2369,6 +2369,11 @@ function reportList(values: Array<string | null | undefined>) {
   return lines.length > 0 ? lines.join('\n') : 'Ej angivet'
 }
 
+function optionalReportLine(label: string, value: string | null | undefined) {
+  const normalized = normalizeText(value)
+  return normalized ? `${label}: ${normalized}` : null
+}
+
 function appointedByLabel(value: EbInspectorAppointedBy | null) {
   if (value === 'client') return 'Beställare'
   if (value === 'parties_jointly') return 'Parterna gemensamt'
@@ -2397,17 +2402,16 @@ function partyLabel(value: EbPartyKey | null) {
 }
 
 function reportParticipantRow(participant: EbInvitationParticipant) {
+  const name = [participant.companyName, participant.personName].map(normalizeText).filter(Boolean).join(', ')
+  const contact = [participant.email, participant.phone].map(normalizeText).filter(Boolean).join(', ')
   const representation =
     participant.canRepresentParty && participant.representsPartyKey
       ? `För talan för: ${partyLabel(participant.representsPartyKey)}`
       : null
 
   return reportList([
-    participant.roleLabel,
-    participant.companyName,
-    participant.personName,
-    participant.email,
-    participant.phone,
+    participant.roleLabel ? `${participant.roleLabel}: ${name || 'Ej angivet'}` : name,
+    contact,
     representation,
   ])
 }
@@ -2428,12 +2432,12 @@ function ebAttachmentReportRow(attachment: EbProjectAttachment) {
   const heading = attachment.littera
     ? `${attachment.littera}. ${ebAttachmentTitle(attachment)}`
     : ebAttachmentTitle(attachment)
-  const details = reportList([
-    reportLine('Datum', attachment.documentDate),
-    reportLine('Nr/revision', attachment.documentNumber),
+  const details = [
+    optionalReportLine('Datum', attachment.documentDate),
+    optionalReportLine('Nr/revision', attachment.documentNumber),
     attachment.documentNote,
-  ])
-  return details ? `${heading}\n${details}` : heading
+  ].map(normalizeText).filter(Boolean)
+  return details.length > 0 ? `${heading}\n${details.join('\n')}` : heading
 }
 
 function ebNoteReportReference(round: EbInspectionRound, note: EbNote) {
@@ -2578,7 +2582,7 @@ function buildEbReportDraft(input: {
       source: 'participants',
       status: presentParticipantRows.length > 0 ? 'complete' : 'missing',
       isRelevant: true,
-      text: presentParticipantRows.length > 0 ? presentParticipantRows.join('\\n') : 'Inga närvarande är registrerade.',
+      text: presentParticipantRows.length > 0 ? presentParticipantRows.join('\n\n') : 'Inga närvarande är registrerade.',
       updatedAt: null,
     },
     {
@@ -2807,7 +2811,7 @@ function buildEbReportDraft(input: {
       text: reportList([
         reportLine('Distributionsdatum', round.inspection.reportDistributionDate),
         reportRecipientRows.length > 0
-          ? reportRecipientRows.join('\n')
+          ? reportRecipientRows.join('\n\n')
           : ebStandardText('EB_REPORT_DISTRIBUTION_LIST_MISSING'),
       ]),
       updatedAt: null,
