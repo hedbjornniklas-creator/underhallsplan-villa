@@ -706,6 +706,16 @@ function toProjectTitle(input: {
   )
 }
 
+function isMissingColumnError(error: { code?: string | null; message?: string | null; details?: string | null }) {
+  const text = [error.code, error.message, error.details].filter(Boolean).join(' ').toLowerCase()
+  return (
+    text.includes('42703') ||
+    text.includes('column') && text.includes('does not exist') ||
+    text.includes('could not find') && text.includes('column') ||
+    text.includes('schema cache') && text.includes('column')
+  )
+}
+
 function toPropertyName(input: {
   address?: string | null
   propertyDesignation?: string | null
@@ -820,17 +830,33 @@ async function fetchDetailsForProjects(orgId: string, projectIds: string[]) {
   if (projectIds.length === 0) return []
 
   const admin = createSupabaseAdminClient()
+  const baseSelect =
+    'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,report_locked_at,created_at'
+  const withStructuredReportSelect =
+    'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,inspector_appointed_by,invitation_method,invitation_date,approval_status,approval_note,requires_continued_final_inspection,warranty_period_years,warranty_end_date,default_remedy_deadline,after_inspection_requested,after_inspection_due_date,after_inspection_notice_in_report,report_distribution_date,report_locked_at,created_at'
   const { data, error } = await admin
     .from('eb_inspection_details')
-    .select(
-      'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,inspector_appointed_by,invitation_method,invitation_date,approval_status,approval_note,requires_continued_final_inspection,warranty_period_years,warranty_end_date,default_remedy_deadline,after_inspection_requested,after_inspection_due_date,after_inspection_notice_in_report,report_distribution_date,report_locked_at,created_at'
-    )
+    .select(withStructuredReportSelect)
     .eq('org_id', orgId)
     .in('eb_project_id', projectIds)
     .order('sequence_no', { ascending: true })
     .order('created_at', { ascending: true })
 
   if (error) {
+    if (isMissingColumnError(error)) {
+      const fallback = await admin
+        .from('eb_inspection_details')
+        .select(baseSelect)
+        .eq('org_id', orgId)
+        .in('eb_project_id', projectIds)
+        .order('sequence_no', { ascending: true })
+        .order('created_at', { ascending: true })
+
+      if (fallback.error) {
+        throw new Error(fallback.error.message ?? 'Kunde inte hämta EB-besiktningar.')
+      }
+      return (fallback.data ?? []) as EbInspectionDetailRow[]
+    }
     throw new Error(error.message ?? 'Kunde inte hämta EB-besiktningar.')
   }
 
@@ -934,16 +960,31 @@ export async function listEbProjectAttachments(input: {
   }
 
   const admin = createSupabaseAdminClient()
+  const baseSelect =
+    'id,eb_project_id,attachment_type,title,storage_bucket,file_path,file_name,content_type,file_size_bytes,uploaded_by,created_at'
+  const withReportMetadataSelect =
+    'id,eb_project_id,attachment_type,title,storage_bucket,file_path,file_name,content_type,file_size_bytes,include_in_report,littera,document_date,document_number,document_note,uploaded_by,created_at'
   const { data, error } = await admin
     .from('eb_project_attachments')
-    .select(
-      'id,eb_project_id,attachment_type,title,storage_bucket,file_path,file_name,content_type,file_size_bytes,include_in_report,littera,document_date,document_number,document_note,uploaded_by,created_at'
-    )
+    .select(withReportMetadataSelect)
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
     .order('created_at', { ascending: false })
 
   if (error) {
+    if (isMissingColumnError(error)) {
+      const fallback = await admin
+        .from('eb_project_attachments')
+        .select(baseSelect)
+        .eq('org_id', input.orgId)
+        .eq('eb_project_id', input.projectId)
+        .order('created_at', { ascending: false })
+
+      if (fallback.error) {
+        throw new Error(fallback.error.message ?? 'Kunde inte hämta EB-bilagor.')
+      }
+      return Promise.all(((fallback.data ?? []) as EbProjectAttachmentRow[]).map(mapProjectAttachment))
+    }
     throw new Error(error.message ?? 'Kunde inte hämta EB-bilagor.')
   }
 
@@ -1121,11 +1162,13 @@ async function listEbNotes(input: {
   statuses: EbNoteStatus[]
 }) {
   const admin = createSupabaseAdminClient()
+  const baseSelect =
+    'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,sort_order,created_at,updated_at'
+  const withReportMetadataSelect =
+    'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,investigation_responsible_party,investigation_responsible_note,investigation_cost_party,investigation_due_date,deduction_amount,sort_order,created_at,updated_at'
   const { data, error } = await admin
     .from('eb_notes')
-    .select(
-      'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,investigation_responsible_party,investigation_responsible_note,investigation_cost_party,investigation_due_date,deduction_amount,sort_order,created_at,updated_at'
-    )
+    .select(withReportMetadataSelect)
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
     .eq('inspection_id', input.inspectionId)
@@ -1134,6 +1177,28 @@ async function listEbNotes(input: {
     .order('created_at', { ascending: true })
 
   if (error) {
+    if (isMissingColumnError(error)) {
+      const fallback = await admin
+        .from('eb_notes')
+        .select(baseSelect)
+        .eq('org_id', input.orgId)
+        .eq('eb_project_id', input.projectId)
+        .eq('inspection_id', input.inspectionId)
+        .order('sort_order', { ascending: true, nullsFirst: false })
+        .order('note_number', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: true })
+
+      if (fallback.error) {
+        throw new Error(fallback.error.message ?? 'Kunde inte hämta EB-noteringar.')
+      }
+
+      const disciplinesById = new Map(input.disciplines.map((discipline) => [discipline.id, discipline]))
+      const markersByKey = new Map(input.markers.map((marker) => [marker.key, marker]))
+      const statusesByKey = new Map(input.statuses.map((status) => [status.key, status]))
+      return ((fallback.data ?? []) as EbNoteRow[]).map((row) =>
+        mapNote(row, disciplinesById, markersByKey, statusesByKey)
+      )
+    }
     throw new Error(error.message ?? 'Kunde inte hämta EB-noteringar.')
   }
 
@@ -1267,6 +1332,9 @@ async function fetchEbReportDraft(input: {
     .maybeSingle()
 
   if (error) {
+    if (isMissingColumnError(error)) {
+      return normalizeEbReportDraft(null, null)
+    }
     throw new Error(error.message ?? 'Kunde inte hämta utlåtandeutkast.')
   }
 
@@ -2840,15 +2908,32 @@ async function listParticipantsForInspection(input: {
   inspectionId: string
 }) {
   const admin = createSupabaseAdminClient()
+  const baseSelect = 'id,role_label,company_name,person_name,email,phone,receives_invitation,sort_order'
+  const withAttendanceSelect =
+    'id,role_label,company_name,person_name,email,phone,receives_invitation,attended,receives_report,represents_party_key,can_represent_party,sort_order'
   const { data, error } = await admin
     .from('eb_participants')
-    .select('id,role_label,company_name,person_name,email,phone,receives_invitation,attended,receives_report,represents_party_key,can_represent_party,sort_order')
+    .select(withAttendanceSelect)
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
     .eq('inspection_id', input.inspectionId)
     .order('sort_order', { ascending: true })
 
   if (error) {
+    if (isMissingColumnError(error)) {
+      const fallback = await admin
+        .from('eb_participants')
+        .select(baseSelect)
+        .eq('org_id', input.orgId)
+        .eq('eb_project_id', input.projectId)
+        .eq('inspection_id', input.inspectionId)
+        .order('sort_order', { ascending: true })
+
+      if (fallback.error) {
+        throw new Error(fallback.error.message ?? 'Kunde inte hämta deltagare.')
+      }
+      return ((fallback.data ?? []) as EbParticipantRow[]).map(mapParticipant)
+    }
     throw new Error(error.message ?? 'Kunde inte hämta deltagare.')
   }
 
