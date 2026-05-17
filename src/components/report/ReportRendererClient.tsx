@@ -79,32 +79,36 @@ const ReportPhoto = ({
     () => toProxyUrl(src, maxLongSidePx, quality),
     [maxLongSidePx, quality, src]
   )
-  const [ready, setReady] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const [readySrc, setReadySrc] = useState<string | null>(null)
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
 
-  useLayoutEffect(() => {
-    setReady(false)
-    setFailed(false)
-  }, [imageSrc])
+  const markReady = useCallback(() => {
+    setReadySrc((currentReadySrc) => {
+      if (currentReadySrc !== imageSrc) onSettled?.()
+      return imageSrc
+    })
+  }, [imageSrc, onSettled])
+
+  const imageRef = useCallback((image: HTMLImageElement | null) => {
+    if (image?.complete && image.naturalWidth > 0 && image.naturalHeight > 0) {
+      markReady()
+    }
+  }, [markReady])
+
+  const failed = failedSrc === imageSrc
+  const ready = readySrc === imageSrc || failed
 
   return (
     <img
+      ref={imageRef}
       src={failed ? TRANSPARENT_PIXEL : imageSrc}
       alt={alt}
       className={className}
       style={style}
-      onLoad={() => {
-        setReady((wasReady) => {
-          if (!wasReady) onSettled?.()
-          return true
-        })
-      }}
+      onLoad={markReady}
       onError={() => {
-        setFailed(true)
-        setReady((wasReady) => {
-          if (!wasReady) onSettled?.()
-          return true
-        })
+        setFailedSrc(imageSrc)
+        markReady()
       }}
       data-report-track="1"
       data-report-ready={ready ? '1' : '0'}

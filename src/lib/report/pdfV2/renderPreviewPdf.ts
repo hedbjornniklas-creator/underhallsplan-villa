@@ -73,7 +73,9 @@ const isReportReady = () => {
   if (images.length === 0) return true
   return images.every((img) => {
     const ready = img.getAttribute('data-report-ready') === '1'
-    return ready && (img instanceof HTMLImageElement ? img.complete : true)
+    if (!(img instanceof HTMLImageElement)) return ready
+    const browserLoaded = img.complete && img.naturalWidth > 0 && img.naturalHeight > 0
+    return ready || browserLoaded
   })
 }
 
@@ -159,7 +161,15 @@ async function collectReportReadinessDiagnostics(page: Page): Promise<Record<str
         }
       })
       const notReadyImages = imageStates.filter(
-        (img) => img.ready !== '1' || img.complete === false
+        (img) =>
+          img.ready !== '1' &&
+          !(
+            img.complete === true &&
+            typeof img.naturalWidth === 'number' &&
+            img.naturalWidth > 0 &&
+            typeof img.naturalHeight === 'number' &&
+            img.naturalHeight > 0
+          )
       )
 
       return {
