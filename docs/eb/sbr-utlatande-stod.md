@@ -38,6 +38,58 @@ All nödvändig information ska antingen finnas som strukturerat fält eller som
 - Utlåtandeutkastet sparas i `eb_inspection_details.report_draft`. Det innebär att vi inte behöver hårdkoda nya databaskolumner för varje formell textpunkt innan flödet har satt sig.
 - Om ett redigerbart fält senare behöver statistik, filtrering eller återanvändning ska det brytas ut till egen kolumn/tabell.
 
+## Beslutad fältplacering
+
+| Uppgift | Placering | Kommentar |
+|---|---|---|
+| Besiktningsman som utför utlåtandet | Hämtas från inloggad användares settings/profil | Ska inte matas in manuellt i varje utlåtande. |
+| Certifiering och SBR-medlemskap | Hämtas från inloggad användares settings/profil | Profilen behöver bära certifiering, nummer och eventuell SBR-koppling. |
+| Vem som utsett besiktningsmannen | Besiktningen | Val: `Beställare`, `Parterna gemensamt`, `Entreprenör`. |
+| Biträdande besiktningsmän | Avvaktas | Ska inte byggas nu. |
+| Partsombud/för talan för beställare | Besiktningen, deltagarlistan | Fylls i under besiktningen. |
+| Partsombud/för talan för entreprenör | Besiktningen, deltagarlistan | Fylls i under besiktningen. |
+| Närvarande vid besiktning | Besiktningen, deltagarlistan | Ska vara separat från kallade. |
+| Mottagare av utlåtande | Besiktningen, deltagarlistan | Ska vara separat från kallelsemottagare. E-post ska samlas in här. |
+| Kallelsemetod | Besiktningen/kallelse | Framgår av kallelsen men ska kunna redigeras i besiktningen. |
+| Kallelsedatum | Besiktningen/kallelse | Ska vara tydlig egen uppgift och kunna justeras. |
+| Fråga om jäv | Villkorad utlåtandepunkt | Rubrik och text visas endast om besiktningsmannen är utsedd av parterna gemensamt. Tas bort om utsedd av beställaren. |
+| Tidigare besiktningar | Utlåtandeuppgifter | Baseras på intern information samt kompletterande fritext. |
+| Provningar/kontroller som åberopas | Utlåtandeuppgifter | Fritext. |
+| Entreprenadhandlingar | Entreprenaden/handlingar + utlåtandeuppgifter | Välj från entreprenadens handlinglista med kryss för vilka som ska med, plus fritt kompletteringsfält. |
+| Överenskommelser vid/inför besiktning | Utlåtandeuppgifter | Fritext. |
+| Bilageförteckning med littera | Byggs från valda handlingar, kompletteringar och bilagor | Ska inte dubbelmatas. |
+| Delar ej åtkomliga | Granska + utlåtandeuppgifter | Baseras på noteringar/status och kan kompletteras i utlåtandeuppgifter. |
+| Delar endast besiktigade genom handling | Utlåtandeuppgifter | Fritext/lista. |
+| Beslut godkänd/ej godkänd/delvis | Besiktningen | Dropdown. |
+| Beslutets motivering | Besiktningen eller utlåtandeuppgifter | Fritext. |
+| Fortsatt slutbesiktning krävs | Besiktningen | Dropdown ja/nej. |
+| Garantitidens längd | Besiktningen | Dropdown 1-10 år. |
+| Garantitidens slutdatum | Besiktningen | Datumväljare. |
+| Avhjälpandetid generellt | Besiktningen | Datumväljare. |
+| Efterbesiktning påkallad | Besiktningen | Dropdown ja/nej. |
+| Efterbesiktning datum/senast datum | Besiktningen | Datumväljare. |
+| Utlåtandet gäller som kallelse till efterbesiktning | Standardtext | Ska styras av standardtext, inte fritext i varje utlåtande. |
+| Särskild utredning: ansvarig | Noteringar markerade som utredningspunkt | Lista byggs från noteringar. Per rad: dropdown `Entreprenör`, `Beställare`, `Annat` + fritext. |
+| Särskild utredning: kostnadsansvar | Utredningslistan | Dropdown `Entreprenör` eller `Beställare`. |
+| Särskild utredning: klar senast | Utredningslistan | Datumväljare. |
+| Nedsättning: belopp | Noteringar markerade för nedsättning | Fritext per kopplad notering eller nedsättningsrad. |
+| Nedsättning: kopplade noteringar | Byggs från noteringarnas markering | Ska inte dubbelmatas. |
+| Noteringsbeteckningens förklaring | Utlåtandet | Ren standard-/inställningstext. |
+| Separata fackbilagor | Avvaktas | Ska inte byggas nu. |
+| Utlåtandets distributionsdatum | Utlåtande/skicka | Standard dagens datum, men datumväljare ska finnas. |
+| Utlåtandets distributionssätt | Besiktningens sändlista | Byggs från mottagare/e-post i deltagarlistan. |
+
+## Föreslaget datastöd för beslutade fält
+
+| Datamodell | Nya/tydligare fält |
+|---|---|
+| `profiles` eller befintlig profil/settings-modell | certifieringsuppgifter, SBR-medlemskap och visningsnamn för besiktningsman. |
+| `eb_inspection_details` | `inspector_appointed_by`, `invitation_method`, tydligt `invitation_date`, beslut, beslutstext, fortsatt slutbesiktning, garantitid, garantitidens slut, generell avhjälpandetid, efterbesiktning, distributionsdatum. |
+| `eb_participants` | `attended`, `receives_report`, `represents_party_key`, `can_represent_party`. |
+| `eb_project_attachments` | `include_in_report`, `littera`, `document_date`, `document_number`, `document_note`. |
+| `eb_inspection_details.report_draft` | fri text för tidigare besiktningar, provningar, överenskommelser, dokumentationsbesiktigade delar och kompletteringar. |
+| `eb_notes` | utnyttja `marker_key` för särskild utredning och nedsättning; komplettera vid behov med per-notering ansvar, kostnadsansvar, klar-senast och nedsättningsbelopp. |
+
 ## Standardtexter
 
 EB-standardtexter ska inte hårdkodas i React-komponenter eller i `src/lib/eb/server.ts`. De ska ligga som separata textfiler och registreras i `src/content/standardtexts/registry.ts`, på samma sätt som ÖB-utlåtandet.
