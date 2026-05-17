@@ -54,6 +54,11 @@ type CreateInspectionResponse = {
   error?: string
 }
 
+type UpdateInspectionResponse = {
+  project?: EbProjectListItem
+  error?: string
+}
+
 type UpdateProjectResponse = {
   project?: EbProjectListItem
   error?: string
@@ -71,6 +76,27 @@ type SendInvitationResponse = {
 
 type EditableParticipant = EbInvitationParticipant & {
   localId: string
+}
+
+type InspectionDetailsFormState = {
+  inspectionDate: string
+  inspectionTime: string
+  meetingPlace: string
+  startMeetingTime: string
+  finalMeetingTime: string
+  inspectorAppointedBy: string
+  invitationMethod: string
+  invitationDate: string
+  approvalStatus: string
+  approvalNote: string
+  requiresContinuedFinalInspection: string
+  warrantyPeriodYears: string
+  warrantyEndDate: string
+  defaultRemedyDeadline: string
+  afterInspectionRequested: string
+  afterInspectionDueDate: string
+  afterInspectionNoticeInReport: boolean
+  reportDistributionDate: string
 }
 
 const VARIANT_OPTIONS: Array<{ value: EbInspectionVariant; label: string }> = [
@@ -134,8 +160,47 @@ function createEmptyParticipant(sortOrder: number): EditableParticipant {
     email: '',
     phone: '',
     receivesInvitation: true,
+    attended: false,
+    receivesReport: true,
+    representsPartyKey: null,
+    canRepresentParty: false,
     sortOrder,
   }
+}
+
+function buildInspectionDetailsForm(inspection: EbInspectionSummary): InspectionDetailsFormState {
+  return {
+    inspectionDate: inspection.date ?? '',
+    inspectionTime: formatTime(inspection.inspectionTime),
+    meetingPlace: inspection.meetingPlace ?? '',
+    startMeetingTime: formatTime(inspection.startMeetingTime),
+    finalMeetingTime: formatTime(inspection.finalMeetingTime),
+    inspectorAppointedBy: inspection.inspectorAppointedBy ?? '',
+    invitationMethod: inspection.invitationMethod ?? '',
+    invitationDate: inspection.invitationDate ?? '',
+    approvalStatus: inspection.approvalStatus ?? '',
+    approvalNote: inspection.approvalNote ?? '',
+    requiresContinuedFinalInspection:
+      typeof inspection.requiresContinuedFinalInspection === 'boolean'
+        ? String(inspection.requiresContinuedFinalInspection)
+        : '',
+    warrantyPeriodYears: inspection.warrantyPeriodYears ? String(inspection.warrantyPeriodYears) : '',
+    warrantyEndDate: inspection.warrantyEndDate ?? '',
+    defaultRemedyDeadline: inspection.defaultRemedyDeadline ?? '',
+    afterInspectionRequested:
+      typeof inspection.afterInspectionRequested === 'boolean'
+        ? String(inspection.afterInspectionRequested)
+        : '',
+    afterInspectionDueDate: inspection.afterInspectionDueDate ?? '',
+    afterInspectionNoticeInReport: inspection.afterInspectionNoticeInReport,
+    reportDistributionDate: inspection.reportDistributionDate ?? new Date().toISOString().slice(0, 10),
+  }
+}
+
+function booleanFromSelect(value: string) {
+  if (value === 'true') return true
+  if (value === 'false') return false
+  return null
 }
 
 function inspectionTitle(inspection: EbInspectionSummary) {
@@ -328,6 +393,325 @@ function CreateInspectionDialog({
     </div>
   )
 }
+
+function InspectionDetailsDialog({
+  open,
+  project,
+  inspection,
+  onClose,
+  onUpdated,
+}: {
+  open: boolean
+  project: EbProjectListItem
+  inspection: EbInspectionSummary | null
+  onClose: () => void
+  onUpdated: (project: EbProjectListItem) => void
+}) {
+  const [form, setForm] = useState<InspectionDetailsFormState | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open || !inspection) return
+    setForm(buildInspectionDetailsForm(inspection))
+    setError(null)
+  }, [inspection, open])
+
+  if (!open || !inspection || !form) return null
+
+  const updateField = <K extends keyof InspectionDetailsFormState>(
+    field: K,
+    value: InspectionDetailsFormState[K]
+  ) => {
+    setForm((current) => (current ? { ...current, [field]: value } : current))
+  }
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (submitting) return
+
+    try {
+      setSubmitting(true)
+      setError(null)
+      const response = await fetch(
+        `/api/eb/projects/${project.id}/inspections/${inspection.inspectionId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...form,
+            requiresContinuedFinalInspection: booleanFromSelect(form.requiresContinuedFinalInspection),
+            warrantyPeriodYears: form.warrantyPeriodYears ? Number(form.warrantyPeriodYears) : null,
+            afterInspectionRequested: booleanFromSelect(form.afterInspectionRequested),
+          }),
+        }
+      )
+      const payload = (await response.json().catch(() => ({}))) as UpdateInspectionResponse
+
+      if (!response.ok || !payload.project) {
+        throw new Error(payload.error ?? 'Kunde inte spara besiktningsuppgifter.')
+      }
+
+      onUpdated(payload.project)
+      onClose()
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Kunde inte spara besiktningsuppgifter.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-3">
+      <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-emerald-100 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
+              {inspection.variant}
+            </p>
+            <h2 className="text-lg font-semibold text-gray-950">Besiktningsuppgifter</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Stäng"
+            title="Stäng"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={(event) => void handleSubmit(event)} className="overflow-auto p-4">
+          <div className="grid gap-5 lg:grid-cols-2">
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold text-gray-950">Tid och kallelse</h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {fieldLabel(
+                  'Besiktningsdatum',
+                  <input
+                    type="date"
+                    value={form.inspectionDate}
+                    onChange={(event) => updateField('inspectionDate', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Besiktningstid',
+                  <input
+                    type="time"
+                    value={form.inspectionTime}
+                    onChange={(event) => updateField('inspectionTime', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Samlingsplats',
+                  <input
+                    value={form.meetingPlace}
+                    onChange={(event) => updateField('meetingPlace', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Kallelsemetod',
+                  <input
+                    value={form.invitationMethod}
+                    onChange={(event) => updateField('invitationMethod', event.target.value)}
+                    placeholder="E-post"
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Kallelsedatum',
+                  <input
+                    type="date"
+                    value={form.invitationDate}
+                    onChange={(event) => updateField('invitationDate', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  {fieldLabel(
+                    'Försammanträde',
+                    <input
+                      type="time"
+                      value={form.startMeetingTime}
+                      onChange={(event) => updateField('startMeetingTime', event.target.value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                  {fieldLabel(
+                    'Slutsammanträde',
+                    <input
+                      type="time"
+                      value={form.finalMeetingTime}
+                      onChange={(event) => updateField('finalMeetingTime', event.target.value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold text-gray-950">Utlåtande</h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {fieldLabel(
+                  'Besiktningsman utsedd av',
+                  <select
+                    value={form.inspectorAppointedBy}
+                    onChange={(event) => updateField('inspectorAppointedBy', event.target.value)}
+                    className={inputClassName()}
+                  >
+                    <option value="">Ej satt</option>
+                    <option value="client">Beställare</option>
+                    <option value="parties_jointly">Parterna gemensamt</option>
+                    <option value="contractor">Entreprenör</option>
+                  </select>
+                )}
+                {fieldLabel(
+                  'Beslut',
+                  <select
+                    value={form.approvalStatus}
+                    onChange={(event) => updateField('approvalStatus', event.target.value)}
+                    className={inputClassName()}
+                  >
+                    <option value="">Ej satt</option>
+                    <option value="approved">Godkänd</option>
+                    <option value="not_approved">Ej godkänd</option>
+                    <option value="partly_approved">Delvis godkänd</option>
+                  </select>
+                )}
+                <div className="sm:col-span-2">
+                  {fieldLabel(
+                    'Beslutets motivering',
+                    <textarea
+                      value={form.approvalNote}
+                      onChange={(event) => updateField('approvalNote', event.target.value)}
+                      rows={3}
+                      className={inputClassName()}
+                    />
+                  )}
+                </div>
+                {fieldLabel(
+                  'Fortsatt slutbesiktning',
+                  <select
+                    value={form.requiresContinuedFinalInspection}
+                    onChange={(event) => updateField('requiresContinuedFinalInspection', event.target.value)}
+                    className={inputClassName()}
+                  >
+                    <option value="">Ej satt</option>
+                    <option value="true">Ja</option>
+                    <option value="false">Nej</option>
+                  </select>
+                )}
+                {fieldLabel(
+                  'Garantitid',
+                  <select
+                    value={form.warrantyPeriodYears}
+                    onChange={(event) => updateField('warrantyPeriodYears', event.target.value)}
+                    className={inputClassName()}
+                  >
+                    <option value="">Ej satt</option>
+                    {Array.from({ length: 10 }, (_, index) => index + 1).map((year) => (
+                      <option key={year} value={year}>
+                        {year} år
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {fieldLabel(
+                  'Garantitidens slut',
+                  <input
+                    type="date"
+                    value={form.warrantyEndDate}
+                    onChange={(event) => updateField('warrantyEndDate', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Fel avhjälpta senast',
+                  <input
+                    type="date"
+                    value={form.defaultRemedyDeadline}
+                    onChange={(event) => updateField('defaultRemedyDeadline', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Efterbesiktning påkallad',
+                  <select
+                    value={form.afterInspectionRequested}
+                    onChange={(event) => updateField('afterInspectionRequested', event.target.value)}
+                    className={inputClassName()}
+                  >
+                    <option value="">Ej satt</option>
+                    <option value="true">Ja</option>
+                    <option value="false">Nej</option>
+                  </select>
+                )}
+                {fieldLabel(
+                  'Efterbesiktning senast',
+                  <input
+                    type="date"
+                    value={form.afterInspectionDueDate}
+                    onChange={(event) => updateField('afterInspectionDueDate', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Distributionsdatum',
+                  <input
+                    type="date"
+                    value={form.reportDistributionDate}
+                    onChange={(event) => updateField('reportDistributionDate', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+                <label className="inline-flex items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm font-medium text-emerald-900">
+                  <input
+                    type="checkbox"
+                    checked={form.afterInspectionNoticeInReport}
+                    onChange={(event) => updateField('afterInspectionNoticeInReport', event.target.checked)}
+                    className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                  />
+                  Utlåtandet gäller som kallelse till efterbesiktning
+                </label>
+              </div>
+            </section>
+          </div>
+
+          {error ? (
+            <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {error}
+            </p>
+          ) : null}
+
+          <div className="mt-5 flex flex-col-reverse gap-2 border-t border-emerald-100 pt-4 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Avbryt
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+            >
+              {submitting ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={16} />}
+              {submitting ? 'Sparar...' : 'Spara'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 function EditProjectDialog({
   open,
   project,
@@ -516,6 +900,56 @@ function InvitationDialog({
     setParticipants((current) => current.filter((_, participantIndex) => participantIndex !== index))
   }
 
+  const participantPayload = () =>
+    participants.map((participant, index) => ({
+      id: participant.id,
+      roleLabel: participant.roleLabel,
+      companyName: participant.companyName,
+      personName: participant.personName,
+      email: participant.email,
+      phone: participant.phone,
+      receivesInvitation: participant.receivesInvitation,
+      attended: participant.attended,
+      receivesReport: participant.receivesReport,
+      representsPartyKey: participant.representsPartyKey,
+      canRepresentParty: participant.canRepresentParty,
+      sortOrder: participant.sortOrder || (index + 1) * 100,
+    }))
+
+  const handleSave = async () => {
+    if (sending) return
+
+    try {
+      setSending(true)
+      setError(null)
+      const response = await fetch(
+        `/api/eb/projects/${project.id}/inspections/${inspection.inspectionId}/invitation`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subject,
+            body,
+            participants: participantPayload(),
+          }),
+        }
+      )
+      const payload = (await response.json().catch(() => ({}))) as InvitationResponse
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Kunde inte spara kallelse och deltagare.')
+      }
+
+      setSubject(payload.subject ?? subject)
+      setBody(payload.body ?? body)
+      setParticipants((payload.participants ?? []).map(toLocalParticipant))
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara kallelse och deltagare.')
+    } finally {
+      setSending(false)
+    }
+  }
+
   const handleSend = async () => {
     if (sending) return
 
@@ -531,16 +965,7 @@ function InvitationDialog({
           body: JSON.stringify({
             subject,
             body,
-            participants: participants.map((participant, index) => ({
-              id: participant.id,
-              roleLabel: participant.roleLabel,
-              companyName: participant.companyName,
-              personName: participant.personName,
-              email: participant.email,
-              phone: participant.phone,
-              receivesInvitation: participant.receivesInvitation,
-              sortOrder: participant.sortOrder || (index + 1) * 100,
-            })),
+            participants: participantPayload(),
           }),
         }
       )
@@ -658,18 +1083,65 @@ function InvitationDialog({
                           placeholder="Telefon"
                           className={inputClassName()}
                         />
+                        <select
+                          value={participant.representsPartyKey ?? ''}
+                          onChange={(event) =>
+                            updateParticipant(
+                              index,
+                              'representsPartyKey',
+                              (event.target.value || null) as EditableParticipant['representsPartyKey']
+                            )
+                          }
+                          className={inputClassName()}
+                        >
+                          <option value="">Företräder inte part</option>
+                          <option value="client">Beställare</option>
+                          <option value="contractor">Entreprenör</option>
+                          <option value="other">Annan</option>
+                        </select>
                         <div className="flex items-center justify-between gap-2">
-                          <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
-                            <input
-                              type="checkbox"
-                              checked={participant.receivesInvitation}
-                              onChange={(event) =>
-                                updateParticipant(index, 'receivesInvitation', event.target.checked)
-                              }
-                              className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
-                            />
-                            Skicka
-                          </label>
+                          <div className="grid gap-2 text-sm font-medium text-gray-700">
+                            <label className="inline-flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={participant.receivesInvitation}
+                                onChange={(event) =>
+                                  updateParticipant(index, 'receivesInvitation', event.target.checked)
+                                }
+                                className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                              />
+                              Kallelse
+                            </label>
+                            <label className="inline-flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={participant.attended}
+                                onChange={(event) => updateParticipant(index, 'attended', event.target.checked)}
+                                className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                              />
+                              Närvarande
+                            </label>
+                            <label className="inline-flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={participant.receivesReport}
+                                onChange={(event) => updateParticipant(index, 'receivesReport', event.target.checked)}
+                                className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                              />
+                              Utlåtande
+                            </label>
+                            <label className="inline-flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={participant.canRepresentParty}
+                                onChange={(event) =>
+                                  updateParticipant(index, 'canRepresentParty', event.target.checked)
+                                }
+                                className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                              />
+                              För talan
+                            </label>
+                          </div>
                           <button
                             type="button"
                             onClick={() => removeParticipant(index)}
@@ -705,6 +1177,15 @@ function InvitationDialog({
             </button>
             <button
               type="button"
+              onClick={() => void handleSave()}
+              disabled={loading || sending}
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {sending ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={16} />}
+              Spara
+            </button>
+            <button
+              type="button"
               onClick={() => void handleSend()}
               disabled={loading || sending}
               className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
@@ -724,6 +1205,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
   const [currentProject, setCurrentProject] = useState(project)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [detailsInspection, setDetailsInspection] = useState<EbInspectionSummary | null>(null)
   const [invitationInspection, setInvitationInspection] = useState<EbInspectionSummary | null>(null)
   const addressLine = [currentProject.address, currentProject.postalCode, currentProject.city]
     .filter(Boolean)
@@ -889,6 +1371,14 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                             </Link>
                             <button
                               type="button"
+                              onClick={() => setDetailsInspection(inspection)}
+                              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                            >
+                              <Pencil size={16} />
+                              Uppgifter
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => setInvitationInspection(inspection)}
                               className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                             >
@@ -969,6 +1459,13 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
           open={editDialogOpen}
           project={currentProject}
           onClose={() => setEditDialogOpen(false)}
+          onUpdated={handleUpdated}
+        />
+        <InspectionDetailsDialog
+          open={Boolean(detailsInspection)}
+          project={currentProject}
+          inspection={detailsInspection}
+          onClose={() => setDetailsInspection(null)}
           onUpdated={handleUpdated}
         />
         <InvitationDialog

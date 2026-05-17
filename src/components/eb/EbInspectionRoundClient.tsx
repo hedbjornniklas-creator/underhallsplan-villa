@@ -39,6 +39,11 @@ type NoteFormState = {
   noteText: string
   responsibleParty: string
   tradeGroup: string
+  investigationResponsibleParty: string
+  investigationResponsibleNote: string
+  investigationCostParty: string
+  investigationDueDate: string
+  deductionAmount: string
 }
 
 type NoteResponse = {
@@ -93,6 +98,11 @@ function createInitialForm(round: EbInspectionRound): NoteFormState {
     noteText: '',
     responsibleParty: '',
     tradeGroup: '',
+    investigationResponsibleParty: '',
+    investigationResponsibleNote: '',
+    investigationCostParty: '',
+    investigationDueDate: '',
+    deductionAmount: '',
   }
 }
 
@@ -106,6 +116,11 @@ function formFromNote(note: EbNote): NoteFormState {
     noteText: note.noteText,
     responsibleParty: note.responsibleParty ?? '',
     tradeGroup: note.tradeGroup ?? '',
+    investigationResponsibleParty: note.investigationResponsibleParty ?? '',
+    investigationResponsibleNote: note.investigationResponsibleNote ?? '',
+    investigationCostParty: note.investigationCostParty ?? '',
+    investigationDueDate: note.investigationDueDate ?? '',
+    deductionAmount: note.deductionAmount ?? '',
   }
 }
 
@@ -956,6 +971,67 @@ export default function EbInspectionRoundClient({
                     />
                   </label>
                 </div>
+
+                <section className="rounded-md border border-emerald-100 bg-emerald-50/25 p-3">
+                  <div className="mb-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Utlåtandeuppgifter</p>
+                    <p className="text-xs text-gray-600">Används för särskild utredning och nedsättning i utlåtandet.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block">
+                      <span className="block text-xs font-semibold text-gray-700">Utredning ansvarig</span>
+                      <select
+                        value={form.investigationResponsibleParty}
+                        onChange={(event) => updateField('investigationResponsibleParty', event.target.value)}
+                        className={`${inputClassName()} mt-1`}
+                      >
+                        <option value="">Ej vald</option>
+                        <option value="contractor">Entreprenör</option>
+                        <option value="client">Beställare</option>
+                        <option value="other">Annat</option>
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="block text-xs font-semibold text-gray-700">Kostnadsansvar</span>
+                      <select
+                        value={form.investigationCostParty}
+                        onChange={(event) => updateField('investigationCostParty', event.target.value)}
+                        className={`${inputClassName()} mt-1`}
+                      >
+                        <option value="">Ej vald</option>
+                        <option value="contractor">Entreprenör</option>
+                        <option value="client">Beställare</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <label className="block">
+                      <span className="block text-xs font-semibold text-gray-700">Klar senast</span>
+                      <input
+                        type="date"
+                        value={form.investigationDueDate}
+                        onChange={(event) => updateField('investigationDueDate', event.target.value)}
+                        className={`${inputClassName()} mt-1`}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="block text-xs font-semibold text-gray-700">Nedsättning belopp</span>
+                      <input
+                        value={form.deductionAmount}
+                        onChange={(event) => updateField('deductionAmount', event.target.value)}
+                        className={`${inputClassName()} mt-1`}
+                      />
+                    </label>
+                  </div>
+                  <label className="mt-3 block">
+                    <span className="block text-xs font-semibold text-gray-700">Ansvarig/kommentar</span>
+                    <input
+                      value={form.investigationResponsibleNote}
+                      onChange={(event) => updateField('investigationResponsibleNote', event.target.value)}
+                      className={`${inputClassName()} mt-1`}
+                    />
+                  </label>
+                </section>
 
                 {error ? (
                   <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">

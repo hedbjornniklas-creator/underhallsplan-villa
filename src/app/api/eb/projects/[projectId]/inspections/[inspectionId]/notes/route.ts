@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { createEbNote } from '@/lib/eb/server'
+import type { EbPartyKey } from '@/lib/eb/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -12,6 +13,20 @@ function jsonError(message: string, status: number) {
 
 function toText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function toPartyKey(value: unknown): EbPartyKey | null {
+  const normalized = toText(value)
+  if (normalized === 'client' || normalized === 'contractor' || normalized === 'other') {
+    return normalized
+  }
+  return null
+}
+
+function toCostParty(value: unknown): 'client' | 'contractor' | null {
+  const normalized = toText(value)
+  if (normalized === 'client' || normalized === 'contractor') return normalized
+  return null
 }
 
 async function requireEbContext() {
@@ -60,6 +75,11 @@ export async function POST(
       noteText: toText(body.noteText) || null,
       responsibleParty: toText(body.responsibleParty) || null,
       tradeGroup: toText(body.tradeGroup) || null,
+      investigationResponsibleParty: toPartyKey(body.investigationResponsibleParty),
+      investigationResponsibleNote: toText(body.investigationResponsibleNote) || null,
+      investigationCostParty: toCostParty(body.investigationCostParty),
+      investigationDueDate: toText(body.investigationDueDate) || null,
+      deductionAmount: toText(body.deductionAmount) || null,
     })
 
     return NextResponse.json({ note }, { status: 201 })

@@ -11,6 +11,20 @@ function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
 }
 
+function toText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function toBoolean(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'true') return true
+    if (normalized === 'false') return false
+  }
+  return null
+}
+
 async function requireEbContext() {
   await requireModuleAccess({
     productKey: 'dashboard',
@@ -31,6 +45,64 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'EB_PROJECT_NOT_FOUND') return jsonError('Entreprenaden hittades inte.', 404)
   if (message === 'EB_ATTACHMENT_NOT_FOUND') return jsonError('Bilagan hittades inte.', 404)
   return jsonError(message || fallback, 500)
+}
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ projectId: string; attachmentId: string }> }
+) {
+  try {
+    const { projectId, attachmentId } = await context.params
+    const org = await requireEbContext()
+    const project = await getEbProjectById({ orgId: org.orgId, projectId })
+    if (!project) throw new Error('EB_PROJECT_NOT_FOUND')
+
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const includeInReport = toBoolean(body.includeInReport)
+    const admin = createSupabaseAdminClient()
+
+    const { data: attachment, error: fetchError } = await admin
+      .from('eb_project_attachments')
+      .select('id')
+      .eq('org_id', org.orgId)
+      .eq('eb_project_id', projectId)
+      .eq('id', attachmentId)
+      .maybeSingle()
+
+    if (fetchError) {
+      throw new Error(fetchError.message ?? 'Kunde inte läsa bilaga.')
+    }
+    if (!attachment?.id) {
+      throw new Error('EB_ATTACHMENT_NOT_FOUND')
+    }
+
+    const { error: updateError } = await admin
+      .from('eb_project_attachments')
+      .update({
+        title: toText(body.title) || null,
+        include_in_report: includeInReport ?? true,
+        littera: toText(body.littera) || null,
+        document_date: toText(body.documentDate) || null,
+        document_number: toText(body.documentNumber) || null,
+        document_note: toText(body.documentNote) || null,
+      })
+      .eq('org_id', org.orgId)
+      .eq('eb_project_id', projectId)
+      .eq('id', attachmentId)
+
+    if (updateError) {
+      throw new Error(updateError.message ?? 'Kunde inte spara bilageuppgifter.')
+    }
+
+    const attachments = await listEbProjectAttachments({
+      orgId: org.orgId,
+      projectId,
+    })
+
+    return NextResponse.json({ attachments })
+  } catch (error) {
+    return mapError(error, 'Kunde inte spara bilageuppgifter.')
+  }
 }
 
 export async function DELETE(

@@ -3,9 +3,13 @@ import 'server-only'
 import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import type { StandardTextId } from '@/content/standardtexts/registry'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
+import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export type EbInspectionVariant = 'SLB' | 'FB' | 'EB' | 'GB' | 'KSB' | 'SAB'
+export type EbInspectorAppointedBy = 'client' | 'parties_jointly' | 'contractor'
+export type EbApprovalStatus = 'approved' | 'not_approved' | 'partly_approved'
+export type EbPartyKey = 'client' | 'contractor' | 'other'
 
 export type EbInspectionSummary = {
   inspectionId: string
@@ -17,9 +21,25 @@ export type EbInspectionSummary = {
   status: string | null
   date: string | null
   inspectionTime: string | null
+  meetingPlace: string | null
+  startMeetingTime: string | null
+  finalMeetingTime: string | null
   clientName: string | null
   assignmentNumber: string | null
   invitationSentAt: string | null
+  inspectorAppointedBy: EbInspectorAppointedBy | null
+  invitationMethod: string | null
+  invitationDate: string | null
+  approvalStatus: EbApprovalStatus | null
+  approvalNote: string | null
+  requiresContinuedFinalInspection: boolean | null
+  warrantyPeriodYears: number | null
+  warrantyEndDate: string | null
+  defaultRemedyDeadline: string | null
+  afterInspectionRequested: boolean | null
+  afterInspectionDueDate: string | null
+  afterInspectionNoticeInReport: boolean
+  reportDistributionDate: string | null
   reportLockedAt: string | null
   createdAt: string | null
 }
@@ -89,6 +109,11 @@ export type EbNote = {
   noteText: string
   responsibleParty: string | null
   tradeGroup: string | null
+  investigationResponsibleParty: EbPartyKey | null
+  investigationResponsibleNote: string | null
+  investigationCostParty: Exclude<EbPartyKey, 'other'> | null
+  investigationDueDate: string | null
+  deductionAmount: string | null
   sortOrder: number
   createdAt: string | null
   updatedAt: string | null
@@ -129,6 +154,11 @@ export type EbProjectAttachment = {
   fileName: string | null
   contentType: string | null
   fileSizeBytes: number | null
+  includeInReport: boolean
+  littera: string | null
+  documentDate: string | null
+  documentNumber: string | null
+  documentNote: string | null
   signedUrl: string | null
   uploadedBy: string | null
   createdAt: string | null
@@ -184,6 +214,10 @@ export type EbInvitationParticipant = {
   email: string | null
   phone: string | null
   receivesInvitation: boolean
+  attended: boolean
+  receivesReport: boolean
+  representsPartyKey: EbPartyKey | null
+  canRepresentParty: boolean
   sortOrder: number
 }
 
@@ -208,6 +242,11 @@ export type SendEbInvitationInput = {
   subject: string
   body: string
   participants: EbInvitationParticipantInput[]
+}
+
+export type SaveEbInvitationDraftInput = Omit<SendEbInvitationInput, 'subject' | 'body'> & {
+  subject?: string | null
+  body?: string | null
 }
 
 export type SendEbInvitationResult = {
@@ -256,7 +295,23 @@ type EbInspectionDetailRow = {
   parent_inspection_id: string | null
   inspection_variant: string | null
   sequence_no: number | null
+  meeting_place: string | null
+  start_meeting_time: string | null
+  final_meeting_time: string | null
   invitation_sent_at: string | null
+  inspector_appointed_by: string | null
+  invitation_method: string | null
+  invitation_date: string | null
+  approval_status: string | null
+  approval_note: string | null
+  requires_continued_final_inspection: boolean | null
+  warranty_period_years: number | null
+  warranty_end_date: string | null
+  default_remedy_deadline: string | null
+  after_inspection_requested: boolean | null
+  after_inspection_due_date: string | null
+  after_inspection_notice_in_report: boolean | null
+  report_distribution_date: string | null
   invitation_subject?: string | null
   invitation_body?: string | null
   report_locked_at: string | null
@@ -291,6 +346,8 @@ type EbInvitationDetailRow = {
   start_meeting_time: string | null
   final_meeting_time: string | null
   invitation_sent_at: string | null
+  invitation_method: string | null
+  invitation_date: string | null
   invitation_subject: string | null
   invitation_body: string | null
 }
@@ -303,6 +360,10 @@ type EbParticipantRow = {
   email: string | null
   phone: string | null
   receives_invitation: boolean | null
+  attended: boolean | null
+  receives_report: boolean | null
+  represents_party_key: string | null
+  can_represent_party: boolean | null
   sort_order: number | null
 }
 
@@ -329,6 +390,11 @@ type EbNoteRow = {
   note_text: string | null
   responsible_party: string | null
   trade_group: string | null
+  investigation_responsible_party: string | null
+  investigation_responsible_note: string | null
+  investigation_cost_party: string | null
+  investigation_due_date: string | null
+  deduction_amount: string | null
   sort_order: number | null
   created_at: string | null
   updated_at: string | null
@@ -373,6 +439,11 @@ type EbProjectAttachmentRow = {
   file_name: string | null
   content_type: string | null
   file_size_bytes: number | null
+  include_in_report: boolean | null
+  littera: string | null
+  document_date: string | null
+  document_number: string | null
+  document_note: string | null
   uploaded_by: string | null
   created_at: string | null
 }
@@ -381,6 +452,7 @@ type ProfileContactRow = {
   id: string
   full_name: string | null
   email: string | null
+  certification_number: string | null
 }
 
 export type CreateEbProjectInput = {
@@ -435,6 +507,31 @@ export type CreateEbInspectionInput = {
   finalMeetingTime?: string | null
 }
 
+export type UpdateEbInspectionInput = {
+  orgId: string
+  requestedByUserId: string
+  projectId: string
+  inspectionId: string
+  inspectionDate?: string | null
+  inspectionTime?: string | null
+  meetingPlace?: string | null
+  startMeetingTime?: string | null
+  finalMeetingTime?: string | null
+  inspectorAppointedBy?: EbInspectorAppointedBy | null
+  invitationMethod?: string | null
+  invitationDate?: string | null
+  approvalStatus?: EbApprovalStatus | null
+  approvalNote?: string | null
+  requiresContinuedFinalInspection?: boolean | null
+  warrantyPeriodYears?: number | null
+  warrantyEndDate?: string | null
+  defaultRemedyDeadline?: string | null
+  afterInspectionRequested?: boolean | null
+  afterInspectionDueDate?: string | null
+  afterInspectionNoticeInReport?: boolean
+  reportDistributionDate?: string | null
+}
+
 export type SaveEbNoteInput = {
   orgId: string
   requestedByUserId: string
@@ -450,6 +547,11 @@ export type SaveEbNoteInput = {
   noteText?: string | null
   responsibleParty?: string | null
   tradeGroup?: string | null
+  investigationResponsibleParty?: EbPartyKey | null
+  investigationResponsibleNote?: string | null
+  investigationCostParty?: Exclude<EbPartyKey, 'other'> | null
+  investigationDueDate?: string | null
+  deductionAmount?: string | null
 }
 
 export type DeleteEbNoteInput = {
@@ -473,6 +575,9 @@ const VARIANT_LABELS: Record<EbInspectionVariant, string> = {
 }
 
 const EB_VARIANTS = Object.keys(VARIANT_LABELS) as EbInspectionVariant[]
+const INSPECTOR_APPOINTED_BY_VALUES = ['client', 'parties_jointly', 'contractor'] as const
+const APPROVAL_STATUS_VALUES = ['approved', 'not_approved', 'partly_approved'] as const
+const PARTY_KEY_VALUES = ['client', 'contractor', 'other'] as const
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export const EB_PROJECT_ATTACHMENTS_BUCKET = 'eb-project-attachments'
 export const EB_NOTE_IMAGE_BUCKET = 'inspection-images'
@@ -493,6 +598,34 @@ function normalizeTime(value: string | null | undefined) {
   const trimmed = normalizeText(value)
   if (!trimmed) return null
   return /^\d{2}:\d{2}(:\d{2})?$/.test(trimmed) ? trimmed : null
+}
+
+function normalizeInspectorAppointedBy(value: string | null | undefined): EbInspectorAppointedBy | null {
+  const normalized = normalizeText(value)
+  return INSPECTOR_APPOINTED_BY_VALUES.includes(normalized as EbInspectorAppointedBy)
+    ? (normalized as EbInspectorAppointedBy)
+    : null
+}
+
+function normalizeApprovalStatus(value: string | null | undefined): EbApprovalStatus | null {
+  const normalized = normalizeText(value)
+  return APPROVAL_STATUS_VALUES.includes(normalized as EbApprovalStatus)
+    ? (normalized as EbApprovalStatus)
+    : null
+}
+
+function normalizePartyKey(value: string | null | undefined): EbPartyKey | null {
+  const normalized = normalizeText(value)
+  return PARTY_KEY_VALUES.includes(normalized as EbPartyKey) ? (normalized as EbPartyKey) : null
+}
+
+function normalizeBoolean(value: boolean | null | undefined) {
+  return typeof value === 'boolean' ? value : null
+}
+
+function normalizeWarrantyYears(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return null
+  return value >= 1 && value <= 10 ? value : null
 }
 
 function getMailFromAddress() {
@@ -596,9 +729,25 @@ function mapInspectionSummary(
     status: inspection?.status ?? null,
     date: inspection?.date ?? null,
     inspectionTime: inspection?.inspection_time ?? null,
+    meetingPlace: detail.meeting_place ?? null,
+    startMeetingTime: detail.start_meeting_time ?? null,
+    finalMeetingTime: detail.final_meeting_time ?? null,
     clientName: inspection?.client_name ?? null,
     assignmentNumber: inspection?.assignment_number ?? null,
     invitationSentAt: detail.invitation_sent_at ?? null,
+    inspectorAppointedBy: normalizeInspectorAppointedBy(detail.inspector_appointed_by),
+    invitationMethod: detail.invitation_method ?? null,
+    invitationDate: detail.invitation_date ?? null,
+    approvalStatus: normalizeApprovalStatus(detail.approval_status),
+    approvalNote: detail.approval_note ?? null,
+    requiresContinuedFinalInspection: detail.requires_continued_final_inspection ?? null,
+    warrantyPeriodYears: detail.warranty_period_years ?? null,
+    warrantyEndDate: detail.warranty_end_date ?? null,
+    defaultRemedyDeadline: detail.default_remedy_deadline ?? null,
+    afterInspectionRequested: detail.after_inspection_requested ?? null,
+    afterInspectionDueDate: detail.after_inspection_due_date ?? null,
+    afterInspectionNoticeInReport: detail.after_inspection_notice_in_report ?? false,
+    reportDistributionDate: detail.report_distribution_date ?? null,
     reportLockedAt: detail.report_locked_at ?? null,
     createdAt: inspection?.created_at ?? detail.created_at ?? null,
   }
@@ -674,7 +823,7 @@ async function fetchDetailsForProjects(orgId: string, projectIds: string[]) {
   const { data, error } = await admin
     .from('eb_inspection_details')
     .select(
-      'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,invitation_sent_at,report_locked_at,created_at'
+      'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,inspector_appointed_by,invitation_method,invitation_date,approval_status,approval_note,requires_continued_final_inspection,warranty_period_years,warranty_end_date,default_remedy_deadline,after_inspection_requested,after_inspection_due_date,after_inspection_notice_in_report,report_distribution_date,report_locked_at,created_at'
     )
     .eq('org_id', orgId)
     .in('eb_project_id', projectIds)
@@ -764,6 +913,11 @@ async function mapProjectAttachment(row: EbProjectAttachmentRow): Promise<EbProj
     fileName: row.file_name ?? null,
     contentType: row.content_type ?? null,
     fileSizeBytes: row.file_size_bytes ?? null,
+    includeInReport: row.include_in_report ?? true,
+    littera: row.littera ?? null,
+    documentDate: row.document_date ?? null,
+    documentNumber: row.document_number ?? null,
+    documentNote: row.document_note ?? null,
     signedUrl,
     uploadedBy: row.uploaded_by ?? null,
     createdAt: row.created_at ?? null,
@@ -783,7 +937,7 @@ export async function listEbProjectAttachments(input: {
   const { data, error } = await admin
     .from('eb_project_attachments')
     .select(
-      'id,eb_project_id,attachment_type,title,storage_bucket,file_path,file_name,content_type,file_size_bytes,uploaded_by,created_at'
+      'id,eb_project_id,attachment_type,title,storage_bucket,file_path,file_name,content_type,file_size_bytes,include_in_report,littera,document_date,document_number,document_note,uploaded_by,created_at'
     )
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
@@ -858,6 +1012,14 @@ function mapNote(
     noteText: row.note_text ?? '',
     responsibleParty: row.responsible_party ?? null,
     tradeGroup: row.trade_group ?? null,
+    investigationResponsibleParty: normalizePartyKey(row.investigation_responsible_party),
+    investigationResponsibleNote: row.investigation_responsible_note ?? null,
+    investigationCostParty:
+      row.investigation_cost_party === 'contractor' || row.investigation_cost_party === 'client'
+        ? row.investigation_cost_party
+        : null,
+    investigationDueDate: row.investigation_due_date ?? null,
+    deductionAmount: row.deduction_amount ?? null,
     sortOrder: row.sort_order ?? 100,
     createdAt: row.created_at ?? null,
     updatedAt: row.updated_at ?? null,
@@ -962,7 +1124,7 @@ async function listEbNotes(input: {
   const { data, error } = await admin
     .from('eb_notes')
     .select(
-      'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,sort_order,created_at,updated_at'
+      'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,investigation_responsible_party,investigation_responsible_note,investigation_cost_party,investigation_due_date,deduction_amount,sort_order,created_at,updated_at'
     )
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
@@ -1068,6 +1230,14 @@ export async function getEbInspectionReport(input: {
   const participants = await listParticipantsForInspection(input)
   const resolvedParticipants = participants.length > 0 ? participants : buildDefaultParticipants(round.project)
   const storedDraft = await fetchEbReportDraft(input)
+  const attachments = await listEbProjectAttachments({
+    orgId: input.orgId,
+    projectId: input.projectId,
+  })
+  const inspectorText = await buildInspectorReportText({
+    orgId: input.orgId,
+    profileId: input.requestedByUserId,
+  })
 
   return {
     ...round,
@@ -1075,6 +1245,8 @@ export async function getEbInspectionReport(input: {
     reportDraft: buildEbReportDraft({
       round,
       participants: resolvedParticipants,
+      attachments,
+      inspectorText,
       storedDraft,
     }),
   }
@@ -1233,6 +1405,10 @@ async function seedInitialProjectParticipants(input: {
           company_name: input.clientName,
           org_no: input.clientOrgNo,
           receives_invitation: true,
+          attended: false,
+          receives_report: true,
+          represents_party_key: 'client',
+          can_represent_party: true,
           sort_order: 100,
         }
       : null,
@@ -1246,6 +1422,10 @@ async function seedInitialProjectParticipants(input: {
           company_name: input.contractorName,
           org_no: input.contractorOrgNo,
           receives_invitation: true,
+          attended: false,
+          receives_report: true,
+          represents_party_key: 'contractor',
+          can_represent_party: true,
           sort_order: 200,
         }
       : null,
@@ -1579,6 +1759,70 @@ export async function createEbInspectionForProject(
   }
 }
 
+export async function updateEbInspection(input: UpdateEbInspectionInput): Promise<EbProjectListItem> {
+  const project = await getEbProjectById({
+    orgId: input.orgId,
+    projectId: input.projectId,
+  })
+
+  if (!project) {
+    throw new Error('EB_PROJECT_NOT_FOUND')
+  }
+
+  const inspection = project.inspections.find((item) => item.inspectionId === input.inspectionId)
+  if (!inspection) {
+    throw new Error('EB_INSPECTION_NOT_FOUND')
+  }
+
+  const admin = createSupabaseAdminClient()
+  const { error: inspectionError } = await admin
+    .from('inspections')
+    .update({
+      date: normalizeDate(input.inspectionDate),
+      inspection_time: normalizeTime(input.inspectionTime),
+    })
+    .eq('id', input.inspectionId)
+
+  if (inspectionError) {
+    throw new Error(inspectionError.message ?? 'Kunde inte uppdatera besiktningen.')
+  }
+
+  const { error: detailError } = await admin
+    .from('eb_inspection_details')
+    .update({
+      meeting_place: normalizeText(input.meetingPlace),
+      start_meeting_time: normalizeTime(input.startMeetingTime),
+      final_meeting_time: normalizeTime(input.finalMeetingTime),
+      inspector_appointed_by: normalizeInspectorAppointedBy(input.inspectorAppointedBy),
+      invitation_method: normalizeText(input.invitationMethod),
+      invitation_date: normalizeDate(input.invitationDate),
+      approval_status: normalizeApprovalStatus(input.approvalStatus),
+      approval_note: normalizeText(input.approvalNote),
+      requires_continued_final_inspection: normalizeBoolean(input.requiresContinuedFinalInspection),
+      warranty_period_years: normalizeWarrantyYears(input.warrantyPeriodYears),
+      warranty_end_date: normalizeDate(input.warrantyEndDate),
+      default_remedy_deadline: normalizeDate(input.defaultRemedyDeadline),
+      after_inspection_requested: normalizeBoolean(input.afterInspectionRequested),
+      after_inspection_due_date: normalizeDate(input.afterInspectionDueDate),
+      after_inspection_notice_in_report: input.afterInspectionNoticeInReport === true,
+      report_distribution_date: normalizeDate(input.reportDistributionDate),
+    })
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+
+  if (detailError) {
+    throw new Error(detailError.message ?? 'Kunde inte uppdatera EB-besiktningsuppgifter.')
+  }
+
+  const updated = await getEbProjectById({ orgId: input.orgId, projectId: input.projectId })
+  if (!updated) {
+    throw new Error('EB_PROJECT_NOT_FOUND')
+  }
+
+  return updated
+}
+
 async function getNextEbNoteNumber(input: {
   orgId: string
   projectId: string
@@ -1750,12 +1994,20 @@ export async function createEbNote(input: SaveEbNoteInput): Promise<EbNote> {
       note_text: noteText,
       responsible_party: normalizeText(input.responsibleParty),
       trade_group: normalizeText(input.tradeGroup),
+      investigation_responsible_party: normalizePartyKey(input.investigationResponsibleParty),
+      investigation_responsible_note: normalizeText(input.investigationResponsibleNote),
+      investigation_cost_party:
+        input.investigationCostParty === 'contractor' || input.investigationCostParty === 'client'
+          ? input.investigationCostParty
+          : null,
+      investigation_due_date: normalizeDate(input.investigationDueDate),
+      deduction_amount: normalizeText(input.deductionAmount),
       sort_order: noteNumber * 100,
       created_by: input.requestedByUserId,
       updated_by: input.requestedByUserId,
     })
     .select(
-      'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,sort_order,created_at,updated_at'
+      'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,investigation_responsible_party,investigation_responsible_note,investigation_cost_party,investigation_due_date,deduction_amount,sort_order,created_at,updated_at'
     )
     .single()
 
@@ -1809,6 +2061,14 @@ export async function updateEbNote(input: SaveEbNoteInput & { noteId: string }):
       note_text: noteText,
       responsible_party: normalizeText(input.responsibleParty),
       trade_group: normalizeText(input.tradeGroup),
+      investigation_responsible_party: normalizePartyKey(input.investigationResponsibleParty),
+      investigation_responsible_note: normalizeText(input.investigationResponsibleNote),
+      investigation_cost_party:
+        input.investigationCostParty === 'contractor' || input.investigationCostParty === 'client'
+          ? input.investigationCostParty
+          : null,
+      investigation_due_date: normalizeDate(input.investigationDueDate),
+      deduction_amount: normalizeText(input.deductionAmount),
       updated_by: input.requestedByUserId,
     })
     .eq('org_id', input.orgId)
@@ -1816,7 +2076,7 @@ export async function updateEbNote(input: SaveEbNoteInput & { noteId: string }):
     .eq('inspection_id', input.inspectionId)
     .eq('id', input.noteId)
     .select(
-      'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,sort_order,created_at,updated_at'
+      'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,investigation_responsible_party,investigation_responsible_note,investigation_cost_party,investigation_due_date,deduction_amount,sort_order,created_at,updated_at'
     )
     .maybeSingle()
 
@@ -1944,7 +2204,7 @@ async function getEbInspectionDetail(input: {
   const { data, error } = await admin
     .from('eb_inspection_details')
     .select(
-      'inspection_id,eb_project_id,inspection_variant,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,invitation_subject,invitation_body'
+      'inspection_id,eb_project_id,inspection_variant,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,invitation_method,invitation_date,invitation_subject,invitation_body'
     )
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
@@ -1967,6 +2227,10 @@ function mapParticipant(row: EbParticipantRow): EbInvitationParticipant {
     email: row.email ?? null,
     phone: row.phone ?? null,
     receivesInvitation: row.receives_invitation ?? true,
+    attended: row.attended ?? false,
+    receivesReport: row.receives_report ?? true,
+    representsPartyKey: normalizePartyKey(row.represents_party_key),
+    canRepresentParty: row.can_represent_party ?? false,
     sortOrder: row.sort_order ?? 100,
   }
 }
@@ -1983,6 +2247,10 @@ function buildDefaultParticipants(project: EbProjectListItem): EbInvitationParti
       email: null,
       phone: null,
       receivesInvitation: true,
+      attended: false,
+      receivesReport: true,
+      representsPartyKey: 'client',
+      canRepresentParty: true,
       sortOrder: 100,
     })
   }
@@ -1996,6 +2264,10 @@ function buildDefaultParticipants(project: EbProjectListItem): EbInvitationParti
       email: null,
       phone: null,
       receivesInvitation: true,
+      attended: false,
+      receivesReport: true,
+      representsPartyKey: 'contractor',
+      canRepresentParty: true,
       sortOrder: 200,
     })
   }
@@ -2011,6 +2283,10 @@ function buildDefaultParticipants(project: EbProjectListItem): EbInvitationParti
       email: null,
       phone: null,
       receivesInvitation: true,
+      attended: false,
+      receivesReport: true,
+      representsPartyKey: null,
+      canRepresentParty: false,
       sortOrder: 100,
     },
   ]
@@ -2025,6 +2301,49 @@ function reportList(values: Array<string | null | undefined>) {
   return lines.length > 0 ? lines.join('\n') : 'Ej angivet'
 }
 
+function appointedByLabel(value: EbInspectorAppointedBy | null) {
+  if (value === 'client') return 'Beställare'
+  if (value === 'parties_jointly') return 'Parterna gemensamt'
+  if (value === 'contractor') return 'Entreprenör'
+  return null
+}
+
+function approvalStatusLabel(value: EbApprovalStatus | null) {
+  if (value === 'approved') return 'Godkänd'
+  if (value === 'not_approved') return 'Ej godkänd'
+  if (value === 'partly_approved') return 'Delvis godkänd'
+  return null
+}
+
+function yesNoLabel(value: boolean | null) {
+  if (value === true) return 'Ja'
+  if (value === false) return 'Nej'
+  return null
+}
+
+function partyLabel(value: EbPartyKey | null) {
+  if (value === 'client') return 'Beställare'
+  if (value === 'contractor') return 'Entreprenör'
+  if (value === 'other') return 'Annan'
+  return null
+}
+
+function reportParticipantRow(participant: EbInvitationParticipant) {
+  const representation =
+    participant.canRepresentParty && participant.representsPartyKey
+      ? `För talan för: ${partyLabel(participant.representsPartyKey)}`
+      : null
+
+  return reportList([
+    participant.roleLabel,
+    participant.companyName,
+    participant.personName,
+    participant.email,
+    participant.phone,
+    representation,
+  ])
+}
+
 function hasText(value: string | null | undefined) {
   return Boolean(normalizeText(value))
 }
@@ -2033,28 +2352,84 @@ function ebStandardText(id: StandardTextId) {
   return loadStandardText(id).trim()
 }
 
+function ebAttachmentTitle(attachment: EbProjectAttachment) {
+  return attachment.title || attachment.fileName || 'Bilaga'
+}
+
+function ebAttachmentReportRow(attachment: EbProjectAttachment) {
+  const heading = attachment.littera
+    ? `${attachment.littera}. ${ebAttachmentTitle(attachment)}`
+    : ebAttachmentTitle(attachment)
+  const details = reportList([
+    reportLine('Datum', attachment.documentDate),
+    reportLine('Nr/revision', attachment.documentNumber),
+    attachment.documentNote,
+  ])
+  return details ? `${heading}\n${details}` : heading
+}
+
+function ebNoteReportReference(round: EbInspectionRound, note: EbNote) {
+  return `${round.project.notePrefix} ${note.noteNumber ?? '-'}`
+}
+
+function ebSpecialInvestigationReportRow(round: EbInspectionRound, note: EbNote) {
+  return reportList([
+    `${ebNoteReportReference(round, note)}: ${note.noteText}`,
+    reportLine('Ansvarig', partyLabel(note.investigationResponsibleParty)),
+    note.investigationResponsibleNote,
+    reportLine('Kostnadsansvar', partyLabel(note.investigationCostParty)),
+    reportLine('Klar senast', note.investigationDueDate),
+  ])
+}
+
+function ebDeductionReportRow(round: EbInspectionRound, note: EbNote) {
+  return reportList([
+    `${ebNoteReportReference(round, note)}: ${note.noteText}`,
+    reportLine('Belopp', note.deductionAmount),
+  ])
+}
+
 function buildEbReportDraft(input: {
   round: EbInspectionRound
   participants: EbInvitationParticipant[]
+  attachments: EbProjectAttachment[]
+  inspectorText: string
   storedDraft: EbReportDraft
 }): EbReportDraft {
-  const { round, participants, storedDraft } = input
+  const { round, participants, attachments, inspectorText, storedDraft } = input
   const now = new Date().toISOString()
   const existingByKey = new Map(storedDraft.sections.map((section) => [section.key, section]))
   const noteCount = round.notes.length
   const notAccessibleNotes = round.notes.filter((note) => note.statusKey === 'not_accessible')
-  const participantRows = participants.map((participant) =>
-    reportList([
-      participant.roleLabel,
-      participant.companyName,
-      participant.personName,
-      participant.email,
-      participant.phone,
-    ])
-  )
-  const attachments = round.project.objectDescription
-    ? `Objektbeskrivning: ${round.project.objectDescription}`
+  const participantRows = participants.map(reportParticipantRow)
+  const presentParticipantRows =
+    participants.some((participant) => participant.attended)
+      ? participants.filter((participant) => participant.attended).map(reportParticipantRow)
+      : participantRows
+  const reportRecipientRows =
+    participants.filter((participant) => participant.receivesReport).map(reportParticipantRow)
+  const conflictOfInterestRelevant = round.inspection.inspectorAppointedBy === 'parties_jointly'
+  const includedAttachments = attachments.filter((attachment) => attachment.includeInReport)
+  const includedDocuments = includedAttachments.filter((attachment) => attachment.attachmentType === 'document')
+  const contractDocuments = includedDocuments.length > 0
+    ? includedDocuments.map(ebAttachmentReportRow).join('\n\n')
     : ebStandardText('EB_REPORT_CONTRACT_DOCUMENTS_MISSING')
+  const appendices = includedAttachments.length > 0
+    ? includedAttachments.map(ebAttachmentReportRow).join('\n\n')
+    : ebStandardText('EB_REPORT_APPENDICES')
+  const specialInvestigationNotes = round.notes.filter(
+    (note) =>
+      note.markerKey === 'S' ||
+      Boolean(
+        note.investigationResponsibleParty ||
+          note.investigationResponsibleNote ||
+          note.investigationCostParty ||
+          note.investigationDueDate
+      )
+  )
+  const deductionNotes = round.notes.filter(
+    (note) => note.markerKey === 'N' || Boolean(note.deductionAmount)
+  )
 
   const defaults: EbReportDraftSection[] = [
     {
@@ -2118,9 +2493,14 @@ function buildEbReportDraft(input: {
       title: 'Besiktningsman och biträdande besiktningsmän',
       sbrPoint: '5',
       source: 'manual',
-      status: 'missing',
+      status: hasText(inspectorText) ? 'complete' : 'missing',
       isRelevant: true,
-      text: ebStandardText('EB_REPORT_INSPECTORS'),
+      text: reportList([
+        inspectorText,
+        round.inspection.inspectorAppointedBy
+          ? reportLine('Utsedd av', appointedByLabel(round.inspection.inspectorAppointedBy))
+          : null,
+      ]),
       updatedAt: null,
     },
     {
@@ -2128,9 +2508,9 @@ function buildEbReportDraft(input: {
       title: 'Närvarande',
       sbrPoint: '6',
       source: 'participants',
-      status: participants.length > 0 ? 'complete' : 'missing',
+      status: presentParticipantRows.length > 0 ? 'complete' : 'missing',
       isRelevant: true,
-      text: participantRows.length > 0 ? participantRows.join('\n') : 'Inga närvarande är registrerade.',
+      text: presentParticipantRows.length > 0 ? presentParticipantRows.join('\\n') : 'Inga närvarande är registrerade.',
       updatedAt: null,
     },
     {
@@ -2138,11 +2518,12 @@ function buildEbReportDraft(input: {
       title: 'Sättet för kallelse',
       sbrPoint: '7',
       source: 'inspection',
-      status: round.inspection.invitationSentAt ? 'complete' : 'missing',
+      status: round.inspection.invitationDate || round.inspection.invitationSentAt ? 'complete' : 'missing',
       isRelevant: true,
-      text: round.inspection.invitationSentAt
-        ? `Kallelse skickades ${round.inspection.invitationSentAt}.`
-        : ebStandardText('EB_REPORT_SUMMONS_MISSING'),
+      text: reportList([
+        reportLine('Kallelsemetod', round.inspection.invitationMethod),
+        reportLine('Kallelsedatum', round.inspection.invitationDate ?? round.inspection.invitationSentAt),
+      ]),
       updatedAt: null,
     },
     {
@@ -2150,8 +2531,8 @@ function buildEbReportDraft(input: {
       title: 'Fråga om jäv',
       sbrPoint: '8',
       source: 'standard_text',
-      status: 'draft',
-      isRelevant: true,
+      status: conflictOfInterestRelevant ? 'draft' : 'not_applicable',
+      isRelevant: conflictOfInterestRelevant,
       text: ebStandardText('EB_REPORT_CONFLICT_OF_INTEREST'),
       updatedAt: null,
     },
@@ -2170,9 +2551,9 @@ function buildEbReportDraft(input: {
       title: 'Entreprenadhandlingar och andra överenskommelser',
       sbrPoint: '10',
       source: 'project',
-      status: 'missing',
+      status: includedDocuments.length > 0 ? 'complete' : 'missing',
       isRelevant: true,
-      text: attachments,
+      text: contractDocuments,
       updatedAt: null,
     },
     {
@@ -2184,7 +2565,7 @@ function buildEbReportDraft(input: {
       isRelevant: true,
       text:
         notAccessibleNotes.length > 0
-          ? notAccessibleNotes.map((note) => `${note.disciplineLabel ?? 'Fack'}: ${note.noteText}`).join('\n')
+          ? notAccessibleNotes.map((note) => `${ebNoteReportReference(round, note)}: ${note.noteText}`).join('\n')
           : ebStandardText('EB_REPORT_NOT_ACCESSIBLE_NONE'),
       updatedAt: null,
     },
@@ -2202,10 +2583,10 @@ function buildEbReportDraft(input: {
       key: 'appendices',
       title: 'Bilagor och littera',
       sbrPoint: null,
-      source: 'manual',
-      status: 'missing',
+      source: 'project',
+      status: includedAttachments.length > 0 ? 'complete' : 'missing',
       isRelevant: true,
-      text: ebStandardText('EB_REPORT_APPENDICES'),
+      text: appendices,
       updatedAt: null,
     },
     {
@@ -2238,20 +2619,26 @@ function buildEbReportDraft(input: {
       key: 'special_investigation',
       title: 'Särskild utredning',
       sbrPoint: '13-17, 23',
-      source: 'manual',
-      status: 'draft',
+      source: 'notes',
+      status: specialInvestigationNotes.length > 0 ? 'complete' : 'draft',
       isRelevant: true,
-      text: ebStandardText('EB_REPORT_SPECIAL_INVESTIGATION'),
+      text:
+        specialInvestigationNotes.length > 0
+          ? specialInvestigationNotes.map((note) => ebSpecialInvestigationReportRow(round, note)).join('\n\n')
+          : ebStandardText('EB_REPORT_SPECIAL_INVESTIGATION'),
       updatedAt: null,
     },
     {
       key: 'deduction',
       title: 'Nedsättning',
       sbrPoint: '13-17, 23',
-      source: 'manual',
-      status: 'draft',
+      source: 'notes',
+      status: deductionNotes.length > 0 ? 'complete' : 'draft',
       isRelevant: true,
-      text: ebStandardText('EB_REPORT_DEDUCTION'),
+      text:
+        deductionNotes.length > 0
+          ? deductionNotes.map((note) => ebDeductionReportRow(round, note)).join('\n\n')
+          : ebStandardText('EB_REPORT_DEDUCTION'),
       updatedAt: null,
     },
     {
@@ -2269,9 +2656,12 @@ function buildEbReportDraft(input: {
       title: 'Besked om godkännande',
       sbrPoint: '18',
       source: 'manual',
-      status: 'missing',
+      status: round.inspection.approvalStatus ? 'complete' : 'missing',
       isRelevant: true,
-      text: ebStandardText('EB_REPORT_APPROVAL_DECISION'),
+      text: reportList([
+        reportLine('Beslut', approvalStatusLabel(round.inspection.approvalStatus)),
+        round.inspection.approvalNote,
+      ]),
       updatedAt: null,
     },
     {
@@ -2279,9 +2669,13 @@ function buildEbReportDraft(input: {
       title: 'Fortsatt eller ny slutbesiktning',
       sbrPoint: '19',
       source: 'standard_text',
-      status: 'draft',
+      status:
+        typeof round.inspection.requiresContinuedFinalInspection === 'boolean' ? 'complete' : 'draft',
       isRelevant: true,
-      text: ebStandardText('EB_REPORT_CONTINUED_FINAL_INSPECTION'),
+      text: reportLine(
+        'Fortsatt slutbesiktning krävs',
+        yesNoLabel(round.inspection.requiresContinuedFinalInspection)
+      ),
       updatedAt: null,
     },
     {
@@ -2289,9 +2683,14 @@ function buildEbReportDraft(input: {
       title: 'Garantitidens slut',
       sbrPoint: '20',
       source: 'manual',
-      status: 'missing',
+      status: round.inspection.warrantyPeriodYears || round.inspection.warrantyEndDate ? 'complete' : 'missing',
       isRelevant: true,
-      text: ebStandardText('EB_REPORT_WARRANTY_END'),
+      text: reportList([
+        round.inspection.warrantyPeriodYears
+          ? reportLine('Garantitid', `${round.inspection.warrantyPeriodYears} år`)
+          : null,
+        reportLine('Garantitidens slut', round.inspection.warrantyEndDate),
+      ]),
       updatedAt: null,
     },
     {
@@ -2299,9 +2698,9 @@ function buildEbReportDraft(input: {
       title: 'När fel ska vara avhjälpta',
       sbrPoint: '24',
       source: 'manual',
-      status: 'missing',
+      status: round.inspection.defaultRemedyDeadline ? 'complete' : 'missing',
       isRelevant: true,
-      text: ebStandardText('EB_REPORT_REMEDY_DEADLINE'),
+      text: reportLine('Fel ska vara avhjälpta senast', round.inspection.defaultRemedyDeadline),
       updatedAt: null,
     },
     {
@@ -2309,9 +2708,15 @@ function buildEbReportDraft(input: {
       title: 'Efterbesiktning',
       sbrPoint: '24',
       source: 'manual',
-      status: 'draft',
+      status: typeof round.inspection.afterInspectionRequested === 'boolean' ? 'complete' : 'draft',
       isRelevant: true,
-      text: ebStandardText('EB_REPORT_AFTER_INSPECTION'),
+      text: reportList([
+        reportLine('Efterbesiktning påkallad', yesNoLabel(round.inspection.afterInspectionRequested)),
+        reportLine('Efterbesiktning senast', round.inspection.afterInspectionDueDate),
+        round.inspection.afterInspectionNoticeInReport
+          ? ebStandardText('EB_REPORT_AFTER_INSPECTION')
+          : null,
+      ]),
       updatedAt: null,
     },
     {
@@ -2329,9 +2734,14 @@ function buildEbReportDraft(input: {
       title: 'Sändlista',
       sbrPoint: '25',
       source: 'participants',
-      status: participants.some((participant) => participant.email) ? 'complete' : 'missing',
+      status: reportRecipientRows.some((row) => row.includes('@')) ? 'complete' : 'missing',
       isRelevant: true,
-      text: participantRows.length > 0 ? participantRows.join('\n') : ebStandardText('EB_REPORT_DISTRIBUTION_LIST_MISSING'),
+      text: reportList([
+        reportLine('Distributionsdatum', round.inspection.reportDistributionDate),
+        reportRecipientRows.length > 0
+          ? reportRecipientRows.join('\n')
+          : ebStandardText('EB_REPORT_DISTRIBUTION_LIST_MISSING'),
+      ]),
       updatedAt: null,
     },
     {
@@ -2350,6 +2760,9 @@ function buildEbReportDraft(input: {
     updatedAt: storedDraft.updatedAt,
     sections: defaults.map((section) => {
       const existing = existingByKey.get(section.key)
+      if (section.key === 'conflict_of_interest' && !conflictOfInterestRelevant) {
+        return section
+      }
       return existing
         ? {
             ...section,
@@ -2367,9 +2780,19 @@ export async function saveEbReportDraft(input: SaveEbReportDraftInput): Promise<
   const round = await getEbInspectionRound(input)
   const participants = await listParticipantsForInspection(input)
   const resolvedParticipants = participants.length > 0 ? participants : buildDefaultParticipants(round.project)
+  const attachments = await listEbProjectAttachments({
+    orgId: input.orgId,
+    projectId: input.projectId,
+  })
+  const inspectorText = await buildInspectorReportText({
+    orgId: input.orgId,
+    profileId: input.requestedByUserId,
+  })
   const baseDraft = buildEbReportDraft({
     round,
     participants: resolvedParticipants,
+    attachments,
+    inspectorText,
     storedDraft: await fetchEbReportDraft(input),
   })
   const now = new Date().toISOString()
@@ -2419,7 +2842,7 @@ async function listParticipantsForInspection(input: {
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
     .from('eb_participants')
-    .select('id,role_label,company_name,person_name,email,phone,receives_invitation,sort_order')
+    .select('id,role_label,company_name,person_name,email,phone,receives_invitation,attended,receives_report,represents_party_key,can_represent_party,sort_order')
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
     .eq('inspection_id', input.inspectionId)
@@ -2487,7 +2910,7 @@ async function getProfileContact(profileId: string) {
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
     .from('profiles')
-    .select('id,full_name,email')
+    .select('id,full_name,email,certification_number')
     .eq('id', profileId)
     .maybeSingle()
 
@@ -2496,6 +2919,33 @@ async function getProfileContact(profileId: string) {
   }
 
   return (data ?? null) as ProfileContactRow | null
+}
+
+async function buildInspectorReportText(input: {
+  orgId: string
+  profileId: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const inspector = await getProfileContact(input.profileId)
+  const { summary } = await resolveInspectorCertificationSummary(admin, {
+    orgId: input.orgId,
+    profileId: input.profileId,
+    legacy: {
+      certification_number: inspector?.certification_number ?? null,
+    },
+  })
+
+  return [
+    inspector?.full_name ? reportLine('Besiktningsman', inspector.full_name) : null,
+    inspector?.email ? reportLine('E-post', inspector.email) : null,
+    summary.status_name ? reportLine('Certifiering', summary.status_name) : null,
+    summary.certification_number ? reportLine('Certifikatnummer', summary.certification_number) : null,
+    summary.membership_name ? reportLine('Medlemskap', summary.membership_name) : null,
+    summary.membership_number ? reportLine('Medlemsnummer', summary.membership_number) : null,
+  ]
+    .map(normalizeText)
+    .filter(Boolean)
+    .join('\n')
 }
 
 export async function getEbInvitationContext(input: {
@@ -2548,6 +2998,10 @@ function normalizeParticipantInput(
     email: normalizeEmail(participant.email),
     phone: normalizeText(participant.phone),
     receivesInvitation: Boolean(participant.receivesInvitation),
+    attended: Boolean(participant.attended),
+    receivesReport: participant.receivesReport !== false,
+    representsPartyKey: normalizePartyKey(participant.representsPartyKey),
+    canRepresentParty: Boolean(participant.canRepresentParty),
     sortOrder: participant.sortOrder ?? (index + 1) * 100,
   }
 }
@@ -2595,6 +3049,10 @@ async function replaceInspectionParticipants(input: {
       email: participant.email,
       phone: participant.phone,
       receives_invitation: participant.receivesInvitation,
+      attended: participant.attended,
+      receives_report: participant.receivesReport,
+      represents_party_key: participant.representsPartyKey,
+      can_represent_party: participant.canRepresentParty,
       sort_order: participant.sortOrder || (index + 1) * 100,
     }))
   )
@@ -2722,6 +3180,8 @@ export async function sendEbInvitation(input: SendEbInvitationInput): Promise<Se
       invitation_sent_at: now,
       invitation_sent_by: input.requestedByUserId,
       invitation_message_id: sentMessageIds[0] ?? null,
+      invitation_method: 'E-post',
+      invitation_date: now.slice(0, 10),
       invitation_subject: subject,
       invitation_body: body,
     })
@@ -2746,4 +3206,33 @@ export async function sendEbInvitation(input: SendEbInvitationInput): Promise<Se
     sentCount: sentMessageIds.length,
     project: updatedProject,
   }
+}
+
+export async function saveEbInvitationDraft(input: SaveEbInvitationDraftInput): Promise<EbInvitationContext> {
+  await getEbInvitationContext(input)
+  const participants = input.participants.map(normalizeParticipantInput).filter(participantHasContent)
+
+  await replaceInspectionParticipants({
+    orgId: input.orgId,
+    projectId: input.projectId,
+    inspectionId: input.inspectionId,
+    participants,
+  })
+
+  const admin = createSupabaseAdminClient()
+  const { error } = await admin
+    .from('eb_inspection_details')
+    .update({
+      invitation_subject: normalizeText(input.subject),
+      invitation_body: normalizeText(input.body),
+    })
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte spara kallelse och deltagare.')
+  }
+
+  return getEbInvitationContext(input)
 }

@@ -3,8 +3,10 @@ import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import {
   getEbInvitationContext,
+  saveEbInvitationDraft,
   sendEbInvitation,
   type EbInvitationParticipantInput,
+  type EbPartyKey,
 } from '@/lib/eb/server'
 
 export const runtime = 'nodejs'
@@ -16,6 +18,11 @@ function jsonError(message: string, status: number) {
 
 function toText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function toPartyKey(value: unknown): EbPartyKey | null {
+  const key = toText(value)
+  return key === 'client' || key === 'contractor' || key === 'other' ? key : null
 }
 
 function toParticipant(value: unknown, index: number): EbInvitationParticipantInput | null {
@@ -30,6 +37,10 @@ function toParticipant(value: unknown, index: number): EbInvitationParticipantIn
     email: toText(record.email) || null,
     phone: toText(record.phone) || null,
     receivesInvitation: record.receivesInvitation !== false,
+    attended: record.attended === true,
+    receivesReport: record.receivesReport !== false,
+    representsPartyKey: toPartyKey(record.representsPartyKey),
+    canRepresentParty: record.canRepresentParty === true,
     sortOrder: typeof record.sortOrder === 'number' ? record.sortOrder : (index + 1) * 100,
   }
 }
@@ -114,5 +125,35 @@ export async function POST(
     return NextResponse.json(result)
   } catch (error) {
     return mapError(error, 'Kunde inte skicka kallelse.')
+  }
+}
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ projectId: string; inspectionId: string }> }
+) {
+  try {
+    const { projectId, inspectionId } = await context.params
+    const org = await requireEbContext()
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const participants = Array.isArray(body.participants)
+      ? body.participants
+          .map((participant, index) => toParticipant(participant, index))
+          .filter((participant): participant is EbInvitationParticipantInput => Boolean(participant))
+      : []
+
+    const invitation = await saveEbInvitationDraft({
+      orgId: org.orgId,
+      requestedByUserId: org.userId,
+      projectId,
+      inspectionId,
+      subject: toText(body.subject) || null,
+      body: toText(body.body) || null,
+      participants,
+    })
+
+    return NextResponse.json(invitation)
+  } catch (error) {
+    return mapError(error, 'Kunde inte spara kallelse och deltagare.')
   }
 }
