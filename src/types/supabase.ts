@@ -2065,6 +2065,7 @@ export type Database = {
           is_active: boolean
           label: string
           sort_order: number
+          system_value: string | null
           trigger_tags: Json | null
           updated_at: string
           value: string
@@ -2076,6 +2077,7 @@ export type Database = {
           is_active?: boolean
           label: string
           sort_order?: number
+          system_value?: string | null
           trigger_tags?: Json | null
           updated_at?: string
           value: string
@@ -2087,6 +2089,7 @@ export type Database = {
           is_active?: boolean
           label?: string
           sort_order?: number
+          system_value?: string | null
           trigger_tags?: Json | null
           updated_at?: string
           value?: string

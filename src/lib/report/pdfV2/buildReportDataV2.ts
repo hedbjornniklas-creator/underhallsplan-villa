@@ -250,6 +250,7 @@ const supabase: any = createSupabaseServerClient()
     if (key === 'ovrigt' || key === '\u00f6vrigt') return 0
     if (key === 'k\u00e4llare') return 10
     if (key === 'k\u00e4llare_delvis') return 20
+    if (key === 'suterr\u00e4ng' || key === 'souterr\u00e4ng') return 25
     if (key === 'plan1') return 30
     if (key === 'plan2') return 40
     if (key === 'plan3') return 50
@@ -265,6 +266,7 @@ const supabase: any = createSupabaseServerClient()
     const key = normalizeKey(value)
     if (key === 'k\u00e4llare') return 'K\u00e4llare'
     if (key === 'k\u00e4llare_delvis') return 'K\u00e4llare'
+    if (key === 'suterr\u00e4ng' || key === 'souterr\u00e4ng') return 'Suterr\u00e4ng'
     if (key === 'entr\u00e9plan' || key === 'plan1') return 'Plan 1'
     if (key === 'plan2') return 'Plan 2'
     if (key === 'plan3') return 'Plan 3'

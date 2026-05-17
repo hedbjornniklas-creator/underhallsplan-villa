@@ -17,6 +17,10 @@ import ControlPointSearchDialog, {
   type ControlPointSearchMode,
   type ControlPointSearchResult,
 } from './ControlPointSearchDialog'
+import {
+  buildInteriorFloorKeysFromOverview,
+  buildOverviewFloorOptionLookup,
+} from '@/lib/ob/overviewFloors'
 
 type Inspection = {
   id: string
@@ -245,61 +249,6 @@ const removeImagesFromImageMap = (
 const isImageLinkedToNote = (image: InspectionImage) =>
   Boolean(image.control_item_id || image.exterior_observation_id)
 
-// -----------------------------
-// Hjälpfunktion: bygg våningsnycklar från Förutsättningar (Byggnadstyp)
-// -----------------------------
-const parseFloorCount = (value: ValueMap[keyof ValueMap]) => {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return Math.max(0, Math.floor(value))
-  }
-
-  const normalized = String(value ?? '').trim().replace(',', '.')
-  if (!normalized) return 0
-
-  const halfFloorMatch = normalized.match(/^(\d+)(?:_5|\.5)$/)
-  if (halfFloorMatch) {
-    return Number(halfFloorMatch[1]) + 1
-  }
-
-  const numeric = Number(normalized)
-  if (!Number.isFinite(numeric)) return 0
-  return Math.max(0, Math.floor(numeric))
-}
-
-const buildFloorsFromAnswers = (answers: ValueMap): string[] => {
-  const floorsVal =
-    answers['floors'] ??
-    answers['våningar'] ??
-    answers['våning'] ??
-    null
-
-  const basementVal =
-    answers['basement'] ??
-    answers['källare'] ??
-    null
-
-  const atticVal = answers['attic'] ?? null
-
-  const count = parseFloorCount(floorsVal)
-
-  const keys: string[] = []
-
-  if (basementVal === 'yes' || basementVal === 'ja' || basementVal === true) {
-    keys.push('källare')
-  } else if (basementVal === 'partial' || basementVal === 'delvis') {
-    keys.push('källare_delvis')
-  }
-
-  for (let floor = 1; floor <= count; floor += 1) {
-    keys.push(`plan${floor}`)
-  }
-  if (atticVal !== null && atticVal !== undefined && String(atticVal).trim() !== '') {
-    keys.push('vind')
-  }
-
-  return keys
-}
-
 const normalizeSwedish = (value: string) =>
   value
     .replace(/Ã¤/g, 'ä')
@@ -438,6 +387,7 @@ const floorLabelFromKey = (k: string) => {
   const normalized = normalizeSwedish(k)
   if (normalized === 'källare') return 'Källare'
   if (normalized === 'källare_delvis') return 'Källare'
+  if (normalized === 'suterräng') return 'Suterräng'
   if (normalized === 'entréplan' || normalized === 'plan1') return 'Plan 1'
   if (normalized === 'plan2') return 'Plan 2'
   if (normalized === 'plan3') return 'Plan 3'
@@ -735,7 +685,46 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             if (btSelErr) throw btSelErr
 
             const answers = (btSelData?.[0]?.values as ValueMap) || {}
-            floorsFromConditions = buildFloorsFromAnswers(answers)
+            const { data: overviewGroupRows, error: overviewGroupErr } =
+              await supabase
+                .from('settings_overview_groups')
+                .select('id, key')
+                .eq('overview_item_id', buildingItem.id)
+                .eq('is_active', true)
+
+            if (overviewGroupErr) throw overviewGroupErr
+
+            const groupRows = (overviewGroupRows ?? []) as Array<{
+              id: string
+              key: string | null
+            }>
+            const groupIds = groupRows.map(group => group.id)
+            let overviewOptionRows: Array<{
+              group_id: string
+              value: string | null
+              label: string | null
+              system_value: string | null
+            }> = []
+
+            if (groupIds.length > 0) {
+              const { data: optionRows, error: optionErr } = await supabase
+                .from('settings_overview_options')
+                .select('group_id, value, label, system_value')
+                .in('group_id', groupIds)
+                .eq('is_active', true)
+
+              if (optionErr) throw optionErr
+              overviewOptionRows = (optionRows ?? []) as typeof overviewOptionRows
+            }
+
+            const groupsWithOptions = groupRows.map(group => ({
+              key: group.key,
+              options: overviewOptionRows.filter(option => option.group_id === group.id),
+            }))
+            floorsFromConditions = buildInteriorFloorKeysFromOverview(
+              answers,
+              buildOverviewFloorOptionLookup(groupsWithOptions)
+            )
 
             const rawAttic = answers['attic'] ?? null
             if (
@@ -744,31 +733,9 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
               String(rawAttic).trim() !== ''
             ) {
               try {
-                const { data: atticGroup, error: atticGroupErr } = await supabase
-                  .from('settings_overview_groups')
-                  .select('id, key')
-                  .eq('overview_item_id', buildingItem.id)
-                  .eq('key', 'attic')
-                  .eq('is_active', true)
-                  .maybeSingle()
-
-                if (atticGroupErr) throw atticGroupErr
-
+                const atticGroup = groupsWithOptions.find(group => group.key === 'attic')
                 if (atticGroup) {
-                  const { data: atticOptions, error: atticOptErr } =
-                    await supabase
-                      .from('settings_overview_options')
-                      .select('value, label')
-                      .eq('group_id', atticGroup.id)
-                      .eq('is_active', true)
-
-                  if (atticOptErr) throw atticOptErr
-
-                  const options = (atticOptions ?? []) as Array<{
-                    value: string | null
-                    label: string | null
-                  }>
-                  const match = options.find(o => o.value === rawAttic)
+                  const match = atticGroup.options.find(o => o.value === rawAttic)
                   setAtticLabel(match?.label ?? String(rawAttic))
                 } else {
                   setAtticLabel(String(rawAttic))

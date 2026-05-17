@@ -4,6 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
 import DebouncedTextarea from './DebouncedTextarea'
+import {
+  buildInteriorFloorKeysFromOverview,
+  buildOverviewFloorOptionLookup,
+} from '@/lib/ob/overviewFloors'
 
 type FurnishingLevel = 'fullt_moblerad' | 'delvis_moblerad' | 'omoblerad'
 type SelectionMode = 'single' | 'multi_set' | 'per_floor'
@@ -51,6 +55,7 @@ interface SettingsOverviewOption {
   group_id: string
   value: string
   label: string
+  system_value: string | null
   sort_order: number
   is_active: boolean
 }
@@ -444,24 +449,6 @@ export default function ObStepForutsattningar({
     setSelections(prev => ({ ...prev, [itemId]: next }))
   }
 
-  const parseFloorCount = (value: SelectionValue | null | undefined) => {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return Math.max(0, Math.floor(value))
-    }
-
-    const normalized = String(value ?? '').trim().replace(',', '.')
-    if (!normalized) return 0
-
-    const halfFloorMatch = normalized.match(/^(\d+)(?:_5|\.5)$/)
-    if (halfFloorMatch) {
-      return Number(halfFloorMatch[1]) + 1
-    }
-
-    const numeric = Number(normalized)
-    if (!Number.isFinite(numeric)) return 0
-    return Math.max(0, Math.floor(numeric))
-  }
-
   const ensureSingleSelection = (itemId: string) => {
     const arr = getItemSelections(itemId)
     if (arr.length > 0) return arr
@@ -569,24 +556,10 @@ export default function ObStepForutsattningar({
     const sels = getItemSelections(buildingItem.id)
     if (!sels.length) return [] as string[]
 
-    const v = sels[0].values || {}
-    const floorsVal = v['floors'] ?? v['våningar'] ?? v['våning'] ?? null
-    const basementVal = v['basement'] ?? v['källare'] ?? null
-
-    const count = parseFloorCount(floorsVal)
-
-    const keys: string[] = []
-    if (basementVal === 'yes' || basementVal === 'ja' || basementVal === true) {
-      keys.push('källare')
-    } else if (basementVal === 'partial' || basementVal === 'delvis') {
-      keys.push('källare_delvis')
-    }
-
-    for (let floor = 1; floor <= count; floor += 1) {
-      keys.push(`plan${floor}`)
-    }
-
-    return keys
+    return buildInteriorFloorKeysFromOverview(
+      sels[0].values || {},
+      buildOverviewFloorOptionLookup(buildingItem.groups)
+    )
   }, [items, getItemSelections])
 
   // -----------------------------
@@ -650,6 +623,7 @@ export default function ObStepForutsattningar({
         group_id: 'generated-years',
         value: year,
         label: year,
+        system_value: null,
         sort_order: index,
         is_active: true,
       } satisfies SettingsOverviewOption
@@ -919,6 +893,7 @@ export default function ObStepForutsattningar({
     const floorLabel = (k?: string | null) => {
       if (k === 'källare') return 'Källare'
       if (k === 'källare_delvis') return 'Källare (delvis)'
+      if (k === 'suterräng') return 'Suterräng'
       if (k === 'entréplan' || k === 'plan1') return 'Plan 1'
       if (k === 'plan2') return 'Plan 2'
       if (k === 'plan3') return 'Plan 3'

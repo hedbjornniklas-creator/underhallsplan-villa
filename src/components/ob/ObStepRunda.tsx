@@ -8,6 +8,10 @@ import ControlPointSearchDialog, {
   type ControlPointSearchMode,
   type ControlPointSearchResult,
 } from './ControlPointSearchDialog'
+import {
+  buildInteriorFloorKeysFromOverview,
+  buildOverviewFloorOptionLookup,
+} from '@/lib/ob/overviewFloors'
 
 type Inspection = {
   id: string
@@ -159,35 +163,6 @@ const normalizeSwedish = (value: string) =>
     .replace(/Ã–/g, 'Ö')
     .replace(/Ã©/g, 'é')
 
-const parseFloorCount = (value: ValueMap[keyof ValueMap]) => {
-  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.floor(value))
-  const normalized = String(value ?? '').trim().replace(',', '.')
-  if (!normalized) return 0
-  const halfFloorMatch = normalized.match(/^(\d+)(?:_5|\.5)$/)
-  if (halfFloorMatch) return Number(halfFloorMatch[1]) + 1
-  const numeric = Number(normalized)
-  if (!Number.isFinite(numeric)) return 0
-  return Math.max(0, Math.floor(numeric))
-}
-
-const buildFloorsFromAnswers = (answers: ValueMap): string[] => {
-  const floorsVal = answers.floors ?? answers['våningar'] ?? answers['våning'] ?? null
-  const basementVal = answers.basement ?? answers['källare'] ?? null
-  const atticVal = answers.attic ?? null
-  const count = parseFloorCount(floorsVal)
-  const keys: string[] = []
-
-  if (basementVal === 'yes' || basementVal === 'ja' || basementVal === true) {
-    keys.push('källare')
-  } else if (basementVal === 'partial' || basementVal === 'delvis') {
-    keys.push('källare_delvis')
-  }
-
-  for (let floor = 1; floor <= count; floor += 1) keys.push(`plan${floor}`)
-  if (atticVal !== null && atticVal !== undefined && String(atticVal).trim() !== '') keys.push('vind')
-  return keys
-}
-
 const normalizeFloorKey = (value: string | null | undefined) => {
   const normalized = normalizeSwedish(String(value ?? '')).trim()
   if (normalized === 'entréplan') return 'plan1'
@@ -200,6 +175,7 @@ const floorLabelFromKey = (key: string) => {
   if (normalized === OTHER_ROOM_TYPE_KEY) return OTHER_ROOM_DISPLAY_LABEL
   if (normalized === 'källare') return 'Källare'
   if (normalized === 'källare_delvis') return 'Källare'
+  if (normalized === 'suterräng') return 'Suterräng'
   if (normalized === 'plan1') return 'Plan 1'
   if (normalized === 'plan2') return 'Plan 2'
   if (normalized === 'plan3') return 'Plan 3'
@@ -807,7 +783,49 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
       if (selectionError) throw selectionError
       const answers = (selectionRows?.[0]?.values as ValueMap) || {}
-      setDerivedFloors(buildFloorsFromAnswers(answers))
+
+      const { data: groupRowsData, error: groupRowsError } = await supabase
+        .from('settings_overview_groups')
+        .select('id, key')
+        .eq('overview_item_id', buildingItem.id)
+        .eq('is_active', true)
+
+      if (groupRowsError) throw groupRowsError
+
+      const groupRows = (groupRowsData ?? []) as Array<{
+        id: string
+        key: string | null
+      }>
+      const groupIds = groupRows.map(group => group.id)
+      let optionRows: Array<{
+        group_id: string
+        value: string | null
+        label: string | null
+        system_value: string | null
+      }> = []
+
+      if (groupIds.length > 0) {
+        const { data: optionRowsData, error: optionRowsError } = await supabase
+          .from('settings_overview_options')
+          .select('group_id, value, label, system_value')
+          .in('group_id', groupIds)
+          .eq('is_active', true)
+
+        if (optionRowsError) throw optionRowsError
+        optionRows = (optionRowsData ?? []) as typeof optionRows
+      }
+
+      const groupsWithOptions = groupRows.map(group => ({
+        key: group.key,
+        options: optionRows.filter(option => option.group_id === group.id),
+      }))
+
+      setDerivedFloors(
+        buildInteriorFloorKeysFromOverview(
+          answers,
+          buildOverviewFloorOptionLookup(groupsWithOptions)
+        )
+      )
     } catch (e) {
       console.warn('Kunde inte läsa våningsinfo för ÖB-runda:', e)
       setDerivedFloors([])

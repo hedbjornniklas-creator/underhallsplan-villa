@@ -183,6 +183,9 @@ const floorLabelFromKey = (value: string | null | undefined) => {
   if (normalized === 'k\u00e4llare_delvis' || normalized === 'kallare_delvis') {
     return 'K\u00e4llare (delvis)'
   }
+  if (normalized === 'suterr\u00e4ng' || normalized === 'suterrang' || normalized === 'souterr\u00e4ng' || normalized === 'souterrang') {
+    return 'Suterr\u00e4ng'
+  }
   if (normalized === 'entr\u00e9plan' || normalized === 'entreplan') return 'Plan 1'
 
   const floorNumber = floorNumberFromKey(normalized)
@@ -196,6 +199,7 @@ const floorSortRank = (value: string | null | undefined) => {
   if (!normalized) return 9998
   if (normalized === 'k\u00e4llare' || normalized === 'kallare') return 0
   if (normalized === 'k\u00e4llare_delvis' || normalized === 'kallare_delvis') return 1
+  if (normalized === 'suterr\u00e4ng' || normalized === 'suterrang' || normalized === 'souterr\u00e4ng' || normalized === 'souterrang') return 2
   if (normalized === 'entr\u00e9plan' || normalized === 'entreplan') return 11
 
   const floorNumber = floorNumberFromKey(normalized)
@@ -276,9 +280,35 @@ const joinValueAndNote = (base: string, note: string) => {
   return `${baseText}${separator}${noteText}`
 }
 
-const renderBasementText = (raw: unknown) => {
+const lowercaseFirst = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  return `${trimmed.charAt(0).toLocaleLowerCase('sv')}${trimmed.slice(1)}`
+}
+
+const renderBasementText = (raw: unknown, label?: string) => {
   if (raw === null || raw === undefined) return ''
   if (typeof raw === 'boolean') return raw ? ' och k\u00e4llare' : ''
+  const labelText = String(label ?? '').trim()
+  const labelValue = labelText.toLowerCase()
+  if (
+    labelValue.includes('utan k\u00e4llare') ||
+    labelValue.includes('utan kallare') ||
+    labelValue.includes('ingen k\u00e4llare') ||
+    labelValue.includes('ingen kallare')
+  ) {
+    return ''
+  }
+  if (
+    labelValue &&
+    labelValue !== 'ja' &&
+    labelValue !== 'yes' &&
+    labelValue !== 'true' &&
+    labelValue !== 'delvis' &&
+    labelValue !== 'partial'
+  ) {
+    return ` och ${lowercaseFirst(labelText)}`
+  }
   const value = String(raw).trim().toLowerCase()
   if (value === 'ja' || value === 'yes' || value === 'true') return ' och k\u00e4llare'
   if (value === 'delvis' || value === 'partial') return ' och delvis k\u00e4llare'
@@ -293,8 +323,9 @@ const resolveBuildingTypeParts = (
   const values = (row.values ?? {}) as Record<string, unknown>
   const typeValue = resolveGroupValue(values, 'type', groups, optionsByGroupId)
   const atticValue = resolveGroupValue(values, 'attic', groups, optionsByGroupId)
+  const basementValue = resolveGroupValue(values, 'basement', groups, optionsByGroupId)
   const floorsValue = renderFloorsText(values['floors'])
-  const basementText = renderBasementText(values['basement'])
+  const basementText = renderBasementText(values['basement'], basementValue)
 
   const typeText = typeValue && typeValue.trim().length > 0 ? typeValue : '--'
   const floorsText = floorsValue && floorsValue.trim().length > 0 ? floorsValue : '--'

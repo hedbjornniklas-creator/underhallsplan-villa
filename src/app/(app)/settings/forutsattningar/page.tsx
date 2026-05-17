@@ -33,7 +33,7 @@ type SettingsOverviewGroup = {
   sort_order: number
   is_active: boolean
   conditional_on_group_key: string | null
-  conditional_on_values: any | null
+  conditional_on_values: unknown | null
   created_at?: string | null
   updated_at?: string | null
 }
@@ -43,9 +43,10 @@ type SettingsOverviewOption = {
   group_id: string
   value: string
   label: string
+  system_value: string | null
   sort_order: number
   is_active: boolean
-  trigger_tags?: any | null
+  trigger_tags?: unknown | null
   created_at?: string | null
   updated_at?: string | null
 }
@@ -99,14 +100,7 @@ export default function ForutsattningarSettingsPage() {
   // historik-guard per item
   const [itemHistoryCount, setItemHistoryCount] = useState<Record<string, number>>({})
 
-  // -----------------------------
-  // LOAD
-  // -----------------------------
-  useEffect(() => {
-    loadItems()
-  }, [])
-
-  const loadItems = async () => {
+  async function loadItems() {
     const { data, error } = await supabase
       .from('settings_overview_items')
       .select('*')
@@ -139,6 +133,13 @@ export default function ForutsattningarSettingsPage() {
       setSelectedItemId(arr[0].id)
     }
   }
+
+  // -----------------------------
+  // LOAD
+  // -----------------------------
+  useEffect(() => {
+    loadItems()
+  }, [])
 
   const loadGroups = async (overviewItemId: string) => {
     const { data, error } = await supabase
@@ -374,6 +375,7 @@ export default function ForutsattningarSettingsPage() {
         group_id: selectedGroupId,
         value,
         label: 'Nytt val',
+        system_value: null,
         sort_order: maxSort + 10,
         is_active: true,
         trigger_tags: null,
@@ -454,7 +456,8 @@ export default function ForutsattningarSettingsPage() {
     if (!s) return options
     return options.filter(o =>
       (o.label ?? '').toLowerCase().includes(s) ||
-      (o.value ?? '').toLowerCase().includes(s)
+      (o.value ?? '').toLowerCase().includes(s) ||
+      (o.system_value ?? '').toLowerCase().includes(s)
     )
   }, [options, qOptions])
 
@@ -829,7 +832,7 @@ export default function ForutsattningarSettingsPage() {
                       }
                       onChange={e => {
                         const v = e.target.value.trim()
-                        let parsed: any = null
+                        let parsed: unknown = null
                         if (v) {
                           try {
                             parsed = JSON.parse(v)
@@ -920,6 +923,23 @@ export default function ForutsattningarSettingsPage() {
                         </div>
 
                         <div>
+                          <label className="text-xs text-gray-600">Systemvärde</label>
+                          <input
+                            className="w-full rounded-md border px-2 py-1 text-sm"
+                            placeholder="t.ex. ja eller nej"
+                            value={o.system_value ?? ''}
+                            onChange={e =>
+                              saveOption(o.id, {
+                                system_value: e.target.value.trim() || null,
+                              })
+                            }
+                          />
+                          <div className="text-[11px] text-gray-500 mt-1">
+                            Kan ändras utan att påverka sparad historik. Används för logik i appen.
+                          </div>
+                        </div>
+
+                        <div>
                           <label className="text-xs text-gray-600">Sort order</label>
                           <input
                             type="number"
@@ -956,7 +976,7 @@ export default function ForutsattningarSettingsPage() {
                           value={o.trigger_tags ? JSON.stringify(o.trigger_tags) : ''}
                           onChange={e => {
                             const v = e.target.value.trim()
-                            let parsed: any = null
+                            let parsed: unknown = null
                             if (v) {
                               try {
                                 parsed = JSON.parse(v)
