@@ -535,8 +535,9 @@ function parseBuildingDataLines(content: string) {
   return rows
 }
 
-const HANDLINGAR_CHUNK_MAX_LINES = 30
+const HANDLINGAR_CHUNK_MAX_LINES = 10
 const HANDLINGAR_CHUNK_APPROX_CHARS_PER_LINE = 72
+const HANDLINGAR_CONTINUED_CHUNK_GAP_MM = 0.5
 
 function estimateHandlingarLineCount(text: string) {
   const normalized = text.replace(/\r\n/g, '\n')
@@ -965,7 +966,9 @@ export default function ReportRendererClient({
                   value: chunk,
                   labelWidthMm: labelWidth,
                   marginTopMm: isFirstChunk ? marginTopMm : 0,
-                  marginBottomMm: isLastChunk ? marginBottomMm : 1.5,
+                  marginBottomMm: isLastChunk
+                    ? marginBottomMm
+                    : HANDLINGAR_CONTINUED_CHUNK_GAP_MM,
                   splittable: chunks.length > 1,
                 },
               })

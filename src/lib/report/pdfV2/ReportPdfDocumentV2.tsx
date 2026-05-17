@@ -187,7 +187,7 @@ const getListAtPath = (obj: unknown, path: string): string[] => {
   return []
 }
 
-const HANDLINGAR_PDF_CHUNK_MAX_LINES = 32
+const HANDLINGAR_PDF_CHUNK_MAX_LINES = 10
 const HANDLINGAR_PDF_APPROX_CHARS_PER_LINE = 74
 
 function estimateHandlingarPdfLineCount(text: string) {
