@@ -458,6 +458,7 @@ type ProfileContactRow = {
   email: string | null
   certification_number: string | null
   logo_path: string | null
+  logo_url: string | null
 }
 
 export type CreateEbProjectInput = {
@@ -1332,7 +1333,7 @@ export async function getEbInspectionReport(input: {
     ...round,
     participants: resolvedParticipants,
     branding: {
-      inspectorLogoUrl: resolvePublicMediaUrl(inspectorProfile?.logo_path),
+      inspectorLogoUrl: resolvePublicMediaUrl(inspectorProfile?.logo_path ?? inspectorProfile?.logo_url),
       besiktAppLogoUrl: BESIKTAPP_REPORT_LOGO_SRC,
     },
     reportDraft: buildEbReportDraft({
@@ -3071,33 +3072,40 @@ function buildInvitationBody(input: {
 
 async function getProfileContact(profileId: string) {
   const admin = createSupabaseAdminClient()
-  const baseSelect = 'id,full_name,email'
-  const withCertificationSelect = 'id,full_name,email,certification_number,logo_path'
-  const { data, error } = await admin
-    .from('profiles')
-    .select(withCertificationSelect)
-    .eq('id', profileId)
-    .maybeSingle()
+  const selectAttempts = [
+    'id,full_name,email,logo_path,logo_url,certification_number',
+    'id,full_name,email,logo_path,logo_url',
+    'id,full_name,email,logo_path',
+    'id,full_name,email',
+  ]
 
-  if (error) {
-    if (isMissingColumnError(error)) {
-      const fallback = await admin
-        .from('profiles')
-        .select(baseSelect)
-        .eq('id', profileId)
-        .maybeSingle()
+  for (const select of selectAttempts) {
+    const { data, error } = await admin
+      .from('profiles')
+      .select(select)
+      .eq('id', profileId)
+      .maybeSingle()
 
-      if (fallback.error) {
-        throw new Error(fallback.error.message ?? 'Kunde inte hämta besiktningsman.')
-      }
-
-      const fallbackRow = (fallback.data ?? null) as Omit<ProfileContactRow, 'certification_number' | 'logo_path'> | null
-      return fallbackRow ? { ...fallbackRow, certification_number: null, logo_path: null } : null
+    if (error) {
+      if (isMissingColumnError(error)) continue
+      throw new Error(error.message ?? 'Kunde inte hämta besiktningsman.')
     }
-    throw new Error(error.message ?? 'Kunde inte hämta besiktningsman.')
+
+    const row = (data ?? null) as Partial<ProfileContactRow> | null
+    if (!row) return null
+    if (!row.id) return null
+
+    return {
+      id: row.id,
+      full_name: row.full_name ?? null,
+      email: row.email ?? null,
+      certification_number: row.certification_number ?? null,
+      logo_path: row.logo_path ?? null,
+      logo_url: row.logo_url ?? null,
+    }
   }
 
-  return (data ?? null) as ProfileContactRow | null
+  throw new Error('Kunde inte hämta besiktningsman.')
 }
 
 async function buildInspectorReportText(input: {
