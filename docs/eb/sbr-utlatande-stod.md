@@ -9,7 +9,7 @@ Syfte: hålla koll på vilka uppgifter som krävs för ett SBR-likt utlåtande f
 - Entreprenadens grunduppgifter fylls i på entreprenadsidan via `Ny entreprenad` eller `Redigera entreprenad`.
 - Besiktningsspecifika uppgifter fylls i på besiktning/runda/kallelse.
 - Noteringar fylls i i `Granska` eller mobil runda.
-- Formella utlåtandepunkter fylls i i `Utlåtandeutkast`.
+- Formella utlåtandepunkter fylls i i `Utlåtandeutkast`. Strukturerade beslut och datum fylls i i panelen `Utlåtandeuppgifter` på samma sida.
 - Färdigt utlåtande får skriva ut formella standardtexter som anger att uppgift inte redovisats, inte fastställts eller inte är aktuell.
 - Färdigt utlåtande får inte skriva ut instruktionstext som börjar med `Ange`, `Komplettera` eller motsvarande redigeringshjälp.
 
@@ -21,8 +21,8 @@ Syfte: hålla koll på vilka uppgifter som krävs för ett SBR-likt utlåtande f
 | Objekt/adress/kommun/fastighetsbeteckning | `eb_projects`, kopplad `properties` | Entreprenadsidan | Strukturerat. |
 | Avtal/entreprenadform/upphandling/kontraktsdatum | `eb_projects` | Entreprenadsidan | Strukturerat. |
 | Beställare/entreprenör/org.nr | `eb_projects`, initialt `eb_participants` | Entreprenadsidan, kallelse | Strukturerat. |
-| Besiktningstyp/datum/tid | `inspections`, `eb_inspection_details` | Ny besiktning/runda | Strukturerat. |
-| Kallelse | `eb_inspection_details`, `eb_participants`, `outbound_messages` | Kallelse-dialog | Delvis strukturerat. |
+| Besiktningstyp/datum/tid | `inspections`, `eb_inspection_details` | Ny besiktning/runda, Utlåtandeutkast | Strukturerat. |
+| Kallelse | `eb_inspection_details`, `eb_participants`, `outbound_messages` | Kallelse-dialog, Utlåtandeutkast | Delvis strukturerat. |
 | Deltagare/närvarande | `eb_participants` | Kallelse-dialog | Strukturerat, men partsombud/för talan behöver tydligare rollstöd. |
 | Fack/littera | `eb_disciplines` | Seedas, visas i granska | Strukturerat. |
 | Noteringar | `eb_notes` | Granska/runda | Strukturerat. |

@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { ArrowLeft, Check, FileText, Save } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useMemo, useState, useTransition } from 'react'
 import type { EbInspectionReport, EbReportDraftSection, EbReportSectionStatus } from '@/lib/eb/server'
 
@@ -34,18 +35,97 @@ const sourceLabels: Record<EbReportDraftSection['source'], string> = {
 
 const sourceHints: Record<EbReportDraftSection['source'], string> = {
   project: 'Grunduppgifter fylls i via Redigera entreprenad på entreprenadsidan.',
-  inspection: 'Besiktningsuppgifter fylls i när besiktningen skapas, i kallelsen eller i runda/granska.',
+  inspection: 'Besiktningsuppgifter fylls i panelen Utlåtandeuppgifter eller i kallelsen.',
   participants: 'Parter, mottagare och närvarande hanteras i kallelsedialogen.',
   notes: 'Noteringar, beteckningar och bilder hanteras i Granska eller mobil runda.',
   standard_text: 'Texten är standardtext för utlåtandet och justeras här innan utskrift.',
   manual: 'Denna punkt fylls i här i utlåtandeutkastet.',
 }
 
+type StructuredReportFormState = {
+  inspectorAppointedBy: string
+  invitationMethod: string
+  invitationDate: string
+  approvalStatus: string
+  approvalNote: string
+  requiresContinuedFinalInspection: string
+  warrantyPeriodYears: string
+  warrantyEndDate: string
+  defaultRemedyDeadline: string
+  afterInspectionRequested: string
+  afterInspectionDueDate: string
+  afterInspectionNoticeInReport: boolean
+  reportDistributionDate: string
+}
+
+type InspectionUpdateResponse = {
+  error?: string
+}
+
+type ReportDraftResponse = {
+  report?: EbInspectionReport
+  error?: string
+}
+
+function todayInputValue() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function buildStructuredReportForm(
+  inspection: EbInspectionReport['inspection']
+): StructuredReportFormState {
+  return {
+    inspectorAppointedBy: inspection.inspectorAppointedBy ?? '',
+    invitationMethod: inspection.invitationMethod ?? '',
+    invitationDate: inspection.invitationDate ?? '',
+    approvalStatus: inspection.approvalStatus ?? '',
+    approvalNote: inspection.approvalNote ?? '',
+    requiresContinuedFinalInspection:
+      typeof inspection.requiresContinuedFinalInspection === 'boolean'
+        ? String(inspection.requiresContinuedFinalInspection)
+        : '',
+    warrantyPeriodYears: inspection.warrantyPeriodYears ? String(inspection.warrantyPeriodYears) : '',
+    warrantyEndDate: inspection.warrantyEndDate ?? '',
+    defaultRemedyDeadline: inspection.defaultRemedyDeadline ?? '',
+    afterInspectionRequested:
+      typeof inspection.afterInspectionRequested === 'boolean'
+        ? String(inspection.afterInspectionRequested)
+        : '',
+    afterInspectionDueDate: inspection.afterInspectionDueDate ?? '',
+    afterInspectionNoticeInReport: inspection.afterInspectionNoticeInReport,
+    reportDistributionDate: inspection.reportDistributionDate ?? todayInputValue(),
+  }
+}
+
+function booleanFromSelect(value: string) {
+  if (value === 'true') return true
+  if (value === 'false') return false
+  return null
+}
+
+function fieldClassName() {
+  return 'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100'
+}
+
+function fieldLabel(label: string, children: ReactNode) {
+  return (
+    <label className="block">
+      <span className="block text-xs font-semibold text-gray-700">{label}</span>
+      <span className="mt-1 block">{children}</span>
+    </label>
+  )
+}
+
 export default function EbInspectionReportDraftClient({ initialReport }: Props) {
   const [sections, setSections] = useState(initialReport.reportDraft.sections)
+  const [structuredForm, setStructuredForm] = useState<StructuredReportFormState>(() =>
+    buildStructuredReportForm(initialReport.inspection)
+  )
   const [activeKey, setActiveKey] = useState(sections[0]?.key ?? '')
   const [message, setMessage] = useState<string | null>(null)
+  const [draftDirty, setDraftDirty] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [isStructuredPending, startStructuredTransition] = useTransition()
 
   const activeSection = useMemo(
     () => sections.find((section) => section.key === activeKey) ?? sections[0] ?? null,
@@ -57,9 +137,17 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
 
   function updateActiveSection(patch: Partial<EbReportDraftSection>) {
     if (!activeSection) return
+    setDraftDirty(true)
     setSections((current) =>
       current.map((section) => (section.key === activeSection.key ? { ...section, ...patch } : section))
     )
+  }
+
+  function updateStructuredField<K extends keyof StructuredReportFormState>(
+    field: K,
+    value: StructuredReportFormState[K]
+  ) {
+    setStructuredForm((current) => ({ ...current, [field]: value }))
   }
 
   function saveDraft() {
@@ -84,7 +172,55 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
       if (payload.reportDraft?.sections) {
         setSections(payload.reportDraft.sections)
       }
+      setDraftDirty(false)
       setMessage('Utlåtandeutkastet är sparat.')
+    })
+  }
+
+  function saveStructuredFields() {
+    if (draftDirty) {
+      setMessage('Spara utlåtandetexten innan du sparar utlåtandeuppgifter.')
+      return
+    }
+
+    setMessage(null)
+    startStructuredTransition(async () => {
+      const updateResponse = await fetch(
+        `/api/eb/projects/${initialReport.project.id}/inspections/${initialReport.inspection.inspectionId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...structuredForm,
+            requiresContinuedFinalInspection: booleanFromSelect(
+              structuredForm.requiresContinuedFinalInspection
+            ),
+            warrantyPeriodYears: structuredForm.warrantyPeriodYears
+              ? Number(structuredForm.warrantyPeriodYears)
+              : null,
+            afterInspectionRequested: booleanFromSelect(structuredForm.afterInspectionRequested),
+          }),
+        }
+      )
+      const updatePayload = (await updateResponse.json().catch(() => ({}))) as InspectionUpdateResponse
+      if (!updateResponse.ok) {
+        setMessage(updatePayload.error ?? 'Kunde inte spara utlåtandeuppgifter.')
+        return
+      }
+
+      const reportResponse = await fetch(
+        `/api/eb/projects/${initialReport.project.id}/inspections/${initialReport.inspection.inspectionId}/report-draft`
+      )
+      const reportPayload = (await reportResponse.json().catch(() => ({}))) as ReportDraftResponse
+      if (!reportResponse.ok || !reportPayload.report) {
+        setMessage(reportPayload.error ?? 'Uppgifterna sparades, men utlåtandeutkastet kunde inte laddas om.')
+        return
+      }
+
+      setSections(reportPayload.report.reportDraft.sections)
+      setStructuredForm(buildStructuredReportForm(reportPayload.report.inspection))
+      setDraftDirty(false)
+      setMessage('Utlåtandeuppgifterna är sparade och utkastet är uppdaterat.')
     })
   }
 
@@ -139,6 +275,175 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
           </div>
           {message ? <p className="mt-3 text-sm font-medium text-gray-700">{message}</p> : null}
         </header>
+
+        <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-800">
+                Utlåtandeuppgifter
+              </p>
+              <h2 className="mt-1 text-lg font-bold text-gray-950">Beslut och formella datum</h2>
+              <p className="mt-1 max-w-3xl text-sm text-gray-600">
+                Dessa fält styr flera avsnitt i utlåtandet och sparas på besiktningen.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={saveStructuredFields}
+              disabled={isStructuredPending}
+              className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Save size={16} />
+              {isStructuredPending ? 'Sparar' : 'Spara uppgifter'}
+            </button>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {fieldLabel(
+              'Besiktningsman utsedd av',
+              <select
+                value={structuredForm.inspectorAppointedBy}
+                onChange={(event) => updateStructuredField('inspectorAppointedBy', event.target.value)}
+                className={fieldClassName()}
+              >
+                <option value="">Ej satt</option>
+                <option value="client">Beställare</option>
+                <option value="parties_jointly">Parterna gemensamt</option>
+                <option value="contractor">Entreprenör</option>
+              </select>
+            )}
+            {fieldLabel(
+              'Beslut',
+              <select
+                value={structuredForm.approvalStatus}
+                onChange={(event) => updateStructuredField('approvalStatus', event.target.value)}
+                className={fieldClassName()}
+              >
+                <option value="">Ej satt</option>
+                <option value="approved">Godkänd</option>
+                <option value="not_approved">Ej godkänd</option>
+                <option value="partly_approved">Delvis godkänd</option>
+              </select>
+            )}
+            {fieldLabel(
+              'Kallelsemetod',
+              <input
+                value={structuredForm.invitationMethod}
+                onChange={(event) => updateStructuredField('invitationMethod', event.target.value)}
+                placeholder="E-post"
+                className={fieldClassName()}
+              />
+            )}
+            {fieldLabel(
+              'Kallelsedatum',
+              <input
+                type="date"
+                value={structuredForm.invitationDate}
+                onChange={(event) => updateStructuredField('invitationDate', event.target.value)}
+                className={fieldClassName()}
+              />
+            )}
+            <div className="md:col-span-2 xl:col-span-4">
+              {fieldLabel(
+                'Beslutets motivering',
+                <textarea
+                  value={structuredForm.approvalNote}
+                  onChange={(event) => updateStructuredField('approvalNote', event.target.value)}
+                  rows={3}
+                  className={`${fieldClassName()} leading-6`}
+                />
+              )}
+            </div>
+            {fieldLabel(
+              'Fortsatt slutbesiktning',
+              <select
+                value={structuredForm.requiresContinuedFinalInspection}
+                onChange={(event) =>
+                  updateStructuredField('requiresContinuedFinalInspection', event.target.value)
+                }
+                className={fieldClassName()}
+              >
+                <option value="">Ej satt</option>
+                <option value="true">Ja</option>
+                <option value="false">Nej</option>
+              </select>
+            )}
+            {fieldLabel(
+              'Garantitid',
+              <select
+                value={structuredForm.warrantyPeriodYears}
+                onChange={(event) => updateStructuredField('warrantyPeriodYears', event.target.value)}
+                className={fieldClassName()}
+              >
+                <option value="">Ej satt</option>
+                {Array.from({ length: 10 }, (_, index) => index + 1).map((year) => (
+                  <option key={year} value={year}>
+                    {year} år
+                  </option>
+                ))}
+              </select>
+            )}
+            {fieldLabel(
+              'Garantitidens slut',
+              <input
+                type="date"
+                value={structuredForm.warrantyEndDate}
+                onChange={(event) => updateStructuredField('warrantyEndDate', event.target.value)}
+                className={fieldClassName()}
+              />
+            )}
+            {fieldLabel(
+              'Fel avhjälpta senast',
+              <input
+                type="date"
+                value={structuredForm.defaultRemedyDeadline}
+                onChange={(event) => updateStructuredField('defaultRemedyDeadline', event.target.value)}
+                className={fieldClassName()}
+              />
+            )}
+            {fieldLabel(
+              'Efterbesiktning påkallad',
+              <select
+                value={structuredForm.afterInspectionRequested}
+                onChange={(event) => updateStructuredField('afterInspectionRequested', event.target.value)}
+                className={fieldClassName()}
+              >
+                <option value="">Ej satt</option>
+                <option value="true">Ja</option>
+                <option value="false">Nej</option>
+              </select>
+            )}
+            {fieldLabel(
+              'Efterbesiktning senast',
+              <input
+                type="date"
+                value={structuredForm.afterInspectionDueDate}
+                onChange={(event) => updateStructuredField('afterInspectionDueDate', event.target.value)}
+                className={fieldClassName()}
+              />
+            )}
+            {fieldLabel(
+              'Distributionsdatum',
+              <input
+                type="date"
+                value={structuredForm.reportDistributionDate}
+                onChange={(event) => updateStructuredField('reportDistributionDate', event.target.value)}
+                className={fieldClassName()}
+              />
+            )}
+            <label className="flex min-h-[4.1rem] items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm font-medium text-emerald-900">
+              <input
+                type="checkbox"
+                checked={structuredForm.afterInspectionNoticeInReport}
+                onChange={(event) =>
+                  updateStructuredField('afterInspectionNoticeInReport', event.target.checked)
+                }
+                className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+              />
+              Utlåtandet gäller som kallelse till efterbesiktning
+            </label>
+          </div>
+        </section>
 
         <div className="grid gap-5 lg:grid-cols-[22rem_minmax(0,1fr)]">
           <aside className="rounded-lg border border-gray-200 bg-white p-2 shadow-sm">
