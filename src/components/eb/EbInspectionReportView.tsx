@@ -61,15 +61,48 @@ function parseLabelLine(line: string) {
   }
 }
 
+function isMissingValue(value: string) {
+  return value.trim().toLocaleLowerCase('sv-SE') === 'ej angivet'
+}
+
+function isInstructionText(text: string) {
+  const normalized = normalizeReportText(text)
+  return (
+    normalized.startsWith('Ange ') ||
+    normalized.includes(' Komplettera ') ||
+    normalized.includes('Komplettera om ')
+  )
+}
+
+function printableReportLines(text: string) {
+  if (isInstructionText(text)) return []
+
+  return normalizeReportText(text)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line || isMissingValue(line)) return false
+      const row = parseLabelLine(line)
+      return !row || !isMissingValue(row.value)
+    })
+}
+
+function hasPrintableReportText(text: string) {
+  return printableReportLines(text).length > 0
+}
+
 function ReportText({ text }: { text: string }) {
-  const blocks = normalizeReportText(text).split(/\n{2,}/).map((block) => block.trim()).filter(Boolean)
+  const blocks = normalizeReportText(text)
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter((block) => hasPrintableReportText(block))
 
   if (blocks.length === 0) return null
 
   return (
     <div className="space-y-3 text-[13px] leading-5 text-gray-900">
       {blocks.map((block, blockIndex) => {
-        const lines = block.split('\n').map((line) => line.trim()).filter(Boolean)
+        const lines = printableReportLines(block)
         const labelRows = lines.map(parseLabelLine)
         const isDefinitionBlock = labelRows.length > 0 && labelRows.every(Boolean)
 
@@ -119,7 +152,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
       section.isRelevant &&
       section.key !== 'notes' &&
       section.status !== 'missing' &&
-      section.text.trim()
+      hasPrintableReportText(section.text)
   )
   const imagesByNoteId = new Map<string, EbNoteImage[]>()
   for (const image of report.images) {
@@ -170,6 +203,22 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
 
       <article className="eb-report-print-document mx-auto max-w-5xl bg-white px-10 py-8 shadow-sm print:shadow-none">
         <header className="border-b-2 border-gray-950 pb-5">
+          <div className="mb-6 flex min-h-14 items-start justify-between gap-6">
+            <div className="flex min-h-14 flex-1 items-start">
+              {report.branding.inspectorLogoUrl ? (
+                <img
+                  src={report.branding.inspectorLogoUrl}
+                  alt="Besiktningsmannens logotyp"
+                  className="max-h-14 max-w-56 object-contain"
+                />
+              ) : null}
+            </div>
+            <img
+              src={report.branding.besiktAppLogoUrl}
+              alt="BesiktApp"
+              className="h-10 w-auto object-contain"
+            />
+          </div>
           <h1 className="text-2xl font-bold tracking-normal text-gray-950">
             Utlåtande över {report.inspection.variantLabel.toLowerCase()}
           </h1>
