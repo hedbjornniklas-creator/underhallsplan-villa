@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
+import { isCustomerSelectableAddonKey } from '@/lib/assignments/addons'
 
 type ProfileRow = {
   id: string
@@ -288,7 +289,9 @@ export default function ObSettingsPage() {
       return activeOrgId
     }
 
-    const catalogRows = (catalogData ?? []) as AddonServiceRow[]
+    const catalogRows = ((catalogData ?? []) as AddonServiceRow[]).filter((service) =>
+      isCustomerSelectableAddonKey(service.key)
+    )
     if (catalogRows.length === 0) {
       setAddonRows([])
       setAddonLoading(false)

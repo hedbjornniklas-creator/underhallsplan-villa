@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, type ChangeEvent } from 'react'
+import { useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { ExternalLink, FileText, Image as ImageIcon, Loader2, Save, Trash2, Upload } from 'lucide-react'
 import type { EbAttachmentType, EbProjectAttachment } from '@/lib/eb/server'
 
@@ -64,14 +64,17 @@ function metadataInputClassName() {
 function UploadButton({
   type,
   busy,
+  disabled = false,
   onFile,
 }: {
   type: EbAttachmentType
   busy: boolean
+  disabled?: boolean
   onFile: (type: EbAttachmentType, file: File) => void
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const isImage = type === 'image'
+  const isDisabled = disabled || busy
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null
@@ -81,7 +84,7 @@ function UploadButton({
   }
 
   return (
-    <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50">
+    <label className={`inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 ${isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
       {busy ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
       {isImage ? 'Ladda upp bild' : 'Ladda upp handling'}
       <input
@@ -89,10 +92,78 @@ function UploadButton({
         type="file"
         className="sr-only"
         accept={isImage ? 'image/jpeg,image/png,image/webp,image/heic,image/heif' : '.pdf,.doc,.docx,.xls,.xlsx,.txt'}
-        disabled={busy}
+        disabled={isDisabled}
         onChange={handleChange}
       />
     </label>
+  )
+}
+
+function AttachmentDropZone({
+  type,
+  active,
+  disabled,
+  busy,
+  onActiveChange,
+  onFiles,
+}: {
+  type: EbAttachmentType
+  active: boolean
+  disabled: boolean
+  busy: boolean
+  onActiveChange: (type: EbAttachmentType | null) => void
+  onFiles: (type: EbAttachmentType, files: File[]) => void
+}) {
+  const isImage = type === 'image'
+
+  const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    if (!disabled) onActiveChange(type)
+  }
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    if (disabled) return
+    event.dataTransfer.dropEffect = 'copy'
+    onActiveChange(type)
+  }
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    onActiveChange(null)
+    if (disabled) return
+
+    const files = Array.from(event.dataTransfer.files ?? [])
+    if (files.length === 0) return
+    onFiles(type, files)
+  }
+
+  return (
+    <div
+      role="button"
+      tabIndex={-1}
+      aria-disabled={disabled}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={() => onActiveChange(null)}
+      onDrop={handleDrop}
+      className={`mb-3 flex min-h-24 items-center justify-center rounded-md border border-dashed px-3 py-4 text-center text-sm transition ${
+        active
+          ? 'border-emerald-500 bg-emerald-50 text-emerald-900'
+          : 'border-emerald-200 bg-white/70 text-gray-600'
+      } ${disabled ? 'opacity-60' : ''}`}
+    >
+      <div className="flex flex-col items-center gap-2">
+        {busy ? (
+          <Loader2 size={20} className="animate-spin text-emerald-700" />
+        ) : isImage ? (
+          <ImageIcon size={20} className="text-emerald-700" />
+        ) : (
+          <FileText size={20} className="text-emerald-700" />
+        )}
+        <span className="font-semibold">{isImage ? 'Släpp bilder här' : 'Släpp handlingar här'}</span>
+      </div>
+    </div>
   )
 }
 
@@ -105,6 +176,7 @@ export default function EbProjectAttachmentsPanel({
     () => buildAttachmentEditMap(initialAttachments)
   )
   const [uploadingType, setUploadingType] = useState<EbAttachmentType | null>(null)
+  const [draggingType, setDraggingType] = useState<EbAttachmentType | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -134,32 +206,41 @@ export default function EbProjectAttachmentsPanel({
     }))
   }
 
-  const handleUpload = async (attachmentType: EbAttachmentType, file: File) => {
+  const handleFilesUpload = async (attachmentType: EbAttachmentType, files: File[]) => {
     if (uploadingType) return
+    const uploadFiles = files.filter(Boolean)
+    if (uploadFiles.length === 0) return
 
     try {
       setUploadingType(attachmentType)
       setError(null)
-      const formData = new FormData()
-      formData.set('attachmentType', attachmentType)
-      formData.set('file', file)
 
-      const response = await fetch(`/api/eb/projects/${projectId}/attachments`, {
-        method: 'POST',
-        body: formData,
-      })
-      const payload = (await response.json().catch(() => ({}))) as AttachmentsResponse
+      for (const file of uploadFiles) {
+        const formData = new FormData()
+        formData.set('attachmentType', attachmentType)
+        formData.set('file', file)
 
-      if (!response.ok || !payload.attachments) {
-        throw new Error(payload.error ?? 'Kunde inte ladda upp bilaga.')
+        const response = await fetch(`/api/eb/projects/${projectId}/attachments`, {
+          method: 'POST',
+          body: formData,
+        })
+        const payload = (await response.json().catch(() => ({}))) as AttachmentsResponse
+
+        if (!response.ok || !payload.attachments) {
+          throw new Error(payload.error ?? 'Kunde inte ladda upp bilaga.')
+        }
+
+        replaceAttachments(payload.attachments)
       }
-
-      replaceAttachments(payload.attachments)
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp bilaga.')
     } finally {
       setUploadingType(null)
     }
+  }
+
+  const handleUpload = (attachmentType: EbAttachmentType, file: File) => {
+    void handleFilesUpload(attachmentType, [file])
   }
 
   const handleSaveMetadata = async (attachment: EbProjectAttachment) => {
@@ -221,8 +302,18 @@ export default function EbProjectAttachmentsPanel({
           <p className="text-xs text-gray-600">{attachments.length} st bilagor</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <UploadButton type="document" busy={uploadingType === 'document'} onFile={handleUpload} />
-          <UploadButton type="image" busy={uploadingType === 'image'} onFile={handleUpload} />
+          <UploadButton
+            type="document"
+            busy={uploadingType === 'document'}
+            disabled={Boolean(uploadingType && uploadingType !== 'document')}
+            onFile={handleUpload}
+          />
+          <UploadButton
+            type="image"
+            busy={uploadingType === 'image'}
+            disabled={Boolean(uploadingType && uploadingType !== 'image')}
+            onFile={handleUpload}
+          />
         </div>
       </div>
 
@@ -236,6 +327,14 @@ export default function EbProjectAttachmentsPanel({
             <FileText size={17} className="text-emerald-700" />
             Handlingar
           </div>
+          <AttachmentDropZone
+            type="document"
+            active={draggingType === 'document'}
+            disabled={Boolean(uploadingType)}
+            busy={uploadingType === 'document'}
+            onActiveChange={setDraggingType}
+            onFiles={(type, files) => void handleFilesUpload(type, files)}
+          />
           {documents.length === 0 ? (
             <div className="rounded-md border border-dashed border-emerald-200 bg-white/70 px-3 py-6 text-center text-sm text-gray-600">
               Inga handlingar uppladdade.
@@ -356,6 +455,14 @@ export default function EbProjectAttachmentsPanel({
             <ImageIcon size={17} className="text-emerald-700" />
             Bilder
           </div>
+          <AttachmentDropZone
+            type="image"
+            active={draggingType === 'image'}
+            disabled={Boolean(uploadingType)}
+            busy={uploadingType === 'image'}
+            onActiveChange={setDraggingType}
+            onFiles={(type, files) => void handleFilesUpload(type, files)}
+          />
           {images.length === 0 ? (
             <div className="rounded-md border border-dashed border-emerald-200 bg-white/70 px-3 py-6 text-center text-sm text-gray-600">
               Inga bilder uppladdade.
