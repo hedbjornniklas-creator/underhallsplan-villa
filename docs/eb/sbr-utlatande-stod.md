@@ -1,6 +1,6 @@
 # EB - SBR-utlåtande, stödmatris
 
-Senast uppdaterad: 2026-05-15
+Senast uppdaterad: 2026-05-22
 
 Syfte: hålla koll på vilka uppgifter som krävs för ett SBR-likt utlåtande för slutbesiktning och var de stöds i Hushub. Målet är att färdigt utlåtande inte ska innehålla instruktionstext eller "Ange ..."-texter.
 
@@ -10,7 +10,8 @@ Syfte: hålla koll på vilka uppgifter som krävs för ett SBR-likt utlåtande f
 - Besiktningsspecifika uppgifter fylls i på besiktning/runda/kallelse.
 - Noteringar fylls i i `Granska` eller mobil runda.
 - Formella utlåtandepunkter fylls i i `Utlåtandeutkast`.
-- Färdigt utlåtande skriver bara ut relevanta sektioner som inte har status `Saknas`.
+- Färdigt utlåtande får skriva ut formella standardtexter som anger att uppgift inte redovisats, inte fastställts eller inte är aktuell.
+- Färdigt utlåtande får inte skriva ut instruktionstext som börjar med `Ange`, `Komplettera` eller motsvarande redigeringshjälp.
 
 ## Datastöd
 
@@ -43,7 +44,7 @@ All nödvändig information ska antingen finnas som strukturerat fält eller som
 | Uppgift | Placering | Kommentar |
 |---|---|---|
 | Besiktningsman som utför utlåtandet | Hämtas från inloggad användares settings/profil | Ska inte matas in manuellt i varje utlåtande. |
-| Certifiering och SBR-medlemskap | Hämtas från inloggad användares settings/profil | Profilen behöver bära certifiering, nummer och eventuell SBR-koppling. |
+| Certifiering och SBR-medlemskap | Hämtas från inloggad användares settings/profil | Profilen behöver bära certifiering, nummer och eventuell SBR-koppling. ÖB-specifika formuleringar ska inte visas i EB-utlåtandet. |
 | Vem som utsett besiktningsmannen | Besiktningen | Val: `Beställare`, `Parterna gemensamt`, `Entreprenör`. |
 | Biträdande besiktningsmän | Avvaktas | Ska inte byggas nu. |
 | Partsombud/för talan för beställare | Besiktningen, deltagarlistan | Fylls i under besiktningen. |
@@ -113,11 +114,14 @@ EB-texterna ligger här:
 - `src/content/standardtexts/eb/EB_REPORT_APPROVAL_DECISION.txt`
 - `src/content/standardtexts/eb/EB_REPORT_CONTINUED_FINAL_INSPECTION.txt`
 - `src/content/standardtexts/eb/EB_REPORT_WARRANTY_END.txt`
+- `src/content/standardtexts/eb/EB_REPORT_RECLAMATION_NOTICE.txt`
 - `src/content/standardtexts/eb/EB_REPORT_REMEDY_DEADLINE.txt`
+- `src/content/standardtexts/eb/EB_REPORT_REMEDY_COST.txt`
 - `src/content/standardtexts/eb/EB_REPORT_AFTER_INSPECTION.txt`
 - `src/content/standardtexts/eb/EB_REPORT_OTHER_NOTES.txt`
 - `src/content/standardtexts/eb/EB_REPORT_DISTRIBUTION_LIST_MISSING.txt`
 - `src/content/standardtexts/eb/EB_REPORT_SIGNATURE_CERTIFICATE.txt`
+- `src/content/standardtexts/eb/EB_REPORT_NOTE_LEGEND.txt`
 
 Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de ska inte vara en kopia av SBR:s malltext.
 
@@ -144,7 +148,9 @@ Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de s
 | Besked om godkännande (18) | Redigerbart utkast | `report_draft.approval_decision` |
 | Fortsatt/ny slutbesiktning (19) | Redigerbart utkast | `report_draft.continued_final_inspection` |
 | Garantitidens slut (20) | Redigerbart utkast | `report_draft.warranty_end` |
+| Reklamationsfrister | Standardtext + redigerbart utkast vid behov | `report_draft.reclamation_notice` |
 | När fel ska vara avhjälpta (24) | Redigerbart utkast | `report_draft.remedy_deadline` |
+| Kostnad för avhjälpande | Standardtext + redigerbart utkast vid behov | `report_draft.remedy_cost` |
 | Efterbesiktning (24) | Redigerbart utkast | `report_draft.after_inspection` |
 | Övriga noteringar | Redigerbart utkast | `report_draft.other_notes` |
 | Sändlista (25) | Delvis strukturerat | `eb_participants`, `report_draft.distribution_list` |
@@ -163,4 +169,4 @@ Detta är inte blockerande för att kunna fylla i ett komplett utlåtande, men b
 
 ## Regel för utskrift
 
-Färdigt utlåtande ska inte skriva ut sektioner med status `Saknas`. Sektioner i `Utkast` får skrivas ut först när texten har granskats och inte längre är ren instruktionstext.
+Färdigt utlåtande ska aldrig skriva ut instruktionstext. Om en uppgift saknas men avsnittet bör framgå i ett komplett utlåtande ska standardtexten vara en formell uppgift, till exempel att något inte har redovisats, inte fastställts eller inte är aktuellt. Sektioner i `Utkast` får alltså skrivas ut när texten är en sådan formell standardtext eller när användaren har granskat och ersatt den med faktisk information.

@@ -2551,6 +2551,31 @@ function ebDeductionReportRow(round: EbInspectionRound, note: EbNote) {
   ])
 }
 
+function isReportInstructionText(text: string | null | undefined) {
+  const normalized = normalizeText(String(text ?? '').replace(/\r\n/g, '\n').replace(/\\n/g, '\n'))
+  if (!normalized) return false
+  return (
+    normalized.startsWith('Ange ') ||
+    normalized.includes(' Komplettera ') ||
+    normalized.includes('Komplettera om ')
+  )
+}
+
+function shouldKeepStoredReportSection(
+  existing: EbReportDraftSection | undefined,
+  fallback: EbReportDraftSection
+): existing is EbReportDraftSection {
+  if (!existing) return false
+  if (isReportInstructionText(existing.text)) return false
+  if (existing.status === 'missing' && fallback.status !== 'missing') return false
+  return true
+}
+
+function isObCertificationText(value: string | null | undefined) {
+  const normalized = normalizeText(value)?.toLocaleLowerCase('sv-SE') ?? ''
+  return normalized.includes('överlåtelse') || normalized.includes('overlatelse')
+}
+
 function buildEbReportDraft(input: {
   round: EbInspectionRound
   participants: EbInvitationParticipant[]
@@ -2560,6 +2585,7 @@ function buildEbReportDraft(input: {
 }): EbReportDraft {
   const { round, participants, attachments, inspectorText, storedDraft } = input
   const now = new Date().toISOString()
+  const today = now.slice(0, 10)
   const existingByKey = new Map(storedDraft.sections.map((section) => [section.key, section]))
   const noteCount = round.notes.length
   const notAccessibleNotes = round.notes.filter((note) => note.statusKey === 'not_accessible')
@@ -2609,7 +2635,7 @@ function buildEbReportDraft(input: {
       title: 'Besiktningens omfattning',
       sbrPoint: '2',
       source: 'standard_text',
-      status: hasText(round.project.objectDescription) ? 'complete' : 'missing',
+      status: hasText(round.project.objectDescription) ? 'complete' : 'draft',
       isRelevant: true,
       text: reportList([
         round.project.objectDescription,
@@ -2680,12 +2706,15 @@ function buildEbReportDraft(input: {
       title: 'Sättet för kallelse',
       sbrPoint: '7',
       source: 'inspection',
-      status: round.inspection.invitationDate || round.inspection.invitationSentAt ? 'complete' : 'missing',
+      status: round.inspection.invitationDate || round.inspection.invitationSentAt ? 'complete' : 'draft',
       isRelevant: true,
-      text: reportList([
-        optionalReportLine('Kallelsemetod', round.inspection.invitationMethod),
-        optionalReportLine('Kallelsedatum', round.inspection.invitationDate ?? round.inspection.invitationSentAt),
-      ]),
+      text:
+        round.inspection.invitationMethod || round.inspection.invitationDate || round.inspection.invitationSentAt
+          ? reportList([
+              optionalReportLine('Kallelsemetod', round.inspection.invitationMethod),
+              optionalReportLine('Kallelsedatum', round.inspection.invitationDate ?? round.inspection.invitationSentAt),
+            ])
+          : ebStandardText('EB_REPORT_SUMMONS_MISSING'),
       updatedAt: null,
     },
     {
@@ -2703,7 +2732,7 @@ function buildEbReportDraft(input: {
       title: 'Tidigare besiktningar och provningar',
       sbrPoint: '9',
       source: 'manual',
-      status: 'missing',
+      status: 'complete',
       isRelevant: true,
       text: ebStandardText('EB_REPORT_PREVIOUS_INSPECTIONS_TESTS'),
       updatedAt: null,
@@ -2713,7 +2742,7 @@ function buildEbReportDraft(input: {
       title: 'Entreprenadhandlingar och andra överenskommelser',
       sbrPoint: '10',
       source: 'project',
-      status: includedDocuments.length > 0 ? 'complete' : 'missing',
+      status: includedDocuments.length > 0 ? 'complete' : 'draft',
       isRelevant: true,
       text: contractDocuments,
       updatedAt: null,
@@ -2736,7 +2765,7 @@ function buildEbReportDraft(input: {
       title: 'Delar besiktigade endast genom handling',
       sbrPoint: '12',
       source: 'manual',
-      status: 'missing',
+      status: 'complete',
       isRelevant: true,
       text: ebStandardText('EB_REPORT_DOCUMENTATION_ONLY'),
       updatedAt: null,
@@ -2746,7 +2775,7 @@ function buildEbReportDraft(input: {
       title: 'Bilagor och littera',
       sbrPoint: null,
       source: 'project',
-      status: includedAttachments.length > 0 ? 'complete' : 'missing',
+      status: includedAttachments.length > 0 ? 'complete' : 'draft',
       isRelevant: true,
       text: appendices,
       updatedAt: null,
@@ -2773,7 +2802,10 @@ function buildEbReportDraft(input: {
       isRelevant: true,
       text:
         round.markers.length > 0
-          ? round.markers.map((marker) => `${marker.key}: ${marker.label}`).join('\n')
+          ? reportList([
+              round.markers.map((marker) => `${marker.key}: ${marker.label}`).join('\n'),
+              ebStandardText('EB_REPORT_NOTE_LEGEND'),
+            ])
           : ebStandardText('EB_REPORT_MARKER_LEGEND_MISSING'),
       updatedAt: null,
     },
@@ -2782,7 +2814,7 @@ function buildEbReportDraft(input: {
       title: 'Särskild utredning',
       sbrPoint: '13-17, 23',
       source: 'notes',
-      status: specialInvestigationNotes.length > 0 ? 'complete' : 'missing',
+      status: specialInvestigationNotes.length > 0 ? 'complete' : 'draft',
       isRelevant: true,
       text:
         specialInvestigationNotes.length > 0
@@ -2795,7 +2827,7 @@ function buildEbReportDraft(input: {
       title: 'Nedsättning',
       sbrPoint: '13-17, 23',
       source: 'notes',
-      status: deductionNotes.length > 0 ? 'complete' : 'missing',
+      status: deductionNotes.length > 0 ? 'complete' : 'draft',
       isRelevant: true,
       text:
         deductionNotes.length > 0
@@ -2818,12 +2850,14 @@ function buildEbReportDraft(input: {
       title: 'Besked om godkännande',
       sbrPoint: '18',
       source: 'manual',
-      status: round.inspection.approvalStatus ? 'complete' : 'missing',
+      status: round.inspection.approvalStatus ? 'complete' : 'draft',
       isRelevant: true,
-      text: reportList([
-        optionalReportLine('Beslut', approvalStatusLabel(round.inspection.approvalStatus)),
-        round.inspection.approvalNote,
-      ]),
+      text: round.inspection.approvalStatus
+        ? reportList([
+            optionalReportLine('Beslut', approvalStatusLabel(round.inspection.approvalStatus)),
+            round.inspection.approvalNote,
+          ])
+        : ebStandardText('EB_REPORT_APPROVAL_DECISION'),
       updatedAt: null,
     },
     {
@@ -2832,7 +2866,7 @@ function buildEbReportDraft(input: {
       sbrPoint: '19',
       source: 'standard_text',
       status:
-        typeof round.inspection.requiresContinuedFinalInspection === 'boolean' ? 'complete' : 'missing',
+        typeof round.inspection.requiresContinuedFinalInspection === 'boolean' ? 'complete' : 'draft',
       isRelevant: true,
       text: optionalReportLine(
         'Fortsatt slutbesiktning krävs',
@@ -2845,14 +2879,27 @@ function buildEbReportDraft(input: {
       title: 'Garantitidens slut',
       sbrPoint: '20',
       source: 'manual',
-      status: round.inspection.warrantyPeriodYears || round.inspection.warrantyEndDate ? 'complete' : 'missing',
+      status: round.inspection.warrantyPeriodYears || round.inspection.warrantyEndDate ? 'complete' : 'draft',
       isRelevant: true,
-      text: reportList([
-        round.inspection.warrantyPeriodYears
-          ? reportLine('Garantitid', `${round.inspection.warrantyPeriodYears} år`)
-          : null,
-        optionalReportLine('Garantitidens slut', round.inspection.warrantyEndDate),
-      ]),
+      text:
+        round.inspection.warrantyPeriodYears || round.inspection.warrantyEndDate
+          ? reportList([
+              round.inspection.warrantyPeriodYears
+                ? reportLine('Garantitid', `${round.inspection.warrantyPeriodYears} år`)
+                : null,
+              optionalReportLine('Garantitidens slut', round.inspection.warrantyEndDate),
+            ])
+          : ebStandardText('EB_REPORT_WARRANTY_END'),
+      updatedAt: null,
+    },
+    {
+      key: 'reclamation_notice',
+      title: 'Reklamationsfrister',
+      sbrPoint: null,
+      source: 'standard_text',
+      status: 'complete',
+      isRelevant: true,
+      text: ebStandardText('EB_REPORT_RECLAMATION_NOTICE'),
       updatedAt: null,
     },
     {
@@ -2860,10 +2907,20 @@ function buildEbReportDraft(input: {
       title: 'När fel ska vara avhjälpta',
       sbrPoint: '24',
       source: 'manual',
-      status: round.inspection.defaultRemedyDeadline ? 'complete' : 'missing',
+      status: round.inspection.defaultRemedyDeadline ? 'complete' : 'draft',
       isRelevant: true,
       text: optionalReportLine('Fel ska vara avhjälpta senast', round.inspection.defaultRemedyDeadline) ??
         ebStandardText('EB_REPORT_REMEDY_DEADLINE'),
+      updatedAt: null,
+    },
+    {
+      key: 'remedy_cost',
+      title: 'Kostnad för avhjälpande',
+      sbrPoint: '24',
+      source: 'standard_text',
+      status: 'complete',
+      isRelevant: true,
+      text: ebStandardText('EB_REPORT_REMEDY_COST'),
       updatedAt: null,
     },
     {
@@ -2871,15 +2928,18 @@ function buildEbReportDraft(input: {
       title: 'Efterbesiktning',
       sbrPoint: '24',
       source: 'manual',
-      status: typeof round.inspection.afterInspectionRequested === 'boolean' ? 'complete' : 'missing',
+      status: typeof round.inspection.afterInspectionRequested === 'boolean' ? 'complete' : 'draft',
       isRelevant: true,
-      text: reportList([
-        optionalReportLine('Efterbesiktning påkallad', yesNoLabel(round.inspection.afterInspectionRequested)),
-        optionalReportLine('Efterbesiktning senast', round.inspection.afterInspectionDueDate),
-        round.inspection.afterInspectionNoticeInReport
-          ? ebStandardText('EB_REPORT_AFTER_INSPECTION')
-          : null,
-      ]),
+      text:
+        typeof round.inspection.afterInspectionRequested === 'boolean'
+          ? reportList([
+              optionalReportLine('Efterbesiktning påkallad', yesNoLabel(round.inspection.afterInspectionRequested)),
+              optionalReportLine('Efterbesiktning senast', round.inspection.afterInspectionDueDate),
+              round.inspection.afterInspectionNoticeInReport
+                ? ebStandardText('EB_REPORT_AFTER_INSPECTION')
+                : null,
+            ])
+          : 'Efterbesiktning har inte påkallats vid tidpunkten för utlåtandets upprättande.',
       updatedAt: null,
     },
     {
@@ -2887,7 +2947,7 @@ function buildEbReportDraft(input: {
       title: 'Övriga noteringar',
       sbrPoint: null,
       source: 'manual',
-      status: 'missing',
+      status: 'complete',
       isRelevant: true,
       text: ebStandardText('EB_REPORT_OTHER_NOTES'),
       updatedAt: null,
@@ -2897,7 +2957,7 @@ function buildEbReportDraft(input: {
       title: 'Sändlista',
       sbrPoint: '25',
       source: 'participants',
-      status: reportRecipientRows.some((row) => row.includes('@')) ? 'complete' : 'missing',
+      status: reportRecipientRows.length > 0 ? 'complete' : 'draft',
       isRelevant: true,
       text: reportList([
         optionalReportLine('Distributionsdatum', round.inspection.reportDistributionDate),
@@ -2912,9 +2972,13 @@ function buildEbReportDraft(input: {
       title: 'Underskrift och certifiering',
       sbrPoint: null,
       source: 'manual',
-      status: 'missing',
+      status: hasText(inspectorText) ? 'complete' : 'draft',
       isRelevant: true,
-      text: ebStandardText('EB_REPORT_SIGNATURE_CERTIFICATE'),
+      text: reportList([
+        ebStandardText('EB_REPORT_SIGNATURE_CERTIFICATE'),
+        inspectorText,
+        optionalReportLine('Datum', round.inspection.reportDistributionDate ?? today),
+      ]),
       updatedAt: null,
     },
   ]
@@ -2926,15 +2990,16 @@ function buildEbReportDraft(input: {
       if (section.key === 'conflict_of_interest' && !conflictOfInterestRelevant) {
         return section
       }
-      return existing
-        ? {
-            ...section,
-            status: existing.status,
-            isRelevant: existing.isRelevant,
-            text: existing.text,
-            updatedAt: existing.updatedAt ?? storedDraft.updatedAt ?? now,
-          }
-        : section
+      if (!shouldKeepStoredReportSection(existing, section)) {
+        return section
+      }
+      return {
+        ...section,
+        status: existing.status,
+        isRelevant: existing.isRelevant,
+        text: existing.text,
+        updatedAt: existing.updatedAt ?? storedDraft.updatedAt ?? now,
+      }
     }),
   }
 }
@@ -3138,14 +3203,18 @@ async function buildInspectorReportText(input: {
       certification_number: inspector?.certification_number ?? null,
     },
   })
+  const certificationName = isObCertificationText(summary.status_name) ? null : summary.status_name
+  const membershipName = isObCertificationText(summary.membership_name) ? null : summary.membership_name
 
   return [
     inspector?.full_name ? reportLine('Besiktningsman', inspector.full_name) : null,
     inspector?.email ? reportLine('E-post', inspector.email) : null,
-    summary.status_name ? reportLine('Certifiering', summary.status_name) : null,
-    summary.certification_number ? reportLine('Certifikatnummer', summary.certification_number) : null,
-    summary.membership_name ? reportLine('Medlemskap', summary.membership_name) : null,
-    summary.membership_number ? reportLine('Medlemsnummer', summary.membership_number) : null,
+    certificationName ? reportLine('Certifiering', certificationName) : null,
+    certificationName && summary.certification_number
+      ? reportLine('Certifikatnummer', summary.certification_number)
+      : null,
+    membershipName ? reportLine('Medlemskap', membershipName) : null,
+    membershipName && summary.membership_number ? reportLine('Medlemsnummer', summary.membership_number) : null,
   ]
     .map(normalizeText)
     .filter(Boolean)

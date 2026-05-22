@@ -1,1 +1,1 @@
-Ange hur kallelse har skett, när den skickades och vilka som kallades.
+Uppgift om kallelsemetod, kallelsedatum och kallade mottagare har inte angetts.
