@@ -47,6 +47,7 @@ export type EbInspectionSummary = {
 export type EbProjectListItem = {
   id: string
   orgId: string
+  ownerProfileId: string
   propertyId: string | null
   title: string
   contractName: string | null
@@ -269,6 +270,7 @@ export type SaveEbReportDraftInput = {
 type EbProjectRow = {
   id: string
   org_id: string
+  owner_profile_id: string
   property_id: string | null
   title: string
   contract_name: string | null
@@ -604,9 +606,16 @@ function resolvePublicMediaUrl(path: string | null | undefined) {
   const trimmed = normalizeText(path)
   if (!trimmed) return null
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (trimmed.startsWith('/storage/')) return base ? `${base}${trimmed}` : trimmed
+  if (trimmed.startsWith('storage/')) return base ? `${base}/${trimmed}` : `/${trimmed}`
   if (trimmed.startsWith('/')) return trimmed
 
   return createSupabaseAdminClient().storage.from(PROFILE_MEDIA_BUCKET).getPublicUrl(trimmed).data.publicUrl
+}
+
+function resolveProfileLogoUrl(profile: ProfileContactRow | null | undefined) {
+  return resolvePublicMediaUrl(profile?.logo_path ?? profile?.logo_url)
 }
 
 function normalizeDate(value: string | null | undefined) {
@@ -799,6 +808,7 @@ function mapProject(
   return {
     id: project.id,
     orgId: project.org_id,
+    ownerProfileId: project.owner_profile_id,
     propertyId: project.property_id ?? null,
     title: project.title,
     contractName: project.contract_name ?? null,
@@ -829,7 +839,7 @@ async function fetchProjectsByOrg(orgId: string, projectId?: string) {
   let query = admin
     .from('eb_projects')
     .select(
-      'id,org_id,property_id,title,contract_name,object_description,property_designation,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,contractor_name,contractor_org_no,status,created_at,updated_at'
+      'id,org_id,owner_profile_id,property_id,title,contract_name,object_description,property_designation,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,contractor_name,contractor_org_no,status,created_at,updated_at'
     )
     .eq('org_id', orgId)
     .order('updated_at', { ascending: false })
@@ -1328,12 +1338,18 @@ export async function getEbInspectionReport(input: {
     profileId: input.requestedByUserId,
     inspector: inspectorProfile,
   })
+  const inspectorLogoUrl = resolveProfileLogoUrl(inspectorProfile)
+  let ownerLogoUrl: string | null = null
+  if (!inspectorLogoUrl && round.project.ownerProfileId !== input.requestedByUserId) {
+    const ownerProfile = await getProfileContact(round.project.ownerProfileId)
+    ownerLogoUrl = resolveProfileLogoUrl(ownerProfile)
+  }
 
   return {
     ...round,
     participants: resolvedParticipants,
     branding: {
-      inspectorLogoUrl: resolvePublicMediaUrl(inspectorProfile?.logo_path ?? inspectorProfile?.logo_url),
+      inspectorLogoUrl: inspectorLogoUrl ?? ownerLogoUrl,
       besiktAppLogoUrl: BESIKTAPP_REPORT_LOGO_SRC,
     },
     reportDraft: buildEbReportDraft({
