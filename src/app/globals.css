@@ -25,6 +25,10 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+body.ob-round-fullscreen [data-app-topbar="true"] {
+  display: none;
+}
+
 /* Print note: browser headers/footers (date/url/page number) are controlled in the print dialog. */
 @media print {
   @page {

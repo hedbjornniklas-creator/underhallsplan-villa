@@ -452,6 +452,14 @@ export default function InspectionDetailPage() {
   }, [activeSection])
 
   useEffect(() => {
+    document.body.classList.toggle('ob-round-fullscreen', activeSection === 'runda')
+
+    return () => {
+      document.body.classList.remove('ob-round-fullscreen')
+    }
+  }, [activeSection])
+
+  useEffect(() => {
     if (!mobileMenuOpen) return
 
     const previousOverflow = document.body.style.overflow
@@ -490,7 +498,11 @@ export default function InspectionDetailPage() {
 
   return (
     <Protected>
-      <main className="relative min-h-full overflow-hidden px-2 pb-24 pt-3 sm:px-3 md:p-6">
+      <main
+        className={`relative min-h-full overflow-hidden ${
+          activeSection === 'runda' ? 'p-0' : 'px-2 pb-24 pt-3 sm:px-3 md:p-6'
+        }`}
+      >
         <div
           className="pointer-events-none absolute inset-0"
           style={{
@@ -500,7 +512,11 @@ export default function InspectionDetailPage() {
         />
         <div className="pointer-events-none absolute inset-0 bg-white/8" />
 
-        <div className="relative mx-auto w-full max-w-7xl space-y-3 md:space-y-4">
+        <div
+          className={`relative mx-auto w-full ${
+            activeSection === 'runda' ? 'max-w-none space-y-0' : 'max-w-7xl space-y-3 md:space-y-4'
+          }`}
+        >
           {activeSection !== 'runda' ? (
             <div className="flex items-center justify-between gap-2 rounded-full border border-white/45 bg-white/90 px-2.5 py-2 shadow-lg ring-1 ring-black/5 md:hidden">
               <button

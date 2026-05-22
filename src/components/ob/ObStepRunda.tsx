@@ -964,6 +964,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     if (!saved?.id) return
     setRooms(prev => [...prev, saved].sort(sortRooms))
     setActiveRoomId(saved.id)
+    setRoomDialogOpen(true)
     setNewRoomLabel('')
     await ensureDefaultInteriorControlItems(saved)
   }
@@ -1835,7 +1836,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   }
 
   return (
-    <div className="-m-2 min-h-[calc(100vh-10rem)] space-y-4 bg-white p-2 md:-m-4 md:p-4">
+    <div className="min-h-dvh space-y-4 bg-white p-2 md:p-4">
       {isInspectionLocked ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           Besiktningen är låst. ÖB-rundan kan läsas men inte ändras.
@@ -1998,7 +1999,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
   function renderRoomListBox() {
     return (
-      <div className="space-y-3 rounded-2xl border-2 border-sky-200 bg-white p-3 shadow-lg ring-1 ring-sky-100 md:p-4">
+      <div className="space-y-3">
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-xl border border-sky-300 bg-sky-50/70 p-2.5 shadow-sm">
             <div className="space-y-2">
@@ -2057,7 +2058,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
   function renderExteriorPicker() {
     return (
-      <div className="grid gap-2 rounded-2xl border border-sky-200 bg-white p-3 shadow-lg ring-1 ring-sky-100 sm:grid-cols-2 md:p-4 lg:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {exteriorItems.map(item => (
           <button
             key={item.id}

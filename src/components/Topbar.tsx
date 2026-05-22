@@ -152,6 +152,7 @@ export default function Topbar() {
 
   return (
     <header
+      data-app-topbar="true"
       className={`sticky top-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-sm transition-[transform,box-shadow] duration-200 ease-out md:translate-y-0 ${
         isMobileCompact ? '-translate-y-full shadow-none' : 'translate-y-0'
       }`}
