@@ -3162,7 +3162,6 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
               <RoomControlPointsSection
                 room={room}
                 collapsedStorageKey={`ob:insida:collapsed:${inspection.id}:room:${room.id}`}
-                inspectionSide={inspectionSide}
                 items={roomControlItems}
                 onUpdateItem={updateControlItem}
                 onDeleteItem={deleteControlItem}
@@ -3831,7 +3830,6 @@ function ControlItemImagesSection({
 type RoomControlPointsSectionProps = {
   room: InteriorRoom
   collapsedStorageKey: string
-  inspectionSide: InspectionSide
   items: InspectionControlItem[]
   isInspectionLocked: boolean
   onUpdateItem: (itemId: string, patch: Partial<InspectionControlItem>) => void
@@ -3857,7 +3855,6 @@ type RoomControlPointsSectionProps = {
 function RoomControlPointsSection({
   room,
   collapsedStorageKey,
-  inspectionSide,
   items,
   isInspectionLocked,
   onUpdateItem,
@@ -4118,10 +4115,7 @@ function RoomControlPointsSection({
           return
         }
 
-        const points = (data ?? []) as ControlPointLite[]
-        setSearchResults(
-          points.filter(cp => controlPointAppliesToInspectionSide(cp, inspectionSide))
-        )
+        setSearchResults((data ?? []) as ControlPointLite[])
         return
       }
 
@@ -4183,12 +4177,8 @@ function RoomControlPointsSection({
         {}
       )
 
-      const points = (controlPointsData ?? []) as ControlPointLite[]
-      const filteredPoints = points.filter(cp =>
-        controlPointAppliesToInspectionSide(cp, inspectionSide)
-      )
       setSearchResults(
-        filteredPoints.map(cp => {
+        ((controlPointsData ?? []) as ControlPointLite[]).map(cp => {
           const outcomeLabels = outcomeLabelsByControlPointId[cp.id] || []
           return {
             ...cp,

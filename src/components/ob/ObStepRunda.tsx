@@ -433,7 +433,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   const activeRoomImages = useMemo(() => {
     if (!activeRoom?.id) return []
     return images
-      .filter(image => image.origin_interior_room_id === activeRoom.id)
+      .filter(image => image.origin_interior_room_id === activeRoom.id && !image.control_item_id)
       .sort((a, b) => {
         const left = new Date(a.captured_at ?? a.created_at ?? 0).getTime()
         const right = new Date(b.captured_at ?? b.created_at ?? 0).getTime()
@@ -444,7 +444,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   const activeExteriorImages = useMemo(() => {
     if (!activeExteriorItem?.id) return []
     return images
-      .filter(image => image.origin_exterior_item_id === activeExteriorItem.id)
+      .filter(image => image.origin_exterior_item_id === activeExteriorItem.id && !image.control_item_id)
       .sort((a, b) => {
         const left = new Date(a.captured_at ?? a.created_at ?? 0).getTime()
         const right = new Date(b.captured_at ?? b.created_at ?? 0).getTime()
@@ -1722,7 +1722,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
           .eq('is_active', true)
           .or(`title.ilike.${like},label.ilike.${like},key.ilike.${like},description.ilike.${like}`)
         if (searchError) throw searchError
-        setSearchResults(filterSearchResults((data ?? []) as ControlPointLite[]))
+        setSearchResults((data ?? []) as ControlPointLite[])
         return
       }
 
@@ -1762,7 +1762,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         return acc
       }, {})
       setSearchResults(
-        filterSearchResults((data ?? []) as ControlPointLite[]).map(cp => {
+        ((data ?? []) as ControlPointLite[]).map(cp => {
           const outcomeLabels = outcomeLabelsByControlPointId[cp.id] || []
           return {
             ...cp,
@@ -1802,7 +1802,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       }
 
       const payload = await response.json() as { results?: ControlPointLite[] }
-      setSearchResults(filterSearchResults(payload.results ?? []))
+      setSearchResults(payload.results ?? [])
     } catch (e) {
       console.error('AI control point search failed:', e)
       setSearchResults([])
@@ -1811,19 +1811,6 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       setSearching(false)
     }
   }
-
-  const filterSearchResults = (results: ControlPointLite[]) =>
-    results.filter(cp => {
-      if (area === 'interior') {
-        return (
-          cp.scope === 'interior' &&
-          !!activeRoom &&
-          controlPointAppliesToInspectionSide(cp, inspectionSide)
-        )
-      }
-      if (!activeExteriorItem) return cp.scope === 'exterior'
-      return cp.scope === 'exterior' && cp.exterior_item_key === activeExteriorItem.key
-    })
 
   const toggleImageSelection = (imageId: string) => {
     setSelectedImageIds(prev => {

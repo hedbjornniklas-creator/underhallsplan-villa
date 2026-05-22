@@ -501,33 +501,35 @@ export default function InspectionDetailPage() {
         <div className="pointer-events-none absolute inset-0 bg-white/8" />
 
         <div className="relative mx-auto w-full max-w-7xl space-y-3 md:space-y-4">
-          <div className="flex items-center justify-between gap-2 rounded-full border border-white/45 bg-white/90 px-2.5 py-2 shadow-lg ring-1 ring-black/5 md:hidden">
-            <button
-              type="button"
-              onClick={handleBackToInspections}
-              aria-label="Tillbaka"
-              title="Tillbaka"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-            >
-              <ArrowLeft size={17} strokeWidth={2} />
-            </button>
-            <div className="min-w-0 flex-1 text-center">
-              <div className="truncate text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                Överlåtelsebesiktning
+          {activeSection !== 'runda' ? (
+            <div className="flex items-center justify-between gap-2 rounded-full border border-white/45 bg-white/90 px-2.5 py-2 shadow-lg ring-1 ring-black/5 md:hidden">
+              <button
+                type="button"
+                onClick={handleBackToInspections}
+                aria-label="Tillbaka"
+                title="Tillbaka"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              >
+                <ArrowLeft size={17} strokeWidth={2} />
+              </button>
+              <div className="min-w-0 flex-1 text-center">
+                <div className="truncate text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                  Överlåtelsebesiktning
+                </div>
+                <div className="truncate text-sm font-semibold text-gray-900">
+                  {activeSectionLabel}
+                  {activeSectionIndex >= 0 ? (
+                    <span className="ml-1 text-xs font-medium text-gray-500">
+                      {activeSectionIndex + 1}/{visibleSections.length}
+                    </span>
+                  ) : null}
+                </div>
               </div>
-              <div className="truncate text-sm font-semibold text-gray-900">
-                {activeSectionLabel}
-                {activeSectionIndex >= 0 ? (
-                  <span className="ml-1 text-xs font-medium text-gray-500">
-                    {activeSectionIndex + 1}/{visibleSections.length}
-                  </span>
-                ) : null}
+              <div className="inline-flex h-9 min-w-9 items-center justify-center rounded-full bg-indigo-50 px-2 text-xs font-semibold text-indigo-700">
+                {activeSectionIndex >= 0 ? `${activeSectionIndex + 1}/${visibleSections.length}` : null}
               </div>
             </div>
-            <div className="inline-flex h-9 min-w-9 items-center justify-center rounded-full bg-indigo-50 px-2 text-xs font-semibold text-indigo-700">
-              {activeSectionIndex >= 0 ? `${activeSectionIndex + 1}/${visibleSections.length}` : null}
-            </div>
-          </div>
+          ) : null}
 
           <div className="grid min-w-0 items-start">
             <div
