@@ -1,7 +1,7 @@
 'use client'
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Camera, Check, Image as ImageIcon, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
+import { Camera, Check, FileText, Image as ImageIcon, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import DebouncedTextarea from './DebouncedTextarea'
 import ControlPointSearchDialog, {
@@ -344,6 +344,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   const [images, setImages] = useState<InspectionImage[]>([])
 
   const [selectedControlItemId, setSelectedControlItemId] = useState<string | null>(null)
+  const [controlItemDialogId, setControlItemDialogId] = useState<string | null>(null)
   const [freeNoteDialogId, setFreeNoteDialogId] = useState<string | null>(null)
   const [previewImage, setPreviewImage] = useState<InspectionImage | null>(null)
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(() => new Set())
@@ -542,7 +543,13 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     () => images.filter(image => selectedImageIds.has(image.id)),
     [images, selectedImageIds]
   )
-  const overlayOpen = Boolean(previewImage) || searchOpen || Boolean(freeNoteDialogId) || exteriorDialogOpen || roomDialogOpen
+  const overlayOpen =
+    Boolean(previewImage) ||
+    searchOpen ||
+    Boolean(controlItemDialogId) ||
+    Boolean(freeNoteDialogId) ||
+    exteriorDialogOpen ||
+    roomDialogOpen
 
   const closeTopOverlay = useCallback(() => {
     if (previewImage) {
@@ -554,6 +561,10 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       setSearchTerm('')
       setSearchResults([])
       setAiSearchHasRun(false)
+      return true
+    }
+    if (controlItemDialogId) {
+      setControlItemDialogId(null)
       return true
     }
     if (freeNoteDialogId) {
@@ -569,7 +580,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       return true
     }
     return false
-  }, [previewImage, searchOpen, freeNoteDialogId, exteriorDialogOpen, roomDialogOpen])
+  }, [previewImage, searchOpen, controlItemDialogId, freeNoteDialogId, exteriorDialogOpen, roomDialogOpen])
 
   useEffect(() => {
     if (!inspection?.id) return
@@ -1218,6 +1229,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     }
     setControlItems(prev => prev.filter(item => item.id !== itemId))
     if (selectedControlItemId === itemId) setSelectedControlItemId(null)
+    if (controlItemDialogId === itemId) setControlItemDialogId(null)
     if (freeNoteDialogId === itemId) setFreeNoteDialogId(null)
     setImages(prev =>
       prev.map(image =>
@@ -1594,6 +1606,32 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     }
   }
 
+  const unlinkImageFromControlItem = async (imageId: string) => {
+    if (isInspectionLocked) return
+    const image = images.find(row => row.id === imageId)
+    if (!image?.id) return
+
+    try {
+      const { data, error: updateError } = await supabase
+        .from('inspection_images')
+        .update({
+          control_item_id: null,
+          processing_status: 'unprocessed',
+        })
+        .eq('id', image.id)
+        .select('*')
+        .single()
+
+      if (updateError) throw updateError
+      const updated = data as InspectionImage
+      setImages(prev => prev.map(row => (row.id === updated.id ? updated : row)))
+      setMessage('Bilden kopplades loss.')
+    } catch (e: unknown) {
+      console.error('unlink image from control item failed:', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte koppla loss bilden.')
+    }
+  }
+
   const createFreeNoteFromSelectedImages = async () => {
     if (selectedImages.length === 0) {
       setError('Välj minst en bild.')
@@ -1833,6 +1871,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       {renderRoundSurface()}
       {roomDialogOpen && activeRoom ? renderRoomDialog() : null}
       {exteriorDialogOpen && activeExteriorItem ? renderExteriorDialog() : null}
+      {controlItemDialogId ? renderControlItemDetailDialog() : null}
       {freeNoteDialogId ? renderFreeNoteDialog() : null}
       {previewImage ? renderImagePreviewDialog() : null}
 
@@ -2476,6 +2515,169 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     )
   }
 
+  function renderControlItemDetailDialog() {
+    const item = controlItems.find(row => row.id === controlItemDialogId)
+    if (!item?.id) return null
+
+    const outcomes = item.control_point_id ? outcomesByControlPointId[item.control_point_id] ?? [] : []
+    const selectedOutcome = item.selected_outcome_id
+      ? outcomes.find(outcome => outcome.id === item.selected_outcome_id)
+      : null
+    const linkedImages = images.filter(image => image.control_item_id === item.id)
+    const detailLabel =
+      selectedOutcome?.label ??
+      (item.status === 'ok' ? 'Inget att notera' : item.control_point_id ? 'Kontrollpunkt' : 'Fri notering')
+
+    return (
+      <div className="fixed inset-0 z-[100] bg-white md:bg-black/35" role="dialog" aria-modal="true">
+        <div className="flex h-full flex-col bg-white md:mx-auto md:my-4 md:h-[calc(100%-2rem)] md:max-w-3xl md:rounded-2xl md:shadow-2xl">
+          <div className="border-b border-gray-200 px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  {activeTargetLabel}
+                </div>
+                <h2 className="truncate text-lg font-semibold text-gray-950">{item.title}</h2>
+                <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-sky-100 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-900">
+                  <FileText size={13} />
+                  {detailLabel}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setControlItemDialogId(null)}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700"
+                aria-label="Stäng kontrollpunkt"
+                title="Stäng kontrollpunkt"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
+            <div className="space-y-4">
+              <div className="rounded-xl border border-gray-200 bg-white p-3">
+                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Notering</label>
+                <DebouncedTextarea
+                  rows={5}
+                  value={item.note ?? ''}
+                  onSave={value => void updateControlItem(item.id!, { note: value })}
+                  readOnly={isInspectionLocked}
+                  placeholder="Skriv noteringen..."
+                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-xl border border-gray-200 bg-white p-3">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Risk</label>
+                  <DebouncedTextarea
+                    rows={4}
+                    value={item.risk_text ?? ''}
+                    onSave={value => void updateControlItem(item.id!, { risk_text: value || null })}
+                    readOnly={isInspectionLocked}
+                    placeholder="Risktext..."
+                    className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-white p-3">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">FTU</label>
+                  <DebouncedTextarea
+                    rows={4}
+                    value={item.ftu_text ?? ''}
+                    onSave={value => void updateControlItem(item.id!, { ftu_text: value || null })}
+                    readOnly={isInspectionLocked}
+                    placeholder="Fortsatt teknisk utredning..."
+                    className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Bilder</div>
+                    <div className="text-sm font-semibold text-gray-950">
+                      {linkedImages.length} kopplad{linkedImages.length === 1 ? '' : 'e'}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openCameraCapture(item.id!)}
+                      disabled={isInspectionLocked || uploading}
+                      className={primaryButtonClass()}
+                    >
+                      <Camera size={16} />
+                      Kamera
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openGalleryPicker(item.id!)}
+                      disabled={isInspectionLocked || uploading}
+                      className={primaryButtonClass()}
+                    >
+                      <ImageIcon size={16} />
+                      Bilder
+                    </button>
+                  </div>
+                </div>
+
+                {linkedImages.length > 0 ? (
+                  <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {linkedImages.map(image => (
+                      <div key={image.id} className="overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewImage(image)}
+                          className="block w-full focus:outline-none focus:ring-2 focus:ring-sky-300"
+                          aria-label="Visa bild"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={getImagePublicUrl(image.file_path)}
+                            alt=""
+                            className="aspect-square w-full object-cover"
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void unlinkImageFromControlItem(image.id)}
+                          disabled={isInspectionLocked}
+                          className="w-full border-t border-gray-200 px-2 py-1.5 text-xs font-semibold text-gray-700 disabled:opacity-50"
+                        >
+                          Koppla loss
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-sm text-gray-600">
+                    Inga bilder kopplade till kontrollpunkten.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-200 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => void deleteControlItem(item.id!)}
+              disabled={isInspectionLocked}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 disabled:opacity-50 sm:w-auto"
+            >
+              <Trash2 size={16} />
+              Ta bort kontrollpunkt
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   function renderControlItemsPanel(processMode: boolean, showHeaderActions = true) {
     const canHaveControlItems = area === 'interior' ? !!activeRoom : !!activeExteriorItem
     return (
@@ -2552,6 +2754,15 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
             {processMode && meta?.description ? <div className="mt-1 text-xs text-gray-600">{meta.description}</div> : null}
           </div>
           <div className="flex flex-wrap gap-2">
+            {baseItem.id ? (
+              <button
+                type="button"
+                onClick={() => setControlItemDialogId((selectedItems[0]?.id ?? baseItem.id) || null)}
+                className="rounded-full border border-sky-200 bg-white px-2.5 py-1 text-xs font-semibold text-sky-900"
+              >
+                Detaljer
+              </button>
+            ) : null}
             {processMode
               ? selectedForImages.map(item => (
                 <button
@@ -2608,26 +2819,68 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
           </button>
           {outcomes.map(outcome => {
             const activeItem = selectedItems.find(item => item.selected_outcome_id === outcome.id)
+            const linkedImageCount = activeItem?.id
+              ? images.filter(image => image.control_item_id === activeItem.id).length
+              : 0
+            const hasDetailText = Boolean(
+              activeItem?.note?.trim() || activeItem?.risk_text?.trim() || activeItem?.ftu_text?.trim()
+            )
+            const clearActiveItem = () => {
+              if (!activeItem?.id) return
+              if (selectedItems.length === 1) {
+                void updateControlItem(activeItem.id, {
+                  status: RED_STATUS,
+                  selected_outcome_id: null,
+                  note: null,
+                  risk_text: null,
+                  ftu_text: null,
+                })
+              } else {
+                void deleteControlItem(activeItem.id, true)
+              }
+            }
+
+            if (activeItem) {
+              return (
+                <span
+                  key={outcome.id}
+                  className="inline-flex overflow-hidden rounded-full border border-sky-300 bg-sky-50 text-xs font-semibold text-sky-900"
+                >
+                  <button
+                    type="button"
+                    onClick={() => activeItem.id && setControlItemDialogId(activeItem.id)}
+                    disabled={!activeItem.id}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 disabled:opacity-50"
+                  >
+                    {outcome.label}
+                    {hasDetailText ? <FileText size={13} /> : null}
+                    {linkedImageCount > 0 ? (
+                      <span className="inline-flex items-center gap-0.5 rounded-full bg-white/80 px-1.5 py-0.5 text-[11px]">
+                        <ImageIcon size={12} />
+                        {linkedImageCount}
+                      </span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearActiveItem}
+                    disabled={isInspectionLocked}
+                    className="border-l border-sky-200 px-2 py-1.5 disabled:opacity-50"
+                    aria-label="Ta bort valt utfall"
+                    title="Ta bort valt utfall"
+                  >
+                    <X size={13} />
+                  </button>
+                </span>
+              )
+            }
+
             return (
               <button
                 key={outcome.id}
                 type="button"
                 onClick={() => {
                   if (!baseItem.id) return
-                  if (activeItem?.id) {
-                    if (selectedItems.length === 1) {
-                      void updateControlItem(activeItem.id, {
-                        status: RED_STATUS,
-                        selected_outcome_id: null,
-                        note: null,
-                        risk_text: null,
-                        ftu_text: null,
-                      })
-                    } else {
-                      void deleteControlItem(activeItem.id, true)
-                    }
-                    return
-                  }
                   if (selectedItems.length === 0) {
                     void updateControlItem(baseItem.id, {
                       status: 'remark',
@@ -2641,11 +2894,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                   }
                 }}
                 disabled={isInspectionLocked || !baseItem.id}
-                className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                  activeItem
-                    ? 'border-sky-300 bg-sky-50 text-sky-900'
-                    : 'border-gray-300 bg-white text-gray-800'
-                }`}
+                className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800"
               >
                 {outcome.label}
               </button>
@@ -2724,14 +2973,14 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
             ) : item.id ? (
               <button
                 type="button"
-                onClick={() => setSelectedControlItemId(item.id ?? null)}
+                onClick={() => setControlItemDialogId(item.id ?? null)}
                 className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                  selectedControlItemId === item.id
+                  controlItemDialogId === item.id
                     ? 'border-sky-300 bg-sky-50 text-sky-900'
                     : 'border-gray-300 bg-white text-gray-700'
                 }`}
               >
-                Välj
+                Detaljer
               </button>
             ) : null}
           </div>
