@@ -149,6 +149,22 @@ function sortImages(images: EbNoteImage[]) {
   })
 }
 
+function moveNoteInOrder(notes: EbNote[], noteId: string, direction: 'up' | 'down') {
+  const orderedNotes = sortNotes(notes)
+  const currentIndex = orderedNotes.findIndex((item) => item.id === noteId)
+  const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+  if (currentIndex === -1 || targetIndex < 0 || targetIndex >= orderedNotes.length) return null
+
+  const movedNotes = [...orderedNotes]
+  const [movedNote] = movedNotes.splice(currentIndex, 1)
+  movedNotes.splice(targetIndex, 0, movedNote)
+
+  return movedNotes.map((note, index) => ({
+    ...note,
+    sortOrder: (index + 1) * 100,
+  }))
+}
+
 export default function EbInspectionRoundClient({
   initialRound,
   initialDisciplineId,
@@ -157,6 +173,10 @@ export default function EbInspectionRoundClient({
   const pathname = usePathname()
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const galleryInputRef = useRef<HTMLInputElement | null>(null)
+  const notesRef = useRef(initialRound.notes)
+  const lastSavedNotesRef = useRef(initialRound.notes)
+  const orderSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const orderSaveVersionRef = useRef(0)
   const [round, setRound] = useState(initialRound)
   const initialDiscipline = initialRound.disciplines.find(
     (discipline) => discipline.id === initialDisciplineId
@@ -171,7 +191,7 @@ export default function EbInspectionRoundClient({
   const [uploadingImage, setUploadingImage] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
-  const [reorderingId, setReorderingId] = useState<string | null>(null)
+  const [orderSaving, setOrderSaving] = useState(false)
   const [movingImageId, setMovingImageId] = useState<string | null>(null)
   const [showLinkedImages, setShowLinkedImages] = useState(false)
   const [imageViewCount, setImageViewCount] = useState(4)
@@ -219,6 +239,7 @@ export default function EbInspectionRoundClient({
     () => round.notes.reduce((max, note) => Math.max(max, note.noteNumber ?? 0), 0) + 1,
     [round.notes]
   )
+  const showReportFields = form.markerKey === 'S'
   const suggestionCandidates = useMemo(() => {
     const unique = new Map<string, string>()
     for (const suggestion of round.suggestions) {
@@ -249,6 +270,68 @@ export default function EbInspectionRoundClient({
 
   const notesBasePath = `/api/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/notes`
 
+  useEffect(() => {
+    notesRef.current = round.notes
+  }, [round.notes])
+
+  useEffect(() => {
+    return () => {
+      if (orderSaveTimerRef.current) {
+        clearTimeout(orderSaveTimerRef.current)
+      }
+    }
+  }, [])
+
+  const persistNoteOrder = async (notesToSave: EbNote[], version: number) => {
+    setOrderSaving(true)
+    try {
+      const response = await fetch(`${notesBasePath}/reorder`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderedNoteIds: sortNotes(notesToSave).map((note) => note.id) }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as ReorderResponse
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? 'Kunde inte spara noteringsordningen.')
+      }
+      if (version === orderSaveVersionRef.current) {
+        lastSavedNotesRef.current = notesToSave
+        setError(null)
+      }
+    } catch (orderError) {
+      if (version === orderSaveVersionRef.current) {
+        const fallbackNotes = lastSavedNotesRef.current
+        notesRef.current = fallbackNotes
+        setRound((currentRound) => ({ ...currentRound, notes: fallbackNotes }))
+        setError(orderError instanceof Error ? orderError.message : 'Kunde inte spara noteringsordningen.')
+      }
+    } finally {
+      if (version === orderSaveVersionRef.current) {
+        setOrderSaving(false)
+      }
+    }
+  }
+
+  const scheduleNoteOrderSave = (notesToSave: EbNote[]) => {
+    if (orderSaveTimerRef.current) {
+      clearTimeout(orderSaveTimerRef.current)
+    }
+    const version = orderSaveVersionRef.current + 1
+    orderSaveVersionRef.current = version
+    setOrderSaving(true)
+    orderSaveTimerRef.current = setTimeout(() => {
+      void persistNoteOrder(notesToSave, version)
+    }, 500)
+  }
+
+  const clearPendingNoteOrderSave = () => {
+    if (orderSaveTimerRef.current) {
+      clearTimeout(orderSaveTimerRef.current)
+      orderSaveTimerRef.current = null
+    }
+    setOrderSaving(false)
+  }
+
   const selectDiscipline = (disciplineId: string) => {
     setActiveDisciplineId(disciplineId)
     setEditingNote(null)
@@ -262,7 +345,21 @@ export default function EbInspectionRoundClient({
   }
 
   const updateField = <K extends keyof NoteFormState>(field: K, value: NoteFormState[K]) => {
-    setForm((current) => ({ ...current, [field]: value }))
+    setForm((current) => {
+      if (field === 'markerKey' && value !== 'S') {
+        return {
+          ...current,
+          [field]: value,
+          investigationResponsibleParty: '',
+          investigationResponsibleNote: '',
+          investigationCostParty: '',
+          investigationDueDate: '',
+          deductionAmount: '',
+        }
+      }
+
+      return { ...current, [field]: value }
+    })
   }
 
   const resetForm = () => {
@@ -277,9 +374,13 @@ export default function EbInspectionRoundClient({
   }
 
   const upsertNoteInState = (note: EbNote) => {
+    clearPendingNoteOrderSave()
+    const withoutSame = notesRef.current.filter((item) => item.id !== note.id)
+    const notes = sortNotes([...withoutSame, note])
+    notesRef.current = notes
+    lastSavedNotesRef.current = notes
+
     setRound((current) => {
-      const withoutSame = current.notes.filter((item) => item.id !== note.id)
-      const notes = sortNotes([...withoutSame, note])
       const hasSuggestion = current.suggestions.some(
         (suggestion) =>
           suggestion.phrase.toLocaleLowerCase('sv-SE') === note.noteText.toLocaleLowerCase('sv-SE')
@@ -376,38 +477,14 @@ export default function EbInspectionRoundClient({
     setEditorOpen(true)
   }
 
-  const handleMoveNote = async (note: EbNote, direction: 'up' | 'down') => {
-    const previousNotes = round.notes
-    const orderedNotes = sortNotes(previousNotes)
-    const currentIndex = orderedNotes.findIndex((item) => item.id === note.id)
-    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
-    if (currentIndex === -1 || targetIndex < 0 || targetIndex >= orderedNotes.length) return
+  const handleMoveNote = (note: EbNote, direction: 'up' | 'down') => {
+    const movedNotes = moveNoteInOrder(notesRef.current, note.id, direction)
+    if (!movedNotes) return
 
-    const movedNotes = [...orderedNotes]
-    const current = movedNotes[currentIndex]
-    const target = movedNotes[targetIndex]
-    movedNotes[currentIndex] = { ...target, sortOrder: current.sortOrder }
-    movedNotes[targetIndex] = { ...current, sortOrder: target.sortOrder }
-
-    setReorderingId(note.id)
+    notesRef.current = movedNotes
     setError(null)
-    setRound((currentRound) => ({ ...currentRound, notes: sortNotes(movedNotes) }))
-    try {
-      const response = await fetch(`${notesBasePath}/${note.id}/reorder`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ direction }),
-      })
-      const payload = (await response.json().catch(() => ({}))) as ReorderResponse
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error ?? 'Kunde inte flytta notering.')
-      }
-    } catch (moveError) {
-      setRound((currentRound) => ({ ...currentRound, notes: previousNotes }))
-      setError(moveError instanceof Error ? moveError.message : 'Kunde inte flytta notering.')
-    } finally {
-      setReorderingId(null)
-    }
+    setRound((currentRound) => ({ ...currentRound, notes: movedNotes }))
+    scheduleNoteOrderSave(movedNotes)
   }
 
   const uploadImage = async (file: File) => {
@@ -505,9 +582,13 @@ export default function EbInspectionRoundClient({
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error ?? 'Kunde inte radera noteringen.')
       }
+      clearPendingNoteOrderSave()
+      const notes = notesRef.current.filter((item) => item.id !== note.id)
+      notesRef.current = notes
+      lastSavedNotesRef.current = notes
       setRound((current) => ({
         ...current,
-        notes: current.notes.filter((item) => item.id !== note.id),
+        notes,
         images: current.images.map((image) =>
           image.noteId === note.id ? { ...image, noteId: null } : image
         ),
@@ -651,6 +732,12 @@ export default function EbInspectionRoundClient({
                   <p className="text-xs text-gray-600">{activeDiscipline?.littera ?? 'Samtliga fack'}</p>
                 </div>
                 <div className="flex items-center gap-3">
+                  {orderSaving ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                      <Loader2 size={13} className="animate-spin" />
+                      Sparar ordning
+                    </span>
+                  ) : null}
                   <span className="text-xs font-medium text-gray-500">{filteredNotes.length} st</span>
                   <button
                     type="button"
@@ -695,27 +782,27 @@ export default function EbInspectionRoundClient({
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation()
-                              if (canMoveUp) void handleMoveNote(note, 'up')
+                              if (canMoveUp) handleMoveNote(note, 'up')
                             }}
-                            disabled={!canMoveUp || reorderingId !== null}
+                            disabled={!canMoveUp}
                             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                             aria-label="Flytta upp"
                             title="Flytta upp"
                           >
-                            {reorderingId === note.id ? <Loader2 size={15} className="animate-spin" /> : <ChevronUp size={16} />}
+                            <ChevronUp size={16} />
                           </button>
                           <button
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation()
-                              if (canMoveDown) void handleMoveNote(note, 'down')
+                              if (canMoveDown) handleMoveNote(note, 'down')
                             }}
-                            disabled={!canMoveDown || reorderingId !== null}
+                            disabled={!canMoveDown}
                             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                             aria-label="Flytta ned"
                             title="Flytta ned"
                           >
-                            {reorderingId === note.id ? <Loader2 size={15} className="animate-spin" /> : <ChevronDown size={16} />}
+                            <ChevronDown size={16} />
                           </button>
                         </div>
                         <div className="flex justify-end">
@@ -972,6 +1059,7 @@ export default function EbInspectionRoundClient({
                   </label>
                 </div>
 
+                {showReportFields ? (
                 <section className="rounded-md border border-emerald-100 bg-emerald-50/25 p-3">
                   <div className="mb-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Utlåtandeuppgifter</p>
@@ -1032,6 +1120,7 @@ export default function EbInspectionRoundClient({
                     />
                   </label>
                 </section>
+                ) : null}
 
                 {error ? (
                   <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">

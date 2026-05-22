@@ -355,6 +355,7 @@ export default function EbInspectionMobileRoundClient({
     () => round.notes.reduce((max, note) => Math.max(max, note.noteNumber ?? 0), 0) + 1,
     [round.notes]
   )
+  const showReportFields = form.markerKey === 'S'
   const imagesByNoteId = useMemo(() => {
     const map = new Map<string, EbNoteImage[]>()
     for (const image of round.images) {
@@ -436,7 +437,21 @@ export default function EbInspectionMobileRoundClient({
   }, [round])
 
   const updateField = <K extends keyof NoteFormState>(field: K, value: NoteFormState[K]) => {
-    setForm((current) => ({ ...current, [field]: value }))
+    setForm((current) => {
+      if (field === 'markerKey' && value !== 'S') {
+        return {
+          ...current,
+          [field]: value,
+          investigationResponsibleParty: '',
+          investigationResponsibleNote: '',
+          investigationCostParty: '',
+          investigationDueDate: '',
+          deductionAmount: '',
+        }
+      }
+
+      return { ...current, [field]: value }
+    })
   }
 
   const openNoteSheet = () => {
@@ -1134,6 +1149,7 @@ export default function EbInspectionMobileRoundClient({
                     </label>
                   </div>
 
+                  {showReportFields ? (
                   <section className="rounded-md border border-emerald-100 bg-emerald-50/25 p-2.5">
                     <div className="mb-3">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Utlåtandeuppgifter</p>
@@ -1194,6 +1210,7 @@ export default function EbInspectionMobileRoundClient({
                       />
                     </label>
                   </section>
+                  ) : null}
 
                   {error ? (
                     <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">

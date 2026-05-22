@@ -565,6 +565,10 @@ export type ReorderEbNoteInput = DeleteEbNoteInput & {
   direction: 'up' | 'down'
 }
 
+export type ReorderEbNotesInput = Omit<DeleteEbNoteInput, 'noteId'> & {
+  orderedNoteIds: string[]
+}
+
 const VARIANT_LABELS: Record<EbInspectionVariant, string> = {
   SLB: 'Slutbesiktning',
   FB: 'Förbesiktning',
@@ -2255,6 +2259,51 @@ export async function reorderEbNote(input: ReorderEbNoteInput) {
         .eq('eb_project_id', input.projectId)
         .eq('inspection_id', input.inspectionId)
         .eq('id', row.id)
+    )
+  )
+  const updateError = updateResults.find((result) => result.error)?.error
+  if (updateError) {
+    throw new Error(updateError.message ?? 'Kunde inte uppdatera noteringsordning.')
+  }
+}
+
+export async function reorderEbNotes(input: ReorderEbNotesInput) {
+  await getEbInspectionRoundBase(input)
+  const orderedNoteIds = Array.from(
+    new Set(input.orderedNoteIds.map((id) => normalizeText(id)).filter(Boolean) as string[])
+  )
+  if (orderedNoteIds.length === 0) {
+    throw new Error('EB_NOTE_ORDER_EMPTY')
+  }
+
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('eb_notes')
+    .select('id')
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte läsa EB-noteringar.')
+  }
+
+  const existingIds = new Set(((data ?? []) as Array<Pick<EbNoteRow, 'id'>>).map((row) => row.id))
+  const hasEveryExistingNote = existingIds.size === orderedNoteIds.length &&
+    orderedNoteIds.every((noteId) => existingIds.has(noteId))
+  if (!hasEveryExistingNote) {
+    throw new Error('EB_NOTE_ORDER_INVALID')
+  }
+
+  const updateResults = await Promise.all(
+    orderedNoteIds.map((noteId, index) =>
+      admin
+        .from('eb_notes')
+        .update({ sort_order: (index + 1) * 100 })
+        .eq('org_id', input.orgId)
+        .eq('eb_project_id', input.projectId)
+        .eq('inspection_id', input.inspectionId)
+        .eq('id', noteId)
     )
   )
   const updateError = updateResults.find((result) => result.error)?.error
