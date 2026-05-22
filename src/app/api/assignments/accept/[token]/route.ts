@@ -15,6 +15,7 @@ import {
   getAssignmentTermsDocument,
   parseAssignmentTermsRole,
 } from '@/lib/assignments/terms'
+import { isBaseAssignmentAddonKey } from '@/lib/assignments/addons'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 
 export const runtime = 'nodejs'
@@ -24,6 +25,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/
 const TIME_REGEX = /^\d{2}:\d{2}(:\d{2})?$/
 const HASH_REGEX = /^[0-9a-f]{64}$/
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 type PublicState = 'open' | 'used' | 'expired' | 'revoked' | 'outdated'
 
@@ -362,6 +364,29 @@ export async function POST(
       }
 
       selectedAddonServiceIds = [...new Set(selectedAddonServiceIds)]
+    }
+
+    if (selectedAddonServiceIds.length > 0) {
+      const selectedUuidIds = selectedAddonServiceIds.filter((value) => UUID_REGEX.test(value))
+      if (selectedUuidIds.length > 0) {
+        const admin = createSupabaseAdminClient()
+        const { data: selectedAddonRows, error: selectedAddonError } = await admin
+          .from('settings_addon_services')
+          .select('id,key')
+          .in('id', selectedUuidIds)
+
+        if (selectedAddonError) {
+          throw new Error(selectedAddonError.message ?? 'Kunde inte verifiera tilläggsuppdrag.')
+        }
+
+        const baseAddonIds = new Set(
+          ((selectedAddonRows ?? []) as Array<{ id: string; key: string | null }>)
+            .filter((row) => isBaseAssignmentAddonKey(row.key))
+            .map((row) => row.id)
+        )
+
+        selectedAddonServiceIds = selectedAddonServiceIds.filter((id) => !baseAddonIds.has(id))
+      }
     }
 
     const payload = {

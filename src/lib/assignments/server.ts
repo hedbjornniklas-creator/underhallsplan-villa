@@ -12,6 +12,10 @@ import {
   getAssignmentTermsDocument,
   parseAssignmentTermsRole,
 } from '@/lib/assignments/terms'
+import {
+  isBaseAssignmentAddonKey,
+  isCustomerSelectableAddonKey,
+} from '@/lib/assignments/addons'
 import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
 
 export type AssignmentStatus =
@@ -626,6 +630,8 @@ export async function listAddonOffersForProfile(input: {
   const profileByAddonId = new Map(profileRows.map((row) => [row.addon_service_id, row]))
 
   return catalogRows.flatMap((service) => {
+    if (!isCustomerSelectableAddonKey(service.key)) return []
+
     const profileOffer = profileByAddonId.get(service.id)
     if (!profileOffer) return []
 
@@ -680,25 +686,27 @@ export async function listAssignmentAddonOrders(input: {
     created_at: string
   }>
 
-  return rows.map((row) => {
-    const rawPrice =
-      typeof row.price_amount_snapshot === 'number'
-        ? row.price_amount_snapshot
-        : Number(String(row.price_amount_snapshot ?? '0'))
-    const normalizedPrice = Number.isFinite(rawPrice) && rawPrice >= 0 ? Number(rawPrice.toFixed(2)) : 0
+  return rows
+    .filter((row) => !isBaseAssignmentAddonKey(row.addon_key))
+    .map((row) => {
+      const rawPrice =
+        typeof row.price_amount_snapshot === 'number'
+          ? row.price_amount_snapshot
+          : Number(String(row.price_amount_snapshot ?? '0'))
+      const normalizedPrice = Number.isFinite(rawPrice) && rawPrice >= 0 ? Number(rawPrice.toFixed(2)) : 0
 
-    return {
-      id: row.id,
-      assignment_id: row.assignment_id,
-      org_id: row.org_id,
-      addon_service_id: row.addon_service_id,
-      addon_key: row.addon_key,
-      addon_name_snapshot: row.addon_name_snapshot,
-      price_amount_snapshot: normalizedPrice,
-      currency_snapshot: (row.currency_snapshot ?? 'SEK').trim().toUpperCase() || 'SEK',
-      created_at: row.created_at,
-    } satisfies AssignmentAddonOrder
-  })
+      return {
+        id: row.id,
+        assignment_id: row.assignment_id,
+        org_id: row.org_id,
+        addon_service_id: row.addon_service_id,
+        addon_key: row.addon_key,
+        addon_name_snapshot: row.addon_name_snapshot,
+        price_amount_snapshot: normalizedPrice,
+        currency_snapshot: (row.currency_snapshot ?? 'SEK').trim().toUpperCase() || 'SEK',
+        created_at: row.created_at,
+      } satisfies AssignmentAddonOrder
+    })
 }
 
 export async function createAssignment(input: {
