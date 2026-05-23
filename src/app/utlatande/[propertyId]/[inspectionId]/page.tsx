@@ -1236,7 +1236,7 @@ export default async function Page({
       const freeRiskText = trimText(row.risk_text ?? '')
       const freeFtuText = trimText(row.ftu_text ?? '')
       if (!note && freeRiskText.length === 0 && freeFtuText.length === 0) return
-      const line = note ? `${label}: ${note}` : `${label}: --`
+      const line = note || '--'
       if (freeRiskText.length > 0) {
         riskLines.push(label)
         riskLines.push(freeRiskText)
