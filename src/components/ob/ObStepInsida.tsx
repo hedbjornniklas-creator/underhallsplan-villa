@@ -4522,6 +4522,19 @@ function RoomControlPointsSection({
     const isGreen = selectedItems.length === 0 && baseItem.status === 'ok'
     const isYellow = selectedItems.length > 0
     const isCollapsed = !expandedListGroupIds.has(groupId)
+    const selectedOutcomeLabels = selectedItems
+      .map(ci =>
+        ci.selected_outcome_id
+          ? outcomes.find(outcome => outcome.id === ci.selected_outcome_id)?.label ?? null
+          : null
+      )
+      .filter((label): label is string => Boolean(label))
+    const selectedHeadingLabel =
+      selectedOutcomeLabels.length === 1
+        ? selectedOutcomeLabels[0]
+        : selectedOutcomeLabels.length > 1
+          ? selectedOutcomeLabels.join(', ')
+          : null
     const selectedOutcomeIds = new Set(
       selectedItems
         .map(ci => ci.selected_outcome_id)
@@ -4645,7 +4658,7 @@ function RoomControlPointsSection({
       <article
         key={group.controlPointId}
         style={{ order: baseItem.sort_order ?? 0 }}
-        className="overflow-hidden rounded-md border border-gray-200 bg-white"
+        className="border-b border-gray-200 bg-white"
       >
         <div className="flex min-w-0 items-center gap-2 px-3 py-2">
           <button
@@ -4655,6 +4668,11 @@ function RoomControlPointsSection({
             aria-expanded={!isCollapsed}
           >
             <div className="truncate text-sm font-semibold text-gray-950">{baseItem.title}</div>
+            {selectedHeadingLabel ? (
+              <div className="mt-0.5 truncate text-xs font-medium text-gray-700">
+                {selectedHeadingLabel}
+              </div>
+            ) : null}
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-600">
                 <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass}`} aria-hidden="true" />
@@ -4714,7 +4732,7 @@ function RoomControlPointsSection({
               <div className="text-xs font-semibold text-gray-700">
                 {isYellow || isGreen ? 'Byt eller lägg till bedömning' : 'Välj bedömning'}
               </div>
-              <div className="divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200 bg-white">
+              <div className="divide-y divide-gray-100 border-y border-gray-200 bg-white">
                 {isGreen ? (
                   <button
                     type="button"
@@ -4828,7 +4846,13 @@ function RoomControlPointsSection({
       </header>
 
       {/* Lista med befintliga kontrollpunkter */}
-      <div className="flex flex-col gap-2">
+      <div
+        className={
+          USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
+            ? 'flex flex-col border-t border-gray-200'
+            : 'flex flex-col gap-2'
+        }
+      >
         {items.length === 0 && (
           <div className="text-xs text-gray-600">
             Inga kontrollpunkter ännu. De kan läggas till automatiskt för rumstypen
@@ -4846,7 +4870,7 @@ function RoomControlPointsSection({
               style={{ order: ci.sort_order ?? 0 }}
               className={
                 USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
-                  ? 'space-y-2 rounded-md border border-gray-200 bg-white px-3 py-2'
+                  ? 'space-y-2 border-b border-gray-200 bg-white px-3 py-2'
                   : 'rounded-lg border border-red-200 bg-red-50 px-3 py-2 space-y-2'
               }
             >
@@ -4883,7 +4907,13 @@ function RoomControlPointsSection({
               </div>
 
               {!isCollapsed && (
-                <>
+                <div
+                  className={
+                    USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
+                      ? 'space-y-2 border-t border-gray-100 pt-2'
+                      : 'space-y-2'
+                  }
+                >
                   <div className="space-y-1">
                     <label className="text-xs md:text-[11px] text-gray-600">
                       {USE_INSIDA_CONTROL_POINT_LIST_LAYOUT ? 'Notering' : '🧱 Notering'}
@@ -4947,7 +4977,7 @@ function RoomControlPointsSection({
                       disabled={isInspectionLocked}
                     />
                   )}
-                </>
+                </div>
               )}
             </div>
           )
