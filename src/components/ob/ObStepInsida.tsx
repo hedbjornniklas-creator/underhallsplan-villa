@@ -4558,6 +4558,12 @@ function RoomControlPointsSection({
       : isYellow
         ? 'bg-amber-500'
         : 'bg-gray-400'
+    const accentClass = isGreen
+      ? 'border-l-emerald-400'
+      : isYellow
+        ? 'border-l-amber-400'
+        : 'border-l-gray-300'
+    const controlPointSurfaceClass = isCollapsed ? 'bg-white' : 'bg-gray-50/50'
 
     const renderItemDetails = (
       ci: InspectionControlItem,
@@ -4658,7 +4664,7 @@ function RoomControlPointsSection({
       <article
         key={group.controlPointId}
         style={{ order: baseItem.sort_order ?? 0 }}
-        className="border-b border-gray-200 bg-white"
+        className={`border-b border-l-4 border-b-gray-200 ${accentClass} ${controlPointSurfaceClass}`}
       >
         <div className="flex min-w-0 items-center gap-2 px-3 py-2">
           <button
@@ -4708,7 +4714,7 @@ function RoomControlPointsSection({
         </div>
 
         {!isCollapsed ? (
-          <div className="space-y-4 border-t border-gray-200 bg-white px-3 py-3">
+          <div className="space-y-4 border-t border-gray-200 bg-white/80 px-3 py-3">
             <div className="space-y-1">
               <div className="text-xs font-semibold text-gray-700">
                 {isYellow || isGreen ? 'Byt eller lägg till bedömning' : 'Välj bedömning'}
