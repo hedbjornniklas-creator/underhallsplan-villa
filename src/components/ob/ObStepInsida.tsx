@@ -198,6 +198,16 @@ const normalizeInspectionStatus = (value: string | null | undefined) => {
 const IMAGE_BUCKET = 'inspection-images' as const
 const IMAGE_DRAG_DATA_TYPE = 'application/x-ob-insida-image-id'
 
+const isImageFile = (file: File) =>
+  file.type.startsWith('image/') || /\.(avif|gif|heic|heif|jpe?g|png|webp)$/i.test(file.name)
+
+const hasExternalImageFiles = (event: DragEvent<HTMLElement>) =>
+  !Array.from(event.dataTransfer.types).includes(IMAGE_DRAG_DATA_TYPE) &&
+  Array.from(event.dataTransfer.types).includes('Files')
+
+const getDroppedImageFiles = (event: DragEvent<HTMLElement>) =>
+  Array.from(event.dataTransfer.files).filter(isImageFile)
+
 const getImagePublicUrl = (filePath: string) => {
   const { data } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(filePath)
   return data.publicUrl
@@ -439,6 +449,8 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   const [selectedPanelImageIds, setSelectedPanelImageIds] = useState<Set<string>>(() => new Set())
   const [imageBankTarget, setImageBankTarget] = useState<ImageBankTarget | null>(null)
   const [selectedImageBankIds, setSelectedImageBankIds] = useState<Set<string>>(() => new Set())
+  const [imageBankDragOver, setImageBankDragOver] = useState(false)
+  const [imageLibraryDragOver, setImageLibraryDragOver] = useState(false)
   const [quickNoteFilter, setQuickNoteFilter] = useState<QuickNoteFilter>('current')
   const [quickNotes, setQuickNotes] = useState<RoundQuickNote[]>([])
   const [exteriorItems, setExteriorItems] = useState<SettingsExteriorItemLite[]>([])
@@ -1797,6 +1809,88 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     )
   }
 
+  const uploadImageFilesToInteriorBank = async (
+    files: File[],
+    sourceRoom: {
+      id?: string | null
+      floor_label?: string | null
+      room_label?: string | null
+      room_type_key?: string | null
+    }
+  ) => {
+    if (isInspectionLocked) return
+    const imageFiles = files.filter(isImageFile)
+    if (imageFiles.length === 0) return
+    if (!sourceRoom.id) {
+      setError('Välj ett rum innan du lägger bilder i bildbanken.')
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const uploadedImages: InspectionImage[] = []
+      let sortBase = allInspectionImages.reduce((max, image) => Math.max(max, image.sort_order ?? 0), 0)
+
+      for (const file of imageFiles) {
+        const ext = file.name.split('.').pop() || 'jpg'
+        const safeExt = ext.toLowerCase()
+        const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`
+        const path = `${inspection.id}/interior/image-bank/${sourceRoom.id}/${fileName}`
+
+        const { error: uploadError } = await supabase.storage
+          .from(IMAGE_BUCKET)
+          .upload(path, file, {
+            cacheControl: '3600',
+            upsert: false,
+          })
+
+        if (uploadError) throw uploadError
+
+        sortBase += 10
+        const { data, error: insertError } = await supabase
+          .from('inspection_images')
+          .insert({
+            inspection_id: inspection.id,
+            interior_room_id: null,
+            control_item_id: null,
+            exterior_observation_id: null,
+            file_path: path,
+            label: null,
+            sort_order: sortBase,
+            capture_source: 'drag_drop',
+            source_area: 'interior',
+            origin_interior_room_id: sourceRoom.id,
+            origin_floor_label: sourceRoom.floor_label ?? null,
+            origin_room_label: sourceRoom.room_label ?? null,
+            origin_room_type_key: sourceRoom.room_type_key ?? null,
+          })
+          .select('*')
+          .single()
+
+        if (insertError) throw insertError
+        uploadedImages.push(data as InspectionImage)
+      }
+
+      const uploadedIds = new Set(uploadedImages.map(image => image.id))
+      setAllInspectionImages(prev => [
+        ...uploadedImages,
+        ...prev.filter(image => !uploadedIds.has(image.id)),
+      ])
+      setSelectedImageBankIds(prev => {
+        const next = new Set(prev)
+        uploadedImages.forEach(image => next.add(image.id))
+        return next
+      })
+    } catch (e: unknown) {
+      console.error('upload interior image bank files failed:', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte lägga bilderna i bildbanken.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const buildUnlinkedInteriorImagePatch = (image: InspectionImage) => {
     const linkedControlItem = image.control_item_id
       ? controlItems.find(item => item.id === image.control_item_id) ?? null
@@ -2554,6 +2648,46 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     closeImageBank()
   }
 
+  const getImageBankRoomSource = () => {
+    const roomId = imageBankTarget?.controlItem.interior_room_id ?? null
+    const room = roomId ? rooms.find(item => item.id === roomId) ?? null : null
+    return {
+      id: roomId,
+      floor_label: room?.floor_label ?? null,
+      room_label: room?.room_label ?? null,
+      room_type_key: room?.room_type_key ?? null,
+    }
+  }
+
+  const handleImageBankDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (isInspectionLocked || !imageBankTarget || !hasExternalImageFiles(event)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setImageBankDragOver(true)
+  }
+
+  const handleImageBankDrop = async (event: DragEvent<HTMLDivElement>) => {
+    if (isInspectionLocked || !imageBankTarget || !hasExternalImageFiles(event)) return
+    event.preventDefault()
+    setImageBankDragOver(false)
+    await uploadImageFilesToInteriorBank(getDroppedImageFiles(event), getImageBankRoomSource())
+  }
+
+  const handleImageLibraryDragOver = (event: DragEvent<HTMLElement>) => {
+    if (isInspectionLocked || !hasExternalImageFiles(event)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setImageLibraryDragOver(true)
+  }
+
+  const handleImageLibraryDrop = async (event: DragEvent<HTMLElement>, room: InteriorRoom) => {
+    if (isInspectionLocked || !hasExternalImageFiles(event)) return
+    event.preventDefault()
+    setImageLibraryDragOver(false)
+    setPanelTab('images')
+    await uploadImageFilesToInteriorBank(getDroppedImageFiles(event), room)
+  }
+
   const renderImageBankPicker = () => {
     if (!imageBankTarget) return null
     const imageBankImages = sortImagesNewestFirst(
@@ -2582,7 +2716,19 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
             </button>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto bg-gray-50 p-3">
+          <div
+            onDragOver={handleImageBankDragOver}
+            onDragLeave={() => setImageBankDragOver(false)}
+            onDrop={event => void handleImageBankDrop(event)}
+            className={`min-h-0 flex-1 overflow-y-auto bg-gray-50 p-3 transition ${
+              imageBankDragOver ? 'bg-sky-50 ring-2 ring-inset ring-sky-300' : ''
+            }`}
+          >
+            {imageBankDragOver ? (
+              <div className="mb-3 rounded-xl border border-dashed border-sky-300 bg-white/80 px-3 py-3 text-center text-sm font-semibold text-sky-900">
+                Släpp bilder här
+              </div>
+            ) : null}
             {imageBankImages.length === 0 ? (
               <div className="rounded-xl border border-dashed border-gray-300 bg-white px-3 py-10 text-center text-sm text-gray-600">
                 Inga okopplade bilder i bildbanken.
@@ -2682,7 +2828,14 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
         : 'aspect-square w-full object-cover transition group-hover:scale-[1.02]'
 
     return (
-      <aside className="flex min-h-0 flex-col border-t border-gray-200 bg-gray-50/70 lg:h-auto lg:border-l lg:border-t-0">
+      <aside
+        onDragOver={handleImageLibraryDragOver}
+        onDragLeave={() => setImageLibraryDragOver(false)}
+        onDrop={event => void handleImageLibraryDrop(event, room)}
+        className={`flex min-h-0 flex-col border-t border-gray-200 bg-gray-50/70 transition lg:h-auto lg:border-l lg:border-t-0 ${
+          imageLibraryDragOver ? 'ring-2 ring-inset ring-sky-300' : ''
+        }`}
+      >
         <div className="border-b border-gray-200 bg-white">
           <div className="flex gap-1 border-b border-gray-200 px-4 pt-3" role="tablist" aria-label="Panelinnehåll">
             {panelTabs.map(tab => (
@@ -2831,6 +2984,11 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {imageLibraryDragOver ? (
+            <div className="mb-3 rounded-xl border border-dashed border-sky-300 bg-white px-3 py-3 text-center text-sm font-semibold text-sky-900">
+              Släpp bilder här
+            </div>
+          ) : null}
           {panelTab === 'images' ? (
             filteredImages.length === 0 ? (
               <div className="rounded-xl border border-dashed border-gray-300 bg-white px-3 py-8 text-center text-sm text-gray-600">
@@ -3682,12 +3840,13 @@ function ControlItemImagesSection({
 
   const canDropImage = (event: DragEvent<HTMLElement>) =>
     !disabled &&
-    Array.from(event.dataTransfer.types).includes(IMAGE_DRAG_DATA_TYPE)
+    (hasExternalImageFiles(event) || Array.from(event.dataTransfer.types).includes(IMAGE_DRAG_DATA_TYPE))
 
   const handleDragOver = (event: DragEvent<HTMLElement>) => {
     if (!canDropImage(event)) return
     event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = hasExternalImageFiles(event) ? 'copy' : 'move'
     setIsDragOver(true)
   }
 
@@ -3698,7 +3857,17 @@ function ControlItemImagesSection({
   const handleDrop = (event: DragEvent<HTMLElement>) => {
     if (!canDropImage(event)) return
     event.preventDefault()
+    event.stopPropagation()
     setIsDragOver(false)
+    const droppedFiles = getDroppedImageFiles(event)
+    if (droppedFiles.length > 0) {
+      void (async () => {
+        for (const file of droppedFiles) {
+          await onUpload(controlItem, file)
+        }
+      })()
+      return
+    }
     const imageId = event.dataTransfer.getData(IMAGE_DRAG_DATA_TYPE)
     if (!imageId) return
     void onDropImage(controlItem, imageId)
