@@ -1857,7 +1857,7 @@ export default function ReportRendererClient({
           style={{
             borderTop: topBorder,
             display: 'grid',
-            gridTemplateColumns: `${mmToPx(46)} 1fr`,
+            gridTemplateColumns: `${mmToPx(40)} 1fr`,
             columnGap: mmToPx(4),
           }}
         >
@@ -1906,7 +1906,7 @@ export default function ReportRendererClient({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: `${mmToPx(46)} 1fr`,
+            gridTemplateColumns: `${mmToPx(40)} 1fr`,
             columnGap: mmToPx(4),
           }}
         >
