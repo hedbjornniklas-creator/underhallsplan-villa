@@ -4709,26 +4709,7 @@ function RoomControlPointsSection({
 
         {!isCollapsed ? (
           <div className="space-y-4 border-t border-gray-200 bg-white px-3 py-3">
-            {selectedItems.length === 0
-              ? renderItemDetails(baseItem, isGreen ? 'Inget att notera' : 'Notering')
-              : selectedItems.map(ci => {
-                  const selectedOutcome = ci.selected_outcome_id
-                    ? outcomes.find(outcome => outcome.id === ci.selected_outcome_id) || null
-                    : null
-                  if (!selectedOutcome) return null
-                  return renderItemDetails(ci, selectedOutcome.label, selectedOutcome)
-                })}
-
-            {description.length > 0 ? (
-              <details className="border-t border-gray-100 pt-2">
-                <summary className="cursor-pointer text-xs font-medium text-gray-600">
-                  Beskrivning
-                </summary>
-                <p className="mt-2 text-xs leading-5 text-gray-600">{description}</p>
-              </details>
-            ) : null}
-
-            <div className="space-y-1 border-t border-gray-100 pt-3">
+            <div className="space-y-1">
               <div className="text-xs font-semibold text-gray-700">
                 {isYellow || isGreen ? 'Byt eller lägg till bedömning' : 'Välj bedömning'}
               </div>
@@ -4785,9 +4766,154 @@ function RoomControlPointsSection({
                 ) : null}
               </div>
             </div>
+
+            <div className="border-t border-gray-100 pt-3">
+              {selectedItems.length === 0
+                ? renderItemDetails(baseItem, isGreen ? 'Inget att notera' : 'Notering')
+                : selectedItems.map(ci => {
+                    const selectedOutcome = ci.selected_outcome_id
+                      ? outcomes.find(outcome => outcome.id === ci.selected_outcome_id) || null
+                      : null
+                    if (!selectedOutcome) return null
+                    return renderItemDetails(ci, selectedOutcome.label, selectedOutcome)
+                  })}
+            </div>
+
+            {description.length > 0 ? (
+              <details className="border-t border-gray-100 pt-2">
+                <summary className="cursor-pointer text-xs font-medium text-gray-600">
+                  Beskrivning
+                </summary>
+                <p className="mt-2 text-xs leading-5 text-gray-600">{description}</p>
+              </details>
+            ) : null}
           </div>
         ) : null}
       </article>
+    )
+  }
+
+  function renderFreeNoteItem(ci: InspectionControlItem) {
+    const ciId = ci.id ?? ''
+    const ciImages = imagesByControlItemId[ciId] || []
+    const isCollapsed = ciId ? collapsedFreeNoteIds.has(ciId) : false
+
+    return (
+      <div
+        key={ci.id}
+        style={{ order: ci.sort_order ?? 0 }}
+        className={
+          USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
+            ? 'space-y-2 border-b border-gray-200 bg-white px-3 py-2'
+            : 'rounded-lg border border-red-200 bg-red-50 px-3 py-2 space-y-2'
+        }
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs font-semibold text-gray-900">
+            {ci.title}
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => ciId && toggleFreeNoteCollapsed(ciId)}
+              className="text-xs md:text-[11px] text-gray-700 hover:underline"
+              aria-expanded={!isCollapsed}
+              disabled={!ciId}
+            >
+              {isCollapsed ? 'Visa' : 'Dölj'}
+            </button>
+            {ci.id && (
+              <button
+                type="button"
+                onClick={() => ci.id && onDeleteItem(ci.id)}
+                className={
+                  USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
+                    ? 'text-xs text-gray-400 hover:text-rose-600 hover:underline md:text-[11px]'
+                    : 'text-xs md:text-[11px] text-rose-600 hover:underline'
+                }
+                disabled={isInspectionLocked}
+              >
+                Ta bort notering
+              </button>
+            )}
+          </div>
+        </div>
+
+        {!isCollapsed && (
+          <div
+            className={
+              USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
+                ? 'space-y-2 border-t border-gray-100 pt-2'
+                : 'space-y-2'
+            }
+          >
+            <div className="space-y-1">
+              <label className="text-xs md:text-[11px] text-gray-600">
+                {USE_INSIDA_CONTROL_POINT_LIST_LAYOUT ? 'Notering' : '🧱 Notering'}
+              </label>
+              <DebouncedTextarea
+                rows={2}
+                className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
+                placeholder="Fri notering för rummet…"
+                value={ci.note ?? ''}
+                onSave={value => {
+                  if (ci.id) onUpdateItem(ci.id, { note: value })
+                }}
+                readOnly={isInspectionLocked}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs md:text-[11px] text-gray-600">
+                {USE_INSIDA_CONTROL_POINT_LIST_LAYOUT ? 'Riskanalys' : '⚠️ Riskanalys'}
+              </label>
+              <DebouncedTextarea
+                rows={3}
+                className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
+                placeholder="Beskriv riskanalys..."
+                value={ci.risk_text ?? ''}
+                onSave={value => {
+                  if (ci.id) onUpdateItem(ci.id, { risk_text: value })
+                }}
+                readOnly={isInspectionLocked}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs md:text-[11px] text-gray-600">
+                {USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
+                  ? 'Fortsatt teknisk utredning (FTU)'
+                  : '🔍 Fortsatt teknisk utredning (FTU)'}
+              </label>
+              <DebouncedTextarea
+                rows={3}
+                className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
+                placeholder="Beskriv fortsatt teknisk utredning..."
+                value={ci.ftu_text ?? ''}
+                onSave={value => {
+                  if (ci.id) onUpdateItem(ci.id, { ftu_text: value })
+                }}
+                readOnly={isInspectionLocked}
+              />
+            </div>
+
+            {ci.id && (
+              <ControlItemImagesSection
+                controlItem={ci}
+                images={ciImages}
+                onUpload={onUploadImage}
+                onDelete={onDeleteImage}
+                onDropImage={onDropImage}
+                onOpenImageBank={() => onOpenImageBank(ci)}
+                onPreviewImage={onPreviewImage}
+                onUnlink={onUnlinkImage}
+                disabled={isInspectionLocked}
+              />
+            )}
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -4828,14 +4954,6 @@ function RoomControlPointsSection({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => onAddFreeNote(room)}
-            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
-            disabled={isInspectionLocked}
-          >
-            + Lägg till fri notering
-          </button>
-          <button
-            type="button"
             onClick={handleToggleSearch}
             className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
             disabled={isInspectionLocked}
@@ -4853,135 +4971,18 @@ function RoomControlPointsSection({
             : 'flex flex-col gap-2'
         }
       >
-        {items.length === 0 && (
-          <div className="text-xs text-gray-600">
+        {groupedItems.length === 0 && (
+          <div
+            className={
+              USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
+                ? 'border-b border-gray-200 px-3 py-2 text-xs text-gray-600'
+                : 'text-xs text-gray-600'
+            }
+          >
             Inga kontrollpunkter ännu. De kan läggas till automatiskt för rumstypen
             eller via knappen “Lägg till ytterligare kontrollpunkt”.
           </div>
         )}
-
-        {freeNoteItems.map(ci => {
-          const ciId = ci.id ?? ''
-          const ciImages = imagesByControlItemId[ciId] || []
-          const isCollapsed = ciId ? collapsedFreeNoteIds.has(ciId) : false
-          return (
-            <div
-              key={ci.id}
-              style={{ order: ci.sort_order ?? 0 }}
-              className={
-                USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
-                  ? 'space-y-2 border-b border-gray-200 bg-white px-3 py-2'
-                  : 'rounded-lg border border-red-200 bg-red-50 px-3 py-2 space-y-2'
-              }
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs font-semibold text-gray-900">
-                  {ci.title}
-                </div>
-
-                <div className="ml-auto flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => ciId && toggleFreeNoteCollapsed(ciId)}
-                    className="text-xs md:text-[11px] text-gray-700 hover:underline"
-                    aria-expanded={!isCollapsed}
-                    disabled={!ciId}
-                  >
-                    {isCollapsed ? 'Visa' : 'Dölj'}
-                  </button>
-                  {ci.id && (
-                  <button
-                    type="button"
-                    onClick={() => ci.id && onDeleteItem(ci.id)}
-                    className={
-                      USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
-                        ? 'text-xs text-gray-400 hover:text-rose-600 hover:underline md:text-[11px]'
-                        : 'text-xs md:text-[11px] text-rose-600 hover:underline'
-                    }
-                    disabled={isInspectionLocked}
-                  >
-                    Ta bort notering
-                  </button>
-                  )}
-                </div>
-              </div>
-
-              {!isCollapsed && (
-                <div
-                  className={
-                    USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
-                      ? 'space-y-2 border-t border-gray-100 pt-2'
-                      : 'space-y-2'
-                  }
-                >
-                  <div className="space-y-1">
-                    <label className="text-xs md:text-[11px] text-gray-600">
-                      {USE_INSIDA_CONTROL_POINT_LIST_LAYOUT ? 'Notering' : '🧱 Notering'}
-                    </label>
-                    <DebouncedTextarea
-                      rows={2}
-                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
-                      placeholder="Fri notering för rummet…"
-                      value={ci.note ?? ''}
-                      onSave={value => {
-                        if (ci.id) onUpdateItem(ci.id, { note: value })
-                      }}
-                      readOnly={isInspectionLocked}
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs md:text-[11px] text-gray-600">
-                      {USE_INSIDA_CONTROL_POINT_LIST_LAYOUT ? 'Riskanalys' : '⚠️ Riskanalys'}
-                    </label>
-                    <DebouncedTextarea
-                      rows={3}
-                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
-                      placeholder="Beskriv riskanalys..."
-                      value={ci.risk_text ?? ''}
-                      onSave={value => {
-                        if (ci.id) onUpdateItem(ci.id, { risk_text: value })
-                      }}
-                      readOnly={isInspectionLocked}
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs md:text-[11px] text-gray-600">
-                      {USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
-                        ? 'Fortsatt teknisk utredning (FTU)'
-                        : '🔍 Fortsatt teknisk utredning (FTU)'}
-                    </label>
-                    <DebouncedTextarea
-                      rows={3}
-                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
-                      placeholder="Beskriv fortsatt teknisk utredning..."
-                      value={ci.ftu_text ?? ''}
-                      onSave={value => {
-                        if (ci.id) onUpdateItem(ci.id, { ftu_text: value })
-                      }}
-                      readOnly={isInspectionLocked}
-                    />
-                  </div>
-
-                  {ci.id && (
-                    <ControlItemImagesSection
-                      controlItem={ci}
-                      images={ciImages}
-                      onUpload={onUploadImage}
-                      onDelete={onDeleteImage}
-                      onDropImage={onDropImage}
-                      onOpenImageBank={() => onOpenImageBank(ci)}
-                      onPreviewImage={onPreviewImage}
-                      onUnlink={onUnlinkImage}
-                      disabled={isInspectionLocked}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-          )
-        })}
 
         {USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
           ? groupedItems.map(group => renderControlPointListGroup(group))
@@ -5339,6 +5340,41 @@ function RoomControlPointsSection({
         })}
 
       </div>
+
+      <section className="space-y-3 border-t border-gray-300 pt-4">
+        <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h4 className="text-sm font-semibold text-gray-900">
+              Fria noteringar
+            </h4>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onAddFreeNote(room)}
+            className="inline-flex w-fit items-center rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs md:text-[11px] font-medium text-gray-800 hover:bg-gray-50"
+            disabled={isInspectionLocked}
+          >
+            + Lägg till fri notering
+          </button>
+        </header>
+
+        {freeNoteItems.length === 0 ? (
+          <div className="text-xs text-gray-600">
+            Inga fria noteringar ännu.
+          </div>
+        ) : (
+          <div
+            className={
+              USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
+                ? 'flex flex-col border-t border-gray-200'
+                : 'flex flex-col gap-2'
+            }
+          >
+            {freeNoteItems.map(ci => renderFreeNoteItem(ci))}
+          </div>
+        )}
+      </section>
 
     </section>
   )
