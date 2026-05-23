@@ -1475,10 +1475,12 @@ export default function ReportRendererClient({
             : 'note'
     const color =
       tone === 'risk'
-        ? '#b45309'
+        ? '#92400e'
         : tone === 'ftu'
-          ? '#334155'
-          : '#475569'
+          ? '#111827'
+          : tone === 'photo'
+            ? '#334155'
+            : '#111827'
 
     return (
       <div
@@ -1486,8 +1488,8 @@ export default function ReportRendererClient({
           display: 'flex',
           alignItems: 'center',
           gap: mmToPx(1.2),
-          fontSize: '9pt',
-          fontWeight: 700,
+          fontSize: '9.5pt',
+          fontWeight: 800,
           color,
           lineHeight: 1.2,
         }}
@@ -1528,6 +1530,7 @@ export default function ReportRendererClient({
             gridTemplateColumns: `${labelWidth} 1fr`,
             columnGap: mmToPx(3),
             marginTop: mmToPx(1.5),
+            paddingLeft: tone === 'default' ? 0 : mmToPx(3),
             alignItems: 'start',
           }}
         >
@@ -1617,8 +1620,8 @@ export default function ReportRendererClient({
             <span className="ob-icon ob-icon--note self-start mt-[3px]" aria-hidden="true">
               <ReportIcon name="note" />
             </span>
-            <span className="ob-section__label text-sm font-bold tracking-wide uppercase leading-relaxed text-gray-900">
-              NOTERING
+            <span className="ob-section__label text-[13px] font-extrabold leading-relaxed text-gray-950">
+              Notering
             </span>
             <span className="ob-section__text text-sm leading-relaxed text-gray-900 whitespace-pre-line">
               {noteText || '--'}
@@ -1674,10 +1677,10 @@ export default function ReportRendererClient({
             className={
               isPdfMode
                 ? 'mt-3 border-l-2 border-amber-500 bg-white py-1 pl-3'
-                : 'mt-4 rounded-md border border-gray-200 bg-white p-3'
+                : 'ml-5 mt-4 rounded-md border border-gray-200 bg-white p-3'
             }
           >
-            <div className="flex items-center gap-2 text-xs font-semibold text-gray-700">
+            <div className="flex items-center gap-2 text-sm font-extrabold text-gray-950">
               <span className="ob-icon ob-icon--risk" aria-hidden="true">
                 <ReportIcon name="risk" />
               </span>
@@ -1694,14 +1697,14 @@ export default function ReportRendererClient({
             className={
               isPdfMode
                 ? 'mt-3 border-l-2 border-slate-400 bg-white py-1 pl-3'
-                : 'mt-4 rounded-md border border-gray-200 bg-white p-3'
+                : 'ml-5 mt-4 rounded-md border border-gray-200 bg-white p-3'
             }
           >
-            <div className="flex items-center gap-2 text-xs font-semibold text-gray-700">
+            <div className="flex items-center gap-2 text-sm font-extrabold text-gray-950">
               <span className="ob-icon ob-icon--ftu" aria-hidden="true">
                 <ReportIcon name="ftu" />
               </span>
-              <span>Fortsatt teknisk utredning</span>
+              <span>FTU</span>
             </div>
             <div className="text-sm text-gray-800 whitespace-pre-line">
               {ftuText}
@@ -1732,6 +1735,7 @@ export default function ReportRendererClient({
           gridTemplateColumns: `${labelWidth} 1fr`,
           columnGap: mmToPx(3),
           marginTop: mmToPx(1.5),
+          paddingLeft: tone === 'default' ? 0 : mmToPx(3),
           alignItems: 'start',
         }}
       >
