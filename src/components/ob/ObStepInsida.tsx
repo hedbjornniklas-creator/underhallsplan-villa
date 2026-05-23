@@ -4232,13 +4232,7 @@ function RoomControlPointsSection({
 
   const toggleListGroup = (groupId: string) => {
     setExpandedListGroupIds(prev => {
-      const next = new Set(prev)
-      if (next.has(groupId)) {
-        next.delete(groupId)
-      } else {
-        next.add(groupId)
-      }
-      return next
+      return prev.has(groupId) ? new Set() : new Set([groupId])
     })
   }
 
@@ -4528,28 +4522,29 @@ function RoomControlPointsSection({
     const isGreen = selectedItems.length === 0 && baseItem.status === 'ok'
     const isYellow = selectedItems.length > 0
     const isCollapsed = !expandedListGroupIds.has(groupId)
+    const selectedOutcomeIds = new Set(
+      selectedItems
+        .map(ci => ci.selected_outcome_id)
+        .filter((id): id is string => Boolean(id))
+    )
+    const orderedOutcomes = [
+      ...outcomes.filter(outcome => selectedOutcomeIds.has(outcome.id)),
+      ...outcomes.filter(outcome => !selectedOutcomeIds.has(outcome.id)),
+    ]
     const linkedImageCount = group.items.reduce(
       (sum, item) => sum + (item.id ? (imagesByControlItemId[item.id] || []).length : 0),
       0
     )
-    const hasText = group.items.some(item =>
-      Boolean(item.note?.trim() || item.risk_text?.trim() || item.ftu_text?.trim())
-    )
     const statusLabel = isGreen
-      ? 'Inget att notera'
+      ? 'OK'
       : isYellow
-        ? `${selectedItems.length} vald${selectedItems.length === 1 ? ' notering' : 'a noteringar'}`
-        : 'Ej färdig'
-    const statusClass = isGreen
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+        ? `${selectedItems.length} notering${selectedItems.length === 1 ? '' : 'ar'}`
+        : 'Ej klar'
+    const statusDotClass = isGreen
+      ? 'bg-emerald-500'
       : isYellow
-        ? 'border-amber-200 bg-amber-50 text-amber-900'
-        : 'border-red-200 bg-red-50 text-red-800'
-    const rowClass = isGreen
-      ? 'border-emerald-200 bg-white'
-      : isYellow
-        ? 'border-amber-200 bg-white'
-        : 'border-red-200 bg-white'
+        ? 'bg-amber-500'
+        : 'bg-gray-400'
 
     const renderItemDetails = (
       ci: InspectionControlItem,
@@ -4559,16 +4554,20 @@ function RoomControlPointsSection({
       const riskText = (ci.risk_text ?? outcome?.risk_template ?? '').trim()
       const ftuText = (ci.ftu_text ?? outcome?.ftu_template ?? '').trim()
       const ciImages = ci.id ? imagesByControlItemId[ci.id] || [] : []
+      const hasRiskText = riskText.length > 0
+      const hasFtuText = ftuText.length > 0
+      const analysisGridClass =
+        hasRiskText && hasFtuText ? 'mt-2 grid gap-2 md:grid-cols-2' : 'mt-2 grid gap-2'
 
       return (
-        <div key={ci.id ?? label} className="rounded-lg border border-gray-200 bg-white p-3">
+        <div key={ci.id ?? label} className="space-y-2">
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="text-xs font-semibold text-gray-900">{label}</div>
             {ci.id && ci.selected_outcome_id ? (
               <button
                 type="button"
                 onClick={() => clearSelectedOutcome(ci, selectedItems)}
-                className="text-xs text-rose-600 hover:underline"
+                className="text-xs text-gray-500 hover:text-rose-600 hover:underline"
                 disabled={isInspectionLocked}
               >
                 Ta bort notering
@@ -4590,14 +4589,14 @@ function RoomControlPointsSection({
             />
           </div>
 
-          {(riskText.length > 0 || ftuText.length > 0) && (
-            <div className="mt-2 grid gap-2 md:grid-cols-2">
-              {riskText.length > 0 && (
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+          {(hasRiskText || hasFtuText) && (
+            <div className={analysisGridClass}>
+              {hasRiskText && (
+                <div className="space-y-1">
                   <div className="text-xs font-semibold text-gray-700">Riskanalys</div>
                   <DebouncedTextarea
                     rows={3}
-                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
+                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                     placeholder="Beskriv riskanalys..."
                     value={riskText}
                     onSave={value => {
@@ -4607,12 +4606,12 @@ function RoomControlPointsSection({
                   />
                 </div>
               )}
-              {ftuText.length > 0 && (
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+              {hasFtuText && (
+                <div className="space-y-1">
                   <div className="text-xs font-semibold text-gray-700">Fortsatt teknisk utredning (FTU)</div>
                   <DebouncedTextarea
                     rows={3}
-                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
+                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                     placeholder="Beskriv fortsatt teknisk utredning..."
                     value={ftuText}
                     onSave={value => {
@@ -4646,7 +4645,7 @@ function RoomControlPointsSection({
       <article
         key={group.controlPointId}
         style={{ order: baseItem.sort_order ?? 0 }}
-        className={`overflow-hidden rounded-lg border ${rowClass}`}
+        className="overflow-hidden rounded-md border border-gray-200 bg-white"
       >
         <div className="flex min-w-0 items-center gap-2 px-3 py-2">
           <button
@@ -4657,17 +4656,13 @@ function RoomControlPointsSection({
           >
             <div className="truncate text-sm font-semibold text-gray-950">{baseItem.title}</div>
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusClass}`}>
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-600">
+                <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass}`} aria-hidden="true" />
                 {statusLabel}
               </span>
               {linkedImageCount > 0 ? (
-                <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800">
-                  {linkedImageCount} bild{linkedImageCount === 1 ? '' : 'er'}
-                </span>
-              ) : null}
-              {hasText ? (
-                <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] text-gray-700">
-                  Text
+                <span className="text-[11px] font-medium text-gray-500">
+                  Bilder {linkedImageCount}
                 </span>
               ) : null}
             </div>
@@ -4685,7 +4680,7 @@ function RoomControlPointsSection({
               <button
                 type="button"
                 onClick={() => onDeleteItemGroup(baseItem)}
-                className="text-xs text-rose-600 hover:underline md:text-[11px]"
+                className="text-xs text-gray-400 hover:text-rose-600 hover:underline md:text-[11px]"
                 disabled={isInspectionLocked}
               >
                 Ta bort
@@ -4695,52 +4690,7 @@ function RoomControlPointsSection({
         </div>
 
         {!isCollapsed ? (
-          <div className="space-y-3 border-t border-gray-200 bg-gray-50 px-3 py-3">
-            {description.length > 0 ? (
-              <details className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-                <summary className="cursor-pointer text-xs font-semibold text-gray-700">
-                  Beskrivning
-                </summary>
-                <p className="mt-2 text-xs leading-5 text-gray-600">{description}</p>
-              </details>
-            ) : null}
-
-            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-              <div className="border-b border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700">
-                Bedömning
-              </div>
-              <div className="divide-y divide-gray-100">
-                <button
-                  type="button"
-                  onClick={() => markControlPointOk(groupId, baseItem, selectedItems, isGreen)}
-                  disabled={isInspectionLocked || !baseItem.id}
-                  className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs transition ${
-                    isGreen ? 'bg-emerald-50 text-emerald-950' : 'bg-white text-gray-800 hover:bg-gray-50'
-                  }`}
-                >
-                  <span>Inget att notera</span>
-                  {isGreen ? <span className="font-semibold">Vald</span> : null}
-                </button>
-                {outcomes.map(outcome => {
-                  const activeItem = selectedItems.find(ci => ci.selected_outcome_id === outcome.id)
-                  return (
-                    <button
-                      key={outcome.id}
-                      type="button"
-                      onClick={() => selectOutcome(baseItem, selectedItems, outcome)}
-                      disabled={isInspectionLocked || !baseItem.id}
-                      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs transition ${
-                        activeItem ? 'bg-amber-50 text-amber-950' : 'bg-white text-gray-800 hover:bg-gray-50'
-                      }`}
-                    >
-                      <span>{outcome.label}</span>
-                      {activeItem ? <span className="font-semibold">Vald</span> : null}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
+          <div className="space-y-4 border-t border-gray-200 bg-white px-3 py-3">
             {selectedItems.length === 0
               ? renderItemDetails(baseItem, isGreen ? 'Inget att notera' : 'Notering')
               : selectedItems.map(ci => {
@@ -4750,6 +4700,73 @@ function RoomControlPointsSection({
                   if (!selectedOutcome) return null
                   return renderItemDetails(ci, selectedOutcome.label, selectedOutcome)
                 })}
+
+            {description.length > 0 ? (
+              <details className="border-t border-gray-100 pt-2">
+                <summary className="cursor-pointer text-xs font-medium text-gray-600">
+                  Beskrivning
+                </summary>
+                <p className="mt-2 text-xs leading-5 text-gray-600">{description}</p>
+              </details>
+            ) : null}
+
+            <div className="space-y-1 border-t border-gray-100 pt-3">
+              <div className="text-xs font-semibold text-gray-700">
+                {isYellow || isGreen ? 'Byt eller lägg till bedömning' : 'Välj bedömning'}
+              </div>
+              <div className="divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200 bg-white">
+                {isGreen ? (
+                  <button
+                    type="button"
+                    onClick={() => markControlPointOk(groupId, baseItem, selectedItems, isGreen)}
+                    disabled={isInspectionLocked || !baseItem.id}
+                    className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-2 bg-gray-50 px-3 py-2 text-left text-xs font-medium text-gray-950 transition"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-gray-900" aria-hidden="true" />
+                    <span>Inget att notera</span>
+                    <span className="text-[11px] text-gray-500">Vald</span>
+                  </button>
+                ) : null}
+
+                {orderedOutcomes.map(outcome => {
+                  const activeItem = selectedItems.find(ci => ci.selected_outcome_id === outcome.id)
+                  const isActive = Boolean(activeItem)
+                  return (
+                    <button
+                      key={outcome.id}
+                      type="button"
+                      onClick={() => selectOutcome(baseItem, selectedItems, outcome)}
+                      disabled={isInspectionLocked || !baseItem.id}
+                      className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-2 px-3 py-2 text-left text-xs transition ${
+                        isActive
+                          ? 'bg-gray-50 font-medium text-gray-950'
+                          : 'bg-white text-gray-800 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-gray-900' : 'bg-transparent'}`}
+                        aria-hidden="true"
+                      />
+                      <span>{outcome.label}</span>
+                      {isActive ? <span className="text-[11px] text-gray-500">Vald</span> : <span />}
+                    </button>
+                  )
+                })}
+
+                {!isGreen ? (
+                  <button
+                    type="button"
+                    onClick={() => markControlPointOk(groupId, baseItem, selectedItems, isGreen)}
+                    disabled={isInspectionLocked || !baseItem.id}
+                    className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-2 bg-white px-3 py-2 text-left text-xs text-gray-800 transition hover:bg-gray-50"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-transparent" aria-hidden="true" />
+                    <span>Inget att notera</span>
+                    <span />
+                  </button>
+                ) : null}
+              </div>
+            </div>
           </div>
         ) : null}
       </article>
@@ -4827,7 +4844,11 @@ function RoomControlPointsSection({
             <div
               key={ci.id}
               style={{ order: ci.sort_order ?? 0 }}
-              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 space-y-2"
+              className={
+                USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
+                  ? 'space-y-2 rounded-md border border-gray-200 bg-white px-3 py-2'
+                  : 'rounded-lg border border-red-200 bg-red-50 px-3 py-2 space-y-2'
+              }
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-semibold text-gray-900">
@@ -4848,7 +4869,11 @@ function RoomControlPointsSection({
                   <button
                     type="button"
                     onClick={() => ci.id && onDeleteItem(ci.id)}
-                    className="text-xs md:text-[11px] text-rose-600 hover:underline"
+                    className={
+                      USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
+                        ? 'text-xs text-gray-400 hover:text-rose-600 hover:underline md:text-[11px]'
+                        : 'text-xs md:text-[11px] text-rose-600 hover:underline'
+                    }
                     disabled={isInspectionLocked}
                   >
                     Ta bort notering
@@ -4861,7 +4886,7 @@ function RoomControlPointsSection({
                 <>
                   <div className="space-y-1">
                     <label className="text-xs md:text-[11px] text-gray-600">
-                      🧱 Notering
+                      {USE_INSIDA_CONTROL_POINT_LIST_LAYOUT ? 'Notering' : '🧱 Notering'}
                     </label>
                     <DebouncedTextarea
                       rows={2}
@@ -4877,7 +4902,7 @@ function RoomControlPointsSection({
 
                   <div className="space-y-1">
                     <label className="text-xs md:text-[11px] text-gray-600">
-                      ⚠️ Riskanalys
+                      {USE_INSIDA_CONTROL_POINT_LIST_LAYOUT ? 'Riskanalys' : '⚠️ Riskanalys'}
                     </label>
                     <DebouncedTextarea
                       rows={3}
@@ -4893,7 +4918,9 @@ function RoomControlPointsSection({
 
                   <div className="space-y-1">
                     <label className="text-xs md:text-[11px] text-gray-600">
-                      🔍 Fortsatt teknisk utredning (FTU)
+                      {USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
+                        ? 'Fortsatt teknisk utredning (FTU)'
+                        : '🔍 Fortsatt teknisk utredning (FTU)'}
                     </label>
                     <DebouncedTextarea
                       rows={3}
