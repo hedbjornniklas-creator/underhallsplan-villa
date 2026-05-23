@@ -4510,7 +4510,7 @@ function RoomControlPointsSection({
     }
   }
 
-  function renderControlPointListGroup(group: (typeof groupedItems)[number]) {
+  function renderControlPointListGroup(group: (typeof groupedItems)[number], groupIndex: number) {
     const groupId = group.controlPointId
     const baseItem = group.items[0]
     if (!baseItem) return null
@@ -4535,15 +4535,6 @@ function RoomControlPointsSection({
         : selectedOutcomeLabels.length > 1
           ? selectedOutcomeLabels.join(', ')
           : null
-    const selectedOutcomeIds = new Set(
-      selectedItems
-        .map(ci => ci.selected_outcome_id)
-        .filter((id): id is string => Boolean(id))
-    )
-    const orderedOutcomes = [
-      ...outcomes.filter(outcome => selectedOutcomeIds.has(outcome.id)),
-      ...outcomes.filter(outcome => !selectedOutcomeIds.has(outcome.id)),
-    ]
     const linkedImageCount = group.items.reduce(
       (sum, item) => sum + (item.id ? (imagesByControlItemId[item.id] || []).length : 0),
       0
@@ -4558,11 +4549,7 @@ function RoomControlPointsSection({
       : isYellow
         ? 'bg-amber-500'
         : 'bg-gray-400'
-    const accentClass = isGreen
-      ? 'border-l-emerald-400'
-      : isYellow
-        ? 'border-l-amber-400'
-        : 'border-l-gray-300'
+    const accentClass = groupIndex % 2 === 0 ? 'border-l-emerald-300' : 'border-l-orange-300'
     const controlPointSurfaceClass = isCollapsed ? 'bg-white' : 'bg-gray-50/50'
 
     const renderItemDetails = (
@@ -4720,20 +4707,25 @@ function RoomControlPointsSection({
                 {isYellow || isGreen ? 'Byt eller lägg till bedömning' : 'Välj bedömning'}
               </div>
               <div className="divide-y divide-gray-100 border-y border-gray-200 bg-white">
-                {isGreen ? (
-                  <button
-                    type="button"
-                    onClick={() => markControlPointOk(groupId, baseItem, selectedItems, isGreen)}
-                    disabled={isInspectionLocked || !baseItem.id}
-                    className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-2 bg-gray-50 px-3 py-2 text-left text-xs font-medium text-gray-950 transition"
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full bg-gray-900" aria-hidden="true" />
-                    <span>Inget att notera</span>
-                    <span className="text-[11px] text-gray-500">Vald</span>
-                  </button>
-                ) : null}
+                <button
+                  type="button"
+                  onClick={() => markControlPointOk(groupId, baseItem, selectedItems, isGreen)}
+                  disabled={isInspectionLocked || !baseItem.id}
+                  className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-2 px-3 py-2 text-left text-xs transition ${
+                    isGreen
+                      ? 'bg-gray-50 font-medium text-gray-950'
+                      : 'bg-white text-gray-800 hover:bg-gray-50'
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${isGreen ? 'bg-gray-900' : 'bg-transparent'}`}
+                    aria-hidden="true"
+                  />
+                  <span>Inget att notera</span>
+                  {isGreen ? <span className="text-[11px] text-gray-500">Vald</span> : <span />}
+                </button>
 
-                {orderedOutcomes.map(outcome => {
+                {outcomes.map(outcome => {
                   const activeItem = selectedItems.find(ci => ci.selected_outcome_id === outcome.id)
                   const isActive = Boolean(activeItem)
                   return (
@@ -4758,18 +4750,6 @@ function RoomControlPointsSection({
                   )
                 })}
 
-                {!isGreen ? (
-                  <button
-                    type="button"
-                    onClick={() => markControlPointOk(groupId, baseItem, selectedItems, isGreen)}
-                    disabled={isInspectionLocked || !baseItem.id}
-                    className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-2 bg-white px-3 py-2 text-left text-xs text-gray-800 transition hover:bg-gray-50"
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full bg-transparent" aria-hidden="true" />
-                    <span>Inget att notera</span>
-                    <span />
-                  </button>
-                ) : null}
               </div>
             </div>
 
@@ -4991,7 +4971,7 @@ function RoomControlPointsSection({
         )}
 
         {USE_INSIDA_CONTROL_POINT_LIST_LAYOUT
-          ? groupedItems.map(group => renderControlPointListGroup(group))
+          ? groupedItems.map((group, index) => renderControlPointListGroup(group, index))
           : groupedItems.map(group => {
           const groupId = group.controlPointId
           const baseItem = group.items[0]
