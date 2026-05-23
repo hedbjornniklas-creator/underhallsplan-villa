@@ -81,6 +81,7 @@ type InteriorControlItemRow = {
 type InspectionImageRow = {
   id: string
   control_item_id: string | null
+  exterior_observation_id: string | null
   file_path: string | null
   sort_order: number | null
   created_at?: string | null
@@ -1083,9 +1084,8 @@ export default async function Page({
 
   const { data: exteriorImages, error: exteriorImagesError } = await supabase
     .from('inspection_images')
-    .select('id, control_item_id, file_path, sort_order, created_at')
+    .select('id, control_item_id, exterior_observation_id, file_path, sort_order, created_at')
     .eq('inspection_id', resolvedParams.inspectionId)
-    .not('control_item_id', 'is', null)
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: true })
 
@@ -1126,11 +1126,17 @@ export default async function Page({
   }
 
   const imagesByControlItemId = new Map<string, InspectionImageRow[]>()
+  const imagesByExteriorObservationId = new Map<string, InspectionImageRow[]>()
   for (const image of exteriorImageRows) {
-    if (!image.control_item_id) continue
-    const bucket = imagesByControlItemId.get(image.control_item_id) ?? []
-    bucket.push(image)
-    imagesByControlItemId.set(image.control_item_id, bucket)
+    if (image.control_item_id) {
+      const bucket = imagesByControlItemId.get(image.control_item_id) ?? []
+      bucket.push(image)
+      imagesByControlItemId.set(image.control_item_id, bucket)
+    } else if (image.exterior_observation_id) {
+      const bucket = imagesByExteriorObservationId.get(image.exterior_observation_id) ?? []
+      bucket.push(image)
+      imagesByExteriorObservationId.set(image.exterior_observation_id, bucket)
+    }
   }
 
   const exteriorLines: string[] = []
@@ -1235,7 +1241,10 @@ export default async function Page({
       const label = trimText(row.part_label) || 'Fri notering'
       const freeRiskText = trimText(row.risk_text ?? '')
       const freeFtuText = trimText(row.ftu_text ?? '')
-      if (!note && freeRiskText.length === 0 && freeFtuText.length === 0) return
+      const photoUrls = (imagesByExteriorObservationId.get(row.id) ?? [])
+        .map((image) => buildInspectionImageUrl(image.file_path))
+        .filter((url): url is string => Boolean(url))
+      if (!note && freeRiskText.length === 0 && freeFtuText.length === 0 && photoUrls.length === 0) return
       const line = note || '--'
       if (freeRiskText.length > 0) {
         riskLines.push(label)
@@ -1253,7 +1262,7 @@ export default async function Page({
         noteText: line,
         riskText: freeRiskText,
         ftuText: freeFtuText,
-        photoUrls: [],
+        photoUrls,
         hasDeviations: true,
       })
     })
