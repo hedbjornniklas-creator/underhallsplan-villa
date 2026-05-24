@@ -135,7 +135,7 @@ type ReportDeliverySendResponse = {
   linkId: string
 }
 
-type SendCompletionChoice = 'lock' | 'send_open' | 'complete_only' | 'cancel'
+type SendCompletionChoice = 'lock' | 'send_open' | 'complete_only'
 type DeliveryAction = 'send_and_complete' | 'send_open' | 'complete_only'
 type RegeneratePdfResponse = ReportDeliveryMeta & { error?: string }
 
@@ -252,7 +252,6 @@ export default function ObWizard({
   const [extraRecipientsInput, setExtraRecipientsInput] = useState('')
   const [sendingReport, setSendingReport] = useState(false)
   const [regeneratingPdf, setRegeneratingPdf] = useState(false)
-  const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false)
   const [deliveryError, setDeliveryError] = useState<string | null>(null)
   const [deliveryResult, setDeliveryResult] = useState<string | null>(null)
   const currentInspectionStatus = deliveryMeta?.inspectionStatus ?? normalizedInspection.status ?? null
@@ -266,6 +265,13 @@ export default function ObWizard({
       deliveryMeta?.hasStoredPdf &&
       deliveryMeta.pdfStatus === 'ready'
   )
+  const deliveryActionDisabled =
+    !hasValidIds ||
+    !inspectionId ||
+    sendingReport ||
+    deliveryMetaLoading ||
+    deliveryMeta?.canSend === false
+  const deliverySendDisabled = deliveryActionDisabled || !isValidEmail(primaryRecipientInput)
 
   useEffect(() => {
     if (activeSection !== 'delivery' || !hasValidIds || !inspectionId) return
@@ -344,23 +350,12 @@ export default function ObWizard({
     }
   }, [activeSection, hasValidIds, inspectionId, deliveryMeta])
 
-  const requestSendInspectionReport = () => {
-    if (!hasValidIds || !inspectionId) return
-    setSendConfirmationOpen(true)
-  }
-
-  const handleSendConfirmationChoice = async (choice: SendCompletionChoice) => {
-    if (choice === 'cancel') {
-      setSendConfirmationOpen(false)
-      return
-    }
-
+  const handleSendActionChoice = async (choice: SendCompletionChoice) => {
     if ((choice === 'lock' || choice === 'send_open') && !isValidEmail(primaryRecipientInput)) {
       setDeliveryError('Ange en giltig huvudmottagare för utskick.')
       return
     }
 
-    setSendConfirmationOpen(false)
     const action: DeliveryAction =
       choice === 'complete_only'
         ? 'complete_only'
@@ -675,107 +670,75 @@ export default function ObWizard({
                     </div>
                   ) : null}
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={requestSendInspectionReport}
-                      disabled={
-                        sendingReport ||
-                        deliveryMetaLoading ||
-                        deliveryMeta?.canSend === false
-                      }
-                      className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-50 disabled:text-indigo-700 disabled:shadow-none"
-                    >
-                      {sendingReport
-                        ? 'Utför åtgärd...'
-                        : 'Skicka & klarmarkera utlåtandet'}
-                    </button>
-                  </div>
+                  <div className="rounded-md border border-gray-200 bg-white p-3">
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span
+                        className={`inline-flex rounded-full border px-2 py-1 font-medium ${
+                          isCurrentlyLocked
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                            : 'border-amber-200 bg-amber-50 text-amber-800'
+                        }`}
+                      >
+                        {isCurrentlyLocked ? 'Nuvarande läge: Låst' : 'Nuvarande läge: Upplåst'}
+                      </span>
+                      <span
+                        className={`inline-flex rounded-full border px-2 py-1 font-medium ${
+                          isCurrentlyCompleted
+                            ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                            : 'border-gray-200 bg-gray-50 text-gray-700'
+                        }`}
+                      >
+                        {isCurrentlyCompleted ? 'Status: Klarmarkerad' : 'Status: Pågående/utkast'}
+                      </span>
+                    </div>
 
-                  {sendConfirmationOpen ? (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                      <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-xl">
-                        <h3 className="text-base font-semibold text-gray-900">
-                          Skicka eller klarmarkera
-                        </h3>
-                        <p className="mt-2 text-sm text-gray-700">
-                          Välj hur besiktningen ska hanteras.
-                        </p>
-                        <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                          <span
-                            className={`inline-flex rounded-full border px-2 py-1 font-medium ${
-                              isCurrentlyLocked
-                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                                : 'border-amber-200 bg-amber-50 text-amber-800'
-                            }`}
-                          >
-                            {isCurrentlyLocked ? 'Nuvarande läge: Låst' : 'Nuvarande läge: Upplåst'}
-                          </span>
-                          <span
-                            className={`inline-flex rounded-full border px-2 py-1 font-medium ${
-                              isCurrentlyCompleted
-                                ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
-                                : 'border-gray-200 bg-gray-50 text-gray-700'
-                            }`}
-                          >
-                            {isCurrentlyCompleted
-                              ? 'Status: Klarmarkerad'
-                              : 'Status: Pågående/utkast'}
-                          </span>
-                        </div>
-                        <div className="mt-3 space-y-2 text-xs text-gray-600">
-                          <div>
-                            <strong>Klarmarkera och lås:</strong> Utlåtandet skickas och besiktningen låses.
-                          </div>
-                          <div>
-                            <strong>Skicka utan låsning:</strong> Utlåtandet skickas men besiktningen förblir öppen.
-                          </div>
-                          <div>
-                            <strong>Enbart klarmarkera:</strong> Besiktningen klarmarkeras och låses utan utskick.
-                          </div>
-                          <div>
-                            <strong>Avbryt:</strong> Inget utskick görs.
-                          </div>
-                        </div>
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void handleSendConfirmationChoice('lock')}
-                            disabled={!isValidEmail(primaryRecipientInput)}
-                            className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-50 disabled:text-indigo-700 disabled:shadow-none"
-                          >
-                            {isCurrentlyCompleted
-                              ? 'Skicka och behåll låst'
-                              : 'Skicka, klarmarkera och lås'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleSendConfirmationChoice('send_open')}
-                            disabled={!isValidEmail(primaryRecipientInput)}
-                            className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 shadow-sm hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {isCurrentlyCompleted
-                              ? 'Skicka och lämna upplåst'
-                              : 'Skicka utan låsning'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleSendConfirmationChoice('complete_only')}
-                            className="inline-flex items-center rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 shadow-sm hover:bg-emerald-100"
-                          >
-                            Enbart klarmarkera
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleSendConfirmationChoice('cancel')}
-                            className="inline-flex items-center rounded-md border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-50"
-                          >
-                            Avbryt (skicka inte)
-                          </button>
-                        </div>
+                    <div className="mt-3 space-y-2 text-xs text-gray-600">
+                      <div>
+                        <strong>Klarmarkera och lås:</strong> Utlåtandet skickas och besiktningen låses.
+                      </div>
+                      <div>
+                        <strong>Skicka utan låsning:</strong> Utlåtandet skickas men besiktningen förblir öppen.
+                      </div>
+                      <div>
+                        <strong>Enbart klarmarkera:</strong> Besiktningen klarmarkeras och låses utan utskick.
                       </div>
                     </div>
-                  ) : null}
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleSendActionChoice('lock')}
+                        disabled={deliverySendDisabled}
+                        className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-50 disabled:text-indigo-700 disabled:shadow-none"
+                      >
+                        {isCurrentlyCompleted
+                          ? 'Skicka och behåll låst'
+                          : 'Skicka, klarmarkera och lås'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleSendActionChoice('send_open')}
+                        disabled={deliverySendDisabled}
+                        className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isCurrentlyCompleted
+                          ? 'Skicka och lämna upplåst'
+                          : 'Skicka utan låsning'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleSendActionChoice('complete_only')}
+                        disabled={deliveryActionDisabled}
+                        className="inline-flex items-center rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Enbart klarmarkera
+                      </button>
+                    </div>
+
+                    {sendingReport ? (
+                      <p className="mt-2 text-xs text-gray-600">Utför åtgärd...</p>
+                    ) : null}
+                  </div>
 
                   {deliveryMeta ? (
                     <div className="rounded-md border border-gray-200 bg-white p-2 text-xs text-gray-700">
