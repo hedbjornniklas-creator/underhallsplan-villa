@@ -611,7 +611,7 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
           <div className="mt-3 grid gap-4 lg:grid-cols-3">
             <article>
               <h3 className="text-xs font-semibold uppercase text-slate-500">
-                Tillhandahållna handlingar
+                Handlingar
               </h3>
               {providedDocuments.length > 0 ? (
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">

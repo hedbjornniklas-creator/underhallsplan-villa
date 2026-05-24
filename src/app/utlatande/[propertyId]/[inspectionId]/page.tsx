@@ -129,6 +129,22 @@ export default async function Page({
     return fallback
   }
   const trimText = (value: string | null | undefined) => (value ?? '').trim()
+  const formatDocumentReportLine = (doc: {
+    title?: string | null
+    status?: string | null
+    note?: string | null
+  }) => {
+    const status = trimText(doc.status).toLowerCase()
+    if (status === 'na') return null
+
+    const title = valueOrFallback(doc.title, 'Handling')
+    const note = trimText(doc.note)
+    if (status === 'missing') {
+      return note ? `${title}: Inte tillhandahållen. ${note}` : `${title}: Inte tillhandahållen`
+    }
+
+    return note ? `${title}: ${note}` : title
+  }
   const normalizeSwedish = (value: string) =>
     String(value ?? '')
       // Double-encoded mojibake (UTF-8 -> Latin-1 -> UTF-8)
@@ -439,12 +455,7 @@ export default async function Page({
 
   const providedDocuments =
     (documentRows as any[] | null)
-      ?.filter((doc: any) => doc.status === 'present')
-      .map((doc: any) => {
-        const title = valueOrFallback(doc.title, 'Handling')
-        const note = (doc.note ?? '').trim()
-        return note ? `${title}: ${note}` : title
-      })
+      ?.map((doc: any) => formatDocumentReportLine(doc))
       .filter(Boolean) ?? []
 
   const { data: disclosureRow, error: disclosureError } = await supabase

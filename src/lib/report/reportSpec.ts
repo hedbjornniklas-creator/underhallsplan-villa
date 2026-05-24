@@ -385,7 +385,7 @@ export const REPORT_SPEC: ReportSection[] = [
       {
         type: 'handlingarLayout',
         labels: {
-          provided: 'TillhandahÃ¥llna handlingar:',
+          provided: 'Handlingar:',
           info: 'Information frÃ¥n uppdragsgivare, fastighetsÃ¤gare, eller dess ombud:',
           faults: 'Upplysningar om fel i fastigheten:',
         },
