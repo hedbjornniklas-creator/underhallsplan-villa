@@ -612,12 +612,18 @@ function splitInspectionGroupTitle(title: string) {
 
   const context = parts[0]?.trim() ?? ''
   const label = parts.slice(1).join(' - ').trim()
+  const normalizedContext = context
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
   const isFloorContext =
-    /^plan\s+\d+$/i.test(context) ||
-    /^källare/i.test(context) ||
-    /^allmänt$/i.test(context) ||
-    /^vind$/i.test(context) ||
-    /^inredd\s+vind$/i.test(context)
+    /^plan\s+\d+$/.test(normalizedContext) ||
+    /^kallare/.test(normalizedContext) ||
+    /^suterrang/.test(normalizedContext) ||
+    /^souterrang/.test(normalizedContext) ||
+    /^allmant$/.test(normalizedContext) ||
+    /^vind$/.test(normalizedContext) ||
+    /^inredd\s+vind$/.test(normalizedContext)
 
   if (!isFloorContext || !label) return { context: '', label: title.trim() }
   return { context, label }

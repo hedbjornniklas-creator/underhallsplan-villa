@@ -12,6 +12,14 @@ import {
   buildInteriorFloorKeysFromOverview,
   buildOverviewFloorOptionLookup,
 } from '@/lib/ob/overviewFloors'
+import {
+  deleteRoundImageUploadItem,
+  getRoundImageUploadItem,
+  listRoundImageUploadItems,
+  putRoundImageUploadItem,
+  updateRoundImageUploadItem,
+  type RoundImageUploadItem,
+} from '@/lib/ob/roundImageUploadQueue'
 
 type Inspection = {
   id: string
@@ -130,6 +138,13 @@ type InspectionImage = {
   ignored_at?: string | null
 }
 
+type RoundImage = InspectionImage & {
+  local_queue_id?: string
+  local_preview_url?: string
+  local_upload_status?: RoundImageUploadItem['status']
+  local_upload_error?: string | null
+}
+
 type QuickNote = {
   id: string
   inspection_id: string
@@ -220,6 +235,15 @@ const getImagePublicUrl = (filePath: string) => {
   const { data } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(filePath)
   return data.publicUrl
 }
+
+const createLocalId = () =>
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => {
+        const random = Math.floor(Math.random() * 16)
+        const value = char === 'x' ? random : (random & 0x3) | 0x8
+        return value.toString(16)
+      })
 
 const parseInspectionSideToken = (value: string): InspectionSide | null => {
   const token = normalizeSwedish(value)
@@ -318,7 +342,6 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   const [area, setArea] = useState<RoundArea>('interior')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
@@ -342,6 +365,8 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   const [controlPointMetaById, setControlPointMetaById] = useState<Record<string, ControlPointLite>>({})
   const [quickNotes, setQuickNotes] = useState<QuickNote[]>([])
   const [images, setImages] = useState<InspectionImage[]>([])
+  const [queuedImageUploads, setQueuedImageUploads] = useState<RoundImageUploadItem[]>([])
+  const [localImagePreviewUrls, setLocalImagePreviewUrls] = useState<Record<string, string>>({})
 
   const [selectedControlItemId, setSelectedControlItemId] = useState<string | null>(null)
   const [controlItemDialogId, setControlItemDialogId] = useState<string | null>(null)
@@ -364,6 +389,19 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   const overlayHistoryPushedRef = useRef(false)
   const ensuredInteriorRoomIdsRef = useRef<Set<string>>(new Set())
   const ensuredExteriorItemIdsRef = useRef<Set<string>>(new Set())
+  const uploadProcessorRunningRef = useRef(false)
+  const localImagePreviewUrlsRef = useRef<Record<string, string>>({})
+
+  useEffect(() => {
+    localImagePreviewUrlsRef.current = localImagePreviewUrls
+  }, [localImagePreviewUrls])
+
+  useEffect(
+    () => () => {
+      Object.values(localImagePreviewUrlsRef.current).forEach(url => URL.revokeObjectURL(url))
+    },
+    []
+  )
 
   const activeRoom = useMemo(
     () => rooms.find(room => room.id === activeRoomId) ?? null,
@@ -430,27 +468,68 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     [rooms, activeFloor]
   )
 
+  const localImages = useMemo<RoundImage[]>(
+    () =>
+      queuedImageUploads.map(item => ({
+        id: item.serverImageId,
+        inspection_id: item.inspectionId,
+        interior_room_id: item.link.interior_room_id,
+        exterior_observation_id: item.link.exterior_observation_id,
+        control_item_id: item.link.control_item_id,
+        file_path: item.storagePath,
+        label: null,
+        sort_order: item.sortOrder,
+        created_at: item.createdAt,
+        capture_source: 'ob_round',
+        source_area: item.sourceArea,
+        origin_interior_room_id: item.origin.origin_interior_room_id,
+        origin_exterior_observation_id: item.origin.origin_exterior_observation_id,
+        origin_exterior_item_id: item.origin.origin_exterior_item_id,
+        origin_floor_label: item.origin.origin_floor_label,
+        origin_room_label: item.origin.origin_room_label,
+        origin_room_type_key: item.origin.origin_room_type_key,
+        origin_exterior_item_key: item.origin.origin_exterior_item_key,
+        captured_at: item.capturedAt,
+        processing_status: item.link.processing_status,
+        ignored_at: item.link.ignored_at,
+        local_queue_id: item.id,
+        local_preview_url: localImagePreviewUrls[item.id],
+        local_upload_status: item.status,
+        local_upload_error: item.error,
+      })),
+    [queuedImageUploads, localImagePreviewUrls]
+  )
+
+  const roundImages = useMemo<RoundImage[]>(
+    () => [...localImages, ...images],
+    [localImages, images]
+  )
+
+  const pendingUploadCount = queuedImageUploads.length
+  const failedUploadCount = queuedImageUploads.filter(item => item.status === 'failed').length
+  const uploadingCount = queuedImageUploads.filter(item => item.status === 'uploading').length
+
   const activeRoomImages = useMemo(() => {
     if (!activeRoom?.id) return []
-    return images
+    return roundImages
       .filter(image => image.origin_interior_room_id === activeRoom.id && !image.control_item_id)
       .sort((a, b) => {
         const left = new Date(a.captured_at ?? a.created_at ?? 0).getTime()
         const right = new Date(b.captured_at ?? b.created_at ?? 0).getTime()
         return right - left
       })
-  }, [activeRoom, images])
+  }, [activeRoom, roundImages])
 
   const activeExteriorImages = useMemo(() => {
     if (!activeExteriorItem?.id) return []
-    return images
+    return roundImages
       .filter(image => image.origin_exterior_item_id === activeExteriorItem.id && !image.control_item_id)
       .sort((a, b) => {
         const left = new Date(a.captured_at ?? a.created_at ?? 0).getTime()
         const right = new Date(b.captured_at ?? b.created_at ?? 0).getTime()
         return right - left
       })
-  }, [activeExteriorItem, images])
+  }, [activeExteriorItem, roundImages])
 
   const activeTargetLabel = useMemo(() => {
     if (area === 'interior') {
@@ -515,7 +594,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     const activeRoomOriginId = activeRoom?.id ?? null
     const activeExteriorOriginId = activeExteriorItem?.id ?? null
 
-    return images
+    return roundImages
       .filter(image => {
         const status = imageStatus(image)
         if (imageFilter === 'unprocessed') return status === 'unprocessed'
@@ -537,11 +616,11 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         const right = new Date(b.captured_at ?? b.created_at ?? 0).getTime()
         return right - left
       })
-  }, [images, imageFilter, area, activeRoom, activeExteriorItem])
+  }, [roundImages, imageFilter, area, activeRoom, activeExteriorItem])
 
   const selectedImages = useMemo(
-    () => images.filter(image => selectedImageIds.has(image.id)),
-    [images, selectedImageIds]
+    () => roundImages.filter(image => selectedImageIds.has(image.id)),
+    [roundImages, selectedImageIds]
   )
   const overlayOpen =
     Boolean(previewImage) ||
@@ -582,11 +661,207 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     return false
   }, [previewImage, searchOpen, controlItemDialogId, freeNoteDialogId, exteriorDialogOpen, roomDialogOpen])
 
+  const updateQueuedUploadInState = useCallback((item: RoundImageUploadItem) => {
+    setQueuedImageUploads(prev => prev.map(row => (row.id === item.id ? item : row)))
+  }, [])
+
+  const removeQueuedUploadFromState = useCallback((id: string) => {
+    setQueuedImageUploads(prev => prev.filter(row => row.id !== id))
+    setLocalImagePreviewUrls(prev => {
+      const current = prev[id]
+      if (current) URL.revokeObjectURL(current)
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }, [])
+
+  const refreshQueuedImageUploads = useCallback(async () => {
+    try {
+      const rows = await listRoundImageUploadItems(inspection.id)
+      setQueuedImageUploads(rows)
+      setLocalImagePreviewUrls(prev => {
+        const next = { ...prev }
+        const activeIds = new Set(rows.map(row => row.id))
+
+        rows.forEach(row => {
+          if (!next[row.id]) next[row.id] = URL.createObjectURL(row.blob)
+        })
+
+        Object.keys(next).forEach(id => {
+          if (!activeIds.has(id)) {
+            URL.revokeObjectURL(next[id])
+            delete next[id]
+          }
+        })
+
+        return next
+      })
+    } catch (e: unknown) {
+      console.error('load local OB round image queue failed:', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte läsa lokal bildkö.')
+    }
+  }, [inspection.id])
+
+  const processQueuedImageUploads = useCallback(async () => {
+    if (uploadProcessorRunningRef.current) return
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+
+    uploadProcessorRunningRef.current = true
+    try {
+      const attemptedIds = new Set<string>()
+      while (true) {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) break
+        const rows = await listRoundImageUploadItems(inspection.id)
+        const item = rows.find(row => !attemptedIds.has(row.id))
+        if (!item) break
+        attemptedIds.add(item.id)
+
+        const uploadingItem: RoundImageUploadItem = {
+          ...item,
+          status: 'uploading',
+          attempts: item.attempts + 1,
+          error: null,
+          updatedAt: new Date().toISOString(),
+        }
+        await putRoundImageUploadItem(uploadingItem)
+        updateQueuedUploadInState(uploadingItem)
+
+        try {
+          const { error: uploadError } = await supabase.storage
+            .from(IMAGE_BUCKET)
+            .upload(item.storagePath, item.blob, {
+              cacheControl: '3600',
+              upsert: true,
+              contentType: item.contentType || 'image/jpeg',
+            })
+          if (uploadError) throw uploadError
+
+          const latestItem = await getRoundImageUploadItem(item.id)
+          if (!latestItem) {
+            await supabase.storage.from(IMAGE_BUCKET).remove([item.storagePath])
+            continue
+          }
+
+          const { data, error: upsertError } = await supabase
+            .from('inspection_images')
+            .upsert(
+              {
+                id: latestItem.serverImageId,
+                inspection_id: latestItem.inspectionId,
+                interior_room_id: latestItem.link.interior_room_id,
+                exterior_observation_id: latestItem.link.exterior_observation_id,
+                control_item_id: latestItem.link.control_item_id,
+                file_path: latestItem.storagePath,
+                label: null,
+                sort_order: latestItem.sortOrder,
+                capture_source: 'ob_round',
+                source_area: latestItem.sourceArea,
+                origin_interior_room_id: latestItem.origin.origin_interior_room_id,
+                origin_exterior_observation_id: latestItem.origin.origin_exterior_observation_id,
+                origin_exterior_item_id: latestItem.origin.origin_exterior_item_id,
+                origin_floor_label: latestItem.origin.origin_floor_label,
+                origin_room_label: latestItem.origin.origin_room_label,
+                origin_room_type_key: latestItem.origin.origin_room_type_key,
+                origin_exterior_item_key: latestItem.origin.origin_exterior_item_key,
+                captured_at: latestItem.capturedAt,
+                processing_status: latestItem.link.processing_status,
+                ignored_at: latestItem.link.ignored_at,
+              },
+              { onConflict: 'id' }
+            )
+            .select('*')
+            .single()
+
+          if (upsertError) throw upsertError
+
+          const saved = data as InspectionImage
+          await deleteRoundImageUploadItem(latestItem.id)
+          removeQueuedUploadFromState(latestItem.id)
+          setImages(prev =>
+            prev.some(image => image.id === saved.id)
+              ? prev.map(image => (image.id === saved.id ? saved : image))
+              : [saved, ...prev]
+          )
+          setMessage('Bild uppladdad.')
+        } catch (e: unknown) {
+          const latestItem = await getRoundImageUploadItem(item.id)
+          if (!latestItem) continue
+          const failedItem: RoundImageUploadItem = {
+            ...latestItem,
+            status: 'failed',
+            attempts: uploadingItem.attempts,
+            error: e instanceof Error ? e.message : 'Kunde inte ladda upp bilden.',
+            updatedAt: new Date().toISOString(),
+          }
+          await putRoundImageUploadItem(failedItem)
+          updateQueuedUploadInState(failedItem)
+          console.error('background OB round image upload failed:', e)
+        }
+      }
+    } catch (e: unknown) {
+      console.error('process local OB round image queue failed:', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte bearbeta lokal bildkö.')
+    } finally {
+      uploadProcessorRunningRef.current = false
+    }
+  }, [inspection.id, removeQueuedUploadFromState, updateQueuedUploadInState])
+
   useEffect(() => {
     if (!inspection?.id) return
     void loadAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inspection?.id])
+
+  useEffect(() => {
+    if (!inspection?.id) return
+    void refreshQueuedImageUploads()
+  }, [inspection?.id, refreshQueuedImageUploads])
+
+  useEffect(() => {
+    if (queuedImageUploads.length === 0) return
+    void processQueuedImageUploads()
+  }, [queuedImageUploads.length, processQueuedImageUploads])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handleOnline = () => void processQueuedImageUploads()
+    window.addEventListener('online', handleOnline)
+    return () => window.removeEventListener('online', handleOnline)
+  }, [processQueuedImageUploads])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const hasPending = queuedImageUploads.length > 0
+    if (!hasPending) return
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+
+    const handleDocumentClick = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null
+      const anchor = target?.closest('a[href]') as HTMLAnchorElement | null
+      if (!anchor || anchor.target === '_blank') return
+      const href = anchor.href
+      if (!href) return
+      const nextUrl = new URL(href, window.location.href)
+      const currentUrl = new URL(window.location.href)
+      if (nextUrl.origin === currentUrl.origin && nextUrl.pathname === currentUrl.pathname) return
+      const ok = window.confirm(
+        'Det finns bilder som bara är sparade lokalt på den här enheten. De laddas upp när besiktningen öppnas igen. Vill du lämna ändå?'
+      )
+      if (!ok) event.preventDefault()
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    document.addEventListener('click', handleDocumentClick, true)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      document.removeEventListener('click', handleDocumentClick, true)
+    }
+  }, [queuedImageUploads.length])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1460,63 +1735,59 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
   const uploadImage = async (blob: Blob, originalName?: string, linkToControlItemId: string | null = null) => {
     if (isInspectionLocked) return
-    setUploading(true)
     setError(null)
     setMessage(null)
     try {
       const capturedAt = new Date().toISOString()
       const datePart = capturedAt.slice(0, 10)
       const ext = originalName?.split('.').pop()?.toLowerCase() || 'jpg'
-      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+      const localId = createLocalId()
+      const serverImageId = createLocalId()
+      const fileName = `${capturedAt.replace(/[:.]/g, '-')}-${localId.slice(0, 8)}.${ext}`
       const path = `${inspection.id}/round/${datePart}/${fileName}`
-
-      const { error: uploadError } = await supabase.storage.from(IMAGE_BUCKET).upload(path, blob, {
-        cacheControl: '3600',
-        upsert: false,
-        contentType: blob.type || 'image/jpeg',
-      })
-      if (uploadError) throw uploadError
-
       const origin = await getCaptureOrigin()
-      const maxSort = images.reduce((max, image) => Math.max(max, image.sort_order ?? 0), 0)
+      const maxSort = roundImages.reduce((max, image) => Math.max(max, image.sort_order ?? 0), 0)
       const linkedControlItem = linkToControlItemId
         ? controlItems.find(item => item.id === linkToControlItemId) ?? null
         : null
 
-      const { data, error: insertError } = await supabase
-        .from('inspection_images')
-        .insert({
-          inspection_id: inspection.id,
+      const item: RoundImageUploadItem = {
+        id: localId,
+        serverImageId,
+        inspectionId: inspection.id,
+        blob,
+        originalName: originalName ?? null,
+        contentType: blob.type || 'image/jpeg',
+        storagePath: path,
+        capturedAt,
+        createdAt: capturedAt,
+        updatedAt: capturedAt,
+        status: 'queued',
+        attempts: 0,
+        error: null,
+        sortOrder: maxSort + 10,
+        sourceArea: area,
+        origin,
+        link: {
+          control_item_id: linkedControlItem?.id ?? null,
           interior_room_id: linkedControlItem?.interior_room_id ?? null,
           exterior_observation_id: linkedControlItem?.exterior_observation_id ?? null,
-          control_item_id: linkedControlItem?.id ?? null,
-          file_path: path,
-          label: null,
-          sort_order: maxSort + 10,
-          capture_source: 'ob_round',
-          source_area: area,
-          origin_interior_room_id: origin.origin_interior_room_id,
-          origin_exterior_observation_id: origin.origin_exterior_observation_id,
-          origin_exterior_item_id: origin.origin_exterior_item_id,
-          origin_floor_label: origin.origin_floor_label,
-          origin_room_label: origin.origin_room_label,
-          origin_room_type_key: origin.origin_room_type_key,
-          origin_exterior_item_key: origin.origin_exterior_item_key,
-          captured_at: capturedAt,
           processing_status: linkedControlItem ? 'linked' : 'unprocessed',
-        })
-        .select('*')
-        .single()
+          ignored_at: null,
+        },
+      }
 
-      if (insertError) throw insertError
-      const saved = data as InspectionImage
-      setImages(prev => [saved, ...prev])
-      setMessage(linkedControlItem ? 'Bild sparad och kopplad.' : 'Bild sparad.')
+      await putRoundImageUploadItem(item)
+      setQueuedImageUploads(prev => [...prev, item])
+      setLocalImagePreviewUrls(prev => ({
+        ...prev,
+        [item.id]: URL.createObjectURL(blob),
+      }))
+      setMessage(linkedControlItem ? 'Bild sparad lokalt och köad för uppladdning.' : 'Bild sparad lokalt.')
+      void processQueuedImageUploads()
     } catch (e: unknown) {
-      console.error('upload OB round image failed:', e)
-      setError(e instanceof Error ? e.message : 'Kunde inte spara bilden.')
-    } finally {
-      setUploading(false)
+      console.error('queue OB round image failed:', e)
+      setError(e instanceof Error ? e.message : 'Kunde inte spara bilden lokalt.')
     }
   }
 
@@ -1558,6 +1829,22 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     }
   }
 
+  const isLocalRoundImage = (image: RoundImage | InspectionImage): image is RoundImage & { local_queue_id: string } =>
+    Boolean((image as RoundImage).local_queue_id)
+
+  const getRoundImageSrc = (image: RoundImage | InspectionImage) =>
+    (image as RoundImage).local_preview_url ?? getImagePublicUrl(image.file_path)
+
+  const updateLocalQueuedImage = async (
+    image: RoundImage & { local_queue_id: string },
+    patch: Partial<RoundImageUploadItem>
+  ) => {
+    const updated = await updateRoundImageUploadItem(image.local_queue_id, patch)
+    if (!updated) return null
+    updateQueuedUploadInState(updated)
+    return updated
+  }
+
   const linkSelectedImagesToControlItem = async (controlItemId = selectedControlItemId) => {
     if (isInspectionLocked) return
     if (!controlItemId) {
@@ -1570,8 +1857,9 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     }
     const controlItem = controlItems.find(item => item.id === controlItemId)
     if (!controlItem?.id) return
+    const resolvedControlItemId = controlItem.id
     const alreadyLinkedElsewhere = selectedImages.find(
-      image => image.control_item_id && image.control_item_id !== controlItem.id
+      image => image.control_item_id && image.control_item_id !== resolvedControlItemId
     )
     if (alreadyLinkedElsewhere) {
       setError('En vald bild är redan kopplad till en annan notering.')
@@ -1581,24 +1869,49 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     setSaving(true)
     setError(null)
     try {
-      const imageIds = selectedImages.map(image => image.id)
-      const { data, error: updateError } = await supabase
-        .from('inspection_images')
-        .update({
-          control_item_id: controlItem.id,
-          interior_room_id: controlItem.interior_room_id,
-          exterior_observation_id: controlItem.exterior_observation_id,
-          processing_status: 'linked',
-          ignored_at: null,
-        })
-        .in('id', imageIds)
-        .select('*')
+      const localImagesToUpdate = selectedImages.filter(isLocalRoundImage)
+      const serverImagesToUpdate = selectedImages.filter(image => !isLocalRoundImage(image))
+      const serverImageIds = serverImagesToUpdate.map(image => image.id)
+      let updated: InspectionImage[] = []
 
-      if (updateError) throw updateError
-      const updated = (data ?? []) as InspectionImage[]
-      setImages(prev => prev.map(image => updated.find(row => row.id === image.id) ?? image))
+      if (serverImageIds.length > 0) {
+        const { data, error: updateError } = await supabase
+          .from('inspection_images')
+          .update({
+            control_item_id: resolvedControlItemId,
+            interior_room_id: controlItem.interior_room_id,
+            exterior_observation_id: controlItem.exterior_observation_id,
+            processing_status: 'linked',
+            ignored_at: null,
+          })
+          .in('id', serverImageIds)
+          .select('*')
+
+        if (updateError) throw updateError
+        updated = (data ?? []) as InspectionImage[]
+        setImages(prev => prev.map(image => updated.find(row => row.id === image.id) ?? image))
+      }
+
+      await Promise.all(
+        localImagesToUpdate.map(image =>
+          updateLocalQueuedImage(image, {
+            link: {
+              control_item_id: resolvedControlItemId,
+              interior_room_id: controlItem.interior_room_id,
+              exterior_observation_id: controlItem.exterior_observation_id,
+              processing_status: 'linked',
+              ignored_at: null,
+            },
+            status: image.local_upload_status === 'failed' ? 'queued' : image.local_upload_status ?? 'queued',
+            error: null,
+          })
+        )
+      )
+
       setSelectedImageIds(new Set())
-      setMessage(`${updated.length} bild${updated.length === 1 ? '' : 'er'} kopplad${updated.length === 1 ? '' : 'e'}.`)
+      const count = updated.length + localImagesToUpdate.length
+      setMessage(`${count} bild${count === 1 ? '' : 'er'} kopplad${count === 1 ? '' : 'e'}.`)
+      if (localImagesToUpdate.length > 0) void processQueuedImageUploads()
     } catch (e: unknown) {
       console.error('link images failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte koppla bilder.')
@@ -1609,8 +1922,25 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
   const unlinkImageFromControlItem = async (imageId: string) => {
     if (isInspectionLocked) return
-    const image = images.find(row => row.id === imageId)
+    const image = roundImages.find(row => row.id === imageId)
     if (!image?.id) return
+
+    if (isLocalRoundImage(image)) {
+      await updateLocalQueuedImage(image, {
+        link: {
+          control_item_id: null,
+          interior_room_id: null,
+          exterior_observation_id: null,
+          processing_status: 'unprocessed',
+          ignored_at: null,
+        },
+        status: image.local_upload_status === 'failed' ? 'queued' : image.local_upload_status ?? 'queued',
+        error: null,
+      })
+      setMessage('Bilden kopplades loss.')
+      void processQueuedImageUploads()
+      return
+    }
 
     try {
       const { data, error: updateError } = await supabase
@@ -1648,37 +1978,68 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       setError('Kopplade bilder kan inte ignoreras. Radera bilden om den inte ska användas.')
       return
     }
-    const imageIds = selectedImages.map(image => image.id)
+    const localImagesToUpdate = selectedImages.filter(isLocalRoundImage)
+    const serverImagesToUpdate = selectedImages.filter(image => !isLocalRoundImage(image))
+    const imageIds = serverImagesToUpdate.map(image => image.id)
     const ignoredAt = new Date().toISOString()
-    const { data, error: updateError } = await supabase
-      .from('inspection_images')
-      .update({ processing_status: 'ignored', ignored_at: ignoredAt })
-      .in('id', imageIds)
-      .select('*')
-    if (updateError) {
-      setError(updateError.message)
-      return
+    if (imageIds.length > 0) {
+      const { data, error: updateError } = await supabase
+        .from('inspection_images')
+        .update({ processing_status: 'ignored', ignored_at: ignoredAt })
+        .in('id', imageIds)
+        .select('*')
+      if (updateError) {
+        setError(updateError.message)
+        return
+      }
+      const updated = (data ?? []) as InspectionImage[]
+      setImages(prev => prev.map(image => updated.find(row => row.id === image.id) ?? image))
     }
-    const updated = (data ?? []) as InspectionImage[]
-    setImages(prev => prev.map(image => updated.find(row => row.id === image.id) ?? image))
+    await Promise.all(
+      localImagesToUpdate.map(image =>
+        updateLocalQueuedImage(image, {
+          link: {
+            control_item_id: null,
+            interior_room_id: image.interior_room_id,
+            exterior_observation_id: image.exterior_observation_id,
+            processing_status: 'ignored',
+            ignored_at: ignoredAt,
+          },
+          status: image.local_upload_status === 'failed' ? 'queued' : image.local_upload_status ?? 'queued',
+          error: null,
+        })
+      )
+    )
     setSelectedImageIds(new Set())
+    if (localImagesToUpdate.length > 0) void processQueuedImageUploads()
   }
 
   const deleteSelectedImages = async () => {
     if (selectedImages.length === 0 || isInspectionLocked) return
     if (!confirm(`Radera ${selectedImages.length} bild${selectedImages.length === 1 ? '' : 'er'}?`)) return
-    const paths = selectedImages.map(image => image.file_path).filter(Boolean)
+    const localImagesToDelete = selectedImages.filter(isLocalRoundImage)
+    const serverImagesToDelete = selectedImages.filter(image => !isLocalRoundImage(image))
+    await Promise.all(
+      localImagesToDelete.map(async image => {
+        if (!image.local_queue_id) return
+        await deleteRoundImageUploadItem(image.local_queue_id)
+        removeQueuedUploadFromState(image.local_queue_id)
+      })
+    )
+    const paths = serverImagesToDelete.map(image => image.file_path).filter(Boolean)
     if (paths.length > 0) {
       const { error: storageError } = await supabase.storage.from(IMAGE_BUCKET).remove(paths)
       if (storageError) console.error('delete round images from storage failed:', storageError)
     }
-    const imageIds = selectedImages.map(image => image.id)
-    const { error: deleteError } = await supabase.from('inspection_images').delete().in('id', imageIds)
-    if (deleteError) {
-      setError(deleteError.message)
-      return
+    const imageIds = serverImagesToDelete.map(image => image.id)
+    if (imageIds.length > 0) {
+      const { error: deleteError } = await supabase.from('inspection_images').delete().in('id', imageIds)
+      if (deleteError) {
+        setError(deleteError.message)
+        return
+      }
+      setImages(prev => prev.filter(image => !imageIds.includes(image.id)))
     }
-    setImages(prev => prev.filter(image => !imageIds.includes(image.id)))
     setSelectedImageIds(new Set())
   }
 
@@ -1856,6 +2217,8 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         </div>
       ) : null}
 
+      {renderImageUploadQueueNotice()}
+
       {renderRoundSurface()}
       {roomDialogOpen && activeRoom ? renderRoomDialog() : null}
       {exteriorDialogOpen && activeExteriorItem ? renderExteriorDialog() : null}
@@ -1931,6 +2294,55 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     return isActive
       ? 'border-sky-300 bg-sky-50 text-sky-950 ring-1 ring-sky-200'
       : 'border-slate-200 bg-white text-slate-900 hover:bg-sky-50/60'
+  }
+
+  function renderImageUploadQueueNotice() {
+    if (pendingUploadCount === 0) return null
+    const waitingCount = Math.max(0, pendingUploadCount - uploadingCount - failedUploadCount)
+    const tone =
+      failedUploadCount > 0
+        ? 'border-amber-200 bg-amber-50 text-amber-900'
+        : 'border-sky-200 bg-sky-50 text-sky-900'
+
+    return (
+      <div className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs ${tone}`}>
+        <div>
+          <span className="font-semibold">{pendingUploadCount} bild{pendingUploadCount === 1 ? '' : 'er'} sparad{pendingUploadCount === 1 ? '' : 'e'} lokalt.</span>{' '}
+          {uploadingCount > 0 ? `${uploadingCount} laddas upp. ` : ''}
+          {waitingCount > 0 ? `${waitingCount} väntar. ` : ''}
+          {failedUploadCount > 0 ? `${failedUploadCount} behöver nytt försök.` : ''}
+        </div>
+        <button
+          type="button"
+          onClick={() => void processQueuedImageUploads()}
+          className="inline-flex items-center gap-1 rounded-full border border-current/25 bg-white/70 px-2.5 py-1 font-semibold"
+        >
+          <RefreshCw size={13} />
+          Försök igen
+        </button>
+      </div>
+    )
+  }
+
+  function renderLocalImageBadge(image: RoundImage | InspectionImage) {
+    if (!isLocalRoundImage(image)) return null
+    const label =
+      image.local_upload_status === 'uploading'
+        ? 'Laddar upp'
+        : image.local_upload_status === 'failed'
+          ? 'Fel'
+          : 'Lokalt'
+    const className =
+      image.local_upload_status === 'failed'
+        ? 'bg-amber-600 text-white'
+        : image.local_upload_status === 'uploading'
+          ? 'bg-sky-600 text-white'
+          : 'bg-gray-900/80 text-white'
+    return (
+      <span className={`absolute bottom-1 left-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold shadow ${className}`}>
+        {label}
+      </span>
+    )
   }
 
   function renderRoundSurface() {
@@ -2143,7 +2555,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               <button
                 type="button"
                 onClick={() => openCameraCapture()}
-                disabled={isInspectionLocked || uploading}
+                disabled={isInspectionLocked}
                 className={primaryButtonClass('min-h-12 flex-col gap-1 px-2 text-xs')}
               >
                 <Camera size={17} />
@@ -2152,7 +2564,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               <button
                 type="button"
                 onClick={() => openGalleryPicker()}
-                disabled={isInspectionLocked || uploading}
+                disabled={isInspectionLocked}
                 className={primaryButtonClass('min-h-12 flex-col gap-1 px-2 text-xs')}
               >
                 <ImageIcon size={17} />
@@ -2228,7 +2640,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               <button
                 type="button"
                 onClick={() => openCameraCapture()}
-                disabled={isInspectionLocked || uploading}
+                disabled={isInspectionLocked}
                 className={primaryButtonClass('min-h-12 flex-col gap-1 px-2 text-xs')}
               >
                 <Camera size={17} />
@@ -2237,7 +2649,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               <button
                 type="button"
                 onClick={() => openGalleryPicker()}
-                disabled={isInspectionLocked || uploading}
+                disabled={isInspectionLocked}
                 className={primaryButtonClass('min-h-12 flex-col gap-1 px-2 text-xs')}
               >
                 <ImageIcon size={17} />
@@ -2275,15 +2687,16 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 key={image.id}
                 type="button"
                 onClick={() => setPreviewImage(image)}
-                className="shrink-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-300"
+                className="relative shrink-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-300"
                 aria-label="Visa bild"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={getImagePublicUrl(image.file_path)}
+                  src={getRoundImageSrc(image)}
                   alt=""
                   className="h-20 w-20 rounded-lg border border-gray-200 object-cover"
                 />
+                {renderLocalImageBadge(image)}
               </button>
             ))}
           </div>
@@ -2313,15 +2726,16 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 key={image.id}
                 type="button"
                 onClick={() => setPreviewImage(image)}
-                className="shrink-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-300"
+                className="relative shrink-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-300"
                 aria-label="Visa bild"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={getImagePublicUrl(image.file_path)}
+                  src={getRoundImageSrc(image)}
                   alt=""
                   className="h-20 w-20 rounded-lg border border-gray-200 object-cover"
                 />
+                {renderLocalImageBadge(image)}
               </button>
             ))}
           </div>
@@ -2350,13 +2764,14 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               <X size={20} />
             </button>
           </div>
-          <div className="min-h-0 flex-1">
+          <div className="relative min-h-0 flex-1">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={getImagePublicUrl(previewImage.file_path)}
+              src={getRoundImageSrc(previewImage)}
               alt=""
               className="h-full w-full object-contain"
             />
+            {renderLocalImageBadge(previewImage)}
           </div>
         </div>
       </div>
@@ -2366,7 +2781,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   function renderFreeNoteDialog() {
     const item = controlItems.find(row => row.id === freeNoteDialogId)
     if (!item?.id) return null
-    const linkedImages = images.filter(image => image.control_item_id === item.id)
+    const linkedImages = roundImages.filter(image => image.control_item_id === item.id)
 
     return (
       <div className="fixed inset-0 z-[100] bg-white md:bg-black/35" role="dialog" aria-modal="true">
@@ -2441,7 +2856,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                     <button
                       type="button"
                       onClick={() => openCameraCapture(item.id!)}
-                      disabled={isInspectionLocked || uploading}
+                      disabled={isInspectionLocked}
                       className={primaryButtonClass()}
                     >
                       <Camera size={16} />
@@ -2450,7 +2865,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                     <button
                       type="button"
                       onClick={() => openGalleryPicker(item.id!)}
-                      disabled={isInspectionLocked || uploading}
+                      disabled={isInspectionLocked}
                       className={primaryButtonClass()}
                     >
                       <ImageIcon size={16} />
@@ -2466,15 +2881,16 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                         key={image.id}
                         type="button"
                         onClick={() => setPreviewImage(image)}
-                        className="rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-300"
+                        className="relative rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-300"
                         aria-label="Visa bild"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={getImagePublicUrl(image.file_path)}
+                          src={getRoundImageSrc(image)}
                           alt=""
                           className="aspect-square rounded-lg border border-gray-200 object-cover"
                         />
+                        {renderLocalImageBadge(image)}
                       </button>
                     ))}
                   </div>
@@ -2511,7 +2927,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     const selectedOutcome = item.selected_outcome_id
       ? outcomes.find(outcome => outcome.id === item.selected_outcome_id)
       : null
-    const linkedImages = images.filter(image => image.control_item_id === item.id)
+    const linkedImages = roundImages.filter(image => image.control_item_id === item.id)
     const detailLabel =
       selectedOutcome?.label ??
       (item.status === 'ok' ? 'Inget att notera' : item.control_point_id ? 'Kontrollpunkt' : 'Fri notering')
@@ -2595,7 +3011,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                     <button
                       type="button"
                       onClick={() => openCameraCapture(item.id!)}
-                      disabled={isInspectionLocked || uploading}
+                      disabled={isInspectionLocked}
                       className={primaryButtonClass()}
                     >
                       <Camera size={16} />
@@ -2604,7 +3020,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                     <button
                       type="button"
                       onClick={() => openGalleryPicker(item.id!)}
-                      disabled={isInspectionLocked || uploading}
+                      disabled={isInspectionLocked}
                       className={primaryButtonClass()}
                     >
                       <ImageIcon size={16} />
@@ -2620,15 +3036,16 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                         <button
                           type="button"
                           onClick={() => setPreviewImage(image)}
-                          className="block w-full focus:outline-none focus:ring-2 focus:ring-sky-300"
+                          className="relative block w-full focus:outline-none focus:ring-2 focus:ring-sky-300"
                           aria-label="Visa bild"
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={getImagePublicUrl(image.file_path)}
+                            src={getRoundImageSrc(image)}
                             alt=""
                             className="aspect-square w-full object-cover"
                           />
+                          {renderLocalImageBadge(image)}
                         </button>
                         <button
                           type="button"
@@ -2808,7 +3225,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
           {outcomes.map(outcome => {
             const activeItem = selectedItems.find(item => item.selected_outcome_id === outcome.id)
             const linkedImageCount = activeItem?.id
-              ? images.filter(image => image.control_item_id === activeItem.id).length
+                ? roundImages.filter(image => image.control_item_id === activeItem.id).length
               : 0
             const hasDetailText = Boolean(
               activeItem?.note?.trim() || activeItem?.risk_text?.trim() || activeItem?.ftu_text?.trim()
@@ -2910,7 +3327,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     const selectedOutcome = item.selected_outcome_id
       ? outcomes.find(outcome => outcome.id === item.selected_outcome_id)
       : null
-    const linkedImages = images.filter(image => image.control_item_id === item.id)
+    const linkedImages = roundImages.filter(image => image.control_item_id === item.id)
     const hasRiskText = Boolean(item.risk_text?.trim())
     const hasFtuText = Boolean(item.ftu_text?.trim())
     return (
@@ -3002,15 +3419,16 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 key={image.id}
                 type="button"
                 onClick={() => setPreviewImage(image)}
-                className="rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-300"
+                className="relative rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-300"
                 aria-label="Visa bild"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={getImagePublicUrl(image.file_path)}
+                  src={getRoundImageSrc(image)}
                   alt=""
                   className="aspect-square rounded-lg border border-gray-200 object-cover"
                 />
+                {renderLocalImageBadge(image)}
               </button>
             ))}
           </div>
@@ -3123,12 +3541,15 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 }`}
               >
                 <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-2 p-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={getImagePublicUrl(image.file_path)}
-                    alt=""
-                    className="aspect-square rounded-lg object-cover"
-                  />
+                  <div className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={getRoundImageSrc(image)}
+                      alt=""
+                      className="aspect-square rounded-lg object-cover"
+                    />
+                    {renderLocalImageBadge(image)}
+                  </div>
                   <div className="min-w-0 space-y-1">
                     <div className="flex items-center gap-1.5">
                       <span
