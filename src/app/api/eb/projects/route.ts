@@ -61,6 +61,7 @@ export async function POST(request: Request) {
       contractName: toText(body.contractName) || null,
       objectDescription: toText(body.objectDescription) || null,
       propertyDesignation: toText(body.propertyDesignation) || null,
+      brfApartmentNumber: toText(body.brfApartmentNumber) || null,
       address: toText(body.address) || null,
       postalCode: toText(body.postalCode) || null,
       city: toText(body.city) || null,

@@ -98,6 +98,7 @@ export type EbProjectListItem = {
   contractName: string | null
   objectDescription: string | null
   propertyDesignation: string | null
+  brfApartmentNumber: string | null
   address: string | null
   postalCode: string | null
   city: string | null
@@ -338,6 +339,7 @@ type EbProjectRow = {
   contract_name: string | null
   object_description: string | null
   property_designation: string | null
+  brf_apartment_number?: string | null
   address: string | null
   postal_code: string | null
   city: string | null
@@ -577,6 +579,7 @@ export type CreateEbProjectInput = {
   contractName?: string | null
   objectDescription?: string | null
   propertyDesignation?: string | null
+  brfApartmentNumber?: string | null
   address?: string | null
   postalCode?: string | null
   city?: string | null
@@ -1027,8 +1030,14 @@ function isMissingColumnError(error: { code?: string | null; message?: string | 
 function toPropertyName(input: {
   address?: string | null
   propertyDesignation?: string | null
+  brfApartmentNumber?: string | null
 }, title: string) {
-  return normalizeText(input.address) ?? normalizeText(input.propertyDesignation) ?? title
+  return (
+    normalizeText(input.address) ??
+    normalizeText(input.propertyDesignation) ??
+    normalizeText(input.brfApartmentNumber) ??
+    title
+  )
 }
 
 function mapInspectionSummary(
@@ -1104,6 +1113,7 @@ function mapProject(
     contractName: project.contract_name ?? null,
     objectDescription: project.object_description ?? null,
     propertyDesignation: project.property_designation ?? null,
+    brfApartmentNumber: project.brf_apartment_number ?? null,
     address: project.address ?? null,
     postalCode: project.postal_code ?? null,
     city: project.city ?? null,
@@ -1135,7 +1145,9 @@ async function fetchProjectsByOrg(orgId: string, projectId?: string) {
   const admin = createSupabaseAdminClient()
   const baseSelect =
     'id,org_id,owner_profile_id,property_id,title,contract_name,object_description,property_designation,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,client_address,client_postal_code,client_city,contractor_name,contractor_org_no,contractor_address,contractor_postal_code,contractor_city,status,created_at,updated_at'
-  const withAgreementItemsSelect = `${baseSelect},agreement_items`
+  const withProjectIdentifiersSelect =
+    'id,org_id,owner_profile_id,property_id,title,contract_name,object_description,property_designation,brf_apartment_number,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,client_address,client_postal_code,client_city,contractor_name,contractor_org_no,contractor_address,contractor_postal_code,contractor_city,status,created_at,updated_at'
+  const withAgreementItemsSelect = `${withProjectIdentifiersSelect},agreement_items`
   let query = admin
     .from('eb_projects')
     .select(withAgreementItemsSelect)
@@ -2280,6 +2292,7 @@ export async function createEbProjectWithInitialSlb(
         contract_name: normalizeText(input.contractName),
         object_description: normalizeText(input.objectDescription),
         property_designation: normalizeText(input.propertyDesignation),
+        brf_apartment_number: normalizeText(input.brfApartmentNumber),
         address: normalizedAddress,
         postal_code: normalizeText(input.postalCode),
         city: normalizeText(input.city),
@@ -2386,6 +2399,7 @@ export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbPr
       contract_name: normalizeText(input.contractName),
       object_description: normalizeText(input.objectDescription),
       property_designation: normalizeText(input.propertyDesignation),
+      brf_apartment_number: normalizeText(input.brfApartmentNumber),
       address: normalizedAddress,
       postal_code: normalizeText(input.postalCode),
       city: normalizeText(input.city),
@@ -4080,7 +4094,7 @@ function buildInvitationBody(input: {
     `Härmed kallas ni till ${input.inspection.variantLabel.toLowerCase()}.`,
     '',
     `Entreprenad: ${input.project.contractName ?? input.project.title}`,
-    `Fastighet/adress: ${address || input.project.propertyDesignation || 'Ej satt'}`,
+    `Fastighet/adress: ${address || input.project.propertyDesignation || input.project.brfApartmentNumber || 'Ej satt'}`,
     `Beställare: ${input.project.clientName ?? 'Ej satt'}`,
     `Entreprenör: ${input.project.contractorName ?? 'Ej satt'}`,
     `Datum: ${formatSwedishDate(input.inspection.date)}`,

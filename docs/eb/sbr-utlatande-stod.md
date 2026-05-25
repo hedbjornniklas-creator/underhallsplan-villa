@@ -57,7 +57,7 @@ Hantverkare /(Näringsidkare): [företagsnamn]
 | Område | Datastöd | UI-stöd | Kommentar |
 |---|---|---|---|
 | Entreprenad/projekt | `eb_projects` | Entreprenadsidan | Strukturerat. |
-| Objekt/adress/kommun/fastighetsbeteckning | `eb_projects`, kopplad `properties` | Entreprenadsidan | Strukturerat. |
+| Objekt/adress/kommun/fastighetsbeteckning/BRF och lgh nr | `eb_projects`, kopplad `properties` | Entreprenadsidan | Strukturerat. I utlåtandets huvud visas bara ifyllda objektrader. |
 | Avtal/entreprenadform/upphandling/kontraktsdatum | `eb_projects` | Entreprenadsidan | Strukturerat. |
 | Beställare/hantverkare/entreprenör/org.nr/adress | `eb_projects`, initialt `eb_participants` | Entreprenadsidan, kallelse | Strukturerat för beställare och primär hantverkare/entreprenör. |
 | Besiktningstyp/datum/tid | `inspections`, `eb_inspection_details` | Ny besiktning/runda, Utlåtandeutkast | Strukturerat. |

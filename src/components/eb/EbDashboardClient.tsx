@@ -229,6 +229,7 @@ function CreateProjectDialog({
 function ProjectRow({ project }: { project: EbProjectListItem }) {
   const primaryInspection = getPrimaryInspection(project)
   const address = [project.address, project.postalCode, project.city].filter(Boolean).join(', ')
+  const objectIdentifier = project.propertyDesignation || project.brfApartmentNumber
   const agreement = [project.standardAgreement, project.contractForm].filter(Boolean).join(' · ')
 
   return (
@@ -239,7 +240,7 @@ function ProjectRow({ project }: { project: EbProjectListItem }) {
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold text-gray-950">{project.title}</p>
         <p className="mt-0.5 truncate text-xs text-gray-600">
-          {address || project.propertyDesignation || 'Adress ej satt'}
+          {address || objectIdentifier || 'Adress ej satt'}
         </p>
       </div>
       <div className="min-w-0 text-xs text-gray-600">

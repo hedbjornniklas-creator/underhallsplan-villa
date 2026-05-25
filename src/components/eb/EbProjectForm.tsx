@@ -10,6 +10,7 @@ export type EbProjectFormState = {
   contractName: string
   objectDescription: string
   propertyDesignation: string
+  brfApartmentNumber: string
   address: string
   postalCode: string
   city: string
@@ -37,6 +38,7 @@ export const EMPTY_EB_PROJECT_FORM: EbProjectFormState = {
   contractName: '',
   objectDescription: '',
   propertyDesignation: '',
+  brfApartmentNumber: '',
   address: '',
   postalCode: '',
   city: '',
@@ -91,6 +93,7 @@ export function buildEbProjectForm(project: EbProjectListItem): EbProjectFormSta
     contractName: project.contractName ?? '',
     objectDescription: project.objectDescription ?? '',
     propertyDesignation: project.propertyDesignation ?? '',
+    brfApartmentNumber: project.brfApartmentNumber ?? '',
     address: project.address ?? '',
     postalCode: project.postalCode ?? '',
     city: project.city ?? '',
@@ -308,10 +311,18 @@ export default function EbProjectForm({
                 />
               </EbProjectFieldLabel>
             ) : null}
-            <EbProjectFieldLabel label="Fastighetsbeteckning / Brf, lgh nr">
+            <EbProjectFieldLabel label="Fastighetsbeteckning">
               <input
                 value={form.propertyDesignation}
                 onChange={(event) => onChange('propertyDesignation', event.target.value)}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
+            <EbProjectFieldLabel label="BRF och lgh nr">
+              <input
+                value={form.brfApartmentNumber}
+                onChange={(event) => onChange('brfApartmentNumber', event.target.value)}
+                placeholder="Exempel: Brf Solgläntan, lgh 1202"
                 className={ebProjectInputClassName()}
               />
             </EbProjectFieldLabel>

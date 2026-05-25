@@ -818,7 +818,8 @@ function isTestingDocumentationSection(section: EbInspectionReport['reportDraft'
 }
 
 function ReportHeader({ report }: { report: EbInspectionReport }) {
-  const propertyDesignation = report.project.propertyDesignation?.trim() || '-'
+  const propertyDesignation = report.project.propertyDesignation?.trim()
+  const brfApartmentNumber = report.project.brfApartmentNumber?.trim()
   const streetAndCity = detailLine([report.project.address, report.project.city])
   const entreprenadDescription = report.project.objectDescription?.trim() || '-'
 
@@ -846,10 +847,18 @@ function ReportHeader({ report }: { report: EbInspectionReport }) {
       <div className="mt-3 h-[1.5px] w-full bg-[#2f7d55]" />
 
       <dl className="mt-3 grid gap-y-1 text-[10.5pt] leading-snug text-black">
-        <div className="grid grid-cols-[38mm_1fr] gap-x-4">
-          <dt className="font-bold">Fastighetsbeteckning</dt>
-          <dd>{propertyDesignation}</dd>
-        </div>
+        {propertyDesignation ? (
+          <div className="grid grid-cols-[38mm_1fr] gap-x-4">
+            <dt className="font-bold">Fastighetsbeteckning</dt>
+            <dd>{propertyDesignation}</dd>
+          </div>
+        ) : null}
+        {brfApartmentNumber ? (
+          <div className="grid grid-cols-[38mm_1fr] gap-x-4">
+            <dt className="font-bold">BRF och lgh nr</dt>
+            <dd>{brfApartmentNumber}</dd>
+          </div>
+        ) : null}
         <div className="grid grid-cols-[38mm_1fr] gap-x-4">
           <dt className="font-bold">Gatuadress, ort</dt>
           <dd>{streetAndCity}</dd>

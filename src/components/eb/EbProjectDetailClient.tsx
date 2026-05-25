@@ -1912,6 +1912,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
   const propertyLine = [currentProject.propertyDesignation, currentProject.municipality]
     .filter(Boolean)
     .join(' - ')
+  const objectIdentifier = propertyLine || currentProject.brfApartmentNumber
   const partyVocabulary = resolveEbAgreementVocabulary(currentProject.standardAgreement)
   const clientAddressLine = [currentProject.clientAddress, [currentProject.clientPostalCode, currentProject.clientCity].filter(Boolean).join(' ')]
     .filter(Boolean)
@@ -1958,7 +1959,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">EB-projekt</p>
                   <h1 className="truncate text-2xl font-semibold text-gray-950">{currentProject.title}</h1>
                   <p className="mt-1 truncate text-sm text-gray-600">
-                    {addressLine || currentProject.propertyDesignation || 'Adress ej satt'}
+                    {addressLine || objectIdentifier || 'Adress ej satt'}
                   </p>
                 </div>
               </div>
@@ -2136,7 +2137,12 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                   </div>
                   <div>
                     <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Objekt</dt>
-                    <dd className="mt-1 text-sm font-semibold text-gray-950">{propertyLine || addressLine || 'Ej satt'}</dd>
+                    <dd className="mt-1 text-sm font-semibold text-gray-950">
+                      {objectIdentifier || addressLine || 'Ej satt'}
+                    </dd>
+                    {propertyLine && currentProject.brfApartmentNumber ? (
+                      <dd className="text-xs text-gray-600">{currentProject.brfApartmentNumber}</dd>
+                    ) : null}
                     <dd className="text-xs text-gray-600">{addressLine || 'Adress ej satt'}</dd>
                   </div>
                 </dl>
