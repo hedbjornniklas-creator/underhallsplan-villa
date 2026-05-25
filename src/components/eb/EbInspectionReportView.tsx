@@ -52,6 +52,7 @@ function addressCityLine(postalCode: string | null | undefined, city: string | n
 }
 
 const REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER SLUTBESIKTNING'
+const SBR_LOGO_SRC = '/report-assets/sbr-logo.png'
 const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[16pt] font-bold uppercase leading-tight text-black'
 const REPORT_SECTION_HEADING_CLASS_NAME = 'mb-2 text-[12pt] font-bold leading-tight text-black'
 const REPORT_APPENDIX_HEADING_CLASS_NAME = 'mb-3 text-[13pt] font-bold uppercase leading-tight text-black'
@@ -64,6 +65,10 @@ const HIDDEN_REPORT_SECTION_KEYS = new Set([
   'deduction',
   'notes',
   'warranty_end',
+  'special_investigation',
+  'remedy_cost',
+  'after_inspection',
+  'signature_certificate',
 ])
 const DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION =
   'Fönster, dörrar, väggar etc numreras från vänster till höger. Vägg 1 = vägg till vänster om entrévägg. Vägg 2 = nästa vägg till höger om vägg 1 osv.'
@@ -654,6 +659,91 @@ function ApprovalDecisionReport({ report }: { report: EbInspectionReport }) {
   )
 }
 
+function reportRecipients(report: EbInspectionReport) {
+  return report.participants.filter((participant) => participant.receivesReport)
+}
+
+function signatureRows(report: EbInspectionReport) {
+  const signatureSection = report.reportDraft.sections.find(
+    (section) => section.key === 'signature_certificate'
+  )
+  const rows = printableReportLines(signatureSection?.text ?? '')
+    .map(parseLabelLine)
+    .filter((row): row is NonNullable<ReturnType<typeof parseLabelLine>> => Boolean(row))
+  const name = rows.find((row) => row.label === 'Besiktningsman')?.value ?? '-'
+  const details = rows.filter((row) => row.label !== 'Besiktningsman' && row.label !== 'Datum')
+
+  return { name, details }
+}
+
+function DistributionListReport({ report }: { report: EbInspectionReport }) {
+  const recipients = reportRecipients(report)
+  const distributionDate = report.inspection.reportDistributionDate?.trim() || 'Klicka här - ange datum'
+  const inspector = signatureRows(report)
+
+  return (
+    <ReportSection title="Sändlista">
+      <div className="space-y-4 text-[10.5pt] leading-[1.35] text-black">
+        <p>
+          Undertecknat utlåtande har {distributionDate} sänts per e-post till parterna och övriga enligt nedan.
+        </p>
+
+        {recipients.length > 0 ? (
+          <table className="w-full border-collapse text-[9.5pt] leading-tight text-black">
+            <thead>
+              <tr className="bg-[#4f86bf] text-left text-white print:bg-[#4f86bf]">
+                <th className="w-[58mm] px-1.5 py-1 font-bold">Företag</th>
+                <th className="w-[58mm] px-1.5 py-1 font-bold">Namn</th>
+                <th className="px-1.5 py-1 font-bold">Adress</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recipients.map((recipient, index) => (
+                <tr key={recipient.id ?? `${recipient.email}-${index}`}>
+                  <td className="px-1.5 py-0.5">{recipient.companyName?.trim() || '-'}</td>
+                  <td className="px-1.5 py-0.5">{recipient.personName?.trim() || '-'}</td>
+                  <td className="px-1.5 py-0.5">{recipient.email?.trim() || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p>Mottagare av utlåtandet har inte angetts.</p>
+        )}
+
+        <div className="pt-3">
+          {report.branding.inspectorAvatarUrl ? (
+            <img
+              src={report.branding.inspectorAvatarUrl}
+              alt="Besiktningsmannen"
+              className="eb-report-inspector-avatar h-[34mm] w-[34mm] object-cover"
+            />
+          ) : null}
+
+          <div className="mt-4 space-y-1">
+            <p className="font-semibold">{inspector.name}</p>
+            {inspector.details.length > 0 ? (
+              <dl className="grid gap-y-0.5">
+                {inspector.details.map((row) => (
+                  <div key={row.label} className="grid grid-cols-[34mm_1fr] gap-x-2">
+                    <dt>{row.label}:</dt>
+                    <dd>{row.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
+            <img
+              src={SBR_LOGO_SRC}
+              alt="SBR Byggingenjörerna"
+              className="eb-report-sbr-logo mt-2 h-[14mm] w-auto object-contain"
+            />
+          </div>
+        </div>
+      </div>
+    </ReportSection>
+  )
+}
+
 function defectNoErrorPartsPolicyText(report: EbInspectionReport) {
   return report.inspection.defectNoErrorPartsPolicy === 'listed_with_dash' ? 'med ---' : 'inte'
 }
@@ -740,7 +830,7 @@ function ReportHeader({ report }: { report: EbInspectionReport }) {
             <img
               src={report.branding.inspectorLogoUrl}
               alt="Besiktningsmannens logotyp"
-              className="h-[16mm] w-auto max-w-[52mm] object-contain"
+              className="eb-report-header-logo h-[16mm] max-h-[16mm] w-auto max-w-[52mm] object-contain"
             />
           ) : null}
         </div>
@@ -749,7 +839,7 @@ function ReportHeader({ report }: { report: EbInspectionReport }) {
           <img
             src={report.branding.besiktAppLogoUrl}
             alt="BesiktApp"
-            className="h-[16mm] w-auto max-w-[52mm] object-contain"
+            className="eb-report-header-logo h-[16mm] max-h-[16mm] w-auto max-w-[52mm] object-contain"
           />
         </div>
       </div>
@@ -971,6 +1061,8 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
             </ReportSection>
           ) : section.key === 'approval_decision' ? (
             <ApprovalDecisionReport key={section.key} report={report} />
+          ) : section.key === 'distribution_list' ? (
+            <DistributionListReport key={section.key} report={report} />
           ) : (
             <ReportSection
               key={section.key}

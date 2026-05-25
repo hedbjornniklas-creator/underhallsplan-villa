@@ -108,8 +108,10 @@ type InspectionDetailsFormState = {
   warrantyScope: string
   defaultRemedyDeadline: string
   afterInspectionRequested: string
+  afterInspectionRequestedBy: string
   afterInspectionDueDate: string
   afterInspectionNoticeInReport: boolean
+  inspectionCostDistribution: string
   reportDistributionDate: string
   previousInspections: EbPreviousInspectionItem[]
   defectNumberingExplanation: string
@@ -679,8 +681,10 @@ function buildInspectionDetailsForm(inspection: EbInspectionSummary): Inspection
       typeof inspection.afterInspectionRequested === 'boolean'
         ? String(inspection.afterInspectionRequested)
         : '',
+    afterInspectionRequestedBy: inspection.afterInspectionRequestedBy ?? '',
     afterInspectionDueDate: inspection.afterInspectionDueDate ?? '',
     afterInspectionNoticeInReport: inspection.afterInspectionNoticeInReport,
+    inspectionCostDistribution: inspection.inspectionCostDistribution ?? '',
     reportDistributionDate: inspection.reportDistributionDate ?? new Date().toISOString().slice(0, 10),
     previousInspections: inspection.previousInspections,
     defectNumberingExplanation:
@@ -1427,6 +1431,18 @@ function InspectionDetailsDialog({
                     </select>
                   )}
                   {fieldLabel(
+                    'Efterbesiktning påkallad av',
+                    <select
+                      value={form.afterInspectionRequestedBy}
+                      onChange={(event) => updateField('afterInspectionRequestedBy', event.target.value)}
+                      className={inputClassName()}
+                    >
+                      <option value="">Ej satt</option>
+                      <option value="client">Beställare</option>
+                      <option value="contractor">Hantverkare</option>
+                    </select>
+                  )}
+                  {fieldLabel(
                     'Efterbesiktning senast',
                     <input
                       type="date"
@@ -1444,6 +1460,18 @@ function InspectionDetailsDialog({
                       className={inputClassName()}
                     />
                   )}
+                  <div className="sm:col-span-2">
+                    {fieldLabel(
+                      'Besiktningskostnadens fördelning',
+                      <textarea
+                        value={form.inspectionCostDistribution}
+                        onChange={(event) => updateField('inspectionCostDistribution', event.target.value)}
+                        rows={3}
+                        placeholder="Exempel: Kostnaden för besiktningen betalas av beställaren."
+                        className={inputClassName()}
+                      />
+                    )}
+                  </div>
                   <label className="inline-flex items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm font-medium text-emerald-900">
                     <input
                       type="checkbox"

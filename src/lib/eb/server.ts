@@ -11,6 +11,7 @@ export type EbInspectionVariant = 'SLB' | 'FB' | 'EB' | 'GB' | 'KSB' | 'SAB'
 export type EbInspectorAppointedBy = 'client' | 'parties_jointly' | 'contractor'
 export type EbApprovalStatus = 'approved' | 'not_approved' | 'partly_approved'
 export type EbPartyKey = 'client' | 'contractor' | 'other'
+export type EbAfterInspectionRequestedBy = 'client' | 'contractor'
 export type EbPreviousInspectionStatus = 'performed' | 'not_performed' | 'not_applicable'
 export type EbInspectionDocumentStatus = 'present' | 'missing' | 'na'
 export type EbProjectAgreementItemKind = 'change_order' | 'other'
@@ -76,8 +77,10 @@ export type EbInspectionSummary = {
   warrantyScope: string | null
   defaultRemedyDeadline: string | null
   afterInspectionRequested: boolean | null
+  afterInspectionRequestedBy: EbAfterInspectionRequestedBy | null
   afterInspectionDueDate: string | null
   afterInspectionNoticeInReport: boolean
+  inspectionCostDistribution: string | null
   reportDistributionDate: string | null
   previousInspections: EbPreviousInspectionItem[]
   defectNumberingExplanation: string | null
@@ -257,6 +260,7 @@ export type EbInspectionReport = EbInspectionRound & {
   reportDraft: EbReportDraft
   branding: {
     inspectorLogoUrl: string | null
+    inspectorAvatarUrl: string | null
     besiktAppLogoUrl: string
   }
 }
@@ -383,8 +387,10 @@ type EbInspectionDetailRow = {
   warranty_scope?: string | null
   default_remedy_deadline: string | null
   after_inspection_requested: boolean | null
+  after_inspection_requested_by?: string | null
   after_inspection_due_date: string | null
   after_inspection_notice_in_report: boolean | null
+  inspection_cost_distribution?: string | null
   report_distribution_date: string | null
   previous_inspections?: unknown
   defect_numbering_explanation?: string | null
@@ -559,6 +565,7 @@ type ProfileContactRow = {
   full_name: string | null
   email: string | null
   certification_number: string | null
+  avatar_path: string | null
   logo_path: string | null
   logo_url: string | null
 }
@@ -645,8 +652,10 @@ export type UpdateEbInspectionInput = {
   warrantyScope?: string | null
   defaultRemedyDeadline?: string | null
   afterInspectionRequested?: boolean | null
+  afterInspectionRequestedBy?: EbAfterInspectionRequestedBy | null
   afterInspectionDueDate?: string | null
   afterInspectionNoticeInReport?: boolean
+  inspectionCostDistribution?: string | null
   reportDistributionDate?: string | null
   previousInspections?: EbPreviousInspectionItem[] | null
   defectNumberingExplanation?: string | null
@@ -703,6 +712,7 @@ const EB_VARIANTS = Object.keys(VARIANT_LABELS) as EbInspectionVariant[]
 const INSPECTOR_APPOINTED_BY_VALUES = ['client', 'parties_jointly', 'contractor'] as const
 const APPROVAL_STATUS_VALUES = ['approved', 'not_approved', 'partly_approved'] as const
 const PARTY_KEY_VALUES = ['client', 'contractor', 'other'] as const
+const AFTER_INSPECTION_REQUESTED_BY_VALUES = ['client', 'contractor'] as const
 const PREVIOUS_INSPECTION_STATUS_VALUES = ['performed', 'not_performed', 'not_applicable'] as const
 const DEFECT_NO_ERROR_PARTS_POLICY_VALUES = ['not_listed', 'listed_with_dash'] as const
 const EB_MISSING_DOCUMENT_NOTE_SOURCE = 'eb_missing_document'
@@ -759,6 +769,10 @@ function resolveProfileLogoUrl(profile: ProfileContactRow | null | undefined) {
   return resolvePublicMediaUrl(profile?.logo_path ?? profile?.logo_url)
 }
 
+function resolveProfileAvatarUrl(profile: ProfileContactRow | null | undefined) {
+  return resolvePublicMediaUrl(profile?.avatar_path)
+}
+
 function normalizeDate(value: string | null | undefined) {
   const trimmed = normalizeText(value)
   if (!trimmed) return null
@@ -782,6 +796,15 @@ function normalizeApprovalStatus(value: string | null | undefined): EbApprovalSt
   const normalized = normalizeText(value)
   return APPROVAL_STATUS_VALUES.includes(normalized as EbApprovalStatus)
     ? (normalized as EbApprovalStatus)
+    : null
+}
+
+function normalizeAfterInspectionRequestedBy(
+  value: string | null | undefined
+): EbAfterInspectionRequestedBy | null {
+  const normalized = normalizeText(value)
+  return AFTER_INSPECTION_REQUESTED_BY_VALUES.includes(normalized as EbAfterInspectionRequestedBy)
+    ? (normalized as EbAfterInspectionRequestedBy)
     : null
 }
 
@@ -1043,8 +1066,10 @@ function mapInspectionSummary(
     warrantyScope: detail.warranty_scope ?? null,
     defaultRemedyDeadline: detail.default_remedy_deadline ?? null,
     afterInspectionRequested: detail.after_inspection_requested ?? null,
+    afterInspectionRequestedBy: normalizeAfterInspectionRequestedBy(detail.after_inspection_requested_by),
     afterInspectionDueDate: detail.after_inspection_due_date ?? null,
     afterInspectionNoticeInReport: detail.after_inspection_notice_in_report ?? false,
+    inspectionCostDistribution: detail.inspection_cost_distribution ?? null,
     reportDistributionDate: detail.report_distribution_date ?? null,
     previousInspections: normalizePreviousInspections(detail.previous_inspections),
     defectNumberingExplanation: detail.defect_numbering_explanation ?? null,
@@ -1154,7 +1179,7 @@ async function fetchDetailsForProjects(orgId: string, projectIds: string[]) {
   const baseSelect =
     'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,report_locked_at,created_at'
   const withStructuredReportSelect =
-    'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,inspector_appointed_by,invitation_method,invitation_date,approval_status,approval_note,requires_continued_final_inspection,continued_final_inspection_date,continued_final_inspection_time,warranty_period_years,warranty_end_date,warranty_scope,default_remedy_deadline,after_inspection_requested,after_inspection_due_date,after_inspection_notice_in_report,report_distribution_date,previous_inspections,defect_numbering_explanation,defect_no_error_parts_policy,report_locked_at,created_at'
+    'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,inspector_appointed_by,invitation_method,invitation_date,approval_status,approval_note,requires_continued_final_inspection,continued_final_inspection_date,continued_final_inspection_time,warranty_period_years,warranty_end_date,warranty_scope,default_remedy_deadline,after_inspection_requested,after_inspection_requested_by,after_inspection_due_date,after_inspection_notice_in_report,inspection_cost_distribution,report_distribution_date,previous_inspections,defect_numbering_explanation,defect_no_error_parts_policy,report_locked_at,created_at'
   const { data, error } = await admin
     .from('eb_inspection_details')
     .select(withStructuredReportSelect)
@@ -1959,6 +1984,7 @@ export async function getEbInspectionReport(input: {
     inspector: inspectorProfile,
   })
   const inspectorLogoUrl = resolveProfileLogoUrl(inspectorProfile)
+  const inspectorAvatarUrl = resolveProfileAvatarUrl(inspectorProfile)
   let ownerLogoUrl: string | null = null
   if (!inspectorLogoUrl && round.project.ownerProfileId !== input.requestedByUserId) {
     const ownerProfile = await getProfileContact(round.project.ownerProfileId)
@@ -1971,6 +1997,7 @@ export async function getEbInspectionReport(input: {
     inspectionDocuments,
     branding: {
       inspectorLogoUrl: inspectorLogoUrl ?? ownerLogoUrl,
+      inspectorAvatarUrl,
       besiktAppLogoUrl: BESIKTAPP_REPORT_LOGO_SRC,
     },
     reportDraft: buildEbReportDraft({
@@ -2569,8 +2596,10 @@ export async function updateEbInspection(input: UpdateEbInspectionInput): Promis
       warranty_scope: normalizeText(input.warrantyScope),
       default_remedy_deadline: normalizeDate(input.defaultRemedyDeadline),
       after_inspection_requested: normalizeBoolean(input.afterInspectionRequested),
+      after_inspection_requested_by: normalizeAfterInspectionRequestedBy(input.afterInspectionRequestedBy),
       after_inspection_due_date: normalizeDate(input.afterInspectionDueDate),
       after_inspection_notice_in_report: input.afterInspectionNoticeInReport === true,
+      inspection_cost_distribution: normalizeText(input.inspectionCostDistribution),
       report_distribution_date: normalizeDate(input.reportDistributionDate),
       previous_inspections: normalizePreviousInspections(input.previousInspections),
       defect_numbering_explanation: normalizeText(input.defectNumberingExplanation),
@@ -3147,6 +3176,12 @@ function partyLabel(value: EbPartyKey | null) {
   return null
 }
 
+function afterInspectionRequestedByReportLabel(value: EbAfterInspectionRequestedBy | null) {
+  if (value === 'client') return 'beställaren'
+  if (value === 'contractor') return 'hantverkaren'
+  return 'beställaren / hantverkaren'
+}
+
 function reportParticipantRow(participant: EbInvitationParticipant) {
   const name = [participant.companyName, participant.personName].map(normalizeText).filter(Boolean).join(', ')
   const contact = [participant.email, participant.phone].map(normalizeText).filter(Boolean).join(', ')
@@ -3278,16 +3313,38 @@ function ebContinuedFinalInspectionReportText(round: EbInspectionRound) {
   ])
 }
 
+function ebRemedyDeadlineAgreementReportText(round: EbInspectionRound) {
+  const remedyDeadline = normalizeText(round.inspection.defaultRemedyDeadline)
+  const afterInspectionDate = normalizeText(round.inspection.afterInspectionDueDate)
+  const afterInspectionRequestedBy = afterInspectionRequestedByReportLabel(
+    round.inspection.afterInspectionRequestedBy
+  )
+
+  return reportList([
+    remedyDeadline
+      ? `Parterna har överenskommit att fel skall vara avhjälpta senast till ${remedyDeadline}.`
+      : 'Parterna har inte angett någon överenskommelse om när fel skall vara avhjälpta.',
+    round.inspection.afterInspectionRequested === true
+      ? `Efterbesiktning som påkallats av ${afterInspectionRequestedBy} görs ${
+          afterInspectionDate ?? 'datum ej angivet'
+        }.`
+      : round.inspection.afterInspectionRequested === false
+        ? 'Efterbesiktning har inte påkallats vid tidpunkten för utlåtandets upprättande.'
+        : null,
+    round.inspection.afterInspectionNoticeInReport ? 'Denna notering gäller som kallelse.' : null,
+  ])
+}
+
 function ebReclamationNoticeReportText(round: EbInspectionRound) {
   const warrantyEndDate = normalizeText(round.inspection.warrantyEndDate)
   const warrantyScope = normalizeText(round.inspection.warrantyScope)
   const warrantyText =
-    warrantyEndDate || warrantyScope
+    warrantyEndDate && warrantyScope
       ? [
           'Särskild varugaranti enligt nedan gäller till och med:',
-          `• ${warrantyEndDate ?? 'datum ej angivet'} för ${warrantyScope ?? 'vara'}`,
+          `• ${warrantyEndDate} för ${warrantyScope}`,
         ].join('\n')
-      : null
+      : 'Särskild varugaranti enligt nedan gäller till och med:\n-'
 
   return reportList([
     ebStandardText('EB_REPORT_RECLAMATION_NOTICE'),
@@ -3668,8 +3725,8 @@ function buildEbReportDraft(input: {
       title: 'Särskild utredning',
       sbrPoint: '13-17, 23',
       source: 'notes',
-      status: specialInvestigationNotes.length > 0 ? 'complete' : 'draft',
-      isRelevant: true,
+      status: 'not_applicable',
+      isRelevant: false,
       text:
         specialInvestigationNotes.length > 0
           ? specialInvestigationNotes.map((note) => ebSpecialInvestigationReportRow(round, note)).join('\n\n')
@@ -3749,13 +3806,16 @@ function buildEbReportDraft(input: {
     },
     {
       key: 'remedy_deadline',
-      title: 'När fel ska vara avhjälpta',
+      title: 'Parternas överenskommelse om när fel skall vara avhjälpta',
       sbrPoint: '24',
       source: 'manual',
-      status: round.inspection.defaultRemedyDeadline ? 'complete' : 'draft',
+      status:
+        round.inspection.defaultRemedyDeadline ||
+        typeof round.inspection.afterInspectionRequested === 'boolean'
+          ? 'complete'
+          : 'draft',
       isRelevant: true,
-      text: optionalReportLine('Fel ska vara avhjälpta senast', round.inspection.defaultRemedyDeadline) ??
-        ebStandardText('EB_REPORT_REMEDY_DEADLINE'),
+      text: ebRemedyDeadlineAgreementReportText(round),
       updatedAt: null,
     },
     {
@@ -3763,8 +3823,8 @@ function buildEbReportDraft(input: {
       title: 'Kostnad för avhjälpande',
       sbrPoint: '24',
       source: 'standard_text',
-      status: 'complete',
-      isRelevant: true,
+      status: 'not_applicable',
+      isRelevant: false,
       text: ebStandardText('EB_REPORT_REMEDY_COST'),
       updatedAt: null,
     },
@@ -3773,8 +3833,8 @@ function buildEbReportDraft(input: {
       title: 'Efterbesiktning',
       sbrPoint: '24',
       source: 'manual',
-      status: typeof round.inspection.afterInspectionRequested === 'boolean' ? 'complete' : 'draft',
-      isRelevant: true,
+      status: 'not_applicable',
+      isRelevant: false,
       text:
         typeof round.inspection.afterInspectionRequested === 'boolean'
           ? reportList([
@@ -3785,6 +3845,16 @@ function buildEbReportDraft(input: {
                 : null,
             ])
           : 'Efterbesiktning har inte påkallats vid tidpunkten för utlåtandets upprättande.',
+      updatedAt: null,
+    },
+    {
+      key: 'inspection_cost_distribution',
+      title: 'Besiktningskostnadens fördelning',
+      sbrPoint: null,
+      source: 'manual',
+      status: round.inspection.inspectionCostDistribution ? 'complete' : 'draft',
+      isRelevant: Boolean(round.inspection.inspectionCostDistribution),
+      text: round.inspection.inspectionCostDistribution ?? 'Ej angivet',
       updatedAt: null,
     },
     {
@@ -3848,6 +3918,18 @@ function buildEbReportDraft(input: {
         return section
       }
       if (section.key === 'reclamation_notice') {
+        return section
+      }
+      if (section.key === 'distribution_list' || section.key === 'signature_certificate') {
+        return section
+      }
+      if (
+        section.key === 'special_investigation' ||
+        section.key === 'remedy_deadline' ||
+        section.key === 'remedy_cost' ||
+        section.key === 'after_inspection' ||
+        section.key === 'inspection_cost_distribution'
+      ) {
         return section
       }
       if (!shouldKeepStoredReportSection(existing, section)) {
@@ -4018,9 +4100,9 @@ function buildInvitationBody(input: {
 async function getProfileContact(profileId: string) {
   const admin = createSupabaseAdminClient()
   const selectAttempts = [
-    'id,full_name,email,logo_path,logo_url,certification_number',
-    'id,full_name,email,logo_path,logo_url',
-    'id,full_name,email,logo_path',
+    'id,full_name,email,avatar_path,logo_path,logo_url,certification_number',
+    'id,full_name,email,avatar_path,logo_path,logo_url',
+    'id,full_name,email,avatar_path,logo_path',
     'id,full_name,email',
   ]
 
@@ -4045,6 +4127,7 @@ async function getProfileContact(profileId: string) {
       full_name: row.full_name ?? null,
       email: row.email ?? null,
       certification_number: row.certification_number ?? null,
+      avatar_path: row.avatar_path ?? null,
       logo_path: row.logo_path ?? null,
       logo_url: row.logo_url ?? null,
     }

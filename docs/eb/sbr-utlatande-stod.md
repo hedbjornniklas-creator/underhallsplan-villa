@@ -108,7 +108,9 @@ All nödvändig information ska antingen finnas som strukturerat fält eller som
 | Särskild varugaranti för | Besiktningen | Fritext för vilken vara/produkt/material garantin gäller. |
 | Avhjälpandetid generellt | Besiktningen | Datumväljare. |
 | Efterbesiktning påkallad | Besiktningen | Dropdown ja/nej. |
+| Efterbesiktning påkallad av | Besiktningen | Dropdown `Beställare` eller `Hantverkare`. |
 | Efterbesiktning datum/senast datum | Besiktningen | Datumväljare. |
+| Besiktningskostnadens fördelning | Besiktningen | Fritext under `Uppgifter > Utlåtande`. |
 | Utlåtandet gäller som kallelse till efterbesiktning | Standardtext | Ska styras av standardtext, inte fritext i varje utlåtande. |
 | Särskild utredning: ansvarig | Noteringar markerade som utredningspunkt | Lista byggs från noteringar. Per rad: dropdown `Entreprenör`, `Beställare`, `Annat` + fritext. |
 | Särskild utredning: kostnadsansvar | Utredningslistan | Dropdown `Entreprenör` eller `Beställare`. |
@@ -125,7 +127,7 @@ All nödvändig information ska antingen finnas som strukturerat fält eller som
 | Datamodell | Nya/tydligare fält |
 |---|---|
 | `profiles` eller befintlig profil/settings-modell | certifieringsuppgifter, SBR-medlemskap och visningsnamn för besiktningsman. |
-| `eb_inspection_details` | `inspector_appointed_by`, `invitation_method`, tydligt `invitation_date`, beslut, beslutstext, fortsatt/ny slutbesiktning inklusive överenskommet datum/tid, garantitid, garantitidens slut, vad särskild varugaranti gäller, generell avhjälpandetid, efterbesiktning, distributionsdatum. |
+| `eb_inspection_details` | `inspector_appointed_by`, `invitation_method`, tydligt `invitation_date`, beslut, beslutstext, fortsatt/ny slutbesiktning inklusive överenskommet datum/tid, garantitid, garantitidens slut, vad särskild varugaranti gäller, generell avhjälpandetid, efterbesiktning inklusive vem som påkallat den, besiktningskostnadens fördelning, distributionsdatum. |
 | `eb_participants` | `attended`, `receives_report`, `represents_party_key`, `can_represent_party`. |
 | `eb_project_attachments` | `include_in_report`, `littera`, `document_date`, `document_number`, `document_note`. |
 | `eb_inspection_details.report_draft` | fri text för tidigare besiktningar, provningar, överenskommelser, dokumentationsbesiktigade delar och kompletteringar. |
@@ -185,18 +187,19 @@ Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de s
 | Endast dokumentationsbesiktigade delar (12) | Ej egen sektion just nu | `report_draft.documentation_only` |
 | Fel och förhållanden (13-17, 23) | Ja/delvis | `eb_notes`, `settings_eb_note_markers`, `report_draft.defects_appendices` |
 | Beteckningar E/B/S/U/N/A | Ingår i Fel och förhållanden | `settings_eb_note_markers`, använda `eb_notes.marker_key` |
-| Särskild utredning | Redigerbart utkast | `report_draft.special_investigation` |
+| Särskild utredning | Ska inte skrivas ut i denna version | Data kan finnas kvar på noteringar men `report_draft.special_investigation` är ej relevant. |
 | Nedsättning | Ingår i Fel och förhållanden | `eb_notes.marker_key=N`, `eb_notes.deduction_amount` |
 | Besked om godkännande (18) | Redigerbart utkast | `report_draft.approval_decision` |
 | Fortsatt/ny slutbesiktning (19) | Strukturerat + redigerbart utkast | `eb_inspection_details.requires_continued_final_inspection`, `continued_final_inspection_date`, `continued_final_inspection_time`, `report_draft.continued_final_inspection` |
 | Garantitidens slut (20) | Ingår i `Reklamationsfrister` i denna layout | `warranty_end_date`, `warranty_scope` |
 | Reklamationsfrister | Standardtext + strukturerad särskild varugaranti | `warranty_end_date`, `warranty_scope`, `report_draft.reclamation_notice` |
-| När fel ska vara avhjälpta (24) | Redigerbart utkast | `report_draft.remedy_deadline` |
-| Kostnad för avhjälpande | Standardtext + redigerbart utkast vid behov | `report_draft.remedy_cost` |
-| Efterbesiktning (24) | Redigerbart utkast | `report_draft.after_inspection` |
+| Parternas överenskommelse om när fel skall vara avhjälpta (24) | Strukturerat + redigerbart utkast | `default_remedy_deadline`, `after_inspection_requested`, `after_inspection_requested_by`, `after_inspection_due_date`, `after_inspection_notice_in_report`, `report_draft.remedy_deadline` |
+| Kostnad för avhjälpande | Ska inte skrivas ut i denna version | `report_draft.remedy_cost` är ej relevant. |
+| Efterbesiktning (24) | Ingår i avhjälpandesektionen | `report_draft.after_inspection` skrivs inte ut som egen sektion. |
+| Besiktningskostnadens fördelning | Strukturerat + redigerbart utkast | `eb_inspection_details.inspection_cost_distribution`, `report_draft.inspection_cost_distribution` |
 | Övriga noteringar | Redigerbart utkast | `report_draft.other_notes` |
-| Sändlista (25) | Delvis strukturerat | `eb_participants`, `report_draft.distribution_list` |
-| Underskrift/certifiering/SBR | Redigerbart utkast | `report_draft.signature_certificate` |
+| Sändlista (25) | Strukturerat | `eb_participants.receives_report`, `report_distribution_date`, `report_draft.distribution_list` |
+| Underskrift/certifiering/SBR | Hämtas från besiktningsmannens settings/profil | `profiles`, `profile_certifications`, `report_draft.signature_certificate` |
 
 Utlåtandet ska inte skriva ut egna sektioner för `Delar som inte varit åtkomliga`, `Delar besiktigade endast genom handling` eller `Bilagor och littera` i denna version. Uppgifterna kan finnas kvar som data/utkast men ska inte visas som separata avsnitt i det färdiga utlåtandet.
 
@@ -210,7 +213,11 @@ Layoutregel för `Tidigare besiktningar`: uppgifterna fylls i under `Uppgifter >
 
 Layoutregel för `Föreskrift om en ny slutbesiktning`: sektionen visas endast när `Fortsatt slutbesiktning`/ny slutbesiktning är vald som `Ja` i `Uppgifter > Utlåtande`. Texten ska börja med `En ny slutbesiktning skall ske, efter att hantverkaren underrättat om färdigställande.` och innehålla `Denna notering gäller som kallelse.` Om parterna har kommit överens om tidpunkt visas även `Enligt överenskommelse verkställs ny slutbesiktning [datum], kl [tid].`
 
-Layoutregel för `Reklamationsfrister`: sektionen ska visa standardtexten `Beställarens reklamationsrätter framgår av konsumenttjänstlagen (Ktjl. 17 §).` Om särskild varugaranti är ifylld visas dessutom `Särskild varugaranti enligt nedan gäller till och med:` följt av punktlistan `[datum] för [vara/produkt/material]`. Instruktionstext som `Ange eller ta bort...` ska inte skrivas ut i färdigt utlåtande.
+Layoutregel för `Parternas överenskommelse om när fel skall vara avhjälpta`: sektionen ersätter de tidigare separata sektionerna `När fel ska vara avhjälpta` och `Efterbesiktning`. Texten ska skrivas som löptext: `Parterna har överenskommit att fel skall vara avhjälpta senast till [datum].` Om efterbesiktning är påkallad ska nästa rad vara `Efterbesiktning som påkallats av [beställaren/hantverkaren] görs [datum].` Om utlåtandet ska gälla som kallelse visas även `Denna notering gäller som kallelse.`
+
+Layoutregel för `Reklamationsfrister`: sektionen ska visa standardtexten `Beställarens reklamationsrätter framgår av konsumenttjänstlagen (Ktjl. 17 §).` Särskild varugaranti fylls i under `Uppgifter > Utlåtande` med fälten `Garantitidens slut` och `Särskild varugaranti för`. Om båda är ifyllda visas `Särskild varugaranti enligt nedan gäller till och med:` följt av punktlistan `[datum] för [vara/produkt/material]`. Om ingen sådan garanti finns, eller om bara datum/vara är ifyllt, ska raden markeras med `-` i stället för att skriva ut ofullständig text som `för vara`. Instruktionstext som `Ange eller ta bort...` ska inte skrivas ut i färdigt utlåtande.
+
+Layoutregel för `Sändlista`: sista sektionen ska visa rubriken `Sändlista`, meningen `Undertecknat utlåtande har [datum] sänts per e-post till parterna och övriga enligt nedan.` och en tabell med kolumnerna `Företag`, `Namn`, `Adress`. Raderna byggs från deltagare/mottagare där `receives_report=true`; adresskolumnen visar e-postadress. Direkt under tabellen visas besiktningsmannens porträtt från `profiles.avatar_path`, namn och certifierings-/medlemskapsuppgifter från settings/profil samt SBR-logotypen. Den separata sektionen `Underskrift och certifiering` ska inte skrivas ut som egen rubrik utan ingå visuellt i `Sändlista`.
 
 Standardtext för `Provning, dokumentation`: texten ligger i `src/content/standardtexts/eb/EB_REPORT_TESTING_DOCUMENTATION.txt` och ska börja med `Följande dokument över avtalade kvalitetsåtgärder redovisades...`. Bedömningstexten om att entreprenörens dokumentation utgjort tillräckligt underlag ska ligga före listan med granskade handlingar. Under dessa stycken ska underrubriken `Dokumentation:` visas, följt av granskade handlingar i två kolumner: handling till vänster och `Daterad: [datum]` eller överlämningsstatus till höger. Under listan med handlingar ska texten om att saknad eller felaktig dokumentation noteras som fel under `Fel och förhållanden` ligga. Äldre sparade utkast med den tidigare interna instruktionstexten ersätts automatiskt av den aktuella standardtexten.
 

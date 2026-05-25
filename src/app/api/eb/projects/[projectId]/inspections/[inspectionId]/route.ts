@@ -4,6 +4,7 @@ import { requireOrgContext } from '@/lib/assignments/server'
 import {
   updateEbInspection,
   type EbApprovalStatus,
+  type EbAfterInspectionRequestedBy,
   type EbDefectNoErrorPartsPolicy,
   type EbInspectorAppointedBy,
   type EbPreviousInspectionItem,
@@ -103,8 +104,12 @@ export async function PATCH(
       warrantyScope: toText(body.warrantyScope) || null,
       defaultRemedyDeadline: toText(body.defaultRemedyDeadline) || null,
       afterInspectionRequested: toOptionalBoolean(body.afterInspectionRequested),
+      afterInspectionRequestedBy: (toText(body.afterInspectionRequestedBy) || null) as
+        | EbAfterInspectionRequestedBy
+        | null,
       afterInspectionDueDate: toText(body.afterInspectionDueDate) || null,
       afterInspectionNoticeInReport: body.afterInspectionNoticeInReport === true,
+      inspectionCostDistribution: toText(body.inspectionCostDistribution) || null,
       reportDistributionDate: toText(body.reportDistributionDate) || null,
       previousInspections: toPreviousInspections(body.previousInspections),
       defectNumberingExplanation: toText(body.defectNumberingExplanation) || null,

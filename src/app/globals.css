@@ -154,4 +154,28 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     break-inside: avoid;
     page-break-inside: avoid;
   }
+
+  .eb-report-print-document img.eb-report-header-logo {
+    width: auto !important;
+    height: 16mm !important;
+    max-width: 52mm !important;
+    max-height: 16mm !important;
+    object-fit: contain !important;
+  }
+
+  .eb-report-print-document img.eb-report-inspector-avatar {
+    width: 34mm !important;
+    height: 34mm !important;
+    max-width: 34mm !important;
+    max-height: 34mm !important;
+    object-fit: cover !important;
+  }
+
+  .eb-report-print-document img.eb-report-sbr-logo {
+    width: auto !important;
+    height: 14mm !important;
+    max-width: 42mm !important;
+    max-height: 14mm !important;
+    object-fit: contain !important;
+  }
 }

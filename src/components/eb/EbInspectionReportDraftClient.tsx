@@ -79,8 +79,10 @@ type StructuredReportFormState = {
   warrantyScope: string
   defaultRemedyDeadline: string
   afterInspectionRequested: string
+  afterInspectionRequestedBy: string
   afterInspectionDueDate: string
   afterInspectionNoticeInReport: boolean
+  inspectionCostDistribution: string
   reportDistributionDate: string
   previousInspections: EbPreviousInspectionItem[]
 }
@@ -121,8 +123,10 @@ function buildStructuredReportForm(
       typeof inspection.afterInspectionRequested === 'boolean'
         ? String(inspection.afterInspectionRequested)
         : '',
+    afterInspectionRequestedBy: inspection.afterInspectionRequestedBy ?? '',
     afterInspectionDueDate: inspection.afterInspectionDueDate ?? '',
     afterInspectionNoticeInReport: inspection.afterInspectionNoticeInReport,
+    inspectionCostDistribution: inspection.inspectionCostDistribution ?? '',
     reportDistributionDate: inspection.reportDistributionDate ?? todayInputValue(),
     previousInspections: inspection.previousInspections,
   }
@@ -585,6 +589,20 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
               </select>
             )}
             {fieldLabel(
+              'Efterbesiktning påkallad av',
+              <select
+                value={structuredForm.afterInspectionRequestedBy}
+                onChange={(event) =>
+                  updateStructuredField('afterInspectionRequestedBy', event.target.value)
+                }
+                className={fieldClassName()}
+              >
+                <option value="">Ej satt</option>
+                <option value="client">Beställare</option>
+                <option value="contractor">Hantverkare</option>
+              </select>
+            )}
+            {fieldLabel(
               'Efterbesiktning senast',
               <input
                 type="date"
@@ -602,6 +620,20 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                 className={fieldClassName()}
               />
             )}
+            <div className="md:col-span-2 xl:col-span-4">
+              {fieldLabel(
+                'Besiktningskostnadens fördelning',
+                <textarea
+                  value={structuredForm.inspectionCostDistribution}
+                  onChange={(event) =>
+                    updateStructuredField('inspectionCostDistribution', event.target.value)
+                  }
+                  rows={3}
+                  placeholder="Exempel: Kostnaden för besiktningen betalas av beställaren."
+                  className={`${fieldClassName()} leading-6`}
+                />
+              )}
+            </div>
             <label className="flex min-h-[4.1rem] items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm font-medium text-emerald-900">
               <input
                 type="checkbox"
