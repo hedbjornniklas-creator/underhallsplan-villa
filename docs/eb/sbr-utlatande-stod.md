@@ -102,6 +102,7 @@ EB-texterna ligger här:
 - `src/content/standardtexts/eb/EB_REPORT_SUMMONS_MISSING.txt`
 - `src/content/standardtexts/eb/EB_REPORT_CONFLICT_OF_INTEREST.txt`
 - `src/content/standardtexts/eb/EB_REPORT_PREVIOUS_INSPECTIONS_TESTS.txt`
+- `src/content/standardtexts/eb/EB_REPORT_TESTING_DOCUMENTATION.txt`
 - `src/content/standardtexts/eb/EB_REPORT_CONTRACT_DOCUMENTS_MISSING.txt`
 - `src/content/standardtexts/eb/EB_REPORT_NOT_ACCESSIBLE_NONE.txt`
 - `src/content/standardtexts/eb/EB_REPORT_DOCUMENTATION_ONLY.txt`
@@ -138,6 +139,7 @@ Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de s
 | Sättet för kallelse (7) | Delvis strukturerat | `eb_inspection_details.invitation_sent_at`, `report_draft.summons` |
 | Fråga om jäv (8) | Redigerbart utkast | `report_draft.conflict_of_interest` |
 | Tidigare besiktningar/provningar (9) | Redigerbart utkast | `report_draft.previous_inspections_tests` |
+| Provning/dokumentation | Redigerbart utkast + standardtext | `report_draft.testing_documentation` |
 | Entreprenadhandlingar/överenskommelser (10) | Delvis | `eb_project_attachments`, `report_draft.contract_documents` |
 | Ej åtkomliga delar (11) | Delvis | `eb_notes.status_key=not_accessible`, `report_draft.not_accessible` |
 | Endast dokumentationsbesiktigade delar (12) | Redigerbart utkast | `report_draft.documentation_only` |

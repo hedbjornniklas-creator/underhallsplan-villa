@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 /* eslint-disable @next/next/no-img-element */
 
@@ -100,7 +100,7 @@ function ReportText({ text }: { text: string }) {
   if (blocks.length === 0) return null
 
   return (
-    <div className="space-y-3 text-[13px] leading-5 text-gray-900">
+    <div className="space-y-2 text-[10.5pt] leading-[1.35] text-black">
       {blocks.map((block, blockIndex) => {
         const lines = printableReportLines(block)
         const labelRows = lines.map(parseLabelLine)
@@ -110,8 +110,8 @@ function ReportText({ text }: { text: string }) {
           return (
             <dl key={`${blockIndex}-${block}`} className="grid gap-y-1">
               {labelRows.map((row, rowIndex) => row ? (
-                <div key={`${row.label}-${rowIndex}`} className="grid gap-x-4 sm:grid-cols-[11rem_1fr]">
-                  <dt className="font-semibold text-gray-600">{row.label}</dt>
+                <div key={`${row.label}-${rowIndex}`} className="grid grid-cols-[38mm_1fr] gap-x-4">
+                  <dt className="font-normal text-black">{row.label}</dt>
                   <dd>{row.value}</dd>
                 </div>
               ) : null)}
@@ -131,7 +131,7 @@ function ReportText({ text }: { text: string }) {
   )
 }
 
-function Section({
+function ReportSection({
   title,
   children,
 }: {
@@ -139,12 +139,166 @@ function Section({
   children: ReactNode
 }) {
   return (
-    <section className="border-t border-gray-300 py-4 print:py-3">
-      <h2 className="mb-2 text-[13px] font-bold text-gray-950">{title}</h2>
+    <section className="eb-report-section break-inside-auto pt-4">
+      <h2 className="mb-2 text-[12pt] font-bold leading-tight text-black">{title}</h2>
       {children}
     </section>
   )
 }
+
+function ReportHeader({ report }: { report: EbInspectionReport }) {
+  return (
+    <header className="mb-8">
+      <div className="flex min-h-[22mm] items-start justify-between gap-8">
+        <div className="flex min-h-[18mm] flex-1 items-start">
+          {report.branding.inspectorLogoUrl ? (
+            <img
+              src={report.branding.inspectorLogoUrl}
+              alt="Besiktningsmannens logotyp"
+              className="max-h-[18mm] max-w-[70mm] object-contain"
+            />
+          ) : null}
+        </div>
+        <img
+          src={report.branding.besiktAppLogoUrl}
+          alt="BesiktApp"
+          className="h-[13mm] w-auto object-contain"
+        />
+      </div>
+
+      <div className="mt-8 text-center">
+        <h1 className="text-[16pt] font-bold leading-tight text-black">
+          Utlåtande över {report.inspection.variantLabel.toLowerCase()}
+        </h1>
+        <p className="mt-3 text-[14pt] font-bold text-black">
+          {detailLine([report.project.address, report.project.postalCode, report.project.city])}
+        </p>
+      </div>
+
+      <div className="mt-7 grid grid-cols-[1fr_47mm] gap-8 border-b border-black pb-4 text-[10.5pt] text-black">
+        <div>
+          <p className="font-bold">{report.project.title}</p>
+          <p>{detailLine([report.project.propertyDesignation, report.project.municipality])}</p>
+        </div>
+        <dl className="grid gap-y-1">
+          <div className="grid grid-cols-[24mm_1fr] gap-x-3">
+            <dt>Besiktning:</dt>
+            <dd>{report.inspection.variant}{report.inspection.sequenceNo}</dd>
+          </div>
+          <div className="grid grid-cols-[24mm_1fr] gap-x-3">
+            <dt>Datum:</dt>
+            <dd>{formatDate(report.inspection.date)}</dd>
+          </div>
+          <div className="grid grid-cols-[24mm_1fr] gap-x-3">
+            <dt>Tid:</dt>
+            <dd>{formatTime(report.inspection.inspectionTime) || '-'}</dd>
+          </div>
+        </dl>
+      </div>
+    </header>
+  )
+}
+
+function noteReference(report: EbInspectionReport, note: EbNote, index: number) {
+  return `${report.project.notePrefix} ${note.noteNumber ?? index + 1}`
+}
+
+function NoteTable({
+  report,
+  notes,
+}: {
+  report: EbInspectionReport
+  notes: EbNote[]
+}) {
+  if (notes.length === 0) {
+    return <p className="text-[10.5pt] text-black">Inga noteringar registrerade.</p>
+  }
+
+  return (
+    <table className="w-full border-collapse text-[9.5pt] leading-tight text-black">
+      <thead>
+        <tr className="bg-[#4f86bf] text-left text-white print:bg-[#4f86bf]">
+          <th className="w-[12mm] border border-[#8db1d7] px-1.5 py-1 font-bold">Bet.</th>
+          <th className="w-[16mm] border border-[#8db1d7] px-1.5 py-1 font-bold">Nr</th>
+          <th className="w-[42mm] border border-[#8db1d7] px-1.5 py-1 font-bold">Del / Rum</th>
+          <th className="border border-[#8db1d7] px-1.5 py-1 font-bold">Fel</th>
+          <th className="w-[24mm] border border-[#8db1d7] px-1.5 py-1 font-bold">Avhjälpt /sign</th>
+        </tr>
+      </thead>
+      <tbody>
+        {notes.map((note, index) => (
+          <tr key={note.id} className="break-inside-avoid">
+            <td className="align-top border border-[#8db1d7] px-1.5 py-1.5">
+              {note.markerKey || ''}
+            </td>
+            <td className="align-top border border-[#8db1d7] px-1.5 py-1.5">
+              {noteReference(report, note, index)}
+            </td>
+            <td className="align-top border border-[#8db1d7] px-1.5 py-1.5">
+              {detailLine([note.room, note.location, note.placeDetail]) !== '-'
+                ? detailLine([note.room, note.location, note.placeDetail])
+                : ''}
+            </td>
+            <td className="whitespace-pre-wrap align-top border border-[#8db1d7] px-1.5 py-1.5">
+              {note.noteText}
+            </td>
+            <td className="align-top border border-[#8db1d7] px-1.5 py-1.5" />
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function PhotoAppendix({
+  report,
+  notes,
+  imagesByNoteId,
+}: {
+  report: EbInspectionReport
+  notes: EbNote[]
+  imagesByNoteId: Map<string, EbNoteImage[]>
+}) {
+  const notesWithImages = notes
+    .map((note, index) => ({
+      note,
+      index,
+      images: imagesByNoteId.get(note.id) ?? [],
+    }))
+    .filter((item) => item.images.length > 0)
+
+  if (notesWithImages.length === 0) return null
+
+  return (
+    <section className="eb-report-section mt-8 break-before-page">
+      <h2 className="mb-3 text-[12pt] font-bold leading-tight text-black">Fotobilaga</h2>
+      <div className="space-y-5">
+        {notesWithImages.map(({ note, index, images }) => (
+          <article key={note.id} className="break-inside-avoid">
+            <p className="mb-2 text-[10pt] font-bold text-black">
+              {noteReference(report, note, index)} {note.markerKey ? `(${note.markerKey})` : ''}
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              {images.map((image) => (
+                <figure key={image.id} className="break-inside-avoid">
+                  <img
+                    src={image.publicUrl}
+                    alt={image.label ?? 'Noteringsbild'}
+                    className="h-[62mm] w-full border border-gray-300 object-contain"
+                  />
+                  {image.label ? (
+                    <figcaption className="mt-1 text-[8.5pt] text-gray-700">{image.label}</figcaption>
+                  ) : null}
+                </figure>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 export default function EbInspectionReportView({ report }: EbInspectionReportViewProps) {
   const notes = sortNotes(report.notes)
   const reportSections = report.reportDraft.sections.filter(
@@ -164,7 +318,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
   }
 
   return (
-    <main className="eb-report-print-root min-h-screen bg-gray-100 text-gray-950 print:min-h-0 print:bg-white">
+    <main className="eb-report-print-root min-h-screen bg-neutral-200 text-black print:min-h-0 print:bg-white">
       <div className="mx-auto max-w-5xl px-4 py-5 print:hidden">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
@@ -201,125 +355,27 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
         </div>
       </div>
 
-      <article className="eb-report-print-document mx-auto max-w-5xl bg-white px-10 py-8 shadow-sm print:shadow-none">
-        <header className="border-b-2 border-gray-950 pb-5">
-          <div className="mb-6 flex min-h-14 items-start justify-between gap-6">
-            <div className="flex min-h-14 flex-1 items-start">
-              {report.branding.inspectorLogoUrl ? (
-                <img
-                  src={report.branding.inspectorLogoUrl}
-                  alt="Besiktningsmannens logotyp"
-                  className="max-h-14 max-w-56 object-contain"
-                />
-              ) : null}
-            </div>
-            <img
-              src={report.branding.besiktAppLogoUrl}
-              alt="BesiktApp"
-              className="h-10 w-auto object-contain"
-            />
-          </div>
-          <h1 className="text-2xl font-bold tracking-normal text-gray-950">
-            Utlåtande över {report.inspection.variantLabel.toLowerCase()}
-          </h1>
-          <div className="mt-5 grid gap-5 sm:grid-cols-[1.4fr_1fr]">
-            <div>
-              <p className="text-lg font-bold">{report.project.title}</p>
-              <p className="mt-1 text-sm text-gray-700">
-                {detailLine([report.project.address, report.project.postalCode, report.project.city])}
-              </p>
-              <p className="mt-1 text-sm text-gray-700">
-                {detailLine([report.project.propertyDesignation, report.project.municipality])}
-              </p>
-            </div>
-            <dl className="grid gap-2 text-sm">
-              <div className="flex justify-between gap-4">
-                <dt className="font-semibold text-gray-500">Besiktning</dt>
-                <dd className="font-bold">{report.inspection.variant}{report.inspection.sequenceNo}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="font-semibold text-gray-500">Datum</dt>
-                <dd>{formatDate(report.inspection.date)}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="font-semibold text-gray-500">Tid</dt>
-                <dd>{formatTime(report.inspection.inspectionTime) || '-'}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="font-semibold text-gray-500">Noteringsserie</dt>
-                <dd>{report.project.notePrefix}</dd>
-              </div>
-            </dl>
-          </div>
-        </header>
+      <article className="eb-report-print-document mx-auto bg-white px-12 py-10 shadow-sm print:shadow-none">
+        <ReportHeader report={report} />
 
         {reportSections.map((section) => (
-          <Section
+          <ReportSection
             key={section.key}
             title={section.sbrPoint ? `${section.sbrPoint}. ${section.title}` : section.title}
           >
             <ReportText text={section.text} />
-          </Section>
+          </ReportSection>
         ))}
-        <Section title="Noteringar">
-          {notes.length === 0 ? (
-            <p className="text-sm text-gray-600">Inga noteringar registrerade.</p>
-          ) : (
-            <div>
-              {notes.map((note, index) => {
-                const images = imagesByNoteId.get(note.id) ?? []
-                const notePlace = detailLine([note.room, note.location, note.placeDetail])
-                return (
-                  <article key={note.id} className="break-inside-avoid border-t border-gray-200 py-3 first:border-t-0 first:pt-0">
-                    <div className="grid gap-3 sm:grid-cols-[6rem_1fr_7rem]">
-                      <div className="text-sm">
-                        <p className="text-[11px] font-semibold text-gray-500">Nr / bet.</p>
-                        <p className="mt-1 font-bold text-gray-950">
-                          {report.project.notePrefix} {note.noteNumber ?? index + 1}
-                        </p>
-                        <p className="font-bold text-gray-950">{note.markerKey || '-'}</p>
-                      </div>
-                      <div>
-                        {notePlace !== '-' ? (
-                          <p className="text-[12px] font-semibold text-gray-600">{notePlace}</p>
-                        ) : null}
-                        <p className="mt-1 whitespace-pre-wrap text-[13px] leading-5 text-gray-950">{note.noteText}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-semibold text-gray-500">Status</p>
-                        <p className="mt-1 text-[13px] font-semibold">{note.statusLabel ?? note.statusKey}</p>
-                      </div>
-                    </div>
-                    {images.length > 0 ? (
-                      <div className="mt-3 flex flex-wrap gap-3 sm:pl-[6rem]">
-                        {images.map((image) => (
-                          <figure key={image.id} className="break-inside-avoid">
-                            <img
-                              src={image.publicUrl}
-                              alt={image.label ?? 'Noteringsbild'}
-                              className="h-32 w-40 bg-gray-50 object-contain print:h-[32mm] print:w-[42mm]"
-                            />
-                          </figure>
-                        ))}
-                      </div>
-                    ) : null}
-                  </article>
-                )
-              })}
-            </div>
-          )}
-        </Section>
 
-        <Section title="Underskrift">
-          <div className="mt-12 grid gap-10 sm:grid-cols-2">
-            <div className="border-t border-gray-400 pt-3 text-sm text-gray-700">Besiktningsman</div>
-            <div className="border-t border-gray-400 pt-3 text-sm text-gray-700">Datum</div>
-          </div>
-        </Section>
+        <section className="eb-report-section mt-8 break-before-page">
+          <h2 className="mb-3 text-[13pt] font-bold leading-tight text-black">
+            Bilaga 1 till utlåtande över {report.inspection.variantLabel.toLowerCase()}
+          </h2>
+          <NoteTable report={report} notes={notes} />
+        </section>
+
+        <PhotoAppendix report={report} notes={notes} imagesByNoteId={imagesByNoteId} />
       </article>
     </main>
   )
 }
-
-
-

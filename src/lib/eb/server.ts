@@ -2534,6 +2534,46 @@ function ebNoteReportReference(round: EbInspectionRound, note: EbNote) {
   return `${round.project.notePrefix} ${note.noteNumber ?? '-'}`
 }
 
+function ebSummonsReportText(round: EbInspectionRound) {
+  const method = normalizeText(round.inspection.invitationMethod)
+  const invitationDate = normalizeText(
+    round.inspection.invitationDate ?? round.inspection.invitationSentAt
+  )
+
+  if (method && invitationDate) {
+    return `Besiktningsmannen har ${invitationDate} kallat parterna per ${method}.`
+  }
+  if (invitationDate) {
+    return `Besiktningsmannen har kallat parterna ${invitationDate}.`
+  }
+  if (method) {
+    return `Besiktningsmannen har kallat parterna per ${method}.`
+  }
+  return ebStandardText('EB_REPORT_SUMMONS_MISSING')
+}
+
+function ebApprovalDecisionReportText(round: EbInspectionRound) {
+  const decisionDate = normalizeText(round.inspection.date)
+  const decisionLabel = approvalStatusLabel(round.inspection.approvalStatus)
+  if (!round.inspection.approvalStatus || !decisionLabel) {
+    return ebStandardText('EB_REPORT_APPROVAL_DECISION')
+  }
+
+  const dateSuffix = decisionDate ? ` ${decisionDate}` : ''
+  const decisionText =
+    round.inspection.approvalStatus === 'approved'
+      ? `De delar av entreprenaden som omfattas av besiktningen godkänns${dateSuffix}.`
+      : round.inspection.approvalStatus === 'not_approved'
+        ? `De delar av entreprenaden som omfattas av besiktningen godkänns inte${dateSuffix}.`
+        : `De delar av entreprenaden som omfattas av besiktningen godkänns delvis${dateSuffix}.`
+
+  return reportList([
+    decisionText,
+    round.inspection.approvalNote,
+    decisionDate ? 'Beslutet meddelades av besiktningsmannen till parterna vid besiktningen.' : null,
+  ])
+}
+
 function ebSpecialInvestigationReportRow(round: EbInspectionRound, note: EbNote) {
   return reportList([
     `${ebNoteReportReference(round, note)}: ${note.noteText}`,
@@ -2708,13 +2748,7 @@ function buildEbReportDraft(input: {
       source: 'inspection',
       status: round.inspection.invitationDate || round.inspection.invitationSentAt ? 'complete' : 'draft',
       isRelevant: true,
-      text:
-        round.inspection.invitationMethod || round.inspection.invitationDate || round.inspection.invitationSentAt
-          ? reportList([
-              optionalReportLine('Kallelsemetod', round.inspection.invitationMethod),
-              optionalReportLine('Kallelsedatum', round.inspection.invitationDate ?? round.inspection.invitationSentAt),
-            ])
-          : ebStandardText('EB_REPORT_SUMMONS_MISSING'),
+      text: ebSummonsReportText(round),
       updatedAt: null,
     },
     {
@@ -2735,6 +2769,16 @@ function buildEbReportDraft(input: {
       status: 'complete',
       isRelevant: true,
       text: ebStandardText('EB_REPORT_PREVIOUS_INSPECTIONS_TESTS'),
+      updatedAt: null,
+    },
+    {
+      key: 'testing_documentation',
+      title: 'Provning, dokumentation',
+      sbrPoint: '9',
+      source: 'manual',
+      status: 'draft',
+      isRelevant: true,
+      text: ebStandardText('EB_REPORT_TESTING_DOCUMENTATION'),
       updatedAt: null,
     },
     {
@@ -2852,12 +2896,7 @@ function buildEbReportDraft(input: {
       source: 'manual',
       status: round.inspection.approvalStatus ? 'complete' : 'draft',
       isRelevant: true,
-      text: round.inspection.approvalStatus
-        ? reportList([
-            optionalReportLine('Beslut', approvalStatusLabel(round.inspection.approvalStatus)),
-            round.inspection.approvalNote,
-          ])
-        : ebStandardText('EB_REPORT_APPROVAL_DECISION'),
+      text: ebApprovalDecisionReportText(round),
       updatedAt: null,
     },
     {

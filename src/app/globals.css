@@ -141,4 +141,15 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
   .eb-report-print-document * {
     box-sizing: border-box;
   }
+
+  .eb-report-print-document thead {
+    display: table-header-group;
+  }
+
+  .eb-report-print-document tr,
+  .eb-report-print-document figure,
+  .eb-report-print-document img {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }

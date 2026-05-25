@@ -1,1 +1,8 @@
-Noteringarna redovisas med noteringsnummer, beteckning, plats och feltext. Rums- och väggangivelser avser den orientering som använts vid besiktningen. Om en notering senare intygas avhjälpt av entreprenören innebär det inte att avhjälpandet är kontrollerat av besiktningsmannen, om inte detta uttryckligen anges.
+Förklaringar för noteringsförteckningen:
+Bet. anger noteringens beteckning.
+Nr anger noteringens ordningsnummer.
+Del/Rum anger byggdel, installationsdel, rum eller plats.
+Fel anger det förhållande som besiktningsmannen har noterat.
+Avhjälpt/sign är avsett för entreprenörens intygande av att avhjälpande har skett med datum och signatur.
+
+Rums- och väggangivelser avser den orientering som använts vid besiktningen. Väggar, fönster, dörrar och motsvarande anges normalt från vänster till höger utifrån den riktning som använts vid besiktningen. Om en notering senare intygas avhjälpt av entreprenören innebär det inte att avhjälpandet är kontrollerat av besiktningsmannen, om inte detta uttryckligen anges.
