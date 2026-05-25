@@ -19,6 +19,7 @@ type DocType = {
   label: string
   category: string | null
   applies_to: string | null
+  applicable_modules: string
   description: string | null
   is_default: boolean | null
   is_active: boolean | null
@@ -30,10 +31,42 @@ type DocDraft = {
   label: string
   category: string | null
   applies_to: string | null
+  applicable_modules: string
   description: string | null
   is_default: boolean
   is_active: boolean
 }
+
+type DocModule = 'ob' | 'eb'
+
+const DOC_MODULE_OPTIONS: { key: DocModule; label: string }[] = [
+  { key: 'ob', label: 'ÖB' },
+  { key: 'eb', label: 'EB' },
+]
+
+const parseDocModules = (value: string | null | undefined): DocModule[] => {
+  const tokens = String(value ?? 'ob')
+    .split(/[,;|]/g)
+    .map(token => token.trim().toLowerCase())
+    .filter(Boolean)
+
+  const modules = DOC_MODULE_OPTIONS
+    .map(option => option.key)
+    .filter(module => tokens.includes(module))
+
+  return modules.length > 0 ? modules : ['ob']
+}
+
+const serializeDocModules = (modules: DocModule[]) =>
+  DOC_MODULE_OPTIONS
+    .map(option => option.key)
+    .filter(module => modules.includes(module))
+    .join(',')
+
+const docModulesLabel = (value: string | null | undefined) =>
+  parseDocModules(value)
+    .map(module => DOC_MODULE_OPTIONS.find(option => option.key === module)?.label ?? module)
+    .join(', ')
 
 type CompType = {
   id: string
@@ -210,11 +243,12 @@ export default function AdminClient() {
     dir: 'asc' | 'desc'
   }>({ key: 'label', dir: 'asc' })
   const [docFilters, setDocFilters] = useState<{
+    applicable_module: string
     applies_to: string
     category: string
     is_default: string
     is_active: string
-  }>({ applies_to: '', category: '', is_default: '', is_active: '' })
+  }>({ applicable_module: '', applies_to: '', category: '', is_default: '', is_active: '' })
   const [docModalOpen, setDocModalOpen] = useState(false)
   const [docDraft, setDocDraft] = useState<DocDraft | null>(null)
 
@@ -327,7 +361,7 @@ export default function AdminClient() {
   const loadDocs = async () => {
     const { data, error } = await supabase
       .from('document_types')
-      .select('id, code, label, category, applies_to, description, is_default, is_active')
+      .select('id, code, label, category, applies_to, applicable_modules, description, is_default, is_active')
       .order('category', { ascending: true })
       .order('label', { ascending: true })
     if (error) {
@@ -461,10 +495,17 @@ export default function AdminClient() {
             (d.code ?? '').toLowerCase().includes(s) ||
             (d.category ?? '').toLowerCase().includes(s) ||
             (d.applies_to ?? '').toLowerCase().includes(s) ||
+            docModulesLabel(d.applicable_modules).toLowerCase().includes(s) ||
             (d.is_active ? 'aktiv' : 'inaktiv').includes(s)
         )
 
     const filtered = rows.filter(d => {
+      if (
+        docFilters.applicable_module &&
+        !parseDocModules(d.applicable_modules).includes(docFilters.applicable_module as DocModule)
+      ) {
+        return false
+      }
       if (docFilters.applies_to && (d.applies_to ?? 'all') !== docFilters.applies_to) return false
       if (docFilters.category && (d.category ?? '') !== docFilters.category) return false
       if (docFilters.is_default) {
@@ -1059,6 +1100,20 @@ export default function AdminClient() {
     return value ?? ''
   }
 
+  const toggleDocDraftModule = (module: DocModule) => {
+    if (!docDraft) return
+    const current = parseDocModules(docDraft.applicable_modules)
+    const next = current.includes(module)
+      ? current.filter(value => value !== module)
+      : [...current, module]
+
+    if (next.length === 0) return
+    setDocDraft({
+      ...docDraft,
+      applicable_modules: serializeDocModules(next),
+    })
+  }
+
   const openDocModal = (doc?: DocType) => {
     if (doc) {
       setDocDraft({
@@ -1067,6 +1122,7 @@ export default function AdminClient() {
         label: doc.label ?? '',
         category: doc.category ?? null,
         applies_to: doc.applies_to ?? 'all',
+        applicable_modules: doc.applicable_modules ?? 'ob',
         description: doc.description ?? null,
         is_default: !!doc.is_default,
         is_active: doc.is_active ?? true,
@@ -1077,6 +1133,7 @@ export default function AdminClient() {
         label: '',
         category: null,
         applies_to: 'all',
+        applicable_modules: 'ob',
         description: null,
         is_default: false,
         is_active: true,
@@ -1091,6 +1148,7 @@ export default function AdminClient() {
       label: doc.label ? `${doc.label} (kopia)` : 'Kopia',
       category: doc.category ?? null,
       applies_to: doc.applies_to ?? 'all',
+      applicable_modules: doc.applicable_modules ?? 'ob',
       description: doc.description ?? null,
       is_default: !!doc.is_default,
       is_active: doc.is_active ?? true,
@@ -1240,6 +1298,7 @@ export default function AdminClient() {
       label: docDraft.label.trim() || 'Nytt dokument',
       category: docDraft.category || null,
       applies_to: docDraft.applies_to || 'all',
+      applicable_modules: docDraft.applicable_modules || 'ob',
       description: docDraft.description || null,
       is_default: docDraft.is_default,
       is_active: docDraft.is_active,
@@ -1259,7 +1318,7 @@ export default function AdminClient() {
     const { data, error } = await (supabase as any)
       .from('document_types')
       .insert(payload)
-      .select('id, code, label, category, applies_to, description, is_default, is_active')
+      .select('id, code, label, category, applies_to, applicable_modules, description, is_default, is_active')
       .single()
     if (error) return alert(error.message)
     setDocs(prev => [data as DocType, ...prev])
@@ -1587,6 +1646,14 @@ export default function AdminClient() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => toggleDocSort('applicable_modules')}
+                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2.5 py-1 hover:bg-gray-50"
+                >
+                  Modul
+                  {renderSortIcon(docSort.key === 'applicable_modules', docSort.dir)}
+                </button>
+                <button
+                  type="button"
                   onClick={() => toggleDocSort('is_default')}
                   className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2.5 py-1 hover:bg-gray-50"
                 >
@@ -1605,6 +1672,15 @@ export default function AdminClient() {
 
               <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
                 <span className="text-gray-400">Filtrera:</span>
+                <select
+                  className="border rounded-full px-2.5 py-1 bg-white"
+                  value={docFilters.applicable_module}
+                  onChange={e => setDocFilters(prev => ({ ...prev, applicable_module: e.target.value }))}
+                >
+                  <option value="">Modul</option>
+                  <option value="ob">ÖB</option>
+                  <option value="eb">EB</option>
+                </select>
                 <select
                   className="border rounded-full px-2.5 py-1 bg-white"
                   value={docFilters.applies_to}
@@ -1654,9 +1730,10 @@ export default function AdminClient() {
                   <thead>
                     <tr className="text-left text-[10px] uppercase text-gray-400 whitespace-nowrap">
                       <th className="px-3 py-1 w-[12%]">Kod</th>
-                      <th className="px-3 py-1 w-[24%]">Namn</th>
+                      <th className="px-3 py-1 w-[20%]">Namn</th>
                       <th className="px-3 py-1 w-[14%]">Kategori</th>
                       <th className="px-3 py-1 w-[14%]">Gäller för</th>
+                      <th className="px-3 py-1 w-[8%]">Modul</th>
                       <th className="px-3 py-1 w-[8%]">Standard</th>
                       <th className="px-3 py-1 w-[8%]">Aktiv</th>
                       <th className="px-3 py-1 w-[14%]">Beskrivning</th>
@@ -1677,6 +1754,9 @@ export default function AdminClient() {
                         </td>
                         <td className="px-3 py-2 border-y border-gray-200 bg-white transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
                           <div className="truncate">{docAppliesToLabel(d.applies_to)}</div>
+                        </td>
+                        <td className="px-3 py-2 border-y border-gray-200 bg-white transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                          <div className="truncate">{docModulesLabel(d.applicable_modules)}</div>
                         </td>
                         <td className="px-3 py-2 border-y border-gray-200 bg-white transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
                           <div className="truncate">{d.is_default ? 'Ja' : 'Nej'}</div>
@@ -1709,7 +1789,7 @@ export default function AdminClient() {
                     ))}
                     {filteredDocs.length === 0 && (
                       <tr>
-                        <td className="py-4 text-gray-500 text-xs" colSpan={8}>
+                        <td className="py-4 text-gray-500 text-xs" colSpan={9}>
                           Inga rader.
                         </td>
                       </tr>
@@ -2520,6 +2600,24 @@ export default function AdminClient() {
                   <option value="buyer,seller">Köpare + säljare</option>
                 </select>
               </label>
+              <div className="text-sm">
+                <div className="mb-1 text-gray-600">Modul</div>
+                <div className="flex flex-wrap gap-3 rounded border border-gray-200 px-2 py-1.5">
+                  {DOC_MODULE_OPTIONS.map(option => {
+                    const checked = parseDocModules(docDraft.applicable_modules).includes(option.key)
+                    return (
+                      <label key={option.key} className="inline-flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleDocDraftModule(option.key)}
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
               <label className="text-sm md:col-span-2">
                 <div className="mb-1 text-gray-600">Namn</div>
                 <input

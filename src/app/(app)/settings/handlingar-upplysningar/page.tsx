@@ -3,7 +3,7 @@
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 type DocRow = {
   id: string
@@ -11,6 +11,7 @@ type DocRow = {
   label: string
   category: string | null
   scope: 'property' | 'building' | null
+  applicable_modules: string
   description: string | null
   is_default: boolean | null
   // nya fält
@@ -22,20 +23,46 @@ type DocRow = {
   is_active: boolean | null
 }
 
+type DocModule = 'ob' | 'eb'
+
+const MODULE_OPTIONS: { key: DocModule; label: string }[] = [
+  { key: 'ob', label: 'ÖB' },
+  { key: 'eb', label: 'EB' },
+]
+
+const parseDocModules = (value: string | null | undefined): DocModule[] => {
+  const tokens = String(value ?? 'ob')
+    .split(/[,;|]/g)
+    .map(token => token.trim().toLowerCase())
+    .filter(Boolean)
+
+  const modules = MODULE_OPTIONS
+    .map(option => option.key)
+    .filter(module => tokens.includes(module))
+
+  return modules.length > 0 ? modules : ['ob']
+}
+
+const serializeDocModules = (modules: DocModule[]) =>
+  MODULE_OPTIONS
+    .map(option => option.key)
+    .filter(module => modules.includes(module))
+    .join(',')
+
+const docModulesLabel = (value: string | null | undefined) =>
+  parseDocModules(value)
+    .map(module => MODULE_OPTIONS.find(option => option.key === module)?.label ?? module)
+    .join(', ')
+
 export default function HandlingarSettingsPage() {
   const [rows, setRows] = useState<DocRow[]>([])
   const [q, setQ] = useState('')
 
-  // Ladda handlingstyper
-  useEffect(() => {
-    loadRows()
-  }, [])
-
-  const loadRows = async () => {
+  const loadRows = useCallback(async () => {
     const { data, error } = await supabase
       .from('document_types')
       .select(
-        'id, code, label, category, scope, description, is_default, result_label, result_unit, validity_years, recommended_interval_years, interval_note, is_active'
+        'id, code, label, category, scope, applicable_modules, description, is_default, result_label, result_unit, validity_years, recommended_interval_years, interval_note, is_active'
       )
       .order('category', { ascending: true })
       .order('label', { ascending: true })
@@ -46,7 +73,13 @@ export default function HandlingarSettingsPage() {
     }
 
     setRows((data ?? []) as DocRow[])
-  }
+  }, [])
+
+  // Ladda handlingstyper
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadRows()
+  }, [loadRows])
 
   // Lägg till ny handling
   const addRow = async () => {
@@ -58,11 +91,12 @@ export default function HandlingarSettingsPage() {
         label: 'Ny handling',
         category: null,
         scope: 'building',
+        applicable_modules: 'ob',
         is_default: true,
         is_active: true,
       })
       .select(
-        'id, code, label, category, scope, description, is_default, result_label, result_unit, validity_years, recommended_interval_years, interval_note, is_active'
+        'id, code, label, category, scope, applicable_modules, description, is_default, result_label, result_unit, validity_years, recommended_interval_years, interval_note, is_active'
       )
       .single()
 
@@ -104,6 +138,16 @@ export default function HandlingarSettingsPage() {
     setRows(prev => prev.filter(r => r.id !== id))
   }
 
+  const toggleRowModule = (row: DocRow, module: DocModule) => {
+    const current = parseDocModules(row.applicable_modules)
+    const next = current.includes(module)
+      ? current.filter(value => value !== module)
+      : [...current, module]
+
+    if (next.length === 0) return
+    saveRow(row.id, { applicable_modules: serializeDocModules(next) })
+  }
+
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
     if (!s) return rows
@@ -111,6 +155,7 @@ export default function HandlingarSettingsPage() {
       (r.label ?? '').toLowerCase().includes(s) ||
       (r.code ?? '').toLowerCase().includes(s) ||
       (r.category ?? '').toLowerCase().includes(s) ||
+      docModulesLabel(r.applicable_modules).toLowerCase().includes(s) ||
       (r.result_label ?? '').toLowerCase().includes(s)
     )
   }, [rows, q])
@@ -131,7 +176,8 @@ export default function HandlingarSettingsPage() {
         <p className="text-sm text-gray-600 max-w-4xl">
           Här lägger du upp de handlingar som kan kopplas till en fastighet eller byggnad,
           t.ex. energideklaration, radonmätning, sotarintyg m.m. Upplysningar från ägaren
-          skrivs manuellt per byggnad och hanteras inte här.
+          skrivs manuellt per byggnad och hanteras inte här. Markera om dokumenttypen ska
+          användas i ÖB, EB eller båda.
         </p>
 
         {/* Sök + ny */}
@@ -159,6 +205,7 @@ export default function HandlingarSettingsPage() {
                 <th className="py-2 pr-3">Namn</th>
                 <th className="py-2 pr-3">Kategori</th>
                 <th className="py-2 pr-3">Gäller</th>
+                <th className="py-2 pr-3">Moduler</th>
                 <th className="py-2 pr-3">Standard</th>
                 <th className="py-2 pr-3">Resultatnamn</th>
                 <th className="py-2 pr-3">Enhet</th>
@@ -221,6 +268,24 @@ export default function HandlingarSettingsPage() {
                       <option value="building">byggnad</option>
                       <option value="property">fastighet</option>
                     </select>
+                  </td>
+
+                  <td className="py-2 pr-3 align-top">
+                    <div className="flex min-w-28 flex-col gap-1">
+                      {MODULE_OPTIONS.map(option => {
+                        const checked = parseDocModules(r.applicable_modules).includes(option.key)
+                        return (
+                          <label key={option.key} className="inline-flex items-center gap-1">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleRowModule(r, option.key)}
+                            />
+                            <span>{option.label}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
                   </td>
 
                   {/* Standard (is_default) */}
@@ -340,7 +405,7 @@ export default function HandlingarSettingsPage() {
 
               {filtered.length === 0 && (
                 <tr>
-                  <td className="py-4 text-gray-500" colSpan={13}>
+                  <td className="py-4 text-gray-500" colSpan={14}>
                     Inga handlingar upplagda ännu.
                   </td>
                 </tr>

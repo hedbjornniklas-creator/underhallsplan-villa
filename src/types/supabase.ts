@@ -386,6 +386,7 @@ export type Database = {
       }
       document_types: {
         Row: {
+          applicable_modules: string
           applies_to: string | null
           category: string | null
           code: string
@@ -403,6 +404,7 @@ export type Database = {
           validity_years: number | null
         }
         Insert: {
+          applicable_modules?: string
           applies_to?: string | null
           category?: string | null
           code: string
@@ -420,6 +422,7 @@ export type Database = {
           validity_years?: number | null
         }
         Update: {
+          applicable_modules?: string
           applies_to?: string | null
           category?: string | null
           code?: string

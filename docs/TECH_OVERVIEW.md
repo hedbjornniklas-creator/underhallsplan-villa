@@ -58,7 +58,7 @@ Datamodell (Postgres/Supabase)
 - building_media: building_id, path (lagras i bucket), caption, sort_order.
 - inspections: property_id -> properties, date, type (str, t.ex. OB), status (str), inspector_name, assignment_number, inspection_side (buyer/seller), scope (semikolon-lista), attendees, attendees_other, inspection_time, client_name, client_contact, defect_disclosures (fri text), created_at.
 - inspection_documents: inspection_id -> inspections, document_type_id nullable -> document_types, title, status (present/missing/na), document_date, document_value, note, file_url, created_at/updated_at.
-- document_types: code, label, category, scope (building/property), description, is_active, is_default, result_label, result_unit, validity_years, recommended_interval_years, interval_note.
+- document_types: code, label, category, scope (building/property), applicable_modules (ob/eb/ob,eb), applies_to (OB buyer/seller/apartment), description, is_active, is_default, result_label, result_unit, validity_years, recommended_interval_years, interval_note.
 - inspection_disclosures: inspection_id -> inspections, title, note, source_image_url, answer (str), disclosure_item_id nullable -> settings_disclosure_items. I nuvarande UI används en enda rad som fri text; mallfrågor (settings_disclosure_items) används inte ännu.
 - inspection_conditions: inspection_id (1:1), furnishing_level m.m. (Används i Förutsättningar-steget).
 - settings_overview_items/groups/options och inspection_overview_selections: styr Förutsättningar (selection_mode single/multi_set/per_floor, conditional_on_values, note_enabled).
@@ -68,7 +68,7 @@ Datamodell (Postgres/Supabase)
 
 Adminpanel
 - /admin: Flikar för document_types, component_types och settings_control_points. Kontrollpunkter redigeras i modal (duplicera finns). Key autogenereras vid spara om tom; question och label används inte i UI.
-- /settings/handlingar-upplysningar: CRUD för document_types (alla fält inkl. result_label/unit, intervall, giltighet, scope, is_active/default).
+- /settings/handlingar-upplysningar: CRUD för document_types (alla fält inkl. result_label/unit, intervall, giltighet, scope, applicable_modules, is_active/default).
 - /settings/forutsattningar: CRUD för overview-items/groups/options som driver inspection_overview_selections.
 - /settings/ob-utsida, /settings/ob-insida, /settings/ob-control-points m.fl.: mallar för kontrollpunkter och val i utsida/insida.
 - basic_fields hanteras i utsida/insida-settings (används av byggnadssidorna för basinfon).

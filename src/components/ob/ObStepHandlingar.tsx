@@ -16,6 +16,7 @@ type InspectionDisclosure = Tables<'inspection_disclosures'>
 
 type InspectionDocumentStatus = 'present' | 'missing' | 'na'
 type InspectionSide = 'buyer' | 'seller' | 'apartment'
+type DocumentModule = 'ob' | 'eb'
 
 type DocumentViewModel = {
   id: string
@@ -42,6 +43,7 @@ type InspectionExtraFields = Inspection & {
 
 type DocumentTypeExtraFields = DocumentType & {
   applies_to?: unknown
+  applicable_modules?: unknown
   label?: string | null
   description?: string | null
 }
@@ -118,6 +120,32 @@ const parseAppliesToSides = (raw: unknown): InspectionSide[] | null => {
 
   return parsed.length > 0 ? parsed : null
 }
+
+const parseDocumentModules = (raw: unknown): DocumentModule[] => {
+  if (raw == null) return ['ob']
+
+  let tokens: string[] = []
+  if (Array.isArray(raw)) {
+    tokens = raw.filter((value): value is string => typeof value === 'string')
+  } else if (typeof raw === 'string') {
+    tokens = raw.split(/[,;|]/g)
+  } else {
+    return ['ob']
+  }
+
+  const parsed = Array.from(
+    new Set(
+      tokens
+        .map(normalizeSwedishToken)
+        .filter((token): token is DocumentModule => token === 'ob' || token === 'eb')
+    )
+  )
+
+  return parsed.length > 0 ? parsed : ['ob']
+}
+
+const documentTypeAppliesToModule = (documentType: DocumentType, module: DocumentModule) =>
+  parseDocumentModules((documentType as DocumentTypeExtraFields).applicable_modules).includes(module)
 
 const documentTypeAppliesToInspectionSide = (
   documentType: DocumentType,
@@ -229,7 +257,7 @@ export default function ObStepHandlingar({
   const fetchDocumentTypes = useCallback(async (): Promise<DocumentType[]> => {
     const { data, error: dtErr } = await supabase
       .from('document_types')
-      .select('id,label,description,scope,is_active,applies_to')
+      .select('id,label,description,scope,is_active,applies_to,applicable_modules')
       .in('scope', ['building', 'property'])
       .eq('is_active', true)
 
@@ -359,6 +387,7 @@ export default function ObStepHandlingar({
 
         const allTypes = await fetchDocumentTypes()
         const types = allTypes.filter(type =>
+          documentTypeAppliesToModule(type, 'ob') &&
           documentTypeAppliesToInspectionSide(type, inspectionSide)
         )
         if (cancelled) return
