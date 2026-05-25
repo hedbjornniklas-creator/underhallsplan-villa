@@ -12,12 +12,27 @@ export type EbInspectorAppointedBy = 'client' | 'parties_jointly' | 'contractor'
 export type EbApprovalStatus = 'approved' | 'not_approved' | 'partly_approved'
 export type EbPartyKey = 'client' | 'contractor' | 'other'
 export type EbPreviousInspectionStatus = 'performed' | 'not_performed' | 'not_applicable'
+export type EbInspectionDocumentStatus = 'present' | 'missing' | 'na'
 
 export type EbPreviousInspectionItem = {
   key: string
   label: string
   status: EbPreviousInspectionStatus | null
   date: string | null
+}
+
+export type EbInspectionDocument = {
+  id: string | null
+  documentTypeId: string
+  code: string
+  title: string
+  category: string | null
+  resultLabel: string | null
+  resultUnit: string | null
+  status: EbInspectionDocumentStatus
+  documentDate: string | null
+  note: string | null
+  sortOrder: number
 }
 
 export type EbInspectionSummary = {
@@ -220,6 +235,7 @@ export type EbReportDraft = {
 
 export type EbInspectionReport = EbInspectionRound & {
   participants: EbInvitationParticipant[]
+  inspectionDocuments: EbInspectionDocument[]
   reportDraft: EbReportDraft
   branding: {
     inspectorLogoUrl: string | null
@@ -281,6 +297,14 @@ export type SaveEbReportDraftInput = {
   projectId: string
   inspectionId: string
   sections: EbReportDraftSection[]
+}
+
+export type SaveEbInspectionDocumentsInput = {
+  orgId: string
+  requestedByUserId: string
+  projectId: string
+  inspectionId: string
+  documents: EbInspectionDocument[]
 }
 
 type EbProjectRow = {
@@ -477,6 +501,29 @@ type EbProjectAttachmentRow = {
   created_at: string | null
 }
 
+type DocumentTypeRow = {
+  id: string
+  code: string
+  label: string
+  category: string | null
+  applicable_modules: string | null
+  description: string | null
+  result_label: string | null
+  result_unit: string | null
+  is_active: boolean | null
+}
+
+type InspectionDocumentRow = {
+  id: string
+  inspection_id: string
+  document_type_id: string | null
+  title: string
+  status: string | null
+  document_date: string | null
+  note: string | null
+  created_at: string | null
+}
+
 type ProfileContactRow = {
   id: string
   full_name: string | null
@@ -625,6 +672,29 @@ const PREVIOUS_INSPECTION_DEFAULTS: Array<Pick<EbPreviousInspectionItem, 'key' |
   { key: 'syn', label: 'Syn' },
   { key: 'pre_inspection', label: 'Förbesiktning' },
 ]
+const INSPECTION_DOCUMENT_STATUS_VALUES = ['present', 'missing', 'na'] as const
+const EB_DOCUMENT_TYPE_CODE_ORDER = [
+  'EB_DOC_TATSKIKT_YTTERTAK_TERRASSBJALKLAG',
+  'EB_DOC_TATSKIKT_VATRUM',
+  'EB_DOC_GOLVLUTNINGAR_VATRUM',
+  'EB_DOC_KVALITETSDOKUMENT_BBV',
+  'EB_DOC_VATRUMSINTYG_GVK',
+  'EB_DOC_ISOLATIONSPROVNING_EL',
+  'EB_DOC_JORDFELSBRYTARTEST',
+  'EB_DOC_SKYDDSLEDARE_KONTINUITET',
+  'EB_DOC_SAKER_VATTEN',
+  'EB_DOC_PROVTRYCKNING_ROR',
+  'EB_DOC_INJUSTERING_VARME',
+  'EB_DOC_INJUSTERING_VENTILATION_OVK',
+  'EB_DOC_UTVANDIG_PUTS',
+  'EB_DOC_GLASSAKERHET',
+  'EB_DOC_IMKANALER_SAKKUNNIG',
+  'EB_DOC_RELATIONSHANDLINGAR',
+  'EB_DOC_DRIFT_SKOTSELINSTRUKTION',
+] as const
+const EB_DOCUMENT_TYPE_ORDER: ReadonlyMap<string, number> = new Map(
+  EB_DOCUMENT_TYPE_CODE_ORDER.map((code, index) => [code, (index + 1) * 10])
+)
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export const EB_PROJECT_ATTACHMENTS_BUCKET = 'eb-project-attachments'
 export const EB_NOTE_IMAGE_BUCKET = 'inspection-images'
@@ -691,6 +761,15 @@ function normalizePreviousInspectionStatus(
   return PREVIOUS_INSPECTION_STATUS_VALUES.includes(normalized as EbPreviousInspectionStatus)
     ? (normalized as EbPreviousInspectionStatus)
     : null
+}
+
+function normalizeInspectionDocumentStatus(
+  value: string | null | undefined
+): EbInspectionDocumentStatus {
+  const normalized = normalizeText(value)
+  return INSPECTION_DOCUMENT_STATUS_VALUES.includes(normalized as EbInspectionDocumentStatus)
+    ? (normalized as EbInspectionDocumentStatus)
+    : 'na'
 }
 
 function normalizePreviousInspections(value: unknown): EbPreviousInspectionItem[] {
@@ -1135,6 +1214,169 @@ export async function listEbProjectAttachments(input: {
   return Promise.all(((data ?? []) as EbProjectAttachmentRow[]).map(mapProjectAttachment))
 }
 
+function parseApplicableModules(value: string | null | undefined) {
+  return String(value ?? '')
+    .split(/[,;|]/g)
+    .map((module) => module.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+function documentTypeAppliesToEb(row: DocumentTypeRow) {
+  return parseApplicableModules(row.applicable_modules).includes('eb')
+}
+
+function documentTypeSortOrder(row: DocumentTypeRow) {
+  return EB_DOCUMENT_TYPE_ORDER.get(row.code) ?? 1000
+}
+
+function mapInspectionDocument(
+  documentType: DocumentTypeRow,
+  document: InspectionDocumentRow | null
+): EbInspectionDocument {
+  return {
+    id: document?.id ?? null,
+    documentTypeId: documentType.id,
+    code: documentType.code,
+    title: documentType.label,
+    category: documentType.category ?? null,
+    resultLabel: documentType.result_label ?? null,
+    resultUnit: documentType.result_unit ?? null,
+    status: normalizeInspectionDocumentStatus(document?.status ?? null),
+    documentDate: document?.document_date ?? null,
+    note: document?.note ?? null,
+    sortOrder: documentTypeSortOrder(documentType),
+  }
+}
+
+async function listEbDocumentTypes() {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('document_types')
+    .select('id,code,label,category,applicable_modules,description,result_label,result_unit,is_active')
+    .eq('is_active', true)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta EB-dokumenttyper.')
+  }
+
+  return ((data ?? []) as DocumentTypeRow[])
+    .filter(documentTypeAppliesToEb)
+    .sort((left, right) => {
+      const orderDiff = documentTypeSortOrder(left) - documentTypeSortOrder(right)
+      if (orderDiff !== 0) return orderDiff
+      return left.label.localeCompare(right.label, 'sv')
+    })
+}
+
+async function listInspectionDocumentsForTypes(input: {
+  inspectionId: string
+  documentTypeIds: string[]
+}) {
+  if (input.documentTypeIds.length === 0) return []
+
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('inspection_documents')
+    .select('id,inspection_id,document_type_id,title,status,document_date,note,created_at')
+    .eq('inspection_id', input.inspectionId)
+    .in('document_type_id', input.documentTypeIds)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta granskade handlingar.')
+  }
+
+  return (data ?? []) as InspectionDocumentRow[]
+}
+
+export async function listEbInspectionDocuments(input: {
+  orgId: string
+  projectId: string
+  inspectionId: string
+}): Promise<EbInspectionDocument[]> {
+  await getEbInspectionRoundBase(input)
+
+  const documentTypes = await listEbDocumentTypes()
+  const documents = await listInspectionDocumentsForTypes({
+    inspectionId: input.inspectionId,
+    documentTypeIds: documentTypes.map((documentType) => documentType.id),
+  })
+  const documentsByTypeId = new Map<string, InspectionDocumentRow>()
+  for (const document of documents) {
+    const typeId = document.document_type_id
+    if (!typeId || documentsByTypeId.has(typeId)) continue
+    documentsByTypeId.set(typeId, document)
+  }
+
+  return documentTypes.map((documentType) =>
+    mapInspectionDocument(documentType, documentsByTypeId.get(documentType.id) ?? null)
+  )
+}
+
+function normalizeInspectionDocumentInput(
+  document: EbInspectionDocument,
+  documentType: DocumentTypeRow
+) {
+  return {
+    document_type_id: documentType.id,
+    title: documentType.label,
+    status: normalizeInspectionDocumentStatus(document.status),
+    document_date: normalizeDate(document.documentDate),
+    document_value: null,
+    note: normalizeText(document.note),
+  }
+}
+
+export async function saveEbInspectionDocuments(
+  input: SaveEbInspectionDocumentsInput
+): Promise<EbInspectionDocument[]> {
+  await getEbInspectionRoundBase(input)
+
+  const documentTypes = await listEbDocumentTypes()
+  const typeById = new Map(documentTypes.map((documentType) => [documentType.id, documentType]))
+  const knownTypeIds = documentTypes.map((documentType) => documentType.id)
+  const admin = createSupabaseAdminClient()
+
+  if (knownTypeIds.length > 0) {
+    const { error: deleteError } = await admin
+      .from('inspection_documents')
+      .delete()
+      .eq('inspection_id', input.inspectionId)
+      .in('document_type_id', knownTypeIds)
+
+    if (deleteError) {
+      throw new Error(deleteError.message ?? 'Kunde inte uppdatera granskade handlingar.')
+    }
+  }
+
+  const rows = input.documents
+    .map((document) => {
+      const documentType = typeById.get(document.documentTypeId)
+      if (!documentType) return null
+      const normalized = normalizeInspectionDocumentInput(document, documentType)
+      if (normalized.status === 'na' && !normalized.document_date && !normalized.note) return null
+      return {
+        inspection_id: input.inspectionId,
+        document_type_id: normalized.document_type_id,
+        title: normalized.title,
+        status: normalized.status,
+        document_date: normalized.document_date,
+        document_value: normalized.document_value,
+        note: normalized.note,
+      }
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+
+  if (rows.length > 0) {
+    const { error: insertError } = await admin.from('inspection_documents').insert(rows)
+    if (insertError) {
+      throw new Error(insertError.message ?? 'Kunde inte spara granskade handlingar.')
+    }
+  }
+
+  return listEbInspectionDocuments(input)
+}
+
 function mapDiscipline(row: EbDisciplineRow): EbDiscipline {
   return {
     id: row.id,
@@ -1436,13 +1678,14 @@ export async function getEbInspectionReport(input: {
   inspectionId: string
 }): Promise<EbInspectionReport> {
   const round = await getEbInspectionRound(input)
-  const [participants, storedDraft, attachments, inspectorProfile] = await Promise.all([
+  const [participants, storedDraft, attachments, inspectionDocuments, inspectorProfile] = await Promise.all([
     listParticipantsForInspection(input),
     fetchEbReportDraft(input),
     listEbProjectAttachments({
       orgId: input.orgId,
       projectId: input.projectId,
     }),
+    listEbInspectionDocuments(input),
     getProfileContact(input.requestedByUserId),
   ])
   const resolvedParticipants = participants.length > 0 ? participants : buildDefaultParticipants(round.project)
@@ -1461,6 +1704,7 @@ export async function getEbInspectionReport(input: {
   return {
     ...round,
     participants: resolvedParticipants,
+    inspectionDocuments,
     branding: {
       inspectorLogoUrl: inspectorLogoUrl ?? ownerLogoUrl,
       besiktAppLogoUrl: BESIKTAPP_REPORT_LOGO_SRC,
@@ -1469,6 +1713,7 @@ export async function getEbInspectionReport(input: {
       round,
       participants: resolvedParticipants,
       attachments,
+      inspectionDocuments,
       inspectorText,
       storedDraft,
     }),
@@ -2668,6 +2913,43 @@ function ebAttachmentReportRow(attachment: EbProjectAttachment) {
   return details.length > 0 ? `${heading}\n${details.join('\n')}` : heading
 }
 
+function isHandoverDocument(document: EbInspectionDocument) {
+  return normalizeText(document.resultLabel)?.toLocaleLowerCase('sv-SE').includes('överlämnas') ?? false
+}
+
+function ebInspectionDocumentReportRow(document: EbInspectionDocument) {
+  if (isHandoverDocument(document)) {
+    if (document.status === 'present') return `• ${document.title} överlämnas.`
+    if (document.status === 'missing') return `• ${document.title} överlämnas inte.`
+    return null
+  }
+
+  if (document.status === 'present') {
+    const date = document.documentDate ?? 'datum ej angivet'
+    return `• ${document.title} Datum: ${date}`
+  }
+  if (document.status === 'missing') {
+    return `• ${document.title}: ej redovisat.`
+  }
+  return null
+}
+
+function ebTestingDocumentationReportText(documents: EbInspectionDocument[]) {
+  const standardText = ebStandardText('EB_REPORT_TESTING_DOCUMENTATION')
+  const [intro, ...rest] = standardText.split(/\n{2,}/)
+  const conclusion = rest.join('\n\n')
+  const documentRows = documents
+    .map(ebInspectionDocumentReportRow)
+    .filter((row): row is string => Boolean(row))
+
+  const documentText =
+    documentRows.length > 0
+      ? documentRows.join('\n')
+      : 'Inga dokument har markerats som redovisade för granskning.'
+
+  return [intro, documentText, conclusion].map(normalizeText).filter(Boolean).join('\n\n')
+}
+
 function ebNoteReportReference(round: EbInspectionRound, note: EbNote) {
   return `${round.project.notePrefix} ${note.noteNumber ?? '-'}`
 }
@@ -2799,22 +3081,15 @@ function isObCertificationText(value: string | null | undefined) {
   return normalized.includes('överlåtelse') || normalized.includes('overlatelse')
 }
 
-function isLegacyTestingDocumentationText(value: string | null | undefined) {
-  const normalized = normalizeText(value)?.toLocaleLowerCase('sv-SE') ?? ''
-  return (
-    normalized.includes('provning och dokumentation som åberopas') ||
-    normalized.includes('funktionsprovningar och kontroller av installationer')
-  )
-}
-
 function buildEbReportDraft(input: {
   round: EbInspectionRound
   participants: EbInvitationParticipant[]
   attachments: EbProjectAttachment[]
+  inspectionDocuments: EbInspectionDocument[]
   inspectorText: string
   storedDraft: EbReportDraft
 }): EbReportDraft {
-  const { round, participants, attachments, inspectorText, storedDraft } = input
+  const { round, participants, attachments, inspectionDocuments, inspectorText, storedDraft } = input
   const now = new Date().toISOString()
   const today = now.slice(0, 10)
   const existingByKey = new Map(storedDraft.sections.map((section) => [section.key, section]))
@@ -2833,6 +3108,9 @@ function buildEbReportDraft(input: {
   const contractDocuments = includedDocuments.length > 0
     ? includedDocuments.map(ebAttachmentReportRow).join('\n\n')
     : ebStandardText('EB_REPORT_CONTRACT_DOCUMENTS_MISSING')
+  const testingDocumentationText = ebTestingDocumentationReportText(inspectionDocuments)
+  const hasReviewedDocuments = inspectionDocuments.some((document) => document.status === 'present')
+  const hasDocumentRemarks = inspectionDocuments.some((document) => document.status !== 'na')
   const appendices = includedAttachments.length > 0
     ? includedAttachments.map(ebAttachmentReportRow).join('\n\n')
     : ebStandardText('EB_REPORT_APPENDICES')
@@ -2954,9 +3232,9 @@ function buildEbReportDraft(input: {
       title: 'Provning, dokumentation',
       sbrPoint: '9',
       source: 'manual',
-      status: 'draft',
+      status: hasReviewedDocuments || hasDocumentRemarks ? 'complete' : 'draft',
       isRelevant: true,
-      text: ebStandardText('EB_REPORT_TESTING_DOCUMENTATION'),
+      text: testingDocumentationText,
       updatedAt: null,
     },
     {
@@ -3207,7 +3485,7 @@ function buildEbReportDraft(input: {
       if (section.key === 'scope' || section.key === 'contract_parties') {
         return section
       }
-      if (section.key === 'testing_documentation' && isLegacyTestingDocumentationText(existing?.text)) {
+      if (section.key === 'testing_documentation') {
         return section
       }
       if (section.key === 'conflict_of_interest' && !conflictOfInterestRelevant) {
@@ -3231,10 +3509,13 @@ export async function saveEbReportDraft(input: SaveEbReportDraftInput): Promise<
   const round = await getEbInspectionRound(input)
   const participants = await listParticipantsForInspection(input)
   const resolvedParticipants = participants.length > 0 ? participants : buildDefaultParticipants(round.project)
-  const attachments = await listEbProjectAttachments({
-    orgId: input.orgId,
-    projectId: input.projectId,
-  })
+  const [attachments, inspectionDocuments] = await Promise.all([
+    listEbProjectAttachments({
+      orgId: input.orgId,
+      projectId: input.projectId,
+    }),
+    listEbInspectionDocuments(input),
+  ])
   const inspectorText = await buildInspectorReportText({
     orgId: input.orgId,
     profileId: input.requestedByUserId,
@@ -3243,6 +3524,7 @@ export async function saveEbReportDraft(input: SaveEbReportDraftInput): Promise<
     round,
     participants: resolvedParticipants,
     attachments,
+    inspectionDocuments,
     inspectorText,
     storedDraft: await fetchEbReportDraft(input),
   })

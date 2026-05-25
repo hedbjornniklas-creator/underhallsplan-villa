@@ -57,6 +57,7 @@ function normalizeReportText(value: string) {
 }
 
 function parseLabelLine(line: string) {
+  if (line.trim().startsWith('•')) return null
   const match = line.match(/^([^:]{1,48}):\s*(.*)$/)
   if (!match) return null
   return {

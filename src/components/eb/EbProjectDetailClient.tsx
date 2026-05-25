@@ -27,6 +27,7 @@ import EbProjectForm, {
 } from '@/components/eb/EbProjectForm'
 import type {
   EbProjectAttachment,
+  EbInspectionDocument,
   EbInspectionSummary,
   EbInspectionVariant,
   EbInvitationContext,
@@ -67,6 +68,11 @@ type UpdateProjectResponse = {
 }
 
 type InvitationResponse = EbInvitationContext & {
+  error?: string
+}
+
+type InspectionDocumentsResponse = {
+  documents?: EbInspectionDocument[]
   error?: string
 }
 
@@ -461,6 +467,121 @@ function PreviousInspectionsEditor({
   )
 }
 
+function isHandoverDocument(document: EbInspectionDocument) {
+  return document.resultLabel?.toLocaleLowerCase('sv-SE').includes('överlämnas') ?? false
+}
+
+function documentStatusLabel(document: EbInspectionDocument, status: EbInspectionDocument['status']) {
+  if (isHandoverDocument(document)) {
+    if (status === 'present') return 'Överlämnad'
+    if (status === 'missing') return 'Ej överlämnad'
+    return 'Ej aktuell'
+  }
+  if (status === 'present') return 'Granskad'
+  if (status === 'missing') return 'Ej redovisad'
+  return 'Ej aktuell'
+}
+
+function InspectionDocumentsEditor({
+  documents,
+  loading,
+  onChange,
+}: {
+  documents: EbInspectionDocument[]
+  loading: boolean
+  onChange: (documents: EbInspectionDocument[]) => void
+}) {
+  const updateDocument = <K extends keyof EbInspectionDocument>(
+    index: number,
+    field: K,
+    value: EbInspectionDocument[K]
+  ) => {
+    onChange(documents.map((document, documentIndex) =>
+      documentIndex === index ? { ...document, [field]: value } : document
+    ))
+  }
+
+  return (
+    <section className="space-y-3 lg:col-span-2">
+      <div>
+        <h3 className="text-sm font-semibold text-gray-950">Provning och dokumentation</h3>
+        <p className="mt-1 text-xs text-gray-600">
+          Markera vilka handlingar som redovisats och granskats inför utlåtandet.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="rounded-md border border-emerald-100 bg-emerald-50/40 px-3 py-2 text-sm text-gray-700">
+          Laddar dokumenttyper...
+        </div>
+      ) : documents.length === 0 ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Inga EB-dokumenttyper finns upplagda i admin.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-emerald-100">
+          <table className="min-w-[760px] w-full text-sm">
+            <thead className="bg-emerald-50 text-left text-xs font-semibold uppercase tracking-[0.08em] text-emerald-800">
+              <tr>
+                <th className="px-3 py-2">Handling</th>
+                <th className="w-40 px-3 py-2">Status</th>
+                <th className="w-36 px-3 py-2">Datum</th>
+                <th className="w-64 px-3 py-2">Kommentar</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-emerald-100 bg-white">
+              {documents.map((document, index) => (
+                <tr key={document.documentTypeId}>
+                  <td className="px-3 py-2 align-top">
+                    <div className="font-medium text-gray-950">{document.title}</div>
+                    {document.resultLabel ? (
+                      <div className="mt-0.5 text-xs text-gray-500">{document.resultLabel}</div>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <select
+                      value={document.status}
+                      onChange={(event) =>
+                        updateDocument(index, 'status', event.target.value as EbInspectionDocument['status'])
+                      }
+                      className={inputClassName()}
+                    >
+                      {(['na', 'present', 'missing'] as const).map((status) => (
+                        <option key={status} value={status}>
+                          {documentStatusLabel(document, status)}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    {isHandoverDocument(document) ? (
+                      <span className="block px-3 py-2 text-sm text-gray-500">-</span>
+                    ) : (
+                      <input
+                        type="date"
+                        value={document.documentDate ?? ''}
+                        onChange={(event) => updateDocument(index, 'documentDate', event.target.value || null)}
+                        className={inputClassName()}
+                      />
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <input
+                      value={document.note ?? ''}
+                      onChange={(event) => updateDocument(index, 'note', event.target.value || null)}
+                      className={inputClassName()}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  )
+}
+
 function buildInspectionDetailsForm(inspection: EbInspectionSummary): InspectionDetailsFormState {
   return {
     inspectionDate: inspection.date ?? '',
@@ -705,6 +826,9 @@ function InspectionDetailsDialog({
   const [submitting, setSubmitting] = useState(false)
   const [participantsLoading, setParticipantsLoading] = useState(false)
   const [participantsLoaded, setParticipantsLoaded] = useState(false)
+  const [documentsLoading, setDocumentsLoading] = useState(false)
+  const [documentsLoaded, setDocumentsLoaded] = useState(false)
+  const [documents, setDocuments] = useState<EbInspectionDocument[]>([])
   const [invitationSubject, setInvitationSubject] = useState('')
   const [invitationBody, setInvitationBody] = useState('')
   const [participants, setParticipants] = useState<EditableParticipant[]>([])
@@ -717,6 +841,8 @@ function InspectionDetailsDialog({
     setForm(buildInspectionDetailsForm(inspection))
     setParticipants([])
     setParticipantsLoaded(false)
+    setDocuments([])
+    setDocumentsLoaded(false)
     setInvitationSubject('')
     setInvitationBody('')
     setError(null)
@@ -750,7 +876,34 @@ function InspectionDetailsDialog({
       }
     }
 
+    const loadDocuments = async () => {
+      try {
+        setDocumentsLoading(true)
+        const response = await fetch(
+          `/api/eb/projects/${project.id}/inspections/${inspection.inspectionId}/documents`
+        )
+        const payload = (await response.json().catch(() => ({}))) as InspectionDocumentsResponse
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Kunde inte hämta granskade handlingar.')
+        }
+
+        if (cancelled) return
+        setDocuments(payload.documents ?? [])
+        setDocumentsLoaded(true)
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta granskade handlingar.')
+        }
+      } finally {
+        if (!cancelled) {
+          setDocumentsLoading(false)
+        }
+      }
+    }
+
     void loadParticipants()
+    void loadDocuments()
 
     return () => {
       cancelled = true
@@ -832,6 +985,22 @@ function InspectionDetailsDialog({
 
         if (!participantsResponse.ok) {
           throw new Error(participantsPayload.error ?? 'Kunde inte spara närvarande och sändlista.')
+        }
+      }
+
+      if (documentsLoaded) {
+        const documentsResponse = await fetch(
+          `/api/eb/projects/${project.id}/inspections/${inspection.inspectionId}/documents`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ documents }),
+          }
+        )
+        const documentsPayload = (await documentsResponse.json().catch(() => ({}))) as InspectionDocumentsResponse
+
+        if (!documentsResponse.ok) {
+          throw new Error(documentsPayload.error ?? 'Kunde inte spara granskade handlingar.')
         }
       }
 
@@ -939,6 +1108,12 @@ function InspectionDetailsDialog({
             <PreviousInspectionsEditor
               rows={form.previousInspections}
               onChange={(rows) => updateField('previousInspections', rows)}
+            />
+
+            <InspectionDocumentsEditor
+              documents={documents}
+              loading={documentsLoading}
+              onChange={setDocuments}
             />
 
             <section className="space-y-3">
