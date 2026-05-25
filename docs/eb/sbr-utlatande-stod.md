@@ -185,7 +185,7 @@ Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de s
 | Fel och förhållanden (13-17, 23) | Ja/delvis | `eb_notes`, `settings_eb_note_markers`, `report_draft.defects_appendices` |
 | Beteckningar E/B/S/U/N/A | Ingår i Fel och förhållanden | `settings_eb_note_markers`, använda `eb_notes.marker_key` |
 | Särskild utredning | Redigerbart utkast | `report_draft.special_investigation` |
-| Nedsättning | Redigerbart utkast | `report_draft.deduction` |
+| Nedsättning | Ingår i Fel och förhållanden | `eb_notes.marker_key=N`, `eb_notes.deduction_amount` |
 | Besked om godkännande (18) | Redigerbart utkast | `report_draft.approval_decision` |
 | Fortsatt/ny slutbesiktning (19) | Redigerbart utkast | `report_draft.continued_final_inspection` |
 | Garantitidens slut (20) | Redigerbart utkast | `report_draft.warranty_end` |
@@ -213,7 +213,10 @@ Regel för saknad dokumentation: när en EB-handling i `Provning och dokumentati
 
 Layoutregel för `Avtal, handlingar och andra överenskommelser`: uppgifterna fylls i under `Redigera entreprenad > Avtal`. ÄTA-handlingar och övriga handlingar/överenskommelser sparas strukturerat i `eb_projects.agreement_items`, med flera rader och val för om raden ska tas med i utlåtandet. Utlåtandet ska inleda med avtalsform och kontraktsdatum, därefter lista ÄTA-handlingar och sist övriga handlingar/överenskommelser. Uppladdade projektdokument/bilagor i `eb_project_attachments` ska inte automatiskt listas i detta avsnitt.
 
-Layoutregel för `Fel och förhållanden`: sektionen ska visa texten `Under denna rubrik är angivna förhållanden som besiktningsmannen anser utgöra fel.` och därefter `Förklaringar för respektive kolumn:`. Under `Bet.` visas endast de beteckningar som faktiskt används i `eb_notes.marker_key` för aktuell besiktning. Oanvända beteckningar ska inte skrivas ut. Kolumnförklaringarna för `Nr`, `Del/Rum`, `Fel` och `Avhjälpt /sign` ska alltid visas när sektionen är relevant. Därefter visas `Övriga förklaringar:` med redigerbar numrerings-/förklaringstext från `eb_inspection_details.defect_numbering_explanation` samt val från `eb_inspection_details.defect_no_error_parts_policy` för om lokal/byggdel/installationsdel utan fel redovisas `inte` eller `med ---`. Uppgifterna fylls i under `Uppgifter > Förklaringar` på besiktningen. Den gamla separata markeringssektionen ska inte skrivas ut som egen del i utlåtandet.
+Layoutregel för `Fel och förhållanden`: sektionen ska visa texten `Under denna rubrik är angivna förhållanden som besiktningsmannen anser utgöra fel.` och därefter `Förklaringar för respektive kolumn:`. Under `Bet.` visas endast de beteckningar som faktiskt används i `eb_notes.marker_key` för aktuell besiktning. Oanvända beteckningar ska inte skrivas ut. När beteckningen `N` används ska alla noteringar med `marker_key=N` listas under N-förklaringen med noteringsnummer och `eb_notes.deduction_amount`. Fältet för belopp visas i noteringsformuläret när beteckning `N` är vald. Kolumnförklaringarna för `Nr`, `Del/Rum`, `Fel` och `Avhjälpt /sign` ska alltid visas när sektionen är relevant. Därefter visas `Övriga förklaringar:` med redigerbar numrerings-/förklaringstext från `eb_inspection_details.defect_numbering_explanation`, val från `eb_inspection_details.defect_no_error_parts_policy` för om lokal/byggdel/installationsdel utan fel redovisas `inte` eller `med ---`, samt standardtexten om att `Avhjälps ej` innebär att parterna enats om att avhjälpande ej ska ske men att beställaren förbehåller sig rätt till kostnadsreglering. Uppgifterna fylls i under `Uppgifter > Förklaringar` på besiktningen. Den gamla separata markeringssektionen och den gamla separata nedsättningssektionen ska inte skrivas ut som egna delar i utlåtandet.
+
+Noteringsförteckningen ska inte ha rubriken `BILAGA 1 TILL UTLÅTANDE ÖVER SLUTBESIKTNING` i denna version.
+Noteringsförteckningen ska komma direkt efter `Fel och förhållanden`. Kolumnen `Nr` ska enbart visa sifferbeteckningen, utan entreprenadens noteringsprefix.
 
 ## Kvar att göra för mer strukturerat stöd
 

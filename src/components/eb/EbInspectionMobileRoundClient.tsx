@@ -355,7 +355,9 @@ export default function EbInspectionMobileRoundClient({
     () => round.notes.reduce((max, note) => Math.max(max, note.noteNumber ?? 0), 0) + 1,
     [round.notes]
   )
-  const showReportFields = form.markerKey === 'S'
+  const showInvestigationFields = form.markerKey === 'S'
+  const showDeductionFields = form.markerKey === 'N'
+  const showReportFields = showInvestigationFields || showDeductionFields
   const imagesByNoteId = useMemo(() => {
     const map = new Map<string, EbNoteImage[]>()
     for (const image of round.images) {
@@ -438,15 +440,15 @@ export default function EbInspectionMobileRoundClient({
 
   const updateField = <K extends keyof NoteFormState>(field: K, value: NoteFormState[K]) => {
     setForm((current) => {
-      if (field === 'markerKey' && value !== 'S') {
+      if (field === 'markerKey') {
         return {
           ...current,
           [field]: value,
-          investigationResponsibleParty: '',
-          investigationResponsibleNote: '',
-          investigationCostParty: '',
-          investigationDueDate: '',
-          deductionAmount: '',
+          investigationResponsibleParty: value === 'S' ? current.investigationResponsibleParty : '',
+          investigationResponsibleNote: value === 'S' ? current.investigationResponsibleNote : '',
+          investigationCostParty: value === 'S' ? current.investigationCostParty : '',
+          investigationDueDate: value === 'S' ? current.investigationDueDate : '',
+          deductionAmount: value === 'N' ? current.deductionAmount : '',
         }
       }
 
@@ -1153,62 +1155,71 @@ export default function EbInspectionMobileRoundClient({
                   <section className="rounded-md border border-emerald-100 bg-emerald-50/25 p-2.5">
                     <div className="mb-3">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Utlåtandeuppgifter</p>
-                      <p className="text-xs text-gray-600">Särskild utredning och nedsättning.</p>
+                      <p className="text-xs text-gray-600">
+                        {showDeductionFields ? 'Nedsättning.' : 'Särskild utredning.'}
+                      </p>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    {showInvestigationFields ? (
+                      <>
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="block">
+                            <span className="block text-xs font-semibold text-gray-700">Utredning ansvarig</span>
+                            <select
+                              value={form.investigationResponsibleParty}
+                              onChange={(event) => updateField('investigationResponsibleParty', event.target.value)}
+                              className={`${inputClassName()} mt-1`}
+                            >
+                              <option value="">Ej vald</option>
+                              <option value="contractor">Entreprenör</option>
+                              <option value="client">Beställare</option>
+                              <option value="other">Annat</option>
+                            </select>
+                          </label>
+                          <label className="block">
+                            <span className="block text-xs font-semibold text-gray-700">Kostnadsansvar</span>
+                            <select
+                              value={form.investigationCostParty}
+                              onChange={(event) => updateField('investigationCostParty', event.target.value)}
+                              className={`${inputClassName()} mt-1`}
+                            >
+                              <option value="">Ej vald</option>
+                              <option value="contractor">Entreprenör</option>
+                              <option value="client">Beställare</option>
+                            </select>
+                          </label>
+                        </div>
+                        <label className="mt-3 block">
+                          <span className="block text-xs font-semibold text-gray-700">Klar senast</span>
+                          <input
+                            type="date"
+                            value={form.investigationDueDate}
+                            onChange={(event) => updateField('investigationDueDate', event.target.value)}
+                            className={`${inputClassName()} mt-1`}
+                          />
+                        </label>
+                        <label className="mt-3 block">
+                          <span className="block text-xs font-semibold text-gray-700">Ansvarig/kommentar</span>
+                          <input
+                            value={form.investigationResponsibleNote}
+                            onChange={(event) => updateField('investigationResponsibleNote', event.target.value)}
+                            className={`${inputClassName()} mt-1`}
+                          />
+                        </label>
+                      </>
+                    ) : null}
+                    {showDeductionFields ? (
                       <label className="block">
-                        <span className="block text-xs font-semibold text-gray-700">Utredning ansvarig</span>
-                        <select
-                          value={form.investigationResponsibleParty}
-                          onChange={(event) => updateField('investigationResponsibleParty', event.target.value)}
-                          className={`${inputClassName()} mt-1`}
-                        >
-                          <option value="">Ej vald</option>
-                          <option value="contractor">Entreprenör</option>
-                          <option value="client">Beställare</option>
-                          <option value="other">Annat</option>
-                        </select>
-                      </label>
-                      <label className="block">
-                        <span className="block text-xs font-semibold text-gray-700">Kostnadsansvar</span>
-                        <select
-                          value={form.investigationCostParty}
-                          onChange={(event) => updateField('investigationCostParty', event.target.value)}
-                          className={`${inputClassName()} mt-1`}
-                        >
-                          <option value="">Ej vald</option>
-                          <option value="contractor">Entreprenör</option>
-                          <option value="client">Beställare</option>
-                        </select>
-                      </label>
-                    </div>
-                    <div className="mt-3 grid grid-cols-2 gap-3">
-                      <label className="block">
-                        <span className="block text-xs font-semibold text-gray-700">Klar senast</span>
-                        <input
-                          type="date"
-                          value={form.investigationDueDate}
-                          onChange={(event) => updateField('investigationDueDate', event.target.value)}
-                          className={`${inputClassName()} mt-1`}
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="block text-xs font-semibold text-gray-700">Nedsättning belopp</span>
+                        <span className="block text-xs font-semibold text-gray-700">
+                          Uppskattad nedsättning, kronor
+                        </span>
                         <input
                           value={form.deductionAmount}
                           onChange={(event) => updateField('deductionAmount', event.target.value)}
+                          placeholder="Belopp"
                           className={`${inputClassName()} mt-1`}
                         />
                       </label>
-                    </div>
-                    <label className="mt-3 block">
-                      <span className="block text-xs font-semibold text-gray-700">Ansvarig/kommentar</span>
-                      <input
-                        value={form.investigationResponsibleNote}
-                        onChange={(event) => updateField('investigationResponsibleNote', event.target.value)}
-                        className={`${inputClassName()} mt-1`}
-                      />
-                    </label>
+                    ) : null}
                   </section>
                   ) : null}
 

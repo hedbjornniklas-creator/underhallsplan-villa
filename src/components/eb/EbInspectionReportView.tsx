@@ -52,7 +52,6 @@ function addressCityLine(postalCode: string | null | undefined, city: string | n
 }
 
 const REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER SLUTBESIKTNING'
-const REPORT_NOTE_APPENDIX_TITLE = 'BILAGA 1 TILL UTLÅTANDE ÖVER SLUTBESIKTNING'
 const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[16pt] font-bold uppercase leading-tight text-black'
 const REPORT_SECTION_HEADING_CLASS_NAME = 'mb-2 text-[12pt] font-bold leading-tight text-black'
 const REPORT_APPENDIX_HEADING_CLASS_NAME = 'mb-3 text-[13pt] font-bold uppercase leading-tight text-black'
@@ -62,6 +61,7 @@ const HIDDEN_REPORT_SECTION_KEYS = new Set([
   'documentation_only',
   'appendices',
   'marker_legend',
+  'deduction',
   'notes',
 ])
 const DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION =
@@ -526,9 +526,43 @@ function usedReportMarkers(report: EbInspectionReport) {
 
 function markerExplanation(marker: EbInspectionReport['markers'][number]) {
   if (marker.key === 'N') {
-    return 'Nedsättning av avtalat pris kan vara tillämplig. Belopp anges i förekommande fall för fel som kvarstår.'
+    return 'Om nedsättning av avtalat pris är tillämplig anges uppskattad nedsättning för angivet fel som kvarstår.'
   }
   return marker.label
+}
+
+function deductionNotes(report: EbInspectionReport) {
+  return sortNotes(report.notes.filter((note) => note.markerKey === 'N'))
+}
+
+function deductionAmountText(value: string | null) {
+  const amount = value?.trim()
+  if (!amount) return 'Ej angivet'
+  return /(\bkr\b|kron)/i.test(amount) ? amount : `${amount} kronor`
+}
+
+function DeductionNotesList({ report }: { report: EbInspectionReport }) {
+  const notes = deductionNotes(report)
+  if (notes.length === 0) return null
+
+  return (
+    <div className="col-start-2 space-y-1 pt-1">
+      <p>
+        Om nedsättning av avtalat pris är tillämplig ska uppskattad nedsättning anges nedan.
+        Beloppet ska motsvara skillnaden mellan värdet på det totala priset för arbetet i
+        kontraktsenligt respektive felaktigt utförande.
+      </p>
+      <p>Uppskattad nedsättning av det totala priset för arbetet är för nedan angivna fel:</p>
+      <dl className="grid gap-y-1">
+        {notes.map((note) => (
+          <div key={note.id} className="grid grid-cols-[34mm_1fr] gap-x-4">
+            <dt>{`${report.project.notePrefix} ${note.noteNumber ?? '-'}`}</dt>
+            <dd>{deductionAmountText(note.deductionAmount)}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
 }
 
 function defectNoErrorPartsPolicyText(report: EbInspectionReport) {
@@ -558,6 +592,7 @@ function DefectsConditionsReport({
             <div key={marker.key} className="grid grid-cols-[22mm_1fr] gap-x-4">
               <dt className="pl-[16mm] font-bold">{marker.key}</dt>
               <dd>{markerExplanation(marker)}</dd>
+              {marker.key === 'N' ? <DeductionNotesList report={report} /> : null}
             </div>
           ))}
 
@@ -586,6 +621,9 @@ function DefectsConditionsReport({
           </p>
           <p className="mt-2">
             Lokal, byggdel eller installationsdel utan fel redovisas {defectNoErrorPartsPolicyText(report)} och gäller eventuell förekomst av allmänna fel.
+          </p>
+          <p className="mt-2">
+            Fel kompletterad med texten &quot;Avhjälps ej&quot; innebär att parterna enats om att avhjälpande ej skall ske, men att beställaren förbehåller sig rätt till kostnadsreglering.
           </p>
         </div>
       </div>
@@ -654,11 +692,13 @@ function noteReference(report: EbInspectionReport, note: EbNote, index: number) 
   return `${report.project.notePrefix} ${note.noteNumber ?? index + 1}`
 }
 
+function noteNumber(note: EbNote, index: number) {
+  return String(note.noteNumber ?? index + 1)
+}
+
 function NoteTable({
-  report,
   notes,
 }: {
-  report: EbInspectionReport
   notes: EbNote[]
 }) {
   if (notes.length === 0) {
@@ -683,7 +723,7 @@ function NoteTable({
               {note.markerKey || ''}
             </td>
             <td className="align-top border border-[#8db1d7] px-1.5 py-1.5">
-              {noteReference(report, note, index)}
+              {noteNumber(note, index)}
             </td>
             <td className="align-top border border-[#8db1d7] px-1.5 py-1.5">
               {detailLine([note.room, note.location, note.placeDetail]) !== '-'
@@ -829,7 +869,12 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
           ) : isTestingDocumentationSection(section) ? (
             <TestingDocumentationReport key={section.key} report={report} section={section} />
           ) : section.key === 'defects_appendices' ? (
-            <DefectsConditionsReport key={section.key} report={report} />
+            <div key={section.key}>
+              <DefectsConditionsReport report={report} />
+              <section className="eb-report-section mt-4">
+                <NoteTable notes={notes} />
+              </section>
+            </div>
           ) : section.key === 'contract_documents' ? (
             <ReportSection key={section.key} title={section.title} headingMarker>
               <ReportText text={section.text} />
@@ -847,11 +892,6 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
             </ReportSection>
           )
         ))}
-
-        <section className="eb-report-section mt-8 break-before-page">
-          <h2 className={REPORT_APPENDIX_HEADING_CLASS_NAME}>{REPORT_NOTE_APPENDIX_TITLE}</h2>
-          <NoteTable report={report} notes={notes} />
-        </section>
 
         <PhotoAppendix report={report} notes={notes} imagesByNoteId={imagesByNoteId} />
       </article>
