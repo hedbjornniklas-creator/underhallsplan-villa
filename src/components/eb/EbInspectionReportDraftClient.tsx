@@ -72,8 +72,11 @@ type StructuredReportFormState = {
   approvalStatus: string
   approvalNote: string
   requiresContinuedFinalInspection: string
+  continuedFinalInspectionDate: string
+  continuedFinalInspectionTime: string
   warrantyPeriodYears: string
   warrantyEndDate: string
+  warrantyScope: string
   defaultRemedyDeadline: string
   afterInspectionRequested: string
   afterInspectionDueDate: string
@@ -108,8 +111,11 @@ function buildStructuredReportForm(
       typeof inspection.requiresContinuedFinalInspection === 'boolean'
         ? String(inspection.requiresContinuedFinalInspection)
         : '',
+    continuedFinalInspectionDate: inspection.continuedFinalInspectionDate ?? '',
+    continuedFinalInspectionTime: inspection.continuedFinalInspectionTime?.slice(0, 5) ?? '',
     warrantyPeriodYears: inspection.warrantyPeriodYears ? String(inspection.warrantyPeriodYears) : '',
     warrantyEndDate: inspection.warrantyEndDate ?? '',
+    warrantyScope: inspection.warrantyScope ?? '',
     defaultRemedyDeadline: inspection.defaultRemedyDeadline ?? '',
     afterInspectionRequested:
       typeof inspection.afterInspectionRequested === 'boolean'
@@ -498,6 +504,32 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                 <option value="false">Nej</option>
               </select>
             )}
+            {structuredForm.requiresContinuedFinalInspection === 'true' ? (
+              <>
+                {fieldLabel(
+                  'Ny slutbesiktning datum',
+                  <input
+                    type="date"
+                    value={structuredForm.continuedFinalInspectionDate}
+                    onChange={(event) =>
+                      updateStructuredField('continuedFinalInspectionDate', event.target.value)
+                    }
+                    className={fieldClassName()}
+                  />
+                )}
+                {fieldLabel(
+                  'Ny slutbesiktning tid',
+                  <input
+                    type="time"
+                    value={structuredForm.continuedFinalInspectionTime}
+                    onChange={(event) =>
+                      updateStructuredField('continuedFinalInspectionTime', event.target.value)
+                    }
+                    className={fieldClassName()}
+                  />
+                )}
+              </>
+            ) : null}
             {fieldLabel(
               'Garantitid',
               <select
@@ -519,6 +551,15 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                 type="date"
                 value={structuredForm.warrantyEndDate}
                 onChange={(event) => updateStructuredField('warrantyEndDate', event.target.value)}
+                className={fieldClassName()}
+              />
+            )}
+            {fieldLabel(
+              'Särskild varugaranti för',
+              <input
+                value={structuredForm.warrantyScope}
+                onChange={(event) => updateStructuredField('warrantyScope', event.target.value)}
+                placeholder="Exempel: vara, produkt eller material"
                 className={fieldClassName()}
               />
             )}

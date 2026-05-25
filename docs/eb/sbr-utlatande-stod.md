@@ -102,9 +102,10 @@ All nödvändig information ska antingen finnas som strukturerat fält eller som
 | Delar endast besiktigade genom handling | Utlåtandeuppgifter | Fritext/lista. |
 | Beslut godkänd/ej godkänd/delvis | Besiktningen | Dropdown. |
 | Beslutets motivering | Besiktningen eller utlåtandeuppgifter | Fritext. |
-| Fortsatt slutbesiktning krävs | Besiktningen | Dropdown ja/nej. |
+| Fortsatt/ny slutbesiktning krävs | Besiktningen | Dropdown ja/nej. Om ja kan överenskommet datum och klockslag anges. Sektionen visas inte i utlåtandet om valet inte är ja. |
 | Garantitidens längd | Besiktningen | Dropdown 1-10 år. |
-| Garantitidens slutdatum | Besiktningen | Datumväljare. |
+| Garantitidens slutdatum | Besiktningen | Datumväljare. Visas i `Reklamationsfrister` om särskild varugaranti är aktuell. |
+| Särskild varugaranti för | Besiktningen | Fritext för vilken vara/produkt/material garantin gäller. |
 | Avhjälpandetid generellt | Besiktningen | Datumväljare. |
 | Efterbesiktning påkallad | Besiktningen | Dropdown ja/nej. |
 | Efterbesiktning datum/senast datum | Besiktningen | Datumväljare. |
@@ -124,7 +125,7 @@ All nödvändig information ska antingen finnas som strukturerat fält eller som
 | Datamodell | Nya/tydligare fält |
 |---|---|
 | `profiles` eller befintlig profil/settings-modell | certifieringsuppgifter, SBR-medlemskap och visningsnamn för besiktningsman. |
-| `eb_inspection_details` | `inspector_appointed_by`, `invitation_method`, tydligt `invitation_date`, beslut, beslutstext, fortsatt slutbesiktning, garantitid, garantitidens slut, generell avhjälpandetid, efterbesiktning, distributionsdatum. |
+| `eb_inspection_details` | `inspector_appointed_by`, `invitation_method`, tydligt `invitation_date`, beslut, beslutstext, fortsatt/ny slutbesiktning inklusive överenskommet datum/tid, garantitid, garantitidens slut, vad särskild varugaranti gäller, generell avhjälpandetid, efterbesiktning, distributionsdatum. |
 | `eb_participants` | `attended`, `receives_report`, `represents_party_key`, `can_represent_party`. |
 | `eb_project_attachments` | `include_in_report`, `littera`, `document_date`, `document_number`, `document_note`. |
 | `eb_inspection_details.report_draft` | fri text för tidigare besiktningar, provningar, överenskommelser, dokumentationsbesiktigade delar och kompletteringar. |
@@ -187,9 +188,9 @@ Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de s
 | Särskild utredning | Redigerbart utkast | `report_draft.special_investigation` |
 | Nedsättning | Ingår i Fel och förhållanden | `eb_notes.marker_key=N`, `eb_notes.deduction_amount` |
 | Besked om godkännande (18) | Redigerbart utkast | `report_draft.approval_decision` |
-| Fortsatt/ny slutbesiktning (19) | Redigerbart utkast | `report_draft.continued_final_inspection` |
-| Garantitidens slut (20) | Redigerbart utkast | `report_draft.warranty_end` |
-| Reklamationsfrister | Standardtext + redigerbart utkast vid behov | `report_draft.reclamation_notice` |
+| Fortsatt/ny slutbesiktning (19) | Strukturerat + redigerbart utkast | `eb_inspection_details.requires_continued_final_inspection`, `continued_final_inspection_date`, `continued_final_inspection_time`, `report_draft.continued_final_inspection` |
+| Garantitidens slut (20) | Ingår i `Reklamationsfrister` i denna layout | `warranty_end_date`, `warranty_scope` |
+| Reklamationsfrister | Standardtext + strukturerad särskild varugaranti | `warranty_end_date`, `warranty_scope`, `report_draft.reclamation_notice` |
 | När fel ska vara avhjälpta (24) | Redigerbart utkast | `report_draft.remedy_deadline` |
 | Kostnad för avhjälpande | Standardtext + redigerbart utkast vid behov | `report_draft.remedy_cost` |
 | Efterbesiktning (24) | Redigerbart utkast | `report_draft.after_inspection` |
@@ -207,6 +208,10 @@ Layoutregel för `Sättet för kallelse till besiktningen`: sektionen ska visa r
 
 Layoutregel för `Tidigare besiktningar`: uppgifterna fylls i under `Uppgifter > Tidigare` på besiktningen och sparas strukturerat i `eb_inspection_details.previous_inspections`. Listan ska kunna kompletteras med valfria fritextrader samt rader som senare kan hämtas från programmet. Om inga tidigare besiktningar finns ska utlåtandet visa `-`.
 
+Layoutregel för `Föreskrift om en ny slutbesiktning`: sektionen visas endast när `Fortsatt slutbesiktning`/ny slutbesiktning är vald som `Ja` i `Uppgifter > Utlåtande`. Texten ska börja med `En ny slutbesiktning skall ske, efter att hantverkaren underrättat om färdigställande.` och innehålla `Denna notering gäller som kallelse.` Om parterna har kommit överens om tidpunkt visas även `Enligt överenskommelse verkställs ny slutbesiktning [datum], kl [tid].`
+
+Layoutregel för `Reklamationsfrister`: sektionen ska visa standardtexten `Beställarens reklamationsrätter framgår av konsumenttjänstlagen (Ktjl. 17 §).` Om särskild varugaranti är ifylld visas dessutom `Särskild varugaranti enligt nedan gäller till och med:` följt av punktlistan `[datum] för [vara/produkt/material]`. Instruktionstext som `Ange eller ta bort...` ska inte skrivas ut i färdigt utlåtande.
+
 Standardtext för `Provning, dokumentation`: texten ligger i `src/content/standardtexts/eb/EB_REPORT_TESTING_DOCUMENTATION.txt` och ska börja med `Följande dokument över avtalade kvalitetsåtgärder redovisades...`. Bedömningstexten om att entreprenörens dokumentation utgjort tillräckligt underlag ska ligga före listan med granskade handlingar. Under dessa stycken ska underrubriken `Dokumentation:` visas, följt av granskade handlingar i två kolumner: handling till vänster och `Daterad: [datum]` eller överlämningsstatus till höger. Under listan med handlingar ska texten om att saknad eller felaktig dokumentation noteras som fel under `Fel och förhållanden` ligga. Äldre sparade utkast med den tidigare interna instruktionstexten ersätts automatiskt av den aktuella standardtexten.
 
 Regel för saknad dokumentation: när en EB-handling i `Provning och dokumentation` markeras som `Ej redovisad`/`Ej överlämnad` ska systemet skapa en automatisk notering i `Fel och förhållanden`. Noteringen märks med `eb_notes.source_system = eb_missing_document` och `source_record_id = document_types.id`, så den kan uppdateras eller tas bort när dokumentstatus ändras utan att manuella noteringar påverkas. Själva avsnittet `Provning, dokumentation` ska bara lista handlingar som är `Granskad`/`Överlämnad`.
@@ -216,7 +221,10 @@ Layoutregel för `Avtal, handlingar och andra överenskommelser`: uppgifterna fy
 Layoutregel för `Fel och förhållanden`: sektionen ska visa texten `Under denna rubrik är angivna förhållanden som besiktningsmannen anser utgöra fel.` och därefter `Förklaringar för respektive kolumn:`. Under `Bet.` visas endast de beteckningar som faktiskt används i `eb_notes.marker_key` för aktuell besiktning. Oanvända beteckningar ska inte skrivas ut. När beteckningen `N` används ska alla noteringar med `marker_key=N` listas under N-förklaringen med noteringsnummer och `eb_notes.deduction_amount`. Fältet för belopp visas i noteringsformuläret när beteckning `N` är vald. Kolumnförklaringarna för `Nr`, `Del/Rum`, `Fel` och `Avhjälpt /sign` ska alltid visas när sektionen är relevant. Därefter visas `Övriga förklaringar:` med redigerbar numrerings-/förklaringstext från `eb_inspection_details.defect_numbering_explanation`, val från `eb_inspection_details.defect_no_error_parts_policy` för om lokal/byggdel/installationsdel utan fel redovisas `inte` eller `med ---`, samt standardtexten om att `Avhjälps ej` innebär att parterna enats om att avhjälpande ej ska ske men att beställaren förbehåller sig rätt till kostnadsreglering. Uppgifterna fylls i under `Uppgifter > Förklaringar` på besiktningen. Den gamla separata markeringssektionen och den gamla separata nedsättningssektionen ska inte skrivas ut som egna delar i utlåtandet.
 
 Noteringsförteckningen ska inte ha rubriken `BILAGA 1 TILL UTLÅTANDE ÖVER SLUTBESIKTNING` i denna version.
-Noteringsförteckningen ska komma direkt efter `Fel och förhållanden`. Kolumnen `Nr` ska enbart visa sifferbeteckningen, utan entreprenadens noteringsprefix.
+Noteringsförteckningen ska komma direkt efter `Fel och förhållanden`. Kolumnen `Nr` ska enbart visa sifferbeteckningen, utan entreprenadens noteringsprefix. Raderna ska sorteras efter noteringsnummer i stigande nummerordning.
+Om det finns nedsättningsnoteringar (`marker_key=N`) ska en sammanfattande text om kostnad för avhjälpande visas direkt efter noteringsförteckningen. Beloppet hämtas från `eb_notes.deduction_amount`; numeriska belopp summeras när det är möjligt.
+
+Layoutregel för `Besked om godkännande`: sektionen styrs av `eb_inspection_details.approval_status`, `approval_note` och besiktningsdatumet. Vid `approved` ska texten vara `Arbetena godkänns [datum]` och `Beslutet meddelades av besiktningsmannen till parterna vid besiktningen.`. Vid `not_approved` eller `partly_approved` ska alternativtexten för icke godkännande visas och motiveringen från `approval_note` listas som skäl.
 
 ## Kvar att göra för mer strukturerat stöd
 

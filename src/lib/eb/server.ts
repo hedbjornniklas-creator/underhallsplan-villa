@@ -69,8 +69,11 @@ export type EbInspectionSummary = {
   approvalStatus: EbApprovalStatus | null
   approvalNote: string | null
   requiresContinuedFinalInspection: boolean | null
+  continuedFinalInspectionDate: string | null
+  continuedFinalInspectionTime: string | null
   warrantyPeriodYears: number | null
   warrantyEndDate: string | null
+  warrantyScope: string | null
   defaultRemedyDeadline: string | null
   afterInspectionRequested: boolean | null
   afterInspectionDueDate: string | null
@@ -373,8 +376,11 @@ type EbInspectionDetailRow = {
   approval_status: string | null
   approval_note: string | null
   requires_continued_final_inspection: boolean | null
+  continued_final_inspection_date?: string | null
+  continued_final_inspection_time?: string | null
   warranty_period_years: number | null
   warranty_end_date: string | null
+  warranty_scope?: string | null
   default_remedy_deadline: string | null
   after_inspection_requested: boolean | null
   after_inspection_due_date: string | null
@@ -632,8 +638,11 @@ export type UpdateEbInspectionInput = {
   approvalStatus?: EbApprovalStatus | null
   approvalNote?: string | null
   requiresContinuedFinalInspection?: boolean | null
+  continuedFinalInspectionDate?: string | null
+  continuedFinalInspectionTime?: string | null
   warrantyPeriodYears?: number | null
   warrantyEndDate?: string | null
+  warrantyScope?: string | null
   defaultRemedyDeadline?: string | null
   afterInspectionRequested?: boolean | null
   afterInspectionDueDate?: string | null
@@ -1027,8 +1036,11 @@ function mapInspectionSummary(
     approvalStatus: normalizeApprovalStatus(detail.approval_status),
     approvalNote: detail.approval_note ?? null,
     requiresContinuedFinalInspection: detail.requires_continued_final_inspection ?? null,
+    continuedFinalInspectionDate: detail.continued_final_inspection_date ?? null,
+    continuedFinalInspectionTime: detail.continued_final_inspection_time ?? null,
     warrantyPeriodYears: detail.warranty_period_years ?? null,
     warrantyEndDate: detail.warranty_end_date ?? null,
+    warrantyScope: detail.warranty_scope ?? null,
     defaultRemedyDeadline: detail.default_remedy_deadline ?? null,
     afterInspectionRequested: detail.after_inspection_requested ?? null,
     afterInspectionDueDate: detail.after_inspection_due_date ?? null,
@@ -1142,7 +1154,7 @@ async function fetchDetailsForProjects(orgId: string, projectIds: string[]) {
   const baseSelect =
     'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,report_locked_at,created_at'
   const withStructuredReportSelect =
-    'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,inspector_appointed_by,invitation_method,invitation_date,approval_status,approval_note,requires_continued_final_inspection,warranty_period_years,warranty_end_date,default_remedy_deadline,after_inspection_requested,after_inspection_due_date,after_inspection_notice_in_report,report_distribution_date,previous_inspections,defect_numbering_explanation,defect_no_error_parts_policy,report_locked_at,created_at'
+    'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,inspector_appointed_by,invitation_method,invitation_date,approval_status,approval_note,requires_continued_final_inspection,continued_final_inspection_date,continued_final_inspection_time,warranty_period_years,warranty_end_date,warranty_scope,default_remedy_deadline,after_inspection_requested,after_inspection_due_date,after_inspection_notice_in_report,report_distribution_date,previous_inspections,defect_numbering_explanation,defect_no_error_parts_policy,report_locked_at,created_at'
   const { data, error } = await admin
     .from('eb_inspection_details')
     .select(withStructuredReportSelect)
@@ -2550,8 +2562,11 @@ export async function updateEbInspection(input: UpdateEbInspectionInput): Promis
       approval_status: normalizeApprovalStatus(input.approvalStatus),
       approval_note: normalizeText(input.approvalNote),
       requires_continued_final_inspection: normalizeBoolean(input.requiresContinuedFinalInspection),
+      continued_final_inspection_date: normalizeDate(input.continuedFinalInspectionDate),
+      continued_final_inspection_time: normalizeTime(input.continuedFinalInspectionTime),
       warranty_period_years: normalizeWarrantyYears(input.warrantyPeriodYears),
       warranty_end_date: normalizeDate(input.warrantyEndDate),
+      warranty_scope: normalizeText(input.warrantyScope),
       default_remedy_deadline: normalizeDate(input.defaultRemedyDeadline),
       after_inspection_requested: normalizeBoolean(input.afterInspectionRequested),
       after_inspection_due_date: normalizeDate(input.afterInspectionDueDate),
@@ -3249,6 +3264,37 @@ function ebApprovalDecisionReportText(round: EbInspectionRound) {
   ])
 }
 
+function ebContinuedFinalInspectionReportText(round: EbInspectionRound) {
+  const date = normalizeText(round.inspection.continuedFinalInspectionDate)
+  const time = normalizeText(round.inspection.continuedFinalInspectionTime)?.slice(0, 5)
+  const scheduleLine =
+    date || time
+      ? `Enligt överenskommelse verkställs ny slutbesiktning ${date ?? 'Klicka här - ange datum'}, kl ${time ?? '??:??'}.`
+      : null
+
+  return reportList([
+    ebStandardText('EB_REPORT_CONTINUED_FINAL_INSPECTION'),
+    scheduleLine,
+  ])
+}
+
+function ebReclamationNoticeReportText(round: EbInspectionRound) {
+  const warrantyEndDate = normalizeText(round.inspection.warrantyEndDate)
+  const warrantyScope = normalizeText(round.inspection.warrantyScope)
+  const warrantyText =
+    warrantyEndDate || warrantyScope
+      ? [
+          'Särskild varugaranti enligt nedan gäller till och med:',
+          `• ${warrantyEndDate ?? 'datum ej angivet'} för ${warrantyScope ?? 'vara'}`,
+        ].join('\n')
+      : null
+
+  return reportList([
+    ebStandardText('EB_REPORT_RECLAMATION_NOTICE'),
+    warrantyText,
+  ])
+}
+
 function addressCityLine(postalCode: string | null | undefined, city: string | null | undefined) {
   return [normalizeText(postalCode), normalizeText(city)].filter(Boolean).join(' ') || '-'
 }
@@ -3665,16 +3711,12 @@ function buildEbReportDraft(input: {
     },
     {
       key: 'continued_final_inspection',
-      title: 'Fortsatt eller ny slutbesiktning',
+      title: 'Föreskrift om en ny slutbesiktning',
       sbrPoint: '19',
       source: 'standard_text',
-      status:
-        typeof round.inspection.requiresContinuedFinalInspection === 'boolean' ? 'complete' : 'draft',
-      isRelevant: true,
-      text: optionalReportLine(
-        'Fortsatt slutbesiktning krävs',
-        yesNoLabel(round.inspection.requiresContinuedFinalInspection)
-      ) ?? ebStandardText('EB_REPORT_CONTINUED_FINAL_INSPECTION'),
+      status: round.inspection.requiresContinuedFinalInspection === true ? 'complete' : 'not_applicable',
+      isRelevant: round.inspection.requiresContinuedFinalInspection === true,
+      text: ebContinuedFinalInspectionReportText(round),
       updatedAt: null,
     },
     {
@@ -3682,8 +3724,8 @@ function buildEbReportDraft(input: {
       title: 'Garantitidens slut',
       sbrPoint: '20',
       source: 'manual',
-      status: round.inspection.warrantyPeriodYears || round.inspection.warrantyEndDate ? 'complete' : 'draft',
-      isRelevant: true,
+      status: 'not_applicable',
+      isRelevant: false,
       text:
         round.inspection.warrantyPeriodYears || round.inspection.warrantyEndDate
           ? reportList([
@@ -3702,7 +3744,7 @@ function buildEbReportDraft(input: {
       source: 'standard_text',
       status: 'complete',
       isRelevant: true,
-      text: ebStandardText('EB_REPORT_RECLAMATION_NOTICE'),
+      text: ebReclamationNoticeReportText(round),
       updatedAt: null,
     },
     {
@@ -3797,6 +3839,15 @@ function buildEbReportDraft(input: {
         return section
       }
       if (section.key === 'conflict_of_interest' && !conflictOfInterestRelevant) {
+        return section
+      }
+      if (section.key === 'continued_final_inspection') {
+        return section
+      }
+      if (section.key === 'warranty_end') {
+        return section
+      }
+      if (section.key === 'reclamation_notice') {
         return section
       }
       if (!shouldKeepStoredReportSection(existing, section)) {

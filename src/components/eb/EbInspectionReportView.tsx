@@ -20,11 +20,11 @@ type EbInspectionReportViewProps = {
 
 function sortNotes(notes: EbNote[]) {
   return [...notes].sort((left, right) => {
-    if ((left.sortOrder ?? 0) !== (right.sortOrder ?? 0)) {
-      return (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
-    }
     if ((left.noteNumber ?? 0) !== (right.noteNumber ?? 0)) {
       return (left.noteNumber ?? 0) - (right.noteNumber ?? 0)
+    }
+    if ((left.sortOrder ?? 0) !== (right.sortOrder ?? 0)) {
+      return (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
     }
     return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
   })
@@ -63,6 +63,7 @@ const HIDDEN_REPORT_SECTION_KEYS = new Set([
   'marker_legend',
   'deduction',
   'notes',
+  'warranty_end',
 ])
 const DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION =
   'Fönster, dörrar, väggar etc numreras från vänster till höger. Vägg 1 = vägg till vänster om entrévägg. Vägg 2 = nästa vägg till höger om vägg 1 osv.'
@@ -541,6 +542,34 @@ function deductionAmountText(value: string | null) {
   return /(\bkr\b|kron)/i.test(amount) ? amount : `${amount} kronor`
 }
 
+function parseDeductionNumber(value: string | null) {
+  const normalized = value
+    ?.replace(/\s/g, '')
+    .replace(/kr(?:onor)?/gi, '')
+    .replace(/\./g, '')
+    .replace(',', '.')
+    .trim()
+  if (!normalized) return null
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function deductionSummaryAmountText(report: EbInspectionReport) {
+  const amountValues = deductionNotes(report)
+    .map((note) => note.deductionAmount)
+    .filter((amount): amount is string => Boolean(amount?.trim()))
+
+  if (amountValues.length === 0) return 'Ej angivet'
+
+  const parsedValues = amountValues.map(parseDeductionNumber)
+  if (parsedValues.every((value): value is number => value !== null)) {
+    const sum = parsedValues.reduce((total, value) => total + value, 0)
+    return `${sum.toLocaleString('sv-SE')} kronor`
+  }
+
+  return amountValues.map(deductionAmountText).join(', ')
+}
+
 function DeductionNotesList({ report }: { report: EbInspectionReport }) {
   const notes = deductionNotes(report)
   if (notes.length === 0) return null
@@ -562,6 +591,66 @@ function DeductionNotesList({ report }: { report: EbInspectionReport }) {
         ))}
       </dl>
     </div>
+  )
+}
+
+function DeductionAgreementSummary({ report }: { report: EbInspectionReport }) {
+  if (deductionNotes(report).length === 0) return null
+
+  return (
+    <section className="eb-report-section mt-6 break-inside-avoid text-[10.5pt] leading-[1.35] text-black">
+      <p className="font-medium italic">
+        Nedan anges om parterna har träffat överenskommelse om det.
+      </p>
+      <p className="mt-2">
+        Kostnad för avhjälpande av fel i arbeten som är påtalade av besiktningsmannen bedöms till{' '}
+        {deductionSummaryAmountText(report)}.
+      </p>
+    </section>
+  )
+}
+
+function approvalDecisionDate(report: EbInspectionReport) {
+  return report.inspection.date?.trim() || 'Klicka här - ange datum för godkännande = Dag för slutbesiktning.'
+}
+
+function approvalReasonLines(value: string | null) {
+  const lines = normalizeReportText(value ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  return lines.length > 0 ? lines : ['Ange skälet - eller skälen']
+}
+
+function ApprovalDecisionReport({ report }: { report: EbInspectionReport }) {
+  const isApproved = report.inspection.approvalStatus === 'approved'
+  const isPartlyApproved = report.inspection.approvalStatus === 'partly_approved'
+
+  return (
+    <ReportSection title="Besked om godkännande">
+      <div className="space-y-2 text-[10.5pt] leading-[1.35] text-black">
+        {isApproved ? (
+          <>
+            <p>Arbetena godkänns {approvalDecisionDate(report)}</p>
+            <p>Beslutet meddelades av besiktningsmannen till parterna vid besiktningen.</p>
+          </>
+        ) : (
+          <>
+            <p className="font-medium italic">
+              Alternativt till ovan vid ej godkännande. Ange skälen för icke godkännande:
+            </p>
+            <p>
+              Arbetena godkänns {isPartlyApproved ? 'delvis' : 'inte'} på grund av att noterade fel sammantaget inte anses vara av mindre betydelse. Följande skäl utgör hinder för godkännande:
+            </p>
+            <ul className="list-disc space-y-1 pl-8">
+              {approvalReasonLines(report.inspection.approvalNote).map((line, index) => (
+                <li key={`${line}-${index}`}>{line}</li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+    </ReportSection>
   )
 }
 
@@ -874,11 +963,14 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
               <section className="eb-report-section mt-4">
                 <NoteTable notes={notes} />
               </section>
+              <DeductionAgreementSummary report={report} />
             </div>
           ) : section.key === 'contract_documents' ? (
             <ReportSection key={section.key} title={section.title} headingMarker>
               <ReportText text={section.text} />
             </ReportSection>
+          ) : section.key === 'approval_decision' ? (
+            <ApprovalDecisionReport key={section.key} report={report} />
           ) : (
             <ReportSection
               key={section.key}

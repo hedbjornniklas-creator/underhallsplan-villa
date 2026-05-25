@@ -101,8 +101,11 @@ type InspectionDetailsFormState = {
   approvalStatus: string
   approvalNote: string
   requiresContinuedFinalInspection: string
+  continuedFinalInspectionDate: string
+  continuedFinalInspectionTime: string
   warrantyPeriodYears: string
   warrantyEndDate: string
+  warrantyScope: string
   defaultRemedyDeadline: string
   afterInspectionRequested: string
   afterInspectionDueDate: string
@@ -666,8 +669,11 @@ function buildInspectionDetailsForm(inspection: EbInspectionSummary): Inspection
       typeof inspection.requiresContinuedFinalInspection === 'boolean'
         ? String(inspection.requiresContinuedFinalInspection)
         : '',
+    continuedFinalInspectionDate: inspection.continuedFinalInspectionDate ?? '',
+    continuedFinalInspectionTime: formatTime(inspection.continuedFinalInspectionTime),
     warrantyPeriodYears: inspection.warrantyPeriodYears ? String(inspection.warrantyPeriodYears) : '',
     warrantyEndDate: inspection.warrantyEndDate ?? '',
+    warrantyScope: inspection.warrantyScope ?? '',
     defaultRemedyDeadline: inspection.defaultRemedyDeadline ?? '',
     afterInspectionRequested:
       typeof inspection.afterInspectionRequested === 'boolean'
@@ -1344,6 +1350,28 @@ function InspectionDetailsDialog({
                       <option value="false">Nej</option>
                     </select>
                   )}
+                  {form.requiresContinuedFinalInspection === 'true' ? (
+                    <>
+                      {fieldLabel(
+                        'Ny slutbesiktning datum',
+                        <input
+                          type="date"
+                          value={form.continuedFinalInspectionDate}
+                          onChange={(event) => updateField('continuedFinalInspectionDate', event.target.value)}
+                          className={inputClassName()}
+                        />
+                      )}
+                      {fieldLabel(
+                        'Ny slutbesiktning tid',
+                        <input
+                          type="time"
+                          value={form.continuedFinalInspectionTime}
+                          onChange={(event) => updateField('continuedFinalInspectionTime', event.target.value)}
+                          className={inputClassName()}
+                        />
+                      )}
+                    </>
+                  ) : null}
                   {fieldLabel(
                     'Garantitid',
                     <select
@@ -1365,6 +1393,15 @@ function InspectionDetailsDialog({
                       type="date"
                       value={form.warrantyEndDate}
                       onChange={(event) => updateField('warrantyEndDate', event.target.value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                  {fieldLabel(
+                    'Särskild varugaranti för',
+                    <input
+                      value={form.warrantyScope}
+                      onChange={(event) => updateField('warrantyScope', event.target.value)}
+                      placeholder="Exempel: vara, produkt eller material"
                       className={inputClassName()}
                     />
                   )}
