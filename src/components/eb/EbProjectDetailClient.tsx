@@ -1435,7 +1435,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
 
               {currentProject.objectDescription ? (
                 <section className="rounded-lg border border-emerald-100 bg-white/90 p-4 shadow-sm">
-                  <h2 className="text-base font-semibold text-gray-950">Objektbeskrivning</h2>
+                  <h2 className="text-base font-semibold text-gray-950">Beskrivning av entreprenaden</h2>
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-700">
                     {currentProject.objectDescription}
                   </p>

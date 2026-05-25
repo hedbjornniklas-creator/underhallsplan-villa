@@ -152,7 +152,7 @@ export default function EbProjectForm({
             />
           </EbProjectFieldLabel>
           <div className="md:col-span-2">
-            <EbProjectFieldLabel label="Objektbeskrivning">
+            <EbProjectFieldLabel label="Beskrivning av entreprenaden">
               <textarea
                 value={form.objectDescription}
                 onChange={(event) => onChange('objectDescription', event.target.value)}

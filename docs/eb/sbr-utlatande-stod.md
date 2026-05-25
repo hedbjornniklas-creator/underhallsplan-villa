@@ -1,6 +1,6 @@
 # EB - SBR-utlåtande, stödmatris
 
-Senast uppdaterad: 2026-05-22
+Senast uppdaterad: 2026-05-25
 
 Syfte: hålla koll på vilka uppgifter som krävs för ett SBR-likt utlåtande för slutbesiktning och var de stöds i Hushub. Målet är att färdigt utlåtande inte ska innehålla instruktionstext eller "Ange ..."-texter.
 
@@ -12,6 +12,28 @@ Syfte: hålla koll på vilka uppgifter som krävs för ett SBR-likt utlåtande f
 - Formella utlåtandepunkter fylls i i `Utlåtandeutkast`. Strukturerade beslut och datum fylls i i panelen `Utlåtandeuppgifter` på samma sida.
 - Färdigt utlåtande får skriva ut formella standardtexter som anger att uppgift inte redovisats, inte fastställts eller inte är aktuell.
 - Färdigt utlåtande får inte skriva ut instruktionstext som börjar med `Ange`, `Komplettera` eller motsvarande redigeringshjälp.
+
+## Rubrikregel
+
+EB-utlåtandet ska följa en fast rubrikhierarki så att digital vy och PDF får samma struktur:
+
+| Nivå | Användning | Form |
+|---|---|---|
+| Dokumenttitel | Huvudrubriken efter objektinformationen | Versaler, centrerad, 16 pt, fet. Exakt text: `UTLÅTANDE ÖVER SLUTBESIKTNING`. |
+| Huvudavsnitt | Formella utlåtandepunkter från `report_draft.sections` | 12 pt, fet. Synlig rubrik skrivs utan numrering. SBR-punkt får bara användas internt för spårbarhet. |
+| Bilagerubrik | Noteringsbilaga och fotobilaga | Versaler, 13 pt, fet. Exempel: `BILAGA 1 TILL UTLÅTANDE ÖVER SLUTBESIKTNING`. |
+| Tabellrubrik | Kolumner i noteringsbilagan | Kort SBR-lik text: `Bet.`, `Nr`, `Del/Rum`, `Fel`, `Avhjälpt/sign`. |
+| Fältetikett | Objektinformation och metadata | Fet etikett till vänster, värde till höger. |
+
+Regel i kod: rubrikklasser för EB-utlåtandet ska ligga samlade i rapportkomponenten som namngivna konstanter. Nya rubriker ska använda dessa nivåer i stället för egna Tailwind-klasser direkt i JSX.
+
+Första synliga avsnitt i färdigt utlåtande ska vara:
+
+1. `Besiktningens omfattning`
+2. `Tid för besiktningen`
+3. `Avtalade arbeten och parter`
+
+`Typ av besiktning` sparas i utkastet för spårbarhet men skrivs inte ut som egen rubrik, eftersom dokumenttiteln redan anger slutbesiktning.
 
 ## Datastöd
 
@@ -131,9 +153,9 @@ Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de s
 | SBR-punkt | Stöd i Hushub | Källa |
 |---|---|---|
 | Typ av besiktning (1) | Ja | `inspections`, `eb_inspection_details`, `report_draft.inspection_type` |
-| Besiktningens omfattning (2) | Ja, redigerbart | `report_draft.scope`, grundas på `eb_projects.object_description` |
+| Besiktningens omfattning (2) | Ja, redigerbart | `report_draft.scope`, standardtext. Entreprenadbeskrivning visas i sidhuvudet från `eb_projects.object_description`. |
 | Tid för besiktningen (3) | Ja | `inspections.date`, `inspections.inspection_time`, `report_draft.inspection_time` |
-| Entreprenaden samt parterna (4) | Ja | `eb_projects`, `report_draft.contract_parties` |
+| Avtalade arbeten och parter (4) | Ja | `eb_projects`, `report_draft.contract_parties` |
 | Besiktningsman (5) | Redigerbart utkast | `report_draft.inspectors` |
 | Närvarande (6) | Delvis strukturerat | `eb_participants`, `report_draft.participants` |
 | Sättet för kallelse (7) | Delvis strukturerat | `eb_inspection_details.invitation_sent_at`, `report_draft.summons` |

@@ -11,18 +11,6 @@ type EbInspectionReportViewProps = {
   report: EbInspectionReport
 }
 
-function formatDate(value: string | null) {
-  if (!value) return '-'
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleDateString('sv-SE')
-}
-
-function formatTime(value: string | null) {
-  if (!value) return ''
-  return value.slice(0, 5)
-}
-
 function sortNotes(notes: EbNote[]) {
   return [...notes].sort((left, right) => {
     if ((left.sortOrder ?? 0) !== (right.sortOrder ?? 0)) {
@@ -47,6 +35,13 @@ function sortImages(images: EbNoteImage[]) {
 function detailLine(parts: Array<string | null | undefined>) {
   return parts.map((part) => part?.trim()).filter(Boolean).join(', ') || '-'
 }
+
+const REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER SLUTBESIKTNING'
+const REPORT_NOTE_APPENDIX_TITLE = 'BILAGA 1 TILL UTLÅTANDE ÖVER SLUTBESIKTNING'
+const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[16pt] font-bold uppercase leading-tight text-black'
+const REPORT_SECTION_HEADING_CLASS_NAME = 'mb-2 text-[12pt] font-bold leading-tight text-black'
+const REPORT_APPENDIX_HEADING_CLASS_NAME = 'mb-3 text-[13pt] font-bold uppercase leading-tight text-black'
+const HIDDEN_REPORT_SECTION_KEYS = new Set(['inspection_type', 'notes'])
 
 function normalizeReportText(value: string) {
   return value.replace(/\r\n/g, '\n').replace(/\\n/g, '\n').trim()
@@ -140,17 +135,21 @@ function ReportSection({
 }) {
   return (
     <section className="eb-report-section break-inside-auto pt-4">
-      <h2 className="mb-2 text-[12pt] font-bold leading-tight text-black">{title}</h2>
+      <h2 className={REPORT_SECTION_HEADING_CLASS_NAME}>{title}</h2>
       {children}
     </section>
   )
 }
 
 function ReportHeader({ report }: { report: EbInspectionReport }) {
+  const propertyDesignation = report.project.propertyDesignation?.trim() || '-'
+  const streetAndCity = detailLine([report.project.address, report.project.city])
+  const entreprenadDescription = report.project.objectDescription?.trim() || '-'
+
   return (
     <header className="mb-8">
-      <div className="flex min-h-[22mm] items-start justify-between gap-8">
-        <div className="flex min-h-[18mm] flex-1 items-start">
+      <div className="grid min-h-[22mm] grid-cols-[70mm_1fr_54mm] items-start gap-4">
+        <div className="flex min-h-[18mm] items-start justify-start">
           {report.branding.inspectorLogoUrl ? (
             <img
               src={report.branding.inspectorLogoUrl}
@@ -159,41 +158,34 @@ function ReportHeader({ report }: { report: EbInspectionReport }) {
             />
           ) : null}
         </div>
-        <img
-          src={report.branding.besiktAppLogoUrl}
-          alt="BesiktApp"
-          className="h-[13mm] w-auto object-contain"
-        />
-      </div>
-
-      <div className="mt-8 text-center">
-        <h1 className="text-[16pt] font-bold leading-tight text-black">
-          Utlåtande över {report.inspection.variantLabel.toLowerCase()}
-        </h1>
-        <p className="mt-3 text-[14pt] font-bold text-black">
-          {detailLine([report.project.address, report.project.postalCode, report.project.city])}
-        </p>
-      </div>
-
-      <div className="mt-7 grid grid-cols-[1fr_47mm] gap-8 border-b border-black pb-4 text-[10.5pt] text-black">
-        <div>
-          <p className="font-bold">{report.project.title}</p>
-          <p>{detailLine([report.project.propertyDesignation, report.project.municipality])}</p>
+        <div aria-hidden="true" />
+        <div className="flex min-h-[18mm] items-start justify-end">
+          <img
+            src={report.branding.besiktAppLogoUrl}
+            alt="BesiktApp"
+            className="h-[13mm] w-auto object-contain"
+          />
         </div>
-        <dl className="grid gap-y-1">
-          <div className="grid grid-cols-[24mm_1fr] gap-x-3">
-            <dt>Besiktning:</dt>
-            <dd>{report.inspection.variant}{report.inspection.sequenceNo}</dd>
-          </div>
-          <div className="grid grid-cols-[24mm_1fr] gap-x-3">
-            <dt>Datum:</dt>
-            <dd>{formatDate(report.inspection.date)}</dd>
-          </div>
-          <div className="grid grid-cols-[24mm_1fr] gap-x-3">
-            <dt>Tid:</dt>
-            <dd>{formatTime(report.inspection.inspectionTime) || '-'}</dd>
-          </div>
-        </dl>
+      </div>
+      <div className="mt-3 h-[1.5px] w-full bg-[#2f7d55]" />
+
+      <dl className="mt-3 grid gap-y-1 text-[10.5pt] leading-snug text-black">
+        <div className="grid grid-cols-[38mm_1fr] gap-x-4">
+          <dt className="font-bold">Fastighetsbeteckning</dt>
+          <dd>{propertyDesignation}</dd>
+        </div>
+        <div className="grid grid-cols-[38mm_1fr] gap-x-4">
+          <dt className="font-bold">Gatuadress, ort</dt>
+          <dd>{streetAndCity}</dd>
+        </div>
+        <div className="grid grid-cols-[38mm_1fr] gap-x-4">
+          <dt className="font-bold">Entreprenad</dt>
+          <dd className="whitespace-pre-wrap">{entreprenadDescription}</dd>
+        </div>
+      </dl>
+
+      <div className="mt-7 text-center">
+        <h1 className={REPORT_TITLE_HEADING_CLASS_NAME}>{REPORT_DOCUMENT_TITLE}</h1>
       </div>
     </header>
   )
@@ -271,7 +263,7 @@ function PhotoAppendix({
 
   return (
     <section className="eb-report-section mt-8 break-before-page">
-      <h2 className="mb-3 text-[12pt] font-bold leading-tight text-black">Fotobilaga</h2>
+      <h2 className={REPORT_APPENDIX_HEADING_CLASS_NAME}>FOTOBILAGA</h2>
       <div className="space-y-5">
         {notesWithImages.map(({ note, index, images }) => (
           <article key={note.id} className="break-inside-avoid">
@@ -301,13 +293,15 @@ function PhotoAppendix({
 
 export default function EbInspectionReportView({ report }: EbInspectionReportViewProps) {
   const notes = sortNotes(report.notes)
-  const reportSections = report.reportDraft.sections.filter(
+  const printableSections = report.reportDraft.sections.filter(
     (section) =>
       section.isRelevant &&
-      section.key !== 'notes' &&
+      !HIDDEN_REPORT_SECTION_KEYS.has(section.key) &&
       section.status !== 'missing' &&
       hasPrintableReportText(section.text)
   )
+  const scopeSection = printableSections.find((section) => section.key === 'scope') ?? null
+  const reportSections = printableSections.filter((section) => section.key !== 'scope')
   const imagesByNoteId = new Map<string, EbNoteImage[]>()
   for (const image of report.images) {
     if (!image.noteId) continue
@@ -358,19 +352,23 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
       <article className="eb-report-print-document mx-auto bg-white px-12 py-10 shadow-sm print:shadow-none">
         <ReportHeader report={report} />
 
+        {scopeSection ? (
+          <ReportSection title={scopeSection.title}>
+            <ReportText text={scopeSection.text} />
+          </ReportSection>
+        ) : null}
+
         {reportSections.map((section) => (
           <ReportSection
             key={section.key}
-            title={section.sbrPoint ? `${section.sbrPoint}. ${section.title}` : section.title}
+            title={section.title}
           >
             <ReportText text={section.text} />
           </ReportSection>
         ))}
 
         <section className="eb-report-section mt-8 break-before-page">
-          <h2 className="mb-3 text-[13pt] font-bold leading-tight text-black">
-            Bilaga 1 till utlåtande över {report.inspection.variantLabel.toLowerCase()}
-          </h2>
+          <h2 className={REPORT_APPENDIX_HEADING_CLASS_NAME}>{REPORT_NOTE_APPENDIX_TITLE}</h2>
           <NoteTable report={report} notes={notes} />
         </section>
 

@@ -2675,12 +2675,9 @@ function buildEbReportDraft(input: {
       title: 'Besiktningens omfattning',
       sbrPoint: '2',
       source: 'standard_text',
-      status: hasText(round.project.objectDescription) ? 'complete' : 'draft',
+      status: 'complete',
       isRelevant: true,
-      text: reportList([
-        round.project.objectDescription,
-        ebStandardText('EB_REPORT_SCOPE'),
-      ]),
+      text: ebStandardText('EB_REPORT_SCOPE'),
       updatedAt: null,
     },
     {
@@ -2698,7 +2695,7 @@ function buildEbReportDraft(input: {
     },
     {
       key: 'contract_parties',
-      title: 'Entreprenaden samt parterna',
+      title: 'Avtalade arbeten och parter',
       sbrPoint: '4',
       source: 'project',
       status: round.project.clientName && round.project.contractorName ? 'complete' : 'missing',
