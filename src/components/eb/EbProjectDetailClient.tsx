@@ -37,6 +37,9 @@ import type {
 } from '@/lib/eb/server'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 
+const DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION =
+  'Fönster, dörrar, väggar etc numreras från vänster till höger. Vägg 1 = vägg till vänster om entrévägg. Vägg 2 = nästa vägg till höger om vägg 1 osv.'
+
 type EbProjectDetailClientProps = {
   project: EbProjectListItem
   attachments: EbProjectAttachment[]
@@ -106,9 +109,11 @@ type InspectionDetailsFormState = {
   afterInspectionNoticeInReport: boolean
   reportDistributionDate: string
   previousInspections: EbPreviousInspectionItem[]
+  defectNumberingExplanation: string
+  defectNoErrorPartsPolicy: string
 }
 
-type InspectionDetailsTabKey = 'time' | 'previous' | 'documents' | 'report' | 'participants'
+type InspectionDetailsTabKey = 'time' | 'previous' | 'documents' | 'defect_explanations' | 'report' | 'participants'
 
 const INSPECTION_DETAILS_TABS: Array<{
   key: InspectionDetailsTabKey
@@ -118,6 +123,7 @@ const INSPECTION_DETAILS_TABS: Array<{
   { key: 'time', label: 'Tid och kallelse', icon: CalendarDays },
   { key: 'previous', label: 'Tidigare', icon: ClipboardCheck },
   { key: 'documents', label: 'Handlingar', icon: FileText },
+  { key: 'defect_explanations', label: 'Förklaringar', icon: FileText },
   { key: 'report', label: 'Utlåtande', icon: Pencil },
   { key: 'participants', label: 'Närvarande', icon: UserPlus },
 ]
@@ -671,6 +677,9 @@ function buildInspectionDetailsForm(inspection: EbInspectionSummary): Inspection
     afterInspectionNoticeInReport: inspection.afterInspectionNoticeInReport,
     reportDistributionDate: inspection.reportDistributionDate ?? new Date().toISOString().slice(0, 10),
     previousInspections: inspection.previousInspections,
+    defectNumberingExplanation:
+      inspection.defectNumberingExplanation ?? DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION,
+    defectNoErrorPartsPolicy: inspection.defectNoErrorPartsPolicy ?? 'not_listed',
   }
 }
 
@@ -1229,6 +1238,52 @@ function InspectionDetailsDialog({
                   onChange={setDocuments}
                 />
               </div>
+            ) : null}
+
+            {activeTab === 'defect_explanations' ? (
+              <section
+                id="inspection-details-defect_explanations"
+                role="tabpanel"
+                aria-labelledby="inspection-details-tab-defect_explanations"
+                className="space-y-4"
+              >
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-950">Fel och förhållanden</h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Dessa uppgifter visas under Förklaringar för respektive kolumn i utlåtandet.
+                  </p>
+                </div>
+
+                {fieldLabel(
+                  'Övriga förklaringar',
+                  <textarea
+                    value={form.defectNumberingExplanation}
+                    onChange={(event) => updateField('defectNumberingExplanation', event.target.value)}
+                    rows={4}
+                    className={inputClassName()}
+                  />
+                )}
+
+                {fieldLabel(
+                  'Lokal, byggdel eller installationsdel utan fel redovisas',
+                  <select
+                    value={form.defectNoErrorPartsPolicy}
+                    onChange={(event) => updateField('defectNoErrorPartsPolicy', event.target.value)}
+                    className={inputClassName()}
+                  >
+                    <option value="not_listed">inte</option>
+                    <option value="listed_with_dash">med ---</option>
+                  </select>
+                )}
+
+                <div className="rounded-md border border-emerald-100 bg-emerald-50/50 px-3 py-2 text-sm text-gray-700">
+                  Lokal, byggdel eller installationsdel utan fel redovisas{' '}
+                  <span className="font-semibold">
+                    {form.defectNoErrorPartsPolicy === 'listed_with_dash' ? 'med ---' : 'inte'}
+                  </span>{' '}
+                  och gäller eventuell förekomst av allmänna fel.
+                </div>
+              </section>
             ) : null}
 
             {activeTab === 'report' ? (

@@ -14,6 +14,7 @@ export type EbPartyKey = 'client' | 'contractor' | 'other'
 export type EbPreviousInspectionStatus = 'performed' | 'not_performed' | 'not_applicable'
 export type EbInspectionDocumentStatus = 'present' | 'missing' | 'na'
 export type EbProjectAgreementItemKind = 'change_order' | 'other'
+export type EbDefectNoErrorPartsPolicy = 'not_listed' | 'listed_with_dash'
 
 export type EbPreviousInspectionItem = {
   key: string
@@ -76,6 +77,8 @@ export type EbInspectionSummary = {
   afterInspectionNoticeInReport: boolean
   reportDistributionDate: string | null
   previousInspections: EbPreviousInspectionItem[]
+  defectNumberingExplanation: string | null
+  defectNoErrorPartsPolicy: EbDefectNoErrorPartsPolicy | null
   reportLockedAt: string | null
   createdAt: string | null
 }
@@ -378,6 +381,8 @@ type EbInspectionDetailRow = {
   after_inspection_notice_in_report: boolean | null
   report_distribution_date: string | null
   previous_inspections?: unknown
+  defect_numbering_explanation?: string | null
+  defect_no_error_parts_policy?: string | null
   invitation_subject?: string | null
   invitation_body?: string | null
   report_locked_at: string | null
@@ -635,6 +640,8 @@ export type UpdateEbInspectionInput = {
   afterInspectionNoticeInReport?: boolean
   reportDistributionDate?: string | null
   previousInspections?: EbPreviousInspectionItem[] | null
+  defectNumberingExplanation?: string | null
+  defectNoErrorPartsPolicy?: EbDefectNoErrorPartsPolicy | null
 }
 
 export type SaveEbNoteInput = {
@@ -688,6 +695,7 @@ const INSPECTOR_APPOINTED_BY_VALUES = ['client', 'parties_jointly', 'contractor'
 const APPROVAL_STATUS_VALUES = ['approved', 'not_approved', 'partly_approved'] as const
 const PARTY_KEY_VALUES = ['client', 'contractor', 'other'] as const
 const PREVIOUS_INSPECTION_STATUS_VALUES = ['performed', 'not_performed', 'not_applicable'] as const
+const DEFECT_NO_ERROR_PARTS_POLICY_VALUES = ['not_listed', 'listed_with_dash'] as const
 const EB_MISSING_DOCUMENT_NOTE_SOURCE = 'eb_missing_document'
 const INSPECTION_DOCUMENT_STATUS_VALUES = ['present', 'missing', 'na'] as const
 const EB_DOCUMENT_TYPE_CODE_ORDER = [
@@ -718,6 +726,8 @@ export const EB_NOTE_IMAGE_BUCKET = 'inspection-images'
 const PROFILE_MEDIA_BUCKET = 'property-media'
 const BESIKTAPP_REPORT_LOGO_SRC = '/report-assets/BesiktApp.png'
 const EB_ATTACHMENT_SIGNED_URL_SECONDS = 60 * 60
+export const DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION =
+  'Fönster, dörrar, väggar etc numreras från vänster till höger. Vägg 1 = vägg till vänster om entrévägg. Vägg 2 = nästa vägg till höger om vägg 1 osv.'
 
 function normalizeText(value: string | null | undefined) {
   const trimmed = String(value ?? '').trim()
@@ -763,6 +773,15 @@ function normalizeApprovalStatus(value: string | null | undefined): EbApprovalSt
   const normalized = normalizeText(value)
   return APPROVAL_STATUS_VALUES.includes(normalized as EbApprovalStatus)
     ? (normalized as EbApprovalStatus)
+    : null
+}
+
+function normalizeDefectNoErrorPartsPolicy(
+  value: string | null | undefined
+): EbDefectNoErrorPartsPolicy | null {
+  const normalized = normalizeText(value)
+  return DEFECT_NO_ERROR_PARTS_POLICY_VALUES.includes(normalized as EbDefectNoErrorPartsPolicy)
+    ? (normalized as EbDefectNoErrorPartsPolicy)
     : null
 }
 
@@ -1016,6 +1035,8 @@ function mapInspectionSummary(
     afterInspectionNoticeInReport: detail.after_inspection_notice_in_report ?? false,
     reportDistributionDate: detail.report_distribution_date ?? null,
     previousInspections: normalizePreviousInspections(detail.previous_inspections),
+    defectNumberingExplanation: detail.defect_numbering_explanation ?? null,
+    defectNoErrorPartsPolicy: normalizeDefectNoErrorPartsPolicy(detail.defect_no_error_parts_policy),
     reportLockedAt: detail.report_locked_at ?? null,
     createdAt: inspection?.created_at ?? detail.created_at ?? null,
   }
@@ -1121,7 +1142,7 @@ async function fetchDetailsForProjects(orgId: string, projectIds: string[]) {
   const baseSelect =
     'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,report_locked_at,created_at'
   const withStructuredReportSelect =
-    'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,inspector_appointed_by,invitation_method,invitation_date,approval_status,approval_note,requires_continued_final_inspection,warranty_period_years,warranty_end_date,default_remedy_deadline,after_inspection_requested,after_inspection_due_date,after_inspection_notice_in_report,report_distribution_date,previous_inspections,report_locked_at,created_at'
+    'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,inspector_appointed_by,invitation_method,invitation_date,approval_status,approval_note,requires_continued_final_inspection,warranty_period_years,warranty_end_date,default_remedy_deadline,after_inspection_requested,after_inspection_due_date,after_inspection_notice_in_report,report_distribution_date,previous_inspections,defect_numbering_explanation,defect_no_error_parts_policy,report_locked_at,created_at'
   const { data, error } = await admin
     .from('eb_inspection_details')
     .select(withStructuredReportSelect)
@@ -2537,6 +2558,8 @@ export async function updateEbInspection(input: UpdateEbInspectionInput): Promis
       after_inspection_notice_in_report: input.afterInspectionNoticeInReport === true,
       report_distribution_date: normalizeDate(input.reportDistributionDate),
       previous_inspections: normalizePreviousInspections(input.previousInspections),
+      defect_numbering_explanation: normalizeText(input.defectNumberingExplanation),
+      defect_no_error_parts_policy: normalizeDefectNoErrorPartsPolicy(input.defectNoErrorPartsPolicy),
     })
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)

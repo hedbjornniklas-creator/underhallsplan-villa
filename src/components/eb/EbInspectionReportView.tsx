@@ -56,7 +56,16 @@ const REPORT_NOTE_APPENDIX_TITLE = 'BILAGA 1 TILL UTLÅTANDE ÖVER SLUTBESIKTNIN
 const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[16pt] font-bold uppercase leading-tight text-black'
 const REPORT_SECTION_HEADING_CLASS_NAME = 'mb-2 text-[12pt] font-bold leading-tight text-black'
 const REPORT_APPENDIX_HEADING_CLASS_NAME = 'mb-3 text-[13pt] font-bold uppercase leading-tight text-black'
-const HIDDEN_REPORT_SECTION_KEYS = new Set(['inspection_type', 'marker_legend', 'notes'])
+const HIDDEN_REPORT_SECTION_KEYS = new Set([
+  'inspection_type',
+  'not_accessible',
+  'documentation_only',
+  'appendices',
+  'marker_legend',
+  'notes',
+])
+const DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION =
+  'Fönster, dörrar, väggar etc numreras från vänster till höger. Vägg 1 = vägg till vänster om entrévägg. Vägg 2 = nästa vägg till höger om vägg 1 osv.'
 
 function normalizeReportText(value: string) {
   return value.replace(/\r\n/g, '\n').replace(/\\n/g, '\n').trim()
@@ -522,6 +531,10 @@ function markerExplanation(marker: EbInspectionReport['markers'][number]) {
   return marker.label
 }
 
+function defectNoErrorPartsPolicyText(report: EbInspectionReport) {
+  return report.inspection.defectNoErrorPartsPolicy === 'listed_with_dash' ? 'med ---' : 'inte'
+}
+
 function DefectsConditionsReport({
   report,
 }: {
@@ -565,6 +578,16 @@ function DefectsConditionsReport({
             <dd>Kolumn för intygande av hantverkaren att avhjälpande har skett med datum och signatur.</dd>
           </div>
         </dl>
+
+        <div className="pt-3">
+          <p className="underline">Övriga förklaringar:</p>
+          <p className="mt-2 whitespace-pre-wrap">
+            {report.inspection.defectNumberingExplanation?.trim() || DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION}
+          </p>
+          <p className="mt-2">
+            Lokal, byggdel eller installationsdel utan fel redovisas {defectNoErrorPartsPolicyText(report)} och gäller eventuell förekomst av allmänna fel.
+          </p>
+        </div>
       </div>
     </ReportSection>
   )

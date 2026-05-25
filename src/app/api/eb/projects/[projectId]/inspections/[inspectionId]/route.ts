@@ -4,6 +4,7 @@ import { requireOrgContext } from '@/lib/assignments/server'
 import {
   updateEbInspection,
   type EbApprovalStatus,
+  type EbDefectNoErrorPartsPolicy,
   type EbInspectorAppointedBy,
   type EbPreviousInspectionItem,
 } from '@/lib/eb/server'
@@ -103,6 +104,10 @@ export async function PATCH(
       afterInspectionNoticeInReport: body.afterInspectionNoticeInReport === true,
       reportDistributionDate: toText(body.reportDistributionDate) || null,
       previousInspections: toPreviousInspections(body.previousInspections),
+      defectNumberingExplanation: toText(body.defectNumberingExplanation) || null,
+      defectNoErrorPartsPolicy: (toText(body.defectNoErrorPartsPolicy) || null) as
+        | EbDefectNoErrorPartsPolicy
+        | null,
     })
 
     return NextResponse.json({ project })
