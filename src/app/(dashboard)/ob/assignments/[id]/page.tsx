@@ -204,6 +204,8 @@ export default function AssignmentDetailsPage() {
   const [saving, setSaving] = useState(false)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [sending, setSending] = useState(false)
+  const [booking, setBooking] = useState(false)
+  const [converting, setConverting] = useState(false)
   const [reissuing, setReissuing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -228,6 +230,8 @@ export default function AssignmentDetailsPage() {
   }, [form])
 
   const canSend = assignment?.status === 'draft' && hasOrdererRole && hasValidPrice
+  const canBook = assignment?.status === 'ordered' && !assignment.inspection_id
+  const canConvert = assignment?.status === 'booked' && !assignment.inspection_id
   const isSent = assignment?.status === 'sent'
   const isOrdered = assignment?.status === 'ordered'
   const isBookedLocked = assignment?.status === 'booked'
@@ -446,6 +450,60 @@ export default function AssignmentDetailsPage() {
     }
   }
 
+  const handleBook = async () => {
+    try {
+      setBooking(true)
+      setError(null)
+      setSuccess(null)
+
+      const response = await fetch(`/api/ob/assignments/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'booked' }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(jsonToErrorMessage(payload, 'Kunde inte acceptera uppdraget.'))
+      }
+
+      const typedPayload = payload as { bookingEmailSent?: boolean } | null
+      await loadAssignment()
+      if (typedPayload?.bookingEmailSent === false) {
+        setSuccess('Uppdraget är nu accepterat. Mejlet kunde inte skickas automatiskt.')
+      } else {
+        setSuccess('Uppdraget är nu accepterat och bekräftelsemejl har skickats.')
+      }
+    } catch (bookError) {
+      setError(bookError instanceof Error ? bookError.message : 'Kunde inte acceptera uppdraget.')
+    } finally {
+      setBooking(false)
+    }
+  }
+
+  const handleConvert = async () => {
+    try {
+      setConverting(true)
+      setError(null)
+      setSuccess(null)
+
+      const response = await fetch(`/api/ob/assignments/${id}/convert`, { method: 'POST' })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(jsonToErrorMessage(payload, 'Kunde inte starta besiktning.'))
+      }
+
+      const body = payload as { propertyId?: string; inspectionId?: string }
+      if (!body.propertyId || !body.inspectionId) {
+        throw new Error('Konvertering saknar property/inspection-id.')
+      }
+      router.push(`/properties/${body.propertyId}/ob/${body.inspectionId}`)
+    } catch (convertError) {
+      setError(convertError instanceof Error ? convertError.message : 'Kunde inte starta besiktning.')
+    } finally {
+      setConverting(false)
+    }
+  }
+
   const handleReissue = async () => {
     try {
       setReissuing(true)
@@ -512,7 +570,7 @@ export default function AssignmentDetailsPage() {
                   <button
                     type="button"
                     onClick={() => void handleSend()}
-                    disabled={!canSend || sending || reissuing || saving || loading}
+                    disabled={!canSend || sending || booking || converting || reissuing || saving || loading}
                     title="Skickar uppdragsbekräftelsen till kunden för godkännande."
                     className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-[0_10px_20px_-14px_rgba(15,23,42,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500 disabled:shadow-none"
                   >
@@ -523,13 +581,31 @@ export default function AssignmentDetailsPage() {
                   <button
                     type="button"
                     onClick={() => void handleReissue()}
-                    disabled={reissuing || sending || saving || loading}
+                    disabled={reissuing || sending || booking || converting || saving || loading}
                     title="Skapar en ny utkastversion baserad på befintliga uppgifter. Du kan redigera den och sedan skicka för nytt godkännande."
                     className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950 transition duration-200 hover:-translate-y-0.5 hover:bg-amber-100 hover:shadow-[0_10px_20px_-12px_rgba(245,158,11,0.45)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 disabled:cursor-not-allowed disabled:border-amber-200 disabled:bg-amber-50 disabled:text-amber-600 disabled:shadow-none"
                   >
                     {reissuing ? 'Skapar ny...' : 'Skicka om uppdragsbekräftelse'}
                   </button>
                 ) : null}
+                <button
+                  type="button"
+                  onClick={() => void handleBook()}
+                  disabled={!canBook || booking || sending || converting || reissuing || saving || loading}
+                  title="Accepterar uppdraget som besiktningsman och skickar full beställningsbekräftelse."
+                  className="rounded-lg border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-[0_12px_24px_-12px_rgba(16,185,129,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:cursor-not-allowed disabled:border-emerald-200 disabled:bg-emerald-50 disabled:text-emerald-700 disabled:shadow-none"
+                >
+                  {booking ? 'Accepterar...' : 'Acceptera uppdrag'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleConvert()}
+                  disabled={!canConvert || converting || booking || sending || reissuing || saving || loading}
+                  title="Startar besiktningen och öppnar besiktningsvyn."
+                  className="rounded-lg border border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-[0_10px_20px_-12px_rgba(79,70,229,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:cursor-not-allowed disabled:border-indigo-200 disabled:bg-indigo-50 disabled:text-indigo-700 disabled:shadow-none"
+                >
+                  {converting ? 'Startar...' : 'Starta besiktning'}
+                </button>
               </div>
             </div>
           </header>
@@ -544,11 +620,11 @@ export default function AssignmentDetailsPage() {
           ) : null}
           {isBookedLocked ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              Uppdragsbekräftelsen är bokad och låst för redigering.
+              Uppdragsbekräftelsen är bokad och låst för redigering. Klicka på Starta besiktning för att gå vidare.
             </div>
           ) : isOrdered ? (
             <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800">
-              Uppdragsbekräftelsen är beställd och låst för redigering. Klicka på Skicka om uppdragsbekräftelse för att skapa en ny redigerbar version.
+              Uppdragsbekräftelsen är beställd och låst för redigering. Klicka på Acceptera uppdrag eller Skicka om uppdragsbekräftelse.
             </div>
           ) : isSent ? (
             <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
