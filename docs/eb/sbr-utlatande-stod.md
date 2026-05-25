@@ -182,8 +182,8 @@ Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de s
 | Avtal, handlingar och andra överenskommelser (10) | Ja | `eb_projects.contract_date`, `eb_projects.agreement_items`, `report_draft.contract_documents` |
 | Ej åtkomliga delar (11) | Delvis | `eb_notes.status_key=not_accessible`, `report_draft.not_accessible` |
 | Endast dokumentationsbesiktigade delar (12) | Redigerbart utkast | `report_draft.documentation_only` |
-| Fel, bristfälligheter, anmärkningar och förhållanden (13-17, 23) | Ja/delvis | `eb_notes`, `report_draft.defects_appendices` |
-| Beteckningar E/B/S/U/N/A | Ja/delvis | `settings_eb_note_markers`, `report_draft.marker_legend` |
+| Fel och förhållanden (13-17, 23) | Ja/delvis | `eb_notes`, `settings_eb_note_markers`, `report_draft.defects_appendices` |
+| Beteckningar E/B/S/U/N/A | Ingår i Fel och förhållanden | `settings_eb_note_markers`, använda `eb_notes.marker_key` |
 | Särskild utredning | Redigerbart utkast | `report_draft.special_investigation` |
 | Nedsättning | Redigerbart utkast | `report_draft.deduction` |
 | Besked om godkännande (18) | Redigerbart utkast | `report_draft.approval_decision` |
@@ -210,6 +210,8 @@ Standardtext för `Provning, dokumentation`: texten ligger i `src/content/standa
 Regel för saknad dokumentation: när en EB-handling i `Provning och dokumentation` markeras som `Ej redovisad`/`Ej överlämnad` ska systemet skapa en automatisk notering i `Fel och förhållanden`. Noteringen märks med `eb_notes.source_system = eb_missing_document` och `source_record_id = document_types.id`, så den kan uppdateras eller tas bort när dokumentstatus ändras utan att manuella noteringar påverkas. Själva avsnittet `Provning, dokumentation` ska bara lista handlingar som är `Granskad`/`Överlämnad`.
 
 Layoutregel för `Avtal, handlingar och andra överenskommelser`: uppgifterna fylls i under `Redigera entreprenad > Avtal`. ÄTA-handlingar och övriga handlingar/överenskommelser sparas strukturerat i `eb_projects.agreement_items`, med flera rader och val för om raden ska tas med i utlåtandet. Utlåtandet ska inleda med avtalsform och kontraktsdatum, därefter lista ÄTA-handlingar och sist övriga handlingar/överenskommelser. Uppladdade projektdokument/bilagor i `eb_project_attachments` ska inte automatiskt listas i detta avsnitt.
+
+Layoutregel för `Fel och förhållanden`: sektionen ska visa texten `Under denna rubrik är angivna förhållanden som besiktningsmannen anser utgöra fel.` och därefter `Förklaringar för respektive kolumn:`. Under `Bet.` visas endast de beteckningar som faktiskt används i `eb_notes.marker_key` för aktuell besiktning. Oanvända beteckningar ska inte skrivas ut. Kolumnförklaringarna för `Nr`, `Del/Rum`, `Fel` och `Avhjälpt /sign` ska alltid visas när sektionen är relevant. Den gamla separata markeringssektionen ska inte skrivas ut som egen del i utlåtandet.
 
 ## Kvar att göra för mer strukturerat stöd
 

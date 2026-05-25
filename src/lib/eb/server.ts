@@ -3567,14 +3567,14 @@ function buildEbReportDraft(input: {
     },
     {
       key: 'defects_appendices',
-      title: 'Fel, bristfälligheter, anmärkningar och förhållanden',
+      title: 'Fel och förhållanden',
       sbrPoint: '13-17, 23',
       source: 'notes',
       status: noteCount > 0 ? 'complete' : 'missing',
       isRelevant: true,
       text:
         noteCount > 0
-          ? `Samtliga vid besiktningen registrerade fel, bristfälligheter, anmärkningar och förhållanden redovisas i noteringsförteckningen. Antal noteringar: ${noteCount}.`
+          ? 'Under denna rubrik är angivna förhållanden som besiktningsmannen anser utgöra fel.'
           : ebStandardText('EB_REPORT_DEFECTS_APPENDICES_EMPTY'),
       updatedAt: null,
     },

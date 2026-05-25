@@ -56,7 +56,7 @@ const REPORT_NOTE_APPENDIX_TITLE = 'BILAGA 1 TILL UTLÅTANDE ÖVER SLUTBESIKTNIN
 const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[16pt] font-bold uppercase leading-tight text-black'
 const REPORT_SECTION_HEADING_CLASS_NAME = 'mb-2 text-[12pt] font-bold leading-tight text-black'
 const REPORT_APPENDIX_HEADING_CLASS_NAME = 'mb-3 text-[13pt] font-bold uppercase leading-tight text-black'
-const HIDDEN_REPORT_SECTION_KEYS = new Set(['inspection_type', 'notes'])
+const HIDDEN_REPORT_SECTION_KEYS = new Set(['inspection_type', 'marker_legend', 'notes'])
 
 function normalizeReportText(value: string) {
   return value.replace(/\r\n/g, '\n').replace(/\\n/g, '\n').trim()
@@ -503,6 +503,73 @@ function TestingDocumentationReport({
   )
 }
 
+function usedReportMarkers(report: EbInspectionReport) {
+  const usedKeys = new Set(
+    report.notes
+      .map((note) => note.markerKey?.trim())
+      .filter((markerKey): markerKey is string => Boolean(markerKey))
+  )
+
+  return report.markers
+    .filter((marker) => usedKeys.has(marker.key))
+    .sort((left, right) => left.sortOrder - right.sortOrder)
+}
+
+function markerExplanation(marker: EbInspectionReport['markers'][number]) {
+  if (marker.key === 'N') {
+    return 'Nedsättning av avtalat pris kan vara tillämplig. Belopp anges i förekommande fall för fel som kvarstår.'
+  }
+  return marker.label
+}
+
+function DefectsConditionsReport({
+  report,
+}: {
+  report: EbInspectionReport
+}) {
+  const markers = usedReportMarkers(report)
+
+  return (
+    <ReportSection title="Fel och förhållanden">
+      <div className="space-y-2 text-[10.5pt] leading-[1.35] text-black">
+        <p>Under denna rubrik är angivna förhållanden som besiktningsmannen anser utgöra fel.</p>
+        <p className="underline">Förklaringar för respektive kolumn:</p>
+
+        <dl className="grid gap-y-1">
+          <div className="grid grid-cols-[22mm_1fr] gap-x-4">
+            <dt>Bet.</dt>
+            <dd>Beteckning med markering:</dd>
+          </div>
+
+          {markers.map((marker) => (
+            <div key={marker.key} className="grid grid-cols-[22mm_1fr] gap-x-4">
+              <dt className="pl-[16mm] font-bold">{marker.key}</dt>
+              <dd>{markerExplanation(marker)}</dd>
+            </div>
+          ))}
+
+          <div className="grid grid-cols-[22mm_1fr] gap-x-4 pt-1">
+            <dt>Nr</dt>
+            <dd>Ordningsnummer på fel / bristfällighet / anmärkning.</dd>
+          </div>
+          <div className="grid grid-cols-[22mm_1fr] gap-x-4">
+            <dt>Del/Rum</dt>
+            <dd>Bygg- eller installationsdel / alternativt rumsnummer / rumsbenämning.</dd>
+          </div>
+          <div className="grid grid-cols-[22mm_1fr] gap-x-4">
+            <dt>Fel</dt>
+            <dd>Fel / bristfällighet / anmärkning.</dd>
+          </div>
+          <div className="grid grid-cols-[22mm_1fr] gap-x-4">
+            <dt>Avhjälpt /sign</dt>
+            <dd>Kolumn för intygande av hantverkaren att avhjälpande har skett med datum och signatur.</dd>
+          </div>
+        </dl>
+      </div>
+    </ReportSection>
+  )
+}
+
 function isTestingDocumentationSection(section: EbInspectionReport['reportDraft']['sections'][number]) {
   return (
     section.key === 'testing_documentation' ||
@@ -738,6 +805,8 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
             <PreviousInspectionsReport key={section.key} report={report} />
           ) : isTestingDocumentationSection(section) ? (
             <TestingDocumentationReport key={section.key} report={report} section={section} />
+          ) : section.key === 'defects_appendices' ? (
+            <DefectsConditionsReport key={section.key} report={report} />
           ) : section.key === 'contract_documents' ? (
             <ReportSection key={section.key} title={section.title} headingMarker>
               <ReportText text={section.text} />
