@@ -443,12 +443,51 @@ function PreviousInspectionsEditor({
     onChange(rows.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row))
   }
 
+  const addRow = () => {
+    onChange([
+      ...rows,
+      {
+        key: `custom_${Date.now()}_${rows.length + 1}`,
+        label: '',
+        status: null,
+        date: null,
+      },
+    ])
+  }
+
+  const removeRow = (index: number) => {
+    onChange(rows.filter((_, rowIndex) => rowIndex !== index))
+  }
+
   return (
     <section className="space-y-3">
-      <h3 className="text-sm font-semibold text-gray-950">Tidigare besiktningar</h3>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-950">Tidigare besiktningar</h3>
+          <p className="mt-1 text-xs text-gray-600">
+            Lägg till tidigare besiktningar eller kompletterande fritextrader.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={addRow}
+          className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
+        >
+          <Plus size={16} />
+          Lägg till
+        </button>
+      </div>
       <div className="grid gap-2">
+        {rows.length === 0 ? (
+          <p className="rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-2 text-sm text-gray-600">
+            Inga tidigare besiktningar är registrerade. Utlåtandet visar “-”.
+          </p>
+        ) : null}
         {rows.map((row, index) => (
-          <div key={row.key} className="grid gap-2 rounded-md border border-emerald-100 bg-white p-2 sm:grid-cols-[1fr_9rem_10rem]">
+          <div
+            key={`${row.key}-${index}`}
+            className="grid gap-2 rounded-md border border-emerald-100 bg-white p-2 sm:grid-cols-[1fr_9rem_10rem_auto]"
+          >
             <input
               value={row.label}
               onChange={(event) => updateRow(index, 'label', event.target.value)}
@@ -474,6 +513,15 @@ function PreviousInspectionsEditor({
               onChange={(event) => updateRow(index, 'date', event.target.value || null)}
               className={inputClassName()}
             />
+            <button
+              type="button"
+              onClick={() => removeRow(index)}
+              aria-label="Ta bort tidigare besiktning"
+              title="Ta bort tidigare besiktning"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50"
+            >
+              <Trash2 size={16} />
+            </button>
           </div>
         ))}
       </div>

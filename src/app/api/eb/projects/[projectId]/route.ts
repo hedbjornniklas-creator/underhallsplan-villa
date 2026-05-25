@@ -71,6 +71,7 @@ export async function PATCH(
       contractorAddress: toText(body.contractorAddress) || null,
       contractorPostalCode: toText(body.contractorPostalCode) || null,
       contractorCity: toText(body.contractorCity) || null,
+      agreementItems: Array.isArray(body.agreementItems) ? body.agreementItems : [],
     })
 
     return NextResponse.json({ project })

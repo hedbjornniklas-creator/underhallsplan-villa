@@ -13,6 +13,7 @@ export type EbApprovalStatus = 'approved' | 'not_approved' | 'partly_approved'
 export type EbPartyKey = 'client' | 'contractor' | 'other'
 export type EbPreviousInspectionStatus = 'performed' | 'not_performed' | 'not_applicable'
 export type EbInspectionDocumentStatus = 'present' | 'missing' | 'na'
+export type EbProjectAgreementItemKind = 'change_order' | 'other'
 
 export type EbPreviousInspectionItem = {
   key: string
@@ -32,6 +33,16 @@ export type EbInspectionDocument = {
   status: EbInspectionDocumentStatus
   documentDate: string | null
   note: string | null
+  sortOrder: number
+}
+
+export type EbProjectAgreementItem = {
+  id: string
+  kind: EbProjectAgreementItemKind
+  title: string
+  documentDate: string | null
+  note: string | null
+  includeInReport: boolean
   sortOrder: number
 }
 
@@ -97,6 +108,7 @@ export type EbProjectListItem = {
   contractorAddress: string | null
   contractorPostalCode: string | null
   contractorCity: string | null
+  agreementItems: EbProjectAgreementItem[]
   status: string
   createdAt: string | null
   updatedAt: string | null
@@ -335,6 +347,7 @@ type EbProjectRow = {
   contractor_address: string | null
   contractor_postal_code: string | null
   contractor_city: string | null
+  agreement_items?: unknown
   status: string | null
   created_at: string | null
   updated_at: string | null
@@ -564,6 +577,7 @@ export type CreateEbProjectInput = {
   contractorAddress?: string | null
   contractorPostalCode?: string | null
   contractorCity?: string | null
+  agreementItems?: EbProjectAgreementItem[] | null
   inspectionDate?: string | null
   inspectionTime?: string | null
   meetingPlace?: string | null
@@ -674,10 +688,6 @@ const INSPECTOR_APPOINTED_BY_VALUES = ['client', 'parties_jointly', 'contractor'
 const APPROVAL_STATUS_VALUES = ['approved', 'not_approved', 'partly_approved'] as const
 const PARTY_KEY_VALUES = ['client', 'contractor', 'other'] as const
 const PREVIOUS_INSPECTION_STATUS_VALUES = ['performed', 'not_performed', 'not_applicable'] as const
-const PREVIOUS_INSPECTION_DEFAULTS: Array<Pick<EbPreviousInspectionItem, 'key' | 'label'>> = [
-  { key: 'syn', label: 'Syn' },
-  { key: 'pre_inspection', label: 'Förbesiktning' },
-]
 const EB_MISSING_DOCUMENT_NOTE_SOURCE = 'eb_missing_document'
 const INSPECTION_DOCUMENT_STATUS_VALUES = ['present', 'missing', 'na'] as const
 const EB_DOCUMENT_TYPE_CODE_ORDER = [
@@ -779,37 +789,62 @@ function normalizeInspectionDocumentStatus(
     : 'na'
 }
 
+function normalizeAgreementItemKind(value: string | null | undefined): EbProjectAgreementItemKind {
+  return value === 'change_order' || value === 'other' ? value : 'other'
+}
+
 function normalizePreviousInspections(value: unknown): EbPreviousInspectionItem[] {
   const rows = Array.isArray(value) ? value : []
-  const byKey = new Map<string, EbPreviousInspectionItem>()
 
-  for (const defaultRow of PREVIOUS_INSPECTION_DEFAULTS) {
-    byKey.set(defaultRow.key, {
-      ...defaultRow,
-      status: null,
-      date: null,
+  return rows
+    .map((row, index) => {
+      if (!row || typeof row !== 'object') return null
+      const record = row as Record<string, unknown>
+      const key = normalizeText(typeof record.key === 'string' ? record.key : null) ?? `custom_${index + 1}`
+      const label = normalizeText(typeof record.label === 'string' ? record.label : null)
+      const status = normalizePreviousInspectionStatus(typeof record.status === 'string' ? record.status : null)
+      const date = normalizeDate(typeof record.date === 'string' ? record.date : null)
+
+      if (!label && !status && !date) return null
+
+      return {
+        key,
+        label: label ?? '',
+        status,
+        date,
+      }
     })
-  }
+    .filter((row): row is EbPreviousInspectionItem => Boolean(row))
+}
 
-  rows.forEach((row, index) => {
-    if (!row || typeof row !== 'object') return
-    const record = row as Record<string, unknown>
-    const key = normalizeText(typeof record.key === 'string' ? record.key : null) ?? `custom_${index + 1}`
-    const defaultRow = PREVIOUS_INSPECTION_DEFAULTS.find((item) => item.key === key)
-    const label =
-      defaultRow?.label ??
-      normalizeText(typeof record.label === 'string' ? record.label : null) ??
-      key
+function normalizeAgreementItems(value: unknown): EbProjectAgreementItem[] {
+  const rows = Array.isArray(value) ? value : []
 
-    byKey.set(key, {
-      key,
-      label,
-      status: normalizePreviousInspectionStatus(typeof record.status === 'string' ? record.status : null),
-      date: normalizeDate(typeof record.date === 'string' ? record.date : null),
+  return rows
+    .map((row, index) => {
+      if (!row || typeof row !== 'object') return null
+      const record = row as Record<string, unknown>
+      const kind = normalizeAgreementItemKind(typeof record.kind === 'string' ? record.kind : null)
+      const title = normalizeText(typeof record.title === 'string' ? record.title : null)
+      const note = normalizeText(typeof record.note === 'string' ? record.note : null)
+      const documentDate = normalizeDate(typeof record.documentDate === 'string' ? record.documentDate : null)
+
+      if (!title && !note && !documentDate) return null
+
+      return {
+        id: normalizeText(typeof record.id === 'string' ? record.id : null) ?? `${kind}_${index + 1}`,
+        kind,
+        title: title ?? '',
+        documentDate,
+        note,
+        includeInReport: typeof record.includeInReport === 'boolean' ? record.includeInReport : true,
+        sortOrder: typeof record.sortOrder === 'number' && Number.isFinite(record.sortOrder)
+          ? record.sortOrder
+          : (index + 1) * 100,
+      }
     })
-  })
-
-  return Array.from(byKey.values()).filter((row) => normalizeText(row.label))
+    .filter((row): row is EbProjectAgreementItem => Boolean(row))
+    .sort((left, right) => left.sortOrder - right.sortOrder)
 }
 
 function hasPreviousInspectionValue(row: EbPreviousInspectionItem) {
@@ -830,11 +865,15 @@ function resolvePreviousInspectionsForProject(
 
   if (!preInspection?.date) return rows
 
-  return rows.map((row) =>
-    row.key === 'pre_inspection'
-      ? { ...row, status: 'performed', date: preInspection.date }
-      : row
-  )
+  return [
+    ...rows,
+    {
+      key: `auto_pre_inspection_${preInspection.inspectionId}`,
+      label: 'Förbesiktning',
+      status: 'performed',
+      date: preInspection.date,
+    },
+  ]
 }
 
 function normalizeBoolean(value: boolean | null | undefined) {
@@ -1026,6 +1065,7 @@ function mapProject(
     contractorAddress: project.contractor_address ?? null,
     contractorPostalCode: project.contractor_postal_code ?? null,
     contractorCity: project.contractor_city ?? null,
+    agreementItems: normalizeAgreementItems(project.agreement_items),
     status: project.status ?? 'draft',
     createdAt: project.created_at ?? null,
     updatedAt: project.updated_at ?? null,
@@ -1035,11 +1075,12 @@ function mapProject(
 
 async function fetchProjectsByOrg(orgId: string, projectId?: string) {
   const admin = createSupabaseAdminClient()
+  const baseSelect =
+    'id,org_id,owner_profile_id,property_id,title,contract_name,object_description,property_designation,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,client_address,client_postal_code,client_city,contractor_name,contractor_org_no,contractor_address,contractor_postal_code,contractor_city,status,created_at,updated_at'
+  const withAgreementItemsSelect = `${baseSelect},agreement_items`
   let query = admin
     .from('eb_projects')
-    .select(
-      'id,org_id,owner_profile_id,property_id,title,contract_name,object_description,property_designation,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,client_address,client_postal_code,client_city,contractor_name,contractor_org_no,contractor_address,contractor_postal_code,contractor_city,status,created_at,updated_at'
-    )
+    .select(withAgreementItemsSelect)
     .eq('org_id', orgId)
     .order('updated_at', { ascending: false })
 
@@ -1050,6 +1091,23 @@ async function fetchProjectsByOrg(orgId: string, projectId?: string) {
   const { data, error } = await query
 
   if (error) {
+    if (isMissingColumnError(error)) {
+      let fallbackQuery = admin
+        .from('eb_projects')
+        .select(baseSelect)
+        .eq('org_id', orgId)
+        .order('updated_at', { ascending: false })
+
+      if (projectId) {
+        fallbackQuery = fallbackQuery.eq('id', projectId)
+      }
+
+      const fallback = await fallbackQuery
+      if (fallback.error) {
+        throw new Error(fallback.error.message ?? 'Kunde inte hämta EB-projekt.')
+      }
+      return (fallback.data ?? []) as EbProjectRow[]
+    }
     throw new Error(error.message ?? 'Kunde inte hämta EB-projekt.')
   }
 
@@ -2100,6 +2158,7 @@ export async function createEbProjectWithInitialSlb(
   const normalizedContractorAddress = normalizeText(input.contractorAddress)
   const normalizedContractorPostalCode = normalizeText(input.contractorPostalCode)
   const normalizedContractorCity = normalizeText(input.contractorCity)
+  const agreementItems = normalizeAgreementItems(input.agreementItems)
   let propertyId: string | null = null
   let inspectionId: string | null = null
   let projectId: string | null = null
@@ -2180,6 +2239,7 @@ export async function createEbProjectWithInitialSlb(
         contractor_address: normalizedContractorAddress,
         contractor_postal_code: normalizedContractorPostalCode,
         contractor_city: normalizedContractorCity,
+        agreement_items: agreementItems,
         status: 'active',
       })
       .select('id')
@@ -2257,6 +2317,7 @@ export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbPr
   const normalizedContractorPostalCode = normalizeText(input.contractorPostalCode)
   const normalizedContractorCity = normalizeText(input.contractorCity)
   const normalizedNotePrefix = normalizeText(input.notePrefix) ?? 'BES'
+  const agreementItems = normalizeAgreementItems(input.agreementItems)
 
   const { error } = await admin
     .from('eb_projects')
@@ -2284,6 +2345,7 @@ export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbPr
       contractor_address: normalizedContractorAddress,
       contractor_postal_code: normalizedContractorPostalCode,
       contractor_city: normalizedContractorCity,
+      agreement_items: agreementItems,
     })
     .eq('org_id', input.orgId)
     .eq('id', input.projectId)
@@ -3093,16 +3155,12 @@ function isHandoverDocument(document: EbInspectionDocument) {
 function ebInspectionDocumentReportRow(document: EbInspectionDocument) {
   if (isHandoverDocument(document)) {
     if (document.status === 'present') return `• ${document.title} överlämnas.`
-    if (document.status === 'missing') return `• ${document.title} överlämnas inte.`
     return null
   }
 
   if (document.status === 'present') {
     const date = document.documentDate ?? 'datum ej angivet'
     return `• ${document.title} Datum: ${date}`
-  }
-  if (document.status === 'missing') {
-    return `• ${document.title}: ej redovisat.`
   }
   return null
 }
@@ -3191,6 +3249,68 @@ function ebContractPartiesReportText(round: EbInspectionRound) {
   ])
 }
 
+function sentenceWithPeriod(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return trimmed
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`
+}
+
+function agreementReference(standardAgreement: string | null | undefined) {
+  const vocabulary = resolveEbAgreementVocabulary(standardAgreement)
+  return vocabulary.agreementLine.replace(/^Enligt\s+/i, '')
+}
+
+function ebAgreementChangeOrderLine(item: EbProjectAgreementItem) {
+  const title = normalizeText(item.title) ?? 'Bilaga till avtalet enligt formulär Ändring och tilläggsarbeten'
+  const dateText = item.documentDate ? ` undertecknat av parterna ${item.documentDate}` : ''
+  const noteText = item.note ? ` ${item.note}` : ''
+  return sentenceWithPeriod(`${title}${dateText}${noteText}`)
+}
+
+function ebAgreementOtherLine(item: EbProjectAgreementItem) {
+  const title = normalizeText(item.title) ?? 'Övrig handling eller överenskommelse'
+  const note = normalizeText(item.note)
+  const dateText = item.documentDate ? `, ${item.documentDate}` : ''
+  return `• ${sentenceWithPeriod([title, note].filter(Boolean).join(' - ') + dateText)}`
+}
+
+function ebAttachmentAgreementLine(attachment: EbProjectAttachment) {
+  const title = normalizeText(attachment.title) ?? normalizeText(attachment.fileName) ?? 'Handling'
+  const details = [
+    attachment.documentDate ? `datum ${attachment.documentDate}` : null,
+    attachment.documentNumber ? `nr/rev ${attachment.documentNumber}` : null,
+    attachment.littera ? `littera ${attachment.littera}` : null,
+    attachment.documentNote,
+  ].filter(Boolean)
+  return `• ${sentenceWithPeriod(details.length > 0 ? `${title} (${details.join(', ')})` : title)}`
+}
+
+function ebContractDocumentsReportText(round: EbInspectionRound, includedDocuments: EbProjectAttachment[]) {
+  const reportItems = round.project.agreementItems.filter((item) => item.includeInReport)
+  const changeOrders = reportItems.filter((item) => item.kind === 'change_order')
+  const otherAgreementItems = reportItems.filter((item) => item.kind === 'other')
+  const otherRows = [
+    ...otherAgreementItems.map(ebAgreementOtherLine),
+    ...includedDocuments.map(ebAttachmentAgreementLine),
+  ]
+
+  return [
+    `Arbetenas omfattning framgår av skriftligt avtal enligt ${agreementReference(round.project.standardAgreement)} undertecknat av parterna ${round.project.contractDate ?? 'datum ej angivet'}.`,
+    [
+      'Därutöver har skriftligt avtalats om ändringar och tilläggsarbeten enligt följande:',
+      changeOrders.length > 0
+        ? changeOrders.map(ebAgreementChangeOrderLine).join('\n')
+        : 'Inga ÄTA-handlingar är registrerade.',
+    ].join('\n'),
+    [
+      'I övrigt har för besiktningen följande handlingar och överenskommelser utgjort underlag:',
+      otherRows.length > 0
+        ? otherRows.join('\n')
+        : '• Inga övriga handlingar eller överenskommelser är registrerade.',
+    ].join('\n'),
+  ].join('\n\n')
+}
+
 function previousInspectionStatusLabel(value: EbPreviousInspectionStatus | null) {
   if (value === 'performed') return 'Utförd'
   if (value === 'not_performed') return 'Ej utförd'
@@ -3199,10 +3319,15 @@ function previousInspectionStatusLabel(value: EbPreviousInspectionStatus | null)
 }
 
 function ebPreviousInspectionsReportText(round: EbInspectionRound) {
-  return round.inspection.previousInspections
+  const rows = round.inspection.previousInspections.filter(
+    (row) => normalizeText(row.label) || row.status || row.date
+  )
+  if (rows.length === 0) return '-'
+
+  return rows
     .map((row) =>
       reportList([
-        row.label,
+        row.label || '-',
         previousInspectionStatusLabel(row.status),
         row.status === 'performed'
           ? row.date ?? 'Klicka här - ange datum'
@@ -3278,9 +3403,8 @@ function buildEbReportDraft(input: {
   const conflictOfInterestRelevant = round.inspection.inspectorAppointedBy === 'parties_jointly'
   const includedAttachments = attachments.filter((attachment) => attachment.includeInReport)
   const includedDocuments = includedAttachments.filter((attachment) => attachment.attachmentType === 'document')
-  const contractDocuments = includedDocuments.length > 0
-    ? includedDocuments.map(ebAttachmentReportRow).join('\n\n')
-    : ebStandardText('EB_REPORT_CONTRACT_DOCUMENTS_MISSING')
+  const contractDocuments = ebContractDocumentsReportText(round, includedDocuments)
+  const includedAgreementItems = round.project.agreementItems.filter((item) => item.includeInReport)
   const testingDocumentationText = ebTestingDocumentationReportText(inspectionDocuments)
   const hasReviewedDocuments = inspectionDocuments.some((document) => document.status === 'present')
   const hasDocumentRemarks = inspectionDocuments.some((document) => document.status !== 'na')
@@ -3412,10 +3536,12 @@ function buildEbReportDraft(input: {
     },
     {
       key: 'contract_documents',
-      title: 'Entreprenadhandlingar och andra överenskommelser',
+      title: 'Avtal, handlingar och andra överenskommelser',
       sbrPoint: '10',
       source: 'project',
-      status: includedDocuments.length > 0 ? 'complete' : 'draft',
+      status: round.project.contractDate || includedAgreementItems.length > 0 || includedDocuments.length > 0
+        ? 'complete'
+        : 'draft',
       isRelevant: true,
       text: contractDocuments,
       updatedAt: null,
@@ -3655,7 +3781,7 @@ function buildEbReportDraft(input: {
     updatedAt: storedDraft.updatedAt,
     sections: defaults.map((section) => {
       const existing = existingByKey.get(section.key)
-      if (section.key === 'scope' || section.key === 'contract_parties') {
+      if (section.key === 'scope' || section.key === 'contract_parties' || section.key === 'contract_documents') {
         return section
       }
       if (section.key === 'testing_documentation') {

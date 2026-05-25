@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, type ReactNode } from 'react'
-import type { EbProjectListItem } from '@/lib/eb/server'
+import { Plus, Trash2 } from 'lucide-react'
+import type { EbProjectAgreementItem, EbProjectAgreementItemKind, EbProjectListItem } from '@/lib/eb/server'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 
 export type EbProjectFormState = {
@@ -28,6 +29,7 @@ export type EbProjectFormState = {
   contractorAddress: string
   contractorPostalCode: string
   contractorCity: string
+  agreementItems: EbProjectAgreementItem[]
 }
 
 export const EMPTY_EB_PROJECT_FORM: EbProjectFormState = {
@@ -54,6 +56,7 @@ export const EMPTY_EB_PROJECT_FORM: EbProjectFormState = {
   contractorAddress: '',
   contractorPostalCode: '',
   contractorCity: '',
+  agreementItems: [],
 }
 
 const STANDARD_AGREEMENT_OPTIONS = [
@@ -65,6 +68,22 @@ const STANDARD_AGREEMENT_OPTIONS = [
 ]
 
 type EbProjectFormTab = 'object' | 'agreement' | 'contractors'
+
+function createAgreementItem(kind: EbProjectAgreementItemKind, sortOrder: number): EbProjectAgreementItem {
+  const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${kind}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+  return {
+    id,
+    kind,
+    title: '',
+    documentDate: null,
+    note: null,
+    includeInReport: true,
+    sortOrder,
+  }
+}
 
 export function buildEbProjectForm(project: EbProjectListItem): EbProjectFormState {
   return {
@@ -91,6 +110,7 @@ export function buildEbProjectForm(project: EbProjectListItem): EbProjectFormSta
     contractorAddress: project.contractorAddress ?? '',
     contractorPostalCode: project.contractorPostalCode ?? '',
     contractorCity: project.contractorCity ?? '',
+    agreementItems: project.agreementItems ?? [],
   }
 }
 
@@ -133,6 +153,106 @@ export default function EbProjectForm({
     { key: 'agreement', label: 'Avtal' },
     { key: 'contractors', label: vocabulary.contractorPluralLabel },
   ]
+  const changeOrders = form.agreementItems.filter((item) => item.kind === 'change_order')
+  const otherAgreements = form.agreementItems.filter((item) => item.kind === 'other')
+
+  const updateAgreementItem = <K extends keyof EbProjectAgreementItem>(
+    id: string,
+    field: K,
+    value: EbProjectAgreementItem[K]
+  ) => {
+    onChange(
+      'agreementItems',
+      form.agreementItems.map((item) => item.id === id ? { ...item, [field]: value } : item)
+    )
+  }
+
+  const addAgreementItem = (kind: EbProjectAgreementItemKind) => {
+    onChange('agreementItems', [
+      ...form.agreementItems,
+      createAgreementItem(kind, (form.agreementItems.length + 1) * 100),
+    ])
+  }
+
+  const removeAgreementItem = (id: string) => {
+    onChange('agreementItems', form.agreementItems.filter((item) => item.id !== id))
+  }
+
+  const renderAgreementRows = (
+    rows: EbProjectAgreementItem[],
+    kind: EbProjectAgreementItemKind,
+    emptyText: string
+  ) => (
+    <div className="space-y-3">
+      {rows.length === 0 ? (
+        <p className="rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-2 text-sm text-gray-600">
+          {emptyText}
+        </p>
+      ) : null}
+
+      {rows.map((item) => (
+        <div key={item.id} className="rounded-md border border-emerald-100 bg-white p-3">
+          <div className="grid gap-3 md:grid-cols-[1fr_150px_auto]">
+            <EbProjectFieldLabel label={kind === 'change_order' ? 'ÄTA-handling' : 'Handling/överenskommelse'}>
+              <input
+                value={item.title}
+                onChange={(event) => updateAgreementItem(item.id, 'title', event.target.value)}
+                placeholder={kind === 'change_order' ? 'Bilaga till avtalet enligt formulär Ändring och tilläggsarbeten' : 'Ange handling eller överenskommelse'}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
+            <EbProjectFieldLabel label="Datum">
+              <input
+                type="date"
+                value={item.documentDate ?? ''}
+                onChange={(event) => updateAgreementItem(item.id, 'documentDate', event.target.value || null)}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
+            <div className="flex items-end justify-end gap-2">
+              <label className="inline-flex h-10 items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-3 text-sm font-medium text-emerald-900">
+                <input
+                  type="checkbox"
+                  checked={item.includeInReport}
+                  onChange={(event) => updateAgreementItem(item.id, 'includeInReport', event.target.checked)}
+                  className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                />
+                Utlåtande
+              </label>
+              <button
+                type="button"
+                onClick={() => removeAgreementItem(item.id)}
+                aria-label="Ta bort rad"
+                title="Ta bort rad"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </div>
+          <div className="mt-3">
+            <EbProjectFieldLabel label="Kommentar">
+              <textarea
+                value={item.note ?? ''}
+                onChange={(event) => updateAgreementItem(item.id, 'note', event.target.value || null)}
+                rows={2}
+                className={`${ebProjectInputClassName()} resize-y leading-6`}
+              />
+            </EbProjectFieldLabel>
+          </div>
+        </div>
+      ))}
+
+      <button
+        type="button"
+        onClick={() => addAgreementItem(kind)}
+        className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
+      >
+        <Plus size={16} />
+        {kind === 'change_order' ? 'Lägg till ÄTA-handling' : 'Lägg till övrig handling'}
+      </button>
+    </div>
+  )
 
   return (
     <div className="space-y-5">
@@ -315,6 +435,36 @@ export default function EbProjectForm({
                 className={ebProjectInputClassName()}
               />
             </EbProjectFieldLabel>
+          </div>
+
+          <div className="mt-6 space-y-6">
+            <section>
+              <div className="mb-3">
+                <h4 className="text-sm font-semibold text-gray-950">ÄTA-handlingar</h4>
+                <p className="mt-1 text-xs text-gray-600">
+                  Lägg till ändringar och tilläggsarbeten som ska framgå i utlåtandet.
+                </p>
+              </div>
+              {renderAgreementRows(
+                changeOrders,
+                'change_order',
+                'Inga ÄTA-handlingar är tillagda.'
+              )}
+            </section>
+
+            <section>
+              <div className="mb-3">
+                <h4 className="text-sm font-semibold text-gray-950">Övriga handlingar och överenskommelser</h4>
+                <p className="mt-1 text-xs text-gray-600">
+                  Ange övriga skriftliga eller muntliga överenskommelser som varit underlag för besiktningen.
+                </p>
+              </div>
+              {renderAgreementRows(
+                otherAgreements,
+                'other',
+                'Inga övriga handlingar eller överenskommelser är tillagda.'
+              )}
+            </section>
           </div>
         </section>
       ) : null}

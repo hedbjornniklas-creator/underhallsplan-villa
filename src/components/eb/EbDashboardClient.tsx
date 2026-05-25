@@ -90,6 +90,10 @@ function CreateProjectDialog({
     setForm((current) => ({ ...current, [field]: value }))
   }
 
+  const updateProjectField = <K extends keyof EbProjectFormState>(field: K, value: EbProjectFormState[K]) => {
+    setForm((current) => ({ ...current, [field]: value }))
+  }
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (submitting) return
@@ -142,7 +146,7 @@ function CreateProjectDialog({
 
         <form onSubmit={(event) => void handleSubmit(event)} className="max-h-[calc(92vh-70px)] overflow-auto p-4">
           <div className="space-y-5">
-            <EbProjectForm form={form} onChange={updateField} />
+            <EbProjectForm form={form} onChange={updateProjectField} />
 
             <section>
               <h3 className="text-sm font-semibold text-gray-950">Första slutbesiktning</h3>

@@ -636,6 +636,10 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
             <SummonsReport key={section.key} report={report} section={section} />
           ) : section.key === 'previous_inspections_tests' ? (
             <PreviousInspectionsReport key={section.key} report={report} />
+          ) : section.key === 'contract_documents' ? (
+            <ReportSection key={section.key} title={section.title} headingMarker>
+              <ReportText text={section.text} />
+            </ReportSection>
           ) : (
             <ReportSection
               key={section.key}

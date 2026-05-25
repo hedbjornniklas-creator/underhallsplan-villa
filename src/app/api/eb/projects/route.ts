@@ -79,6 +79,7 @@ export async function POST(request: Request) {
       contractorAddress: toText(body.contractorAddress) || null,
       contractorPostalCode: toText(body.contractorPostalCode) || null,
       contractorCity: toText(body.contractorCity) || null,
+      agreementItems: Array.isArray(body.agreementItems) ? body.agreementItems : [],
       inspectionDate: toText(body.inspectionDate) || null,
       inspectionTime: toText(body.inspectionTime) || null,
       meetingPlace: toText(body.meetingPlace) || null,
