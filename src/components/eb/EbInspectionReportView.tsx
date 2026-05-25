@@ -280,6 +280,75 @@ function InspectorReport({
   )
 }
 
+function participantName(participant: EbInspectionReport['participants'][number]) {
+  return participant.personName?.trim() || participant.companyName?.trim() || '-'
+}
+
+function otherParticipantDescription(participant: EbInspectionReport['participants'][number]) {
+  return participant.personName?.trim()
+    ? detailLine([participant.personName, participant.companyName, participant.roleLabel])
+    : detailLine([participant.companyName, participant.roleLabel])
+}
+
+function participantLines(participants: EbInspectionReport['participants']) {
+  return participants.length > 0 ? participants.map(participantName).join('\n') : '-'
+}
+
+function otherParticipantLines(participants: EbInspectionReport['participants']) {
+  return participants.length > 0 ? participants.map(otherParticipantDescription).join('\n') : '-'
+}
+
+function isParticipantForParty(
+  participant: EbInspectionReport['participants'][number],
+  party: 'client' | 'contractor'
+) {
+  if (participant.representsPartyKey === party) return true
+  const role = participant.roleLabel?.toLocaleLowerCase('sv-SE') ?? ''
+  if (party === 'client') return role.includes('beställ') || role.includes('konsument')
+  return role.includes('hantverk') || role.includes('entrepren') || role.includes('näringsidk')
+}
+
+function contractorRepresentativeLabel(report: EbInspectionReport) {
+  const vocabulary = resolveEbAgreementVocabulary(report.project.standardAgreement)
+  const contractor = vocabulary.contractorShortLabel.toLocaleLowerCase('sv-SE')
+  return contractor.startsWith('hantverk') ? 'för hantverkaren:' : 'för entreprenören:'
+}
+
+function ParticipantsReport({ report }: { report: EbInspectionReport }) {
+  const presentParticipants = report.participants.filter((participant) => participant.attended)
+  const clientParticipants = presentParticipants.filter((participant) => isParticipantForParty(participant, 'client'))
+  const contractorParticipants = presentParticipants.filter((participant) =>
+    isParticipantForParty(participant, 'contractor')
+  )
+  const otherParticipants = presentParticipants.filter(
+    (participant) =>
+      !isParticipantForParty(participant, 'client') &&
+      !isParticipantForParty(participant, 'contractor')
+  )
+
+  return (
+    <ReportSection title="Närvarande" headingMarker>
+      <div className="text-[10.5pt] leading-[1.35] text-black">
+        <p className="mb-2">Vid besiktningen var parterna representerade av:</p>
+        <dl className="grid gap-y-1">
+          <div className="grid grid-cols-[62mm_1fr] gap-x-4">
+            <dt>för beställaren:</dt>
+            <dd className="whitespace-pre-wrap">{participantLines(clientParticipants)}</dd>
+          </div>
+          <div className="grid grid-cols-[62mm_1fr] gap-x-4">
+            <dt>{contractorRepresentativeLabel(report)}</dt>
+            <dd className="whitespace-pre-wrap">{participantLines(contractorParticipants)}</dd>
+          </div>
+          <div className="grid grid-cols-[62mm_1fr] gap-x-4">
+            <dt>Övriga närvarande:</dt>
+            <dd className="whitespace-pre-wrap">{otherParticipantLines(otherParticipants)}</dd>
+          </div>
+        </dl>
+      </div>
+    </ReportSection>
+  )
+}
+
 function ReportHeader({ report }: { report: EbInspectionReport }) {
   const propertyDesignation = report.project.propertyDesignation?.trim() || '-'
   const streetAndCity = detailLine([report.project.address, report.project.city])
@@ -500,6 +569,8 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
         {reportSections.map((section) => (
           section.key === 'inspectors' ? (
             <InspectorReport key={section.key} report={report} section={section} />
+          ) : section.key === 'participants' ? (
+            <ParticipantsReport key={section.key} report={report} />
           ) : (
             <ReportSection
               key={section.key}

@@ -169,6 +169,173 @@ function createEmptyParticipant(sortOrder: number): EditableParticipant {
   }
 }
 
+function participantPayload(participants: EditableParticipant[]) {
+  return participants.map((participant, index) => ({
+    id: participant.id,
+    roleLabel: participant.roleLabel,
+    companyName: participant.companyName,
+    personName: participant.personName,
+    email: participant.email,
+    phone: participant.phone,
+    receivesInvitation: participant.receivesInvitation,
+    attended: participant.attended,
+    receivesReport: participant.receivesReport,
+    representsPartyKey: participant.representsPartyKey,
+    canRepresentParty: participant.canRepresentParty,
+    sortOrder: participant.sortOrder || (index + 1) * 100,
+  }))
+}
+
+function ParticipantEditor({
+  project,
+  participants,
+  onAdd,
+  onRemove,
+  onChange,
+  title,
+}: {
+  project: EbProjectListItem
+  participants: EditableParticipant[]
+  onAdd: () => void
+  onRemove: (index: number) => void
+  onChange: <K extends keyof EditableParticipant>(
+    index: number,
+    field: K,
+    value: EditableParticipant[K]
+  ) => void
+  title: string
+}) {
+  const vocabulary = resolveEbAgreementVocabulary(project.standardAgreement)
+
+  return (
+    <section>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-950">{title}</h3>
+          <p className="mt-1 text-xs text-gray-600">
+            Kryssa i vilka som var närvarande, vilka som ska kallas och vilka som ska få utlåtandet.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+        >
+          <UserPlus size={16} />
+          Lägg till
+        </button>
+      </div>
+
+      <div className="mt-3 space-y-3">
+        {participants.map((participant, index) => (
+          <div
+            key={participant.localId}
+            className="rounded-lg border border-emerald-100 bg-emerald-50/25 p-3"
+          >
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input
+                value={participant.roleLabel ?? ''}
+                onChange={(event) => onChange(index, 'roleLabel', event.target.value)}
+                placeholder="Roll"
+                className={inputClassName()}
+              />
+              <input
+                value={participant.email ?? ''}
+                onChange={(event) => onChange(index, 'email', event.target.value)}
+                placeholder="epost@exempel.se"
+                className={inputClassName()}
+              />
+              <input
+                value={participant.companyName ?? ''}
+                onChange={(event) => onChange(index, 'companyName', event.target.value)}
+                placeholder="Företag"
+                className={inputClassName()}
+              />
+              <input
+                value={participant.personName ?? ''}
+                onChange={(event) => onChange(index, 'personName', event.target.value)}
+                placeholder="Namn"
+                className={inputClassName()}
+              />
+              <input
+                value={participant.phone ?? ''}
+                onChange={(event) => onChange(index, 'phone', event.target.value)}
+                placeholder="Telefon"
+                className={inputClassName()}
+              />
+              <select
+                value={participant.representsPartyKey ?? ''}
+                onChange={(event) =>
+                  onChange(
+                    index,
+                    'representsPartyKey',
+                    (event.target.value || null) as EditableParticipant['representsPartyKey']
+                  )
+                }
+                className={inputClassName()}
+              >
+                <option value="">Företräder inte part</option>
+                <option value="client">{vocabulary.clientShortLabel}</option>
+                <option value="contractor">{vocabulary.contractorShortLabel}</option>
+                <option value="other">Annan</option>
+              </select>
+              <div className="flex items-center justify-between gap-2">
+                <div className="grid gap-2 text-sm font-medium text-gray-700">
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={participant.receivesInvitation}
+                      onChange={(event) => onChange(index, 'receivesInvitation', event.target.checked)}
+                      className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                    />
+                    Kallelse
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={participant.attended}
+                      onChange={(event) => onChange(index, 'attended', event.target.checked)}
+                      className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                    />
+                    Närvarande
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={participant.receivesReport}
+                      onChange={(event) => onChange(index, 'receivesReport', event.target.checked)}
+                      className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                    />
+                    Utlåtande
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={participant.canRepresentParty}
+                      onChange={(event) => onChange(index, 'canRepresentParty', event.target.checked)}
+                      className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                    />
+                    För talan
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onRemove(index)}
+                  aria-label="Ta bort deltagare"
+                  title="Ta bort deltagare"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function buildInspectionDetailsForm(inspection: EbInspectionSummary): InspectionDetailsFormState {
   return {
     inspectionDate: inspection.date ?? '',
@@ -410,13 +577,59 @@ function InspectionDetailsDialog({
 }) {
   const [form, setForm] = useState<InspectionDetailsFormState | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [participantsLoading, setParticipantsLoading] = useState(false)
+  const [participantsLoaded, setParticipantsLoaded] = useState(false)
+  const [invitationSubject, setInvitationSubject] = useState('')
+  const [invitationBody, setInvitationBody] = useState('')
+  const [participants, setParticipants] = useState<EditableParticipant[]>([])
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open || !inspection) return
+    let cancelled = false
+
     setForm(buildInspectionDetailsForm(inspection))
+    setParticipants([])
+    setParticipantsLoaded(false)
+    setInvitationSubject('')
+    setInvitationBody('')
     setError(null)
-  }, [inspection, open])
+
+    const loadParticipants = async () => {
+      try {
+        setParticipantsLoading(true)
+        const response = await fetch(
+          `/api/eb/projects/${project.id}/inspections/${inspection.inspectionId}/invitation`
+        )
+        const payload = (await response.json().catch(() => ({}))) as InvitationResponse
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Kunde inte hämta närvarande.')
+        }
+
+        if (cancelled) return
+
+        setInvitationSubject(payload.subject ?? '')
+        setInvitationBody(payload.body ?? '')
+        setParticipants((payload.participants ?? []).map(toLocalParticipant))
+        setParticipantsLoaded(true)
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta närvarande.')
+        }
+      } finally {
+        if (!cancelled) {
+          setParticipantsLoading(false)
+        }
+      }
+    }
+
+    void loadParticipants()
+
+    return () => {
+      cancelled = true
+    }
+  }, [inspection, open, project.id])
 
   if (!open || !inspection || !form) return null
 
@@ -425,6 +638,29 @@ function InspectionDetailsDialog({
     value: InspectionDetailsFormState[K]
   ) => {
     setForm((current) => (current ? { ...current, [field]: value } : current))
+  }
+
+  const updateParticipant = <K extends keyof EditableParticipant>(
+    index: number,
+    field: K,
+    value: EditableParticipant[K]
+  ) => {
+    setParticipants((current) =>
+      current.map((participant, participantIndex) =>
+        participantIndex === index ? { ...participant, [field]: value } : participant
+      )
+    )
+  }
+
+  const addParticipant = () => {
+    setParticipants((current) => [
+      ...current,
+      createEmptyParticipant((current.length + 1) * 100),
+    ])
+  }
+
+  const removeParticipant = (index: number) => {
+    setParticipants((current) => current.filter((_, participantIndex) => participantIndex !== index))
   }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -451,6 +687,26 @@ function InspectionDetailsDialog({
 
       if (!response.ok || !payload.project) {
         throw new Error(payload.error ?? 'Kunde inte spara besiktningsuppgifter.')
+      }
+
+      if (participantsLoaded) {
+        const participantsResponse = await fetch(
+          `/api/eb/projects/${project.id}/inspections/${inspection.inspectionId}/invitation`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              subject: invitationSubject,
+              body: invitationBody,
+              participants: participantPayload(participants),
+            }),
+          }
+        )
+        const participantsPayload = (await participantsResponse.json().catch(() => ({}))) as InvitationResponse
+
+        if (!participantsResponse.ok) {
+          throw new Error(participantsPayload.error ?? 'Kunde inte spara närvarande och sändlista.')
+        }
       }
 
       onUpdated(payload.project)
@@ -683,6 +939,24 @@ function InspectionDetailsDialog({
             </section>
           </div>
 
+          <div className="mt-5 border-t border-emerald-100 pt-4">
+            {participantsLoading ? (
+              <div className="flex items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/50 px-3 py-3 text-sm text-gray-600">
+                <Loader2 size={16} className="animate-spin text-emerald-700" />
+                Hämtar närvarande och sändlista...
+              </div>
+            ) : (
+              <ParticipantEditor
+                project={project}
+                participants={participants}
+                onAdd={addParticipant}
+                onRemove={removeParticipant}
+                onChange={updateParticipant}
+                title="Närvarande och sändlista"
+              />
+            )}
+          </div>
+
           {error ? (
             <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
               {error}
@@ -700,7 +974,7 @@ function InspectionDetailsDialog({
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || participantsLoading}
               className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
             >
               {submitting ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={16} />}
@@ -901,22 +1175,6 @@ function InvitationDialog({
     setParticipants((current) => current.filter((_, participantIndex) => participantIndex !== index))
   }
 
-  const participantPayload = () =>
-    participants.map((participant, index) => ({
-      id: participant.id,
-      roleLabel: participant.roleLabel,
-      companyName: participant.companyName,
-      personName: participant.personName,
-      email: participant.email,
-      phone: participant.phone,
-      receivesInvitation: participant.receivesInvitation,
-      attended: participant.attended,
-      receivesReport: participant.receivesReport,
-      representsPartyKey: participant.representsPartyKey,
-      canRepresentParty: participant.canRepresentParty,
-      sortOrder: participant.sortOrder || (index + 1) * 100,
-    }))
-
   const handleSave = async () => {
     if (sending) return
 
@@ -931,7 +1189,7 @@ function InvitationDialog({
           body: JSON.stringify({
             subject,
             body,
-            participants: participantPayload(),
+            participants: participantPayload(participants),
           }),
         }
       )
@@ -966,7 +1224,7 @@ function InvitationDialog({
           body: JSON.stringify({
             subject,
             body,
-            participants: participantPayload(),
+            participants: participantPayload(participants),
           }),
         }
       )
@@ -1034,130 +1292,14 @@ function InvitationDialog({
                 )}
               </section>
 
-              <section>
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-gray-950">Mottagare</h3>
-                  <button
-                    type="button"
-                    onClick={addParticipant}
-                    className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-                  >
-                    <UserPlus size={16} />
-                    Lägg till
-                  </button>
-                </div>
-
-                <div className="mt-3 space-y-3">
-                  {participants.map((participant, index) => (
-                    <div
-                      key={participant.localId}
-                      className="rounded-lg border border-emerald-100 bg-emerald-50/25 p-3"
-                    >
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <input
-                          value={participant.roleLabel ?? ''}
-                          onChange={(event) => updateParticipant(index, 'roleLabel', event.target.value)}
-                          placeholder="Roll"
-                          className={inputClassName()}
-                        />
-                        <input
-                          value={participant.email ?? ''}
-                          onChange={(event) => updateParticipant(index, 'email', event.target.value)}
-                          placeholder="epost@exempel.se"
-                          className={inputClassName()}
-                        />
-                        <input
-                          value={participant.companyName ?? ''}
-                          onChange={(event) => updateParticipant(index, 'companyName', event.target.value)}
-                          placeholder="Företag"
-                          className={inputClassName()}
-                        />
-                        <input
-                          value={participant.personName ?? ''}
-                          onChange={(event) => updateParticipant(index, 'personName', event.target.value)}
-                          placeholder="Namn"
-                          className={inputClassName()}
-                        />
-                        <input
-                          value={participant.phone ?? ''}
-                          onChange={(event) => updateParticipant(index, 'phone', event.target.value)}
-                          placeholder="Telefon"
-                          className={inputClassName()}
-                        />
-                        <select
-                          value={participant.representsPartyKey ?? ''}
-                          onChange={(event) =>
-                            updateParticipant(
-                              index,
-                              'representsPartyKey',
-                              (event.target.value || null) as EditableParticipant['representsPartyKey']
-                            )
-                          }
-                          className={inputClassName()}
-                        >
-                          <option value="">Företräder inte part</option>
-                          <option value="client">Beställare</option>
-                          <option value="contractor">Entreprenör</option>
-                          <option value="other">Annan</option>
-                        </select>
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="grid gap-2 text-sm font-medium text-gray-700">
-                            <label className="inline-flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={participant.receivesInvitation}
-                                onChange={(event) =>
-                                  updateParticipant(index, 'receivesInvitation', event.target.checked)
-                                }
-                                className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
-                              />
-                              Kallelse
-                            </label>
-                            <label className="inline-flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={participant.attended}
-                                onChange={(event) => updateParticipant(index, 'attended', event.target.checked)}
-                                className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
-                              />
-                              Närvarande
-                            </label>
-                            <label className="inline-flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={participant.receivesReport}
-                                onChange={(event) => updateParticipant(index, 'receivesReport', event.target.checked)}
-                                className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
-                              />
-                              Utlåtande
-                            </label>
-                            <label className="inline-flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={participant.canRepresentParty}
-                                onChange={(event) =>
-                                  updateParticipant(index, 'canRepresentParty', event.target.checked)
-                                }
-                                className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
-                              />
-                              För talan
-                            </label>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeParticipant(index)}
-                            aria-label="Ta bort mottagare"
-                            title="Ta bort mottagare"
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
+              <ParticipantEditor
+                project={project}
+                participants={participants}
+                onAdd={addParticipant}
+                onRemove={removeParticipant}
+                onChange={updateParticipant}
+                title="Mottagare och närvarande"
+              />
             </div>
           )}
 

@@ -199,6 +199,8 @@ Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de s
 
 Layoutregel för `Besiktningsman`: sektionen ska visa rubriken `Besiktningsman` och en rad i formatet `Besiktningsman: [namn] [utsedd av ...]`. Biträdande besiktningsmän ska inte skrivas ut i denna första version.
 
+Layoutregel för `Närvarande`: uppgifterna fylls i under `Uppgifter` på besiktningen. Sektionen ska visa rubriken `Närvarande`, texten `Vid besiktningen var parterna representerade av:` och tre rader: `för beställaren:`, `för hantverkaren:`/`för entreprenören:` samt `Övriga närvarande:`. Övriga närvarande ska visa namn, företag och roll i projektet när uppgifterna finns.
+
 ## Kvar att göra för mer strukturerat stöd
 
 Detta är inte blockerande för att kunna fylla i ett komplett utlåtande, men bör prioriteras för bättre styrning:

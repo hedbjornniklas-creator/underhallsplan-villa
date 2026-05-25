@@ -35,8 +35,8 @@ const sourceLabels: Record<EbReportDraftSection['source'], string> = {
 
 const sourceHints: Record<EbReportDraftSection['source'], string> = {
   project: 'Grunduppgifter fylls i via Redigera entreprenad på entreprenadsidan.',
-  inspection: 'Besiktningsuppgifter fylls i panelen Utlåtandeuppgifter eller i kallelsen.',
-  participants: 'Parter, mottagare och närvarande hanteras i kallelsedialogen.',
+  inspection: 'Besiktningsuppgifter fylls i Uppgifter på besiktningen.',
+  participants: 'Parter, mottagare och närvarande hanteras i Uppgifter på besiktningen.',
   notes: 'Noteringar, beteckningar och bilder hanteras i Granska eller mobil runda.',
   standard_text: 'Texten är standardtext för utlåtandet och justeras här innan utskrift.',
   manual: 'Denna punkt fylls i här i utlåtandeutkastet.',
