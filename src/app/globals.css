@@ -72,6 +72,8 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     height: 297mm !important;
     min-height: 297mm !important;
     padding-top: 20mm !important;
+    padding-right: 14mm !important;
+    padding-left: 14mm !important;
     page-break-after: always;
     overflow: hidden;
     break-inside: avoid;

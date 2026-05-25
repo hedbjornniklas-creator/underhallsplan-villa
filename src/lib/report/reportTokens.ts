@@ -1,4 +1,4 @@
-export const FONT_FAMILY = 'Calibri, sans-serif'
+export const FONT_FAMILY = 'Arial, Helvetica, sans-serif'
 export const ACCENT_COLOR = '#5B9BD5'
 export const TEXT_COLOR = '#000000'
 export const BASE_FONT_PT = 11
