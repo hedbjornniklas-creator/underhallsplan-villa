@@ -42,6 +42,15 @@ const sourceHints: Record<EbReportDraftSection['source'], string> = {
   manual: 'Denna punkt fylls i här i utlåtandeutkastet.',
 }
 
+const INVITATION_METHOD_OPTIONS = [
+  'E-post',
+  'Brev',
+  'Telefon',
+  'SMS',
+  'Muntligen',
+  'Digitalt möte',
+]
+
 type StructuredReportFormState = {
   inspectorAppointedBy: string
   invitationMethod: string
@@ -113,6 +122,56 @@ function fieldLabel(label: string, children: ReactNode) {
       <span className="block text-xs font-semibold text-gray-700">{label}</span>
       <span className="mt-1 block">{children}</span>
     </label>
+  )
+}
+
+function invitationMethodOption(value: string) {
+  const normalized = value.trim().toLocaleLowerCase('sv-SE')
+  return INVITATION_METHOD_OPTIONS.find((option) => option.toLocaleLowerCase('sv-SE') === normalized)
+}
+
+function InvitationMethodField({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (value: string) => void
+}) {
+  const [customOpen, setCustomOpen] = useState(false)
+  const selectedOption = value ? invitationMethodOption(value) : null
+  const isCustom = customOpen || Boolean(value && !selectedOption)
+
+  return (
+    <div className="space-y-2">
+      <select
+        value={isCustom ? '__custom__' : selectedOption ?? ''}
+        onChange={(event) => {
+          if (event.target.value === '__custom__') {
+            setCustomOpen(true)
+            return
+          }
+          setCustomOpen(false)
+          onChange(event.target.value)
+        }}
+        className={fieldClassName()}
+      >
+        <option value="">Ej satt</option>
+        {INVITATION_METHOD_OPTIONS.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+        <option value="__custom__">Annat</option>
+      </select>
+      {isCustom ? (
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Ange kallelsemetod"
+          className={fieldClassName()}
+        />
+      ) : null}
+    </div>
   )
 }
 
@@ -327,11 +386,9 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
             )}
             {fieldLabel(
               'Kallelsemetod',
-              <input
+              <InvitationMethodField
                 value={structuredForm.invitationMethod}
-                onChange={(event) => updateStructuredField('invitationMethod', event.target.value)}
-                placeholder="E-post"
-                className={fieldClassName()}
+                onChange={(value) => updateStructuredField('invitationMethod', value)}
               />
             )}
             {fieldLabel(

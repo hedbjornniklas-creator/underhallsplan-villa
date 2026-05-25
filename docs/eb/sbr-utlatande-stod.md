@@ -201,6 +201,8 @@ Layoutregel för `Besiktningsman`: sektionen ska visa rubriken `Besiktningsman` 
 
 Layoutregel för `Närvarande`: uppgifterna fylls i under `Uppgifter` på besiktningen. Sektionen ska visa rubriken `Närvarande`, texten `Vid besiktningen var parterna representerade av:` och tre rader: `för beställaren:`, `för hantverkaren:`/`för entreprenören:` samt `Övriga närvarande:`. Övriga närvarande ska visa namn, företag och roll i projektet när uppgifterna finns.
 
+Layoutregel för `Sättet för kallelse till besiktningen`: sektionen ska visa rubriken med markering och meningen `Besiktningsmannen har [kallelsedatum] kallat parterna per [kallelsemetod].`. Kallelsedatum och metod fylls i under `Uppgifter` på besiktningen. Kallelsemetod ska kunna väljas från vanliga alternativ, med möjlighet att ange egen metod.
+
 ## Kvar att göra för mer strukturerat stöd
 
 Detta är inte blockerande för att kunna fylla i ett komplett utlåtande, men bör prioriteras för bättre styrning:

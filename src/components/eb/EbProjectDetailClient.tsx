@@ -108,6 +108,15 @@ const VARIANT_OPTIONS: Array<{ value: EbInspectionVariant; label: string }> = [
   { value: 'SAB', label: 'Särskild besiktning' },
 ]
 
+const INVITATION_METHOD_OPTIONS = [
+  'E-post',
+  'Brev',
+  'Telefon',
+  'SMS',
+  'Muntligen',
+  'Digitalt möte',
+]
+
 function formatDate(value: string | null) {
   if (!value) return 'Ej satt'
   const parsed = new Date(value)
@@ -138,6 +147,58 @@ function fieldLabel(label: string, children: ReactNode) {
       <span className="block text-xs font-semibold text-gray-700">{label}</span>
       <span className="mt-1 block">{children}</span>
     </label>
+  )
+}
+
+function invitationMethodOption(value: string) {
+  const normalized = value.trim().toLocaleLowerCase('sv-SE')
+  return INVITATION_METHOD_OPTIONS.find((option) => option.toLocaleLowerCase('sv-SE') === normalized)
+}
+
+function InvitationMethodField({
+  value,
+  onChange,
+  className,
+}: {
+  value: string
+  onChange: (value: string) => void
+  className: string
+}) {
+  const [customOpen, setCustomOpen] = useState(false)
+  const selectedOption = value ? invitationMethodOption(value) : null
+  const isCustom = customOpen || Boolean(value && !selectedOption)
+
+  return (
+    <div className="space-y-2">
+      <select
+        value={isCustom ? '__custom__' : selectedOption ?? ''}
+        onChange={(event) => {
+          if (event.target.value === '__custom__') {
+            setCustomOpen(true)
+            return
+          }
+          setCustomOpen(false)
+          onChange(event.target.value)
+        }}
+        className={className}
+      >
+        <option value="">Ej satt</option>
+        {INVITATION_METHOD_OPTIONS.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+        <option value="__custom__">Annat</option>
+      </select>
+      {isCustom ? (
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Ange kallelsemetod"
+          className={className}
+        />
+      ) : null}
+    </div>
   )
 }
 
@@ -772,10 +833,9 @@ function InspectionDetailsDialog({
                 )}
                 {fieldLabel(
                   'Kallelsemetod',
-                  <input
+                  <InvitationMethodField
                     value={form.invitationMethod}
-                    onChange={(event) => updateField('invitationMethod', event.target.value)}
-                    placeholder="E-post"
+                    onChange={(value) => updateField('invitationMethod', value)}
                     className={inputClassName()}
                   />
                 )}

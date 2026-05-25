@@ -349,6 +349,39 @@ function ParticipantsReport({ report }: { report: EbInspectionReport }) {
   )
 }
 
+function summonsMethod(report: EbInspectionReport, sectionText: string) {
+  const method = report.inspection.invitationMethod?.trim()
+  if (method) return method.toLocaleLowerCase('sv-SE')
+
+  const lowerText = sectionText.toLocaleLowerCase('sv-SE')
+  if (lowerText.includes('e-post') || lowerText.includes('epost') || lowerText.includes('e-mail')) return 'e-post'
+  return 'e-post'
+}
+
+function summonsDate(report: EbInspectionReport, sectionText: string) {
+  const date = report.inspection.invitationDate?.trim() || report.inspection.invitationSentAt?.trim()
+  if (date) return date.slice(0, 10)
+
+  const match = sectionText.match(/\b\d{4}-\d{2}-\d{2}\b/)
+  return match?.[0] ?? 'Klicka här - ange datum'
+}
+
+function SummonsReport({
+  report,
+  section,
+}: {
+  report: EbInspectionReport
+  section: EbInspectionReport['reportDraft']['sections'][number]
+}) {
+  return (
+    <ReportSection title="Sättet för kallelse till besiktningen" headingMarker>
+      <p className="text-[10.5pt] leading-[1.35] text-black">
+        Besiktningsmannen har {summonsDate(report, section.text)} kallat parterna per {summonsMethod(report, section.text)}.
+      </p>
+    </ReportSection>
+  )
+}
+
 function ReportHeader({ report }: { report: EbInspectionReport }) {
   const propertyDesignation = report.project.propertyDesignation?.trim() || '-'
   const streetAndCity = detailLine([report.project.address, report.project.city])
@@ -571,6 +604,8 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
             <InspectorReport key={section.key} report={report} section={section} />
           ) : section.key === 'participants' ? (
             <ParticipantsReport key={section.key} report={report} />
+          ) : section.key === 'summons' ? (
+            <SummonsReport key={section.key} report={report} section={section} />
           ) : (
             <ReportSection
               key={section.key}
