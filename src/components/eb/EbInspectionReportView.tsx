@@ -575,7 +575,13 @@ function deductionSummaryAmountText(report: EbInspectionReport) {
   return amountValues.map(deductionAmountText).join(', ')
 }
 
-function DeductionNotesList({ report }: { report: EbInspectionReport }) {
+function DeductionNotesList({
+  report,
+  displayNumberByNoteId,
+}: {
+  report: EbInspectionReport
+  displayNumberByNoteId: Map<string, number>
+}) {
   const notes = deductionNotes(report)
   if (notes.length === 0) return null
 
@@ -590,7 +596,7 @@ function DeductionNotesList({ report }: { report: EbInspectionReport }) {
       <dl className="grid gap-y-1">
         {notes.map((note) => (
           <div key={note.id} className="grid grid-cols-[34mm_1fr] gap-x-4">
-            <dt>{`${report.project.notePrefix} ${note.noteNumber ?? '-'}`}</dt>
+            <dt>{`${report.project.notePrefix} ${displayNumberByNoteId.get(note.id) ?? '-'}`}</dt>
             <dd>{deductionAmountText(note.deductionAmount)}</dd>
           </div>
         ))}
@@ -750,8 +756,10 @@ function defectNoErrorPartsPolicyText(report: EbInspectionReport) {
 
 function DefectsConditionsReport({
   report,
+  displayNumberByNoteId,
 }: {
   report: EbInspectionReport
+  displayNumberByNoteId: Map<string, number>
 }) {
   const markers = usedReportMarkers(report)
 
@@ -771,7 +779,9 @@ function DefectsConditionsReport({
             <div key={marker.key} className="grid grid-cols-[22mm_1fr] gap-x-4">
               <dt className="pl-[16mm] font-bold">{marker.key}</dt>
               <dd>{markerExplanation(marker)}</dd>
-              {marker.key === 'N' ? <DeductionNotesList report={report} /> : null}
+              {marker.key === 'N' ? (
+                <DeductionNotesList report={report} displayNumberByNoteId={displayNumberByNoteId} />
+              ) : null}
             </div>
           ))}
 
@@ -876,12 +886,12 @@ function ReportHeader({ report }: { report: EbInspectionReport }) {
   )
 }
 
-function noteReference(report: EbInspectionReport, note: EbNote, index: number) {
-  return `${report.project.notePrefix} ${note.noteNumber ?? index + 1}`
+function noteReference(report: EbInspectionReport, index: number) {
+  return `${report.project.notePrefix} ${index + 1}`
 }
 
-function noteNumber(note: EbNote, index: number) {
-  return String(note.noteNumber ?? index + 1)
+function noteNumber(index: number) {
+  return String(index + 1)
 }
 
 function NoteTable({
@@ -911,7 +921,7 @@ function NoteTable({
               {note.markerKey || ''}
             </td>
             <td className="align-top border border-[#8db1d7] px-1.5 py-1.5">
-              {noteNumber(note, index)}
+              {noteNumber(index)}
             </td>
             <td className="align-top border border-[#8db1d7] px-1.5 py-1.5">
               {detailLine([note.room, note.location, note.placeDetail]) !== '-'
@@ -955,7 +965,7 @@ function PhotoAppendix({
         {notesWithImages.map(({ note, index, images }) => (
           <article key={note.id} className="break-inside-avoid">
             <p className="mb-2 text-[10pt] font-bold text-black">
-              {noteReference(report, note, index)} {note.markerKey ? `(${note.markerKey})` : ''}
+              {noteReference(report, index)} {note.markerKey ? `(${note.markerKey})` : ''}
             </p>
             <div className="grid grid-cols-2 gap-4">
               {images.map((image) => (
@@ -980,6 +990,7 @@ function PhotoAppendix({
 
 export default function EbInspectionReportView({ report }: EbInspectionReportViewProps) {
   const notes = sortNotes(report.notes)
+  const displayNumberByNoteId = new Map(notes.map((note, index) => [note.id, index + 1]))
   const printableSections = report.reportDraft.sections.filter(
     (section) =>
       section.isRelevant &&
@@ -1058,7 +1069,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
             <TestingDocumentationReport key={section.key} report={report} section={section} />
           ) : section.key === 'defects_appendices' ? (
             <div key={section.key}>
-              <DefectsConditionsReport report={report} />
+              <DefectsConditionsReport report={report} displayNumberByNoteId={displayNumberByNoteId} />
               <section className="eb-report-section mt-4">
                 <NoteTable notes={notes} />
               </section>
