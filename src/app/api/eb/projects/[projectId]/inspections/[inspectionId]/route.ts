@@ -5,6 +5,7 @@ import {
   updateEbInspection,
   type EbApprovalStatus,
   type EbInspectorAppointedBy,
+  type EbPreviousInspectionItem,
 } from '@/lib/eb/server'
 
 export const runtime = 'nodejs'
@@ -24,6 +25,27 @@ function toOptionalBoolean(value: unknown) {
 
 function toOptionalNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function toPreviousInspections(value: unknown): EbPreviousInspectionItem[] | null {
+  if (!Array.isArray(value)) return null
+
+  return value
+    .map((row) => {
+      if (!row || typeof row !== 'object') return null
+      const record = row as Record<string, unknown>
+      const key = toText(record.key)
+      const label = toText(record.label)
+      if (!key || !label) return null
+
+      return {
+        key,
+        label,
+        status: (toText(record.status) || null) as EbPreviousInspectionItem['status'],
+        date: toText(record.date) || null,
+      }
+    })
+    .filter((row): row is EbPreviousInspectionItem => Boolean(row))
 }
 
 async function requireEbContext() {
@@ -80,6 +102,7 @@ export async function PATCH(
       afterInspectionDueDate: toText(body.afterInspectionDueDate) || null,
       afterInspectionNoticeInReport: body.afterInspectionNoticeInReport === true,
       reportDistributionDate: toText(body.reportDistributionDate) || null,
+      previousInspections: toPreviousInspections(body.previousInspections),
     })
 
     return NextResponse.json({ project })

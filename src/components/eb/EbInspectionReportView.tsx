@@ -5,7 +5,7 @@
 import Link from 'next/link'
 import { ArrowLeft, ClipboardCheck, FileText, Printer } from 'lucide-react'
 import type { ReactNode } from 'react'
-import type { EbInspectionReport, EbNote, EbNoteImage } from '@/lib/eb/server'
+import type { EbInspectionReport, EbNote, EbNoteImage, EbPreviousInspectionItem } from '@/lib/eb/server'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 
 type EbInspectionReportViewProps = {
@@ -382,6 +382,33 @@ function SummonsReport({
   )
 }
 
+function previousInspectionStatusLabel(value: EbPreviousInspectionItem['status']) {
+  if (value === 'performed') return 'Utförd'
+  if (value === 'not_performed') return 'Ej utförd'
+  if (value === 'not_applicable') return 'Ej aktuell'
+  return 'Ej angivet'
+}
+
+function PreviousInspectionsReport({ report }: { report: EbInspectionReport }) {
+  return (
+    <ReportSection title="Tidigare besiktningar">
+      <dl className="grid gap-y-1 text-[10.5pt] leading-[1.35] text-black">
+        {report.inspection.previousInspections.map((row) => (
+          <div key={row.key} className="grid grid-cols-[62mm_20mm_1fr] gap-x-4">
+            <dt>{row.label}</dt>
+            <dd>{previousInspectionStatusLabel(row.status)}</dd>
+            <dd>
+              {row.status === 'performed'
+                ? row.date ?? 'Klicka här - ange datum.'
+                : row.date ?? ''}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </ReportSection>
+  )
+}
+
 function ReportHeader({ report }: { report: EbInspectionReport }) {
   const propertyDesignation = report.project.propertyDesignation?.trim() || '-'
   const streetAndCity = detailLine([report.project.address, report.project.city])
@@ -606,6 +633,8 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
             <ParticipantsReport key={section.key} report={report} />
           ) : section.key === 'summons' ? (
             <SummonsReport key={section.key} report={report} section={section} />
+          ) : section.key === 'previous_inspections_tests' ? (
+            <PreviousInspectionsReport key={section.key} report={report} />
           ) : (
             <ReportSection
               key={section.key}

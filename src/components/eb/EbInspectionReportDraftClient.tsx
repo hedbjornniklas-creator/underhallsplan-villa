@@ -4,7 +4,12 @@ import Link from 'next/link'
 import { ArrowLeft, Check, FileText, Save } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useMemo, useState, useTransition } from 'react'
-import type { EbInspectionReport, EbReportDraftSection, EbReportSectionStatus } from '@/lib/eb/server'
+import type {
+  EbInspectionReport,
+  EbPreviousInspectionItem,
+  EbReportDraftSection,
+  EbReportSectionStatus,
+} from '@/lib/eb/server'
 
 type Props = {
   initialReport: EbInspectionReport
@@ -51,6 +56,15 @@ const INVITATION_METHOD_OPTIONS = [
   'Digitalt möte',
 ]
 
+const PREVIOUS_INSPECTION_STATUS_OPTIONS: Array<{
+  value: Exclude<EbPreviousInspectionItem['status'], null>
+  label: string
+}> = [
+  { value: 'performed', label: 'Utförd' },
+  { value: 'not_performed', label: 'Ej utförd' },
+  { value: 'not_applicable', label: 'Ej aktuell' },
+]
+
 type StructuredReportFormState = {
   inspectorAppointedBy: string
   invitationMethod: string
@@ -65,6 +79,7 @@ type StructuredReportFormState = {
   afterInspectionDueDate: string
   afterInspectionNoticeInReport: boolean
   reportDistributionDate: string
+  previousInspections: EbPreviousInspectionItem[]
 }
 
 type InspectionUpdateResponse = {
@@ -103,6 +118,7 @@ function buildStructuredReportForm(
     afterInspectionDueDate: inspection.afterInspectionDueDate ?? '',
     afterInspectionNoticeInReport: inspection.afterInspectionNoticeInReport,
     reportDistributionDate: inspection.reportDistributionDate ?? todayInputValue(),
+    previousInspections: inspection.previousInspections,
   }
 }
 
@@ -171,6 +187,59 @@ function InvitationMethodField({
           className={fieldClassName()}
         />
       ) : null}
+    </div>
+  )
+}
+
+function PreviousInspectionsEditor({
+  rows,
+  onChange,
+}: {
+  rows: EbPreviousInspectionItem[]
+  onChange: (rows: EbPreviousInspectionItem[]) => void
+}) {
+  const updateRow = <K extends keyof EbPreviousInspectionItem>(
+    index: number,
+    field: K,
+    value: EbPreviousInspectionItem[K]
+  ) => {
+    onChange(rows.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row))
+  }
+
+  return (
+    <div className="md:col-span-2 xl:col-span-4">
+      <h3 className="text-sm font-semibold text-gray-950">Tidigare besiktningar</h3>
+      <div className="mt-2 grid gap-2">
+        {rows.map((row, index) => (
+          <div key={row.key} className="grid gap-2 rounded-md border border-gray-200 bg-gray-50 p-2 md:grid-cols-[1fr_9rem_10rem]">
+            <input
+              value={row.label}
+              onChange={(event) => updateRow(index, 'label', event.target.value)}
+              className={fieldClassName()}
+            />
+            <select
+              value={row.status ?? ''}
+              onChange={(event) =>
+                updateRow(index, 'status', (event.target.value || null) as EbPreviousInspectionItem['status'])
+              }
+              className={fieldClassName()}
+            >
+              <option value="">Ej satt</option>
+              {PREVIOUS_INSPECTION_STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <input
+              type="date"
+              value={row.date ?? ''}
+              onChange={(event) => updateRow(index, 'date', event.target.value || null)}
+              className={fieldClassName()}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -400,6 +469,10 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                 className={fieldClassName()}
               />
             )}
+            <PreviousInspectionsEditor
+              rows={structuredForm.previousInspections}
+              onChange={(rows) => updateStructuredField('previousInspections', rows)}
+            />
             <div className="md:col-span-2 xl:col-span-4">
               {fieldLabel(
                 'Beslutets motivering',

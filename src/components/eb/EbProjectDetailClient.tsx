@@ -31,6 +31,7 @@ import type {
   EbInspectionVariant,
   EbInvitationContext,
   EbInvitationParticipant,
+  EbPreviousInspectionItem,
   EbProjectListItem,
 } from '@/lib/eb/server'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
@@ -98,6 +99,7 @@ type InspectionDetailsFormState = {
   afterInspectionDueDate: string
   afterInspectionNoticeInReport: boolean
   reportDistributionDate: string
+  previousInspections: EbPreviousInspectionItem[]
 }
 
 const VARIANT_OPTIONS: Array<{ value: EbInspectionVariant; label: string }> = [
@@ -115,6 +117,15 @@ const INVITATION_METHOD_OPTIONS = [
   'SMS',
   'Muntligen',
   'Digitalt möte',
+]
+
+const PREVIOUS_INSPECTION_STATUS_OPTIONS: Array<{
+  value: Exclude<EbPreviousInspectionItem['status'], null>
+  label: string
+}> = [
+  { value: 'performed', label: 'Utförd' },
+  { value: 'not_performed', label: 'Ej utförd' },
+  { value: 'not_applicable', label: 'Ej aktuell' },
 ]
 
 function formatDate(value: string | null) {
@@ -397,6 +408,59 @@ function ParticipantEditor({
   )
 }
 
+function PreviousInspectionsEditor({
+  rows,
+  onChange,
+}: {
+  rows: EbPreviousInspectionItem[]
+  onChange: (rows: EbPreviousInspectionItem[]) => void
+}) {
+  const updateRow = <K extends keyof EbPreviousInspectionItem>(
+    index: number,
+    field: K,
+    value: EbPreviousInspectionItem[K]
+  ) => {
+    onChange(rows.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row))
+  }
+
+  return (
+    <section className="space-y-3">
+      <h3 className="text-sm font-semibold text-gray-950">Tidigare besiktningar</h3>
+      <div className="grid gap-2">
+        {rows.map((row, index) => (
+          <div key={row.key} className="grid gap-2 rounded-md border border-emerald-100 bg-white p-2 sm:grid-cols-[1fr_9rem_10rem]">
+            <input
+              value={row.label}
+              onChange={(event) => updateRow(index, 'label', event.target.value)}
+              className={inputClassName()}
+            />
+            <select
+              value={row.status ?? ''}
+              onChange={(event) =>
+                updateRow(index, 'status', (event.target.value || null) as EbPreviousInspectionItem['status'])
+              }
+              className={inputClassName()}
+            >
+              <option value="">Ej satt</option>
+              {PREVIOUS_INSPECTION_STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <input
+              type="date"
+              value={row.date ?? ''}
+              onChange={(event) => updateRow(index, 'date', event.target.value || null)}
+              className={inputClassName()}
+            />
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function buildInspectionDetailsForm(inspection: EbInspectionSummary): InspectionDetailsFormState {
   return {
     inspectionDate: inspection.date ?? '',
@@ -423,6 +487,7 @@ function buildInspectionDetailsForm(inspection: EbInspectionSummary): Inspection
     afterInspectionDueDate: inspection.afterInspectionDueDate ?? '',
     afterInspectionNoticeInReport: inspection.afterInspectionNoticeInReport,
     reportDistributionDate: inspection.reportDistributionDate ?? new Date().toISOString().slice(0, 10),
+    previousInspections: inspection.previousInspections,
   }
 }
 
@@ -870,6 +935,11 @@ function InspectionDetailsDialog({
                 </div>
               </div>
             </section>
+
+            <PreviousInspectionsEditor
+              rows={form.previousInspections}
+              onChange={(rows) => updateField('previousInspections', rows)}
+            />
 
             <section className="space-y-3">
               <h3 className="text-sm font-semibold text-gray-950">Utlåtande</h3>

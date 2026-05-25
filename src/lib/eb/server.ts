@@ -11,6 +11,14 @@ export type EbInspectionVariant = 'SLB' | 'FB' | 'EB' | 'GB' | 'KSB' | 'SAB'
 export type EbInspectorAppointedBy = 'client' | 'parties_jointly' | 'contractor'
 export type EbApprovalStatus = 'approved' | 'not_approved' | 'partly_approved'
 export type EbPartyKey = 'client' | 'contractor' | 'other'
+export type EbPreviousInspectionStatus = 'performed' | 'not_performed' | 'not_applicable'
+
+export type EbPreviousInspectionItem = {
+  key: string
+  label: string
+  status: EbPreviousInspectionStatus | null
+  date: string | null
+}
 
 export type EbInspectionSummary = {
   inspectionId: string
@@ -41,6 +49,7 @@ export type EbInspectionSummary = {
   afterInspectionDueDate: string | null
   afterInspectionNoticeInReport: boolean
   reportDistributionDate: string | null
+  previousInspections: EbPreviousInspectionItem[]
   reportLockedAt: string | null
   createdAt: string | null
 }
@@ -331,6 +340,7 @@ type EbInspectionDetailRow = {
   after_inspection_due_date: string | null
   after_inspection_notice_in_report: boolean | null
   report_distribution_date: string | null
+  previous_inspections?: unknown
   invitation_subject?: string | null
   invitation_body?: string | null
   report_locked_at: string | null
@@ -557,6 +567,7 @@ export type UpdateEbInspectionInput = {
   afterInspectionDueDate?: string | null
   afterInspectionNoticeInReport?: boolean
   reportDistributionDate?: string | null
+  previousInspections?: EbPreviousInspectionItem[] | null
 }
 
 export type SaveEbNoteInput = {
@@ -609,6 +620,11 @@ const EB_VARIANTS = Object.keys(VARIANT_LABELS) as EbInspectionVariant[]
 const INSPECTOR_APPOINTED_BY_VALUES = ['client', 'parties_jointly', 'contractor'] as const
 const APPROVAL_STATUS_VALUES = ['approved', 'not_approved', 'partly_approved'] as const
 const PARTY_KEY_VALUES = ['client', 'contractor', 'other'] as const
+const PREVIOUS_INSPECTION_STATUS_VALUES = ['performed', 'not_performed', 'not_applicable'] as const
+const PREVIOUS_INSPECTION_DEFAULTS: Array<Pick<EbPreviousInspectionItem, 'key' | 'label'>> = [
+  { key: 'syn', label: 'Syn' },
+  { key: 'pre_inspection', label: 'Förbesiktning' },
+]
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export const EB_PROJECT_ATTACHMENTS_BUCKET = 'eb-project-attachments'
 export const EB_NOTE_IMAGE_BUCKET = 'inspection-images'
@@ -666,6 +682,73 @@ function normalizeApprovalStatus(value: string | null | undefined): EbApprovalSt
 function normalizePartyKey(value: string | null | undefined): EbPartyKey | null {
   const normalized = normalizeText(value)
   return PARTY_KEY_VALUES.includes(normalized as EbPartyKey) ? (normalized as EbPartyKey) : null
+}
+
+function normalizePreviousInspectionStatus(
+  value: string | null | undefined
+): EbPreviousInspectionStatus | null {
+  const normalized = normalizeText(value)
+  return PREVIOUS_INSPECTION_STATUS_VALUES.includes(normalized as EbPreviousInspectionStatus)
+    ? (normalized as EbPreviousInspectionStatus)
+    : null
+}
+
+function normalizePreviousInspections(value: unknown): EbPreviousInspectionItem[] {
+  const rows = Array.isArray(value) ? value : []
+  const byKey = new Map<string, EbPreviousInspectionItem>()
+
+  for (const defaultRow of PREVIOUS_INSPECTION_DEFAULTS) {
+    byKey.set(defaultRow.key, {
+      ...defaultRow,
+      status: null,
+      date: null,
+    })
+  }
+
+  rows.forEach((row, index) => {
+    if (!row || typeof row !== 'object') return
+    const record = row as Record<string, unknown>
+    const key = normalizeText(typeof record.key === 'string' ? record.key : null) ?? `custom_${index + 1}`
+    const defaultRow = PREVIOUS_INSPECTION_DEFAULTS.find((item) => item.key === key)
+    const label =
+      defaultRow?.label ??
+      normalizeText(typeof record.label === 'string' ? record.label : null) ??
+      key
+
+    byKey.set(key, {
+      key,
+      label,
+      status: normalizePreviousInspectionStatus(typeof record.status === 'string' ? record.status : null),
+      date: normalizeDate(typeof record.date === 'string' ? record.date : null),
+    })
+  })
+
+  return Array.from(byKey.values()).filter((row) => normalizeText(row.label))
+}
+
+function hasPreviousInspectionValue(row: EbPreviousInspectionItem) {
+  return Boolean(row.status || row.date)
+}
+
+function resolvePreviousInspectionsForProject(
+  inspection: EbInspectionSummary,
+  inspections: EbInspectionSummary[]
+): EbPreviousInspectionItem[] {
+  const rows = normalizePreviousInspections(inspection.previousInspections)
+  if (rows.some(hasPreviousInspectionValue)) return rows
+
+  const preInspection = inspections
+    .filter((item) => item.inspectionId !== inspection.inspectionId && item.variant === 'FB')
+    .sort((left, right) => String(left.date ?? '').localeCompare(String(right.date ?? '')))
+    .at(-1)
+
+  if (!preInspection?.date) return rows
+
+  return rows.map((row) =>
+    row.key === 'pre_inspection'
+      ? { ...row, status: 'performed', date: preInspection.date }
+      : row
+  )
 }
 
 function normalizeBoolean(value: boolean | null | undefined) {
@@ -807,6 +890,7 @@ function mapInspectionSummary(
     afterInspectionDueDate: detail.after_inspection_due_date ?? null,
     afterInspectionNoticeInReport: detail.after_inspection_notice_in_report ?? false,
     reportDistributionDate: detail.report_distribution_date ?? null,
+    previousInspections: normalizePreviousInspections(detail.previous_inspections),
     reportLockedAt: detail.report_locked_at ?? null,
     createdAt: inspection?.created_at ?? detail.created_at ?? null,
   }
@@ -823,6 +907,10 @@ function mapProject(
       if (left.sequenceNo !== right.sequenceNo) return left.sequenceNo - right.sequenceNo
       return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
     })
+  const inspectionsWithPreviousRows = inspections.map((inspection) => ({
+    ...inspection,
+    previousInspections: resolvePreviousInspectionsForProject(inspection, inspections),
+  }))
 
   return {
     id: project.id,
@@ -855,7 +943,7 @@ function mapProject(
     status: project.status ?? 'draft',
     createdAt: project.created_at ?? null,
     updatedAt: project.updated_at ?? null,
-    inspections,
+    inspections: inspectionsWithPreviousRows,
   }
 }
 
@@ -889,7 +977,7 @@ async function fetchDetailsForProjects(orgId: string, projectIds: string[]) {
   const baseSelect =
     'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,report_locked_at,created_at'
   const withStructuredReportSelect =
-    'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,inspector_appointed_by,invitation_method,invitation_date,approval_status,approval_note,requires_continued_final_inspection,warranty_period_years,warranty_end_date,default_remedy_deadline,after_inspection_requested,after_inspection_due_date,after_inspection_notice_in_report,report_distribution_date,report_locked_at,created_at'
+    'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,inspector_appointed_by,invitation_method,invitation_date,approval_status,approval_note,requires_continued_final_inspection,warranty_period_years,warranty_end_date,default_remedy_deadline,after_inspection_requested,after_inspection_due_date,after_inspection_notice_in_report,report_distribution_date,previous_inspections,report_locked_at,created_at'
   const { data, error } = await admin
     .from('eb_inspection_details')
     .select(withStructuredReportSelect)
@@ -1968,6 +2056,7 @@ export async function updateEbInspection(input: UpdateEbInspectionInput): Promis
       after_inspection_due_date: normalizeDate(input.afterInspectionDueDate),
       after_inspection_notice_in_report: input.afterInspectionNoticeInReport === true,
       report_distribution_date: normalizeDate(input.reportDistributionDate),
+      previous_inspections: normalizePreviousInspections(input.previousInspections),
     })
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
@@ -2647,6 +2736,27 @@ function ebContractPartiesReportText(round: EbInspectionRound) {
   ])
 }
 
+function previousInspectionStatusLabel(value: EbPreviousInspectionStatus | null) {
+  if (value === 'performed') return 'Utförd'
+  if (value === 'not_performed') return 'Ej utförd'
+  if (value === 'not_applicable') return 'Ej aktuell'
+  return 'Ej angivet'
+}
+
+function ebPreviousInspectionsReportText(round: EbInspectionRound) {
+  return round.inspection.previousInspections
+    .map((row) =>
+      reportList([
+        row.label,
+        previousInspectionStatusLabel(row.status),
+        row.status === 'performed'
+          ? row.date ?? 'Klicka här - ange datum'
+          : row.date,
+      ])
+    )
+    .join('\n\n')
+}
+
 function ebSpecialInvestigationReportRow(round: EbInspectionRound, note: EbNote) {
   return reportList([
     `${ebNoteReportReference(round, note)}: ${note.noteText}`,
@@ -2828,7 +2938,7 @@ function buildEbReportDraft(input: {
       source: 'manual',
       status: 'complete',
       isRelevant: true,
-      text: ebStandardText('EB_REPORT_PREVIOUS_INSPECTIONS_TESTS'),
+      text: ebPreviousInspectionsReportText(round),
       updatedAt: null,
     },
     {

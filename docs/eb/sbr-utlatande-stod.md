@@ -203,6 +203,8 @@ Layoutregel för `Närvarande`: uppgifterna fylls i under `Uppgifter` på besikt
 
 Layoutregel för `Sättet för kallelse till besiktningen`: sektionen ska visa rubriken med markering och meningen `Besiktningsmannen har [kallelsedatum] kallat parterna per [kallelsemetod].`. Kallelsedatum och metod fylls i under `Uppgifter` på besiktningen. Kallelsemetod ska kunna väljas från vanliga alternativ, med möjlighet att ange egen metod.
 
+Layoutregel för `Tidigare besiktningar`: uppgifterna fylls i under `Uppgifter` på besiktningen och sparas strukturerat i `eb_inspection_details.previous_inspections`. Sektionen ska visa rader med besiktningstyp, status (`Utförd`, `Ej utförd`, `Ej aktuell`) och datum när status är `Utförd`.
+
 ## Kvar att göra för mer strukturerat stöd
 
 Detta är inte blockerande för att kunna fylla i ett komplett utlåtande, men bör prioriteras för bättre styrning:
