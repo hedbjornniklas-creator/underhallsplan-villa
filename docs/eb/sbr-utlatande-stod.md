@@ -205,7 +205,7 @@ Layoutregel för `Sättet för kallelse till besiktningen`: sektionen ska visa r
 
 Layoutregel för `Tidigare besiktningar`: uppgifterna fylls i under `Uppgifter` på besiktningen och sparas strukturerat i `eb_inspection_details.previous_inspections`. Sektionen ska visa rader med besiktningstyp, status (`Utförd`, `Ej utförd`, `Ej aktuell`) och datum när status är `Utförd`.
 
-Standardtext för `Provning, dokumentation`: texten ligger i `src/content/standardtexts/eb/EB_REPORT_TESTING_DOCUMENTATION.txt` och ska börja med `Följande dokument över avtalade kvalitetsåtgärder redovisades...`. Äldre sparade utkast med den tidigare interna instruktionstexten ersätts automatiskt av den aktuella standardtexten.
+Standardtext för `Provning, dokumentation`: texten ligger i `src/content/standardtexts/eb/EB_REPORT_TESTING_DOCUMENTATION.txt` och ska börja med `Följande dokument över avtalade kvalitetsåtgärder redovisades...`. Under listan med handlingar ska texten om att saknad eller felaktig dokumentation noteras som fel under `Fel och förhållanden` ligga. Äldre sparade utkast med den tidigare interna instruktionstexten ersätts automatiskt av den aktuella standardtexten.
 
 ## Kvar att göra för mer strukturerat stöd
 

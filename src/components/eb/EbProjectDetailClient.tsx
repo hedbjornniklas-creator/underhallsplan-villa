@@ -108,6 +108,20 @@ type InspectionDetailsFormState = {
   previousInspections: EbPreviousInspectionItem[]
 }
 
+type InspectionDetailsTabKey = 'time' | 'previous' | 'documents' | 'report' | 'participants'
+
+const INSPECTION_DETAILS_TABS: Array<{
+  key: InspectionDetailsTabKey
+  label: string
+  icon: typeof CalendarDays
+}> = [
+  { key: 'time', label: 'Tid och kallelse', icon: CalendarDays },
+  { key: 'previous', label: 'Tidigare', icon: ClipboardCheck },
+  { key: 'documents', label: 'Handlingar', icon: FileText },
+  { key: 'report', label: 'Utlåtande', icon: Pencil },
+  { key: 'participants', label: 'Närvarande', icon: UserPlus },
+]
+
 const VARIANT_OPTIONS: Array<{ value: EbInspectionVariant; label: string }> = [
   { value: 'EB', label: 'Efterbesiktning' },
   { value: 'FB', label: 'Förbesiktning' },
@@ -832,6 +846,7 @@ function InspectionDetailsDialog({
   const [invitationSubject, setInvitationSubject] = useState('')
   const [invitationBody, setInvitationBody] = useState('')
   const [participants, setParticipants] = useState<EditableParticipant[]>([])
+  const [activeTab, setActiveTab] = useState<InspectionDetailsTabKey>('time')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -845,6 +860,7 @@ function InspectionDetailsDialog({
     setDocumentsLoaded(false)
     setInvitationSubject('')
     setInvitationBody('')
+    setActiveTab('time')
     setError(null)
 
     const loadParticipants = async () => {
@@ -1035,231 +1051,295 @@ function InspectionDetailsDialog({
         </div>
 
         <form onSubmit={(event) => void handleSubmit(event)} className="overflow-auto p-4">
-          <div className="grid gap-5 lg:grid-cols-2">
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-gray-950">Tid och kallelse</h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {fieldLabel(
-                  'Besiktningsdatum',
-                  <input
-                    type="date"
-                    value={form.inspectionDate}
-                    onChange={(event) => updateField('inspectionDate', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                {fieldLabel(
-                  'Besiktningstid',
-                  <input
-                    type="time"
-                    value={form.inspectionTime}
-                    onChange={(event) => updateField('inspectionTime', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                {fieldLabel(
-                  'Samlingsplats',
-                  <input
-                    value={form.meetingPlace}
-                    onChange={(event) => updateField('meetingPlace', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                {fieldLabel(
-                  'Kallelsemetod',
-                  <InvitationMethodField
-                    value={form.invitationMethod}
-                    onChange={(value) => updateField('invitationMethod', value)}
-                    className={inputClassName()}
-                  />
-                )}
-                {fieldLabel(
-                  'Kallelsedatum',
-                  <input
-                    type="date"
-                    value={form.invitationDate}
-                    onChange={(event) => updateField('invitationDate', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                <div className="grid grid-cols-2 gap-3">
-                  {fieldLabel(
-                    'Försammanträde',
-                    <input
-                      type="time"
-                      value={form.startMeetingTime}
-                      onChange={(event) => updateField('startMeetingTime', event.target.value)}
-                      className={inputClassName()}
-                    />
-                  )}
-                  {fieldLabel(
-                    'Slutsammanträde',
-                    <input
-                      type="time"
-                      value={form.finalMeetingTime}
-                      onChange={(event) => updateField('finalMeetingTime', event.target.value)}
-                      className={inputClassName()}
-                    />
-                  )}
-                </div>
-              </div>
-            </section>
-
-            <PreviousInspectionsEditor
-              rows={form.previousInspections}
-              onChange={(rows) => updateField('previousInspections', rows)}
-            />
-
-            <InspectionDocumentsEditor
-              documents={documents}
-              loading={documentsLoading}
-              onChange={setDocuments}
-            />
-
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-gray-950">Utlåtande</h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {fieldLabel(
-                  'Besiktningsman utsedd av',
-                  <select
-                    value={form.inspectorAppointedBy}
-                    onChange={(event) => updateField('inspectorAppointedBy', event.target.value)}
-                    className={inputClassName()}
+          <div className="border-b border-emerald-100">
+            <div role="tablist" aria-label="Besiktningsuppgifter" className="flex gap-2 overflow-x-auto pb-3">
+              {INSPECTION_DETAILS_TABS.map((tab) => {
+                const Icon = tab.icon
+                const selected = activeTab === tab.key
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    aria-controls={`inspection-details-${tab.key}`}
+                    id={`inspection-details-tab-${tab.key}`}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`inline-flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
+                      selected
+                        ? 'border-emerald-700 bg-emerald-700 text-white shadow-sm'
+                        : 'border-emerald-100 bg-white text-gray-700 hover:bg-emerald-50 hover:text-emerald-900'
+                    }`}
                   >
-                    <option value="">Ej satt</option>
-                    <option value="client">Beställare</option>
-                    <option value="parties_jointly">Parterna gemensamt</option>
-                    <option value="contractor">Entreprenör</option>
-                  </select>
-                )}
-                {fieldLabel(
-                  'Beslut',
-                  <select
-                    value={form.approvalStatus}
-                    onChange={(event) => updateField('approvalStatus', event.target.value)}
-                    className={inputClassName()}
-                  >
-                    <option value="">Ej satt</option>
-                    <option value="approved">Godkänd</option>
-                    <option value="not_approved">Ej godkänd</option>
-                    <option value="partly_approved">Delvis godkänd</option>
-                  </select>
-                )}
-                <div className="sm:col-span-2">
-                  {fieldLabel(
-                    'Beslutets motivering',
-                    <textarea
-                      value={form.approvalNote}
-                      onChange={(event) => updateField('approvalNote', event.target.value)}
-                      rows={3}
-                      className={inputClassName()}
-                    />
-                  )}
-                </div>
-                {fieldLabel(
-                  'Fortsatt slutbesiktning',
-                  <select
-                    value={form.requiresContinuedFinalInspection}
-                    onChange={(event) => updateField('requiresContinuedFinalInspection', event.target.value)}
-                    className={inputClassName()}
-                  >
-                    <option value="">Ej satt</option>
-                    <option value="true">Ja</option>
-                    <option value="false">Nej</option>
-                  </select>
-                )}
-                {fieldLabel(
-                  'Garantitid',
-                  <select
-                    value={form.warrantyPeriodYears}
-                    onChange={(event) => updateField('warrantyPeriodYears', event.target.value)}
-                    className={inputClassName()}
-                  >
-                    <option value="">Ej satt</option>
-                    {Array.from({ length: 10 }, (_, index) => index + 1).map((year) => (
-                      <option key={year} value={year}>
-                        {year} år
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {fieldLabel(
-                  'Garantitidens slut',
-                  <input
-                    type="date"
-                    value={form.warrantyEndDate}
-                    onChange={(event) => updateField('warrantyEndDate', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                {fieldLabel(
-                  'Fel avhjälpta senast',
-                  <input
-                    type="date"
-                    value={form.defaultRemedyDeadline}
-                    onChange={(event) => updateField('defaultRemedyDeadline', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                {fieldLabel(
-                  'Efterbesiktning påkallad',
-                  <select
-                    value={form.afterInspectionRequested}
-                    onChange={(event) => updateField('afterInspectionRequested', event.target.value)}
-                    className={inputClassName()}
-                  >
-                    <option value="">Ej satt</option>
-                    <option value="true">Ja</option>
-                    <option value="false">Nej</option>
-                  </select>
-                )}
-                {fieldLabel(
-                  'Efterbesiktning senast',
-                  <input
-                    type="date"
-                    value={form.afterInspectionDueDate}
-                    onChange={(event) => updateField('afterInspectionDueDate', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                {fieldLabel(
-                  'Distributionsdatum',
-                  <input
-                    type="date"
-                    value={form.reportDistributionDate}
-                    onChange={(event) => updateField('reportDistributionDate', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                <label className="inline-flex items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm font-medium text-emerald-900">
-                  <input
-                    type="checkbox"
-                    checked={form.afterInspectionNoticeInReport}
-                    onChange={(event) => updateField('afterInspectionNoticeInReport', event.target.checked)}
-                    className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
-                  />
-                  Utlåtandet gäller som kallelse till efterbesiktning
-                </label>
-              </div>
-            </section>
+                    <Icon size={16} />
+                    {tab.label}
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
-          <div className="mt-5 border-t border-emerald-100 pt-4">
-            {participantsLoading ? (
-              <div className="flex items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/50 px-3 py-3 text-sm text-gray-600">
-                <Loader2 size={16} className="animate-spin text-emerald-700" />
-                Hämtar närvarande och sändlista...
+          <div className="mt-4">
+            {activeTab === 'time' ? (
+              <section
+                id="inspection-details-time"
+                role="tabpanel"
+                aria-labelledby="inspection-details-tab-time"
+                className="space-y-3"
+              >
+                <h3 className="text-sm font-semibold text-gray-950">Tid och kallelse</h3>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {fieldLabel(
+                    'Besiktningsdatum',
+                    <input
+                      type="date"
+                      value={form.inspectionDate}
+                      onChange={(event) => updateField('inspectionDate', event.target.value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                  {fieldLabel(
+                    'Besiktningstid',
+                    <input
+                      type="time"
+                      value={form.inspectionTime}
+                      onChange={(event) => updateField('inspectionTime', event.target.value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                  {fieldLabel(
+                    'Samlingsplats',
+                    <input
+                      value={form.meetingPlace}
+                      onChange={(event) => updateField('meetingPlace', event.target.value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                  {fieldLabel(
+                    'Kallelsemetod',
+                    <InvitationMethodField
+                      value={form.invitationMethod}
+                      onChange={(value) => updateField('invitationMethod', value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                  {fieldLabel(
+                    'Kallelsedatum',
+                    <input
+                      type="date"
+                      value={form.invitationDate}
+                      onChange={(event) => updateField('invitationDate', event.target.value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                  <div className="grid grid-cols-2 gap-3">
+                    {fieldLabel(
+                      'Försammanträde',
+                      <input
+                        type="time"
+                        value={form.startMeetingTime}
+                        onChange={(event) => updateField('startMeetingTime', event.target.value)}
+                        className={inputClassName()}
+                      />
+                    )}
+                    {fieldLabel(
+                      'Slutsammanträde',
+                      <input
+                        type="time"
+                        value={form.finalMeetingTime}
+                        onChange={(event) => updateField('finalMeetingTime', event.target.value)}
+                        className={inputClassName()}
+                      />
+                    )}
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
+            {activeTab === 'previous' ? (
+              <div
+                id="inspection-details-previous"
+                role="tabpanel"
+                aria-labelledby="inspection-details-tab-previous"
+              >
+                <PreviousInspectionsEditor
+                  rows={form.previousInspections}
+                  onChange={(rows) => updateField('previousInspections', rows)}
+                />
               </div>
-            ) : (
-              <ParticipantEditor
-                project={project}
-                participants={participants}
-                onAdd={addParticipant}
-                onRemove={removeParticipant}
-                onChange={updateParticipant}
-                title="Närvarande och sändlista"
-              />
-            )}
+            ) : null}
+
+            {activeTab === 'documents' ? (
+              <div
+                id="inspection-details-documents"
+                role="tabpanel"
+                aria-labelledby="inspection-details-tab-documents"
+              >
+                <InspectionDocumentsEditor
+                  documents={documents}
+                  loading={documentsLoading}
+                  onChange={setDocuments}
+                />
+              </div>
+            ) : null}
+
+            {activeTab === 'report' ? (
+              <section
+                id="inspection-details-report"
+                role="tabpanel"
+                aria-labelledby="inspection-details-tab-report"
+                className="space-y-3"
+              >
+                <h3 className="text-sm font-semibold text-gray-950">Utlåtande</h3>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {fieldLabel(
+                    'Besiktningsman utsedd av',
+                    <select
+                      value={form.inspectorAppointedBy}
+                      onChange={(event) => updateField('inspectorAppointedBy', event.target.value)}
+                      className={inputClassName()}
+                    >
+                      <option value="">Ej satt</option>
+                      <option value="client">Beställare</option>
+                      <option value="parties_jointly">Parterna gemensamt</option>
+                      <option value="contractor">Entreprenör</option>
+                    </select>
+                  )}
+                  {fieldLabel(
+                    'Beslut',
+                    <select
+                      value={form.approvalStatus}
+                      onChange={(event) => updateField('approvalStatus', event.target.value)}
+                      className={inputClassName()}
+                    >
+                      <option value="">Ej satt</option>
+                      <option value="approved">Godkänd</option>
+                      <option value="not_approved">Ej godkänd</option>
+                      <option value="partly_approved">Delvis godkänd</option>
+                    </select>
+                  )}
+                  <div className="sm:col-span-2">
+                    {fieldLabel(
+                      'Beslutets motivering',
+                      <textarea
+                        value={form.approvalNote}
+                        onChange={(event) => updateField('approvalNote', event.target.value)}
+                        rows={3}
+                        className={inputClassName()}
+                      />
+                    )}
+                  </div>
+                  {fieldLabel(
+                    'Fortsatt slutbesiktning',
+                    <select
+                      value={form.requiresContinuedFinalInspection}
+                      onChange={(event) => updateField('requiresContinuedFinalInspection', event.target.value)}
+                      className={inputClassName()}
+                    >
+                      <option value="">Ej satt</option>
+                      <option value="true">Ja</option>
+                      <option value="false">Nej</option>
+                    </select>
+                  )}
+                  {fieldLabel(
+                    'Garantitid',
+                    <select
+                      value={form.warrantyPeriodYears}
+                      onChange={(event) => updateField('warrantyPeriodYears', event.target.value)}
+                      className={inputClassName()}
+                    >
+                      <option value="">Ej satt</option>
+                      {Array.from({ length: 10 }, (_, index) => index + 1).map((year) => (
+                        <option key={year} value={year}>
+                          {year} år
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {fieldLabel(
+                    'Garantitidens slut',
+                    <input
+                      type="date"
+                      value={form.warrantyEndDate}
+                      onChange={(event) => updateField('warrantyEndDate', event.target.value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                  {fieldLabel(
+                    'Fel avhjälpta senast',
+                    <input
+                      type="date"
+                      value={form.defaultRemedyDeadline}
+                      onChange={(event) => updateField('defaultRemedyDeadline', event.target.value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                  {fieldLabel(
+                    'Efterbesiktning påkallad',
+                    <select
+                      value={form.afterInspectionRequested}
+                      onChange={(event) => updateField('afterInspectionRequested', event.target.value)}
+                      className={inputClassName()}
+                    >
+                      <option value="">Ej satt</option>
+                      <option value="true">Ja</option>
+                      <option value="false">Nej</option>
+                    </select>
+                  )}
+                  {fieldLabel(
+                    'Efterbesiktning senast',
+                    <input
+                      type="date"
+                      value={form.afterInspectionDueDate}
+                      onChange={(event) => updateField('afterInspectionDueDate', event.target.value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                  {fieldLabel(
+                    'Distributionsdatum',
+                    <input
+                      type="date"
+                      value={form.reportDistributionDate}
+                      onChange={(event) => updateField('reportDistributionDate', event.target.value)}
+                      className={inputClassName()}
+                    />
+                  )}
+                  <label className="inline-flex items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm font-medium text-emerald-900">
+                    <input
+                      type="checkbox"
+                      checked={form.afterInspectionNoticeInReport}
+                      onChange={(event) => updateField('afterInspectionNoticeInReport', event.target.checked)}
+                      className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                    />
+                    Utlåtandet gäller som kallelse till efterbesiktning
+                  </label>
+                </div>
+              </section>
+            ) : null}
+
+            {activeTab === 'participants' ? (
+              <div
+                id="inspection-details-participants"
+                role="tabpanel"
+                aria-labelledby="inspection-details-tab-participants"
+              >
+                {participantsLoading ? (
+                  <div className="flex items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/50 px-3 py-3 text-sm text-gray-600">
+                    <Loader2 size={16} className="animate-spin text-emerald-700" />
+                    Hämtar närvarande och sändlista...
+                  </div>
+                ) : (
+                  <ParticipantEditor
+                    project={project}
+                    participants={participants}
+                    onAdd={addParticipant}
+                    onRemove={removeParticipant}
+                    onChange={updateParticipant}
+                    title="Närvarande och sändlista"
+                  />
+                )}
+              </div>
+            ) : null}
           </div>
 
           {error ? (
@@ -1279,7 +1359,7 @@ function InspectionDetailsDialog({
             </button>
             <button
               type="submit"
-              disabled={submitting || participantsLoading}
+              disabled={submitting || participantsLoading || documentsLoading}
               className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
             >
               {submitting ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={16} />}
