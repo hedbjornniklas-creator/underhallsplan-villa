@@ -535,91 +535,19 @@ export default function ObStepGrunddata({
     return (data as Inspection | null) ?? null
   }, [inspection.id, isInspectionLocked, onInspectionUpdated])
 
-  const saveOrdererToAssignment = async (
-    patch: Partial<{
-      customer_name: string | null
-      customer_address: string | null
-      customer_postal_code: string | null
-      customer_city: string | null
-      customer_phone: string | null
-      customer_email: string | null
-    }>
-  ) => {
-    if (isInspectionLocked) return false
-    if (!property.assignment_id) return false
-
-    setError(null)
+  const saveOrdererToInspection = async (nextOrderer: typeof ordererForm) => {
+    if (isInspectionLocked) return
     setSavingOrderer(true)
 
-    try {
-      const response = await fetch(`/api/ob/assignments/${property.assignment_id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      })
-      const payload = (await response.json().catch(() => null)) as
-        | { assignment?: Record<string, unknown>; error?: string }
-        | null
-
-      if (!response.ok) {
-        throw new Error(payload?.error ?? 'Kunde inte spara uppdragsgivarens uppgifter.')
-      }
-
-      const pickAssignmentValue = (
-        field:
-          | 'customer_name'
-          | 'customer_address'
-          | 'customer_postal_code'
-          | 'customer_city'
-          | 'customer_phone'
-          | 'customer_email',
-        fallback: string | null
-      ) => {
-        const serverValue = payload?.assignment?.[field]
-        if (typeof serverValue === 'string') return serverValue
-        if (serverValue === null) return null
-        if (field in patch) return patch[field] ?? null
-        return fallback
-      }
-
-      const nextPropertyPatch: Partial<Property> = {
-        assignment_id: property.assignment_id,
-        customer_name: pickAssignmentValue('customer_name', property.customer_name),
-        customer_address: pickAssignmentValue('customer_address', property.customer_address),
-        customer_postal_code: pickAssignmentValue(
-          'customer_postal_code',
-          property.customer_postal_code
-        ),
-        customer_city: pickAssignmentValue('customer_city', property.customer_city),
-        customer_phone: pickAssignmentValue('customer_phone', property.customer_phone),
-        customer_email: pickAssignmentValue('customer_email', property.customer_email),
-      }
-
-      if (onPropertyUpdated) {
-        onPropertyUpdated({ ...property, ...nextPropertyPatch } as Property)
-      }
-
-      return true
-    } catch (assignmentError) {
-      console.error('Kunde inte spara uppdragsgivare till uppdragsbekräftelsen:', assignmentError)
-      setError(
-        assignmentError instanceof Error
-          ? assignmentError.message
-          : 'Kunde inte spara uppdragsgivarens uppgifter.'
-      )
-      return false
-    } finally {
-      setSavingOrderer(false)
-    }
-  }
-
-  const saveOrdererFallbackToInspection = async (nextOrderer: typeof ordererForm) => {
-    if (isInspectionLocked) return
     const customerName = normalizeTextOrNull(nextOrderer.customer_name)
+    const customerAddress = normalizeTextOrNull(nextOrderer.customer_address)
+    const customerPostalCode = normalizeTextOrNull(nextOrderer.customer_postal_code)
+    const customerCity = normalizeTextOrNull(nextOrderer.customer_city)
     const customerPhone = normalizeTextOrNull(nextOrderer.customer_phone)
-    const customerEmail = normalizeTextOrNull(nextOrderer.customer_email)
+    const customerEmail = normalizeTextOrNull(nextOrderer.customer_email)?.toLowerCase() ?? null
 
     if (customerEmail && !CUSTOMER_EMAIL_REGEX.test(customerEmail)) {
+      setSavingOrderer(false)
       setError('Ogiltig e-postadress för uppdragsgivare.')
       return
     }
@@ -628,13 +556,23 @@ export default function ObStepGrunddata({
     const savedInspection = await saveInspection({
       client_name: customerName,
       client_contact: clientContact,
+      customer_name: customerName,
+      customer_address: customerAddress,
+      customer_postal_code: customerPostalCode,
+      customer_city: customerCity,
+      customer_phone: customerPhone,
+      customer_email: customerEmail,
     } as Partial<Inspection>)
+    setSavingOrderer(false)
 
     if (!savedInspection || !onPropertyUpdated) return
 
     onPropertyUpdated({
       ...property,
       customer_name: customerName,
+      customer_address: customerAddress,
+      customer_postal_code: customerPostalCode,
+      customer_city: customerCity,
       customer_phone: customerPhone,
       customer_email: customerEmail,
     } as Property)
@@ -738,44 +676,10 @@ export default function ObStepGrunddata({
       return
     }
 
-    if (property.assignment_id) {
-      const assignmentPatch: Partial<{
-        customer_name: string | null
-        customer_address: string | null
-        customer_postal_code: string | null
-        customer_city: string | null
-        customer_phone: string | null
-        customer_email: string | null
-      }> = {
-        [field]: normalizedValue,
-      }
-      const saved = await saveOrdererToAssignment(assignmentPatch)
-      if (!saved) return
-
-      if (field === 'customer_name') {
-        await saveInspection({ client_name: normalizedValue } as Partial<Inspection>)
-      }
-      if (field === 'customer_phone' || field === 'customer_email') {
-        const customerPhone =
-          field === 'customer_phone'
-            ? normalizedValue
-            : normalizeTextOrNull(ordererForm.customer_phone)
-        const customerEmail =
-          field === 'customer_email'
-            ? normalizedValue
-            : normalizeTextOrNull(ordererForm.customer_email)
-        const clientContact = [customerPhone, customerEmail].filter(Boolean).join(' | ') || null
-        await saveInspection({ client_contact: clientContact } as Partial<Inspection>)
-      }
-      return
-    }
-
-    if (field === 'customer_name' || field === 'customer_phone' || field === 'customer_email') {
-      await saveOrdererFallbackToInspection({
-        ...ordererForm,
-        [field]: ordererForm[field],
-      })
-    }
+    await saveOrdererToInspection({
+      ...ordererForm,
+      [field]: normalizedValue ?? '',
+    })
   }
 
   // Checkboxar för omfattning
@@ -895,8 +799,6 @@ export default function ObStepGrunddata({
     inspForm.inspection_side === 'seller'
       ? ATTENDEE_OPTIONS.filter(opt => opt.key !== 'buyer')
       : ATTENDEE_OPTIONS
-
-  const hasLinkedAssignment = !!property.assignment_id
 
   const uploadInspectionCoverFile = async (file: File) => {
     if (isInspectionLocked) {
@@ -1232,7 +1134,7 @@ export default function ObStepGrunddata({
             onChange={v => handleOrdererChange('customer_address', v)}
             onBlur={() => void handleOrdererBlur('customer_address')}
             placeholder="Gatuadress"
-            readOnly={isInspectionLocked || !hasLinkedAssignment}
+            readOnly={isInspectionLocked}
           />
 
           <div className="grid grid-cols-2 gap-3">
@@ -1242,7 +1144,7 @@ export default function ObStepGrunddata({
               onChange={v => handleOrdererChange('customer_postal_code', v)}
               onBlur={() => void handleOrdererBlur('customer_postal_code')}
               placeholder="123 45"
-              readOnly={isInspectionLocked || !hasLinkedAssignment}
+              readOnly={isInspectionLocked}
             />
             <Field
               label="Ort"
@@ -1250,7 +1152,7 @@ export default function ObStepGrunddata({
               onChange={v => handleOrdererChange('customer_city', v)}
               onBlur={() => void handleOrdererBlur('customer_city')}
               placeholder="Ort"
-              readOnly={isInspectionLocked || !hasLinkedAssignment}
+              readOnly={isInspectionLocked}
             />
           </div>
 
@@ -1272,13 +1174,6 @@ export default function ObStepGrunddata({
               readOnly={isInspectionLocked}
             />
           </div>
-
-          {!hasLinkedAssignment ? (
-            <div className="text-[11px] text-gray-500">
-              Adress, postnummer och ort för uppdragsgivare kan redigeras när besiktningen är kopplad
-              till en uppdragsbekräftelse.
-            </div>
-          ) : null}
 
           <Field
             label="Uppdragsnummer"

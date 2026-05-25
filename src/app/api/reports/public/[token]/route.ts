@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { hashAssignmentToken } from '@/lib/assignments/tokens'
+import { sendAssignmentEmail } from '@/lib/assignments/mailer'
+import { buildInspectionReportShareEmail } from '@/lib/inspections/reportEmailTemplates'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -8,9 +10,18 @@ const REPORT_PDF_SIGNED_URL_TTL_SECONDS = Math.max(
   30,
   Number(process.env.REPORT_PDF_SIGNED_URL_TTL_SECONDS ?? 120)
 )
+const SHARE_TEMPLATE_KEY = 'inspection_report_share'
+const SHARE_MAX_PER_REPORT_WINDOW = 5
+const SHARE_REPORT_WINDOW_MS = 10 * 60 * 1000
+const SHARE_MAX_PER_RECIPIENT_WINDOW = 3
+const SHARE_RECIPIENT_WINDOW_MS = 24 * 60 * 60 * 1000
 
 function notFoundResponse() {
   return new NextResponse('Not found', { status: 404 })
+}
+
+function jsonError(message: string, status: number) {
+  return NextResponse.json({ error: message }, { status })
 }
 
 function normalizePdfStatus(value: unknown): 'pending' | 'processing' | 'ready' | 'failed' {
@@ -23,6 +34,39 @@ function normalizePdfStatus(value: unknown): 'pending' | 'processing' | 'ready' 
   return 'pending'
 }
 
+function buildOrigin(request: Request) {
+  const url = new URL(request.url)
+  const forwardedProto = request.headers.get('x-forwarded-proto')
+  const forwardedHost = request.headers.get('x-forwarded-host')
+  const host = forwardedHost ?? request.headers.get('host') ?? url.host
+  const proto = forwardedProto ?? url.protocol.replace(':', '')
+  return `${proto}://${host}`
+}
+
+function resolvePublicBaseUrl(request: Request) {
+  const fromEnv = process.env.APP_BASE_URL?.trim()
+  if (fromEnv) return fromEnv.replace(/\/+$/, '')
+  return buildOrigin(request)
+}
+
+function getMailFromAddress() {
+  const value = process.env.ASSIGNMENTS_MAIL_FROM?.trim()
+  if (!value) {
+    throw new Error('ASSIGNMENTS_MAIL_FROM saknas. Konfigurera avsändaradress innan utskick.')
+  }
+  return value
+}
+
+function isValidEmail(value: string) {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  return emailRegex.test(value)
+}
+
+function normalizeEmail(value: unknown) {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  return normalized && isValidEmail(normalized) ? normalized : null
+}
+
 const sanitizeFilenamePart = (value: string | null | undefined) => {
   const raw = String(value ?? '').trim()
   if (!raw) return ''
@@ -32,6 +76,27 @@ const sanitizeFilenamePart = (value: string | null | undefined) => {
 const buildReportFileName = (assignmentNumber: string | null | undefined) => {
   const safeAssignment = sanitizeFilenamePart(assignmentNumber)
   return safeAssignment ? `Utlåtande (${safeAssignment}).pdf` : 'Utlåtande.pdf'
+}
+
+function getSnapshotMock(snapshotPayload: unknown): Record<string, unknown> {
+  if (!snapshotPayload || typeof snapshotPayload !== 'object') return {}
+  const reportData = (snapshotPayload as Record<string, unknown>).reportData
+  if (!reportData || typeof reportData !== 'object') return {}
+  const mock = (reportData as Record<string, unknown>).mock
+  return mock && typeof mock === 'object' ? (mock as Record<string, unknown>) : {}
+}
+
+function getNestedRecord(root: Record<string, unknown>, key: string): Record<string, unknown> {
+  const value = root[key]
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function normalizedSnapshotText(value: unknown) {
+  const normalized = String(value ?? '').trim()
+  if (!normalized || normalized === '--') return null
+  return normalized
 }
 
 function extractAssignmentNumberFromSnapshot(snapshotPayload: unknown): string | null {
@@ -46,6 +111,89 @@ function extractAssignmentNumberFromSnapshot(snapshotPayload: unknown): string |
   const assignmentNumber = (inspections as Record<string, unknown>).assignment_number
   const normalized = String(assignmentNumber ?? '').trim()
   return normalized || null
+}
+
+async function countShareMessages(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  input: {
+    orgId: string
+    inspectionId: string
+    recipientEmail?: string | null
+    since: string
+  }
+) {
+  let query = admin
+    .from('outbound_messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('template_key', SHARE_TEMPLATE_KEY)
+    .gte('created_at', input.since)
+
+  if (input.recipientEmail) {
+    query = query.eq('recipient_email', input.recipientEmail)
+  }
+
+  const { count, error } = await query
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte kontrollera delningsgräns.')
+  }
+
+  return count ?? 0
+}
+
+async function createShareOutboundMessage(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  input: {
+    orgId: string
+    assignmentId: string | null
+    inspectionId: string
+    createdBy: string | null
+    recipientEmail: string
+    subject: string
+  }
+) {
+  const { data, error } = await admin
+    .from('outbound_messages')
+    .insert({
+      org_id: input.orgId,
+      assignment_id: input.assignmentId,
+      inspection_id: input.inspectionId,
+      channel: 'email',
+      recipient_email: input.recipientEmail,
+      subject: input.subject,
+      template_key: SHARE_TEMPLATE_KEY,
+      status: 'pending',
+      created_by: input.createdBy,
+    })
+    .select('id')
+    .single()
+
+  if (error || !data) {
+    throw new Error(error?.message ?? 'Kunde inte skapa delningslogg.')
+  }
+
+  return data.id as string
+}
+
+async function updateShareOutboundMessage(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  id: string,
+  patch: {
+    status: 'sent' | 'failed'
+    provider?: string | null
+    provider_message_id?: string | null
+    error_message?: string | null
+    sent_at?: string | null
+  }
+) {
+  const { error } = await admin.from('outbound_messages').update(patch).eq('id', id)
+  if (error) {
+    console.error('[reports.public.share] failed to update outbound_messages', {
+      id,
+      error: error.message ?? error,
+    })
+  }
 }
 
 function decodeBase64(base64: string, linkId: string): Buffer {
@@ -101,6 +249,142 @@ async function createSignedPdfUrl(
       error: signedUrlError instanceof Error ? signedUrlError.message : String(signedUrlError),
     })
     return null
+  }
+}
+
+export async function POST(
+  request: Request,
+  context: { params: Promise<{ token: string }> }
+) {
+  try {
+    const { token } = await context.params
+    const normalizedToken = token?.trim() ?? ''
+
+    if (normalizedToken.length < 20) {
+      return notFoundResponse()
+    }
+
+    const body = (await request.json().catch(() => null)) as { email?: unknown } | null
+    const recipientEmail = normalizeEmail(body?.email)
+    if (!recipientEmail) {
+      return jsonError('Ange en giltig e-postadress.', 400)
+    }
+
+    const tokenHash = hashAssignmentToken(normalizedToken)
+    const admin = createSupabaseAdminClient()
+
+    const { data: linkData, error: linkError } = await admin
+      .from('inspection_report_links')
+      .select('id,org_id,inspection_id,assignment_id,created_by,revoked_at,snapshot_payload')
+      .eq('token_hash', tokenHash)
+      .maybeSingle()
+
+    if (linkError) {
+      console.error('[reports.public.share] lookup failed', { error: linkError.message ?? linkError })
+      return jsonError('Kunde inte läsa utlåtandelänken.', 500)
+    }
+
+    if (!linkData || linkData.revoked_at) {
+      return notFoundResponse()
+    }
+
+    const link = linkData as {
+      id: string
+      org_id: string
+      inspection_id: string
+      assignment_id: string | null
+      created_by: string | null
+      revoked_at: string | null
+      snapshot_payload: unknown
+    }
+
+    const reportWindowStart = new Date(Date.now() - SHARE_REPORT_WINDOW_MS).toISOString()
+    const recentShareCount = await countShareMessages(admin, {
+      orgId: link.org_id,
+      inspectionId: link.inspection_id,
+      since: reportWindowStart,
+    })
+    if (recentShareCount >= SHARE_MAX_PER_REPORT_WINDOW) {
+      return jsonError('För många delningar på kort tid. Försök igen om en stund.', 429)
+    }
+
+    const recipientWindowStart = new Date(Date.now() - SHARE_RECIPIENT_WINDOW_MS).toISOString()
+    const recentRecipientShareCount = await countShareMessages(admin, {
+      orgId: link.org_id,
+      inspectionId: link.inspection_id,
+      recipientEmail,
+      since: recipientWindowStart,
+    })
+    if (recentRecipientShareCount >= SHARE_MAX_PER_RECIPIENT_WINDOW) {
+      return jsonError('Länken har redan skickats till den här mottagaren flera gånger.', 429)
+    }
+
+    const { data: orgData } = await admin
+      .from('organizations')
+      .select('name')
+      .eq('id', link.org_id)
+      .maybeSingle()
+    const orgName = String((orgData as { name?: string | null } | null)?.name ?? '').trim() || null
+
+    const mock = getSnapshotMock(link.snapshot_payload)
+    const properties = getNestedRecord(mock, 'properties')
+    const inspections = getNestedRecord(mock, 'inspections')
+    const propertyAddress = normalizedSnapshotText(properties.address)
+    const inspectionDate =
+      normalizedSnapshotText(inspections.date) ?? normalizedSnapshotText(inspections.date_time)
+    const detailsUrl = `${resolvePublicBaseUrl(request)}/rapport/${encodeURIComponent(normalizedToken)}`
+    const emailContent = buildInspectionReportShareEmail({
+      orgName,
+      propertyAddress,
+      inspectionDate,
+      detailsUrl,
+    })
+
+    const messageId = await createShareOutboundMessage(admin, {
+      orgId: link.org_id,
+      assignmentId: link.assignment_id,
+      inspectionId: link.inspection_id,
+      createdBy: link.created_by,
+      recipientEmail,
+      subject: emailContent.subject,
+    })
+
+    try {
+      const sendResult = await sendAssignmentEmail({
+        to: recipientEmail,
+        from: getMailFromAddress(),
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text,
+      })
+
+      await updateShareOutboundMessage(admin, messageId, {
+        status: 'sent',
+        provider: sendResult.provider,
+        provider_message_id: sendResult.providerMessageId,
+        sent_at: new Date().toISOString(),
+      })
+    } catch (sendError) {
+      const message = sendError instanceof Error ? sendError.message : 'Mejlutskick misslyckades.'
+      await updateShareOutboundMessage(admin, messageId, {
+        status: 'failed',
+        error_message: message,
+      })
+      console.error('[reports.public.share] send failed', { error: message })
+      return jsonError('Kunde inte skicka länken. Försök igen.', 502)
+    }
+
+    return NextResponse.json({ ok: true, recipientEmail })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    console.error('[reports.public.share] unhandled error', { error: message })
+    if (message.includes('RESEND_API_KEY')) {
+      return jsonError('Servern saknar mejlkonfiguration.', 500)
+    }
+    if (message.includes('ASSIGNMENTS_MAIL_FROM')) {
+      return jsonError('Servern saknar avsändaradress för mejl.', 500)
+    }
+    return jsonError('Kunde inte dela utlåtandet.', 500)
   }
 }
 

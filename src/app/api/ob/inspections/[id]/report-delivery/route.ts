@@ -54,6 +54,14 @@ type InspectionForDelivery = {
   property_id: string | null
   status: string | null
   inspection_side: 'buyer' | 'seller' | 'apartment' | null
+  client_contact: string | null
+  client_name: string | null
+  customer_address: string | null
+  customer_city: string | null
+  customer_email: string | null
+  customer_name: string | null
+  customer_phone: string | null
+  customer_postal_code: string | null
 }
 
 type OutboundMessageRow = {
@@ -216,6 +224,39 @@ function normalizeInspectionStatus(value: string | null | undefined): string {
 function isValidEmail(value: string) {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
   return emailRegex.test(value)
+}
+
+const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i
+
+function normalizeEmail(value: string | null | undefined) {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  return normalized && isValidEmail(normalized) ? normalized : null
+}
+
+function extractEmailFromLegacyContact(value: string | null | undefined) {
+  const match = String(value ?? '').match(EMAIL_PATTERN)
+  return normalizeEmail(match?.[0] ?? null)
+}
+
+function hasInspectionCustomerFields(inspection: InspectionForDelivery) {
+  return [
+    inspection.customer_name,
+    inspection.customer_email,
+    inspection.customer_phone,
+    inspection.customer_address,
+    inspection.customer_postal_code,
+    inspection.customer_city,
+  ].some((value) => normalizedText(value) !== null)
+}
+
+function resolveReportRecipientEmail(
+  inspection: InspectionForDelivery,
+  assignment: AssignmentForDelivery | null
+) {
+  const inspectionEmail =
+    normalizeEmail(inspection.customer_email) ?? extractEmailFromLegacyContact(inspection.client_contact)
+  if (hasInspectionCustomerFields(inspection)) return inspectionEmail
+  return inspectionEmail ?? normalizeEmail(assignment?.customer_email)
 }
 
 function parsePrimaryRecipient(input: unknown, fallbackEmail: string | null) {
@@ -658,7 +699,7 @@ async function runReportPdfJobInBackground(input: {
 async function getInspectionById(admin: AdminClient, inspectionId: string) {
   const { data, error } = await admin
     .from('inspections')
-    .select('id,property_id,status,inspection_side')
+    .select('id,property_id,status,inspection_side,client_name,client_contact,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city')
     .eq('id', inspectionId)
     .maybeSingle()
 
@@ -1039,7 +1080,7 @@ export async function GET(
       }
     }
 
-    const ordererEmail = assignment?.customer_email?.trim().toLowerCase() ?? null
+    const ordererEmail = resolveReportRecipientEmail(inspection, assignment)
     const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
     const inspectionStatus = normalizeInspectionStatus(inspection.status)
     const pdfState = await getReportPdfState(admin, id)
@@ -1114,7 +1155,7 @@ export async function POST(
       }
     }
 
-    const fallbackOrdererEmail = assignment?.customer_email?.trim().toLowerCase() ?? null
+    const fallbackOrdererEmail = resolveReportRecipientEmail(inspection, assignment)
     const action = parseReportDeliveryPostAction(body?.action, body?.mark_as_completed)
 
     if (action === 'regenerate_pdf') {
@@ -1330,8 +1371,10 @@ export async function POST(
     const emailContent = buildInspectionReportDeliveryEmail({
       orgName: org.orgName,
       customerName:
-        normalizedText(assignment?.customer_name) ??
         normalizedText((reportData.mock?.inspections as Record<string, unknown> | undefined)?.client_name) ??
+        normalizedText(inspection.customer_name) ??
+        normalizedText(inspection.client_name) ??
+        normalizedText(assignment?.customer_name) ??
         null,
       propertyAddress:
         pickStreetAddress(

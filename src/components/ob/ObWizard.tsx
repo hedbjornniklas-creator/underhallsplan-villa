@@ -631,7 +631,7 @@ export default function ObWizard({
                         className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       />
                       <div className="text-[11px] text-gray-500">
-                        Beställare från uppdragsbekräftelse:{' '}
+                        Föreslagen huvudmottagare:{' '}
                         {deliveryMeta?.ordererEmail ? (
                           <span className="font-medium text-gray-700">{deliveryMeta.ordererEmail}</span>
                         ) : (

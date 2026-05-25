@@ -94,6 +94,24 @@ function normalizeAddonKey(value: string | null | undefined) {
     .replace(/[\u0300-\u036f]/g, '')
 }
 
+const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i
+
+function normalizeTextOrNull(value: string | null | undefined) {
+  const normalized = String(value ?? '').trim()
+  return normalized.length > 0 ? normalized : null
+}
+
+function extractEmailFromLegacyContact(value: string | null | undefined) {
+  const match = String(value ?? '').match(EMAIL_PATTERN)
+  return match?.[0]?.trim().toLowerCase() ?? null
+}
+
+function extractPhoneFromLegacyContact(value: string | null | undefined) {
+  const withoutEmail = String(value ?? '').replace(EMAIL_PATTERN, '')
+  const normalized = withoutEmail.replace(/\s*\|\s*/g, ' ').trim()
+  return normalized.length > 0 ? normalized : null
+}
+
 function hasAreaMeasurementSelection(selectedAddonKeys: string[], scope: string | null | undefined) {
   const selectedLookup = new Set(selectedAddonKeys.map(normalizeAddonKey).filter(Boolean))
   const hasSelectedAddon = selectedLookup.has(AREA_MEASUREMENT_ADDON_KEY)
@@ -225,6 +243,12 @@ export default function InspectionDetailPage() {
           attendees_other,
           inspection_side,
           defect_disclosures,
+          customer_name,
+          customer_email,
+          customer_phone,
+          customer_address,
+          customer_postal_code,
+          customer_city,
           locked_at,
           locked_by
         `
@@ -329,6 +353,23 @@ export default function InspectionDetailPage() {
         normalizeAssignmentRoleToInspectionSide(inspectionRow.inspection_side) ??
         normalizeAssignmentRoleToInspectionSide(assignment?.orderer_role) ??
         'buyer'
+      const legacyCustomerEmail = extractEmailFromLegacyContact(inspectionRow.client_contact)
+      const legacyCustomerPhone = extractPhoneFromLegacyContact(inspectionRow.client_contact)
+      const hasInspectionCustomerFields = [
+        inspectionRow.customer_name,
+        inspectionRow.customer_email,
+        inspectionRow.customer_phone,
+        inspectionRow.customer_address,
+        inspectionRow.customer_postal_code,
+        inspectionRow.customer_city,
+      ].some((value) => normalizeTextOrNull(value) !== null)
+      const inspectionCustomerName =
+        normalizeTextOrNull(inspectionRow.customer_name) ??
+        normalizeTextOrNull(inspectionRow.client_name)
+      const inspectionCustomerEmail =
+        normalizeTextOrNull(inspectionRow.customer_email)?.toLowerCase() ?? legacyCustomerEmail
+      const inspectionCustomerPhone =
+        normalizeTextOrNull(inspectionRow.customer_phone) ?? legacyCustomerPhone
 
       setInspection({
         ...inspectionRow,
@@ -344,12 +385,25 @@ export default function InspectionDetailPage() {
         cadastral_id: snapshot?.cadastral_id ?? prop?.cadastral_id ?? null,
         owner_name: snapshot?.owner_name ?? prop?.owner_name ?? null,
         assignment_id: assignment?.id ?? null,
-        customer_name: assignment?.customer_name ?? inspectionRow.client_name ?? null,
-        customer_address: assignment?.customer_address ?? null,
-        customer_postal_code: assignment?.customer_postal_code ?? null,
-        customer_city: assignment?.customer_city ?? null,
-        customer_phone: assignment?.customer_phone ?? null,
-        customer_email: assignment?.customer_email ?? null,
+        customer_name:
+          inspectionCustomerName ??
+          (hasInspectionCustomerFields ? null : assignment?.customer_name ?? null),
+        customer_address: hasInspectionCustomerFields
+          ? inspectionRow.customer_address ?? null
+          : assignment?.customer_address ?? null,
+        customer_postal_code:
+          hasInspectionCustomerFields
+            ? inspectionRow.customer_postal_code ?? null
+            : assignment?.customer_postal_code ?? null,
+        customer_city: hasInspectionCustomerFields
+          ? inspectionRow.customer_city ?? null
+          : assignment?.customer_city ?? null,
+        customer_phone:
+          inspectionCustomerPhone ??
+          (hasInspectionCustomerFields ? null : assignment?.customer_phone ?? null),
+        customer_email:
+          inspectionCustomerEmail ??
+          (hasInspectionCustomerFields ? null : assignment?.customer_email ?? null),
         tenure_type: (snapshot?.tenure_type ?? prop?.tenure_type ?? null) as Property['tenure_type'],
         dwelling_type: (snapshot?.dwelling_type ?? prop?.dwelling_type ?? null) as Property['dwelling_type'],
         year_built: snapshot?.year_built ?? prop?.year_built ?? null,

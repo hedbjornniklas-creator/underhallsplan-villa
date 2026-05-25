@@ -64,6 +64,7 @@ type InspectionRow = {
   id: string
   property_id: string
   status: string | null
+  customer_name: string | null
   client_name: string | null
 }
 
@@ -939,7 +940,7 @@ export default function OverlatelsebesiktningPage() {
 
           const { data: inspectionData, error: inspectionError } = await supabase
             .from('inspections')
-            .select('id,property_id,status,client_name')
+            .select('id,property_id,status,customer_name,client_name')
             .in('property_id', propertyIds)
             .eq('inspection_family', 'OB')
             .order('date', { ascending: false, nullsFirst: false })
@@ -973,7 +974,12 @@ export default function OverlatelsebesiktningPage() {
             return {
               id: inspection.id,
               address: snapshot?.address ?? property?.address ?? null,
-              customer: inspection.client_name ?? snapshot?.client_name ?? property?.client_name ?? null,
+              customer:
+                inspection.customer_name ??
+                inspection.client_name ??
+                snapshot?.client_name ??
+                property?.client_name ??
+                null,
               status: inspection.status,
               href: `/properties/${inspection.property_id}/ob/${inspection.id}`,
             }

@@ -1700,6 +1700,12 @@ export async function convertAssignmentToInspection(input: {
       inspection_time: assignment.preferred_time,
       client_name: assignment.customer_name,
       client_contact: clientContact,
+      customer_name: assignment.customer_name,
+      customer_email: assignment.customer_email,
+      customer_phone: assignment.customer_phone,
+      customer_address: assignment.customer_address,
+      customer_postal_code: assignment.customer_postal_code,
+      customer_city: assignment.customer_city,
       assignment_number: assignmentNo,
       assignment_confirmation_delivered_date: toDateOnly(assignment.accepted_at),
     })

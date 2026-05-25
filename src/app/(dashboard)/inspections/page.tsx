@@ -15,6 +15,7 @@ type Inspection = {
   status: string | null
   inspector_name: string | null
   created_at: string
+  customer_name: string | null
   client_name: string | null
   client_contact: string | null
   assignment_number: string | null
@@ -237,6 +238,7 @@ function getAddressText(row: InspectionWithProperty) {
 
 function getCustomerText(row: InspectionWithProperty) {
   return (
+    row.customer_name?.trim() ||
     row.client_name?.trim() ||
     row.snapshot?.client_name?.trim() ||
     row.client_contact?.trim() ||
@@ -486,7 +488,7 @@ export default function InspectionsPage() {
         const { data: inspectionData, error: inspectionError } = await supabase
           .from('inspections')
           .select(
-            'id,property_id,date,type,status,inspector_name,created_at,client_name,client_contact,assignment_number,locked_at,locked_by'
+            'id,property_id,date,type,status,inspector_name,created_at,customer_name,client_name,client_contact,assignment_number,locked_at,locked_by'
           )
           .in('property_id', propertyIds)
           .eq('inspection_family', 'OB')
@@ -618,6 +620,7 @@ export default function InspectionsPage() {
 
       const searchable = [
         row.assignment_number ?? '',
+        row.customer_name ?? '',
         row.client_name ?? '',
         row.client_contact ?? '',
         row.type ?? '',

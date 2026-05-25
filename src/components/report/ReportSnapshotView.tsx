@@ -9,6 +9,7 @@ import {
   hushubLogoSrc,
   sbrLogoSrc,
 } from '@/lib/report/reportAssets'
+import ReportShareButton from './ReportShareButton'
 
 type SnapshotInspectionBlock = {
   title?: string | null
@@ -128,6 +129,8 @@ type ReportSnapshotViewProps = {
   pdfError?: string | null
   showPdfActions?: boolean
   showHeader?: boolean
+  shareEndpoint?: string | null
+  shareUrl?: string | null
 }
 
 function repairMojibake(value: string) {
@@ -428,6 +431,12 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                 />
               </div>
               <div className="flex flex-wrap gap-2 md:justify-self-end">
+                {props.shareEndpoint && props.shareUrl ? (
+                  <ReportShareButton
+                    shareEndpoint={props.shareEndpoint}
+                    shareUrl={props.shareUrl}
+                  />
+                ) : null}
                 {showActions ? (
                   <Link
                     href={props.pdfDownloadUrl as string}

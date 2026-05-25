@@ -7,6 +7,7 @@ import {
   type ReportSnapshotPayloadV1,
 } from '@/lib/report/pdfV2/renderStructuredPdfV2'
 import ReportSnapshotView from '@/components/report/ReportSnapshotView'
+import ReportShareButton from '@/components/report/ReportShareButton'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -68,6 +69,8 @@ export default async function PublicReportPage({
 
   const pdfInlineUrl = `/api/reports/public/${encodeURIComponent(normalizedToken)}`
   const pdfDownloadUrl = pdfStatus === 'ready' && hasStoredPdf ? `${pdfInlineUrl}?download=1` : null
+  const shareEndpoint = `/api/reports/public/${encodeURIComponent(normalizedToken)}`
+  const shareUrl = `/rapport/${encodeURIComponent(normalizedToken)}`
 
   if (!snapshot) {
     return (
@@ -76,6 +79,7 @@ export default async function PublicReportPage({
           <h1 className="text-xl font-semibold text-slate-900">Besiktningsutlåtande</h1>
           {pdfStatus === 'ready' && pdfDownloadUrl ? (
             <div className="flex flex-wrap gap-2">
+              <ReportShareButton shareEndpoint={shareEndpoint} shareUrl={shareUrl} />
               <Link
                 href={pdfDownloadUrl}
                 target="_blank"
@@ -108,6 +112,8 @@ export default async function PublicReportPage({
       pdfStatus={pdfStatus}
       pdfError={pdfError}
       showPdfActions
+      shareEndpoint={shareEndpoint}
+      shareUrl={shareUrl}
     />
   )
 }

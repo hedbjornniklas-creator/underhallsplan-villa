@@ -1161,6 +1161,12 @@ export type Database = {
           client_contact: string | null
           client_name: string | null
           created_at: string | null
+          customer_address: string | null
+          customer_city: string | null
+          customer_email: string | null
+          customer_name: string | null
+          customer_phone: string | null
+          customer_postal_code: string | null
           date: string | null
           defect_disclosures: string | null
           id: string
@@ -1183,6 +1189,12 @@ export type Database = {
           client_contact?: string | null
           client_name?: string | null
           created_at?: string | null
+          customer_address?: string | null
+          customer_city?: string | null
+          customer_email?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
+          customer_postal_code?: string | null
           date?: string | null
           defect_disclosures?: string | null
           id?: string
@@ -1205,6 +1217,12 @@ export type Database = {
           client_contact?: string | null
           client_name?: string | null
           created_at?: string | null
+          customer_address?: string | null
+          customer_city?: string | null
+          customer_email?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
+          customer_postal_code?: string | null
           date?: string | null
           defect_disclosures?: string | null
           id?: string

@@ -149,6 +149,18 @@ const supabase: any = createSupabaseServerClient()
     const trimmed = String(value).trim()
     return trimmed.length > 0 ? trimmed : alt
   }
+  const valueOrNull = (value: string | null | undefined) => {
+    const trimmed = String(value ?? '').trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+  const buildCustomerContactText = (row: Record<string, unknown> | null | undefined) => {
+    const customerPhone = typeof row?.customer_phone === 'string' ? row.customer_phone : null
+    const customerEmail = typeof row?.customer_email === 'string' ? row.customer_email : null
+    const legacyContact = typeof row?.client_contact === 'string' ? row.client_contact : null
+    const parts = [valueOrNull(customerPhone), valueOrNull(customerEmail)].filter(Boolean)
+    if (parts.length > 0) return parts.join(' | ')
+    return valueOrNull(legacyContact)
+  }
   const trimText = (value: string | null | undefined) => (value ?? '').trim()
   const formatDocumentReportLine = (doc: {
     title?: string | null
@@ -305,7 +317,7 @@ const supabase: any = createSupabaseServerClient()
   const { data: inspectionData, error: inspectionError } = await supabase
     .from('inspections')
     .select(
-      'id, property_id, date, inspection_time, assignment_number, client_name, client_contact, defect_disclosures, scope, attendees, attendees_other, assignment_confirmation_delivered_date, inspection_side, cover_path, locked_at'
+      'id, property_id, date, inspection_time, assignment_number, client_name, client_contact, customer_name, customer_email, customer_phone, customer_address, customer_postal_code, customer_city, defect_disclosures, scope, attendees, attendees_other, assignment_confirmation_delivered_date, inspection_side, cover_path, locked_at'
     )
     .eq('id', resolvedParams.inspectionId)
     .maybeSingle()
@@ -613,6 +625,8 @@ const supabase: any = createSupabaseServerClient()
 
   const attendeesLines = [...attendeesList, ...attendeesOtherList]
   const attendeesText = attendeesLines.length > 0 ? attendeesLines.join('\n') : '-'
+  const customerName = valueOrNull(inspection?.customer_name) ?? valueOrNull(inspection?.client_name)
+  const customerContactText = buildCustomerContactText(inspection)
 
   const buildingDataMap = buildBuildingDataMap({
     selections: overviewSelections ?? [],
@@ -1445,9 +1459,15 @@ const supabase: any = createSupabaseServerClient()
         date: inspectionDate,
         date_time: inspectionDateTime,
         side: valueOrFallback(inspection?.inspection_side ?? null, ''),
-        inspector_name: valueOrFallback(inspection?.client_contact ?? null),
+        inspector_name: valueOrFallback(customerContactText),
         assignment_number: valueOrFallback(inspection?.assignment_number ?? null),
-        client_name: valueOrFallback(inspection?.client_name ?? null),
+        client_name: valueOrFallback(customerName),
+        customer_name: valueOrFallback(customerName),
+        customer_email: valueOrFallback(inspection?.customer_email ?? null),
+        customer_phone: valueOrFallback(inspection?.customer_phone ?? null),
+        customer_address: valueOrFallback(inspection?.customer_address ?? null),
+        customer_postal_code: valueOrFallback(inspection?.customer_postal_code ?? null),
+        customer_city: valueOrFallback(inspection?.customer_city ?? null),
         scope_text: scopeText,
         attendees_text: attendeesText,
         assignment_confirmation_date: assignmentDeliveredDate,

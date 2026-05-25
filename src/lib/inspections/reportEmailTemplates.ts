@@ -14,6 +14,13 @@ type BuildInspectionReportDeliveryEmailResult = {
   text: string
 }
 
+type BuildInspectionReportShareEmailInput = {
+  orgName: string | null
+  propertyAddress: string | null
+  inspectionDate: string | null
+  detailsUrl: string
+}
+
 type CtaButtonOptions = {
   href: string
   label: string
@@ -149,3 +156,77 @@ export function buildInspectionReportDeliveryEmail(
   return { subject, html, text }
 }
 
+export function buildInspectionReportShareEmail(
+  input: BuildInspectionReportShareEmailInput
+): BuildInspectionReportDeliveryEmailResult {
+  const orgName = toDisplayValue(input.orgName, 'BesiktApp')
+  const propertyAddress = toDisplayValue(input.propertyAddress)
+  const inspectionDate = toSwedishDateString(input.inspectionDate)
+  const subject = `Delat besiktningsutlåtande - ${orgName}`
+  const ctaButton = buildBulletproofButton({
+    href: input.detailsUrl,
+    label: 'Öppna besiktningsutlåtande',
+    width: 290,
+    backgroundColor: '#3730a3',
+    textColor: '#ffffff',
+    borderColor: '#312e81',
+  })
+
+  const html = `
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta charset="utf-8" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Delat besiktningsutlåtande</title>
+  </head>
+  <body style="margin:0;padding:0;background:#eef3ff;font-family:Segoe UI,Arial,sans-serif;color:#1f2937;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef3ff;padding:14px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="width:100%;max-width:640px;background:#ffffff;border:1px solid #dbe4ff;border-radius:16px;overflow:hidden;">
+            <tr>
+              <td style="padding:14px 20px;background:#1d4ed8;background-image:linear-gradient(135deg,#1e3a8a 0%,#1d4ed8 45%,#60a5fa 100%);color:#ffffff;">
+                <div style="font-size:20px;font-weight:700;letter-spacing:0.02em;">BESIKTNINGSUTLÅTANDE</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 24px 22px;">
+                <p style="margin:0 0 14px;font-size:14px;line-height:1.55;">
+                  Du har fått en länk till ett besiktningsutlåtande.
+                </p>
+                <p style="margin:0 0 14px;font-size:13px;line-height:1.55;">
+                  <strong>Adress:</strong> ${escapeHtml(propertyAddress)}<br/>
+                  <strong>Besiktningsdag:</strong> ${escapeHtml(inspectionDate)}
+                </p>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 16px;">
+                  <tr>
+                    <td align="left">
+                      ${ctaButton}
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0;font-size:12px;line-height:1.5;color:#4b5563;">
+                  På sidan kan du läsa, skriva ut och spara utlåtandet.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+  `
+
+  const text =
+    `Du har fått en länk till ett besiktningsutlåtande.\n\n` +
+    `Adress: ${propertyAddress}\n` +
+    `Besiktningsdag: ${inspectionDate}\n\n` +
+    `Öppna besiktningsutlåtande: ${input.detailsUrl}\n\n` +
+    `På sidan kan du läsa, skriva ut och spara utlåtandet.`
+
+  return { subject, html, text }
+}
