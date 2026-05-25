@@ -2778,7 +2778,7 @@ function buildEbReportDraft(input: {
     },
     {
       key: 'inspectors',
-      title: 'Besiktningsman och biträdande besiktningsmän',
+      title: 'Besiktningsman',
       sbrPoint: '5',
       source: 'manual',
       status: hasText(inspectorText) ? 'complete' : 'missing',

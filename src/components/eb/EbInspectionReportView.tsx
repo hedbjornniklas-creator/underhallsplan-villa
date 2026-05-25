@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ArrowLeft, ClipboardCheck, FileText, Printer } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { EbInspectionReport, EbNote, EbNoteImage } from '@/lib/eb/server'
+import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 
 type EbInspectionReportViewProps = {
   report: EbInspectionReport
@@ -34,6 +35,14 @@ function sortImages(images: EbNoteImage[]) {
 
 function detailLine(parts: Array<string | null | undefined>) {
   return parts.map((part) => part?.trim()).filter(Boolean).join(', ') || '-'
+}
+
+function reportValue(value: string | null | undefined) {
+  return value?.trim() || '-'
+}
+
+function addressCityLine(postalCode: string | null | undefined, city: string | null | undefined) {
+  return [postalCode?.trim(), city?.trim()].filter(Boolean).join(' ') || '-'
 }
 
 const REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER SLUTBESIKTNING'
@@ -129,15 +138,145 @@ function ReportText({ text }: { text: string }) {
 function ReportSection({
   title,
   children,
+  headingMarker = false,
 }: {
   title: string
   children: ReactNode
+  headingMarker?: boolean
 }) {
   return (
     <section className="eb-report-section break-inside-auto pt-4">
-      <h2 className={REPORT_SECTION_HEADING_CLASS_NAME}>{title}</h2>
+      <h2 className={`${REPORT_SECTION_HEADING_CLASS_NAME} flex items-baseline gap-2`}>
+        {headingMarker ? (
+          <span
+            aria-hidden="true"
+            className="inline-block h-0 w-0 border-b-[7px] border-l-[7px] border-b-black border-l-transparent"
+          />
+        ) : null}
+        <span>{title}</span>
+      </h2>
       {children}
     </section>
+  )
+}
+
+function PartyLabel({
+  type,
+  fallback,
+}: {
+  type: 'client' | 'contractor'
+  fallback: string
+}) {
+  if (fallback === 'Beställare /(Konsument)' || fallback === 'Hantverkare /(Näringsidkare)') {
+    const prefix = type === 'client' ? 'Beställare /' : 'Hantverkare /'
+    const role = type === 'client' ? 'Konsument' : 'Näringsidkare'
+
+    return (
+      <>
+        {prefix}(<em>{role}</em>):
+      </>
+    )
+  }
+
+  return <>{fallback}:</>
+}
+
+function ContractPartiesReport({ report }: { report: EbInspectionReport }) {
+  const vocabulary = resolveEbAgreementVocabulary(report.project.standardAgreement)
+
+  return (
+    <div className="text-[10.5pt] leading-[1.35] text-black">
+      <div className="grid grid-cols-[62mm_1fr] gap-x-4">
+        <div>Avtalsform:</div>
+        <div>{vocabulary.agreementLine}</div>
+      </div>
+
+      <div className="mt-2 underline">Parter:</div>
+
+      <dl className="mt-2 grid gap-y-1">
+        <div className="grid grid-cols-[62mm_1fr] gap-x-4">
+          <dt>
+            <PartyLabel type="client" fallback={vocabulary.clientLabel} />
+          </dt>
+          <dd>{reportValue(report.project.clientName)}</dd>
+        </div>
+        <div className="grid grid-cols-[62mm_1fr] gap-x-4">
+          <dt aria-hidden="true" />
+          <dd>{reportValue(report.project.clientAddress)}</dd>
+        </div>
+        <div className="grid grid-cols-[62mm_1fr] gap-x-4">
+          <dt aria-hidden="true" />
+          <dd>{addressCityLine(report.project.clientPostalCode, report.project.clientCity)}</dd>
+        </div>
+
+        <div className="grid grid-cols-[62mm_1fr] gap-x-4 pt-1">
+          <dt>
+            <PartyLabel type="contractor" fallback={vocabulary.contractorLabel} />
+          </dt>
+          <dd>{reportValue(report.project.contractorName)}</dd>
+        </div>
+        <div className="grid grid-cols-[62mm_1fr] gap-x-4">
+          <dt aria-hidden="true" />
+          <dd>{reportValue(report.project.contractorAddress)}</dd>
+        </div>
+        <div className="grid grid-cols-[62mm_1fr] gap-x-4">
+          <dt aria-hidden="true" />
+          <dd>{addressCityLine(report.project.contractorPostalCode, report.project.contractorCity)}</dd>
+        </div>
+        <div className="grid grid-cols-[62mm_1fr] gap-x-4">
+          <dt aria-hidden="true" />
+          <dd>
+            Org.nr: {reportValue(report.project.contractorOrgNo)}
+          </dd>
+        </div>
+      </dl>
+    </div>
+  )
+}
+
+function reportFieldValue(text: string, label: string) {
+  const normalizedLabel = label.toLocaleLowerCase('sv-SE')
+  for (const line of printableReportLines(text)) {
+    const row = parseLabelLine(line)
+    if (row?.label.toLocaleLowerCase('sv-SE') === normalizedLabel) {
+      return row.value
+    }
+  }
+  return null
+}
+
+function appointedByPhrase(report: EbInspectionReport, sectionText: string) {
+  if (report.inspection.inspectorAppointedBy === 'client') {
+    return 'utsedd av beställaren'
+  }
+  if (report.inspection.inspectorAppointedBy === 'parties_jointly') {
+    return 'utsedd av parterna gemensamt'
+  }
+  if (report.inspection.inspectorAppointedBy === 'contractor') {
+    const vocabulary = resolveEbAgreementVocabulary(report.project.standardAgreement)
+    const contractor = vocabulary.contractorShortLabel.toLocaleLowerCase('sv-SE')
+    return contractor.startsWith('hantverk') ? 'utsedd av hantverkaren' : 'utsedd av entreprenören'
+  }
+
+  const storedValue = reportFieldValue(sectionText, 'Utsedd av')
+  return storedValue ? `utsedd av ${storedValue.toLocaleLowerCase('sv-SE')}` : '-'
+}
+
+function InspectorReport({
+  report,
+  section,
+}: {
+  report: EbInspectionReport
+  section: EbInspectionReport['reportDraft']['sections'][number]
+}) {
+  return (
+    <ReportSection title={section.title} headingMarker>
+      <div className="grid grid-cols-[62mm_34mm_1fr] gap-x-4 text-[10.5pt] leading-[1.35] text-black">
+        <div>Besiktningsman:</div>
+        <div>{reportFieldValue(section.text, 'Besiktningsman') ?? '-'}</div>
+        <div>{appointedByPhrase(report, section.text)}</div>
+      </div>
+    </ReportSection>
   )
 }
 
@@ -359,12 +498,20 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
         ) : null}
 
         {reportSections.map((section) => (
-          <ReportSection
-            key={section.key}
-            title={section.title}
-          >
-            <ReportText text={section.text} />
-          </ReportSection>
+          section.key === 'inspectors' ? (
+            <InspectorReport key={section.key} report={report} section={section} />
+          ) : (
+            <ReportSection
+              key={section.key}
+              title={section.title}
+            >
+              {section.key === 'contract_parties' ? (
+                <ContractPartiesReport report={report} />
+              ) : (
+                <ReportText text={section.text} />
+              )}
+            </ReportSection>
+          )
         ))}
 
         <section className="eb-report-section mt-8 break-before-page">

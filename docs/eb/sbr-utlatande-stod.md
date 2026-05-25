@@ -43,13 +43,13 @@ Avtalsform: Enligt Hantverkarformuläret HF 17 för konsumenttjänster
 Parter
 
 Beställare /(Konsument): [namn]
-Adress: [adressrad]
-Adress: [adressrad]
+                         [adressrad]
+                         [postnummer ort]
 
 Hantverkare /(Näringsidkare): [företagsnamn]
-Adress: [adressrad]
-Adress: [adressrad]
-Org.nr: [organisationsnummer]
+                              [adressrad]
+                              [postnummer ort]
+                              Org.nr: [organisationsnummer]
 ```
 
 ## Datastöd
@@ -196,6 +196,8 @@ Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de s
 | Övriga noteringar | Redigerbart utkast | `report_draft.other_notes` |
 | Sändlista (25) | Delvis strukturerat | `eb_participants`, `report_draft.distribution_list` |
 | Underskrift/certifiering/SBR | Redigerbart utkast | `report_draft.signature_certificate` |
+
+Layoutregel för `Besiktningsman`: sektionen ska visa rubriken `Besiktningsman` och en rad i formatet `Besiktningsman: [namn] [utsedd av ...]`. Biträdande besiktningsmän ska inte skrivas ut i denna första version.
 
 ## Kvar att göra för mer strukturerat stöd
 
