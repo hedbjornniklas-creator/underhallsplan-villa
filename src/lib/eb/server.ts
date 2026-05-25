@@ -2799,6 +2799,14 @@ function isObCertificationText(value: string | null | undefined) {
   return normalized.includes('överlåtelse') || normalized.includes('overlatelse')
 }
 
+function isLegacyTestingDocumentationText(value: string | null | undefined) {
+  const normalized = normalizeText(value)?.toLocaleLowerCase('sv-SE') ?? ''
+  return (
+    normalized.includes('provning och dokumentation som åberopas') ||
+    normalized.includes('funktionsprovningar och kontroller av installationer')
+  )
+}
+
 function buildEbReportDraft(input: {
   round: EbInspectionRound
   participants: EbInvitationParticipant[]
@@ -3197,6 +3205,9 @@ function buildEbReportDraft(input: {
     sections: defaults.map((section) => {
       const existing = existingByKey.get(section.key)
       if (section.key === 'scope' || section.key === 'contract_parties') {
+        return section
+      }
+      if (section.key === 'testing_documentation' && isLegacyTestingDocumentationText(existing?.text)) {
         return section
       }
       if (section.key === 'conflict_of_interest' && !conflictOfInterestRelevant) {
