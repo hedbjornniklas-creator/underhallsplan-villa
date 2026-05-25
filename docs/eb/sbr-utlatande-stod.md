@@ -180,8 +180,8 @@ Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de s
 | Tidigare besiktningar/provningar (9) | Redigerbart utkast | `report_draft.previous_inspections_tests` |
 | Provning/dokumentation | Redigerbart utkast + standardtext | `report_draft.testing_documentation` |
 | Avtal, handlingar och andra överenskommelser (10) | Ja | `eb_projects.contract_date`, `eb_projects.agreement_items`, `report_draft.contract_documents` |
-| Ej åtkomliga delar (11) | Delvis | `eb_notes.status_key=not_accessible`, `report_draft.not_accessible` |
-| Endast dokumentationsbesiktigade delar (12) | Redigerbart utkast | `report_draft.documentation_only` |
+| Ej åtkomliga delar (11) | Ej egen sektion just nu | `eb_notes.status_key=not_accessible`, `report_draft.not_accessible` |
+| Endast dokumentationsbesiktigade delar (12) | Ej egen sektion just nu | `report_draft.documentation_only` |
 | Fel och förhållanden (13-17, 23) | Ja/delvis | `eb_notes`, `settings_eb_note_markers`, `report_draft.defects_appendices` |
 | Beteckningar E/B/S/U/N/A | Ingår i Fel och förhållanden | `settings_eb_note_markers`, använda `eb_notes.marker_key` |
 | Särskild utredning | Redigerbart utkast | `report_draft.special_investigation` |
@@ -196,6 +196,8 @@ Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de s
 | Övriga noteringar | Redigerbart utkast | `report_draft.other_notes` |
 | Sändlista (25) | Delvis strukturerat | `eb_participants`, `report_draft.distribution_list` |
 | Underskrift/certifiering/SBR | Redigerbart utkast | `report_draft.signature_certificate` |
+
+Utlåtandet ska inte skriva ut egna sektioner för `Delar som inte varit åtkomliga`, `Delar besiktigade endast genom handling` eller `Bilagor och littera` i denna version. Uppgifterna kan finnas kvar som data/utkast men ska inte visas som separata avsnitt i det färdiga utlåtandet.
 
 Layoutregel för `Besiktningsman`: sektionen ska visa rubriken `Besiktningsman` och en rad i formatet `Besiktningsman: [namn] [utsedd av ...]`. Biträdande besiktningsmän ska inte skrivas ut i denna första version.
 
