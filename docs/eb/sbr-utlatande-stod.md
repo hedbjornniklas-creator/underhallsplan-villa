@@ -19,7 +19,7 @@ EB-utlåtandet ska följa en fast rubrikhierarki så att digital vy och PDF får
 
 | Nivå | Användning | Form |
 |---|---|---|
-| Dokumenttitel | Huvudrubriken efter objektinformationen | Versaler, centrerad, 16 pt, fet. Exakt text: `UTLÅTANDE ÖVER SLUTBESIKTNING`. |
+| Dokumenttitel | Huvudrubriken efter objektinformationen | Versaler, vänsterställd, 16 pt, fet. Exakt text: `UTLÅTANDE ÖVER SLUTBESIKTNING`. |
 | Huvudavsnitt | Formella utlåtandepunkter från `report_draft.sections` | 12 pt, fet. Synlig rubrik skrivs utan numrering. SBR-punkt får bara användas internt för spårbarhet. |
 | Bilagerubrik | Noteringsbilaga och fotobilaga | Versaler, 13 pt, fet. Exempel: `BILAGA 1 TILL UTLÅTANDE ÖVER SLUTBESIKTNING`. |
 | Tabellrubrik | Kolumner i noteringsbilagan | Kort SBR-lik text: `Bet.`, `Nr`, `Del/Rum`, `Fel`, `Avhjälpt/sign`. |

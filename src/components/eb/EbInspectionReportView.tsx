@@ -148,22 +148,22 @@ function ReportHeader({ report }: { report: EbInspectionReport }) {
 
   return (
     <header className="mb-8">
-      <div className="grid min-h-[22mm] grid-cols-[70mm_1fr_54mm] items-start gap-4">
-        <div className="flex min-h-[18mm] items-start justify-start">
+      <div className="grid min-h-[18mm] grid-cols-[60mm_1fr_60mm] items-start gap-4">
+        <div className="flex min-h-[16mm] items-start justify-start">
           {report.branding.inspectorLogoUrl ? (
             <img
               src={report.branding.inspectorLogoUrl}
               alt="Besiktningsmannens logotyp"
-              className="max-h-[18mm] max-w-[70mm] object-contain"
+              className="h-[16mm] w-auto max-w-[52mm] object-contain"
             />
           ) : null}
         </div>
         <div aria-hidden="true" />
-        <div className="flex min-h-[18mm] items-start justify-end">
+        <div className="flex min-h-[16mm] items-start justify-end">
           <img
             src={report.branding.besiktAppLogoUrl}
             alt="BesiktApp"
-            className="h-[13mm] w-auto object-contain"
+            className="h-[16mm] w-auto max-w-[52mm] object-contain"
           />
         </div>
       </div>
@@ -184,7 +184,7 @@ function ReportHeader({ report }: { report: EbInspectionReport }) {
         </div>
       </dl>
 
-      <div className="mt-7 text-center">
+      <div className="mt-7 text-left">
         <h1 className={REPORT_TITLE_HEADING_CLASS_NAME}>{REPORT_DOCUMENT_TITLE}</h1>
       </div>
     </header>
