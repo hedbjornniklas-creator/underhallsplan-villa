@@ -137,7 +137,7 @@ export default function EbProjectForm({
               />
             </EbProjectFieldLabel>
           ) : null}
-          <EbProjectFieldLabel label="Fastighetsbeteckning">
+          <EbProjectFieldLabel label="Fastighetsbeteckning / Brf, lgh nr">
             <input
               value={form.propertyDesignation}
               onChange={(event) => onChange('propertyDesignation', event.target.value)}
