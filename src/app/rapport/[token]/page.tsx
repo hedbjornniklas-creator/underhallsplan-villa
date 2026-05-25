@@ -29,6 +29,28 @@ function normalizePdfStatus(value: unknown): 'pending' | 'processing' | 'ready' 
   return 'pending'
 }
 
+function InactiveReportLinkMessage() {
+  return (
+    <main className="min-h-screen bg-slate-100 px-4 py-8">
+      <div className="mx-auto max-w-3xl space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Besiktningsutlåtande
+        </div>
+        <h1 className="text-xl font-semibold text-slate-900">
+          Länken är inte längre aktiv
+        </h1>
+        <p className="text-sm leading-6 text-slate-700">
+          Det här utlåtandet har ersatts av en nyare länk eller återkallats. Kontakta din
+          besiktningsman för att få aktuell länk till utlåtandet.
+        </p>
+        <p className="text-xs leading-5 text-slate-500">
+          Om du har fått länken via mejl kan mejlet avse en äldre version av utlåtandet.
+        </p>
+      </div>
+    </main>
+  )
+}
+
 export default async function PublicReportPage({
   params,
 }: {
@@ -52,7 +74,8 @@ export default async function PublicReportPage({
   if (error) {
     throw new Error(error.message ?? 'Could not load report link.')
   }
-  if (!data || data.revoked_at) notFound()
+  if (!data) notFound()
+  if (data.revoked_at) return <InactiveReportLinkMessage />
 
   const snapshot: ReportSnapshotPayloadV1 | null = isReportSnapshotPayloadV1(data.snapshot_payload)
     ? data.snapshot_payload
