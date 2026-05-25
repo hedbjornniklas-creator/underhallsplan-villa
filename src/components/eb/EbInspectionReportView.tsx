@@ -20,11 +20,11 @@ type EbInspectionReportViewProps = {
 
 function sortNotes(notes: EbNote[]) {
   return [...notes].sort((left, right) => {
-    if ((left.noteNumber ?? 0) !== (right.noteNumber ?? 0)) {
-      return (left.noteNumber ?? 0) - (right.noteNumber ?? 0)
-    }
     if ((left.sortOrder ?? 0) !== (right.sortOrder ?? 0)) {
       return (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
+    }
+    if ((left.noteNumber ?? 0) !== (right.noteNumber ?? 0)) {
+      return (left.noteNumber ?? 0) - (right.noteNumber ?? 0)
     }
     return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
   })
