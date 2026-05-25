@@ -11,7 +11,7 @@ import {
 import {
   createReportSnapshotPayloadV1,
   type ReportSnapshotPayloadV1,
-} from '@/lib/report/pdfV2/renderStructuredPdfV2'
+} from '@/lib/report/reportSnapshotPayload'
 import { buildReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
 import { buildReportSpec } from '@/lib/report/reportSpec'
 import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmailTemplates'

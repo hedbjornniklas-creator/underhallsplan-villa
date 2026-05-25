@@ -2574,6 +2574,24 @@ function ebApprovalDecisionReportText(round: EbInspectionRound) {
   ])
 }
 
+function ebContractPartiesReportText(round: EbInspectionRound) {
+  return reportList([
+    'Avtalsform: Enligt Hantverkarformuläret HF 17 för konsumenttjänster',
+    'Parter',
+    reportList([
+      `Beställare /(Konsument): ${normalizeText(round.project.clientName) ?? '-'}`,
+      'Adress: -',
+      'Adress: -',
+    ]),
+    reportList([
+      `Hantverkare /(Näringsidkare): ${normalizeText(round.project.contractorName) ?? '-'}`,
+      'Adress: -',
+      'Adress: -',
+      `Org.nr: ${normalizeText(round.project.contractorOrgNo) ?? '-'}`,
+    ]),
+  ])
+}
+
 function ebSpecialInvestigationReportRow(round: EbInspectionRound, note: EbNote) {
   return reportList([
     `${ebNoteReportReference(round, note)}: ${note.noteText}`,
@@ -2698,19 +2716,9 @@ function buildEbReportDraft(input: {
       title: 'Avtalade arbeten och parter',
       sbrPoint: '4',
       source: 'project',
-      status: round.project.clientName && round.project.contractorName ? 'complete' : 'missing',
+      status: 'complete',
       isRelevant: true,
-      text: reportList([
-        optionalReportLine('Entreprenad', round.project.contractName),
-        optionalReportLine('Beställare', round.project.clientName),
-        optionalReportLine('Beställare org.nr', round.project.clientOrgNo),
-        optionalReportLine('Entreprenör', round.project.contractorName),
-        optionalReportLine('Entreprenör org.nr', round.project.contractorOrgNo),
-        optionalReportLine('Standardavtal', round.project.standardAgreement),
-        optionalReportLine('Entreprenadform', round.project.contractForm),
-        optionalReportLine('Upphandlingsform', round.project.procurementForm),
-        optionalReportLine('Kontraktsdatum', round.project.contractDate),
-      ]),
+      text: ebContractPartiesReportText(round),
       updatedAt: null,
     },
     {
@@ -3023,7 +3031,7 @@ function buildEbReportDraft(input: {
     updatedAt: storedDraft.updatedAt,
     sections: defaults.map((section) => {
       const existing = existingByKey.get(section.key)
-      if (section.key === 'scope') {
+      if (section.key === 'scope' || section.key === 'contract_parties') {
         return section
       }
       if (section.key === 'conflict_of_interest' && !conflictOfInterestRelevant) {

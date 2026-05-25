@@ -1,6 +1,6 @@
 ﻿import Link from 'next/link'
 import type { CSSProperties } from 'react'
-import type { ReportSnapshotPayloadV1 } from '@/lib/report/pdfV2/renderStructuredPdfV2'
+import type { ReportSnapshotPayloadV1 } from '@/lib/report/reportSnapshotPayload'
 import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import { loadAppendixText } from '@/lib/report/loadAppendixText'
 import {

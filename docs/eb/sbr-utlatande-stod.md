@@ -35,6 +35,25 @@ Första synliga avsnitt i färdigt utlåtande ska vara:
 
 `Typ av besiktning` sparas i utkastet för spårbarhet men skrivs inte ut som egen rubrik, eftersom dokumenttiteln redan anger slutbesiktning.
 
+`Avtalade arbeten och parter` ska byggas från strukturerade entreprenadfält och visas med denna fasta struktur:
+
+```text
+Avtalsform: Enligt Hantverkarformuläret HF 17 för konsumenttjänster
+
+Parter
+
+Beställare /(Konsument): [namn]
+Adress: [adressrad]
+Adress: [adressrad]
+
+Hantverkare /(Näringsidkare): [företagsnamn]
+Adress: [adressrad]
+Adress: [adressrad]
+Org.nr: [organisationsnummer]
+```
+
+Separata adressfält för beställare och hantverkare saknas fortfarande i `eb_projects`; tills dessa finns skrivs adressraderna ut med `-`.
+
 ## Datastöd
 
 | Område | Datastöd | UI-stöd | Kommentar |

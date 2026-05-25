@@ -4,6 +4,7 @@ import type * as ReactPdf from '@react-pdf/renderer'
 import ReportPdfDocumentV2 from '@/lib/report/pdfV2/ReportPdfDocumentV2'
 import { buildReportDataV2, type ReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
 import { buildReportSpec, type ReportSection } from '@/lib/report/reportSpec'
+import type { ReportSnapshotPayloadV1 } from '@/lib/report/reportSnapshotPayload'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 type RenderStructuredPdfV2Params = {
@@ -11,16 +12,8 @@ type RenderStructuredPdfV2Params = {
   propertyId?: string | null
 }
 
-export type ReportSnapshotPayloadV1 = {
-  schemaVersion: 'v1'
-  createdAt: string
-  inspectionId: string
-  propertyId: string
-  inspectionSide: 'buyer' | 'seller' | 'apartment' | null
-  reportData: ReportDataV2
-  reportSpec: ReportSection[]
-}
-
+// Legacy structured PDF renderer. Current report delivery PDF is rendered from
+// the HTML preview via renderPreviewPdf.
 function stripPhotoUrls(data: ReportDataV2): ReportDataV2 {
   const cloned = structuredClone(data)
   const mock = (cloned.mock ?? {}) as Record<string, unknown>
@@ -72,35 +65,6 @@ async function renderDocumentToBuffer(document: React.ReactElement<ReactPdf.Docu
   const rendered = await renderToBuffer(document)
   if (Buffer.isBuffer(rendered)) return rendered
   return Buffer.from(rendered)
-}
-
-export function createReportSnapshotPayloadV1(input: {
-  inspectionId: string
-  propertyId: string
-  inspectionSide: 'buyer' | 'seller' | 'apartment' | null
-  reportData: ReportDataV2
-  reportSpec: ReportSection[]
-}): ReportSnapshotPayloadV1 {
-  return {
-    schemaVersion: 'v1',
-    createdAt: new Date().toISOString(),
-    inspectionId: input.inspectionId,
-    propertyId: input.propertyId,
-    inspectionSide: input.inspectionSide,
-    reportData: input.reportData,
-    reportSpec: input.reportSpec,
-  }
-}
-
-export function isReportSnapshotPayloadV1(value: unknown): value is ReportSnapshotPayloadV1 {
-  if (!value || typeof value !== 'object') return false
-  const row = value as Record<string, unknown>
-  if (row.schemaVersion !== 'v1') return false
-  if (typeof row.inspectionId !== 'string' || row.inspectionId.trim() === '') return false
-  if (typeof row.propertyId !== 'string' || row.propertyId.trim() === '') return false
-  if (typeof row.reportData !== 'object' || row.reportData === null) return false
-  if (!Array.isArray(row.reportSpec)) return false
-  return true
 }
 
 export async function renderStructuredPdfFromSnapshot(

@@ -5,7 +5,7 @@ import { hashAssignmentToken } from '@/lib/assignments/tokens'
 import {
   isReportSnapshotPayloadV1,
   type ReportSnapshotPayloadV1,
-} from '@/lib/report/pdfV2/renderStructuredPdfV2'
+} from '@/lib/report/reportSnapshotPayload'
 import ReportSnapshotView from '@/components/report/ReportSnapshotView'
 import ReportShareButton from '@/components/report/ReportShareButton'
 
