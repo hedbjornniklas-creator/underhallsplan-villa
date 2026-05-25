@@ -116,18 +116,21 @@ export default function Topbar() {
     hasUser && !isDashboardLanding && (isObContext || isEbContext || normalizedPath.startsWith('/inspections'))
   const modules = [
     {
+      code: 'ÖB',
       label: 'Överlåtelsebesiktning',
       description: 'ÖB / insida och utsida',
       href: '/ob',
       active: isObContext || normalizedPath.startsWith('/inspections'),
     },
     {
+      code: 'EB',
       label: 'Entreprenadbesiktning',
       description: 'EB / projekt och utlåtanden',
       href: '/eb',
       active: isEbContext,
     },
   ]
+  const activeModule = modules.find((module) => module.active) ?? null
 
   const logoHref = isAdminContext
     ? '/admin'
@@ -229,6 +232,11 @@ export default function Topbar() {
                 title="Välj modul"
               >
                 <LayoutGrid size={isMobileCompact ? 14 : 16} aria-hidden strokeWidth={2.25} />
+                {activeModule ? (
+                  <span className="inline-flex min-w-7 items-center justify-center rounded-full bg-emerald-700 px-1.5 py-0.5 text-[11px] font-bold leading-none text-white">
+                    {activeModule.code}
+                  </span>
+                ) : null}
                 <span className={isMobileCompact ? 'hidden sm:inline' : 'hidden sm:inline'}>Moduler</span>
               </button>
 
@@ -247,7 +255,16 @@ export default function Topbar() {
                         module.active ? 'bg-emerald-50 text-emerald-950' : 'text-gray-900'
                       }`}
                     >
-                      <span className="block text-sm font-semibold">{module.label}</span>
+                      <span className="flex items-center justify-between gap-3">
+                        <span className="block text-sm font-semibold">{module.label}</span>
+                        <span
+                          className={`inline-flex min-w-8 items-center justify-center rounded-full px-2 py-0.5 text-xs font-bold ${
+                            module.active ? 'bg-emerald-700 text-white' : 'bg-gray-100 text-gray-600'
+                          }`}
+                        >
+                          {module.code}
+                        </span>
+                      </span>
                       <span className="mt-0.5 block text-xs text-gray-500">{module.description}</span>
                     </Link>
                   ))}

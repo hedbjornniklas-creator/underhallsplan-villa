@@ -4,6 +4,7 @@ import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import type { StandardTextId } from '@/content/standardtexts/registry'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export type EbInspectionVariant = 'SLB' | 'FB' | 'EB' | 'GB' | 'KSB' | 'SAB'
@@ -64,8 +65,14 @@ export type EbProjectListItem = {
   notePrefix: string
   clientName: string | null
   clientOrgNo: string | null
+  clientAddress: string | null
+  clientPostalCode: string | null
+  clientCity: string | null
   contractorName: string | null
   contractorOrgNo: string | null
+  contractorAddress: string | null
+  contractorPostalCode: string | null
+  contractorCity: string | null
   status: string
   createdAt: string | null
   updatedAt: string | null
@@ -287,8 +294,14 @@ type EbProjectRow = {
   note_prefix: string | null
   client_name: string | null
   client_org_no: string | null
+  client_address: string | null
+  client_postal_code: string | null
+  client_city: string | null
   contractor_name: string | null
   contractor_org_no: string | null
+  contractor_address: string | null
+  contractor_postal_code: string | null
+  contractor_city: string | null
   status: string | null
   created_at: string | null
   updated_at: string | null
@@ -480,8 +493,14 @@ export type CreateEbProjectInput = {
   contractDate?: string | null
   clientName?: string | null
   clientOrgNo?: string | null
+  clientAddress?: string | null
+  clientPostalCode?: string | null
+  clientCity?: string | null
   contractorName?: string | null
   contractorOrgNo?: string | null
+  contractorAddress?: string | null
+  contractorPostalCode?: string | null
+  contractorCity?: string | null
   inspectionDate?: string | null
   inspectionTime?: string | null
   meetingPlace?: string | null
@@ -825,8 +844,14 @@ function mapProject(
     notePrefix: project.note_prefix ?? 'BES',
     clientName: project.client_name ?? null,
     clientOrgNo: project.client_org_no ?? null,
+    clientAddress: project.client_address ?? null,
+    clientPostalCode: project.client_postal_code ?? null,
+    clientCity: project.client_city ?? null,
     contractorName: project.contractor_name ?? null,
     contractorOrgNo: project.contractor_org_no ?? null,
+    contractorAddress: project.contractor_address ?? null,
+    contractorPostalCode: project.contractor_postal_code ?? null,
+    contractorCity: project.contractor_city ?? null,
     status: project.status ?? 'draft',
     createdAt: project.created_at ?? null,
     updatedAt: project.updated_at ?? null,
@@ -839,7 +864,7 @@ async function fetchProjectsByOrg(orgId: string, projectId?: string) {
   let query = admin
     .from('eb_projects')
     .select(
-      'id,org_id,owner_profile_id,property_id,title,contract_name,object_description,property_designation,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,contractor_name,contractor_org_no,status,created_at,updated_at'
+      'id,org_id,owner_profile_id,property_id,title,contract_name,object_description,property_designation,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,client_address,client_postal_code,client_city,contractor_name,contractor_org_no,contractor_address,contractor_postal_code,contractor_city,status,created_at,updated_at'
     )
     .eq('org_id', orgId)
     .order('updated_at', { ascending: false })
@@ -1561,8 +1586,14 @@ export async function createEbProjectWithInitialSlb(
   const normalizedAddress = normalizeText(input.address)
   const normalizedClientName = normalizeText(input.clientName)
   const normalizedClientOrgNo = normalizeText(input.clientOrgNo)
+  const normalizedClientAddress = normalizeText(input.clientAddress)
+  const normalizedClientPostalCode = normalizeText(input.clientPostalCode)
+  const normalizedClientCity = normalizeText(input.clientCity)
   const normalizedContractorName = normalizeText(input.contractorName)
   const normalizedContractorOrgNo = normalizeText(input.contractorOrgNo)
+  const normalizedContractorAddress = normalizeText(input.contractorAddress)
+  const normalizedContractorPostalCode = normalizeText(input.contractorPostalCode)
+  const normalizedContractorCity = normalizeText(input.contractorCity)
   let propertyId: string | null = null
   let inspectionId: string | null = null
   let projectId: string | null = null
@@ -1635,8 +1666,14 @@ export async function createEbProjectWithInitialSlb(
         note_prefix: 'BES',
         client_name: normalizedClientName,
         client_org_no: normalizedClientOrgNo,
+        client_address: normalizedClientAddress,
+        client_postal_code: normalizedClientPostalCode,
+        client_city: normalizedClientCity,
         contractor_name: normalizedContractorName,
         contractor_org_no: normalizedContractorOrgNo,
+        contractor_address: normalizedContractorAddress,
+        contractor_postal_code: normalizedContractorPostalCode,
+        contractor_city: normalizedContractorCity,
         status: 'active',
       })
       .select('id')
@@ -1705,8 +1742,14 @@ export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbPr
   const normalizedAddress = normalizeText(input.address)
   const normalizedClientName = normalizeText(input.clientName)
   const normalizedClientOrgNo = normalizeText(input.clientOrgNo)
+  const normalizedClientAddress = normalizeText(input.clientAddress)
+  const normalizedClientPostalCode = normalizeText(input.clientPostalCode)
+  const normalizedClientCity = normalizeText(input.clientCity)
   const normalizedContractorName = normalizeText(input.contractorName)
   const normalizedContractorOrgNo = normalizeText(input.contractorOrgNo)
+  const normalizedContractorAddress = normalizeText(input.contractorAddress)
+  const normalizedContractorPostalCode = normalizeText(input.contractorPostalCode)
+  const normalizedContractorCity = normalizeText(input.contractorCity)
   const normalizedNotePrefix = normalizeText(input.notePrefix) ?? 'BES'
 
   const { error } = await admin
@@ -1727,8 +1770,14 @@ export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbPr
       note_prefix: normalizedNotePrefix,
       client_name: normalizedClientName,
       client_org_no: normalizedClientOrgNo,
+      client_address: normalizedClientAddress,
+      client_postal_code: normalizedClientPostalCode,
+      client_city: normalizedClientCity,
       contractor_name: normalizedContractorName,
       contractor_org_no: normalizedContractorOrgNo,
+      contractor_address: normalizedContractorAddress,
+      contractor_postal_code: normalizedContractorPostalCode,
+      contractor_city: normalizedContractorCity,
     })
     .eq('org_id', input.orgId)
     .eq('id', input.projectId)
@@ -2574,19 +2623,25 @@ function ebApprovalDecisionReportText(round: EbInspectionRound) {
   ])
 }
 
+function addressCityLine(postalCode: string | null | undefined, city: string | null | undefined) {
+  return [normalizeText(postalCode), normalizeText(city)].filter(Boolean).join(' ') || '-'
+}
+
 function ebContractPartiesReportText(round: EbInspectionRound) {
+  const vocabulary = resolveEbAgreementVocabulary(round.project.standardAgreement)
+
   return reportList([
-    'Avtalsform: Enligt Hantverkarformuläret HF 17 för konsumenttjänster',
+    `Avtalsform: ${vocabulary.agreementLine}`,
     'Parter',
     reportList([
-      `Beställare /(Konsument): ${normalizeText(round.project.clientName) ?? '-'}`,
-      'Adress: -',
-      'Adress: -',
+      `${vocabulary.clientLabel}: ${normalizeText(round.project.clientName) ?? '-'}`,
+      `Adress: ${normalizeText(round.project.clientAddress) ?? '-'}`,
+      `Adress: ${addressCityLine(round.project.clientPostalCode, round.project.clientCity)}`,
     ]),
     reportList([
-      `Hantverkare /(Näringsidkare): ${normalizeText(round.project.contractorName) ?? '-'}`,
-      'Adress: -',
-      'Adress: -',
+      `${vocabulary.contractorLabel}: ${normalizeText(round.project.contractorName) ?? '-'}`,
+      `Adress: ${normalizeText(round.project.contractorAddress) ?? '-'}`,
+      `Adress: ${addressCityLine(round.project.contractorPostalCode, round.project.contractorCity)}`,
       `Org.nr: ${normalizeText(round.project.contractorOrgNo) ?? '-'}`,
     ]),
   ])

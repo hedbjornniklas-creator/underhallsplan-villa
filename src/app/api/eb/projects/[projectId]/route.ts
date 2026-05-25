@@ -63,8 +63,14 @@ export async function PATCH(
       notePrefix: toText(body.notePrefix) || null,
       clientName: toText(body.clientName) || null,
       clientOrgNo: toText(body.clientOrgNo) || null,
+      clientAddress: toText(body.clientAddress) || null,
+      clientPostalCode: toText(body.clientPostalCode) || null,
+      clientCity: toText(body.clientCity) || null,
       contractorName: toText(body.contractorName) || null,
       contractorOrgNo: toText(body.contractorOrgNo) || null,
+      contractorAddress: toText(body.contractorAddress) || null,
+      contractorPostalCode: toText(body.contractorPostalCode) || null,
+      contractorCity: toText(body.contractorCity) || null,
     })
 
     return NextResponse.json({ project })

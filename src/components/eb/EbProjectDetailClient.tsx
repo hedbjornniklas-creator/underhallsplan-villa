@@ -33,6 +33,7 @@ import type {
   EbInvitationParticipant,
   EbProjectListItem,
 } from '@/lib/eb/server'
+import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 
 type EbProjectDetailClientProps = {
   project: EbProjectListItem
@@ -1216,6 +1217,13 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
   const propertyLine = [currentProject.propertyDesignation, currentProject.municipality]
     .filter(Boolean)
     .join(' - ')
+  const partyVocabulary = resolveEbAgreementVocabulary(currentProject.standardAgreement)
+  const clientAddressLine = [currentProject.clientAddress, [currentProject.clientPostalCode, currentProject.clientCity].filter(Boolean).join(' ')]
+    .filter(Boolean)
+    .join(', ')
+  const contractorAddressLine = [currentProject.contractorAddress, [currentProject.contractorPostalCode, currentProject.contractorCity].filter(Boolean).join(' ')]
+    .filter(Boolean)
+    .join(', ')
 
   const handleCreated = (updatedProject: EbProjectListItem) => {
     setCurrentProject(updatedProject)
@@ -1404,19 +1412,25 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                     className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-50"
                   >
                     <Pencil size={14} />
-                    Redigera
+                    Redigera entreprenad
                   </button>
                 </div>
                 <dl className="mt-4 space-y-4">
                   <div>
-                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Beställare</dt>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                      {partyVocabulary.clientShortLabel}
+                    </dt>
                     <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.clientName ?? 'Ej satt'}</dd>
                     {currentProject.clientOrgNo ? <dd className="text-xs text-gray-600">{currentProject.clientOrgNo}</dd> : null}
+                    {clientAddressLine ? <dd className="text-xs text-gray-600">{clientAddressLine}</dd> : null}
                   </div>
                   <div>
-                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Entreprenör</dt>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                      {partyVocabulary.contractorShortLabel}
+                    </dt>
                     <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.contractorName ?? 'Ej satt'}</dd>
                     {currentProject.contractorOrgNo ? <dd className="text-xs text-gray-600">{currentProject.contractorOrgNo}</dd> : null}
+                    {contractorAddressLine ? <dd className="text-xs text-gray-600">{contractorAddressLine}</dd> : null}
                   </div>
                   <div>
                     <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Kontrakt</dt>

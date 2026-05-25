@@ -1,7 +1,8 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { EbProjectListItem } from '@/lib/eb/server'
+import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 
 export type EbProjectFormState = {
   title: string
@@ -19,8 +20,14 @@ export type EbProjectFormState = {
   notePrefix: string
   clientName: string
   clientOrgNo: string
+  clientAddress: string
+  clientPostalCode: string
+  clientCity: string
   contractorName: string
   contractorOrgNo: string
+  contractorAddress: string
+  contractorPostalCode: string
+  contractorCity: string
 }
 
 export const EMPTY_EB_PROJECT_FORM: EbProjectFormState = {
@@ -39,8 +46,14 @@ export const EMPTY_EB_PROJECT_FORM: EbProjectFormState = {
   notePrefix: 'BES',
   clientName: '',
   clientOrgNo: '',
+  clientAddress: '',
+  clientPostalCode: '',
+  clientCity: '',
   contractorName: '',
   contractorOrgNo: '',
+  contractorAddress: '',
+  contractorPostalCode: '',
+  contractorCity: '',
 }
 
 const STANDARD_AGREEMENT_OPTIONS = [
@@ -48,8 +61,10 @@ const STANDARD_AGREEMENT_OPTIONS = [
   { value: 'AB 04', label: 'AB 04' },
   { value: 'ABT 06', label: 'ABT 06' },
   { value: 'ABS 18', label: 'ABS 18' },
-  { value: 'HF17', label: 'HF17' },
+  { value: 'HF17', label: 'HF 17' },
 ]
+
+type EbProjectFormTab = 'object' | 'agreement' | 'contractors'
 
 export function buildEbProjectForm(project: EbProjectListItem): EbProjectFormState {
   return {
@@ -68,8 +83,14 @@ export function buildEbProjectForm(project: EbProjectListItem): EbProjectFormSta
     notePrefix: project.notePrefix ?? 'BES',
     clientName: project.clientName ?? '',
     clientOrgNo: project.clientOrgNo ?? '',
+    clientAddress: project.clientAddress ?? '',
+    clientPostalCode: project.clientPostalCode ?? '',
+    clientCity: project.clientCity ?? '',
     contractorName: project.contractorName ?? '',
     contractorOrgNo: project.contractorOrgNo ?? '',
+    contractorAddress: project.contractorAddress ?? '',
+    contractorPostalCode: project.contractorPostalCode ?? '',
+    contractorCity: project.contractorCity ?? '',
   }
 }
 
@@ -105,162 +126,243 @@ export default function EbProjectForm({
   onChange: <K extends keyof EbProjectFormState>(field: K, value: EbProjectFormState[K]) => void
   showNotePrefix?: boolean
 }) {
+  const [activeTab, setActiveTab] = useState<EbProjectFormTab>('object')
+  const vocabulary = resolveEbAgreementVocabulary(form.standardAgreement)
+  const tabs: Array<{ key: EbProjectFormTab; label: string }> = [
+    { key: 'object', label: 'Objekt & beställare' },
+    { key: 'agreement', label: 'Avtal' },
+    { key: 'contractors', label: vocabulary.contractorPluralLabel },
+  ]
+
   return (
     <div className="space-y-5">
-      <section>
-        <h3 className="text-sm font-semibold text-gray-950">Entreprenad</h3>
-        <div className="mt-3 grid gap-4 md:grid-cols-2">
-          <EbProjectFieldLabel
-            label="Projektnamn"
-          >
-            <input
-              value={form.title}
-              onChange={(event) => onChange('title', event.target.value)}
-              className={ebProjectInputClassName()}
-              required
-            />
-          </EbProjectFieldLabel>
-          <EbProjectFieldLabel label="Kontraktsnamn">
-            <input
-              value={form.contractName}
-              onChange={(event) => onChange('contractName', event.target.value)}
-              className={ebProjectInputClassName()}
-            />
-          </EbProjectFieldLabel>
-          {showNotePrefix ? (
-            <EbProjectFieldLabel label="Noteringsserie">
+      <div className="border-b border-emerald-100">
+        <div className="flex flex-wrap gap-1">
+          {tabs.map((tab) => {
+            const selected = activeTab === tab.key
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={[
+                  'rounded-t-md border px-3 py-2 text-sm font-semibold transition',
+                  selected
+                    ? 'border-emerald-200 border-b-white bg-white text-emerald-900'
+                    : 'border-transparent text-gray-600 hover:bg-emerald-50 hover:text-emerald-800',
+                ].join(' ')}
+              >
+                {tab.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {activeTab === 'object' ? (
+        <section>
+          <h3 className="text-sm font-semibold text-gray-950">Objekt och beställare</h3>
+          <div className="mt-3 grid gap-4 md:grid-cols-2">
+            <EbProjectFieldLabel label="Projektnamn">
               <input
-                value={form.notePrefix}
-                onChange={(event) => onChange('notePrefix', event.target.value.toUpperCase())}
+                value={form.title}
+                onChange={(event) => onChange('title', event.target.value)}
                 className={ebProjectInputClassName()}
-                maxLength={12}
+                required
               />
             </EbProjectFieldLabel>
-          ) : null}
-          <EbProjectFieldLabel label="Fastighetsbeteckning / Brf, lgh nr">
-            <input
-              value={form.propertyDesignation}
-              onChange={(event) => onChange('propertyDesignation', event.target.value)}
-              className={ebProjectInputClassName()}
-            />
-          </EbProjectFieldLabel>
-          <EbProjectFieldLabel label="Kommun">
-            <input
-              value={form.municipality}
-              onChange={(event) => onChange('municipality', event.target.value)}
-              className={ebProjectInputClassName()}
-            />
-          </EbProjectFieldLabel>
-          <div className="md:col-span-2">
-            <EbProjectFieldLabel label="Beskrivning av entreprenaden">
-              <textarea
-                value={form.objectDescription}
-                onChange={(event) => onChange('objectDescription', event.target.value)}
-                rows={3}
-                className={`${ebProjectInputClassName()} resize-y leading-6`}
+            <EbProjectFieldLabel label="Kontraktsnamn">
+              <input
+                value={form.contractName}
+                onChange={(event) => onChange('contractName', event.target.value)}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
+            {showNotePrefix ? (
+              <EbProjectFieldLabel label="Noteringsserie">
+                <input
+                  value={form.notePrefix}
+                  onChange={(event) => onChange('notePrefix', event.target.value.toUpperCase())}
+                  className={ebProjectInputClassName()}
+                  maxLength={12}
+                />
+              </EbProjectFieldLabel>
+            ) : null}
+            <EbProjectFieldLabel label="Fastighetsbeteckning / Brf, lgh nr">
+              <input
+                value={form.propertyDesignation}
+                onChange={(event) => onChange('propertyDesignation', event.target.value)}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
+            <EbProjectFieldLabel label="Kommun">
+              <input
+                value={form.municipality}
+                onChange={(event) => onChange('municipality', event.target.value)}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
+            <div className="md:col-span-2">
+              <EbProjectFieldLabel label="Beskrivning av entreprenaden">
+                <textarea
+                  value={form.objectDescription}
+                  onChange={(event) => onChange('objectDescription', event.target.value)}
+                  rows={3}
+                  className={`${ebProjectInputClassName()} resize-y leading-6`}
+                />
+              </EbProjectFieldLabel>
+            </div>
+            <EbProjectFieldLabel label="Objektadress">
+              <input
+                value={form.address}
+                onChange={(event) => onChange('address', event.target.value)}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
+            <div className="grid grid-cols-[0.7fr_1fr] gap-3">
+              <EbProjectFieldLabel label="Postnummer">
+                <input
+                  value={form.postalCode}
+                  onChange={(event) => onChange('postalCode', event.target.value)}
+                  className={ebProjectInputClassName()}
+                />
+              </EbProjectFieldLabel>
+              <EbProjectFieldLabel label="Ort">
+                <input
+                  value={form.city}
+                  onChange={(event) => onChange('city', event.target.value)}
+                  className={ebProjectInputClassName()}
+                />
+              </EbProjectFieldLabel>
+            </div>
+            <EbProjectFieldLabel label={vocabulary.clientLabel}>
+              <input
+                value={form.clientName}
+                onChange={(event) => onChange('clientName', event.target.value)}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
+            <EbProjectFieldLabel label="Beställare org.nr">
+              <input
+                value={form.clientOrgNo}
+                onChange={(event) => onChange('clientOrgNo', event.target.value)}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
+            <EbProjectFieldLabel label="Beställare adress">
+              <input
+                value={form.clientAddress}
+                onChange={(event) => onChange('clientAddress', event.target.value)}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
+            <div className="grid grid-cols-[0.7fr_1fr] gap-3">
+              <EbProjectFieldLabel label="Postnummer">
+                <input
+                  value={form.clientPostalCode}
+                  onChange={(event) => onChange('clientPostalCode', event.target.value)}
+                  className={ebProjectInputClassName()}
+                />
+              </EbProjectFieldLabel>
+              <EbProjectFieldLabel label="Ort">
+                <input
+                  value={form.clientCity}
+                  onChange={(event) => onChange('clientCity', event.target.value)}
+                  className={ebProjectInputClassName()}
+                />
+              </EbProjectFieldLabel>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'agreement' ? (
+        <section>
+          <h3 className="text-sm font-semibold text-gray-950">Avtal</h3>
+          <div className="mt-3 grid gap-4 md:grid-cols-2">
+            <EbProjectFieldLabel label="Standardavtal">
+              <select
+                value={form.standardAgreement}
+                onChange={(event) => onChange('standardAgreement', event.target.value)}
+                className={ebProjectInputClassName()}
+              >
+                {STANDARD_AGREEMENT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </EbProjectFieldLabel>
+            <EbProjectFieldLabel label="Kontraktsdatum">
+              <input
+                type="date"
+                value={form.contractDate}
+                onChange={(event) => onChange('contractDate', event.target.value)}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
+            <EbProjectFieldLabel label="Entreprenadform">
+              <input
+                value={form.contractForm}
+                onChange={(event) => onChange('contractForm', event.target.value)}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
+            <EbProjectFieldLabel label="Upphandlingsform">
+              <input
+                value={form.procurementForm}
+                onChange={(event) => onChange('procurementForm', event.target.value)}
+                className={ebProjectInputClassName()}
               />
             </EbProjectFieldLabel>
           </div>
-          <EbProjectFieldLabel label="Adress">
-            <input
-              value={form.address}
-              onChange={(event) => onChange('address', event.target.value)}
-              className={ebProjectInputClassName()}
-            />
-          </EbProjectFieldLabel>
-          <div className="grid grid-cols-[0.7fr_1fr] gap-3">
-            <EbProjectFieldLabel label="Postnummer">
+        </section>
+      ) : null}
+
+      {activeTab === 'contractors' ? (
+        <section>
+          <h3 className="text-sm font-semibold text-gray-950">{vocabulary.contractorShortLabel}</h3>
+          <div className="mt-3 grid gap-4 md:grid-cols-2">
+            <EbProjectFieldLabel label={vocabulary.contractorLabel}>
               <input
-                value={form.postalCode}
-                onChange={(event) => onChange('postalCode', event.target.value)}
+                value={form.contractorName}
+                onChange={(event) => onChange('contractorName', event.target.value)}
                 className={ebProjectInputClassName()}
               />
             </EbProjectFieldLabel>
-            <EbProjectFieldLabel label="Ort">
+            <EbProjectFieldLabel label={vocabulary.contractorOrgLabel}>
               <input
-                value={form.city}
-                onChange={(event) => onChange('city', event.target.value)}
+                value={form.contractorOrgNo}
+                onChange={(event) => onChange('contractorOrgNo', event.target.value)}
                 className={ebProjectInputClassName()}
               />
             </EbProjectFieldLabel>
+            <EbProjectFieldLabel label={`${vocabulary.contractorShortLabel} adress`}>
+              <input
+                value={form.contractorAddress}
+                onChange={(event) => onChange('contractorAddress', event.target.value)}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
+            <div className="grid grid-cols-[0.7fr_1fr] gap-3">
+              <EbProjectFieldLabel label="Postnummer">
+                <input
+                  value={form.contractorPostalCode}
+                  onChange={(event) => onChange('contractorPostalCode', event.target.value)}
+                  className={ebProjectInputClassName()}
+                />
+              </EbProjectFieldLabel>
+              <EbProjectFieldLabel label="Ort">
+                <input
+                  value={form.contractorCity}
+                  onChange={(event) => onChange('contractorCity', event.target.value)}
+                  className={ebProjectInputClassName()}
+                />
+              </EbProjectFieldLabel>
+            </div>
           </div>
-        </div>
-      </section>
-
-      <section>
-        <h3 className="text-sm font-semibold text-gray-950">Avtal</h3>
-        <div className="mt-3 grid gap-4 md:grid-cols-2">
-          <EbProjectFieldLabel label="Standardavtal">
-            <select
-              value={form.standardAgreement}
-              onChange={(event) => onChange('standardAgreement', event.target.value)}
-              className={ebProjectInputClassName()}
-            >
-              {STANDARD_AGREEMENT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </EbProjectFieldLabel>
-          <EbProjectFieldLabel label="Kontraktsdatum">
-            <input
-              type="date"
-              value={form.contractDate}
-              onChange={(event) => onChange('contractDate', event.target.value)}
-              className={ebProjectInputClassName()}
-            />
-          </EbProjectFieldLabel>
-          <EbProjectFieldLabel label="Entreprenadform">
-            <input
-              value={form.contractForm}
-              onChange={(event) => onChange('contractForm', event.target.value)}
-              className={ebProjectInputClassName()}
-            />
-          </EbProjectFieldLabel>
-          <EbProjectFieldLabel label="Upphandlingsform">
-            <input
-              value={form.procurementForm}
-              onChange={(event) => onChange('procurementForm', event.target.value)}
-              className={ebProjectInputClassName()}
-            />
-          </EbProjectFieldLabel>
-        </div>
-      </section>
-
-      <section>
-        <h3 className="text-sm font-semibold text-gray-950">Parter</h3>
-        <div className="mt-3 grid gap-4 md:grid-cols-2">
-          <EbProjectFieldLabel label="Beställare">
-            <input
-              value={form.clientName}
-              onChange={(event) => onChange('clientName', event.target.value)}
-              className={ebProjectInputClassName()}
-            />
-          </EbProjectFieldLabel>
-          <EbProjectFieldLabel label="Beställare org.nr">
-            <input
-              value={form.clientOrgNo}
-              onChange={(event) => onChange('clientOrgNo', event.target.value)}
-              className={ebProjectInputClassName()}
-            />
-          </EbProjectFieldLabel>
-          <EbProjectFieldLabel label="Entreprenör">
-            <input
-              value={form.contractorName}
-              onChange={(event) => onChange('contractorName', event.target.value)}
-              className={ebProjectInputClassName()}
-            />
-          </EbProjectFieldLabel>
-          <EbProjectFieldLabel label="Entreprenör org.nr">
-            <input
-              value={form.contractorOrgNo}
-              onChange={(event) => onChange('contractorOrgNo', event.target.value)}
-              className={ebProjectInputClassName()}
-            />
-          </EbProjectFieldLabel>
-        </div>
-      </section>
+        </section>
+      ) : null}
     </div>
   )
 }

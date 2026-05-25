@@ -35,7 +35,7 @@ Första synliga avsnitt i färdigt utlåtande ska vara:
 
 `Typ av besiktning` sparas i utkastet för spårbarhet men skrivs inte ut som egen rubrik, eftersom dokumenttiteln redan anger slutbesiktning.
 
-`Avtalade arbeten och parter` ska byggas från strukturerade entreprenadfält och visas med denna fasta struktur:
+`Avtalade arbeten och parter` ska byggas från strukturerade entreprenadfält och visas med denna fasta struktur. Vokabulären styrs av avtalstyp: HF 17 använder `Hantverkare /(Näringsidkare)`, medan ABS 18 och övriga entreprenadavtal använder `Entreprenör`.
 
 ```text
 Avtalsform: Enligt Hantverkarformuläret HF 17 för konsumenttjänster
@@ -52,8 +52,6 @@ Adress: [adressrad]
 Org.nr: [organisationsnummer]
 ```
 
-Separata adressfält för beställare och hantverkare saknas fortfarande i `eb_projects`; tills dessa finns skrivs adressraderna ut med `-`.
-
 ## Datastöd
 
 | Område | Datastöd | UI-stöd | Kommentar |
@@ -61,7 +59,7 @@ Separata adressfält för beställare och hantverkare saknas fortfarande i `eb_p
 | Entreprenad/projekt | `eb_projects` | Entreprenadsidan | Strukturerat. |
 | Objekt/adress/kommun/fastighetsbeteckning | `eb_projects`, kopplad `properties` | Entreprenadsidan | Strukturerat. |
 | Avtal/entreprenadform/upphandling/kontraktsdatum | `eb_projects` | Entreprenadsidan | Strukturerat. |
-| Beställare/entreprenör/org.nr | `eb_projects`, initialt `eb_participants` | Entreprenadsidan, kallelse | Strukturerat. |
+| Beställare/hantverkare/entreprenör/org.nr/adress | `eb_projects`, initialt `eb_participants` | Entreprenadsidan, kallelse | Strukturerat för beställare och primär hantverkare/entreprenör. |
 | Besiktningstyp/datum/tid | `inspections`, `eb_inspection_details` | Ny besiktning/runda, Utlåtandeutkast | Strukturerat. |
 | Kallelse | `eb_inspection_details`, `eb_participants`, `outbound_messages` | Kallelse-dialog, Utlåtandeutkast | Delvis strukturerat. |
 | Deltagare/närvarande | `eb_participants` | Kallelse-dialog | Strukturerat, men partsombud/för talan behöver tydligare rollstöd. |
@@ -209,6 +207,7 @@ Detta är inte blockerande för att kunna fylla i ett komplett utlåtande, men b
 - Lägg till strukturerade datum för avhjälpande och efterbesiktning.
 - Lägg till besiktningsmannaprofil med certifikatnummer och SBR-medlemskap.
 - Generera bilagor per fack/littera från `eb_disciplines` och `eb_notes`.
+- Bygg fullt stöd för flera hantverkare/entreprenörer per entreprenad med egen lista/tabell. Nuvarande `eb_projects` hanterar primär hantverkare/entreprenör.
 
 ## Regel för utskrift
 
