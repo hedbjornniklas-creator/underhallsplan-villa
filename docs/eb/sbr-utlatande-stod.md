@@ -179,7 +179,7 @@ Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de s
 | Fråga om jäv (8) | Redigerbart utkast | `report_draft.conflict_of_interest` |
 | Tidigare besiktningar/provningar (9) | Redigerbart utkast | `report_draft.previous_inspections_tests` |
 | Provning/dokumentation | Redigerbart utkast + standardtext | `report_draft.testing_documentation` |
-| Avtal, handlingar och andra överenskommelser (10) | Ja | `eb_projects.contract_date`, `eb_projects.agreement_items`, `eb_project_attachments`, `report_draft.contract_documents` |
+| Avtal, handlingar och andra överenskommelser (10) | Ja | `eb_projects.contract_date`, `eb_projects.agreement_items`, `report_draft.contract_documents` |
 | Ej åtkomliga delar (11) | Delvis | `eb_notes.status_key=not_accessible`, `report_draft.not_accessible` |
 | Endast dokumentationsbesiktigade delar (12) | Redigerbart utkast | `report_draft.documentation_only` |
 | Fel, bristfälligheter, anmärkningar och förhållanden (13-17, 23) | Ja/delvis | `eb_notes`, `report_draft.defects_appendices` |
@@ -205,11 +205,11 @@ Layoutregel för `Sättet för kallelse till besiktningen`: sektionen ska visa r
 
 Layoutregel för `Tidigare besiktningar`: uppgifterna fylls i under `Uppgifter > Tidigare` på besiktningen och sparas strukturerat i `eb_inspection_details.previous_inspections`. Listan ska kunna kompletteras med valfria fritextrader samt rader som senare kan hämtas från programmet. Om inga tidigare besiktningar finns ska utlåtandet visa `-`.
 
-Standardtext för `Provning, dokumentation`: texten ligger i `src/content/standardtexts/eb/EB_REPORT_TESTING_DOCUMENTATION.txt` och ska börja med `Följande dokument över avtalade kvalitetsåtgärder redovisades...`. Under listan med handlingar ska texten om att saknad eller felaktig dokumentation noteras som fel under `Fel och förhållanden` ligga. Äldre sparade utkast med den tidigare interna instruktionstexten ersätts automatiskt av den aktuella standardtexten.
+Standardtext för `Provning, dokumentation`: texten ligger i `src/content/standardtexts/eb/EB_REPORT_TESTING_DOCUMENTATION.txt` och ska börja med `Följande dokument över avtalade kvalitetsåtgärder redovisades...`. Bedömningstexten om att entreprenörens dokumentation utgjort tillräckligt underlag ska ligga före listan med granskade handlingar. Under dessa stycken ska underrubriken `Dokumentation:` visas, följt av granskade handlingar i två kolumner: handling till vänster och `Daterad: [datum]` eller överlämningsstatus till höger. Under listan med handlingar ska texten om att saknad eller felaktig dokumentation noteras som fel under `Fel och förhållanden` ligga. Äldre sparade utkast med den tidigare interna instruktionstexten ersätts automatiskt av den aktuella standardtexten.
 
 Regel för saknad dokumentation: när en EB-handling i `Provning och dokumentation` markeras som `Ej redovisad`/`Ej överlämnad` ska systemet skapa en automatisk notering i `Fel och förhållanden`. Noteringen märks med `eb_notes.source_system = eb_missing_document` och `source_record_id = document_types.id`, så den kan uppdateras eller tas bort när dokumentstatus ändras utan att manuella noteringar påverkas. Själva avsnittet `Provning, dokumentation` ska bara lista handlingar som är `Granskad`/`Överlämnad`.
 
-Layoutregel för `Avtal, handlingar och andra överenskommelser`: uppgifterna fylls i under `Redigera entreprenad > Avtal`. ÄTA-handlingar och övriga handlingar/överenskommelser sparas strukturerat i `eb_projects.agreement_items`, med flera rader och val för om raden ska tas med i utlåtandet. Utlåtandet ska inleda med avtalsform och kontraktsdatum, därefter lista ÄTA-handlingar och sist övriga handlingar/överenskommelser.
+Layoutregel för `Avtal, handlingar och andra överenskommelser`: uppgifterna fylls i under `Redigera entreprenad > Avtal`. ÄTA-handlingar och övriga handlingar/överenskommelser sparas strukturerat i `eb_projects.agreement_items`, med flera rader och val för om raden ska tas med i utlåtandet. Utlåtandet ska inleda med avtalsform och kontraktsdatum, därefter lista ÄTA-handlingar och sist övriga handlingar/överenskommelser. Uppladdade projektdokument/bilagor i `eb_project_attachments` ska inte automatiskt listas i detta avsnitt.
 
 ## Kvar att göra för mer strukturerat stöd
 

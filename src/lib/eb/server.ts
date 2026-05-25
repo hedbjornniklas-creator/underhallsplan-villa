@@ -3168,7 +3168,8 @@ function ebInspectionDocumentReportRow(document: EbInspectionDocument) {
 function ebTestingDocumentationReportText(documents: EbInspectionDocument[]) {
   const standardText = ebStandardText('EB_REPORT_TESTING_DOCUMENTATION')
   const [intro, ...rest] = standardText.split(/\n{2,}/)
-  const conclusion = rest.join('\n\n')
+  const beforeList = rest.length > 1 ? rest.slice(0, -1).join('\n\n') : ''
+  const conclusion = rest.length > 1 ? rest[rest.length - 1] : rest.join('\n\n')
   const documentRows = documents
     .map(ebInspectionDocumentReportRow)
     .filter((row): row is string => Boolean(row))
@@ -3178,7 +3179,7 @@ function ebTestingDocumentationReportText(documents: EbInspectionDocument[]) {
       ? documentRows.join('\n')
       : 'Inga dokument har markerats som redovisade för granskning.'
 
-  return [intro, documentText, conclusion].map(normalizeText).filter(Boolean).join('\n\n')
+  return [intro, beforeList, documentText, conclusion].map(normalizeText).filter(Boolean).join('\n\n')
 }
 
 function ebNoteReportReference(round: EbInspectionRound, note: EbNote) {
@@ -3274,25 +3275,11 @@ function ebAgreementOtherLine(item: EbProjectAgreementItem) {
   return `• ${sentenceWithPeriod([title, note].filter(Boolean).join(' - ') + dateText)}`
 }
 
-function ebAttachmentAgreementLine(attachment: EbProjectAttachment) {
-  const title = normalizeText(attachment.title) ?? normalizeText(attachment.fileName) ?? 'Handling'
-  const details = [
-    attachment.documentDate ? `datum ${attachment.documentDate}` : null,
-    attachment.documentNumber ? `nr/rev ${attachment.documentNumber}` : null,
-    attachment.littera ? `littera ${attachment.littera}` : null,
-    attachment.documentNote,
-  ].filter(Boolean)
-  return `• ${sentenceWithPeriod(details.length > 0 ? `${title} (${details.join(', ')})` : title)}`
-}
-
-function ebContractDocumentsReportText(round: EbInspectionRound, includedDocuments: EbProjectAttachment[]) {
+function ebContractDocumentsReportText(round: EbInspectionRound) {
   const reportItems = round.project.agreementItems.filter((item) => item.includeInReport)
   const changeOrders = reportItems.filter((item) => item.kind === 'change_order')
   const otherAgreementItems = reportItems.filter((item) => item.kind === 'other')
-  const otherRows = [
-    ...otherAgreementItems.map(ebAgreementOtherLine),
-    ...includedDocuments.map(ebAttachmentAgreementLine),
-  ]
+  const otherRows = otherAgreementItems.map(ebAgreementOtherLine)
 
   return [
     `Arbetenas omfattning framgår av skriftligt avtal enligt ${agreementReference(round.project.standardAgreement)} undertecknat av parterna ${round.project.contractDate ?? 'datum ej angivet'}.`,
@@ -3402,8 +3389,7 @@ function buildEbReportDraft(input: {
     participants.filter((participant) => participant.receivesReport).map(reportParticipantRow)
   const conflictOfInterestRelevant = round.inspection.inspectorAppointedBy === 'parties_jointly'
   const includedAttachments = attachments.filter((attachment) => attachment.includeInReport)
-  const includedDocuments = includedAttachments.filter((attachment) => attachment.attachmentType === 'document')
-  const contractDocuments = ebContractDocumentsReportText(round, includedDocuments)
+  const contractDocuments = ebContractDocumentsReportText(round)
   const includedAgreementItems = round.project.agreementItems.filter((item) => item.includeInReport)
   const testingDocumentationText = ebTestingDocumentationReportText(inspectionDocuments)
   const hasReviewedDocuments = inspectionDocuments.some((document) => document.status === 'present')
@@ -3539,7 +3525,7 @@ function buildEbReportDraft(input: {
       title: 'Avtal, handlingar och andra överenskommelser',
       sbrPoint: '10',
       source: 'project',
-      status: round.project.contractDate || includedAgreementItems.length > 0 || includedDocuments.length > 0
+      status: round.project.contractDate || includedAgreementItems.length > 0
         ? 'complete'
         : 'draft',
       isRelevant: true,

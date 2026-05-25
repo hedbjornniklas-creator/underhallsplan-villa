@@ -5,7 +5,13 @@
 import Link from 'next/link'
 import { ArrowLeft, ClipboardCheck, FileText, Printer } from 'lucide-react'
 import type { ReactNode } from 'react'
-import type { EbInspectionReport, EbNote, EbNoteImage, EbPreviousInspectionItem } from '@/lib/eb/server'
+import type {
+  EbInspectionDocument,
+  EbInspectionReport,
+  EbNote,
+  EbNoteImage,
+  EbPreviousInspectionItem,
+} from '@/lib/eb/server'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 
 type EbInspectionReportViewProps = {
@@ -70,6 +76,10 @@ function isMissingValue(value: string) {
   return value.trim().toLocaleLowerCase('sv-SE') === 'ej angivet'
 }
 
+function isReportCursorArtifact(value: string) {
+  return value.trim() === '|'
+}
+
 function isInstructionText(text: string) {
   const normalized = normalizeReportText(text)
   return (
@@ -86,7 +96,7 @@ function printableReportLines(text: string) {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => {
-      if (!line || isMissingValue(line)) return false
+      if (!line || isMissingValue(line) || isReportCursorArtifact(line)) return false
       const row = parseLabelLine(line)
       return !row || !isMissingValue(row.value)
     })
@@ -410,6 +420,96 @@ function PreviousInspectionsReport({ report }: { report: EbInspectionReport }) {
   )
 }
 
+function isTestingDocumentationDocumentBlock(block: string) {
+  const lines = printableReportLines(block)
+  if (lines.length === 0) return false
+  return (
+    lines.every((line) => line.trim().startsWith('•')) ||
+    normalizeReportText(block).startsWith('Inga dokument har markerats')
+  )
+}
+
+function isTestingDocumentationConclusion(block: string) {
+  return normalizeReportText(block).startsWith('Där avtalad dokumentation')
+}
+
+function testingDocumentationBlocks(text: string) {
+  const proseBlocks = normalizeReportText(text)
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter((block) => block && !isTestingDocumentationDocumentBlock(block))
+
+  return {
+    beforeList: proseBlocks.filter((block) => !isTestingDocumentationConclusion(block)),
+    afterList: proseBlocks.filter(isTestingDocumentationConclusion),
+  }
+}
+
+function isHandoverReportDocument(document: EbInspectionDocument) {
+  return document.resultLabel?.trim().toLocaleLowerCase('sv-SE').includes('överlämnas') ?? false
+}
+
+function documentationResultText(document: EbInspectionDocument) {
+  if (isHandoverReportDocument(document)) return 'Överlämnas.'
+  return `Daterad: ${document.documentDate?.trim() || 'Klicka här - ange datum.'}`
+}
+
+function TestingDocumentationReport({
+  report,
+  section,
+}: {
+  report: EbInspectionReport
+  section: EbInspectionReport['reportDraft']['sections'][number]
+}) {
+  const { beforeList, afterList } = testingDocumentationBlocks(section.text)
+  const documents = report.inspectionDocuments
+    .filter((document) => document.status === 'present')
+    .sort((left, right) => left.sortOrder - right.sortOrder)
+
+  return (
+    <ReportSection title="Provning, dokumentation">
+      <div className="space-y-2 text-[10.5pt] leading-[1.35] text-black">
+        {beforeList.map((block, index) => (
+          <p key={`${block}-${index}`} className="whitespace-pre-wrap">
+            {block}
+          </p>
+        ))}
+
+        <div className="pt-1">
+          <p className="underline">Dokumentation:</p>
+          {documents.length > 0 ? (
+            <ul className="mt-2 space-y-1 pl-7">
+              {documents.map((document) => (
+                <li key={document.documentTypeId} className="pl-1">
+                  <div className="grid grid-cols-[88mm_1fr] items-end gap-x-5">
+                    <span>{document.title}</span>
+                    <span>{documentationResultText(document)}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2">Inga dokument har markerats som redovisade för granskning.</p>
+          )}
+        </div>
+
+        {afterList.map((block, index) => (
+          <p key={`${block}-${index}`} className="whitespace-pre-wrap pt-1">
+            {block}
+          </p>
+        ))}
+      </div>
+    </ReportSection>
+  )
+}
+
+function isTestingDocumentationSection(section: EbInspectionReport['reportDraft']['sections'][number]) {
+  return (
+    section.key === 'testing_documentation' ||
+    section.title.trim().toLocaleLowerCase('sv-SE') === 'provning, dokumentation'
+  )
+}
+
 function ReportHeader({ report }: { report: EbInspectionReport }) {
   const propertyDesignation = report.project.propertyDesignation?.trim() || '-'
   const streetAndCity = detailLine([report.project.address, report.project.city])
@@ -636,6 +736,8 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
             <SummonsReport key={section.key} report={report} section={section} />
           ) : section.key === 'previous_inspections_tests' ? (
             <PreviousInspectionsReport key={section.key} report={report} />
+          ) : isTestingDocumentationSection(section) ? (
+            <TestingDocumentationReport key={section.key} report={report} section={section} />
           ) : section.key === 'contract_documents' ? (
             <ReportSection key={section.key} title={section.title} headingMarker>
               <ReportText text={section.text} />
