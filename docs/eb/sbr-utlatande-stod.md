@@ -207,6 +207,8 @@ Layoutregel för `Tidigare besiktningar`: uppgifterna fylls i under `Uppgifter` 
 
 Standardtext för `Provning, dokumentation`: texten ligger i `src/content/standardtexts/eb/EB_REPORT_TESTING_DOCUMENTATION.txt` och ska börja med `Följande dokument över avtalade kvalitetsåtgärder redovisades...`. Under listan med handlingar ska texten om att saknad eller felaktig dokumentation noteras som fel under `Fel och förhållanden` ligga. Äldre sparade utkast med den tidigare interna instruktionstexten ersätts automatiskt av den aktuella standardtexten.
 
+Regel för saknad dokumentation: när en EB-handling i `Provning och dokumentation` markeras som `Ej redovisad`/`Ej överlämnad` ska systemet skapa en automatisk notering i `Fel och förhållanden`. Noteringen märks med `eb_notes.source_system = eb_missing_document` och `source_record_id = document_types.id`, så den kan uppdateras eller tas bort när dokumentstatus ändras utan att manuella noteringar påverkas.
+
 ## Kvar att göra för mer strukturerat stöd
 
 Detta är inte blockerande för att kunna fylla i ett komplett utlåtande, men bör prioriteras för bättre styrning:

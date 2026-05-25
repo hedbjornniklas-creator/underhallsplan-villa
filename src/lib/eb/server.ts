@@ -524,6 +524,12 @@ type InspectionDocumentRow = {
   created_at: string | null
 }
 
+type EbAutoSourceNoteRow = {
+  id: string
+  source_record_id: string | null
+  note_text: string | null
+}
+
 type ProfileContactRow = {
   id: string
   full_name: string | null
@@ -672,6 +678,7 @@ const PREVIOUS_INSPECTION_DEFAULTS: Array<Pick<EbPreviousInspectionItem, 'key' |
   { key: 'syn', label: 'Syn' },
   { key: 'pre_inspection', label: 'Förbesiktning' },
 ]
+const EB_MISSING_DOCUMENT_NOTE_SOURCE = 'eb_missing_document'
 const INSPECTION_DOCUMENT_STATUS_VALUES = ['present', 'missing', 'na'] as const
 const EB_DOCUMENT_TYPE_CODE_ORDER = [
   'EB_DOC_TATSKIKT_YTTERTAK_TERRASSBJALKLAG',
@@ -1229,6 +1236,10 @@ function documentTypeSortOrder(row: DocumentTypeRow) {
   return EB_DOCUMENT_TYPE_ORDER.get(row.code) ?? 1000
 }
 
+function isHandoverDocumentResultLabel(value: string | null | undefined) {
+  return normalizeText(value)?.toLocaleLowerCase('sv-SE').includes('överlämnas') ?? false
+}
+
 function mapInspectionDocument(
   documentType: DocumentTypeRow,
   document: InspectionDocumentRow | null
@@ -1327,10 +1338,157 @@ function normalizeInspectionDocumentInput(
   }
 }
 
+function ebMissingDocumentNoteText(
+  documentType: DocumentTypeRow,
+  document: ReturnType<typeof normalizeInspectionDocumentInput>
+) {
+  const baseText = isHandoverDocumentResultLabel(documentType.result_label)
+    ? `Avtalad dokumentation saknas: ${documentType.label} har inte överlämnats.`
+    : `Avtalad dokumentation saknas: ${documentType.label} har inte redovisats.`
+
+  return document.note ? `${baseText} Kommentar: ${document.note}` : baseText
+}
+
+async function syncMissingDocumentNotes(input: {
+  orgId: string
+  requestedByUserId: string
+  projectId: string
+  inspectionId: string
+  contractorName: string | null
+  documents: Array<{
+    documentType: DocumentTypeRow
+    document: ReturnType<typeof normalizeInspectionDocumentInput>
+  }>
+}) {
+  const admin = createSupabaseAdminClient()
+  const missingDocuments = input.documents.filter(({ document }) => document.status === 'missing')
+  const missingTypeIds = new Set(missingDocuments.map(({ documentType }) => documentType.id))
+
+  const { data, error } = await admin
+    .from('eb_notes')
+    .select('id,source_record_id,note_text')
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('source_system', EB_MISSING_DOCUMENT_NOTE_SOURCE)
+
+  if (error) {
+    if (isMissingColumnError(error)) return
+    throw new Error(error.message ?? 'Kunde inte läsa automatiska dokumentnoteringar.')
+  }
+
+  const existingNotes = (data ?? []) as EbAutoSourceNoteRow[]
+  const existingByTypeId = new Map<string, EbAutoSourceNoteRow>()
+  const obsoleteNoteIds: string[] = []
+
+  for (const note of existingNotes) {
+    const sourceRecordId = normalizeText(note.source_record_id)
+    if (!sourceRecordId || !missingTypeIds.has(sourceRecordId)) {
+      obsoleteNoteIds.push(note.id)
+      continue
+    }
+    if (existingByTypeId.has(sourceRecordId)) {
+      obsoleteNoteIds.push(note.id)
+      continue
+    }
+    existingByTypeId.set(sourceRecordId, note)
+  }
+
+  if (obsoleteNoteIds.length > 0) {
+    const { error: imageDetachError } = await admin
+      .from('inspection_images')
+      .update({ eb_note_id: null })
+      .eq('inspection_id', input.inspectionId)
+      .in('eb_note_id', obsoleteNoteIds)
+
+    if (imageDetachError) {
+      throw new Error(imageDetachError.message ?? 'Kunde inte koppla loss bilder från dokumentnoteringar.')
+    }
+
+    const { error: deleteError } = await admin
+      .from('eb_notes')
+      .delete()
+      .eq('org_id', input.orgId)
+      .eq('eb_project_id', input.projectId)
+      .eq('inspection_id', input.inspectionId)
+      .eq('source_system', EB_MISSING_DOCUMENT_NOTE_SOURCE)
+      .in('id', obsoleteNoteIds)
+
+    if (deleteError) {
+      throw new Error(deleteError.message ?? 'Kunde inte ta bort automatiska dokumentnoteringar.')
+    }
+  }
+
+  const updateResults = await Promise.all(
+    missingDocuments.map(({ documentType, document }) => {
+      const existingNote = existingByTypeId.get(documentType.id)
+      if (!existingNote) return Promise.resolve({ error: null })
+
+      const noteText = ebMissingDocumentNoteText(documentType, document)
+      if (existingNote.note_text === noteText) return Promise.resolve({ error: null })
+
+      return admin
+        .from('eb_notes')
+        .update({
+          note_text: noteText,
+          location: 'Dokumentation',
+          marker_key: 'E',
+          status_key: 'open',
+          responsible_party: input.contractorName,
+          trade_group: 'Dokumentation',
+          updated_by: input.requestedByUserId,
+        })
+        .eq('org_id', input.orgId)
+        .eq('eb_project_id', input.projectId)
+        .eq('inspection_id', input.inspectionId)
+        .eq('id', existingNote.id)
+    })
+  )
+  const updateError = updateResults.find((result) => result.error)?.error
+  if (updateError) {
+    throw new Error(updateError.message ?? 'Kunde inte uppdatera automatiska dokumentnoteringar.')
+  }
+
+  const documentsToInsert = missingDocuments.filter(({ documentType }) => !existingByTypeId.has(documentType.id))
+  if (documentsToInsert.length === 0) return
+
+  let nextNoteNumber = await getNextEbNoteNumber(input)
+  const insertRows = documentsToInsert.map(({ documentType, document }) => {
+    const noteNumber = nextNoteNumber
+    nextNoteNumber += 1
+
+    return {
+      org_id: input.orgId,
+      eb_project_id: input.projectId,
+      inspection_id: input.inspectionId,
+      discipline_id: null,
+      note_number: noteNumber,
+      location: 'Dokumentation',
+      room: null,
+      place_detail: null,
+      marker_key: 'E',
+      status_key: 'open',
+      note_text: ebMissingDocumentNoteText(documentType, document),
+      responsible_party: input.contractorName,
+      trade_group: 'Dokumentation',
+      sort_order: noteNumber * 100,
+      created_by: input.requestedByUserId,
+      updated_by: input.requestedByUserId,
+      source_system: EB_MISSING_DOCUMENT_NOTE_SOURCE,
+      source_record_id: documentType.id,
+    }
+  })
+
+  const { error: insertError } = await admin.from('eb_notes').insert(insertRows)
+  if (insertError) {
+    throw new Error(insertError.message ?? 'Kunde inte skapa noteringar för saknade dokument.')
+  }
+}
+
 export async function saveEbInspectionDocuments(
   input: SaveEbInspectionDocumentsInput
 ): Promise<EbInspectionDocument[]> {
-  await getEbInspectionRoundBase(input)
+  const roundBase = await getEbInspectionRoundBase(input)
 
   const documentTypes = await listEbDocumentTypes()
   const typeById = new Map(documentTypes.map((documentType) => [documentType.id, documentType]))
@@ -1349,11 +1507,17 @@ export async function saveEbInspectionDocuments(
     }
   }
 
-  const rows = input.documents
+  const normalizedDocuments = input.documents
     .map((document) => {
       const documentType = typeById.get(document.documentTypeId)
       if (!documentType) return null
       const normalized = normalizeInspectionDocumentInput(document, documentType)
+      return { documentType, document: normalized }
+    })
+    .filter((document): document is NonNullable<typeof document> => Boolean(document))
+
+  const rows = normalizedDocuments
+    .map(({ document: normalized }) => {
       if (normalized.status === 'na' && !normalized.document_date && !normalized.note) return null
       return {
         inspection_id: input.inspectionId,
@@ -1373,6 +1537,15 @@ export async function saveEbInspectionDocuments(
       throw new Error(insertError.message ?? 'Kunde inte spara granskade handlingar.')
     }
   }
+
+  await syncMissingDocumentNotes({
+    orgId: input.orgId,
+    requestedByUserId: input.requestedByUserId,
+    projectId: input.projectId,
+    inspectionId: input.inspectionId,
+    contractorName: roundBase.project.contractorName,
+    documents: normalizedDocuments,
+  })
 
   return listEbInspectionDocuments(input)
 }
