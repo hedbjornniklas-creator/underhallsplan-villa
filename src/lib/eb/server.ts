@@ -3023,6 +3023,9 @@ function buildEbReportDraft(input: {
     updatedAt: storedDraft.updatedAt,
     sections: defaults.map((section) => {
       const existing = existingByKey.get(section.key)
+      if (section.key === 'scope') {
+        return section
+      }
       if (section.key === 'conflict_of_interest' && !conflictOfInterestRelevant) {
         return section
       }
