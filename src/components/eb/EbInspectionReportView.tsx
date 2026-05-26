@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from 'next/link'
-import { ArrowLeft, ClipboardCheck, FileText, Printer } from 'lucide-react'
+import { ArrowLeft, ClipboardCheck, Printer } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type {
   EbInspectionDocument,
@@ -1021,13 +1021,6 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
             Till entreprenaden
           </Link>
           <div className="flex items-center gap-2">
-            <Link
-              href={`/eb/projects/${report.project.id}/inspections/${report.inspection.inspectionId}/report/draft`}
-              className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
-            >
-              <FileText size={16} />
-              Redigera utkast
-            </Link>
             <Link
               href={`/eb/projects/${report.project.id}/inspections/${report.inspection.inspectionId}/perform`}
               className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"

@@ -9,7 +9,6 @@ import {
   ClipboardCheck,
   FileText,
   Loader2,
-  Mail,
   Pencil,
   Plus,
   Send,
@@ -2073,22 +2072,6 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                               <FileText size={16} />
                               Utlåtande
                             </Link>
-                            <button
-                              type="button"
-                              onClick={() => setDetailsInspection(inspection)}
-                              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-                            >
-                              <Pencil size={16} />
-                              Uppgifter
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setInvitationInspection(inspection)}
-                              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-                            >
-                              <Mail size={16} />
-                              Kallelse
-                            </button>
                           </div>
                         </div>
                       </article>

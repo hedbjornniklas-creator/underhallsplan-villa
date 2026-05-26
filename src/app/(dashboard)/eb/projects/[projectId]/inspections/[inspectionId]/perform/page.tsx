@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import EbInspectionRoundClient from '@/components/eb/EbInspectionRoundClient'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
-import { getEbInspectionRound, type EbInspectionRound } from '@/lib/eb/server'
+import { getEbInspectionReport, type EbInspectionReport } from '@/lib/eb/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,7 +15,7 @@ export default async function EbInspectionPerformPage({
 }) {
   const { projectId, inspectionId } = await params
   const resolvedSearchParams = searchParams ? await searchParams : {}
-  let round: EbInspectionRound | null = null
+  let report: EbInspectionReport | null = null
 
   try {
     await requireModuleAccess({
@@ -23,7 +23,7 @@ export default async function EbInspectionPerformPage({
       moduleKey: 'construction_inspections',
     })
     const context = await requireOrgContext()
-    round = await getEbInspectionRound({
+    report = await getEbInspectionReport({
       orgId: context.orgId,
       requestedByUserId: context.userId,
       projectId,
@@ -40,13 +40,13 @@ export default async function EbInspectionPerformPage({
     throw error
   }
 
-  if (!round) {
+  if (!report) {
     notFound()
   }
 
   return (
     <EbInspectionRoundClient
-      initialRound={round}
+      initialRound={report}
       initialDisciplineId={resolvedSearchParams.disciplineId ?? null}
     />
   )
