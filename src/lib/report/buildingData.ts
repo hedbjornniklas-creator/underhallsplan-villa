@@ -570,14 +570,18 @@ export function buildBuildingDataMap({
         )
         resolvedValue = `Byggnaden \u00e4r uppf\u00f6rd som ${typeFallback} med --.`
       } else if (def.kind === 'weather') {
-        const weatherNote = conditions?.weather_note ?? null
-        const weather = conditions?.weather ?? null
-        if (weather && weatherNote) {
-          resolvedValue = `${String(weather).trim()} (${String(weatherNote).trim()})`
+        const weatherNote = String(conditions?.weather_note ?? '').trim()
+        const weather = String(conditions?.weather ?? '').trim()
+        if (
+          weather &&
+          weatherNote &&
+          weather.toLocaleLowerCase('sv') !== weatherNote.toLocaleLowerCase('sv')
+        ) {
+          resolvedValue = `${weather} (${weatherNote})`
         } else if (weatherNote) {
-          resolvedValue = String(weatherNote).trim()
+          resolvedValue = weatherNote
         } else if (weather) {
-          resolvedValue = String(weather).trim()
+          resolvedValue = weather
         }
       } else {
         const fallbackValue = def.conditionKeys

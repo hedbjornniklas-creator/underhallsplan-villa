@@ -9,6 +9,7 @@ export type TextSource =
 export type TwoColumnRow = {
   label: string
   value: TextSource | TextSource[]
+  hideWhenEmpty?: boolean
   note?: {
     text: string
     fontSizePt?: number
@@ -303,7 +304,8 @@ export const REPORT_SPEC: ReportSection[] = [
           },
           {
             label: 'Certifieringsnummer:',
-            value: { kind: 'static', text: '--' },
+            value: { kind: 'mock', path: 'mock.profile.certification_number' },
+            hideWhenEmpty: true,
           },
           {
             label: 'Telefon:',

@@ -4,6 +4,10 @@ import ReportToolbar from '../../_components/ReportToolbar'
 import SessionBridge from '../../_components/SessionBridge'
 import ClientSessionDebug from '../../_components/ClientSessionDebug'
 import ReportRenderer from '@/components/report/ReportRenderer'
+import {
+  formatInspectionDocumentReportLine,
+  type InspectionDocumentReportLineInput,
+} from '@/lib/report/inspectionDocumentReportLine'
 import { buildReportSpec } from '@/lib/report/reportSpec'
 import {
   buildBuildingDataMap,
@@ -141,22 +145,6 @@ export default async function Page({
     return fallback
   }
   const trimText = (value: string | null | undefined) => (value ?? '').trim()
-  const formatDocumentReportLine = (doc: {
-    title?: string | null
-    status?: string | null
-    note?: string | null
-  }) => {
-    const status = trimText(doc.status).toLowerCase()
-    if (status === 'na') return null
-
-    const title = valueOrFallback(doc.title, 'Handling')
-    const note = trimText(doc.note)
-    if (status === 'missing') {
-      return note ? `${title}: Inte tillhandahållen. ${note}` : `${title}: Inte tillhandahållen`
-    }
-
-    return note ? `${title}: ${note}` : title
-  }
   const normalizeSwedish = (value: string) =>
     String(value ?? '')
       // Double-encoded mojibake (UTF-8 -> Latin-1 -> UTF-8)
@@ -295,7 +283,7 @@ export default async function Page({
 
   const buildApartmentBuildingDataText = (raw: string) => {
     const text = String(raw ?? '').trim()
-    const keepPrefixes = ['v\u00e4derlek:', 'byggnads\u00e5r:', 'ombyggnads\u00e5r:']
+    const keepPrefixes = ['v\u00e4derlek:', 'byggnadstyp:', 'byggnads\u00e5r:', 'ombyggnads\u00e5r:']
     const keptLines = text
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -466,8 +454,8 @@ export default async function Page({
   }
 
   const providedDocuments =
-    (documentRows as any[] | null)
-      ?.map((doc: any) => formatDocumentReportLine(doc))
+    (documentRows as InspectionDocumentReportLineInput[] | null)
+      ?.map((doc) => formatInspectionDocumentReportLine(doc))
       .filter(Boolean) ?? []
 
   const { data: disclosureRow, error: disclosureError } = await supabase

@@ -2285,6 +2285,18 @@ export default function ReportRendererClient({
     if (block.type === 'twoColumn') {
       const labelWidth = block.labelWidthMm ?? 65
       const rowGap = block.rowGapMm ?? 2
+      const rows = block.rows
+        .map((row) => {
+          const values = Array.isArray(row.value) ? row.value : [row.value]
+          const resolvedValues = values.map((valueSource) => String(resolveText(valueSource, mockData)))
+          const hasContent = resolvedValues.some((value) => {
+            const trimmed = value.trim()
+            return trimmed.length > 0 && trimmed !== '--'
+          })
+          return { row, resolvedValues, hasContent }
+        })
+        .filter(({ row, hasContent }) => !row.hideWhenEmpty || hasContent)
+
       return (
         <div
           key={`${sectionId}-table-${index}`}
@@ -2298,17 +2310,15 @@ export default function ReportRendererClient({
             color: REPORT_STYLES.BODY.color,
           }}
         >
-          {block.rows.flatMap((row, rowIndex) => {
-            const values = Array.isArray(row.value) ? row.value : [row.value]
+          {rows.flatMap(({ row, resolvedValues }, rowIndex) => {
             return [
               <div key={`${sectionId}-label-${rowIndex}`} style={{ fontWeight: 400 }}>
                 {row.label}
               </div>,
               <div key={`${sectionId}-value-${rowIndex}`}>
-                {values.map((valueSource, valueIndex) => (
+                {resolvedValues.map((value, valueIndex) => (
                   <div key={`${sectionId}-line-${rowIndex}-${valueIndex}`}>
-                    {String(resolveText(valueSource, mockData))
-                      .split(/\r?\n/)
+                    {value.split(/\r?\n/)
                       .map((line, lineIndex) => (
                         <div key={`${sectionId}-line-${rowIndex}-${valueIndex}-${lineIndex}`}>
                           {line || '\u00A0'}

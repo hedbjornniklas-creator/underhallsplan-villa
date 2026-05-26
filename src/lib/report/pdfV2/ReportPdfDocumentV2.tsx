@@ -329,10 +329,15 @@ const renderBlock = (
   }
 
   if (block.type === 'twoColumn') {
-    return block.rows.map((row, index) => {
+    return block.rows.flatMap((row, index) => {
       const value = Array.isArray(row.value)
         ? row.value.map((entry) => resolveTextSource(entry, data)).filter(Boolean)
         : [resolveTextSource(row.value, data)]
+      const hasContent = value.some((entry) => {
+        const trimmed = entry.trim()
+        return trimmed.length > 0 && trimmed !== '--'
+      })
+      if (row.hideWhenEmpty && !hasContent) return []
 
       return (
         <View key={`${row.label}-${index}`} style={styles.row}>

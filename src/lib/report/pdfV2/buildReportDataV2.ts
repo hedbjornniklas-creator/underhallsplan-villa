@@ -1,5 +1,9 @@
 ﻿import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { buildBuildingDataMap, buildBuildingTypeParts, renderBuildingDataTextFromTemplate } from '@/lib/report/buildingData'
+import {
+  formatInspectionDocumentReportLine,
+  type InspectionDocumentReportLineInput,
+} from '@/lib/report/inspectionDocumentReportLine'
 import { parseScopeCodes, renderScopeText } from '@/lib/report/scopeText'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 
@@ -162,22 +166,6 @@ const supabase: any = createSupabaseServerClient()
     return valueOrNull(legacyContact)
   }
   const trimText = (value: string | null | undefined) => (value ?? '').trim()
-  const formatDocumentReportLine = (doc: {
-    title?: string | null
-    status?: string | null
-    note?: string | null
-  }) => {
-    const status = trimText(doc.status).toLowerCase()
-    if (status === 'na') return null
-
-    const title = valueOrFallback(doc.title, 'Handling')
-    const note = trimText(doc.note)
-    if (status === 'missing') {
-      return note ? `${title}: Inte tillhandahållen. ${note}` : `${title}: Inte tillhandahållen`
-    }
-
-    return note ? `${title}: ${note}` : title
-  }
   const formatDateOnly = (value: string | null | undefined) => {
     const raw = (value ?? '').trim()
     if (!raw) return ''
@@ -460,8 +448,8 @@ const supabase: any = createSupabaseServerClient()
   }
 
   const providedDocuments =
-    (documentRows as any[] | null)
-      ?.map((doc: any) => formatDocumentReportLine(doc))
+    (documentRows as InspectionDocumentReportLineInput[] | null)
+      ?.map((doc) => formatInspectionDocumentReportLine(doc))
       .filter(Boolean) ?? []
 
   const { data: disclosureRow, error: disclosureError } = await supabase

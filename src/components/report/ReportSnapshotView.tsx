@@ -272,7 +272,7 @@ function filterApartmentBuildingData(raw: string) {
   const text = raw.trim()
   if (!text || text === '--') return ''
 
-  const keepPrefixes = ['väderlek:', 'byggnadsår:', 'ombyggnadsår:']
+  const keepPrefixes = ['väderlek:', 'byggnadstyp:', 'byggnadsår:', 'ombyggnadsår:']
   const keptLines = text
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -355,6 +355,9 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
   const disclosureInfo = getTextByPath(mock, 'disclosures.acquisition_text', '--')
   const renovations = getListByPath(mock, 'disclosures.renovations')
   const faults = getListByPath(mock, 'disclosures.property_faults')
+  const certificationNumber = getTextByPath(mock, 'profile.certification_number', '')
+  const hasCertificationNumber =
+    certificationNumber.trim().length > 0 && certificationNumber.trim() !== '--'
 
   const assignmentDate = getTextByPath(mock, 'inspections.assignment_confirmation_date', '--')
   const assignmentNoticeId =
@@ -593,10 +596,12 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                     .join('\n')}
                 </dd>
               </div>
-              <div>
-                <dt className="text-xs text-slate-500">Certifieringsnummer</dt>
-                <dd>--</dd>
-              </div>
+              {hasCertificationNumber ? (
+                <div>
+                  <dt className="text-xs text-slate-500">Certifieringsnummer</dt>
+                  <dd>{certificationNumber}</dd>
+                </div>
+              ) : null}
               <div>
                 <dt className="text-xs text-slate-500">Telefon</dt>
                 <dd>{getTextByPath(mock, 'profile.phone')}</dd>
