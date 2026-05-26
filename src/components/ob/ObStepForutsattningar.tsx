@@ -100,6 +100,12 @@ const isUniqueViolation = (error: unknown) => {
   return err?.code === '23505' || text.includes('duplicate key')
 }
 
+const isMissingConflictTarget = (error: unknown) => {
+  const err = toErrorLike(error)
+  const text = `${err?.message ?? ''} ${err?.details ?? ''}`.toLowerCase()
+  return err?.code === '42P10' || text.includes('no unique or exclusion constraint')
+}
+
 const normalizeSwedishToken = (value: string) =>
   value
     .trim()
@@ -392,45 +398,97 @@ export default function ObStepForutsattningar({
   // -----------------------------
   // Upsert selection row
   // -----------------------------
-  const upsertSelection = async (sel: InspectionOverviewSelection) => {
+  const upsertSelection = async (
+    sel: InspectionOverviewSelection,
+    options?: { throwOnError?: boolean }
+  ) => {
     if (isInspectionLocked) return sel
     setSaving(true)
     setError(null)
 
     try {
-      if (sel.id) {
-        const { data, error: updErr } = await supabase
+      const selectionPayload = {
+        inspection_id: sel.inspection_id,
+        overview_item_id: sel.overview_item_id,
+        floor_key: sel.floor_key,
+        set_index: sel.set_index,
+        values: sel.values,
+        note: sel.note,
+      }
+
+      const findExistingSelection = async () => {
+        let query = supabase
+          .from('inspection_overview_selections')
+          .select('*')
+          .eq('inspection_id', sel.inspection_id)
+          .eq('overview_item_id', sel.overview_item_id)
+          .eq('set_index', sel.set_index)
+
+        query = sel.floor_key === null
+          ? query.is('floor_key', null)
+          : query.eq('floor_key', sel.floor_key)
+
+        const { data, error } = await query
+          .order('updated_at', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(1)
+
+        if (error) throw error
+        return ((data ?? [])[0] ?? null) as InspectionOverviewSelection | null
+      }
+
+      const updateExistingSelection = async (id: string) => {
+        const { data, error } = await supabase
           .from('inspection_overview_selections')
           .update({
             values: sel.values,
             note: sel.note,
           })
-          .eq('id', sel.id)
+          .eq('id', id)
           .select('*')
           .single()
 
-        if (updErr) throw updErr
+        if (error) throw error
         return data as InspectionOverviewSelection
+      }
+
+      if (sel.id) {
+        return await updateExistingSelection(sel.id)
       } else {
-        const { data, error: insErr } = await supabase
+        const { data, error: upsertErr } = await supabase
           .from('inspection_overview_selections')
-          .insert({
-            inspection_id: sel.inspection_id,
-            overview_item_id: sel.overview_item_id,
-            floor_key: sel.floor_key,
-            set_index: sel.set_index,
-            values: sel.values,
-            note: sel.note,
+          .upsert(selectionPayload, {
+            onConflict: 'inspection_id,overview_item_id,floor_key,set_index',
           })
           .select('*')
           .single()
 
+        if (!upsertErr) return data as InspectionOverviewSelection
+        if (!isMissingConflictTarget(upsertErr) && !isUniqueViolation(upsertErr)) {
+          throw upsertErr
+        }
+
+        const existing = await findExistingSelection()
+        if (existing?.id) return await updateExistingSelection(existing.id)
+
+        const { data: inserted, error: insErr } = await supabase
+          .from('inspection_overview_selections')
+          .insert(selectionPayload)
+          .select('*')
+          .single()
+
+        if (insErr && isUniqueViolation(insErr)) {
+          const createdByRace = await findExistingSelection()
+          if (createdByRace?.id) return await updateExistingSelection(createdByRace.id)
+        }
         if (insErr) throw insErr
-        return data as InspectionOverviewSelection
+
+        return inserted as InspectionOverviewSelection
       }
     } catch (e: unknown) {
       console.error('upsertSelection failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte spara val.')
+      if (options?.throwOnError) throw e
       return sel
     } finally {
       setSaving(false)
@@ -522,7 +580,7 @@ export default function ObStepForutsattningar({
     setItemSelections(itemId, next)
   }
 
-  const updateSelectionNote = (itemId: string, selIndex: number, note: string) => {
+  const updateSelectionNote = async (itemId: string, selIndex: number, note: string) => {
     if (isInspectionLocked) return
     const arr = ensureSingleSelection(itemId)
     const next = [...arr]
@@ -534,16 +592,15 @@ export default function ObStepForutsattningar({
     const version = (noteSaveVersions.current[timerKey] ?? 0) + 1
     noteSaveVersions.current[timerKey] = version
 
-    void upsertSelection(sel).then(saved => {
-      if (noteSaveVersions.current[timerKey] !== version) return
-      const latest = getItemSelections(itemId).map(s => {
-        if (s.set_index === saved.set_index && s.floor_key === saved.floor_key) {
-          return { ...saved, note }
-        }
-        return s
-      })
-      setItemSelections(itemId, latest)
+    const saved = await upsertSelection(sel, { throwOnError: true })
+    if (noteSaveVersions.current[timerKey] !== version) return
+    const latest = getItemSelections(itemId).map(s => {
+      if (s.set_index === saved.set_index && s.floor_key === saved.floor_key) {
+        return { ...saved, note }
+      }
+      return s
     })
+    setItemSelections(itemId, latest)
   }
 
   // -----------------------------
@@ -777,6 +834,7 @@ export default function ObStepForutsattningar({
           <div className="space-y-1">
             <label className="text-xs font-medium text-gray-700">Notering (valfritt)</label>
             <DebouncedTextarea
+              draftKey={`ob:${inspection.id}:forutsattningar:${item.id}:${sel.floor_key ?? 'nofloor'}:${sel.set_index}:note`}
               value={sel.note ?? ''}
               disabled={isInspectionLocked}
               onSave={note => updateSelectionNote(item.id, selIndex, note)}

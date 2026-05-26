@@ -12,6 +12,7 @@ import {
 import type { Tables } from '@/types/supabase'
 import { formatCertificationDisplayLines } from '@/lib/certifications/display'
 import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
+import { getObTextDraftStorageKey } from '@/lib/ob/localTextDrafts'
 import DebouncedTextarea from './DebouncedTextarea'
 
 type Property = Tables<'properties'>
@@ -187,6 +188,45 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
   const hydratedRef = useRef(false)
   const lastSavedFingerprintRef = useRef('')
   const nameFallbackId = useId()
+  const formDraftStorageKey = useMemo(
+    () => getObTextDraftStorageKey(`ob:${inspection.id}:areamatning:form`),
+    [inspection.id]
+  )
+  const readLocalFormDraft = useCallback((): AreaMeasurementForm | null => {
+    if (!formDraftStorageKey || typeof window === 'undefined') return null
+    try {
+      const raw = window.localStorage.getItem(formDraftStorageKey)
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as { value?: unknown }
+      return parsed.value && typeof parsed.value === 'object'
+        ? (parsed.value as AreaMeasurementForm)
+        : null
+    } catch {
+      return null
+    }
+  }, [formDraftStorageKey])
+  const writeLocalFormDraft = useCallback(
+    (nextForm: AreaMeasurementForm) => {
+      if (!formDraftStorageKey || typeof window === 'undefined') return
+      try {
+        window.localStorage.setItem(
+          formDraftStorageKey,
+          JSON.stringify({ value: nextForm, updatedAt: new Date().toISOString() })
+        )
+      } catch {
+        // local draft storage is best-effort.
+      }
+    },
+    [formDraftStorageKey]
+  )
+  const clearLocalFormDraft = useCallback(() => {
+    if (!formDraftStorageKey || typeof window === 'undefined') return
+    try {
+      window.localStorage.removeItem(formDraftStorageKey)
+    } catch {
+      // best-effort cleanup
+    }
+  }, [formDraftStorageKey])
 
   useEffect(() => {
     let cancelled = false
@@ -216,7 +256,8 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
 
         setUnsupported(payload?.unsupported === true)
         setProfile((payload?.profile as ProfileSnapshot | null) ?? null)
-        setForm(nextForm)
+        const localDraft = readLocalFormDraft()
+        setForm(localDraft ?? nextForm)
         lastSavedFingerprintRef.current = formFingerprint(nextForm)
         hydratedRef.current = true
         setSaveState('idle')
@@ -233,7 +274,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
     return () => {
       cancelled = true
     }
-  }, [inspection.id, property.year_built, property.city, inspection.date])
+  }, [inspection.id, property.year_built, property.city, inspection.date, readLocalFormDraft])
 
   const persistForm = useCallback(
     async (nextForm: AreaMeasurementForm) => {
@@ -270,23 +311,29 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
         }
 
         lastSavedFingerprintRef.current = formFingerprint(nextForm)
+        clearLocalFormDraft()
         setSaveState('saved')
       } catch (saveError) {
+        writeLocalFormDraft(nextForm)
         setSaveState('idle')
         setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara areamätning.')
       } finally {
         setSaving(false)
       }
     },
-    [inspection.date, inspection.id, isInspectionLocked, property.city, unsupported]
+    [clearLocalFormDraft, inspection.date, inspection.id, isInspectionLocked, property.city, unsupported, writeLocalFormDraft]
   )
 
   useEffect(() => {
     if (loading || !hydratedRef.current) return
 
     const nextFingerprint = formFingerprint(form)
-    if (nextFingerprint === lastSavedFingerprintRef.current) return
+    if (nextFingerprint === lastSavedFingerprintRef.current) {
+      clearLocalFormDraft()
+      return
+    }
 
+    writeLocalFormDraft(form)
     const timeoutId = window.setTimeout(() => {
       void persistForm(form)
     }, 700)
@@ -294,7 +341,7 @@ export default function ObStepAreamatning({ property, inspection }: ObStepAreama
     return () => {
       window.clearTimeout(timeoutId)
     }
-  }, [form, loading, persistForm])
+  }, [clearLocalFormDraft, form, loading, persistForm, writeLocalFormDraft])
 
   const totals = useMemo(() => {
     const sum = form.rows.reduce(

@@ -447,8 +447,17 @@ const createBuildingDataContext = ({
   }
 }
 
-const sortSelectionRows = (rows: OverviewSelection[]) =>
-  rows.slice().sort((a, b) => {
+const selectionRowSignature = (row: OverviewSelection) =>
+  JSON.stringify([
+    normalizeFloorKey(row.floor_key),
+    row.set_index ?? 0,
+    row.values ?? {},
+    row.note ?? '',
+  ])
+
+const sortSelectionRows = (rows: OverviewSelection[]) => {
+  const seen = new Set<string>()
+  return rows.slice().sort((a, b) => {
     const floorA = floorSortRank(a.floor_key)
     const floorB = floorSortRank(b.floor_key)
     if (floorA !== floorB) return floorA - floorB
@@ -456,7 +465,13 @@ const sortSelectionRows = (rows: OverviewSelection[]) =>
     const floorKeyB = normalizeFloorKey(b.floor_key)
     if (floorKeyA !== floorKeyB) return floorKeyA.localeCompare(floorKeyB, 'sv')
     return (a.set_index ?? 0) - (b.set_index ?? 0)
+  }).filter((row) => {
+    const signature = selectionRowSignature(row)
+    if (seen.has(signature)) return false
+    seen.add(signature)
+    return true
   })
+}
 
 export function buildBuildingTypeParts({
   selections,

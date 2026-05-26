@@ -1231,10 +1231,12 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   // Upsert kontrollpunkt-instans
   // -----------------------------
   const upsertControlItem = async (
-    item: InspectionControlItem
+    item: InspectionControlItem,
+    options?: { throwOnError?: boolean }
   ): Promise<InspectionControlItem> => {
     if (isInspectionLocked) {
       setError('Besiktningen är låst (klar) och kan inte redigeras.')
+      if (options?.throwOnError) throw new Error('Besiktningen är låst och kan inte redigeras.')
       return item
     }
     setSaving(true)
@@ -1308,6 +1310,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     } catch (e: unknown) {
       console.error('upsertControlItem failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte spara kontrollpunkt.')
+      if (options?.throwOnError) throw e
       return item
     } finally {
       setSaving(false)
@@ -1316,16 +1319,20 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
   const updateControlItem = async (
     itemId: string,
-    patch: Partial<InspectionControlItem>
+    patch: Partial<InspectionControlItem>,
+    options?: { throwOnError?: boolean }
   ) => {
     if (isInspectionLocked) return
     const current = controlItems.find(ci => ci.id === itemId)
-    if (!current) return
+    if (!current) {
+      if (options?.throwOnError) throw new Error('Kontrollpunkten kunde inte hittas.')
+      return
+    }
 
     const optimistic: InspectionControlItem = { ...current, ...patch }
     setControlItems(prev => prev.map(ci => (ci.id === itemId ? optimistic : ci)))
 
-    const saved = await upsertControlItem(optimistic)
+    const saved = await upsertControlItem(optimistic, options)
     setControlItems(prev => prev.map(ci => (ci.id === itemId ? saved : ci)))
   }
 
@@ -3319,6 +3326,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
             {room.id && (
               <RoomControlPointsSection
+                inspectionId={inspection.id}
                 room={room}
                 collapsedStorageKey={`ob:insida:collapsed:${inspection.id}:room:${room.id}`}
                 items={roomControlItems}
@@ -3998,11 +4006,16 @@ function ControlItemImagesSection({
 // Undkomponent: Kontrollpunkter per rum
 // =============================
 type RoomControlPointsSectionProps = {
+  inspectionId: string
   room: InteriorRoom
   collapsedStorageKey: string
   items: InspectionControlItem[]
   isInspectionLocked: boolean
-  onUpdateItem: (itemId: string, patch: Partial<InspectionControlItem>) => void
+  onUpdateItem: (
+    itemId: string,
+    patch: Partial<InspectionControlItem>,
+    options?: { throwOnError?: boolean }
+  ) => void | Promise<void>
   onDeleteItem: (itemId: string, skipConfirm?: boolean) => void
   onDeleteItemGroup: (baseItem: InspectionControlItem) => void
   onAddOutcomeItem: (
@@ -4023,6 +4036,7 @@ type RoomControlPointsSectionProps = {
 }
 
 function RoomControlPointsSection({
+  inspectionId,
   room,
   collapsedStorageKey,
   items,
@@ -4584,12 +4598,13 @@ function RoomControlPointsSection({
           <div className="space-y-1">
             <label className="text-xs md:text-[11px] text-gray-600">Notering</label>
             <DebouncedTextarea
+              draftKey={`ob:${inspectionId}:insida:control-item:${ci.id}:note`}
               rows={2}
               className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
               placeholder="Noteringstext..."
               value={ci.note ?? ''}
               onSave={value => {
-                if (ci.id) onUpdateItem(ci.id, { note: value })
+                if (ci.id) return onUpdateItem(ci.id, { note: value }, { throwOnError: true })
               }}
               readOnly={isInspectionLocked}
             />
@@ -4601,12 +4616,13 @@ function RoomControlPointsSection({
                 <div className="space-y-1">
                   <div className="text-xs font-semibold text-gray-700">Riskanalys</div>
                   <DebouncedTextarea
+                    draftKey={`ob:${inspectionId}:insida:control-item:${ci.id}:risk_text`}
                     rows={3}
                     className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                     placeholder="Beskriv riskanalys..."
                     value={riskText}
                     onSave={value => {
-                      if (ci.id) onUpdateItem(ci.id, { risk_text: value })
+                      if (ci.id) return onUpdateItem(ci.id, { risk_text: value }, { throwOnError: true })
                     }}
                     readOnly={isInspectionLocked}
                   />
@@ -4616,12 +4632,13 @@ function RoomControlPointsSection({
                 <div className="space-y-1">
                   <div className="text-xs font-semibold text-gray-700">Fortsatt teknisk utredning (FTU)</div>
                   <DebouncedTextarea
+                    draftKey={`ob:${inspectionId}:insida:control-item:${ci.id}:ftu_text`}
                     rows={3}
                     className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                     placeholder="Beskriv fortsatt teknisk utredning..."
                     value={ftuText}
                     onSave={value => {
-                      if (ci.id) onUpdateItem(ci.id, { ftu_text: value })
+                      if (ci.id) return onUpdateItem(ci.id, { ftu_text: value }, { throwOnError: true })
                     }}
                     readOnly={isInspectionLocked}
                   />
@@ -4839,12 +4856,13 @@ function RoomControlPointsSection({
                 {USE_INSIDA_CONTROL_POINT_LIST_LAYOUT ? 'Notering' : '🧱 Notering'}
               </label>
               <DebouncedTextarea
+                draftKey={`ob:${inspectionId}:insida:control-item:${ci.id}:note`}
                 rows={2}
                 className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                 placeholder="Fri notering för rummet…"
                 value={ci.note ?? ''}
                 onSave={value => {
-                  if (ci.id) onUpdateItem(ci.id, { note: value })
+                  if (ci.id) return onUpdateItem(ci.id, { note: value }, { throwOnError: true })
                 }}
                 readOnly={isInspectionLocked}
               />
@@ -4855,12 +4873,13 @@ function RoomControlPointsSection({
                 {USE_INSIDA_CONTROL_POINT_LIST_LAYOUT ? 'Riskanalys' : '⚠️ Riskanalys'}
               </label>
               <DebouncedTextarea
+                draftKey={`ob:${inspectionId}:insida:control-item:${ci.id}:risk_text`}
                 rows={3}
                 className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                 placeholder="Beskriv riskanalys..."
                 value={ci.risk_text ?? ''}
                 onSave={value => {
-                  if (ci.id) onUpdateItem(ci.id, { risk_text: value })
+                  if (ci.id) return onUpdateItem(ci.id, { risk_text: value }, { throwOnError: true })
                 }}
                 readOnly={isInspectionLocked}
               />
@@ -4873,12 +4892,13 @@ function RoomControlPointsSection({
                   : '🔍 Fortsatt teknisk utredning (FTU)'}
               </label>
               <DebouncedTextarea
+                draftKey={`ob:${inspectionId}:insida:control-item:${ci.id}:ftu_text`}
                 rows={3}
                 className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                 placeholder="Beskriv fortsatt teknisk utredning..."
                 value={ci.ftu_text ?? ''}
                 onSave={value => {
-                  if (ci.id) onUpdateItem(ci.id, { ftu_text: value })
+                  if (ci.id) return onUpdateItem(ci.id, { ftu_text: value }, { throwOnError: true })
                 }}
                 readOnly={isInspectionLocked}
               />
@@ -5197,12 +5217,13 @@ function RoomControlPointsSection({
                       🧱 Notering
                     </label>
                     <DebouncedTextarea
+                      draftKey={`ob:${inspectionId}:insida:control-item:${baseItem.id}:note`}
                       rows={2}
                       className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                       placeholder="Notering för just denna kontrollpunkt…"
                       value={baseItem.note ?? ''}
                       onSave={value => {
-                        if (baseItem.id) onUpdateItem(baseItem.id, { note: value })
+                        if (baseItem.id) return onUpdateItem(baseItem.id, { note: value }, { throwOnError: true })
                       }}
                       readOnly={isInspectionLocked}
                     />
@@ -5253,12 +5274,13 @@ function RoomControlPointsSection({
                             🧱 Notering
                           </label>
                           <DebouncedTextarea
+                            draftKey={`ob:${inspectionId}:insida:control-item:${ci.id}:note`}
                             rows={2}
                             className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                             placeholder="Noteringstext..."
                             value={ci.note ?? ''}
                             onSave={value => {
-                              if (ci.id) onUpdateItem(ci.id, { note: value })
+                              if (ci.id) return onUpdateItem(ci.id, { note: value }, { throwOnError: true })
                             }}
                             readOnly={isInspectionLocked}
                           />
@@ -5272,12 +5294,13 @@ function RoomControlPointsSection({
                                   ⚠️ Riskanalys
                                 </div>
                                 <DebouncedTextarea
+                                  draftKey={`ob:${inspectionId}:insida:control-item:${ci.id}:risk_text`}
                                   rows={3}
                                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                                   placeholder="Beskriv riskanalys..."
                                   value={riskText}
                                   onSave={value => {
-                                    if (ci.id) onUpdateItem(ci.id, { risk_text: value })
+                                    if (ci.id) return onUpdateItem(ci.id, { risk_text: value }, { throwOnError: true })
                                   }}
                                   readOnly={isInspectionLocked}
                                 />
@@ -5289,12 +5312,13 @@ function RoomControlPointsSection({
                                   🔍 Fortsatt teknisk utredning (FTU)
                                 </div>
                                 <DebouncedTextarea
+                                  draftKey={`ob:${inspectionId}:insida:control-item:${ci.id}:ftu_text`}
                                   rows={3}
                                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                                   placeholder="Beskriv fortsatt teknisk utredning..."
                                   value={ftuText}
                                   onSave={value => {
-                                    if (ci.id) onUpdateItem(ci.id, { ftu_text: value })
+                                    if (ci.id) return onUpdateItem(ci.id, { ftu_text: value }, { throwOnError: true })
                                   }}
                                   readOnly={isInspectionLocked}
                                 />

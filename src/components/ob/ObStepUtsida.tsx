@@ -997,10 +997,14 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   }
 
     const upsertObservationRow = async (
-      row: InspectionExteriorObservation
+      row: InspectionExteriorObservation,
+      options?: { throwOnError?: boolean }
     ): Promise<InspectionExteriorObservation> => {
     if (isInspectionLocked) {
       setError('Besiktningen är låst (klar) och kan inte redigeras.')
+      if (options?.throwOnError) {
+        throw new Error('Besiktningen ar last (klar) och kan inte redigeras.')
+      }
       return row
     }
     setSaving(true)
@@ -1072,6 +1076,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     } catch (e: unknown) {
       console.error('upsertObservationRow utsida failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte spara notering.')
+      if (options?.throwOnError) {
+        throw e
+      }
       return row
     } finally {
       setSaving(false)
@@ -1081,12 +1088,23 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   const updateFreeNoteRow = async (
     itemId: string,
     rowId: string,
-    patch: Partial<InspectionExteriorObservation>
+    patch: Partial<InspectionExteriorObservation>,
+    options?: { throwOnError?: boolean }
   ) => {
-    if (isInspectionLocked) return
+    if (isInspectionLocked) {
+      if (options?.throwOnError) {
+        throw new Error('Besiktningen ar last (klar) och kan inte redigeras.')
+      }
+      return
+    }
     const rows = getItemRows(itemId)
     const index = rows.findIndex(r => r.id === rowId)
-    if (index === -1) return
+    if (index === -1) {
+      if (options?.throwOnError) {
+        throw new Error('Kunde inte hitta noteringen som ska sparas.')
+      }
+      return
+    }
 
     const current = rows[index]
       const updated: InspectionExteriorObservation = {
@@ -1104,7 +1122,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     optimistic[index] = updated
     setItemRows(itemId, optimistic)
 
-    const saved = await upsertObservationRow(updated)
+    const saved = await upsertObservationRow(updated, options)
     const finalRows = [...getItemRows(itemId)]
     const finalIndex = finalRows.findIndex(r => r.id === rowId)
     if (finalIndex !== -1) {
@@ -1176,10 +1194,14 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   // KONTROLLPUNKTER – helpers
   // -----------------------------
   const upsertControlItem = async (
-    item: InspectionControlItem
+    item: InspectionControlItem,
+    options?: { throwOnError?: boolean }
   ): Promise<InspectionControlItem> => {
     if (isInspectionLocked) {
       setError('Besiktningen är låst (klar) och kan inte redigeras.')
+      if (options?.throwOnError) {
+        throw new Error('Besiktningen ar last (klar) och kan inte redigeras.')
+      }
       return item
     }
     setSaving(true)
@@ -1229,6 +1251,9 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
     } catch (e: unknown) {
       console.error('upsertControlItem (utsida) failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte spara kontrollpunkt.')
+      if (options?.throwOnError) {
+        throw e
+      }
       return item
     } finally {
       setSaving(false)
@@ -1237,16 +1262,27 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
 
   const updateControlItem = async (
     itemId: string,
-    patch: Partial<InspectionControlItem>
+    patch: Partial<InspectionControlItem>,
+    options?: { throwOnError?: boolean }
   ) => {
-    if (isInspectionLocked) return
+    if (isInspectionLocked) {
+      if (options?.throwOnError) {
+        throw new Error('Besiktningen ar last (klar) och kan inte redigeras.')
+      }
+      return
+    }
     const current = controlItems.find(ci => ci.id === itemId)
-    if (!current) return
+    if (!current) {
+      if (options?.throwOnError) {
+        throw new Error('Kunde inte hitta kontrollpunkten som ska sparas.')
+      }
+      return
+    }
 
     const optimistic: InspectionControlItem = { ...current, ...patch }
     setControlItems(prev => prev.map(ci => (ci.id === itemId ? optimistic : ci)))
 
-    const saved = await upsertControlItem(optimistic)
+    const saved = await upsertControlItem(optimistic, options)
     setControlItems(prev => prev.map(ci => (ci.id === itemId ? saved : ci)))
   }
 
@@ -2991,6 +3027,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             {/* Kontrollpunkter för komponenten */}
             <ExteriorControlPointsSection
               item={item}
+              inspectionId={inspection.id}
               collapsedStorageKey={`${collapsedStorageKey}:control-points:${item.id}`}
               items={rowControlItems}
               isInspectionLocked={isInspectionLocked}
@@ -3011,12 +3048,13 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
             {/* Fria noteringar + knapp för ytterligare kontrollpunkt */}
             <FreeNotesSection
               item={item}
+              inspectionId={inspection.id}
               collapsedStorageKey={`${collapsedStorageKey}:free-notes:${item.id}`}
               rows={freeNoteRows}
               imagesByObservationId={imagesByObservationId}
               onAddNewFreeNote={() => addFreeNoteControlItem(mainRow)}
-              onUpdateFreeNote={(rowId, patch) =>
-                updateFreeNoteRow(item.id, rowId, patch)
+              onUpdateFreeNote={(rowId, patch, options) =>
+                updateFreeNoteRow(item.id, rowId, patch, options)
               }
               onDeleteFreeNote={(rowId) => deleteFreeNoteRow(item.id, rowId)}
               onUploadImageForObservation={handleUploadImageForObservation}
@@ -3450,10 +3488,15 @@ function ControlPointImagesSection({
 // UND-KOMPONENT: Kontrollpunkter per komponent
 type ExteriorControlPointsSectionProps = {
   item: ItemBundle
+  inspectionId: string
   collapsedStorageKey: string
   items: InspectionControlItem[]
   isInspectionLocked: boolean
-  onUpdateItem: (itemId: string, patch: Partial<InspectionControlItem>) => void
+  onUpdateItem: (
+    itemId: string,
+    patch: Partial<InspectionControlItem>,
+    options?: { throwOnError?: boolean }
+  ) => void | Promise<void>
   onDeleteItem: (itemId: string, skipConfirm?: boolean) => void
   onDeleteItemGroup: (baseItem: InspectionControlItem) => void
   onAddOutcomeItem: (
@@ -3478,6 +3521,7 @@ type ExteriorControlPointsSectionProps = {
 
 function ExteriorControlPointsSection({
   item,
+  inspectionId,
   collapsedStorageKey,
   items,
   isInspectionLocked,
@@ -3724,8 +3768,19 @@ function ExteriorControlPointsSection({
                       className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                       placeholder={`Fri notering för ${item.label.toLowerCase()}...`}
                       value={ci.note ?? ''}
+                      draftKey={
+                        ci.id
+                          ? `ob:${inspectionId}:utsida:control-item:${ci.id}:note`
+                          : undefined
+                      }
                       onSave={value => {
-                        if (ci.id) onUpdateItem(ci.id, { note: value })
+                        if (ci.id) {
+                          return onUpdateItem(
+                            ci.id,
+                            { note: value },
+                            { throwOnError: true }
+                          )
+                        }
                       }}
                       readOnly={isInspectionLocked}
                     />
@@ -3740,8 +3795,19 @@ function ExteriorControlPointsSection({
                       className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                       placeholder="Beskriv riskanalys..."
                       value={ci.risk_text ?? ''}
+                      draftKey={
+                        ci.id
+                          ? `ob:${inspectionId}:utsida:control-item:${ci.id}:risk_text`
+                          : undefined
+                      }
                       onSave={value => {
-                        if (ci.id) onUpdateItem(ci.id, { risk_text: value })
+                        if (ci.id) {
+                          return onUpdateItem(
+                            ci.id,
+                            { risk_text: value },
+                            { throwOnError: true }
+                          )
+                        }
                       }}
                       readOnly={isInspectionLocked}
                     />
@@ -3756,8 +3822,19 @@ function ExteriorControlPointsSection({
                       className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                       placeholder="Beskriv fortsatt teknisk utredning..."
                       value={ci.ftu_text ?? ''}
+                      draftKey={
+                        ci.id
+                          ? `ob:${inspectionId}:utsida:control-item:${ci.id}:ftu_text`
+                          : undefined
+                      }
                       onSave={value => {
-                        if (ci.id) onUpdateItem(ci.id, { ftu_text: value })
+                        if (ci.id) {
+                          return onUpdateItem(
+                            ci.id,
+                            { ftu_text: value },
+                            { throwOnError: true }
+                          )
+                        }
                       }}
                       readOnly={isInspectionLocked}
                     />
@@ -4008,8 +4085,19 @@ function ExteriorControlPointsSection({
                       className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                       placeholder="Notering för just denna kontrollpunkt…"
                       value={baseItem.note ?? ''}
+                      draftKey={
+                        baseItem.id
+                          ? `ob:${inspectionId}:utsida:control-item:${baseItem.id}:note`
+                          : undefined
+                      }
                       onSave={value => {
-                        if (baseItem.id) onUpdateItem(baseItem.id, { note: value })
+                        if (baseItem.id) {
+                          return onUpdateItem(
+                            baseItem.id,
+                            { note: value },
+                            { throwOnError: true }
+                          )
+                        }
                       }}
                       readOnly={isInspectionLocked}
                     />
@@ -4062,8 +4150,19 @@ function ExteriorControlPointsSection({
                             className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                             placeholder="Noteringstext..."
                             value={ci.note ?? ''}
+                            draftKey={
+                              ci.id
+                                ? `ob:${inspectionId}:utsida:control-item:${ci.id}:note`
+                                : undefined
+                            }
                             onSave={value => {
-                              if (ci.id) onUpdateItem(ci.id, { note: value })
+                              if (ci.id) {
+                                return onUpdateItem(
+                                  ci.id,
+                                  { note: value },
+                                  { throwOnError: true }
+                                )
+                              }
                             }}
                             readOnly={isInspectionLocked}
                           />
@@ -4081,8 +4180,19 @@ function ExteriorControlPointsSection({
                                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                                   placeholder="Beskriv riskanalys..."
                                   value={riskText}
+                                  draftKey={
+                                    ci.id
+                                      ? `ob:${inspectionId}:utsida:control-item:${ci.id}:risk_text`
+                                      : undefined
+                                  }
                                   onSave={value => {
-                                    if (ci.id) onUpdateItem(ci.id, { risk_text: value })
+                                    if (ci.id) {
+                                      return onUpdateItem(
+                                        ci.id,
+                                        { risk_text: value },
+                                        { throwOnError: true }
+                                      )
+                                    }
                                   }}
                                   readOnly={isInspectionLocked}
                                 />
@@ -4098,8 +4208,19 @@ function ExteriorControlPointsSection({
                                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                                   placeholder="Beskriv fortsatt teknisk utredning..."
                                   value={ftuText}
+                                  draftKey={
+                                    ci.id
+                                      ? `ob:${inspectionId}:utsida:control-item:${ci.id}:ftu_text`
+                                      : undefined
+                                  }
                                   onSave={value => {
-                                    if (ci.id) onUpdateItem(ci.id, { ftu_text: value })
+                                    if (ci.id) {
+                                      return onUpdateItem(
+                                        ci.id,
+                                        { ftu_text: value },
+                                        { throwOnError: true }
+                                      )
+                                    }
                                   }}
                                   readOnly={isInspectionLocked}
                                 />
@@ -4135,6 +4256,7 @@ function ExteriorControlPointsSection({
 // =============================
 type FreeNotesSectionProps = {
   item: ItemBundle
+  inspectionId: string
   collapsedStorageKey: string
   rows: InspectionExteriorObservation[]
   imagesByObservationId: Record<string, InspectionImage[]>
@@ -4142,8 +4264,9 @@ type FreeNotesSectionProps = {
   onAddNewFreeNote: () => void
   onUpdateFreeNote: (
     rowId: string,
-    patch: Partial<InspectionExteriorObservation>
-  ) => void
+    patch: Partial<InspectionExteriorObservation>,
+    options?: { throwOnError?: boolean }
+  ) => void | Promise<void>
   onDeleteFreeNote: (rowId: string) => void
   onUploadImageForObservation: (
     observation: InspectionExteriorObservation,
@@ -4161,6 +4284,7 @@ type FreeNotesSectionProps = {
 
 function FreeNotesSection({
   item,
+  inspectionId,
   collapsedStorageKey,
   rows,
   imagesByObservationId,
@@ -4485,8 +4609,19 @@ function FreeNotesSection({
                         className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                         placeholder="Beskrivning av observationen eller kompletterande upplysning…"
                         value={row.note ?? ''}
+                        draftKey={
+                          row.id
+                            ? `ob:${inspectionId}:utsida:observation:${row.id}:note`
+                            : undefined
+                        }
                         onSave={value => {
-                          if (row.id) onUpdateFreeNote(row.id, { note: value })
+                          if (row.id) {
+                            return onUpdateFreeNote(
+                              row.id,
+                              { note: value },
+                              { throwOnError: true }
+                            )
+                          }
                         }}
                         readOnly={isInspectionLocked}
                       />
@@ -4501,8 +4636,19 @@ function FreeNotesSection({
                         className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                         placeholder="Beskriv riskanalys..."
                         value={row.risk_text ?? ''}
+                        draftKey={
+                          row.id
+                            ? `ob:${inspectionId}:utsida:observation:${row.id}:risk_text`
+                            : undefined
+                        }
                         onSave={value => {
-                          if (row.id) onUpdateFreeNote(row.id, { risk_text: value })
+                          if (row.id) {
+                            return onUpdateFreeNote(
+                              row.id,
+                              { risk_text: value },
+                              { throwOnError: true }
+                            )
+                          }
                         }}
                         readOnly={isInspectionLocked}
                       />
@@ -4517,8 +4663,19 @@ function FreeNotesSection({
                         className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm md:text-xs text-gray-900 placeholder:text-gray-500"
                         placeholder="Beskriv fortsatt teknisk utredning..."
                         value={row.ftu_text ?? ''}
+                        draftKey={
+                          row.id
+                            ? `ob:${inspectionId}:utsida:observation:${row.id}:ftu_text`
+                            : undefined
+                        }
                         onSave={value => {
-                          if (row.id) onUpdateFreeNote(row.id, { ftu_text: value })
+                          if (row.id) {
+                            return onUpdateFreeNote(
+                              row.id,
+                              { ftu_text: value },
+                              { throwOnError: true }
+                            )
+                          }
                         }}
                         readOnly={isInspectionLocked}
                       />

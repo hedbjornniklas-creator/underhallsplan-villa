@@ -481,8 +481,15 @@ export default function ObStepHandlingar({
   // -------------------------------
   // HANDLINGAR update
   // -------------------------------
-  const updateDoc = async (id: string, patch: Partial<InspectionDocument>) => {
-    if (isInspectionLocked) return
+  const updateDoc = async (
+    id: string,
+    patch: Partial<InspectionDocument>,
+    options?: { throwOnError?: boolean }
+  ) => {
+    if (isInspectionLocked) {
+      if (options?.throwOnError) throw new Error('Besiktningen ar last och kan inte redigeras.')
+      return
+    }
     setDocumentsRaw(prev => prev.map(d => (d.id === id ? ({ ...d, ...patch } as InspectionDocument) : d)))
     setSavingDocs(true)
 
@@ -493,6 +500,7 @@ export default function ObStepHandlingar({
     if (error) {
       console.error(error)
       setError('Kunde inte spara handling.')
+      if (options?.throwOnError) throw error
     }
   }
 
@@ -602,7 +610,7 @@ export default function ObStepHandlingar({
     if (error) {
       console.error(error)
       setError('Kunde inte spara upplysningar.')
-      return
+      throw error
     }
 
     setSavedDisclosure(true)
@@ -633,7 +641,7 @@ export default function ObStepHandlingar({
     if (error) {
       console.error(error)
       setError('Kunde inte spara upplysningar om fel.')
-      return
+      throw error
     }
 
     setSavedDefect(true)
@@ -831,7 +839,10 @@ export default function ObStepHandlingar({
                           className="min-h-20 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
                           value={viewDoc.note}
                           disabled={isInspectionLocked}
-                          onSave={value => void updateDoc(doc.id, { note: value })}
+                          draftKey={`ob:${inspection.id}:handlingar:document:${doc.id}:note`}
+                          onSave={value =>
+                            updateDoc(doc.id, { note: value }, { throwOnError: true })
+                          }
                         />
                       </label>
                     </div>
@@ -943,7 +954,10 @@ export default function ObStepHandlingar({
                         className="min-h-[2.5rem] w-full rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900"
                         value={typedDocument.note ?? ''}
                         disabled={isInspectionLocked}
-                        onSave={value => void updateDoc(doc.id, { note: value })}
+                        draftKey={`ob:${inspection.id}:handlingar:document:${doc.id}:note`}
+                        onSave={value =>
+                          updateDoc(doc.id, { note: value }, { throwOnError: true })
+                        }
                       />
                     </td>
                   </tr>
@@ -990,6 +1004,11 @@ export default function ObStepHandlingar({
           placeholder="Skriv alla upplysningar här ..."
           value={disclosureText}
           disabled={isInspectionLocked}
+          draftKey={
+            disclosure?.id
+              ? `ob:${inspection.id}:handlingar:disclosure:${disclosure.id}:note`
+              : undefined
+          }
           onValueChange={setDisclosureText}
           onSave={saveDisclosureText}
         />
@@ -1051,6 +1070,7 @@ export default function ObStepHandlingar({
           className="min-h-[160px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500"
           value={defectText}
           disabled={isInspectionLocked}
+          draftKey={`ob:${inspection.id}:handlingar:defect_disclosures`}
           onValueChange={setDefectText}
           onSave={saveDefectText}
         />

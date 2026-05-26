@@ -1,11 +1,12 @@
 ﻿'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Menu, X } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 import { parseScopeCodes } from '@/lib/report/scopeText'
+import { hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
 import ObWizard, {
   ObSectionKey,
   ObWizardInspectionInput,
@@ -204,15 +205,89 @@ export default function InspectionDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedAddonKeys, setSelectedAddonKeys] = useState<string[]>([])
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const textDraftHistoryGuardPushedRef = useRef(false)
+  const confirmLeaveIfTextDrafts = useCallback(() => {
+    if (!hasObTextDraftsForInspection(inspectionId)) return true
+    return window.confirm(
+      'Det finns text som bara är sparad lokalt på den här enheten. Den ligger kvar och försöker sparas när du öppnar besiktningen igen. Vill du lämna ändå?'
+    )
+  }, [inspectionId])
   const handleBackToInspections = useCallback(() => {
+    if (!confirmLeaveIfTextDrafts()) return
     router.push('/inspections')
-  }, [router])
+  }, [confirmLeaveIfTextDrafts, router])
   const handleInspectionAddonSelectionChanged = useCallback((keys: string[]) => {
     setSelectedAddonKeys((prev) => (areAddonKeyListsEqual(prev, keys) ? prev : keys))
   }, [])
 
   // Starta på Grunddata
   const [activeSection, setActiveSection] = useState<ObSectionKey>('grunddata')
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const hasTextDrafts = () => hasObTextDraftsForInspection(inspectionId)
+    const confirmMessage =
+      'Det finns text som bara är sparad lokalt på den här enheten. Den ligger kvar och försöker sparas när du öppnar besiktningen igen. Vill du lämna ändå?'
+
+    const pushBackButtonGuard = () => {
+      if (textDraftHistoryGuardPushedRef.current || !hasTextDrafts()) return
+      window.history.pushState({ obTextDraftGuard: true }, '', window.location.href)
+      textDraftHistoryGuardPushedRef.current = true
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasTextDrafts()) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+
+    const handleDocumentClick = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null
+      const anchor = target?.closest('a[href]') as HTMLAnchorElement | null
+      if (!anchor || anchor.target === '_blank') return
+
+      const nextUrl = new URL(anchor.href, window.location.href)
+      const currentUrl = new URL(window.location.href)
+      if (nextUrl.origin === currentUrl.origin && nextUrl.pathname === currentUrl.pathname) {
+        return
+      }
+
+      if (!hasTextDrafts()) return
+      if (!window.confirm(confirmMessage)) event.preventDefault()
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      const state = event.state as { obTextDraftGuard?: unknown } | null
+      if (state?.obTextDraftGuard === true) return
+      if (!textDraftHistoryGuardPushedRef.current) return
+      if (!hasTextDrafts()) {
+        textDraftHistoryGuardPushedRef.current = false
+        return
+      }
+
+      if (window.confirm(confirmMessage)) {
+        textDraftHistoryGuardPushedRef.current = false
+        window.setTimeout(() => window.history.back(), 0)
+        return
+      }
+
+      window.history.pushState({ obTextDraftGuard: true }, '', window.location.href)
+    }
+
+    pushBackButtonGuard()
+    const intervalId = window.setInterval(pushBackButtonGuard, 1000)
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('popstate', handlePopState)
+    document.addEventListener('click', handleDocumentClick, true)
+
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('popstate', handlePopState)
+      document.removeEventListener('click', handleDocumentClick, true)
+    }
+  }, [inspectionId])
 
   useEffect(() => {
     if (!propertyId || !inspectionId) return

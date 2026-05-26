@@ -508,8 +508,14 @@ export default function ObStepGrunddata({
   }
 
   // Hjälpare: spara inspection-fält
-  const saveInspection = useCallback(async (patch: Partial<Inspection>): Promise<Inspection | null> => {
-    if (isInspectionLocked) return null
+  const saveInspection = useCallback(async (
+    patch: Partial<Inspection>,
+    options?: { throwOnError?: boolean }
+  ): Promise<Inspection | null> => {
+    if (isInspectionLocked) {
+      if (options?.throwOnError) throw new Error('Besiktningen ar last och kan inte redigeras.')
+      return null
+    }
     setError(null)
     setSavingInsp(true)
 
@@ -525,6 +531,7 @@ export default function ObStepGrunddata({
     if (updErr) {
       console.error(updErr)
       setError('Kunde inte spara uppdragsuppgifterna.')
+      if (options?.throwOnError) throw updErr
       return null
     }
 
@@ -1267,8 +1274,14 @@ export default function ObStepGrunddata({
                   placeholder="T.ex. Anna Andersson (mäklare), Kalle Karlsson (besiktningsman säljare)"
                   value={inspForm.attendees_other}
                   disabled={isInspectionLocked}
+                  draftKey={`ob:${inspection.id}:grunddata:attendees_other`}
                   onValueChange={value => handleInspChange('attendees_other', value)}
-                  onSave={value => void saveInspection({ attendees_other: value || null })}
+                  onSave={async value => {
+                    await saveInspection(
+                      { attendees_other: value || null },
+                      { throwOnError: true }
+                    )
+                  }}
                 />
               </div>
 

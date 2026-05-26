@@ -1433,9 +1433,13 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   }
 
   const upsertControlItem = async (
-    item: InspectionControlItem
+    item: InspectionControlItem,
+    options?: { throwOnError?: boolean }
   ): Promise<InspectionControlItem | null> => {
-    if (isInspectionLocked) return null
+    if (isInspectionLocked) {
+      if (options?.throwOnError) throw new Error('Besiktningen är låst och kan inte redigeras.')
+      return null
+    }
     setSaving(true)
     setError(null)
     try {
@@ -1480,18 +1484,27 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     } catch (e: unknown) {
       console.error('upsert control item in OB round failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte spara kontrollpunkten.')
+      if (options?.throwOnError) throw e
       return null
     } finally {
       setSaving(false)
     }
   }
 
-  const updateControlItem = async (itemId: string, patch: Partial<InspectionControlItem>) => {
+  const updateControlItem = async (
+    itemId: string,
+    patch: Partial<InspectionControlItem>,
+    options?: { throwOnError?: boolean }
+  ) => {
     const current = controlItems.find(item => item.id === itemId)
-    if (!current) return
+    if (!current) {
+      if (options?.throwOnError) throw new Error('Kontrollpunkten kunde inte hittas.')
+      return
+    }
     const optimistic = { ...current, ...patch }
     setControlItems(prev => prev.map(item => (item.id === itemId ? optimistic : item)))
-    const saved = await upsertControlItem(optimistic)
+    const saved = await upsertControlItem(optimistic, options)
+    if (!saved && options?.throwOnError) throw new Error('Kunde inte spara kontrollpunkten.')
     if (saved) setControlItems(prev => prev.map(item => (item.id === itemId ? saved : item)))
   }
 
@@ -1712,6 +1725,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     } catch (e: unknown) {
       console.error('save quick note failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte spara snabbanteckningen.')
+      throw e
     }
   }
 
@@ -2499,9 +2513,10 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
           Intern snabbanteckning
         </label>
         <DebouncedTextarea
+          draftKey={`ob:${inspection.id}:runda:quick-note:${area}:${area === 'interior' ? activeRoom?.id ?? 'none' : activeExteriorItem?.id ?? 'none'}:note`}
           rows={3}
           value={activeQuickNote?.note ?? ''}
-          onSave={value => void saveQuickNote(value)}
+          onSave={value => saveQuickNote(value)}
           readOnly={isInspectionLocked}
           placeholder="Endast internt stöd, syns inte i rapporten."
           className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
@@ -2811,9 +2826,10 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               <div className="rounded-xl border border-gray-200 bg-white p-3">
                 <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Notering</label>
                 <DebouncedTextarea
+                  draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:note`}
                   rows={5}
                   value={item.note ?? ''}
-                  onSave={value => void updateControlItem(item.id!, { note: value })}
+                  onSave={value => updateControlItem(item.id!, { note: value }, { throwOnError: true })}
                   readOnly={isInspectionLocked}
                   placeholder="Skriv noteringen..."
                   className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
@@ -2823,9 +2839,10 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               <div className="rounded-xl border border-gray-200 bg-white p-3">
                 <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Risk</label>
                 <DebouncedTextarea
+                  draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:risk_text`}
                   rows={4}
                   value={item.risk_text ?? ''}
-                  onSave={value => void updateControlItem(item.id!, { risk_text: value || null })}
+                  onSave={value => updateControlItem(item.id!, { risk_text: value || null }, { throwOnError: true })}
                   readOnly={isInspectionLocked}
                   placeholder="Risktext..."
                   className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
@@ -2835,9 +2852,10 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               <div className="rounded-xl border border-gray-200 bg-white p-3">
                 <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">FTU</label>
                 <DebouncedTextarea
+                  draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:ftu_text`}
                   rows={4}
                   value={item.ftu_text ?? ''}
-                  onSave={value => void updateControlItem(item.id!, { ftu_text: value || null })}
+                  onSave={value => updateControlItem(item.id!, { ftu_text: value || null }, { throwOnError: true })}
                   readOnly={isInspectionLocked}
                   placeholder="Fortsatt teknisk utredning..."
                   className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
@@ -2964,9 +2982,10 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
               <div className="rounded-xl border border-gray-200 bg-white p-3">
                 <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Notering</label>
                 <DebouncedTextarea
+                  draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:note`}
                   rows={5}
                   value={item.note ?? ''}
-                  onSave={value => void updateControlItem(item.id!, { note: value })}
+                  onSave={value => updateControlItem(item.id!, { note: value }, { throwOnError: true })}
                   readOnly={isInspectionLocked}
                   placeholder="Skriv noteringen..."
                   className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
@@ -2977,9 +2996,10 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 <div className="rounded-xl border border-gray-200 bg-white p-3">
                   <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Risk</label>
                   <DebouncedTextarea
+                    draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:risk_text`}
                     rows={4}
                     value={item.risk_text ?? ''}
-                    onSave={value => void updateControlItem(item.id!, { risk_text: value || null })}
+                    onSave={value => updateControlItem(item.id!, { risk_text: value || null }, { throwOnError: true })}
                     readOnly={isInspectionLocked}
                     placeholder="Risktext..."
                     className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
@@ -2989,9 +3009,10 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
                 <div className="rounded-xl border border-gray-200 bg-white p-3">
                   <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">FTU</label>
                   <DebouncedTextarea
+                    draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:ftu_text`}
                     rows={4}
                     value={item.ftu_text ?? ''}
-                    onSave={value => void updateControlItem(item.id!, { ftu_text: value || null })}
+                    onSave={value => updateControlItem(item.id!, { ftu_text: value || null }, { throwOnError: true })}
                     readOnly={isInspectionLocked}
                     placeholder="Fortsatt teknisk utredning..."
                     className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
@@ -3401,10 +3422,11 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
           </button>
         ) : (
           <DebouncedTextarea
+            draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:note`}
             rows={2}
             value={item.note ?? ''}
             onSave={value => {
-              if (item.id) void updateControlItem(item.id, { note: value })
+              if (item.id) return updateControlItem(item.id, { note: value }, { throwOnError: true })
             }}
             readOnly={isInspectionLocked}
             placeholder="Notering..."
