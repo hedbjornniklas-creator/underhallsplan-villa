@@ -13,6 +13,7 @@ import {
   type AssignmentDetails,
   type AssignmentListItem,
 } from '@/lib/assignments/server'
+import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export type TuReportSectionKey =
@@ -100,6 +101,21 @@ export type TuInvestigationDetails = TuInspectionSummary & {
   accessibility: string | null
 }
 
+export type TuInvestigationImage = {
+  id: string
+  inspectionId: string
+  orgId: string
+  sectionKey: 'bank' | 'appendix'
+  storageBucket: string
+  filePath: string
+  publicUrl: string
+  caption: string | null
+  sortOrder: number
+  uploadedBy: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
 type TuDetailRow = {
   inspection_id: string
   org_id: string
@@ -155,6 +171,20 @@ type InspectionRow = {
 
 type PropertyRow = TuPropertySummary
 
+type TuImageRow = {
+  id: string
+  inspection_id: string
+  org_id: string
+  section_key: string | null
+  storage_bucket: string | null
+  file_path: string
+  caption: string | null
+  sort_order: number | null
+  uploaded_by: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
 type SupabaseError = {
   message?: string
 } | null
@@ -180,6 +210,14 @@ type QueryBuilder<T = Record<string, unknown>> = {
 
 type TuSupabaseClient = {
   from: (table: string) => QueryBuilder
+}
+
+type TuStorageClient = TuSupabaseClient & {
+  storage: {
+    from: (bucket: string) => {
+      getPublicUrl: (path: string) => { data: { publicUrl: string } }
+    }
+  }
 }
 
 export const TU_REPORT_SECTIONS: Array<Pick<TuReportSection, 'key' | 'title'>> = [
@@ -265,19 +303,37 @@ export function normalizeTuReportDraft(value: unknown): TuReportDraft {
   }
 }
 
-function upsertReportSectionText(
+function extractTuInspectorBlock(text: string) {
+  const match = text.match(/(?:^|\r?\n\r?\n)Besiktningsman\r?\n([\s\S]*)$/)
+  return match?.[1]?.trim() ?? null
+}
+
+function upsertAssignmentPartiesSectionText(
   draft: TuReportDraft,
-  key: TuReportSectionKey,
   defaultText: string | null
 ): TuReportDraft {
   const normalizedText = cleanText(defaultText)
   if (!normalizedText) return draft
 
+  const inspectorBlock = extractTuInspectorBlock(normalizedText)
+  const hasInspectorText = Boolean(inspectorBlock && inspectorBlock !== 'Ej angivet.')
+  const missingInspectorPattern = /Besiktningsman\r?\nEj angivet\.?/m
+
   return {
     sections: draft.sections.map((section) => {
-      if (section.key !== key) return section
-      if (section.text.trim()) return section
-      return { ...section, text: normalizedText }
+      if (section.key !== 'assignment_parties') return section
+
+      const currentText = section.text.trim()
+      if (!currentText) return { ...section, text: normalizedText }
+
+      if (hasInspectorText && missingInspectorPattern.test(currentText)) {
+        return {
+          ...section,
+          text: currentText.replace(missingInspectorPattern, `Besiktningsman\n${inspectorBlock}`),
+        }
+      }
+
+      return section
     }),
   }
 }
@@ -339,21 +395,39 @@ function buildTuAssignmentPartiesText(input: {
   ].join('\n')
 }
 
-async function getTuInspectorProfile(profileId: string | null | undefined) {
-  const normalizedProfileId = cleanText(profileId)
+async function getTuInspectorProfile(input: {
+  profileId: string | null | undefined
+  orgId: string
+}) {
+  const normalizedProfileId = cleanText(input.profileId)
   if (!normalizedProfileId) return null
 
   const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
   const { data, error } = await admin
     .from('profiles')
     .select(
-      'id,full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city,sbr_group,sbr_status,membership_number,certification_number'
+      'id,full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city'
     )
     .eq('id', normalizedProfileId)
     .maybeSingle()
 
   if (error || !data) return null
-  return data as TuInspectorProfileRow
+  const profile = data as Omit<
+    TuInspectorProfileRow,
+    'sbr_group' | 'sbr_status' | 'membership_number' | 'certification_number'
+  >
+  const { summary } = await resolveInspectorCertificationSummary(admin, {
+    profileId: normalizedProfileId,
+    orgId: input.orgId,
+  })
+
+  return {
+    ...profile,
+    sbr_group: summary.sbr_group,
+    sbr_status: summary.sbr_status,
+    membership_number: summary.membership_number,
+    certification_number: summary.certification_number,
+  } satisfies TuInspectorProfileRow
 }
 
 export async function requireTuContext() {
@@ -824,6 +898,7 @@ export async function listTuInvestigations(orgId: string): Promise<TuInspectionS
 export async function getTuInvestigationById(input: {
   orgId: string
   inspectionId: string
+  inspectorProfileId?: string | null
 }): Promise<TuInvestigationDetails | null> {
   const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
   const { data: detailData, error: detailError } = await admin
@@ -865,10 +940,12 @@ export async function getTuInvestigationById(input: {
   const assignment = detail.assignment_id
     ? await getAssignmentById(input.orgId, detail.assignment_id)
     : null
-  const inspector = await getTuInspectorProfile(assignment?.responsible_profile_id ?? detail.created_by)
-  const reportDraft = upsertReportSectionText(
+  const inspector = await getTuInspectorProfile({
+    profileId: input.inspectorProfileId ?? assignment?.responsible_profile_id ?? detail.created_by,
+    orgId: input.orgId,
+  })
+  const reportDraft = upsertAssignmentPartiesSectionText(
     normalizeTuReportDraft(detail.report_draft),
-    'assignment_parties',
     buildTuAssignmentPartiesText({ assignment, inspection, inspector })
   )
 
@@ -896,6 +973,56 @@ export async function getTuInvestigationById(input: {
   }
 }
 
+const TU_IMAGE_COLUMNS =
+  'id,inspection_id,org_id,section_key,storage_bucket,file_path,caption,sort_order,uploaded_by,created_at,updated_at'
+
+function normalizeTuImageSectionKey(value: string | null | undefined): 'bank' | 'appendix' {
+  return value === 'appendix' ? 'appendix' : 'bank'
+}
+
+function mapTuInvestigationImage(row: TuImageRow, admin: TuStorageClient): TuInvestigationImage {
+  const bucket = row.storage_bucket?.trim() || 'inspection-images'
+  return {
+    id: row.id,
+    inspectionId: row.inspection_id,
+    orgId: row.org_id,
+    sectionKey: normalizeTuImageSectionKey(row.section_key),
+    storageBucket: bucket,
+    filePath: row.file_path,
+    publicUrl: admin.storage.from(bucket).getPublicUrl(row.file_path).data.publicUrl,
+    caption: row.caption,
+    sortOrder: row.sort_order ?? 100,
+    uploadedBy: row.uploaded_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export async function listTuInvestigationImages(input: {
+  orgId: string
+  inspectionId: string
+  sectionKey?: 'bank' | 'appendix'
+}): Promise<TuInvestigationImage[]> {
+  const admin = createSupabaseAdminClient() as unknown as TuStorageClient
+  let query = admin
+    .from('technical_investigation_images')
+    .select(TU_IMAGE_COLUMNS)
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+
+  if (input.sectionKey) {
+    query = query.eq('section_key', input.sectionKey)
+  }
+
+  const { data, error } = await query
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) throw new Error(error.message ?? 'Kunde inte hämta TU-bilder.')
+
+  return ((data ?? []) as TuImageRow[]).map((row) => mapTuInvestigationImage(row, admin))
+}
+
 export async function updateTuInvestigationDraft(input: {
   orgId: string
   inspectionId: string
@@ -910,7 +1037,11 @@ export async function updateTuInvestigationDraft(input: {
   }
 }) {
   const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
-  const existing = await getTuInvestigationById({ orgId: input.orgId, inspectionId: input.inspectionId })
+  const existing = await getTuInvestigationById({
+    orgId: input.orgId,
+    inspectionId: input.inspectionId,
+    inspectorProfileId: input.updatedBy,
+  })
   if (!existing) throw new Error('TU_INVESTIGATION_NOT_FOUND')
   if (existing.reportLockedAt) throw new Error('TU_REPORT_LOCKED')
 
@@ -945,5 +1076,9 @@ export async function updateTuInvestigationDraft(input: {
       .eq('id', input.inspectionId)
   }
 
-  return getTuInvestigationById({ orgId: input.orgId, inspectionId: input.inspectionId })
+  return getTuInvestigationById({
+    orgId: input.orgId,
+    inspectionId: input.inspectionId,
+    inspectorProfileId: input.updatedBy,
+  })
 }

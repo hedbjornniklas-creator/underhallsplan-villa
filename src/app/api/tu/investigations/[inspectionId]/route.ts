@@ -30,7 +30,11 @@ export async function GET(
   try {
     const { inspectionId } = await context.params
     const orgContext = await requireTuContext()
-    const investigation = await getTuInvestigationById({ orgId: orgContext.orgId, inspectionId })
+    const investigation = await getTuInvestigationById({
+      orgId: orgContext.orgId,
+      inspectionId,
+      inspectorProfileId: orgContext.userId,
+    })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
     return NextResponse.json({ investigation })
   } catch (error) {

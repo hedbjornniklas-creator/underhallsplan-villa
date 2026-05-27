@@ -18,7 +18,11 @@ export default async function TuInvestigationPage({
 
   try {
     const context = await requireTuContext()
-    investigation = await getTuInvestigationById({ orgId: context.orgId, inspectionId })
+    investigation = await getTuInvestigationById({
+      orgId: context.orgId,
+      inspectionId,
+      inspectorProfileId: context.userId,
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') redirect('/login')

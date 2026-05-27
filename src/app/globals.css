@@ -178,4 +178,33 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     max-height: 14mm !important;
     object-fit: contain !important;
   }
+
+  .tu-print-root {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  .tu-print-document {
+    width: 186mm !important;
+    max-width: 186mm !important;
+    margin: 0 auto !important;
+    padding: 12mm 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
+
+  .tu-print-document,
+  .tu-print-document * {
+    box-sizing: border-box;
+  }
+
+  .tu-print-block,
+  .tu-print-document figure,
+  .tu-print-document img {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }
