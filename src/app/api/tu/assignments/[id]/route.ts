@@ -65,6 +65,21 @@ export async function PATCH(
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const patch: Record<string, unknown> = {}
     const editableStatuses = new Set(['draft', 'sent'])
+    const bodyKeys = Object.keys(body)
+    const hasArchivedAtInBody = Object.prototype.hasOwnProperty.call(body, 'archived_at')
+    const archiveValue = hasArchivedAtInBody ? body.archived_at : undefined
+    const isArchiveSetValue =
+      archiveValue !== undefined && archiveValue !== null && archiveValue !== ''
+    const isArchiveClearValue = archiveValue === null || archiveValue === ''
+    const isArchiveTogglePatch = bodyKeys.length === 1 && bodyKeys[0] === 'archived_at'
+    const isArchiveClearOnlyPatch = isArchiveTogglePatch && isArchiveClearValue
+    const isCancelAndArchivePatch =
+      typeof body.status === 'string' &&
+      body.status.trim().toLowerCase() === 'cancelled' &&
+      bodyKeys.length >= 1 &&
+      bodyKeys.length <= 2 &&
+      bodyKeys.includes('archived_at') &&
+      bodyKeys.every((key) => key === 'status' || key === 'archived_at')
 
     const statusRaw = typeof body.status === 'string' ? body.status.trim().toLowerCase() : ''
     if (statusRaw) {
@@ -78,7 +93,44 @@ export async function PATCH(
       }
     }
 
-    if (!editableStatuses.has(existing.status) && Object.keys(patch).length === 0) {
+    if (
+      statusRaw &&
+      statusRaw !== 'cancelled' &&
+      !editableStatuses.has(existing.status)
+    ) {
+      return jsonError('Endast utkast och skickade TU-uppdrag kan redigeras.', 409)
+    }
+
+    if (hasArchivedAtInBody) {
+      if (archiveValue === null || archiveValue === '') {
+        patch.archived_at = null
+        patch.archived_by = null
+      } else if (typeof archiveValue === 'string') {
+        const effectiveStatus = (patch.status as AssignmentStatus | undefined) ?? existing.status
+        if (
+          isArchiveSetValue &&
+          effectiveStatus !== 'cancelled' &&
+          (effectiveStatus === 'sent' || effectiveStatus === 'ordered' || effectiveStatus === 'booked')
+        ) {
+          return jsonError('Skickad, godkänd och bokad uppdragsbekräftelse kan inte arkiveras.', 409)
+        }
+        const parsed = new Date(archiveValue)
+        if (Number.isNaN(parsed.getTime())) {
+          return jsonError('Ogiltigt arkivdatum.', 400)
+        }
+        patch.archived_at = parsed.toISOString()
+        patch.archived_by = orgContext.userId
+      } else {
+        return jsonError('Ogiltigt värde för arkivering.', 400)
+      }
+    }
+
+    if (
+      !editableStatuses.has(existing.status) &&
+      !isArchiveClearOnlyPatch &&
+      !isCancelAndArchivePatch &&
+      !isArchiveTogglePatch
+    ) {
       return jsonError('Endast utkast och skickade TU-uppdrag kan redigeras.', 409)
     }
 

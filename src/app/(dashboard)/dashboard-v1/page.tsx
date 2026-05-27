@@ -2,7 +2,9 @@ import DashboardV1Client, { type ModuleCardData } from './DashboardV1Client'
 import { hasCurrentUserAccess } from '@/lib/access/server'
 
 const MODULE_CATALOG: Array<
-  ModuleCardData & { moduleKey: 'inspections' | 'construction_inspections' | 'technical_investigations' }
+  Omit<ModuleCardData, 'active'> & {
+    moduleKey: 'inspections' | 'construction_inspections' | 'technical_investigations'
+  }
 > = [
   {
     id: 'ob',
@@ -42,13 +44,14 @@ export default async function DashboardV1Page() {
       hasCurrentUserAccess({ productKey: 'dashboard', moduleKey: module.moduleKey })
     )
   )
-  const modules = MODULE_CATALOG.filter((_, index) => accessResults[index]).map((module) => ({
+  const modules = MODULE_CATALOG.map((module, index) => ({
     id: module.id,
     title: module.title,
     description: module.description,
     href: module.href,
     accentClass: module.accentClass,
     badgeClass: module.badgeClass,
+    active: Boolean(accessResults[index]),
   }))
 
   return <DashboardV1Client modules={modules} />

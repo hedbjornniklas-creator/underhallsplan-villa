@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import Protected from '@/components/Protected'
-import { Power } from 'lucide-react'
+import { Lock, Power } from 'lucide-react'
 
 export type ModuleCardData = {
   id: string
@@ -12,12 +12,25 @@ export type ModuleCardData = {
   href: string
   accentClass: string
   badgeClass: string
+  active: boolean
 }
 
 function ModuleCard({ module }: { module: ModuleCardData }) {
+  const badgeClass = module.active
+    ? module.badgeClass
+    : 'border-gray-200 bg-gray-100 text-gray-500'
+  const accentClass = module.active ? module.accentClass : 'from-gray-300 to-gray-400'
+  const buttonLabel = module.active ? `Öppna ${module.title}` : `${module.title} är inte aktiv`
+
   return (
-    <article className="group relative aspect-square h-full overflow-hidden rounded-lg border border-white/40 bg-white/90 p-5 shadow-2xl ring-1 ring-black/5 backdrop-blur-md transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-[0_30px_70px_-26px_rgba(15,23,42,0.65)] md:p-6">
-      <div className={`pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b ${module.accentClass}`} />
+    <article
+      className={`group relative aspect-square h-full overflow-hidden rounded-lg border border-white/40 bg-white/90 p-5 shadow-2xl ring-1 ring-black/5 backdrop-blur-md transition-all duration-300 ease-out md:p-6 ${
+        module.active
+          ? 'hover:-translate-y-1 hover:shadow-[0_30px_70px_-26px_rgba(15,23,42,0.65)]'
+          : 'opacity-80 grayscale-[0.2]'
+      }`}
+    >
+      <div className={`pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b ${accentClass}`} />
       <div className="pointer-events-none absolute left-4 right-4 top-0 h-px bg-white/60" />
       <div className="relative flex h-full flex-col">
         <div className="space-y-3">
@@ -29,8 +42,8 @@ function ModuleCard({ module }: { module: ModuleCardData }) {
               height={28}
               className="h-6 w-auto object-contain"
             />
-            <span className={`mt-0.5 inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-xs font-medium ${module.badgeClass}`}>
-              Aktiv modul
+            <span className={`mt-0.5 inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-xs font-medium ${badgeClass}`}>
+              {module.active ? 'Aktiv modul' : 'Ej aktiv modul'}
             </span>
           </div>
 
@@ -42,21 +55,33 @@ function ModuleCard({ module }: { module: ModuleCardData }) {
         </div>
 
         <div className="flex flex-1 items-center justify-center">
-          <Link
-            href={module.href}
-            aria-label={`Öppna ${module.title}`}
-            title={`Öppna ${module.title}`}
-            className="inline-flex h-28 w-28 cursor-pointer items-center justify-center rounded-full bg-gradient-to-b from-lime-400 to-green-600 p-[9px] shadow-[0_16px_26px_-16px_rgba(22,101,52,0.85)] transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-105 hover:from-cyan-400 hover:to-blue-600 hover:shadow-[0_22px_34px_-10px_rgba(14,165,233,0.98)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
-          >
-            <span className="flex h-full w-full items-center justify-center rounded-full bg-white ring-1 ring-black/10 shadow-inner transition-all duration-300 hover:bg-slate-50">
-              <Power
-                size={42}
-                aria-hidden
-                className="text-gray-500 transition-transform duration-300 ease-out group-hover:rotate-12 group-hover:scale-110"
-                strokeWidth={2.25}
-              />
-            </span>
-          </Link>
+          {module.active ? (
+            <Link
+              href={module.href}
+              aria-label={buttonLabel}
+              title={buttonLabel}
+              className="inline-flex h-28 w-28 cursor-pointer items-center justify-center rounded-full bg-gradient-to-b from-lime-400 to-green-600 p-[9px] shadow-[0_16px_26px_-16px_rgba(22,101,52,0.85)] transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-105 hover:from-cyan-400 hover:to-blue-600 hover:shadow-[0_22px_34px_-10px_rgba(14,165,233,0.98)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+            >
+              <span className="flex h-full w-full items-center justify-center rounded-full bg-white ring-1 ring-black/10 shadow-inner transition-all duration-300 hover:bg-slate-50">
+                <Power
+                  size={42}
+                  aria-hidden
+                  className="text-gray-500 transition-transform duration-300 ease-out group-hover:rotate-12 group-hover:scale-110"
+                  strokeWidth={2.25}
+                />
+              </span>
+            </Link>
+          ) : (
+            <div
+              aria-label={buttonLabel}
+              title={buttonLabel}
+              className="inline-flex h-28 w-28 cursor-not-allowed items-center justify-center rounded-full bg-gradient-to-b from-gray-200 to-gray-400 p-[9px] shadow-[0_16px_26px_-16px_rgba(75,85,99,0.45)]"
+            >
+              <span className="flex h-full w-full items-center justify-center rounded-full bg-white ring-1 ring-black/10 shadow-inner">
+                <Lock size={40} aria-hidden className="text-gray-400" strokeWidth={2.25} />
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </article>
@@ -83,28 +108,19 @@ export default function DashboardV1Client({ modules }: { modules: ModuleCardData
             </h1>
           </header>
 
-          {modules.length === 0 ? (
-            <section className="mx-auto mt-10 max-w-xl rounded-lg border border-amber-200 bg-white/90 p-5 text-center shadow-sm">
-              <h2 className="text-base font-semibold text-gray-900">Inga aktiva moduler</h2>
-              <p className="mt-2 text-sm leading-6 text-gray-600">
-                Din Dashboard-access är aktiv, men ingen besiktningsmodul är tilldelad.
-              </p>
-            </section>
-          ) : (
-            <section className="mx-auto mt-10 grid w-full max-w-6xl grid-cols-1 gap-5 place-items-center sm:grid-cols-2 sm:place-items-stretch lg:grid-cols-3">
-              {modules.map((module, index) => {
-                const centerSingleCard = modules.length === 1 && index === 0
-                return (
-                  <div
-                    key={module.id}
-                    className={`w-full max-w-md sm:max-w-none ${centerSingleCard ? 'lg:col-start-2' : ''}`}
-                  >
-                    <ModuleCard module={module} />
-                  </div>
-                )
-              })}
-            </section>
-          )}
+          <section className="mx-auto mt-10 grid w-full max-w-6xl grid-cols-1 gap-5 place-items-center sm:grid-cols-2 sm:place-items-stretch lg:grid-cols-3">
+            {modules.map((module, index) => {
+              const centerSingleCard = modules.length === 1 && index === 0
+              return (
+                <div
+                  key={module.id}
+                  className={`w-full max-w-md sm:max-w-none ${centerSingleCard ? 'lg:col-start-2' : ''}`}
+                >
+                  <ModuleCard module={module} />
+                </div>
+              )
+            })}
+          </section>
         </div>
       </main>
     </Protected>
