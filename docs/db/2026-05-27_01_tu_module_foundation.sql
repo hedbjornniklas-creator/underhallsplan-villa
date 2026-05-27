@@ -26,6 +26,87 @@ set
   is_active = excluded.is_active,
   sort_order = excluded.sort_order;
 
+with target_profiles as (
+  select distinct paa.profile_id
+  from public.platform_access_assignments paa
+  join public.platform_products hp on hp.id = paa.product_id and hp.key = 'hushub_admin'
+  join public.platform_modules hm on hm.id = paa.module_id and hm.key = 'access_management'
+  join public.platform_roles hr on hr.id = paa.role_id and hr.key = 'hushub_superadmin'
+  where paa.is_active = true
+    and (paa.expires_at is null or paa.expires_at > now())
+
+  union
+
+  select p.id
+  from public.profiles p
+  where coalesce(p.is_admin, false) = true
+),
+target_assignment as (
+  select
+    tp.profile_id,
+    dp.id as product_id,
+    tm.id as module_id,
+    ir.id as role_id
+  from target_profiles tp
+  join public.platform_products dp on dp.key = 'dashboard'
+  join public.platform_modules tm
+    on tm.product_id = dp.id
+   and tm.key = 'technical_investigations'
+  join public.platform_roles ir
+    on ir.product_id = dp.id
+   and ir.key = 'inspector'
+),
+reactivated as (
+  update public.platform_access_assignments paa
+  set
+    is_active = true,
+    granted_reason = coalesce(paa.granted_reason, 'Bootstrap TU access for access admins.'),
+    source_system = coalesce(paa.source_system, 'tu_module_bootstrap'),
+    updated_at = now()
+  from target_assignment ta
+  where paa.profile_id = ta.profile_id
+    and paa.product_id = ta.product_id
+    and paa.module_id = ta.module_id
+    and paa.role_id = ta.role_id
+    and paa.scope_type = 'global'
+    and paa.scope_id is null
+  returning paa.id
+)
+insert into public.platform_access_assignments (
+  profile_id,
+  product_id,
+  module_id,
+  role_id,
+  scope_type,
+  scope_id,
+  is_active,
+  granted_by_profile_id,
+  granted_reason,
+  source_system
+)
+select
+  ta.profile_id,
+  ta.product_id,
+  ta.module_id,
+  ta.role_id,
+  'global',
+  null,
+  true,
+  ta.profile_id,
+  'Bootstrap TU access for access admins.',
+  'tu_module_bootstrap'
+from target_assignment ta
+where not exists (
+  select 1
+  from public.platform_access_assignments paa
+  where paa.profile_id = ta.profile_id
+    and paa.product_id = ta.product_id
+    and paa.module_id = ta.module_id
+    and paa.role_id = ta.role_id
+    and paa.scope_type = 'global'
+    and paa.scope_id is null
+);
+
 alter table public.assignments
   add column if not exists scope_description text;
 

@@ -321,9 +321,7 @@ export default function AccessManagementClient() {
         (byKey.get('dashboard')?.modules ?? []).map((module) => {
           const assignment =
             activeUser.uiAssignments.dashboard.find((item) => item.moduleId === module.id) ??
-            ((module.key === 'inspections' ||
-              module.key === 'construction_inspections' ||
-              module.key === 'technical_investigations')
+            ((module.key === 'inspections' || module.key === 'construction_inspections')
               ? legacyDashboardAssignment
               : null)
           return {
