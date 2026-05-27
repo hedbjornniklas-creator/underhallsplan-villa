@@ -5,7 +5,8 @@ import SessionBridge from '../../_components/SessionBridge'
 import ClientSessionDebug from '../../_components/ClientSessionDebug'
 import ReportRenderer from '@/components/report/ReportRenderer'
 import {
-  formatInspectionDocumentReportLine,
+  formatInspectionDocumentReportLineParts,
+  type InspectionDocumentReportLineParts,
   type InspectionDocumentReportLineInput,
 } from '@/lib/report/inspectionDocumentReportLine'
 import { buildReportSpec } from '@/lib/report/reportSpec'
@@ -453,10 +454,11 @@ export default async function Page({
     console.error('Kunde inte hÃ¤mta handlingar', documentError)
   }
 
-  const providedDocuments =
+  const providedDocumentRows =
     (documentRows as InspectionDocumentReportLineInput[] | null)
-      ?.map((doc) => formatInspectionDocumentReportLine(doc))
-      .filter(Boolean) ?? []
+      ?.map((doc) => formatInspectionDocumentReportLineParts(doc))
+      .filter((row): row is InspectionDocumentReportLineParts => Boolean(row)) ?? []
+  const providedDocuments = providedDocumentRows.map((row) => row.text)
 
   const { data: disclosureRow, error: disclosureError } = await supabase
     .from('inspection_disclosures')
@@ -1469,6 +1471,7 @@ export default async function Page({
       },
       documents: {
         provided: providedDocuments,
+        provided_rows: providedDocumentRows,
       },
       disclosures: {
         acquisition_text:

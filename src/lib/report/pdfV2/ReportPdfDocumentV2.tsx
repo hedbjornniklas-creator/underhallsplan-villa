@@ -8,6 +8,10 @@ import {
 } from '@react-pdf/renderer'
 import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import { loadAppendixText } from '@/lib/report/loadAppendixText'
+import {
+  parseInspectionDocumentReportLine,
+  type InspectionDocumentReportLineParts,
+} from '@/lib/report/inspectionDocumentReportLine'
 import type { ReportBlock, ReportSection, TextSource } from '@/lib/report/reportSpec'
 import type { ReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
 
@@ -187,6 +191,59 @@ const getListAtPath = (obj: unknown, path: string): string[] => {
   return []
 }
 
+const isInspectionDocumentReportLineParts = (
+  value: unknown
+): value is InspectionDocumentReportLineParts => {
+  if (!value || typeof value !== 'object') return false
+  const row = value as Partial<InspectionDocumentReportLineParts>
+  return typeof row.title === 'string' && typeof row.statusText === 'string'
+}
+
+const getInspectionDocumentRows = (obj: unknown) => {
+  const structuredRows = getValueAtPath(obj, 'mock.documents.provided_rows')
+  if (Array.isArray(structuredRows)) {
+    const rows = structuredRows
+      .filter(isInspectionDocumentReportLineParts)
+      .map((row) => ({
+        ...row,
+        title: repairMojibake(row.title),
+        statusText: repairMojibake(row.statusText),
+        note: repairMojibake(row.note ?? ''),
+        text: repairMojibake(row.text ?? ''),
+      }))
+    if (rows.length > 0) return rows
+  }
+
+  return getListAtPath(obj, 'mock.documents.provided').map((line) =>
+    parseInspectionDocumentReportLine(line)
+  )
+}
+
+const renderDocumentRowsPdf = (rows: InspectionDocumentReportLineParts[]) => {
+  const normalizedRows = rows.length > 0 ? rows : [parseInspectionDocumentReportLine('--')]
+
+  return normalizedRows.map((row, index) => {
+    const statusText = [row.statusText, row.note ? `. ${row.note}` : '']
+      .filter(Boolean)
+      .join('')
+
+    if (!row.statusText) {
+      return (
+        <Text key={`document-row-${index}`} style={{ marginBottom: 2 }}>
+          {row.title || '\u00A0'}
+        </Text>
+      )
+    }
+
+    return (
+      <View key={`document-row-${index}`} style={{ flexDirection: 'row', marginBottom: 2 }} wrap={false}>
+        <Text style={{ width: '58%', paddingRight: 12 }}>{row.title}</Text>
+        <Text style={{ width: '42%' }}>{statusText}</Text>
+      </View>
+    )
+  })
+}
+
 const HANDLINGAR_PDF_CHUNK_MAX_LINES = 10
 const HANDLINGAR_PDF_APPROX_CHARS_PER_LINE = 74
 
@@ -350,6 +407,7 @@ const renderBlock = (
 
   if (block.type === 'handlingarLayout') {
     const provided = getListAtPath(data, 'mock.documents.provided')
+    const providedRows = getInspectionDocumentRows(data)
     const renovations = getListAtPath(data, 'mock.disclosures.renovations')
     const faults = getListAtPath(data, 'mock.disclosures.property_faults')
     const acquisitionText = String(
@@ -375,7 +433,17 @@ const renderBlock = (
       ...splitHandlingarTextForPdf(providedText).map((chunk, index) => (
         <View key={`handlingar-provided-${index}`} style={styles.row} wrap={false}>
           <Text style={labelStyle}>{index === 0 ? block.labels.provided : '\u00A0'}</Text>
-          <Text style={valueStyle}>{chunk || '\u00A0'}</Text>
+          <View style={valueStyle}>
+            {renderDocumentRowsPdf(
+              chunk
+                ? chunk
+                    .split(/\r?\n/)
+                    .map((line) => line.trim())
+                    .filter(Boolean)
+                    .map((line) => parseInspectionDocumentReportLine(line))
+                : providedRows
+            )}
+          </View>
         </View>
       )),
       ...splitHandlingarTextForPdf(infoParts.join('\n\n')).map((chunk, index) => (

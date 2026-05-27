@@ -1,7 +1,8 @@
 ﻿import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { buildBuildingDataMap, buildBuildingTypeParts, renderBuildingDataTextFromTemplate } from '@/lib/report/buildingData'
 import {
-  formatInspectionDocumentReportLine,
+  formatInspectionDocumentReportLineParts,
+  type InspectionDocumentReportLineParts,
   type InspectionDocumentReportLineInput,
 } from '@/lib/report/inspectionDocumentReportLine'
 import { parseScopeCodes, renderScopeText } from '@/lib/report/scopeText'
@@ -447,10 +448,11 @@ const supabase: any = createSupabaseServerClient()
     console.error('Kunde inte hÃ¤mta handlingar', documentError)
   }
 
-  const providedDocuments =
+  const providedDocumentRows =
     (documentRows as InspectionDocumentReportLineInput[] | null)
-      ?.map((doc) => formatInspectionDocumentReportLine(doc))
-      .filter(Boolean) ?? []
+      ?.map((doc) => formatInspectionDocumentReportLineParts(doc))
+      .filter((row): row is InspectionDocumentReportLineParts => Boolean(row)) ?? []
+  const providedDocuments = providedDocumentRows.map((row) => row.text)
 
   const { data: disclosureRow, error: disclosureError } = await supabase
     .from('inspection_disclosures')
@@ -1434,6 +1436,7 @@ const supabase: any = createSupabaseServerClient()
       },
       documents: {
         provided: providedDocuments,
+        provided_rows: providedDocumentRows,
       },
       disclosures: {
         acquisition_text:

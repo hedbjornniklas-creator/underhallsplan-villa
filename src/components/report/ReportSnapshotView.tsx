@@ -9,6 +9,10 @@ import {
   hushubLogoSrc,
   sbrLogoSrc,
 } from '@/lib/report/reportAssets'
+import {
+  parseInspectionDocumentReportLine,
+  type InspectionDocumentReportLineParts,
+} from '@/lib/report/inspectionDocumentReportLine'
 import ReportShareButton from './ReportShareButton'
 
 type SnapshotInspectionBlock = {
@@ -195,6 +199,26 @@ function getListByPath(root: Record<string, unknown>, path: string) {
   return [] as string[]
 }
 
+function isInspectionDocumentReportLineParts(
+  value: unknown
+): value is InspectionDocumentReportLineParts {
+  if (!value || typeof value !== 'object') return false
+  const row = value as Partial<InspectionDocumentReportLineParts>
+  return typeof row.title === 'string' && typeof row.statusText === 'string'
+}
+
+function getInspectionDocumentRows(root: Record<string, unknown>) {
+  const structuredRows = getByPath(root, 'documents.provided_rows')
+  if (Array.isArray(structuredRows)) {
+    const rows = structuredRows.filter(isInspectionDocumentReportLineParts)
+    if (rows.length > 0) return rows
+  }
+
+  return getListByPath(root, 'documents.provided').map((line) =>
+    parseInspectionDocumentReportLine(line)
+  )
+}
+
 function formatSnapshotTimestamp(value: string | null | undefined) {
   if (!value) return '--'
   const date = new Date(value)
@@ -351,7 +375,7 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
     '--'
   )
 
-  const providedDocuments = getListByPath(mock, 'documents.provided')
+  const providedDocuments = getInspectionDocumentRows(mock)
   const disclosureInfo = getTextByPath(mock, 'disclosures.acquisition_text', '--')
   const renovations = getListByPath(mock, 'disclosures.renovations')
   const faults = getListByPath(mock, 'disclosures.property_faults')
@@ -628,11 +652,22 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                 Handlingar
               </h3>
               {providedDocuments.length > 0 ? (
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-                  {providedDocuments.map((line, idx) => (
-                    <li key={`provided-${idx}`}>{line}</li>
-                  ))}
-                </ul>
+                <div className="mt-2 space-y-1 text-sm text-slate-700">
+                  {providedDocuments.map((row, idx) => {
+                    const statusText = [row.statusText, row.note ? `. ${row.note}` : '']
+                      .filter(Boolean)
+                      .join('')
+                    return (
+                      <div
+                        key={`provided-${idx}`}
+                        className="grid grid-cols-[minmax(0,1fr)_11rem] gap-4"
+                      >
+                        <span>{row.title}</span>
+                        <span>{statusText}</span>
+                      </div>
+                    )
+                  })}
+                </div>
               ) : (
                 <p className="mt-2 text-sm text-slate-600">--</p>
               )}

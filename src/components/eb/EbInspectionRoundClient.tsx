@@ -2227,7 +2227,11 @@ export default function EbInspectionRoundClient({
     </div>
 
         {editorOpen ? (
-          <section className="relative mx-auto mt-4 w-full max-w-7xl rounded-lg border border-emerald-100 bg-white/90 shadow-sm backdrop-blur-sm">
+          <div className="fixed inset-0 z-[100] flex justify-end bg-slate-950/25" onClick={closeEditor}>
+            <aside
+              className="flex h-full w-full max-w-7xl flex-col bg-white shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
               <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
@@ -2638,7 +2642,8 @@ export default function EbInspectionRoundClient({
                 </div>
               </aside>
               </div>
-          </section>
+            </aside>
+          </div>
         ) : null}
       </main>
     </Protected>

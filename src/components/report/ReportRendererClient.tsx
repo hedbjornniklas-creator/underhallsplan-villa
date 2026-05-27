@@ -12,6 +12,10 @@ import {
 import AppendixPage from '@/components/report/AppendixPage'
 import ReportCoverPage from '@/components/report/ReportCoverPage'
 import ReportPage from '@/components/report/ReportPage'
+import {
+  parseInspectionDocumentReportLine,
+  type InspectionDocumentReportLineParts,
+} from '@/lib/report/inspectionDocumentReportLine'
 import type { ReportBlock, ReportSection, TextSource } from '@/lib/report/reportSpec'
 import {
   ACCENT_COLOR,
@@ -221,6 +225,7 @@ type HandlingarRowEntry = {
   marginTopMm: number
   marginBottomMm: number
   splittable?: boolean
+  format?: 'documents' | 'text'
 }
 
 type ExtendedReportBlock =
@@ -499,6 +504,30 @@ function getMockList(data: Record<string, unknown>, path: string): string[] {
   return []
 }
 
+function isInspectionDocumentReportLineParts(
+  value: unknown
+): value is InspectionDocumentReportLineParts {
+  if (!value || typeof value !== 'object') return false
+  const row = value as Partial<InspectionDocumentReportLineParts>
+  return typeof row.title === 'string' && typeof row.statusText === 'string'
+}
+
+function getInspectionDocumentRows(data: Record<string, unknown>) {
+  const structuredRows = getMockArray<unknown>(data, 'mock.documents.provided_rows')
+    .filter(isInspectionDocumentReportLineParts)
+    .map((row) => ({
+      ...row,
+      note: typeof row.note === 'string' ? row.note : '',
+      text: typeof row.text === 'string' ? row.text : '',
+    }))
+
+  if (structuredRows.length > 0) return structuredRows
+
+  return getMockList(data, 'mock.documents.provided').map((line) =>
+    parseInspectionDocumentReportLine(line)
+  )
+}
+
 function resolveText(source: TextSource, mockData: Record<string, unknown>): string {
   if (source.kind === 'static') return source.text
   if (source.kind === 'mock') return getMockValue(mockData, source.path)
@@ -604,6 +633,50 @@ function splitHandlingarTextForPages(text: string) {
 
   pushCurrent()
   return chunks.length > 0 ? chunks : [normalized]
+}
+
+function renderHandlingarDocumentRows(
+  rows: InspectionDocumentReportLineParts[],
+  gapMm = 1.5
+) {
+  const normalizedRows = rows.length > 0 ? rows : [parseInspectionDocumentReportLine('--')]
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: mmToPx(gapMm),
+      }}
+    >
+      {normalizedRows.map((row, rowIndex) => {
+        const statusText = [row.statusText, row.note ? `. ${row.note}` : '']
+          .filter(Boolean)
+          .join('')
+
+        if (!row.statusText) {
+          return <div key={`handlingar-document-${rowIndex}`}>{row.title || '\u00A0'}</div>
+        }
+
+        return (
+          <div
+            key={`handlingar-document-${rowIndex}`}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `minmax(0, 1fr) ${mmToPx(48)}px`,
+              columnGap: mmToPx(8),
+              alignItems: 'baseline',
+            }}
+          >
+            <div style={{ minWidth: 0 }}>{row.title}</div>
+            <div style={{ whiteSpace: 'pre-wrap' }}>
+              {statusText}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 function splitInspectionGroupTitle(title: string) {
@@ -951,7 +1024,8 @@ export default function ReportRendererClient({
             label: string,
             value: string,
             marginTopMm: number,
-            marginBottomMm: number
+            marginBottomMm: number,
+            format: HandlingarRowEntry['format'] = 'text'
           ) => {
             const chunks = splitHandlingarTextForPages(value)
             chunks.forEach((chunk, chunkIndex) => {
@@ -976,6 +1050,7 @@ export default function ReportRendererClient({
                     ? marginBottomMm
                     : HANDLINGAR_CONTINUED_CHUNK_GAP_MM,
                   splittable: chunks.length > 1,
+                  format,
                 },
               })
             })
@@ -986,7 +1061,8 @@ export default function ReportRendererClient({
             block.labels.provided,
             provided.length > 0 ? provided.join('\n') : emptyPlaceholder,
             block.marginTopMm,
-            rowGap
+            rowGap,
+            'documents'
           )
           appendHandlingarRow('info', block.labels.info, infoText, 0, rowGap)
           appendHandlingarRow(
@@ -2451,6 +2527,14 @@ export default function ReportRendererClient({
     }
 
     if (block.type === 'handlingarRow') {
+      const documentRows =
+        block.format === 'documents'
+          ? block.value
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .map((line) => parseInspectionDocumentReportLine(line))
+          : []
       const textStyle = {
         fontSize: '11pt',
         color: REPORT_STYLES.BODY.color,
@@ -2472,7 +2556,9 @@ export default function ReportRendererClient({
         >
           <div style={textStyle}>{block.label || '\u00A0'}</div>
           <div style={{ ...textStyle, minWidth: 0 }}>
-            {block.value || '\u00A0'}
+            {block.format === 'documents'
+              ? renderHandlingarDocumentRows(documentRows)
+              : block.value || '\u00A0'}
           </div>
         </div>
       )
@@ -2482,7 +2568,7 @@ export default function ReportRendererClient({
       const labelWidth = block.labelWidthMm ?? 55
       const rowGap = block.rowGapMm ?? 6
       const emptyPlaceholder = block.emptyPlaceholder ?? '--'
-      const provided = getMockList(mockData, 'mock.documents.provided')
+      const providedRows = getInspectionDocumentRows(mockData)
       const acquisitionText = getMockValue(
         mockData,
         'mock.disclosures.acquisition_text'
@@ -2557,10 +2643,9 @@ export default function ReportRendererClient({
           <div style={rowStyle}>
             <div style={textStyle}>{block.labels.provided}</div>
             <div style={textStyle}>
-              {renderLines(
-                provided.length > 0 ? provided : [emptyPlaceholder],
-                1.5
-              )}
+              {providedRows.length > 0
+                ? renderHandlingarDocumentRows(providedRows, 1.5)
+                : renderLines([emptyPlaceholder], 1.5)}
             </div>
           </div>
 

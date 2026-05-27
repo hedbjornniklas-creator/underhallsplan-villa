@@ -4,7 +4,7 @@
 
 import Link from 'next/link'
 import { ArrowLeft, ClipboardCheck, Printer } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import type {
   EbInspectionDocument,
   EbInspectionReport,
@@ -45,6 +45,11 @@ function detailLine(parts: Array<string | null | undefined>) {
 
 function reportValue(value: string | null | undefined) {
   return value?.trim() || '-'
+}
+
+function reportPrintTitle(report: EbInspectionReport) {
+  const inspectionDate = report.inspection.date?.trim()
+  return inspectionDate ? `Utlåtande ${inspectionDate}` : 'Utlåtande'
 }
 
 function addressCityLine(postalCode: string | null | undefined, city: string | null | undefined) {
@@ -989,6 +994,7 @@ function PhotoAppendix({
 }
 
 export default function EbInspectionReportView({ report }: EbInspectionReportViewProps) {
+  const printTitle = reportPrintTitle(report)
   const notes = sortNotes(report.notes)
   const displayNumberByNoteId = new Map(notes.map((note, index) => [note.id, index + 1]))
   const printableSections = report.reportDraft.sections.filter(
@@ -1008,6 +1014,17 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
   for (const [noteId, images] of imagesByNoteId) {
     imagesByNoteId.set(noteId, sortImages(images))
   }
+
+  useEffect(() => {
+    const previousTitle = document.title
+    document.title = printTitle
+
+    return () => {
+      if (document.title === printTitle) {
+        document.title = previousTitle
+      }
+    }
+  }, [printTitle])
 
   return (
     <main className="eb-report-print-root min-h-screen bg-neutral-200 text-black print:min-h-0 print:bg-white">
@@ -1030,7 +1047,10 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
             </Link>
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={() => {
+                document.title = printTitle
+                window.print()
+              }}
               className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800"
             >
               <Printer size={16} />
