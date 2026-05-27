@@ -23,11 +23,12 @@ type DocRow = {
   is_active: boolean | null
 }
 
-type DocModule = 'ob' | 'eb'
+type DocModule = 'ob' | 'eb' | 'tu'
 
 const MODULE_OPTIONS: { key: DocModule; label: string }[] = [
   { key: 'ob', label: 'ÖB' },
   { key: 'eb', label: 'EB' },
+  { key: 'tu', label: 'TU' },
 ]
 
 const parseDocModules = (value: string | null | undefined): DocModule[] => {

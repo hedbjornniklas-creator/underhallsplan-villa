@@ -1,7 +1,7 @@
 ﻿import 'server-only'
 
-type TermsRole = 'seller' | 'buyer' | 'apartment'
-type AssignmentType = 'OB' | 'STATUS' | 'UHP' | 'EB'
+type TermsRole = 'seller' | 'buyer' | 'apartment' | 'technical'
+type AssignmentType = 'OB' | 'STATUS' | 'UHP' | 'EB' | 'TU'
 
 type AssignmentForEmail = {
   assignment_type: AssignmentType
@@ -10,6 +10,7 @@ type AssignmentForEmail = {
   customer_phone: string | null
   customer_address: string | null
   preliminary_address: string | null
+  scope_description: string | null
   preferred_date: string | null
   preferred_time: string | null
   price_amount: number | null
@@ -142,12 +143,14 @@ function assignmentTypeToLabel(type: AssignmentType) {
   if (type === 'STATUS') return 'Statusbesiktning'
   if (type === 'UHP') return 'Underhållsplan'
   if (type === 'EB') return 'Entreprenadbesiktning'
+  if (type === 'TU') return 'Teknisk utredning'
   return 'Överlåtelsebesiktning'
 }
 
 function termsRoleToLabel(role: TermsRole, format: 'html' | 'text' = 'text') {
   if (role === 'buyer') return format === 'html' ? 'Köpare' : 'Köpare'
   if (role === 'apartment') return format === 'html' ? 'Lägenhet' : 'Lägenhet'
+  if (role === 'technical') return format === 'html' ? 'Teknisk utredning' : 'Teknisk utredning'
   return format === 'html' ? 'Säljare' : 'Säljare'
 }
 
@@ -245,6 +248,16 @@ export function buildAssignmentConfirmationEmail(
   const roleLabelHtml = termsRoleToLabel(input.termsRole, 'html')
   const roleLabelText = termsRoleToLabel(input.termsRole, 'text')
   const assignmentType = assignmentTypeToLabel(input.assignment.assignment_type)
+  const isTechnicalAssignment = input.assignment.assignment_type === 'TU'
+  const scopeDescription = toDisplayValue(input.assignment.scope_description)
+  const assignmentHeadingHtml = isTechnicalAssignment
+    ? 'Teknisk utredning'
+    : `&Ouml;verl&aring;telsebesiktning f&ouml;r
+                  <span style="display:inline-block;margin-left:8px;padding:5px 12px;border-radius:999px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.45);">${roleLabelHtml}</span>`
+  const assignmentHeadingText = isTechnicalAssignment
+    ? 'Teknisk utredning'
+    : `Överlåtelsebesiktning för ${roleLabelText}`
+  const roleSuffixText = isTechnicalAssignment ? '' : ` (${roleLabelText})`
   const orgName = toDisplayValue(input.orgName, 'BesiktApp')
   const subject = `Uppdragsbekr\u00e4ftelse - ${orgName}`
   const ctaButton = buildBulletproofButton({
@@ -275,8 +288,7 @@ export function buildAssignmentConfirmationEmail(
               <td style="padding:14px 20px;background:#1d4ed8;background-image:linear-gradient(135deg,#1e3a8a 0%,#1d4ed8 48%,#60a5fa 100%);color:#ffffff;">
                 <div style="font-size:20px;font-weight:700;letter-spacing:0.02em;">UPPDRAGSBEKR&Auml;FTELSE</div>
                 <div style="margin-top:10px;font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
-                  &Ouml;verl&aring;telsebesiktning f&ouml;r
-                  <span style="display:inline-block;margin-left:8px;padding:5px 12px;border-radius:999px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.45);">${roleLabelHtml}</span>
+                  ${assignmentHeadingHtml}
                 </div>
               </td>
             </tr>
@@ -335,12 +347,22 @@ export function buildAssignmentConfirmationEmail(
                 </table>
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:2px;background:#f8fbff;border:1px solid #d9e8ff;border-radius:10px;">
                   <tr><td style="padding:14px;">
-                    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:#1f2937;">Besiktningsdag</div>
+                    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:#1f2937;">${isTechnicalAssignment ? 'Utredningstillfälle' : 'Besiktningsdag'}</div>
                     <div style="font-size:13px;line-height:1.5;"><strong>Datum:</strong> ${escapeHtml(inspectionDate)}</div>
                     <div style="font-size:13px;line-height:1.5;"><strong>Tid:</strong> ${escapeHtml(inspectionTime)}</div>
                     <div style="font-size:13px;line-height:1.5;"><strong>Kostnad:</strong> ${escapeHtml(priceText)}</div>
                   </td></tr>
                 </table>
+                ${
+                  isTechnicalAssignment
+                    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:12px;background:#f8fbff;border:1px solid #d9e8ff;border-radius:10px;">
+                  <tr><td style="padding:14px;">
+                    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:#1f2937;">Utredningens omfattning</div>
+                    <div style="font-size:13px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(scopeDescription)}</div>
+                  </td></tr>
+                </table>`
+                    : ''
+                }
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:20px;">
                   <tr>
                     <td align="left">
@@ -364,9 +386,10 @@ export function buildAssignmentConfirmationEmail(
 
   const text =
     `Hej ${customerName},\n\n` +
-    `Vi har skapat en uppdragsbekräftelse för er ${assignmentType} (${roleLabelText}).\n` +
+    `Vi har skapat en uppdragsbekräftelse för er ${assignmentType}${roleSuffixText}.\n` +
     `För att bekräfta uppdraget, klicka på knappen “Öppna uppdragsbekräftelsen”, fyll i eller kontrollera uppgifterna i formuläret och godkänn villkoren.\n\n` +
     `Öppna uppdragsbekräftelsen: ${input.acceptUrl}\n\n` +
+    `${assignmentHeadingText}\n\n` +
     `Objekt\n` +
     `${objectSection.text}\n` +
     `Uppdragsgivare\n` +
@@ -374,10 +397,11 @@ export function buildAssignmentConfirmationEmail(
     `- Adress: ${customerAddress}\n` +
     `- Telefon: ${customerPhone}\n` +
     `- E-post: ${customerEmail}\n\n` +
-    `Besiktningsdag\n` +
+    `${isTechnicalAssignment ? 'Utredningstillfälle' : 'Besiktningsdag'}\n` +
     `- Datum: ${inspectionDate}\n` +
     `- Tid: ${inspectionTime}\n` +
     `- Kostnad: ${priceText}\n\n` +
+    `${isTechnicalAssignment ? `Utredningens omfattning\n${scopeDescription}\n\n` : ''}` +
     `Öppna uppdragsbekräftelse: ${input.acceptUrl}\n` +
     `Länken är giltig till ${expiresDate}.\n` +
     `Villkorsversion: ${input.termsVersion}.`
@@ -413,6 +437,13 @@ export function buildAssignmentOrderReceiptEmail(
   const roleLabelHtml = termsRoleToLabel(input.termsRole, 'html')
   const roleLabelText = termsRoleToLabel(input.termsRole, 'text')
   const assignmentType = assignmentTypeToLabel(input.assignment.assignment_type)
+  const isTechnicalAssignment = input.assignment.assignment_type === 'TU'
+  const scopeDescription = toDisplayValue(input.assignment.scope_description)
+  const assignmentHeadingHtml = isTechnicalAssignment
+    ? 'Teknisk utredning'
+    : `Överlåtelsebesiktning för
+                  <span style="display:inline-block;margin-left:8px;padding:5px 12px;border-radius:999px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.45);">${roleLabelHtml}</span>`
+  const roleSuffixText = isTechnicalAssignment ? '' : ` (${roleLabelText})`
   const orgName = toDisplayValue(input.orgName, 'HusHub')
   const subject = `Beställningsbekräftelse - ${orgName}`
 
@@ -462,8 +493,7 @@ export function buildAssignmentOrderReceiptEmail(
               <td style="padding:14px 20px;background:#1d4ed8;background-image:linear-gradient(135deg,#1e3a8a 0%,#1d4ed8 48%,#60a5fa 100%);color:#ffffff;">
                 <div style="font-size:20px;font-weight:700;letter-spacing:0.02em;">BESTÄLLNINGSBEKRÄFTELSE</div>
                 <div style="margin-top:10px;font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
-                  Överlåtelsebesiktning för
-                  <span style="display:inline-block;margin-left:8px;padding:5px 12px;border-radius:999px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.45);">${roleLabelHtml}</span>
+                  ${assignmentHeadingHtml}
                 </div>
               </td>
             </tr>
@@ -515,12 +545,22 @@ export function buildAssignmentOrderReceiptEmail(
 
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:2px;background:#f8fbff;border:1px solid #d9e8ff;border-radius:10px;">
                   <tr><td style="padding:14px;">
-                    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:#1f2937;">Besiktningsdag</div>
+                    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:#1f2937;">${isTechnicalAssignment ? 'Utredningstillfälle' : 'Besiktningsdag'}</div>
                     <div style="font-size:13px;line-height:1.5;"><strong>Datum:</strong> ${escapeHtml(inspectionDate)}</div>
                     <div style="font-size:13px;line-height:1.5;"><strong>Tid:</strong> ${escapeHtml(inspectionTime)}</div>
                     <div style="font-size:13px;line-height:1.5;"><strong>Kostnad:</strong> ${escapeHtml(priceText)}</div>
                   </td></tr>
                 </table>
+                ${
+                  isTechnicalAssignment
+                    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:12px;background:#f8fbff;border:1px solid #d9e8ff;border-radius:10px;">
+                  <tr><td style="padding:14px;">
+                    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:#1f2937;">Utredningens omfattning</div>
+                    <div style="font-size:13px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(scopeDescription)}</div>
+                  </td></tr>
+                </table>`
+                    : ''
+                }
 
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:12px;background:#f8fbff;border:1px solid #d9e8ff;border-radius:10px;overflow:hidden;">
                   <tr>
@@ -564,7 +604,7 @@ export function buildAssignmentOrderReceiptEmail(
   const text =
     `Hej ${customerName},\n\n` +
     `Här är en sammanställning av er bekräftade beställning inklusive villkorstext.\n\n` +
-    `Typ: ${assignmentType} (${roleLabelText})\n` +
+    `Typ: ${assignmentType}${roleSuffixText}\n` +
     `Accepterad: ${acceptedAt}\n` +
     `Villkorsversion: ${input.termsVersion}\n\n` +
     `Objekt\n` +
@@ -574,10 +614,11 @@ export function buildAssignmentOrderReceiptEmail(
     `- Adress: ${customerAddress}\n` +
     `- Telefon: ${customerPhone}\n` +
     `- E-post: ${customerEmail}\n\n` +
-    `Besiktningsdag\n` +
+    `${isTechnicalAssignment ? 'Utredningstillfälle' : 'Besiktningsdag'}\n` +
     `- Datum: ${inspectionDate}\n` +
     `- Tid: ${inspectionTime}\n` +
     `- Kostnad: ${priceText}\n\n` +
+    `${isTechnicalAssignment ? `Utredningens omfattning\n${scopeDescription}\n\n` : ''}` +
     `Valda tilläggsuppdrag\n` +
     `${addonRowsText}\n\n` +
     `Villkor (version ${input.termsVersion})\n` +

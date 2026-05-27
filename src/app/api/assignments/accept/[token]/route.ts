@@ -41,6 +41,7 @@ type PublicAssignmentSummary = {
   customer_city: string | null
   customer_address: string | null
   preliminary_address: string | null
+  scope_description: string | null
   preferred_date: string | null
   preferred_time: string | null
   price_amount: number | null
@@ -216,27 +217,29 @@ export async function GET(
           }
         : null
 
-      try {
-        addonOffers = await listAddonOffersForProfile({
-          orgId: link.org_id,
-          profileId: assignment.responsible_profile_id,
-        })
-      } catch (addonError) {
-        console.error('[assignments.accept] failed to load addon offers', {
-          token_prefix: token.slice(0, 8),
-          error: addonError instanceof Error ? addonError.message : String(addonError),
-        })
+      if (assignment.assignment_type !== 'TU') {
+        try {
+          addonOffers = await listAddonOffersForProfile({
+            orgId: link.org_id,
+            profileId: assignment.responsible_profile_id,
+          })
+        } catch (addonError) {
+          console.error('[assignments.accept] failed to load addon offers', {
+            token_prefix: token.slice(0, 8),
+            error: addonError instanceof Error ? addonError.message : String(addonError),
+          })
+        }
+
+        const { data: addonOrderData } = await admin
+          .from('assignment_addon_orders')
+          .select('addon_service_id')
+          .eq('assignment_id', assignment.id)
+          .eq('org_id', link.org_id)
+
+        selectedAddonServiceIds = ((addonOrderData ?? []) as Array<{ addon_service_id: string | null }>)
+          .map((row) => row.addon_service_id)
+          .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
       }
-
-      const { data: addonOrderData } = await admin
-        .from('assignment_addon_orders')
-        .select('addon_service_id')
-        .eq('assignment_id', assignment.id)
-        .eq('org_id', link.org_id)
-
-      selectedAddonServiceIds = ((addonOrderData ?? []) as Array<{ addon_service_id: string | null }>)
-        .map((row) => row.addon_service_id)
-        .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
     }
 
     return NextResponse.json({
@@ -264,6 +267,11 @@ export async function GET(
             hash: terms.apartment.documentHash,
             text: terms.apartment.text,
             templateId: terms.apartment.templateId,
+          },
+          technical: {
+            hash: terms.technical.documentHash,
+            text: terms.technical.text,
+            templateId: terms.technical.templateId,
           },
         },
       },
@@ -299,7 +307,10 @@ export async function POST(
       return jsonError('Du måste acceptera villkoren.', 400)
     }
 
-    const termsRole = parseAssignmentTermsRole(assignment.orderer_role)
+    const isTechnicalAssignment = assignment.assignment_type === 'TU'
+    const termsRole = isTechnicalAssignment
+      ? 'technical'
+      : parseAssignmentTermsRole(assignment.orderer_role)
     if (!termsRole) {
       return jsonError('Välj om du är köpare, säljare eller lägenhetsköpare.', 409)
     }
@@ -337,18 +348,20 @@ export async function POST(
     }
 
     const roleLabel =
-      termsRole === 'buyer'
-        ? 'Köpare'
-        : termsRole === 'apartment'
-          ? 'Lägenhet'
-          : 'Säljare'
+      termsRole === 'technical'
+        ? 'Teknisk utredning'
+        : termsRole === 'buyer'
+          ? 'Köpare'
+          : termsRole === 'apartment'
+            ? 'Lägenhet'
+            : 'Säljare'
 
     const priceAmount = parsePrice(assignment.price_amount)
     if (priceAmount === null) {
       return jsonError('Pris är obligatoriskt och måste vara giltigt.', 409)
     }
 
-    const selectedAddonServiceIdsInput = body.selectedAddonServiceIds
+    const selectedAddonServiceIdsInput = isTechnicalAssignment ? [] : body.selectedAddonServiceIds
     let selectedAddonServiceIds: string[] = []
     if (selectedAddonServiceIdsInput !== undefined) {
       if (!Array.isArray(selectedAddonServiceIdsInput)) {
@@ -410,6 +423,8 @@ export async function POST(
       apartment_number: typeof body.apartmentNumber === 'string' ? body.apartmentNumber.trim() : null,
       apartment_holder_name:
         typeof body.apartmentHolderName === 'string' ? body.apartmentHolderName.trim() : null,
+      scope_description:
+        typeof body.scopeDescription === 'string' ? body.scopeDescription.trim() : assignment.scope_description,
       preferred_date: preferredDate,
       preferred_time: preferredTime,
       price_amount: priceAmount,
@@ -434,6 +449,7 @@ export async function POST(
       .update({
         customer_postal_code: payload.customer_postal_code,
         customer_city: payload.customer_city,
+        scope_description: payload.scope_description,
       })
       .eq('org_id', link.org_id)
       .eq('id', assignment.id)

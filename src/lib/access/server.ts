@@ -371,6 +371,9 @@ async function hasLegacyAccess<TProduct extends PlatformProductKey>(
     if (input.moduleKey === 'admin') {
       return orgMember.role === 'admin' || identity.isLegacyAdmin
     }
+    if (input.moduleKey === 'technical_investigations') {
+      return false
+    }
     return true
   }
 

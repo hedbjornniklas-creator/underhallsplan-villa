@@ -1,0 +1,750 @@
+import 'server-only'
+
+import { requireModuleAccess } from '@/lib/access/server'
+import {
+  buildBaseUrl,
+  createAssignment,
+  getAssignmentById,
+  getProfileContact,
+  listAssignmentsByOrg,
+  requireOrgContext,
+  sendAssignmentConfirmation,
+  updateAssignmentById,
+  type AssignmentDetails,
+  type AssignmentListItem,
+} from '@/lib/assignments/server'
+import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+
+export type TuReportSectionKey =
+  | 'assignment_parties'
+  | 'background_scope'
+  | 'basis_conditions'
+  | 'observed_execution'
+  | 'technical_assessment'
+  | 'accessibility'
+  | 'time_assessment'
+  | 'recommended_actions'
+  | 'images'
+  | 'signature'
+
+export type TuReportSection = {
+  key: TuReportSectionKey
+  title: string
+  text: string
+}
+
+export type TuReportDraft = {
+  sections: TuReportSection[]
+}
+
+export type TuAssignmentListItem = AssignmentListItem & {
+  assignment_type: 'TU'
+}
+
+export type TuPropertySummary = {
+  id: string
+  name: string | null
+  address: string | null
+  postal_code: string | null
+  city: string | null
+  municipality: string | null
+  cadastral_id: string | null
+  owner_name: string | null
+  client_name: string | null
+}
+
+export type TuInspectionSummary = {
+  inspectionId: string
+  propertyId: string | null
+  assignmentId: string | null
+  title: string
+  status: string | null
+  date: string | null
+  inspectionTime: string | null
+  customerName: string | null
+  customerEmail: string | null
+  propertyAddress: string | null
+  propertyCity: string | null
+  scopeDescription: string | null
+  reportLockedAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export type TuInvestigationDetails = TuInspectionSummary & {
+  orgId: string
+  inspection: {
+    id: string
+    status: string | null
+    date: string | null
+    inspection_time: string | null
+    customer_name: string | null
+    customer_email: string | null
+    customer_phone: string | null
+    customer_address: string | null
+    customer_postal_code: string | null
+    customer_city: string | null
+  }
+  property: TuPropertySummary | null
+  assignment: AssignmentDetails | null
+  reportDraft: TuReportDraft
+  background: string | null
+  basis: string | null
+  accessibility: string | null
+}
+
+type TuDetailRow = {
+  inspection_id: string
+  org_id: string
+  assignment_id: string | null
+  property_id: string | null
+  title: string | null
+  scope_description: string | null
+  background: string | null
+  basis: string | null
+  accessibility: string | null
+  report_draft: unknown
+  report_draft_updated_at: string | null
+  report_locked_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+type InspectionRow = {
+  id: string
+  property_id: string | null
+  status: string | null
+  date: string | null
+  inspection_time: string | null
+  customer_name: string | null
+  customer_email: string | null
+  customer_phone: string | null
+  customer_address: string | null
+  customer_postal_code: string | null
+  customer_city: string | null
+  created_at: string | null
+}
+
+type PropertyRow = TuPropertySummary
+
+type SupabaseError = {
+  message?: string
+} | null
+
+type SupabaseResponse<T> = Promise<{ data: T | null; error: SupabaseError }>
+type SupabaseListResponse<T> = { data: T[] | null; error: SupabaseError }
+
+type QueryBuilder<T = Record<string, unknown>> = {
+  then: <TResult1 = SupabaseListResponse<T>, TResult2 = never>(
+    onfulfilled?: ((value: SupabaseListResponse<T>) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
+  ) => PromiseLike<TResult1 | TResult2>
+  select: (columns: string) => QueryBuilder<T>
+  insert: (values: unknown) => QueryBuilder<T>
+  update: (values: unknown) => QueryBuilder<T>
+  delete: () => QueryBuilder<T>
+  eq: (column: string, value: unknown) => QueryBuilder<T>
+  in: (column: string, values: unknown[]) => QueryBuilder<T>
+  order: (column: string, options?: { ascending?: boolean }) => QueryBuilder<T>
+  single: () => SupabaseResponse<T>
+  maybeSingle: () => SupabaseResponse<T>
+}
+
+type TuSupabaseClient = {
+  from: (table: string) => QueryBuilder
+}
+
+export const TU_REPORT_SECTIONS: Array<Pick<TuReportSection, 'key' | 'title'>> = [
+  { key: 'assignment_parties', title: 'Uppdragsgivare och besiktningsman' },
+  { key: 'background_scope', title: 'Bakgrund och uppdrag' },
+  { key: 'basis_conditions', title: 'Underlag och besiktningsförutsättningar' },
+  { key: 'observed_execution', title: 'Observerat utförande' },
+  { key: 'technical_assessment', title: 'Teknisk bedömning' },
+  { key: 'accessibility', title: 'Konstruktionens åtkomlighet' },
+  { key: 'time_assessment', title: 'Tidsmässig bedömning' },
+  { key: 'recommended_actions', title: 'Rekommenderade åtgärder' },
+  { key: 'images', title: 'Bilder' },
+  { key: 'signature', title: 'Signering' },
+]
+
+function cleanText(value: string | null | undefined) {
+  const normalized = value?.trim() ?? ''
+  return normalized === '' ? null : normalized
+}
+
+function toPropertyName(address: string | null, fallback: string) {
+  return cleanText(address) ?? fallback
+}
+
+export function createTuReportDraft(seed?: Partial<Record<TuReportSectionKey, string>>): TuReportDraft {
+  return {
+    sections: TU_REPORT_SECTIONS.map((section) => ({
+      key: section.key,
+      title: section.title,
+      text: seed?.[section.key] ?? '',
+    })),
+  }
+}
+
+export function normalizeTuReportDraft(value: unknown): TuReportDraft {
+  if (!value || typeof value !== 'object' || !('sections' in value)) return createTuReportDraft()
+
+  const rawSections = Array.isArray((value as { sections?: unknown }).sections)
+    ? ((value as { sections: unknown[] }).sections)
+    : []
+
+  const byKey = new Map<string, { title?: unknown; text?: unknown }>()
+  for (const section of rawSections) {
+    if (!section || typeof section !== 'object') continue
+    const key = (section as { key?: unknown }).key
+    if (typeof key !== 'string') continue
+    byKey.set(key, {
+      title: (section as { title?: unknown }).title,
+      text: (section as { text?: unknown }).text,
+    })
+  }
+
+  return {
+    sections: TU_REPORT_SECTIONS.map((section) => {
+      const raw = byKey.get(section.key)
+      return {
+        key: section.key,
+        title: typeof raw?.title === 'string' && raw.title.trim() ? raw.title : section.title,
+        text: typeof raw?.text === 'string' ? raw.text : '',
+      }
+    }),
+  }
+}
+
+export async function requireTuContext() {
+  await requireModuleAccess({ productKey: 'dashboard', moduleKey: 'technical_investigations' })
+  return requireOrgContext()
+}
+
+export async function listTuAssignments(orgId: string): Promise<TuAssignmentListItem[]> {
+  const assignments = await listAssignmentsByOrg(orgId)
+  return assignments.filter((assignment): assignment is TuAssignmentListItem => assignment.assignment_type === 'TU')
+}
+
+export async function getTuAssignmentById(orgId: string, assignmentId: string) {
+  const assignment = await getAssignmentById(orgId, assignmentId)
+  if (!assignment) return null
+  if (assignment.assignment_type !== 'TU') throw new Error('TU_ASSIGNMENT_NOT_FOUND')
+  return assignment
+}
+
+export async function createTuAssignmentDraft(input: {
+  orgId: string
+  createdBy: string
+  responsibleProfileId: string
+  customerEmail: string
+  customerName?: string | null
+  customerPhone?: string | null
+  customerPostalCode?: string | null
+  customerCity?: string | null
+  customerAddress?: string | null
+  propertyAddress?: string | null
+  propertyPostalCode?: string | null
+  propertyCity?: string | null
+  propertyMunicipality?: string | null
+  propertyOwnerName?: string | null
+  cadastralId?: string | null
+  scopeDescription?: string | null
+  preferredDate?: string | null
+  preferredTime?: string | null
+  priceAmount?: number | null
+  notesInternal?: string | null
+}) {
+  return createAssignment({
+    orgId: input.orgId,
+    createdBy: input.createdBy,
+    responsibleProfileId: input.responsibleProfileId,
+    assignmentType: 'TU',
+    customerEmail: input.customerEmail,
+    customerName: input.customerName,
+    customerPhone: input.customerPhone,
+    customerPostalCode: input.customerPostalCode,
+    customerCity: input.customerCity,
+    customerAddress: input.customerAddress,
+    preliminaryAddress: input.propertyAddress,
+    propertyAddress: input.propertyAddress,
+    propertyPostalCode: input.propertyPostalCode,
+    propertyCity: input.propertyCity,
+    propertyMunicipality: input.propertyMunicipality,
+    propertyOwnerName: input.propertyOwnerName,
+    cadastralId: input.cadastralId,
+    scopeDescription: input.scopeDescription,
+    ordererRole: 'Teknisk utredning',
+    preferredDate: input.preferredDate,
+    preferredTime: input.preferredTime,
+    priceAmount: input.priceAmount,
+    currency: 'SEK',
+    notesInternal: input.notesInternal,
+  })
+}
+
+export async function sendTuAssignmentConfirmation(input: {
+  assignment: AssignmentDetails
+  orgName: string | null
+  requestedByUserId: string
+}) {
+  if (input.assignment.assignment_type !== 'TU') throw new Error('TU_ASSIGNMENT_NOT_FOUND')
+  const responsibleProfile = await getProfileContact(input.assignment.responsible_profile_id)
+  return sendAssignmentConfirmation({
+    assignment: input.assignment,
+    orgName: input.orgName,
+    requestedByUserId: input.requestedByUserId,
+    responsibleEmail: responsibleProfile?.email ?? null,
+    baseUrl: buildBaseUrl(),
+  })
+}
+
+async function createPropertyForTu(input: {
+  ownerProfileId: string
+  titleFallback: string
+  address?: string | null
+  postalCode?: string | null
+  city?: string | null
+  municipality?: string | null
+  cadastralId?: string | null
+  ownerName?: string | null
+  clientName?: string | null
+}) {
+  const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
+  const { data, error } = await admin
+    .from('properties')
+    .insert({
+      owner: input.ownerProfileId,
+      name: toPropertyName(input.address ?? null, input.titleFallback),
+      status: 'Utkast',
+      address: cleanText(input.address),
+      postal_code: cleanText(input.postalCode),
+      city: cleanText(input.city),
+      municipality: cleanText(input.municipality ?? input.city),
+      cadastral_id: cleanText(input.cadastralId),
+      owner_name: cleanText(input.ownerName ?? input.clientName),
+      client_name: cleanText(input.clientName),
+    })
+    .select('id,name,address,postal_code,city,municipality,cadastral_id,owner_name,client_name')
+    .single()
+
+  if (error || !data) throw new Error(error?.message ?? 'Kunde inte skapa fastighet för TU.')
+  return data as PropertyRow
+}
+
+async function createInspectionForTu(input: {
+  propertyId: string
+  status?: string | null
+  date?: string | null
+  inspectionTime?: string | null
+  scopeDescription?: string | null
+  customerName?: string | null
+  customerEmail?: string | null
+  customerPhone?: string | null
+  customerAddress?: string | null
+  customerPostalCode?: string | null
+  customerCity?: string | null
+}) {
+  const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
+  const contactParts = [input.customerPhone, input.customerEmail].filter(Boolean)
+  const { data, error } = await admin
+    .from('inspections')
+    .insert({
+      property_id: input.propertyId,
+      type: 'TU',
+      inspection_family: 'TU',
+      inspection_variant: 'TU',
+      status: input.status ?? 'draft',
+      inspection_side: null,
+      date: cleanText(input.date),
+      inspection_time: cleanText(input.inspectionTime),
+      scope: cleanText(input.scopeDescription),
+      client_name: cleanText(input.customerName),
+      client_contact: contactParts.length > 0 ? contactParts.join(' | ') : null,
+      customer_name: cleanText(input.customerName),
+      customer_email: cleanText(input.customerEmail),
+      customer_phone: cleanText(input.customerPhone),
+      customer_address: cleanText(input.customerAddress),
+      customer_postal_code: cleanText(input.customerPostalCode),
+      customer_city: cleanText(input.customerCity),
+    })
+    .select('id')
+    .single()
+
+  if (error || !data) throw new Error(error?.message ?? 'Kunde inte skapa TU-utredning.')
+  return data as { id: string }
+}
+
+async function createTuDetail(input: {
+  inspectionId: string
+  orgId: string
+  assignmentId?: string | null
+  propertyId: string
+  title?: string | null
+  scopeDescription?: string | null
+  createdBy: string
+  reportDraft?: TuReportDraft
+}) {
+  const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
+  const { data, error } = await admin
+    .from('technical_investigation_details')
+    .insert({
+      inspection_id: input.inspectionId,
+      org_id: input.orgId,
+      assignment_id: input.assignmentId ?? null,
+      property_id: input.propertyId,
+      title: cleanText(input.title) ?? 'Teknisk utredning',
+      scope_description: cleanText(input.scopeDescription),
+      background: cleanText(input.scopeDescription),
+      report_draft: input.reportDraft ?? createTuReportDraft({ background_scope: input.scopeDescription ?? '' }),
+      report_draft_updated_at: new Date().toISOString(),
+      created_by: input.createdBy,
+      updated_by: input.createdBy,
+    })
+    .select('inspection_id')
+    .single()
+
+  if (error || !data) throw new Error(error?.message ?? 'Kunde inte skapa TU-underlag.')
+  return data as { inspection_id: string }
+}
+
+export async function createScratchTuInvestigation(input: {
+  orgId: string
+  createdBy: string
+  responsibleProfileId?: string | null
+  title?: string | null
+  scopeDescription?: string | null
+  propertyAddress?: string | null
+  propertyPostalCode?: string | null
+  propertyCity?: string | null
+  propertyMunicipality?: string | null
+  propertyOwnerName?: string | null
+  cadastralId?: string | null
+  customerName?: string | null
+  customerEmail?: string | null
+  customerPhone?: string | null
+  customerAddress?: string | null
+  customerPostalCode?: string | null
+  customerCity?: string | null
+  date?: string | null
+  time?: string | null
+}) {
+  const ownerProfileId = cleanText(input.responsibleProfileId) ?? input.createdBy
+  const title = cleanText(input.title) ?? 'Teknisk utredning'
+  const property = await createPropertyForTu({
+    ownerProfileId,
+    titleFallback: title,
+    address: input.propertyAddress,
+    postalCode: input.propertyPostalCode,
+    city: input.propertyCity,
+    municipality: input.propertyMunicipality,
+    cadastralId: input.cadastralId,
+    ownerName: input.propertyOwnerName,
+    clientName: input.customerName,
+  })
+
+  let createdInspectionId: string | null = null
+  try {
+    const inspection = await createInspectionForTu({
+      propertyId: property.id,
+      date: input.date,
+      inspectionTime: input.time,
+      scopeDescription: input.scopeDescription,
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
+      customerPhone: input.customerPhone,
+      customerAddress: input.customerAddress,
+      customerPostalCode: input.customerPostalCode,
+      customerCity: input.customerCity,
+    })
+    createdInspectionId = inspection.id
+
+    await createTuDetail({
+      inspectionId: inspection.id,
+      orgId: input.orgId,
+      propertyId: property.id,
+      title,
+      scopeDescription: input.scopeDescription,
+      createdBy: input.createdBy,
+    })
+
+    return { propertyId: property.id, inspectionId: inspection.id }
+  } catch (error) {
+    const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
+    if (createdInspectionId) {
+      await admin.from('inspections').delete().eq('id', createdInspectionId)
+    }
+    await admin.from('properties').delete().eq('id', property.id)
+    throw error
+  }
+}
+
+export async function convertTuAssignmentToInvestigation(input: {
+  orgId: string
+  assignmentId: string
+  requestedByUserId: string
+}) {
+  const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
+  const assignment = await getTuAssignmentById(input.orgId, input.assignmentId)
+  if (!assignment) throw new Error('TU_ASSIGNMENT_NOT_FOUND')
+
+  if (assignment.inspection_id) {
+    if (!assignment.property_id) throw new Error('TU_ASSIGNMENT_CONVERTED_WITHOUT_PROPERTY')
+    return { propertyId: assignment.property_id, inspectionId: assignment.inspection_id }
+  }
+
+  if (assignment.status !== 'ordered') {
+    throw new Error('TU_ASSIGNMENT_NOT_ACCEPTED')
+  }
+
+  const property = await createPropertyForTu({
+    ownerProfileId: assignment.responsible_profile_id ?? input.requestedByUserId,
+    titleFallback: 'Teknisk utredning',
+    address: assignment.property_address ?? assignment.preliminary_address,
+    postalCode: assignment.property_postal_code,
+    city: assignment.property_city,
+    municipality: assignment.property_municipality,
+    cadastralId: assignment.cadastral_id,
+    ownerName: assignment.property_owner_name,
+    clientName: assignment.customer_name,
+  })
+
+  let createdInspectionId: string | null = null
+  try {
+    const inspection = await createInspectionForTu({
+      propertyId: property.id,
+      date: assignment.preferred_date,
+      inspectionTime: assignment.preferred_time,
+      scopeDescription: assignment.scope_description,
+      customerName: assignment.customer_name,
+      customerEmail: assignment.customer_email,
+      customerPhone: assignment.customer_phone,
+      customerAddress: assignment.customer_address,
+      customerPostalCode: assignment.customer_postal_code,
+      customerCity: assignment.customer_city,
+    })
+    createdInspectionId = inspection.id
+
+    await createTuDetail({
+      inspectionId: inspection.id,
+      orgId: input.orgId,
+      assignmentId: assignment.id,
+      propertyId: property.id,
+      title: 'Teknisk utredning',
+      scopeDescription: assignment.scope_description,
+      createdBy: input.requestedByUserId,
+    })
+
+    await updateAssignmentById({
+      orgId: input.orgId,
+      assignmentId: assignment.id,
+      updatedBy: input.requestedByUserId,
+      patch: {
+        status: 'completed',
+        property_id: property.id,
+        inspection_id: inspection.id,
+        converted_at: new Date().toISOString(),
+      } as Parameters<typeof updateAssignmentById>[0]['patch'] & Record<string, unknown>,
+    })
+
+    return { propertyId: property.id, inspectionId: inspection.id }
+  } catch (error) {
+    if (createdInspectionId) {
+      await admin.from('inspections').delete().eq('id', createdInspectionId)
+    }
+    await admin.from('properties').delete().eq('id', property.id)
+    throw error
+  }
+}
+
+function buildSummary(detail: TuDetailRow, inspection?: InspectionRow | null, property?: PropertyRow | null): TuInspectionSummary {
+  return {
+    inspectionId: detail.inspection_id,
+    propertyId: detail.property_id ?? inspection?.property_id ?? null,
+    assignmentId: detail.assignment_id,
+    title: detail.title ?? 'Teknisk utredning',
+    status: inspection?.status ?? null,
+    date: inspection?.date ?? null,
+    inspectionTime: inspection?.inspection_time ?? null,
+    customerName: inspection?.customer_name ?? null,
+    customerEmail: inspection?.customer_email ?? null,
+    propertyAddress: property?.address ?? null,
+    propertyCity: property?.city ?? null,
+    scopeDescription: detail.scope_description,
+    reportLockedAt: detail.report_locked_at,
+    createdAt: detail.created_at,
+    updatedAt: detail.updated_at,
+  }
+}
+
+export async function listTuInvestigations(orgId: string): Promise<TuInspectionSummary[]> {
+  const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
+  const { data: detailData, error: detailError } = await admin
+    .from('technical_investigation_details')
+    .select(
+      'inspection_id,org_id,assignment_id,property_id,title,scope_description,background,basis,accessibility,report_draft,report_draft_updated_at,report_locked_at,created_at,updated_at'
+    )
+    .eq('org_id', orgId)
+    .order('updated_at', { ascending: false })
+
+  if (detailError) throw new Error(detailError.message ?? 'Kunde inte hämta TU-utredningar.')
+
+  const details = (detailData ?? []) as TuDetailRow[]
+  if (details.length === 0) return []
+
+  const inspectionIds = details.map((detail) => detail.inspection_id)
+  const propertyIds = [...new Set(details.map((detail) => detail.property_id).filter(Boolean) as string[])]
+
+  const [{ data: inspectionData, error: inspectionError }, { data: propertyData, error: propertyError }] =
+    await Promise.all([
+      admin
+        .from('inspections')
+        .select(
+          'id,property_id,status,date,inspection_time,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city,created_at'
+        )
+        .in('id', inspectionIds),
+      propertyIds.length > 0
+        ? admin
+            .from('properties')
+            .select('id,name,address,postal_code,city,municipality,cadastral_id,owner_name,client_name')
+            .in('id', propertyIds)
+        : Promise.resolve({ data: [], error: null }),
+    ])
+
+  if (inspectionError) throw new Error(inspectionError.message ?? 'Kunde inte hämta TU-inspektioner.')
+  if (propertyError) throw new Error(propertyError.message ?? 'Kunde inte hämta TU-fastigheter.')
+
+  const inspectionRows = (inspectionData ?? []) as InspectionRow[]
+  const propertyRows = (propertyData ?? []) as PropertyRow[]
+  const inspections = new Map(inspectionRows.map((row) => [row.id, row]))
+  const properties = new Map(propertyRows.map((row) => [row.id, row]))
+
+  return details.map((detail) =>
+    buildSummary(
+      detail,
+      inspections.get(detail.inspection_id) ?? null,
+      detail.property_id ? properties.get(detail.property_id) ?? null : null
+    )
+  )
+}
+
+export async function getTuInvestigationById(input: {
+  orgId: string
+  inspectionId: string
+}): Promise<TuInvestigationDetails | null> {
+  const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
+  const { data: detailData, error: detailError } = await admin
+    .from('technical_investigation_details')
+    .select(
+      'inspection_id,org_id,assignment_id,property_id,title,scope_description,background,basis,accessibility,report_draft,report_draft_updated_at,report_locked_at,created_at,updated_at'
+    )
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .maybeSingle()
+
+  if (detailError) throw new Error(detailError.message ?? 'Kunde inte hämta TU-utredning.')
+  if (!detailData) return null
+
+  const detail = detailData as TuDetailRow
+  const [{ data: inspectionData, error: inspectionError }, { data: propertyData, error: propertyError }] =
+    await Promise.all([
+      admin
+        .from('inspections')
+        .select(
+          'id,property_id,status,date,inspection_time,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city,created_at'
+        )
+        .eq('id', detail.inspection_id)
+        .maybeSingle(),
+      detail.property_id
+        ? admin
+            .from('properties')
+            .select('id,name,address,postal_code,city,municipality,cadastral_id,owner_name,client_name')
+            .eq('id', detail.property_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ])
+
+  if (inspectionError) throw new Error(inspectionError.message ?? 'Kunde inte hämta TU-inspektion.')
+  if (propertyError) throw new Error(propertyError.message ?? 'Kunde inte hämta TU-fastighet.')
+
+  const inspection = inspectionData as InspectionRow | null
+  const property = propertyData as PropertyRow | null
+  const assignment = detail.assignment_id
+    ? await getAssignmentById(input.orgId, detail.assignment_id)
+    : null
+
+  return {
+    ...buildSummary(detail, inspection, property),
+    orgId: detail.org_id,
+    inspection: {
+      id: detail.inspection_id,
+      status: inspection?.status ?? null,
+      date: inspection?.date ?? null,
+      inspection_time: inspection?.inspection_time ?? null,
+      customer_name: inspection?.customer_name ?? null,
+      customer_email: inspection?.customer_email ?? null,
+      customer_phone: inspection?.customer_phone ?? null,
+      customer_address: inspection?.customer_address ?? null,
+      customer_postal_code: inspection?.customer_postal_code ?? null,
+      customer_city: inspection?.customer_city ?? null,
+    },
+    property,
+    assignment,
+    reportDraft: normalizeTuReportDraft(detail.report_draft),
+    background: detail.background,
+    basis: detail.basis,
+    accessibility: detail.accessibility,
+  }
+}
+
+export async function updateTuInvestigationDraft(input: {
+  orgId: string
+  inspectionId: string
+  updatedBy: string
+  patch: {
+    title?: string | null
+    scopeDescription?: string | null
+    background?: string | null
+    basis?: string | null
+    accessibility?: string | null
+    reportDraft?: TuReportDraft
+  }
+}) {
+  const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
+  const existing = await getTuInvestigationById({ orgId: input.orgId, inspectionId: input.inspectionId })
+  if (!existing) throw new Error('TU_INVESTIGATION_NOT_FOUND')
+  if (existing.reportLockedAt) throw new Error('TU_REPORT_LOCKED')
+
+  const payload: Record<string, unknown> = {
+    updated_by: input.updatedBy,
+  }
+
+  if ('title' in input.patch) payload.title = cleanText(input.patch.title) ?? existing.title
+  if ('scopeDescription' in input.patch) payload.scope_description = cleanText(input.patch.scopeDescription)
+  if ('background' in input.patch) payload.background = cleanText(input.patch.background)
+  if ('basis' in input.patch) payload.basis = cleanText(input.patch.basis)
+  if ('accessibility' in input.patch) payload.accessibility = cleanText(input.patch.accessibility)
+  if ('reportDraft' in input.patch) {
+    payload.report_draft = normalizeTuReportDraft(input.patch.reportDraft)
+    payload.report_draft_updated_at = new Date().toISOString()
+  }
+
+  const { error } = await admin
+    .from('technical_investigation_details')
+    .update(payload)
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+
+  if (error) throw new Error(error.message ?? 'Kunde inte spara TU-utredning.')
+
+  if ('scopeDescription' in input.patch || 'reportDraft' in input.patch) {
+    await admin
+      .from('inspections')
+      .update({
+        scope: 'scopeDescription' in input.patch ? cleanText(input.patch.scopeDescription) : existing.scopeDescription,
+      })
+      .eq('id', input.inspectionId)
+  }
+
+  return getTuInvestigationById({ orgId: input.orgId, inspectionId: input.inspectionId })
+}

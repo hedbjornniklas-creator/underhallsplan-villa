@@ -1,7 +1,9 @@
 import DashboardV1Client, { type ModuleCardData } from './DashboardV1Client'
 import { hasCurrentUserAccess } from '@/lib/access/server'
 
-const MODULE_CATALOG: Array<ModuleCardData & { moduleKey: 'inspections' | 'construction_inspections' }> = [
+const MODULE_CATALOG: Array<
+  ModuleCardData & { moduleKey: 'inspections' | 'construction_inspections' | 'technical_investigations' }
+> = [
   {
     id: 'ob',
     moduleKey: 'inspections',
@@ -21,6 +23,16 @@ const MODULE_CATALOG: Array<ModuleCardData & { moduleKey: 'inspections' | 'const
     href: '/eb',
     accentClass: 'from-emerald-500 to-lime-400',
     badgeClass: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  },
+  {
+    id: 'tu',
+    moduleKey: 'technical_investigations',
+    title: 'Tekniska utredningar',
+    description:
+      'Hantera uppdragsbekräftelser och utlåtanden för tekniska utredningar i ett fristående lila flöde.',
+    href: '/tu',
+    accentClass: 'from-violet-600 to-fuchsia-400',
+    badgeClass: 'border-violet-200 bg-violet-50 text-violet-700',
   },
 ]
 

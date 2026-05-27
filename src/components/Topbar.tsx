@@ -110,10 +110,14 @@ export default function Topbar() {
   const isDashboardLanding = normalizedPath === '/dashboard-v1'
   const isObHome = normalizedPath === '/ob'
   const isEbHome = normalizedPath === '/eb'
+  const isTuHome = normalizedPath === '/tu'
   const isObContext = normalizedPath.includes('/ob')
   const isEbContext = normalizedPath.includes('/eb')
+  const isTuContext = normalizedPath.includes('/tu')
   const showModuleSwitcher =
-    hasUser && !isDashboardLanding && (isObContext || isEbContext || normalizedPath.startsWith('/inspections'))
+    hasUser &&
+    !isDashboardLanding &&
+    (isObContext || isEbContext || isTuContext || normalizedPath.startsWith('/inspections'))
   const modules = [
     {
       code: 'ÖB',
@@ -129,6 +133,13 @@ export default function Topbar() {
       href: '/eb',
       active: isEbContext,
     },
+    {
+      code: 'TU',
+      label: 'Tekniska utredningar',
+      description: 'TU / uppdrag och utlåtanden',
+      href: '/tu',
+      active: isTuContext,
+    },
   ]
   const activeModule = modules.find((module) => module.active) ?? null
 
@@ -136,13 +147,15 @@ export default function Topbar() {
     ? '/admin'
     : isDashboardLanding
       ? '/'
-      : isObHome || isEbHome
+      : isObHome || isEbHome || isTuHome
         ? '/dashboard-v1'
         : isEbContext
           ? '/eb'
-          : isObContext
-            ? '/ob'
-            : '/'
+          : isTuContext
+            ? '/tu'
+            : isObContext
+              ? '/ob'
+              : '/'
   const logoSrc = isAdminContext || isDashboardLanding ? '/landing/Hushub-check2.png' : '/report-assets/BesiktApp.png'
   const logoAlt = isAdminContext || isDashboardLanding ? 'HusHub' : 'BesiktApp'
   const srLabel = isAdminContext ? 'HusHub Admin' : isDashboardLanding ? 'HusHub' : 'BesiktApp'

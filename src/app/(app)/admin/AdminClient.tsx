@@ -37,11 +37,12 @@ type DocDraft = {
   is_active: boolean
 }
 
-type DocModule = 'ob' | 'eb'
+type DocModule = 'ob' | 'eb' | 'tu'
 
 const DOC_MODULE_OPTIONS: { key: DocModule; label: string }[] = [
   { key: 'ob', label: 'ÖB' },
   { key: 'eb', label: 'EB' },
+  { key: 'tu', label: 'TU' },
 ]
 
 const parseDocModules = (value: string | null | undefined): DocModule[] => {
@@ -1680,6 +1681,7 @@ export default function AdminClient() {
                   <option value="">Modul</option>
                   <option value="ob">ÖB</option>
                   <option value="eb">EB</option>
+                  <option value="tu">TU</option>
                 </select>
                 <select
                   className="border rounded-full px-2.5 py-1 bg-white"

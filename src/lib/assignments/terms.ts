@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import type { StandardTextId } from '@/content/standardtexts/registry'
 
-export type AssignmentTermsRole = 'seller' | 'buyer' | 'apartment'
+export type AssignmentTermsRole = 'seller' | 'buyer' | 'apartment' | 'technical'
 
 export const ASSIGNMENT_TERMS_VERSION = '2026-02-21.v1'
 
@@ -35,6 +35,14 @@ export function parseAssignmentTermsRole(value: string | null | undefined): Assi
   if (lowered.includes('apt') || lowered.includes('apartment') || lowered.includes('lagenhet')) {
     return 'apartment'
   }
+  if (
+    lowered === 'tu' ||
+    lowered.includes('technical') ||
+    lowered.includes('teknisk') ||
+    lowered.includes('utred')
+  ) {
+    return 'technical'
+  }
   if (lowered.includes('sell') || lowered.includes('salj')) return 'seller'
   return null
 }
@@ -48,6 +56,7 @@ export function normalizeAssignmentTermsRole(
 export function getAssignmentTermsTemplateId(role: AssignmentTermsRole): StandardTextId {
   if (role === 'buyer') return 'STD_ASSIGNMENT_TEMPLATE_BUYER_2026'
   if (role === 'apartment') return 'STD_ASSIGNMENT_TEMPLATE_APARTMENT_2026'
+  if (role === 'technical') return 'STD_ASSIGNMENT_TEMPLATE_TU_2026'
   return 'STD_ASSIGNMENT_TEMPLATE_SELLER_2026'
 }
 
@@ -69,5 +78,6 @@ export function getAllAssignmentTermsDocuments() {
     seller: getAssignmentTermsDocument('seller'),
     buyer: getAssignmentTermsDocument('buyer'),
     apartment: getAssignmentTermsDocument('apartment'),
+    technical: getAssignmentTermsDocument('technical'),
   } as const
 }

@@ -19,6 +19,7 @@ type AssignmentSummary = {
   customer_city: string | null
   customer_address: string | null
   preliminary_address: string | null
+  scope_description: string | null
   preferred_date: string | null
   preferred_time: string | null
   price_amount: number | null
@@ -81,6 +82,7 @@ type AcceptReadResponse = {
       seller: TermsDocument
       buyer: TermsDocument
       apartment: TermsDocument
+      technical: TermsDocument
     }
   }
 }
@@ -95,6 +97,7 @@ type FormState = {
   brfName: string
   apartmentNumber: string
   apartmentHolderName: string
+  scopeDescription: string
   customerName: string
   customerAddress: string
   customerPostalCode: string
@@ -169,6 +172,7 @@ function toFormState(
     brfName: assignment.brf_name ?? '',
     apartmentNumber: assignment.apartment_number ?? '',
     apartmentHolderName: assignment.apartment_holder_name ?? '',
+    scopeDescription: assignment.scope_description ?? '',
     customerName: assignment.customer_name ?? '',
     customerAddress: assignment.customer_address ?? '',
     customerPostalCode: assignment.customer_postal_code ?? '',
@@ -259,13 +263,16 @@ export default function AssignmentAcceptPage() {
     return normalizeRole(data.assignment.orderer_role)
   }, [data])
 
+  const isTechnicalAssignment = data?.assignment.assignment_type === 'TU'
+
   const activeTerms = useMemo(() => {
     if (!data) return null
+    if (isTechnicalAssignment) return data.terms.documents.technical
     if (lockedOrdererRole === 'buyer') return data.terms.documents.buyer
     if (lockedOrdererRole === 'apartment') return data.terms.documents.apartment
     if (lockedOrdererRole === 'seller') return data.terms.documents.seller
     return null
-  }, [data, lockedOrdererRole])
+  }, [data, isTechnicalAssignment, lockedOrdererRole])
 
   const inspectorName = data?.inspector?.full_name || INSPECTOR_FALLBACK.name
   const inspectorSbrLine1 = data?.inspector?.sbr_group || INSPECTOR_FALLBACK.sbrLine1
@@ -334,10 +341,12 @@ export default function AssignmentAcceptPage() {
       return
     }
 
-    const requiresApartmentObjectFields = lockedOrdererRole === 'apartment'
+    const requiresApartmentObjectFields = !isTechnicalAssignment && lockedOrdererRole === 'apartment'
     const missingObjectFields = requiresApartmentObjectFields
       ? !form.brfName.trim() || !form.apartmentNumber.trim() || !form.apartmentHolderName.trim()
-      : !form.cadastralId.trim() || !form.propertyOwnerName.trim()
+      : isTechnicalAssignment
+        ? false
+        : !form.cadastralId.trim() || !form.propertyOwnerName.trim()
 
     const requiredFieldMissing =
       !form.propertyAddress.trim() ||
@@ -394,6 +403,7 @@ export default function AssignmentAcceptPage() {
           brfName: form.brfName,
           apartmentNumber: form.apartmentNumber,
           apartmentHolderName: form.apartmentHolderName,
+          scopeDescription: form.scopeDescription,
           preferredDate: form.preferredDate,
           preferredTime: form.preferredTime,
           selectedAddonServiceIds: form.selectedAddonServiceIds,
@@ -410,7 +420,9 @@ export default function AssignmentAcceptPage() {
       }
 
       setSuccess(
-        `Tack. Uppdragsbekräftelsen är registrerad (${data.terms.version}, ${roleToLabel(lockedOrdererRole)}).`
+        `Tack. Uppdragsbekräftelsen är registrerad (${data.terms.version}, ${
+          isTechnicalAssignment ? 'Teknisk utredning' : roleToLabel(lockedOrdererRole)
+        }).`
       )
       setData((prev) => (prev ? { ...prev, state: 'used' } : prev))
     } catch (submitError) {
@@ -425,8 +437,9 @@ export default function AssignmentAcceptPage() {
       <div
         className="pointer-events-none absolute inset-0"
         style={{
-          backgroundImage:
-            'radial-gradient(100% 70% at 50% 0%, rgba(219,234,254,0.5) 0%, rgba(219,234,254,0) 60%), linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 42%, #60a5fa 100%)',
+          backgroundImage: isTechnicalAssignment
+            ? 'radial-gradient(100% 70% at 50% 0%, rgba(237,233,254,0.55) 0%, rgba(237,233,254,0) 60%), linear-gradient(135deg, #4c1d95 0%, #7c3aed 42%, #c084fc 100%)'
+            : 'radial-gradient(100% 70% at 50% 0%, rgba(219,234,254,0.5) 0%, rgba(219,234,254,0) 60%), linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 42%, #60a5fa 100%)',
         }}
       />
       <div className="pointer-events-none absolute inset-0 bg-white/10 backdrop-blur-[1px]" />
@@ -463,27 +476,35 @@ export default function AssignmentAcceptPage() {
 
             <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-sky-50 px-4 py-3 shadow-sm md:gap-3">
-                <p className="pr-1 text-base font-bold uppercase tracking-wide text-indigo-900 md:text-lg">
-                  ÖVERLÅTELSEBESIKTNING FÖR
-                </p>
-                <RoleChip
-                  label="Säljare"
-                  active={lockedOrdererRole === 'seller'}
-                  onClick={() => undefined}
-                  disabled
-                />
-                <RoleChip
-                  label="Köpare"
-                  active={lockedOrdererRole === 'buyer'}
-                  onClick={() => undefined}
-                  disabled
-                />
-                <RoleChip
-                  label="Lägenhet"
-                  active={lockedOrdererRole === 'apartment'}
-                  onClick={() => undefined}
-                  disabled
-                />
+                {isTechnicalAssignment ? (
+                  <p className="pr-1 text-base font-bold uppercase tracking-wide text-violet-900 md:text-lg">
+                    TEKNISK UTREDNING
+                  </p>
+                ) : (
+                  <>
+                    <p className="pr-1 text-base font-bold uppercase tracking-wide text-indigo-900 md:text-lg">
+                      ÖVERLÅTELSEBESIKTNING FÖR
+                    </p>
+                    <RoleChip
+                      label="Säljare"
+                      active={lockedOrdererRole === 'seller'}
+                      onClick={() => undefined}
+                      disabled
+                    />
+                    <RoleChip
+                      label="Köpare"
+                      active={lockedOrdererRole === 'buyer'}
+                      onClick={() => undefined}
+                      disabled
+                    />
+                    <RoleChip
+                      label="Lägenhet"
+                      active={lockedOrdererRole === 'apartment'}
+                      onClick={() => undefined}
+                      disabled
+                    />
+                  </>
+                )}
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
@@ -514,7 +535,15 @@ export default function AssignmentAcceptPage() {
                     onChange={(value) => updateField('propertyMunicipality', value)}
                     disabled={!canSubmit}
                   />
-                  {lockedOrdererRole === 'apartment' ? (
+                  {isTechnicalAssignment ? (
+                    <TextAreaField
+                      label="Utredningens omfattning"
+                      value={form.scopeDescription}
+                      onChange={(value) => updateField('scopeDescription', value)}
+                      disabled
+                    />
+                  ) : null}
+                  {!isTechnicalAssignment && lockedOrdererRole === 'apartment' ? (
                     <>
                       <Field
                         label="Bostadsrättsförening *"
@@ -535,7 +564,7 @@ export default function AssignmentAcceptPage() {
                         disabled={!canSubmit}
                       />
                     </>
-                  ) : (
+                  ) : !isTechnicalAssignment ? (
                     <>
                       <Field
                         label="Fastighetsbeteckning *"
@@ -550,7 +579,7 @@ export default function AssignmentAcceptPage() {
                         disabled={!canSubmit}
                       />
                     </>
-                  )}
+                  ) : null}
                 </SectionCard>
 
                 <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -728,7 +757,7 @@ export default function AssignmentAcceptPage() {
             <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">
-                  Villkor för besiktning
+                  {isTechnicalAssignment ? 'Villkor för teknisk utredning' : 'Villkor för besiktning'}
                 </h2>
                 <span className="text-xs font-medium text-gray-500">Version {data.terms.version}</span>
               </div>
@@ -750,7 +779,11 @@ export default function AssignmentAcceptPage() {
                 disabled={!canSubmit || saving || !form.termsAccepted}
                 className="inline-flex h-10 items-center justify-center rounded-lg bg-indigo-600 px-5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
               >
-                {saving ? 'Sparar...' : 'Godkänn villkor och skicka uppdrag'}
+                {saving
+                  ? 'Sparar...'
+                  : isTechnicalAssignment
+                    ? 'Godkänn uppdrag'
+                    : 'Godkänn villkor och skicka uppdrag'}
               </button>
 
               <div className="rounded-xl border border-gray-200 bg-white p-3">
@@ -832,6 +865,31 @@ function Field({
         step={step}
         min={min}
         className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-gray-100 disabled:text-gray-500"
+      />
+    </label>
+  )
+}
+
+function TextAreaField({
+  label,
+  value,
+  onChange,
+  disabled = false,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  disabled?: boolean
+}) {
+  return (
+    <label className="space-y-1">
+      <span className="block text-xs font-medium text-gray-600">{label}</span>
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+        rows={4}
+        className="w-full resize-y rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-gray-100 disabled:text-gray-500"
       />
     </label>
   )

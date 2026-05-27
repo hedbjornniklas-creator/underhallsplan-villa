@@ -27,7 +27,7 @@ export type AssignmentStatus =
   | 'expired'
   | 'cancelled'
 
-export type AssignmentType = 'OB' | 'STATUS' | 'UHP' | 'EB'
+export type AssignmentType = 'OB' | 'STATUS' | 'UHP' | 'EB' | 'TU'
 
 type AuthUserLite = {
   id: string
@@ -73,6 +73,7 @@ export type AssignmentListItem = {
   preferred_date: string | null
   preferred_time: string | null
   preliminary_address: string | null
+  scope_description: string | null
   property_address: string | null
   property_postal_code: string | null
   property_city: string | null
@@ -249,6 +250,7 @@ const ASSIGNMENT_SELECT_LIST = `
   customer_postal_code,
   customer_city,
   preliminary_address,
+  scope_description,
   preferred_date,
   preferred_time,
   property_address,
@@ -721,6 +723,7 @@ export async function createAssignment(input: {
   customerCity?: string | null
   customerAddress?: string | null
   preliminaryAddress?: string | null
+  scopeDescription?: string | null
   propertyAddress?: string | null
   propertyPostalCode?: string | null
   propertyCity?: string | null
@@ -752,6 +755,7 @@ export async function createAssignment(input: {
       customer_city: input.customerCity ?? null,
       customer_address: input.customerAddress ?? null,
       preliminary_address: input.preliminaryAddress ?? null,
+      scope_description: input.scopeDescription ?? null,
       property_address: input.propertyAddress ?? input.preliminaryAddress ?? null,
       property_postal_code: input.propertyPostalCode ?? null,
       property_city: input.propertyCity ?? null,
@@ -808,6 +812,7 @@ export async function updateAssignmentById(input: {
     customer_city: string | null
     customer_address: string | null
     preliminary_address: string | null
+    scope_description: string | null
     preferred_date: string | null
     preferred_time: string | null
     property_address: string | null
@@ -903,6 +908,7 @@ export async function createReissuedAssignmentDraft(input: {
     customerCity: source.customer_city,
     customerAddress: source.customer_address,
     preliminaryAddress: source.preliminary_address,
+    scopeDescription: source.scope_description,
     propertyAddress: source.property_address,
     propertyPostalCode: source.property_postal_code,
     propertyCity: source.property_city,
@@ -970,6 +976,11 @@ export class AssignmentEmailSendError extends Error {
   }
 }
 
+function getTermsRoleForAssignment(assignment: Pick<AssignmentDetails, 'assignment_type' | 'orderer_role'>) {
+  if (assignment.assignment_type === 'TU') return 'technical' as const
+  return parseAssignmentTermsRole(assignment.orderer_role)
+}
+
 function toSwedishDateString(value: string | null) {
   if (!value) return 'Ej satt'
   const date = new Date(value)
@@ -989,7 +1000,7 @@ export async function sendAssignmentConfirmation(input: {
   const tokenHash = hashAssignmentToken(token)
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
   const acceptUrl = `${input.baseUrl}/accept/${token}`
-  const termsRole = parseAssignmentTermsRole(input.assignment.orderer_role)
+  const termsRole = getTermsRoleForAssignment(input.assignment)
   if (!termsRole) {
     throw new Error('ORDERER_ROLE_REQUIRED')
   }
@@ -1117,7 +1128,7 @@ export async function sendAssignmentOrderReceipt(input: {
   responsibleEmail: string | null
 }): Promise<void> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
-  const termsRole = parseAssignmentTermsRole(input.assignment.orderer_role)
+  const termsRole = getTermsRoleForAssignment(input.assignment)
   if (!termsRole) {
     throw new Error('ORDERER_ROLE_REQUIRED')
   }
@@ -1458,7 +1469,7 @@ export async function resolvePublicAssignmentByToken(token: string) {
   const { data, error } = await admin
     .from('assignment_links')
     .select(
-      'id,assignment_id,org_id,expires_at,used_at,revoked_at,terms_version,assignments(id,status,assignment_type,responsible_profile_id,customer_name,customer_email,customer_phone,customer_address,preliminary_address,preferred_date,preferred_time,price_amount,currency,property_address,property_postal_code,property_city,property_municipality,property_owner_name,cadastral_id,brf_name,apartment_number,apartment_holder_name,orderer_role,accepted_at)'
+      'id,assignment_id,org_id,expires_at,used_at,revoked_at,terms_version,assignments(id,status,assignment_type,responsible_profile_id,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city,preliminary_address,scope_description,preferred_date,preferred_time,price_amount,currency,property_address,property_postal_code,property_city,property_municipality,property_owner_name,cadastral_id,brf_name,apartment_number,apartment_holder_name,orderer_role,accepted_at)'
     )
     .eq('token_hash', tokenHash)
     .maybeSingle()
@@ -1542,6 +1553,9 @@ function getInspectionClassificationForAssignment(type: AssignmentType) {
   }
   if (type === 'UHP') {
     return { inspectionFamily: 'UHP', inspectionVariant: 'UHP' }
+  }
+  if (type === 'TU') {
+    return { inspectionFamily: 'TU', inspectionVariant: 'TU' }
   }
   return { inspectionFamily: 'OB', inspectionVariant: 'OB' }
 }

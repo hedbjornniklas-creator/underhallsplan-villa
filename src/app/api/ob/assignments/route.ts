@@ -18,7 +18,9 @@ function jsonError(message: string, status: number) {
 export async function GET() {
   try {
     const context = await requireOrgContext()
-    const items = await listAssignmentsByOrg(context.orgId)
+    const items = (await listAssignmentsByOrg(context.orgId)).filter(
+      (item) => item.assignment_type !== 'TU'
+    )
 
     return NextResponse.json({
       items,
