@@ -46,6 +46,7 @@ export async function POST(request: Request) {
     const context = await requireTuContext()
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const customerEmail = text(body, 'customerEmail').toLowerCase()
+    const objectType = text(body, 'objectType') === 'apartment' ? 'apartment' : 'villa'
     const price = parsePrice(text(body, 'priceAmount'))
 
     if (!customerEmail || !EMAIL_REGEX.test(customerEmail)) {
@@ -71,7 +72,11 @@ export async function POST(request: Request) {
       propertyCity: text(body, 'propertyCity') || null,
       propertyMunicipality: text(body, 'propertyMunicipality') || null,
       propertyOwnerName: text(body, 'propertyOwnerName') || null,
-      cadastralId: text(body, 'cadastralId') || null,
+      cadastralId: objectType === 'villa' ? text(body, 'cadastralId') || null : null,
+      brfName: objectType === 'apartment' ? text(body, 'brfName') || null : null,
+      apartmentNumber: objectType === 'apartment' ? text(body, 'apartmentNumber') || null : null,
+      apartmentHolderName: objectType === 'apartment' ? text(body, 'apartmentHolderName') || null : null,
+      objectType,
       scopeDescription: text(body, 'scopeDescription') || null,
       preferredDate: text(body, 'preferredDate') || null,
       preferredTime: text(body, 'preferredTime') || null,

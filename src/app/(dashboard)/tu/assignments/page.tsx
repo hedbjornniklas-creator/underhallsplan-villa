@@ -19,6 +19,10 @@ type AssignmentItem = {
   property_address: string | null
   property_postal_code: string | null
   property_city: string | null
+  cadastral_id: string | null
+  brf_name: string | null
+  apartment_number: string | null
+  apartment_holder_name: string | null
   scope_description: string | null
   accepted_at: string | null
   converted_at: string | null
@@ -159,7 +163,10 @@ function getStatusTabClass(key: StatusFilter, active: boolean) {
 function getAddress(item: AssignmentItem) {
   const line = item.property_address ?? item.preliminary_address
   const postalCity = [item.property_postal_code, item.property_city].filter(Boolean).join(' ')
-  return [line, postalCity].filter(Boolean).join(', ') || 'Adress saknas'
+  const apartmentObject = [item.brf_name, item.apartment_number ? `lgh ${item.apartment_number}` : null]
+    .filter(Boolean)
+    .join(', ')
+  return [line, postalCity].filter(Boolean).join(', ') || apartmentObject || item.cadastral_id || 'Adress saknas'
 }
 
 function formatDate(raw: string | null) {

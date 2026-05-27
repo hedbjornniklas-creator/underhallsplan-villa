@@ -17,6 +17,7 @@ import Protected from '@/components/Protected'
 import type { TuAssignmentListItem, TuInspectionSummary } from '@/lib/tu/server'
 
 type TuFormState = {
+  objectType: 'villa' | 'apartment'
   customerName: string
   customerEmail: string
   customerPhone: string
@@ -29,6 +30,9 @@ type TuFormState = {
   propertyMunicipality: string
   propertyOwnerName: string
   cadastralId: string
+  brfName: string
+  apartmentNumber: string
+  apartmentHolderName: string
   scopeDescription: string
   preferredDate: string
   preferredTime: string
@@ -37,6 +41,7 @@ type TuFormState = {
 }
 
 type ScratchFormState = {
+  objectType: 'villa' | 'apartment'
   title: string
   scopeDescription: string
   propertyAddress: string
@@ -45,6 +50,9 @@ type ScratchFormState = {
   propertyMunicipality: string
   propertyOwnerName: string
   cadastralId: string
+  brfName: string
+  apartmentNumber: string
+  apartmentHolderName: string
   customerName: string
   customerEmail: string
   customerPhone: string
@@ -53,6 +61,7 @@ type ScratchFormState = {
 }
 
 const EMPTY_TU_FORM: TuFormState = {
+  objectType: 'villa',
   customerName: '',
   customerEmail: '',
   customerPhone: '',
@@ -65,6 +74,9 @@ const EMPTY_TU_FORM: TuFormState = {
   propertyMunicipality: '',
   propertyOwnerName: '',
   cadastralId: '',
+  brfName: '',
+  apartmentNumber: '',
+  apartmentHolderName: '',
   scopeDescription: '',
   preferredDate: '',
   preferredTime: '',
@@ -73,6 +85,7 @@ const EMPTY_TU_FORM: TuFormState = {
 }
 
 const EMPTY_SCRATCH_FORM: ScratchFormState = {
+  objectType: 'villa',
   title: 'Teknisk utredning',
   scopeDescription: '',
   propertyAddress: '',
@@ -81,6 +94,9 @@ const EMPTY_SCRATCH_FORM: ScratchFormState = {
   propertyMunicipality: '',
   propertyOwnerName: '',
   cadastralId: '',
+  brfName: '',
+  apartmentNumber: '',
+  apartmentHolderName: '',
   customerName: '',
   customerEmail: '',
   customerPhone: '',
@@ -143,15 +159,29 @@ export default function TuDashboardClient({
   )
   const latestInvestigations = useMemo(() => investigations.slice(0, 3), [investigations])
 
-  const updateForm = (key: keyof TuFormState, value: string) => {
+  const updateForm = <K extends keyof TuFormState>(key: K, value: TuFormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
-  const updateScratchForm = (key: keyof ScratchFormState, value: string) => {
+  const updateScratchForm = <K extends keyof ScratchFormState>(key: K, value: ScratchFormState[K]) => {
     setScratchForm((current) => ({ ...current, [key]: value }))
   }
 
   const submitAssignment = async (sendNow: boolean) => {
+    const missingVillaObject = form.objectType === 'villa' && !form.cadastralId.trim()
+    const missingApartmentObject =
+      form.objectType === 'apartment' && (!form.brfName.trim() || !form.apartmentNumber.trim())
+
+    if (sendNow && (missingVillaObject || missingApartmentObject)) {
+      setError(
+        form.objectType === 'apartment'
+          ? 'Ange BRF och lägenhetsnummer innan utskick.'
+          : 'Ange fastighetsbeteckning innan utskick.'
+      )
+      setNotice(null)
+      return
+    }
+
     setBusy(sendNow ? 'quick-send' : 'draft')
     setError(null)
     setNotice(null)
@@ -181,6 +211,21 @@ export default function TuDashboardClient({
   }
 
   const createScratchInvestigation = async () => {
+    const missingVillaObject = scratchForm.objectType === 'villa' && !scratchForm.cadastralId.trim()
+    const missingApartmentObject =
+      scratchForm.objectType === 'apartment' &&
+      (!scratchForm.brfName.trim() || !scratchForm.apartmentNumber.trim())
+
+    if (missingVillaObject || missingApartmentObject) {
+      setError(
+        scratchForm.objectType === 'apartment'
+          ? 'Ange BRF och lägenhetsnummer innan utredningen startas.'
+          : 'Ange fastighetsbeteckning innan utredningen startas.'
+      )
+      setNotice(null)
+      return
+    }
+
     setBusy('scratch')
     setError(null)
     setNotice(null)
@@ -484,7 +529,7 @@ function QuickAssignmentDialog({
   form: TuFormState
   busy: string | null
   onClose: () => void
-  onChange: (key: keyof TuFormState, value: string) => void
+  onChange: <K extends keyof TuFormState>(key: K, value: TuFormState[K]) => void
   onSubmit: (sendNow: boolean) => void
 }) {
   return (
@@ -522,16 +567,16 @@ function QuickAssignmentDialog({
         rows={4}
       />
 
+      <ObjectTypeControl
+        value={form.objectType}
+        onChange={(value) => onChange('objectType', value)}
+      />
+
       <div className="grid gap-3 md:grid-cols-2">
         <Field
           label="Objektadress"
           value={form.propertyAddress}
           onChange={(value) => onChange('propertyAddress', value)}
-        />
-        <Field
-          label="Fastighetsbeteckning"
-          value={form.cadastralId}
-          onChange={(value) => onChange('cadastralId', value)}
         />
         <Field
           label="Objekt postnummer"
@@ -544,11 +589,38 @@ function QuickAssignmentDialog({
           value={form.propertyMunicipality}
           onChange={(value) => onChange('propertyMunicipality', value)}
         />
-        <Field
-          label="Fastighetsägare"
-          value={form.propertyOwnerName}
-          onChange={(value) => onChange('propertyOwnerName', value)}
-        />
+        {form.objectType === 'apartment' ? (
+          <>
+            <Field
+              label="Bostadsrättsförening *"
+              value={form.brfName}
+              onChange={(value) => onChange('brfName', value)}
+            />
+            <Field
+              label="Lägenhetsnummer *"
+              value={form.apartmentNumber}
+              onChange={(value) => onChange('apartmentNumber', value)}
+            />
+            <Field
+              label="Bostadsrättsinnehavare"
+              value={form.apartmentHolderName}
+              onChange={(value) => onChange('apartmentHolderName', value)}
+            />
+          </>
+        ) : (
+          <>
+            <Field
+              label="Fastighetsbeteckning *"
+              value={form.cadastralId}
+              onChange={(value) => onChange('cadastralId', value)}
+            />
+            <Field
+              label="Fastighetsägare"
+              value={form.propertyOwnerName}
+              onChange={(value) => onChange('propertyOwnerName', value)}
+            />
+          </>
+        )}
         <Field
           label="Datum"
           value={form.preferredDate}
@@ -610,7 +682,7 @@ function ScratchInvestigationDialog({
   form: ScratchFormState
   busy: string | null
   onClose: () => void
-  onChange: (key: keyof ScratchFormState, value: string) => void
+  onChange: <K extends keyof ScratchFormState>(key: K, value: ScratchFormState[K]) => void
   onSubmit: () => void
 }) {
   return (
@@ -636,16 +708,15 @@ function ScratchInvestigationDialog({
         onChange={(value) => onChange('scopeDescription', value)}
         rows={4}
       />
+      <ObjectTypeControl
+        value={form.objectType}
+        onChange={(value) => onChange('objectType', value)}
+      />
       <div className="grid gap-3 md:grid-cols-2">
         <Field
           label="Objektadress"
           value={form.propertyAddress}
           onChange={(value) => onChange('propertyAddress', value)}
-        />
-        <Field
-          label="Fastighetsbeteckning"
-          value={form.cadastralId}
-          onChange={(value) => onChange('cadastralId', value)}
         />
         <Field
           label="Postnummer"
@@ -658,11 +729,38 @@ function ScratchInvestigationDialog({
           value={form.propertyMunicipality}
           onChange={(value) => onChange('propertyMunicipality', value)}
         />
-        <Field
-          label="Fastighetsägare"
-          value={form.propertyOwnerName}
-          onChange={(value) => onChange('propertyOwnerName', value)}
-        />
+        {form.objectType === 'apartment' ? (
+          <>
+            <Field
+              label="Bostadsrättsförening *"
+              value={form.brfName}
+              onChange={(value) => onChange('brfName', value)}
+            />
+            <Field
+              label="Lägenhetsnummer *"
+              value={form.apartmentNumber}
+              onChange={(value) => onChange('apartmentNumber', value)}
+            />
+            <Field
+              label="Bostadsrättsinnehavare"
+              value={form.apartmentHolderName}
+              onChange={(value) => onChange('apartmentHolderName', value)}
+            />
+          </>
+        ) : (
+          <>
+            <Field
+              label="Fastighetsbeteckning *"
+              value={form.cadastralId}
+              onChange={(value) => onChange('cadastralId', value)}
+            />
+            <Field
+              label="Fastighetsägare"
+              value={form.propertyOwnerName}
+              onChange={(value) => onChange('propertyOwnerName', value)}
+            />
+          </>
+        )}
         <Field label="Datum" value={form.date} onChange={(value) => onChange('date', value)} type="date" />
         <Field label="Tid" value={form.time} onChange={(value) => onChange('time', value)} type="time" />
       </div>
@@ -678,6 +776,43 @@ function ScratchInvestigationDialog({
         </button>
       </div>
     </DialogShell>
+  )
+}
+
+function ObjectTypeControl({
+  value,
+  onChange,
+}: {
+  value: 'villa' | 'apartment'
+  onChange: (value: 'villa' | 'apartment') => void
+}) {
+  return (
+    <fieldset className="mt-3 space-y-1">
+      <legend className="text-xs font-medium text-slate-600">Objekttyp</legend>
+      <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
+        {[
+          { value: 'villa' as const, label: 'Villa' },
+          { value: 'apartment' as const, label: 'Lägenhet' },
+        ].map((option) => {
+          const active = value === option.value
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange(option.value)}
+              className={
+                active
+                  ? 'rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm'
+                  : 'rounded-md px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-white'
+              }
+            >
+              {option.label}
+            </button>
+          )
+        })}
+      </div>
+    </fieldset>
   )
 }
 

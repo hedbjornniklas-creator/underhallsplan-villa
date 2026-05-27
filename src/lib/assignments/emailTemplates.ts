@@ -160,7 +160,12 @@ function buildObjectSection(
   propertyAddress: string,
   municipality: string
 ) {
-  if (termsRole === 'apartment') {
+  const isApartmentObject =
+    termsRole === 'apartment' ||
+    (assignment.assignment_type === 'TU' &&
+      (Boolean(assignment.brf_name?.trim()) || Boolean(assignment.apartment_number?.trim())))
+
+  if (isApartmentObject) {
     const brfName = toDisplayValue(assignment.brf_name)
     const apartmentNumber = toDisplayValue(assignment.apartment_number)
     const apartmentHolderName = toDisplayValue(assignment.apartment_holder_name)

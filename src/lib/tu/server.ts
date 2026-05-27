@@ -27,6 +27,8 @@ export type TuReportSectionKey =
   | 'images'
   | 'signature'
 
+export type TuObjectType = 'villa' | 'apartment'
+
 export type TuReportSection = {
   key: TuReportSectionKey
   title: string
@@ -58,6 +60,7 @@ export type TuInspectionSummary = {
   propertyId: string | null
   assignmentId: string | null
   title: string
+  objectType: TuObjectType
   status: string | null
   date: string | null
   inspectionTime: string | null
@@ -65,6 +68,10 @@ export type TuInspectionSummary = {
   customerEmail: string | null
   propertyAddress: string | null
   propertyCity: string | null
+  cadastralId: string | null
+  brfName: string | null
+  apartmentNumber: string | null
+  apartmentHolderName: string | null
   scopeDescription: string | null
   reportLockedAt: string | null
   createdAt: string | null
@@ -99,15 +106,36 @@ type TuDetailRow = {
   assignment_id: string | null
   property_id: string | null
   title: string | null
+  property_object_type: string | null
   scope_description: string | null
+  brf_name: string | null
+  apartment_number: string | null
+  apartment_holder_name: string | null
   background: string | null
   basis: string | null
   accessibility: string | null
   report_draft: unknown
   report_draft_updated_at: string | null
   report_locked_at: string | null
+  created_by: string | null
   created_at: string | null
   updated_at: string | null
+}
+
+type TuInspectorProfileRow = {
+  id: string
+  full_name: string | null
+  email: string | null
+  phone: string | null
+  company_name: string | null
+  company_orgno: string | null
+  company_address: string | null
+  company_postal_code: string | null
+  company_city: string | null
+  sbr_group: string | null
+  sbr_status: string | null
+  membership_number: string | null
+  certification_number: string | null
 }
 
 type InspectionRow = {
@@ -172,6 +200,27 @@ function cleanText(value: string | null | undefined) {
   return normalized === '' ? null : normalized
 }
 
+function normalizeTuObjectType(value: string | null | undefined): TuObjectType {
+  return value === 'apartment' ? 'apartment' : 'villa'
+}
+
+function inferTuObjectType(input: {
+  objectType?: string | null
+  brfName?: string | null
+  apartmentNumber?: string | null
+  assignment?: AssignmentDetails | null
+}): TuObjectType {
+  if (input.objectType === 'apartment') return 'apartment'
+  if (input.objectType === 'villa') return 'villa'
+  if (cleanText(input.brfName) || cleanText(input.apartmentNumber)) return 'apartment'
+  const role = input.assignment?.orderer_role?.toLowerCase() ?? ''
+  if (role.includes('lägenhet') || role.includes('lagenhet') || role.includes('apartment')) {
+    return 'apartment'
+  }
+  if (input.assignment?.brf_name || input.assignment?.apartment_number) return 'apartment'
+  return 'villa'
+}
+
 function toPropertyName(address: string | null, fallback: string) {
   return cleanText(address) ?? fallback
 }
@@ -216,6 +265,97 @@ export function normalizeTuReportDraft(value: unknown): TuReportDraft {
   }
 }
 
+function upsertReportSectionText(
+  draft: TuReportDraft,
+  key: TuReportSectionKey,
+  defaultText: string | null
+): TuReportDraft {
+  const normalizedText = cleanText(defaultText)
+  if (!normalizedText) return draft
+
+  return {
+    sections: draft.sections.map((section) => {
+      if (section.key !== key) return section
+      if (section.text.trim()) return section
+      return { ...section, text: normalizedText }
+    }),
+  }
+}
+
+function joinLine(label: string, value: string | null | undefined) {
+  const normalized = cleanText(value)
+  return normalized ? `${label}: ${normalized}` : null
+}
+
+function joinAddress(parts: Array<string | null | undefined>) {
+  return cleanText(parts.filter(Boolean).join(', '))
+}
+
+function buildTuAssignmentPartiesText(input: {
+  assignment: AssignmentDetails | null
+  inspection: InspectionRow | null
+  inspector: TuInspectorProfileRow | null
+}) {
+  const assignment = input.assignment
+  const inspection = input.inspection
+  const customerAddress = joinAddress([
+    assignment?.customer_address ?? inspection?.customer_address,
+    joinAddress([
+      assignment?.customer_postal_code ?? inspection?.customer_postal_code,
+      assignment?.customer_city ?? inspection?.customer_city,
+    ]),
+  ])
+  const inspectorAddress = joinAddress([
+    input.inspector?.company_address,
+    joinAddress([input.inspector?.company_postal_code, input.inspector?.company_city]),
+  ])
+
+  const customerLines = [
+    joinLine('Namn', assignment?.customer_name ?? inspection?.customer_name),
+    joinLine('Adress', customerAddress),
+    joinLine('Telefon', assignment?.customer_phone ?? inspection?.customer_phone),
+    joinLine('E-post', assignment?.customer_email ?? inspection?.customer_email),
+  ].filter(Boolean)
+
+  const inspectorLines = [
+    joinLine('Namn', input.inspector?.full_name),
+    joinLine('Företag', input.inspector?.company_name),
+    joinLine('Org.nr', input.inspector?.company_orgno),
+    joinLine('Adress', inspectorAddress),
+    joinLine('Telefon', input.inspector?.phone),
+    joinLine('E-post', input.inspector?.email),
+    joinLine('SBR', input.inspector?.sbr_group),
+    joinLine('Status', input.inspector?.sbr_status),
+    joinLine('Medlemsnummer', input.inspector?.membership_number),
+    joinLine('Certifieringsnummer', input.inspector?.certification_number),
+  ].filter(Boolean)
+
+  return [
+    'Uppdragsgivare',
+    ...(customerLines.length > 0 ? customerLines : ['Ej angivet.']),
+    '',
+    'Besiktningsman',
+    ...(inspectorLines.length > 0 ? inspectorLines : ['Ej angivet.']),
+  ].join('\n')
+}
+
+async function getTuInspectorProfile(profileId: string | null | undefined) {
+  const normalizedProfileId = cleanText(profileId)
+  if (!normalizedProfileId) return null
+
+  const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
+  const { data, error } = await admin
+    .from('profiles')
+    .select(
+      'id,full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city,sbr_group,sbr_status,membership_number,certification_number'
+    )
+    .eq('id', normalizedProfileId)
+    .maybeSingle()
+
+  if (error || !data) return null
+  return data as TuInspectorProfileRow
+}
+
 export async function requireTuContext() {
   await requireModuleAccess({ productKey: 'dashboard', moduleKey: 'technical_investigations' })
   return requireOrgContext()
@@ -249,12 +389,22 @@ export async function createTuAssignmentDraft(input: {
   propertyMunicipality?: string | null
   propertyOwnerName?: string | null
   cadastralId?: string | null
+  brfName?: string | null
+  apartmentNumber?: string | null
+  apartmentHolderName?: string | null
+  objectType?: TuObjectType | null
   scopeDescription?: string | null
   preferredDate?: string | null
   preferredTime?: string | null
   priceAmount?: number | null
   notesInternal?: string | null
 }) {
+  const objectType = inferTuObjectType({
+    objectType: input.objectType,
+    brfName: input.brfName,
+    apartmentNumber: input.apartmentNumber,
+  })
+
   return createAssignment({
     orgId: input.orgId,
     createdBy: input.createdBy,
@@ -272,9 +422,12 @@ export async function createTuAssignmentDraft(input: {
     propertyCity: input.propertyCity,
     propertyMunicipality: input.propertyMunicipality,
     propertyOwnerName: input.propertyOwnerName,
-    cadastralId: input.cadastralId,
+    cadastralId: objectType === 'villa' ? input.cadastralId : null,
+    brfName: objectType === 'apartment' ? input.brfName : null,
+    apartmentNumber: objectType === 'apartment' ? input.apartmentNumber : null,
+    apartmentHolderName: objectType === 'apartment' ? input.apartmentHolderName : null,
     scopeDescription: input.scopeDescription,
-    ordererRole: 'Teknisk utredning',
+    ordererRole: objectType === 'apartment' ? 'Teknisk utredning - Lägenhet' : 'Teknisk utredning - Villa',
     preferredDate: input.preferredDate,
     preferredTime: input.preferredTime,
     priceAmount: input.priceAmount,
@@ -302,6 +455,7 @@ export async function sendTuAssignmentConfirmation(input: {
 async function createPropertyForTu(input: {
   ownerProfileId: string
   titleFallback: string
+  objectType?: TuObjectType | null
   address?: string | null
   postalCode?: string | null
   city?: string | null
@@ -321,7 +475,7 @@ async function createPropertyForTu(input: {
       postal_code: cleanText(input.postalCode),
       city: cleanText(input.city),
       municipality: cleanText(input.municipality ?? input.city),
-      cadastral_id: cleanText(input.cadastralId),
+      cadastral_id: normalizeTuObjectType(input.objectType) === 'villa' ? cleanText(input.cadastralId) : null,
       owner_name: cleanText(input.ownerName ?? input.clientName),
       client_name: cleanText(input.clientName),
     })
@@ -381,11 +535,16 @@ async function createTuDetail(input: {
   assignmentId?: string | null
   propertyId: string
   title?: string | null
+  objectType?: TuObjectType | null
   scopeDescription?: string | null
+  brfName?: string | null
+  apartmentNumber?: string | null
+  apartmentHolderName?: string | null
   createdBy: string
   reportDraft?: TuReportDraft
 }) {
   const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
+  const objectType = normalizeTuObjectType(input.objectType)
   const { data, error } = await admin
     .from('technical_investigation_details')
     .insert({
@@ -394,7 +553,11 @@ async function createTuDetail(input: {
       assignment_id: input.assignmentId ?? null,
       property_id: input.propertyId,
       title: cleanText(input.title) ?? 'Teknisk utredning',
+      property_object_type: objectType,
       scope_description: cleanText(input.scopeDescription),
+      brf_name: objectType === 'apartment' ? cleanText(input.brfName) : null,
+      apartment_number: objectType === 'apartment' ? cleanText(input.apartmentNumber) : null,
+      apartment_holder_name: objectType === 'apartment' ? cleanText(input.apartmentHolderName) : null,
       background: cleanText(input.scopeDescription),
       report_draft: input.reportDraft ?? createTuReportDraft({ background_scope: input.scopeDescription ?? '' }),
       report_draft_updated_at: new Date().toISOString(),
@@ -420,6 +583,10 @@ export async function createScratchTuInvestigation(input: {
   propertyMunicipality?: string | null
   propertyOwnerName?: string | null
   cadastralId?: string | null
+  brfName?: string | null
+  apartmentNumber?: string | null
+  apartmentHolderName?: string | null
+  objectType?: TuObjectType | null
   customerName?: string | null
   customerEmail?: string | null
   customerPhone?: string | null
@@ -431,14 +598,20 @@ export async function createScratchTuInvestigation(input: {
 }) {
   const ownerProfileId = cleanText(input.responsibleProfileId) ?? input.createdBy
   const title = cleanText(input.title) ?? 'Teknisk utredning'
+  const objectType = inferTuObjectType({
+    objectType: input.objectType,
+    brfName: input.brfName,
+    apartmentNumber: input.apartmentNumber,
+  })
   const property = await createPropertyForTu({
     ownerProfileId,
     titleFallback: title,
+    objectType,
     address: input.propertyAddress,
     postalCode: input.propertyPostalCode,
     city: input.propertyCity,
     municipality: input.propertyMunicipality,
-    cadastralId: input.cadastralId,
+    cadastralId: objectType === 'villa' ? input.cadastralId : null,
     ownerName: input.propertyOwnerName,
     clientName: input.customerName,
   })
@@ -464,7 +637,11 @@ export async function createScratchTuInvestigation(input: {
       orgId: input.orgId,
       propertyId: property.id,
       title,
+      objectType,
       scopeDescription: input.scopeDescription,
+      brfName: input.brfName,
+      apartmentNumber: input.apartmentNumber,
+      apartmentHolderName: input.apartmentHolderName,
       createdBy: input.createdBy,
     })
 
@@ -497,14 +674,20 @@ export async function convertTuAssignmentToInvestigation(input: {
     throw new Error('TU_ASSIGNMENT_NOT_ACCEPTED')
   }
 
+  const objectType = inferTuObjectType({
+    assignment,
+    brfName: assignment.brf_name,
+    apartmentNumber: assignment.apartment_number,
+  })
   const property = await createPropertyForTu({
     ownerProfileId: assignment.responsible_profile_id ?? input.requestedByUserId,
     titleFallback: 'Teknisk utredning',
+    objectType,
     address: assignment.property_address ?? assignment.preliminary_address,
     postalCode: assignment.property_postal_code,
     city: assignment.property_city,
     municipality: assignment.property_municipality,
-    cadastralId: assignment.cadastral_id,
+    cadastralId: objectType === 'villa' ? assignment.cadastral_id : null,
     ownerName: assignment.property_owner_name,
     clientName: assignment.customer_name,
   })
@@ -531,7 +714,11 @@ export async function convertTuAssignmentToInvestigation(input: {
       assignmentId: assignment.id,
       propertyId: property.id,
       title: 'Teknisk utredning',
+      objectType,
       scopeDescription: assignment.scope_description,
+      brfName: assignment.brf_name,
+      apartmentNumber: assignment.apartment_number,
+      apartmentHolderName: assignment.apartment_holder_name,
       createdBy: input.requestedByUserId,
     })
 
@@ -558,11 +745,13 @@ export async function convertTuAssignmentToInvestigation(input: {
 }
 
 function buildSummary(detail: TuDetailRow, inspection?: InspectionRow | null, property?: PropertyRow | null): TuInspectionSummary {
+  const objectType = normalizeTuObjectType(detail.property_object_type)
   return {
     inspectionId: detail.inspection_id,
     propertyId: detail.property_id ?? inspection?.property_id ?? null,
     assignmentId: detail.assignment_id,
     title: detail.title ?? 'Teknisk utredning',
+    objectType,
     status: inspection?.status ?? null,
     date: inspection?.date ?? null,
     inspectionTime: inspection?.inspection_time ?? null,
@@ -570,6 +759,10 @@ function buildSummary(detail: TuDetailRow, inspection?: InspectionRow | null, pr
     customerEmail: inspection?.customer_email ?? null,
     propertyAddress: property?.address ?? null,
     propertyCity: property?.city ?? null,
+    cadastralId: property?.cadastral_id ?? null,
+    brfName: detail.brf_name,
+    apartmentNumber: detail.apartment_number,
+    apartmentHolderName: detail.apartment_holder_name,
     scopeDescription: detail.scope_description,
     reportLockedAt: detail.report_locked_at,
     createdAt: detail.created_at,
@@ -582,7 +775,7 @@ export async function listTuInvestigations(orgId: string): Promise<TuInspectionS
   const { data: detailData, error: detailError } = await admin
     .from('technical_investigation_details')
     .select(
-      'inspection_id,org_id,assignment_id,property_id,title,scope_description,background,basis,accessibility,report_draft,report_draft_updated_at,report_locked_at,created_at,updated_at'
+      'inspection_id,org_id,assignment_id,property_id,title,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,report_locked_at,created_by,created_at,updated_at'
     )
     .eq('org_id', orgId)
     .order('updated_at', { ascending: false })
@@ -636,7 +829,7 @@ export async function getTuInvestigationById(input: {
   const { data: detailData, error: detailError } = await admin
     .from('technical_investigation_details')
     .select(
-      'inspection_id,org_id,assignment_id,property_id,title,scope_description,background,basis,accessibility,report_draft,report_draft_updated_at,report_locked_at,created_at,updated_at'
+      'inspection_id,org_id,assignment_id,property_id,title,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,report_locked_at,created_by,created_at,updated_at'
     )
     .eq('org_id', input.orgId)
     .eq('inspection_id', input.inspectionId)
@@ -672,6 +865,12 @@ export async function getTuInvestigationById(input: {
   const assignment = detail.assignment_id
     ? await getAssignmentById(input.orgId, detail.assignment_id)
     : null
+  const inspector = await getTuInspectorProfile(assignment?.responsible_profile_id ?? detail.created_by)
+  const reportDraft = upsertReportSectionText(
+    normalizeTuReportDraft(detail.report_draft),
+    'assignment_parties',
+    buildTuAssignmentPartiesText({ assignment, inspection, inspector })
+  )
 
   return {
     ...buildSummary(detail, inspection, property),
@@ -690,7 +889,7 @@ export async function getTuInvestigationById(input: {
     },
     property,
     assignment,
-    reportDraft: normalizeTuReportDraft(detail.report_draft),
+    reportDraft,
     background: detail.background,
     basis: detail.basis,
     accessibility: detail.accessibility,

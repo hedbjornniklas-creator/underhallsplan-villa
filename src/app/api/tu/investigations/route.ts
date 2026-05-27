@@ -37,6 +37,7 @@ export async function POST(request: Request) {
   try {
     const context = await requireTuContext()
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const objectType = text(body, 'objectType') === 'apartment' ? 'apartment' : 'villa'
 
     const result = await createScratchTuInvestigation({
       orgId: context.orgId,
@@ -49,7 +50,11 @@ export async function POST(request: Request) {
       propertyCity: text(body, 'propertyCity') || null,
       propertyMunicipality: text(body, 'propertyMunicipality') || null,
       propertyOwnerName: text(body, 'propertyOwnerName') || null,
-      cadastralId: text(body, 'cadastralId') || null,
+      cadastralId: objectType === 'villa' ? text(body, 'cadastralId') || null : null,
+      brfName: objectType === 'apartment' ? text(body, 'brfName') || null : null,
+      apartmentNumber: objectType === 'apartment' ? text(body, 'apartmentNumber') || null : null,
+      apartmentHolderName: objectType === 'apartment' ? text(body, 'apartmentHolderName') || null : null,
+      objectType,
       customerName: text(body, 'customerName') || null,
       customerEmail: text(body, 'customerEmail') || null,
       customerPhone: text(body, 'customerPhone') || null,

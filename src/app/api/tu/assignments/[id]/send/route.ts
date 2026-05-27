@@ -33,6 +33,13 @@ export async function POST(
     }
     if (assignment.price_amount === null) return jsonError('Pris är obligatoriskt innan utskick.', 400)
 
+    if (
+      !assignment.cadastral_id?.trim() &&
+      (!assignment.brf_name?.trim() || !assignment.apartment_number?.trim())
+    ) {
+      return jsonError('Ange fastighetsbeteckning eller BRF och lägenhetsnummer innan utskick.', 400)
+    }
+
     const sendResult = await sendTuAssignmentConfirmation({
       assignment,
       orgName: orgContext.orgName,

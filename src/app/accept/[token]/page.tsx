@@ -264,6 +264,9 @@ export default function AssignmentAcceptPage() {
   }, [data])
 
   const isTechnicalAssignment = data?.assignment.assignment_type === 'TU'
+  const usesApartmentObject =
+    lockedOrdererRole === 'apartment' ||
+    (isTechnicalAssignment && Boolean(form?.brfName.trim() || form?.apartmentNumber.trim()))
 
   const activeTerms = useMemo(() => {
     if (!data) return null
@@ -341,11 +344,15 @@ export default function AssignmentAcceptPage() {
       return
     }
 
-    const requiresApartmentObjectFields = !isTechnicalAssignment && lockedOrdererRole === 'apartment'
-    const missingObjectFields = requiresApartmentObjectFields
-      ? !form.brfName.trim() || !form.apartmentNumber.trim() || !form.apartmentHolderName.trim()
+    const usesApartmentObjectForSubmit =
+      lockedOrdererRole === 'apartment' ||
+      (isTechnicalAssignment && Boolean(form.brfName.trim() || form.apartmentNumber.trim()))
+    const missingObjectFields = usesApartmentObjectForSubmit
+      ? !form.brfName.trim() ||
+        !form.apartmentNumber.trim() ||
+        (!isTechnicalAssignment && !form.apartmentHolderName.trim())
       : isTechnicalAssignment
-        ? false
+        ? !form.cadastralId.trim()
         : !form.cadastralId.trim() || !form.propertyOwnerName.trim()
 
     const requiredFieldMissing =
@@ -543,7 +550,7 @@ export default function AssignmentAcceptPage() {
                       disabled
                     />
                   ) : null}
-                  {!isTechnicalAssignment && lockedOrdererRole === 'apartment' ? (
+                  {usesApartmentObject ? (
                     <>
                       <Field
                         label="Bostadsrättsförening *"
@@ -558,13 +565,13 @@ export default function AssignmentAcceptPage() {
                         disabled={!canSubmit}
                       />
                       <Field
-                        label="Bostadsrättsinnehavare *"
+                        label={isTechnicalAssignment ? 'Bostadsrättsinnehavare' : 'Bostadsrättsinnehavare *'}
                         value={form.apartmentHolderName}
                         onChange={(value) => updateField('apartmentHolderName', value)}
                         disabled={!canSubmit}
                       />
                     </>
-                  ) : !isTechnicalAssignment ? (
+                  ) : (
                     <>
                       <Field
                         label="Fastighetsbeteckning *"
@@ -573,13 +580,13 @@ export default function AssignmentAcceptPage() {
                         disabled={!canSubmit}
                       />
                       <Field
-                        label="Fastighetsägare *"
+                        label={isTechnicalAssignment ? 'Fastighetsägare' : 'Fastighetsägare *'}
                         value={form.propertyOwnerName}
                         onChange={(value) => updateField('propertyOwnerName', value)}
                         disabled={!canSubmit}
                       />
                     </>
-                  ) : null}
+                  )}
                 </SectionCard>
 
                 <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">

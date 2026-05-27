@@ -77,6 +77,10 @@ export type AssignmentListItem = {
   property_address: string | null
   property_postal_code: string | null
   property_city: string | null
+  cadastral_id: string | null
+  brf_name: string | null
+  apartment_number: string | null
+  apartment_holder_name: string | null
   accepted_at: string | null
   booked_at: string | null
   converted_at: string | null
@@ -93,9 +97,6 @@ export type AssignmentDetails = AssignmentListItem & {
   customer_address: string | null
   property_municipality: string | null
   property_owner_name: string | null
-  brf_name: string | null
-  apartment_number: string | null
-  apartment_holder_name: string | null
   terms_version: string | null
   terms_document_hash: string | null
   invoice_name: string | null
@@ -103,7 +104,6 @@ export type AssignmentDetails = AssignmentListItem & {
   orderer_role: string | null
   personal_identity_number: string | null
   notes_internal: string | null
-  cadastral_id: string | null
   price_amount: number | null
   currency: string
   property_id: string | null
@@ -256,6 +256,10 @@ const ASSIGNMENT_SELECT_LIST = `
   property_address,
   property_postal_code,
   property_city,
+  cadastral_id,
+  brf_name,
+  apartment_number,
+  apartment_holder_name,
   accepted_at,
   booked_at,
   converted_at,
@@ -272,9 +276,6 @@ const ASSIGNMENT_DETAIL_SELECT = `
   customer_address,
   property_municipality,
   property_owner_name,
-  brf_name,
-  apartment_number,
-  apartment_holder_name,
   terms_version,
   terms_document_hash,
   invoice_name,
@@ -282,7 +283,6 @@ const ASSIGNMENT_DETAIL_SELECT = `
   orderer_role,
   personal_identity_number,
   notes_internal,
-  cadastral_id,
   price_amount,
   currency,
   property_id
