@@ -255,12 +255,31 @@ export default async function TuInvestigationPrintPage({
       <article className="tu-print-document mx-auto my-4 w-full max-w-5xl bg-white px-6 py-8 shadow-sm md:px-10 print:my-0 print:shadow-none">
         <header className="mb-8 flex items-start justify-between gap-6 border-b-2 border-violet-700 pb-5">
           <div className="min-w-0">
+            <div className="tu-print-header-logos mb-5 flex items-center justify-start gap-5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/report-assets/BesiktApp.png"
+                alt="BesiktApp"
+                className="tu-print-besiktapp-logo h-10 w-auto object-contain"
+              />
+              {investigation.inspector?.logo_url ? (
+                <>
+                  <span className="h-8 w-px bg-gray-200" aria-hidden />
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={investigation.inspector.logo_url}
+                    alt={investigation.inspector.company_name ?? 'Företagslogga'}
+                    className="tu-print-company-logo h-10 w-auto object-contain"
+                  />
+                </>
+              ) : null}
+            </div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-700">Teknisk utredning</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-gray-950">{investigation.title}</h1>
             {objectLine ? <p className="mt-2 text-sm text-gray-600">{objectLine}</p> : null}
           </div>
           {investigation.inspector?.logo_url ? (
-            <div className="shrink-0">
+            <div className="hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={investigation.inspector.logo_url}

@@ -208,6 +208,27 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     page-break-inside: avoid;
   }
 
+  .tu-print-header-logos {
+    gap: 6mm !important;
+    margin-bottom: 8mm !important;
+  }
+
+  .tu-print-besiktapp-logo {
+    width: auto !important;
+    height: 8mm !important;
+    max-width: 34mm !important;
+    max-height: 8mm !important;
+    object-fit: contain !important;
+  }
+
+  .tu-print-company-logo {
+    width: auto !important;
+    height: 9mm !important;
+    max-width: 36mm !important;
+    max-height: 9mm !important;
+    object-fit: contain !important;
+  }
+
   .tu-print-footer {
     position: fixed !important;
     left: 12mm !important;
