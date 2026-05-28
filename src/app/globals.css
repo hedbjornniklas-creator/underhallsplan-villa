@@ -38,7 +38,7 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
 
   @page tu-print {
     size: A4;
-    margin: 18mm 12mm 28mm;
+    margin: 18mm 12mm 24mm;
 
     @top-right {
       content: "Sida " counter(page) " av " counter(pages);
@@ -302,13 +302,15 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     position: fixed !important;
     left: 12mm !important;
     right: 12mm !important;
-    bottom: -7mm !important;
+    bottom: 7mm !important;
     display: grid !important;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(22mm, auto) !important;
+    min-height: 12mm !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28mm !important;
     align-items: end !important;
-    gap: 8mm !important;
-    font-size: 8.5pt !important;
-    line-height: 1.3 !important;
+    gap: 7mm !important;
+    padding-top: 2mm !important;
+    font-size: 8pt !important;
+    line-height: 1.25 !important;
   }
 
   .tu-print-powered-by {
@@ -319,9 +321,9 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
 
   .tu-print-powered-by img {
     width: auto !important;
-    height: 5mm !important;
-    max-width: 22mm !important;
-    max-height: 5mm !important;
+    height: 4.5mm !important;
+    max-width: 24mm !important;
+    max-height: 4.5mm !important;
     object-fit: contain !important;
   }
 }
