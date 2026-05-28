@@ -14,6 +14,7 @@ import {
   type AssignmentListItem,
 } from '@/lib/assignments/server'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export type TuReportSectionKey =
@@ -60,6 +61,7 @@ export type TuInspectionSummary = {
   inspectionId: string
   propertyId: string | null
   assignmentId: string | null
+  assignmentNumber: string | null
   title: string
   objectType: TuObjectType
   status: string | null
@@ -86,6 +88,7 @@ export type TuInvestigationDetails = TuInspectionSummary & {
     status: string | null
     date: string | null
     inspection_time: string | null
+    assignment_number: string | null
     customer_name: string | null
     customer_email: string | null
     customer_phone: string | null
@@ -163,6 +166,7 @@ type InspectionRow = {
   status: string | null
   date: string | null
   inspection_time: string | null
+  assignment_number: string | null
   customer_name: string | null
   customer_email: string | null
   customer_phone: string | null
@@ -205,6 +209,7 @@ type QueryBuilder<T = Record<string, unknown>> = {
   update: (values: unknown) => QueryBuilder<T>
   delete: () => QueryBuilder<T>
   eq: (column: string, value: unknown) => QueryBuilder<T>
+  is: (column: string, value: unknown) => QueryBuilder<T>
   in: (column: string, values: unknown[]) => QueryBuilder<T>
   order: (column: string, options?: { ascending?: boolean }) => QueryBuilder<T>
   single: () => SupabaseResponse<T>
@@ -592,6 +597,23 @@ async function createInspectionForTu(input: {
 }) {
   const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
   const contactParts = [input.customerPhone, input.customerEmail].filter(Boolean)
+  const inspectionDate = cleanText(input.date)
+  let assignmentNumber: string | null = null
+
+  if (inspectionDate) {
+    const { data: assignmentNumberRows, error: assignmentNumberError } = await admin
+      .from('inspections')
+      .select('assignment_number')
+      .eq('date', inspectionDate)
+      .eq('inspection_family', 'TU')
+
+    if (assignmentNumberError) {
+      throw new Error(assignmentNumberError.message ?? 'Kunde inte generera arbetsnummer för TU.')
+    }
+
+    assignmentNumber = getNextInspectionAssignmentNumber(inspectionDate, assignmentNumberRows ?? [])
+  }
+
   const { data, error } = await admin
     .from('inspections')
     .insert({
@@ -601,8 +623,9 @@ async function createInspectionForTu(input: {
       inspection_variant: 'TU',
       status: input.status ?? 'draft',
       inspection_side: null,
-      date: cleanText(input.date),
+      date: inspectionDate,
       inspection_time: cleanText(input.inspectionTime),
+      assignment_number: assignmentNumber,
       scope: cleanText(input.scopeDescription),
       client_name: cleanText(input.customerName),
       client_contact: contactParts.length > 0 ? contactParts.join(' | ') : null,
@@ -841,6 +864,7 @@ function buildSummary(detail: TuDetailRow, inspection?: InspectionRow | null, pr
     inspectionId: detail.inspection_id,
     propertyId: detail.property_id ?? inspection?.property_id ?? null,
     assignmentId: detail.assignment_id,
+    assignmentNumber: inspection?.assignment_number ?? null,
     title: detail.title ?? 'Teknisk utredning',
     objectType,
     status: inspection?.status ?? null,
@@ -859,6 +883,42 @@ function buildSummary(detail: TuDetailRow, inspection?: InspectionRow | null, pr
     createdAt: detail.created_at,
     updatedAt: detail.updated_at,
   }
+}
+
+async function ensureTuInspectionAssignmentNumber(
+  admin: TuSupabaseClient,
+  inspection: InspectionRow | null
+) {
+  if (!inspection?.date || inspection.assignment_number) return inspection
+
+  const { data: assignmentNumberRows, error: assignmentNumberError } = await admin
+    .from('inspections')
+    .select('assignment_number')
+    .eq('date', inspection.date)
+    .eq('inspection_family', 'TU')
+
+  if (assignmentNumberError) {
+    throw new Error(assignmentNumberError.message ?? 'Kunde inte generera arbetsnummer för TU.')
+  }
+
+  const assignmentNumber = getNextInspectionAssignmentNumber(inspection.date, assignmentNumberRows ?? [])
+  if (!assignmentNumber) return inspection
+
+  const { data: updatedInspection, error: updateError } = await admin
+    .from('inspections')
+    .update({ assignment_number: assignmentNumber })
+    .eq('id', inspection.id)
+    .is('assignment_number', null)
+    .select(
+      'id,property_id,status,date,inspection_time,assignment_number,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city,created_at'
+    )
+    .maybeSingle()
+
+  if (updateError) {
+    throw new Error(updateError.message ?? 'Kunde inte spara arbetsnummer för TU.')
+  }
+
+  return (updatedInspection as InspectionRow | null) ?? inspection
 }
 
 export async function listTuInvestigations(orgId: string): Promise<TuInspectionSummary[]> {
@@ -884,7 +944,7 @@ export async function listTuInvestigations(orgId: string): Promise<TuInspectionS
       admin
         .from('inspections')
         .select(
-          'id,property_id,status,date,inspection_time,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city,created_at'
+          'id,property_id,status,date,inspection_time,assignment_number,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city,created_at'
         )
         .in('id', inspectionIds),
       propertyIds.length > 0
@@ -936,7 +996,7 @@ export async function getTuInvestigationById(input: {
       admin
         .from('inspections')
         .select(
-          'id,property_id,status,date,inspection_time,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city,created_at'
+          'id,property_id,status,date,inspection_time,assignment_number,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city,created_at'
         )
         .eq('id', detail.inspection_id)
         .maybeSingle(),
@@ -952,7 +1012,7 @@ export async function getTuInvestigationById(input: {
   if (inspectionError) throw new Error(inspectionError.message ?? 'Kunde inte hämta TU-inspektion.')
   if (propertyError) throw new Error(propertyError.message ?? 'Kunde inte hämta TU-fastighet.')
 
-  const inspection = inspectionData as InspectionRow | null
+  const inspection = await ensureTuInspectionAssignmentNumber(admin, inspectionData as InspectionRow | null)
   const property = propertyData as PropertyRow | null
   const assignment = detail.assignment_id
     ? await getAssignmentById(input.orgId, detail.assignment_id)
@@ -974,6 +1034,7 @@ export async function getTuInvestigationById(input: {
       status: inspection?.status ?? null,
       date: inspection?.date ?? null,
       inspection_time: inspection?.inspection_time ?? null,
+      assignment_number: inspection?.assignment_number ?? null,
       customer_name: inspection?.customer_name ?? null,
       customer_email: inspection?.customer_email ?? null,
       customer_phone: inspection?.customer_phone ?? null,

@@ -7,7 +7,7 @@ import { ArrowLeft, Printer } from 'lucide-react'
 export default function TuPrintActions({
   backHref,
   autoPrint,
-  printTitle = 'Teknisk utredning',
+  printTitle = '',
 }: {
   backHref: string
   autoPrint: boolean
@@ -15,7 +15,7 @@ export default function TuPrintActions({
 }) {
   const printWithTitle = useCallback(() => {
     const previousTitle = document.title
-    document.title = printTitle
+    document.title = printTitle.trim() ? printTitle : '\u200B'
 
     const restoreTitle = () => {
       document.title = previousTitle

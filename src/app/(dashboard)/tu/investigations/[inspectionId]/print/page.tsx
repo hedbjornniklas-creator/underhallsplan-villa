@@ -18,6 +18,21 @@ function compact(parts: Array<string | null | undefined>) {
   return filtered.length > 0 ? filtered.join(', ') : null
 }
 
+function formatDate(value: string | null | undefined) {
+  if (!value) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString('sv-SE')
+}
+
+function formatTime(value: string | null | undefined) {
+  if (!value) return null
+  const normalized = value.trim()
+  const match = normalized.match(/^(\d{2}):(\d{2})/)
+  return match ? `${match[1]}:${match[2]}` : normalized
+}
+
 function normalizePrintableText(value: string | null | undefined) {
   const lines = String(value ?? '')
     .replace(/\r\n/g, '\n')
@@ -94,6 +109,33 @@ function ReportSection({ title, text }: { title: string; text: string }) {
   )
 }
 
+function ReportMeta({ investigation }: { investigation: TuInvestigationDetails }) {
+  const assignment = investigation.assignment
+  const rows = [
+    { label: 'Arbetsnummer', value: investigation.assignmentNumber ?? investigation.inspection.assignment_number },
+    { label: 'Besiktningsdag', value: formatDate(investigation.date ?? investigation.inspection.date) },
+    { label: 'Tid', value: formatTime(investigation.inspectionTime ?? investigation.inspection.inspection_time) },
+    { label: 'Beställare', value: assignment?.customer_name ?? investigation.inspection.customer_name },
+    { label: 'Telefon', value: assignment?.customer_phone ?? investigation.inspection.customer_phone },
+    { label: 'E-post', value: assignment?.customer_email ?? investigation.inspection.customer_email },
+  ].filter((row) => normalizePrintableText(row.value))
+
+  if (rows.length === 0) return null
+
+  return (
+    <section className="tu-print-meta">
+      <dl className="tu-print-meta-grid grid gap-x-8 gap-y-2 sm:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.label} className="grid grid-cols-[34mm_minmax(0,1fr)] gap-3 border-b border-gray-200 pb-1.5">
+            <dt className="text-[12px] font-semibold text-gray-600">{row.label}</dt>
+            <dd className="min-w-0 text-[12px] text-gray-950">{normalizePrintableText(row.value)}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
+}
+
 function ObjectSummary({ investigation }: { investigation: TuInvestigationDetails }) {
   const propertyAddress = compact([investigation.property?.address ?? investigation.propertyAddress])
   const propertyCity = compact([investigation.property?.postal_code, investigation.property?.city ?? investigation.propertyCity])
@@ -148,15 +190,15 @@ function CompanyFooter({ investigation }: { investigation: TuInvestigationDetail
           <div key={line}>{line}</div>
         ))}
       </div>
-      <div className="tu-print-powered-by flex min-w-0 items-center justify-center gap-1.5 text-center text-[10px] text-gray-500">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/report-assets/BesiktApp.png" alt="BesiktApp" className="h-4 w-auto object-contain" />
-        <span>Skapat med BesiktApp</span>
-      </div>
-      <div className="min-w-0 text-right">
+      <div className="min-w-0 text-center">
         {rightLines.map((line) => (
           <div key={line}>{line}</div>
         ))}
+      </div>
+      <div className="tu-print-powered-by flex min-w-0 flex-col items-end justify-end gap-1 text-right text-[10px] text-gray-500">
+        <span>Skapat med</span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/report-assets/BesiktApp.png" alt="BesiktApp" className="h-4 w-auto object-contain" />
       </div>
     </footer>
   )
@@ -237,7 +279,7 @@ export default async function TuInvestigationPrintPage({
       <TuPrintActions
         backHref={`/tu/investigations/${encodeURIComponent(inspectionId)}`}
         autoPrint={autoPrint}
-        printTitle={investigation.title || 'Teknisk utredning'}
+        printTitle=""
       />
       <article className="tu-print-document mx-auto my-4 w-full max-w-5xl bg-white px-6 py-8 shadow-sm md:px-10 print:my-0 print:shadow-none">
         <header className="tu-print-header mb-8 border-b-2 border-violet-700 pb-5">
@@ -263,6 +305,7 @@ export default async function TuInvestigationPrintPage({
         </header>
 
         <div className="tu-print-content space-y-6">
+          <ReportMeta investigation={investigation} />
           <ObjectSummary investigation={investigation} />
 
           {scopeText ? (

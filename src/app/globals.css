@@ -257,6 +257,16 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     row-gap: 6mm !important;
   }
 
+  .tu-print-meta {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .tu-print-meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 2mm 8mm !important;
+  }
+
   .tu-print-object-summary {
     break-inside: avoid;
     page-break-inside: avoid;
@@ -292,9 +302,9 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     position: fixed !important;
     left: 12mm !important;
     right: 12mm !important;
-    bottom: 8mm !important;
+    bottom: -7mm !important;
     display: grid !important;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(22mm, auto) !important;
     align-items: end !important;
     gap: 8mm !important;
     font-size: 8.5pt !important;
@@ -303,14 +313,15 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
 
   .tu-print-powered-by {
     align-self: end !important;
+    justify-self: end !important;
     white-space: nowrap !important;
   }
 
   .tu-print-powered-by img {
     width: auto !important;
-    height: 4mm !important;
-    max-width: 20mm !important;
-    max-height: 4mm !important;
+    height: 5mm !important;
+    max-width: 22mm !important;
+    max-height: 5mm !important;
     object-fit: contain !important;
   }
 }
