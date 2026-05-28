@@ -14,6 +14,7 @@ import {
   type InspectionDocumentReportLineParts,
 } from '@/lib/report/inspectionDocumentReportLine'
 import ReportShareButton from './ReportShareButton'
+import SnapshotPhotoGrid from './SnapshotPhotoGrid'
 
 type SnapshotInspectionBlock = {
   title?: string | null
@@ -266,24 +267,7 @@ function renderBlocks(items: SnapshotInspectionBlock[]) {
               </p>
             ) : null}
             {photos.length > 0 ? (
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {photos.map((photoUrl, photoIndex) => (
-                  <a
-                    key={`${title}-${index}-photo-${photoIndex}`}
-                    href={photoUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                    title="Öppna bilden i ny flik"
-                  >
-                    <img
-                      src={photoUrl}
-                      alt={`Foto ${photoIndex + 1}`}
-                      className="h-36 w-full rounded-md border border-gray-200 object-cover transition hover:brightness-95"
-                    />
-                  </a>
-                ))}
-              </div>
+              <SnapshotPhotoGrid photos={photos} title={title} itemIndex={index} />
             ) : null}
           </article>
         )

@@ -81,7 +81,6 @@ interface ObWizardProps {
   onPropertyUpdated?: (p: ObWizardProperty) => void
   onInspectionUpdated?: (i: ObWizardInspection) => void
   onInspectionAddonSelectionChanged?: (selectedAddonKeys: string[]) => void
-  onSectionChange?: (section: ObSectionKey) => void
   availableSections?: ObSectionKey[]
 }
 
@@ -183,7 +182,6 @@ export default function ObWizard({
   onPropertyUpdated,
   onInspectionUpdated,
   onInspectionAddonSelectionChanged,
-  onSectionChange,
   availableSections,
 }: ObWizardProps) {
   const normalizedProperty = useMemo<ObWizardProperty>(
@@ -874,7 +872,6 @@ export default function ObWizard({
           onPropertyUpdated={onPropertyUpdated}
           onInspectionUpdated={onInspectionUpdated}
           onInspectionAddonSelectionChanged={onInspectionAddonSelectionChanged}
-          onSectionChange={onSectionChange}
         />
       )
 

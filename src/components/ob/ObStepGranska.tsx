@@ -1,7 +1,6 @@
 'use client'
 
-import Link from 'next/link'
-import { ExternalLink, Pencil, RefreshCw } from 'lucide-react'
+import { Pencil, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import ObStepAreamatning from './ObStepAreamatning'
 import ObStepForutsattningar from './ObStepForutsattningar'
@@ -28,8 +27,10 @@ type EditableReviewTarget =
 type ReviewSection = {
   id: string
   title: string
-  subtitle: string
+  eyebrow: string
+  body: string
   target: EditableReviewTarget | null
+  summary: string[]
 }
 
 type ObStepGranskaProps = {
@@ -39,7 +40,6 @@ type ObStepGranskaProps = {
   onPropertyUpdated?: (property: ObWizardProperty) => void
   onInspectionUpdated?: (inspection: ObWizardInspection) => void
   onInspectionAddonSelectionChanged?: (selectedAddonKeys: string[]) => void
-  onSectionChange?: (section: ObSectionKey) => void
 }
 
 const EDITABLE_TARGET_LABELS: Record<EditableReviewTarget, string> = {
@@ -56,6 +56,26 @@ function isApartmentInspection(inspection: ObWizardInspection) {
   return String(inspection.inspection_side ?? '').trim().toLowerCase() === 'apartment'
 }
 
+function textOrDash(value: unknown) {
+  const text = String(value ?? '').trim()
+  return text.length > 0 ? text : '--'
+}
+
+function joinAddress(parts: Array<string | null | undefined>) {
+  const line = parts
+    .map((part) => String(part ?? '').trim())
+    .filter(Boolean)
+    .join(' ')
+  return line || '--'
+}
+
+function formatInspectionSide(value: unknown) {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'seller') return 'Säljare'
+  if (normalized === 'apartment') return 'Lägenhet'
+  return 'Köpare'
+}
+
 export default function ObStepGranska({
   property,
   inspection,
@@ -63,10 +83,8 @@ export default function ObStepGranska({
   onPropertyUpdated,
   onInspectionUpdated,
   onInspectionAddonSelectionChanged,
-  onSectionChange,
 }: ObStepGranskaProps) {
-  const [activeReviewSectionId, setActiveReviewSectionId] = useState('assignment')
-  const [previewVersion, setPreviewVersion] = useState(0)
+  const [activeTarget, setActiveTarget] = useState<EditableReviewTarget | null>(null)
   const availableSectionSet = useMemo(
     () => new Set<ObSectionKey>(availableSections),
     [availableSections]
@@ -77,95 +95,137 @@ export default function ObStepGranska({
     const sections: ReviewSection[] = [
       {
         id: 'cover',
-        title: 'Omslag',
-        subtitle: 'Objekt, uppdragsnummer, datum och besiktningsman.',
+        eyebrow: 'Omslag',
+        title: 'Utlåtandets grunduppgifter',
+        body:
+          'Det här motsvarar de uppgifter som läsaren möter först: objekt, uppdrag, datum och besiktningsman.',
         target: 'grunddata',
+        summary: [
+          `Uppdrag: ${textOrDash(inspection.assignment_number)}`,
+          `Besiktningsdatum: ${textOrDash(inspection.date)}`,
+          `Roll: ${formatInspectionSide(inspection.inspection_side)}`,
+          `Besiktningsman: ${textOrDash(inspection.inspector_name)}`,
+        ],
       },
       {
         id: 'assignment',
-        title: apartmentInspection ? 'Uppdraget' : 'Överlåtelsebesiktning',
-        subtitle: 'Beställare, objekt, omfattning och grunduppgifter.',
+        eyebrow: apartmentInspection ? 'Uppdraget' : 'Överlåtelsebesiktning',
+        title: textOrDash(property.name),
+        body:
+          'Objekt, beställare och omfattning samlas här eftersom de styr flera delar av utlåtandet.',
         target: 'grunddata',
+        summary: [
+          `Adress: ${joinAddress([property.address, property.postal_code, property.city])}`,
+          `Fastighetsbeteckning: ${textOrDash(property.cadastral_id)}`,
+          `Beställare: ${textOrDash(property.customer_name ?? inspection.client_name)}`,
+          `Omfattning: ${textOrDash(inspection.scope)}`,
+        ],
       },
       {
         id: 'documents',
-        title: 'Handlingar och upplysningar',
-        subtitle: 'Tillhandahållna handlingar, säljarupplysningar och kända fel.',
+        eyebrow: 'Handlingar och upplysningar',
+        title: 'Handlingar, uppgifter och kända fel',
+        body:
+          'Här redigeras underlag och upplysningar som senare redovisas före noteringarna i utlåtandet.',
         target: 'handlingar',
+        summary: [
+          `Upplysningar: ${textOrDash(inspection.defect_disclosures)}`,
+          'Handlingar redigeras i panelen.',
+        ],
       },
       {
         id: 'conditions',
-        title: 'Förutsättningar',
-        subtitle: 'Väder, möblering, åtkomst och övriga besiktningsförutsättningar.',
+        eyebrow: 'Förutsättningar',
+        title: 'Besiktningens förutsättningar',
+        body:
+          'Förutsättningarna beskriver väder, möblering, åtkomst och andra val som påverkar bedömningen.',
         target: 'forutsattningar',
+        summary: [
+          `Byggnadstyp: ${textOrDash(property.dwelling_type)}`,
+          `Byggnadsår: ${textOrDash(property.year_built)}`,
+          `Uppvärmning: ${textOrDash(property.heating)}`,
+          `Ventilation: ${textOrDash(property.ventilation)}`,
+        ],
       },
     ]
 
     if (availableSectionSet.has('utsida')) {
       sections.push({
         id: 'notes-exterior',
-        title: 'Noteringar - Byggnad utsida',
-        subtitle: 'Utvändiga noteringar, riskanalys, FTU och bilder.',
+        eyebrow: 'Noteringar',
+        title: 'Byggnad - utsida',
+        body:
+          'Utvändiga komponenter, kontrollpunkter, fria noteringar, riskanalys, FTU och bilder.',
         target: 'utsida',
+        summary: ['Mark', 'Grundmur / Sockel', 'Fasad', 'Yttertak', 'Övrigt'],
       })
     }
 
     sections.push({
       id: 'notes-interior',
-      title: apartmentInspection
-        ? 'Noteringar - Lägenhet insida'
-        : 'Noteringar - Byggnad insida',
-      subtitle: 'Invändiga noteringar, riskanalys, FTU och bilder.',
+      eyebrow: 'Noteringar',
+      title: apartmentInspection ? 'Lägenhet - insida' : 'Byggnad - insida',
+      body:
+        'Invändiga rum och byggdelar med noteringar, riskanalys, FTU och bilder i samma del som utlåtandet.',
       target: 'insida',
+      summary: apartmentInspection
+        ? ['Entré', 'Kök', 'Våtrum', 'Rum', 'Övrigt']
+        : ['Plan och rum', 'Kontrollpunkter', 'Bilder', 'Risk/FTU'],
     })
 
     if (availableSectionSet.has('areamatning')) {
       sections.push({
         id: 'area-measurement',
-        title: 'Bilaga - Areamätning',
-        subtitle: 'Mätuppgifter, resultat och sammanfattning.',
+        eyebrow: 'Bilaga',
+        title: 'Areamätning',
+        body:
+          'Mätuppgifter, resultat och sammanfattning visas i bilagan men redigeras från samma granskningsflöde.',
         target: 'areamatning',
+        summary: [
+          `Objekt: ${joinAddress([property.address, property.city])}`,
+          `Uppdrag: ${textOrDash(inspection.assignment_number)}`,
+        ],
       })
     }
 
     if (availableSectionSet.has('fuktkontroll')) {
       sections.push({
         id: 'moisture-control',
-        title: 'Bilaga - Fuktkontroll',
-        subtitle: 'Mätpunkter, bedömning och bilder.',
+        eyebrow: 'Bilaga',
+        title: 'Fuktkontroll',
+        body:
+          'Fuktindikering, mätpunkter, bedömning och bilder visas som egen bilaga i utlåtandet.',
         target: 'fuktkontroll',
+        summary: [
+          `Objekt: ${joinAddress([property.address, property.city])}`,
+          `Uppdrag: ${textOrDash(inspection.assignment_number)}`,
+        ],
       })
     }
 
     sections.push({
       id: 'appendices',
-      title: 'Villkor och bilagor',
-      subtitle: 'Standardbilagor och automatiskt innehåll i utlåtandet.',
+      eyebrow: 'Bilagor',
+      title: 'Villkor och standardbilagor',
+      body:
+        'Denna del skapas från utlåtandemallen och standardtexter. Den är med här för att ordningen ska kännas komplett.',
       target: null,
+      summary: ['Bilaga 1', 'Byggordbok', 'Livslängdstabell'],
     })
 
     return sections
-  }, [apartmentInspection, availableSectionSet])
+  }, [apartmentInspection, availableSectionSet, inspection, property])
 
-  const activeReviewSection =
-    reportSections.find((section) => section.id === activeReviewSectionId) ??
-    reportSections[0]
-  const reportHref =
-    property.id && inspection.id ? `/utlatande/${property.id}/${inspection.id}` : null
-  const iframeSrc = reportHref
-    ? `${reportHref}?embed=1&review=${previewVersion}`
-    : null
+  const activeSection =
+    activeTarget === null
+      ? null
+      : reportSections.find((section) => section.target === activeTarget) ?? null
 
-  function renderEditor(target: EditableReviewTarget | null) {
-    if (!target) {
-      return (
-        <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-sm text-gray-600">
-          Den här delen skapas automatiskt från utlåtandemallen och har ingen egen
-          redigeringsyta.
-        </div>
-      )
-    }
+  function closePanel() {
+    setActiveTarget(null)
+  }
 
+  function renderEditor(target: EditableReviewTarget) {
     switch (target) {
       case 'grunddata':
         return (
@@ -192,137 +252,117 @@ export default function ObStepGranska({
     }
   }
 
-  return (
-    <div className="grid min-h-[calc(100vh-8rem)] gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(26rem,36rem)]">
-      <section className="min-w-0 rounded-2xl border border-white/55 bg-white/95 p-3 shadow-xl ring-1 ring-black/5">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-700">
-              Förhandsgranskning
-            </p>
-            <h2 className="text-lg font-semibold text-gray-950">Utlåtande</h2>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setPreviewVersion((version) => version + 1)}
-              className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
-            >
-              <RefreshCw size={15} />
-              Uppdatera
-            </button>
-            {reportHref ? (
-              <Link
-                href={reportHref}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
-              >
-                <ExternalLink size={15} />
-                Ny flik
-              </Link>
-            ) : null}
-          </div>
+  const panelContent = activeTarget ? (
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-200 bg-white px-4 py-3 md:px-5">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700">
+            Redigera
+          </p>
+          <h2 className="text-lg font-semibold text-gray-950">
+            {activeSection?.title ?? EDITABLE_TARGET_LABELS[activeTarget]}
+          </h2>
         </div>
+        <button
+          type="button"
+          onClick={closePanel}
+          aria-label="Stäng"
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-700 transition hover:bg-gray-100"
+        >
+          <X size={20} strokeWidth={2.25} />
+        </button>
+      </header>
+      <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-3 md:p-5">
+        {renderEditor(activeTarget)}
+      </div>
+    </div>
+  ) : null
 
-        {iframeSrc ? (
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
-            <iframe
-              key={iframeSrc}
-              title="Utlåtande för granskning"
-              src={iframeSrc}
-              className="block w-full bg-white"
-              style={{ minHeight: 'calc(100vh - 14rem)', border: 0 }}
-            />
-          </div>
-        ) : (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            Utlåtandet kan inte förhandsgranskas innan fastighet och besiktning är valda.
-          </div>
-        )}
-      </section>
-
-      <aside className="min-w-0 rounded-2xl border border-white/55 bg-white/95 shadow-xl ring-1 ring-black/5 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-hidden">
-        <div className="border-b border-gray-200 p-4">
+  return (
+    <div className="min-h-[calc(100vh-8rem)] w-full min-w-0 max-w-full">
+      <div className="mx-auto w-full max-w-[1480px] space-y-4">
+        <section className="rounded-2xl border border-gray-200 bg-white/95 p-4 shadow-xl ring-1 ring-black/5 md:p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-700">
             Granska
           </p>
-          <h2 className="text-lg font-semibold text-gray-950">Redigera i rapportordning</h2>
-        </div>
-
-        <div className="grid gap-0 xl:max-h-[calc(100vh-7rem)] xl:grid-rows-[auto_minmax(0,1fr)]">
-          <nav className="border-b border-gray-200 p-3">
-            <div className="grid max-h-64 gap-2 overflow-auto pr-1">
-              {reportSections.map((section, index) => {
-                const isActive = section.id === activeReviewSection?.id
-                return (
-                  <button
-                    key={section.id}
-                    type="button"
-                    onClick={() => setActiveReviewSectionId(section.id)}
-                    className={`grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2 rounded-lg px-3 py-2 text-left transition ${
-                      isActive
-                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-950/10'
-                        : 'bg-gray-50 text-gray-800 hover:bg-gray-100'
-                    }`}
-                  >
-                    <span
-                      className={`mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                        isActive ? 'bg-white/20 text-white' : 'bg-white text-gray-500'
-                      }`}
-                    >
-                      {index + 1}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold">{section.title}</span>
-                      <span
-                        className={`mt-0.5 block truncate text-xs ${
-                          isActive ? 'text-white/80' : 'text-gray-500'
-                        }`}
-                      >
-                        {section.target ? EDITABLE_TARGET_LABELS[section.target] : 'Automatiskt'}
-                      </span>
-                    </span>
-                  </button>
-                )
-              })}
+          <div className="mt-1 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold text-gray-950">Utlåtandet i arbetsordning</h1>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600">
+                Alla redigerbara delar ligger i samma ordning som de hör hemma i utlåtandet.
+                Klicka på en del för att öppna redigering i sidopanelen.
+              </p>
             </div>
-          </nav>
-
-          <div className="min-h-0 overflow-auto p-4">
-            {activeReviewSection ? (
-              <div className="space-y-4">
-                <div className="rounded-lg border border-indigo-100 bg-indigo-50/70 p-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <h3 className="text-base font-semibold text-gray-950">
-                        {activeReviewSection.title}
-                      </h3>
-                      <p className="mt-1 text-sm text-gray-600">
-                        {activeReviewSection.subtitle}
-                      </p>
-                    </div>
-                    {activeReviewSection.target && onSectionChange ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const target = activeReviewSection.target
-                          if (target) onSectionChange(target)
-                        }}
-                        className="inline-flex items-center gap-2 rounded-md border border-indigo-200 bg-white px-3 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50"
-                      >
-                        <Pencil size={15} />
-                        Hel flik
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="min-w-0">{renderEditor(activeReviewSection.target)}</div>
-              </div>
-            ) : null}
+            <div className="text-sm font-medium text-gray-500">
+              {reportSections.length} delar
+            </div>
           </div>
-        </div>
-      </aside>
+        </section>
+
+        <section className="space-y-3">
+          {reportSections.map((section, index) => (
+            <article
+              key={section.id}
+              className="grid gap-4 rounded-2xl border border-gray-200 bg-white/95 p-4 shadow-sm ring-1 ring-black/5 md:grid-cols-[7.5rem_minmax(0,1fr)_auto] md:items-start md:p-5"
+            >
+              <div>
+                <div className="inline-flex h-9 min-w-9 items-center justify-center rounded-full bg-indigo-50 px-3 text-sm font-bold text-indigo-700">
+                  {index + 1}
+                </div>
+                <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
+                  {section.eyebrow}
+                </p>
+              </div>
+
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-gray-950">{section.title}</h2>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600">{section.body}</p>
+                {section.summary.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {section.summary.map((item) => (
+                      <span
+                        key={item}
+                        className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-700"
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex md:justify-end">
+                {section.target ? (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTarget(section.target)}
+                    className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                  >
+                    <Pencil size={15} />
+                    Redigera
+                  </button>
+                ) : (
+                  <span className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-500">
+                    Automatiskt
+                  </span>
+                )}
+              </div>
+            </article>
+          ))}
+        </section>
+      </div>
+
+      {activeTarget && panelContent ? (
+        <>
+          <div className="fixed inset-0 z-50 hidden bg-black/20 lg:block" onClick={closePanel} />
+          <aside className="fixed inset-y-0 right-0 z-50 hidden w-full max-w-[1440px] border-l border-gray-200 bg-white shadow-2xl lg:flex lg:flex-col">
+            {panelContent}
+          </aside>
+          <section className="fixed inset-0 z-50 flex flex-col bg-white lg:hidden">
+            {panelContent}
+          </section>
+        </>
+      ) : null}
     </div>
   )
 }

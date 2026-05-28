@@ -644,7 +644,9 @@ export default function InspectionDetailPage() {
 
         <div
           className={`relative mx-auto w-full ${
-            activeSection === 'runda' ? 'max-w-none space-y-0' : 'max-w-7xl space-y-3 md:space-y-4'
+            activeSection === 'runda' || activeSection === 'review'
+              ? 'max-w-none space-y-0'
+              : 'max-w-7xl space-y-3 md:space-y-4'
           }`}
         >
           {activeSection !== 'runda' ? (
@@ -708,7 +710,6 @@ export default function InspectionDetailPage() {
                 onPropertyUpdated={(updated) => setProperty(updated as Property)}
                 onInspectionUpdated={(updated) => setInspection(updated as Inspection)}
                 onInspectionAddonSelectionChanged={handleInspectionAddonSelectionChanged}
-                onSectionChange={setActiveSection}
                 availableSections={visibleSections.map((section) => section.key)}
               />
             </div>
