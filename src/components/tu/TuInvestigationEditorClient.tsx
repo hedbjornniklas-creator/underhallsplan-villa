@@ -32,6 +32,312 @@ type ImageApiResponse = {
   error?: string
 }
 
+type AssignmentPartiesFieldKey =
+  | 'customerName'
+  | 'customerRole'
+  | 'customerIdentityNumber'
+  | 'customerAddress'
+  | 'customerPhone'
+  | 'customerEmail'
+  | 'invoiceName'
+  | 'invoiceAddress'
+  | 'propertyOwnerName'
+  | 'inspectorName'
+  | 'inspectorCompany'
+  | 'inspectorOrgNo'
+  | 'inspectorAddress'
+  | 'inspectorPhone'
+  | 'inspectorEmail'
+  | 'inspectorSbrGroup'
+  | 'inspectorStatus'
+  | 'inspectorMembershipNumber'
+  | 'inspectorCertificationNumber'
+
+type AssignmentPartiesForm = Record<AssignmentPartiesFieldKey, string>
+
+type AssignmentPartiesField = {
+  key: AssignmentPartiesFieldKey
+  label: string
+  multiline?: boolean
+}
+
+const CUSTOMER_PARTY_FIELDS: AssignmentPartiesField[] = [
+  { key: 'customerName', label: 'Namn' },
+  { key: 'customerRole', label: 'Roll/beställartyp' },
+  { key: 'customerIdentityNumber', label: 'Person-/org.nr' },
+  { key: 'customerAddress', label: 'Adress', multiline: true },
+  { key: 'customerPhone', label: 'Telefon' },
+  { key: 'customerEmail', label: 'E-post' },
+  { key: 'invoiceName', label: 'Fakturanamn' },
+  { key: 'invoiceAddress', label: 'Fakturaadress', multiline: true },
+  { key: 'propertyOwnerName', label: 'Fastighetsägare' },
+]
+
+const INSPECTOR_PARTY_FIELDS: AssignmentPartiesField[] = [
+  { key: 'inspectorName', label: 'Namn' },
+  { key: 'inspectorCompany', label: 'Företag' },
+  { key: 'inspectorOrgNo', label: 'Org.nr' },
+  { key: 'inspectorAddress', label: 'Adress', multiline: true },
+  { key: 'inspectorPhone', label: 'Telefon' },
+  { key: 'inspectorEmail', label: 'E-post' },
+  { key: 'inspectorSbrGroup', label: 'SBR' },
+  { key: 'inspectorStatus', label: 'Status' },
+  { key: 'inspectorMembershipNumber', label: 'Medlemsnummer' },
+  { key: 'inspectorCertificationNumber', label: 'Certifieringsnummer' },
+]
+
+const EMPTY_ASSIGNMENT_PARTIES_FORM: AssignmentPartiesForm = {
+  customerName: '',
+  customerRole: '',
+  customerIdentityNumber: '',
+  customerAddress: '',
+  customerPhone: '',
+  customerEmail: '',
+  invoiceName: '',
+  invoiceAddress: '',
+  propertyOwnerName: '',
+  inspectorName: '',
+  inspectorCompany: '',
+  inspectorOrgNo: '',
+  inspectorAddress: '',
+  inspectorPhone: '',
+  inspectorEmail: '',
+  inspectorSbrGroup: '',
+  inspectorStatus: '',
+  inspectorMembershipNumber: '',
+  inspectorCertificationNumber: '',
+}
+
+function cleanFieldValue(value: string | null | undefined) {
+  return value?.trim() ?? ''
+}
+
+function compactAddress(parts: Array<string | null | undefined>) {
+  return parts.map(cleanFieldValue).filter(Boolean).join(', ')
+}
+
+function getSectionText(draft: TuReportDraft, key: TuReportSectionKey) {
+  return draft.sections.find((section) => section.key === key)?.text ?? ''
+}
+
+function assignIfPresent(
+  form: AssignmentPartiesForm,
+  key: AssignmentPartiesFieldKey,
+  value: string | null | undefined
+) {
+  const cleaned = cleanFieldValue(value)
+  if (cleaned) form[key] = cleaned
+}
+
+function parseAssignmentPartiesText(text: string) {
+  const parsed: Partial<AssignmentPartiesForm> = {}
+  let activeBlock: 'customer' | 'inspector' | null = null
+
+  for (const rawLine of text.replace(/\r\n/g, '\n').split('\n')) {
+    const line = rawLine.trim()
+    if (!line) continue
+
+    if (line.toLowerCase() === 'uppdragsgivare') {
+      activeBlock = 'customer'
+      continue
+    }
+    if (line.toLowerCase() === 'besiktningsman') {
+      activeBlock = 'inspector'
+      continue
+    }
+
+    const separatorIndex = line.indexOf(':')
+    if (!activeBlock || separatorIndex < 0) continue
+
+    const label = line.slice(0, separatorIndex).trim().toLowerCase()
+    const value = line.slice(separatorIndex + 1).trim()
+    if (!value) continue
+
+    if (activeBlock === 'customer') {
+      if (label === 'namn') parsed.customerName = value
+      if (label === 'roll/beställartyp' || label === 'roll' || label === 'beställartyp') parsed.customerRole = value
+      if (
+        label === 'person-/org.nr' ||
+        label === 'person-/organisationsnummer' ||
+        label === 'personnummer/org.nr'
+      ) {
+        parsed.customerIdentityNumber = value
+      }
+      if (label === 'adress') parsed.customerAddress = value
+      if (label === 'telefon') parsed.customerPhone = value
+      if (label === 'e-post') parsed.customerEmail = value
+      if (label === 'fakturanamn') parsed.invoiceName = value
+      if (label === 'fakturaadress') parsed.invoiceAddress = value
+      if (label === 'fastighetsägare') parsed.propertyOwnerName = value
+    }
+
+    if (activeBlock === 'inspector') {
+      if (label === 'namn') parsed.inspectorName = value
+      if (label === 'företag') parsed.inspectorCompany = value
+      if (label === 'org.nr') parsed.inspectorOrgNo = value
+      if (label === 'adress') parsed.inspectorAddress = value
+      if (label === 'telefon') parsed.inspectorPhone = value
+      if (label === 'e-post') parsed.inspectorEmail = value
+      if (label === 'sbr') parsed.inspectorSbrGroup = value
+      if (label === 'status') parsed.inspectorStatus = value
+      if (label === 'medlemsnummer') parsed.inspectorMembershipNumber = value
+      if (label === 'certifieringsnummer') parsed.inspectorCertificationNumber = value
+    }
+  }
+
+  return parsed
+}
+
+function mergeNonEmptyFields(base: AssignmentPartiesForm, parsed: Partial<AssignmentPartiesForm>) {
+  const next = { ...base }
+  for (const [key, value] of Object.entries(parsed) as Array<[AssignmentPartiesFieldKey, string | undefined]>) {
+    if (cleanFieldValue(value)) next[key] = cleanFieldValue(value)
+  }
+  return next
+}
+
+function buildAssignmentPartiesForm(investigation: TuInvestigationDetails): AssignmentPartiesForm {
+  const assignment = investigation.assignment
+  const inspection = investigation.inspection
+  const inspector = investigation.inspector
+  const base = { ...EMPTY_ASSIGNMENT_PARTIES_FORM }
+
+  assignIfPresent(base, 'customerName', assignment?.customer_name ?? inspection.customer_name)
+  assignIfPresent(base, 'customerRole', assignment?.orderer_role)
+  assignIfPresent(base, 'customerIdentityNumber', assignment?.personal_identity_number)
+  assignIfPresent(
+    base,
+    'customerAddress',
+    compactAddress([
+      assignment?.customer_address ?? inspection.customer_address,
+      compactAddress([
+        assignment?.customer_postal_code ?? inspection.customer_postal_code,
+        assignment?.customer_city ?? inspection.customer_city,
+      ]),
+    ])
+  )
+  assignIfPresent(base, 'customerPhone', assignment?.customer_phone ?? inspection.customer_phone)
+  assignIfPresent(base, 'customerEmail', assignment?.customer_email ?? inspection.customer_email)
+  assignIfPresent(base, 'invoiceName', assignment?.invoice_name)
+  assignIfPresent(base, 'invoiceAddress', assignment?.invoice_address)
+  assignIfPresent(base, 'propertyOwnerName', assignment?.property_owner_name)
+
+  assignIfPresent(base, 'inspectorName', inspector?.full_name)
+  assignIfPresent(base, 'inspectorCompany', inspector?.company_name)
+  assignIfPresent(base, 'inspectorOrgNo', inspector?.company_orgno)
+  assignIfPresent(
+    base,
+    'inspectorAddress',
+    compactAddress([inspector?.company_address, compactAddress([inspector?.company_postal_code, inspector?.company_city])])
+  )
+  assignIfPresent(base, 'inspectorPhone', inspector?.phone)
+  assignIfPresent(base, 'inspectorEmail', inspector?.email)
+  assignIfPresent(base, 'inspectorSbrGroup', inspector?.sbr_group)
+  assignIfPresent(base, 'inspectorStatus', inspector?.sbr_status)
+  assignIfPresent(base, 'inspectorMembershipNumber', inspector?.membership_number)
+  assignIfPresent(base, 'inspectorCertificationNumber', inspector?.certification_number)
+
+  const parsed = parseAssignmentPartiesText(getSectionText(investigation.reportDraft, 'assignment_parties'))
+  const parsedCustomerFields = Object.fromEntries(
+    Object.entries(parsed).filter(([key]) => key.startsWith('customer') || key.startsWith('invoice') || key === 'propertyOwnerName')
+  ) as Partial<AssignmentPartiesForm>
+
+  const merged = mergeNonEmptyFields(base, parsedCustomerFields)
+  for (const field of INSPECTOR_PARTY_FIELDS) {
+    if (!merged[field.key] && cleanFieldValue(parsed[field.key])) {
+      merged[field.key] = cleanFieldValue(parsed[field.key])
+    }
+  }
+
+  return merged
+}
+
+function buildLine(label: string, value: string) {
+  const cleaned = cleanFieldValue(value)
+  return cleaned ? `${label}: ${cleaned}` : null
+}
+
+function buildAssignmentPartiesText(form: AssignmentPartiesForm) {
+  const customerLines = [
+    buildLine('Namn', form.customerName),
+    buildLine('Roll/beställartyp', form.customerRole),
+    buildLine('Person-/org.nr', form.customerIdentityNumber),
+    buildLine('Adress', form.customerAddress),
+    buildLine('Telefon', form.customerPhone),
+    buildLine('E-post', form.customerEmail),
+    buildLine('Fakturanamn', form.invoiceName),
+    buildLine('Fakturaadress', form.invoiceAddress),
+    buildLine('Fastighetsägare', form.propertyOwnerName),
+  ].filter(Boolean)
+
+  const inspectorLines = [
+    buildLine('Namn', form.inspectorName),
+    buildLine('Företag', form.inspectorCompany),
+    buildLine('Org.nr', form.inspectorOrgNo),
+    buildLine('Adress', form.inspectorAddress),
+    buildLine('Telefon', form.inspectorPhone),
+    buildLine('E-post', form.inspectorEmail),
+    buildLine('SBR', form.inspectorSbrGroup),
+    buildLine('Status', form.inspectorStatus),
+    buildLine('Medlemsnummer', form.inspectorMembershipNumber),
+    buildLine('Certifieringsnummer', form.inspectorCertificationNumber),
+  ].filter(Boolean)
+
+  return [
+    'Uppdragsgivare',
+    ...(customerLines.length > 0 ? customerLines : ['Ej angivet.']),
+    '',
+    'Besiktningsman',
+    ...(inspectorLines.length > 0 ? inspectorLines : ['Ej angivet.']),
+  ].join('\n')
+}
+
+function AssignmentPartiesInput({
+  field,
+  value,
+  disabled,
+  readOnly,
+  onChange,
+  onBlur,
+}: {
+  field: AssignmentPartiesField
+  value: string
+  disabled: boolean
+  readOnly?: boolean
+  onChange?: (value: string) => void
+  onBlur?: () => void
+}) {
+  const inputClassName = `w-full rounded-md border border-gray-300 px-3 py-2 text-sm leading-5 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 ${
+    readOnly ? 'bg-gray-50 text-gray-700' : 'bg-white'
+  } disabled:bg-gray-100 disabled:text-gray-500`
+
+  return (
+    <label className="space-y-1">
+      <span className="block text-xs font-medium text-gray-600">{field.label}</span>
+      {field.multiline ? (
+        <textarea
+          value={value}
+          rows={2}
+          readOnly={readOnly}
+          disabled={disabled}
+          onChange={(event) => onChange?.(event.target.value)}
+          onBlur={onBlur}
+          className={`${inputClassName} resize-y`}
+        />
+      ) : (
+        <input
+          value={value}
+          readOnly={readOnly}
+          disabled={disabled}
+          onChange={(event) => onChange?.(event.target.value)}
+          onBlur={onBlur}
+          className={`${inputClassName} h-10`}
+        />
+      )}
+    </label>
+  )
+}
+
 function cloneDraftWithSection(draft: TuReportDraft, key: TuReportSectionKey, text: string): TuReportDraft {
   return {
     sections: draft.sections.map((section) => (section.key === key ? { ...section, text } : section)),
@@ -86,6 +392,9 @@ export default function TuInvestigationEditorClient({
   const [draft, setDraft] = useState<TuReportDraft>(initialInvestigation.reportDraft)
   const [title, setTitle] = useState(initialInvestigation.title)
   const [scopeDescription, setScopeDescription] = useState(initialInvestigation.scopeDescription ?? '')
+  const [assignmentParties, setAssignmentParties] = useState<AssignmentPartiesForm>(() =>
+    buildAssignmentPartiesForm(initialInvestigation)
+  )
   const [error, setError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [images, setImages] = useState<TuInvestigationImage[]>([])
@@ -95,12 +404,17 @@ export default function TuInvestigationEditorClient({
   const [bankDropActive, setBankDropActive] = useState(false)
   const [appendixDropActive, setAppendixDropActive] = useState(false)
   const draftRef = useRef(initialInvestigation.reportDraft)
+  const assignmentPartiesRef = useRef(assignmentParties)
   const bankFileInputRef = useRef<HTMLInputElement>(null)
   const appendixFileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     draftRef.current = draft
   }, [draft])
+
+  useEffect(() => {
+    assignmentPartiesRef.current = assignmentParties
+  }, [assignmentParties])
 
   useEffect(() => {
     let cancelled = false
@@ -169,6 +483,25 @@ export default function TuInvestigationEditorClient({
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara avsnittet.')
       throw saveError
+    }
+  }
+
+  const updateAssignmentPartiesField = (field: AssignmentPartiesFieldKey, value: string) => {
+    setAssignmentParties((current) => {
+      const next = { ...current, [field]: value }
+      assignmentPartiesRef.current = next
+      const nextDraft = cloneDraftWithSection(draftRef.current, 'assignment_parties', buildAssignmentPartiesText(next))
+      draftRef.current = nextDraft
+      setDraft(nextDraft)
+      return next
+    })
+  }
+
+  const saveAssignmentParties = async () => {
+    try {
+      await saveSection('assignment_parties', buildAssignmentPartiesText(assignmentPartiesRef.current))
+    } catch {
+      // saveSection already shows the specific error state.
     }
   }
 
@@ -612,29 +945,81 @@ export default function TuInvestigationEditorClient({
         ) : null}
 
         <section className="space-y-4">
-          {draft.sections.map((section, index) => (
-            <article key={section.key} className="rounded-lg border border-violet-100 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-base font-semibold text-gray-950">
-                  {index + 1}. {section.title}
-                </h2>
-                <Save size={16} className="text-violet-500" aria-hidden />
-              </div>
-              <DebouncedTextarea
-                value={section.text}
-                draftKey={`tu:${investigation.inspectionId}:${section.key}`}
-                disabled={locked}
-                rows={7}
-                className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
-                onValueChange={(value) => {
-                  const nextDraft = cloneDraftWithSection(draftRef.current, section.key, value)
-                  draftRef.current = nextDraft
-                  setDraft(nextDraft)
-                }}
-                onSave={(value) => saveSection(section.key, value)}
-              />
-            </article>
-          ))}
+          {draft.sections.map((section, index) => {
+            const isAssignmentParties = section.key === 'assignment_parties'
+
+            return (
+              <article key={section.key} className="rounded-lg border border-violet-100 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-base font-semibold text-gray-950">
+                    {index + 1}. {section.title}
+                  </h2>
+                  {isAssignmentParties ? (
+                    <button
+                      type="button"
+                      onClick={() => void saveAssignmentParties()}
+                      disabled={locked}
+                      className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                    >
+                      <Save size={15} aria-hidden />
+                      Spara uppgifter
+                    </button>
+                  ) : (
+                    <Save size={16} className="text-violet-500" aria-hidden />
+                  )}
+                </div>
+
+                {isAssignmentParties ? (
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-md border border-gray-200 bg-gray-50/60 p-3">
+                      <h3 className="mb-3 text-sm font-semibold text-gray-950">Uppdragsgivare</h3>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {CUSTOMER_PARTY_FIELDS.map((field) => (
+                          <AssignmentPartiesInput
+                            key={field.key}
+                            field={field}
+                            value={assignmentParties[field.key]}
+                            disabled={locked}
+                            onChange={(value) => updateAssignmentPartiesField(field.key, value)}
+                            onBlur={() => void saveAssignmentParties()}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border border-gray-200 bg-gray-50/60 p-3">
+                      <h3 className="mb-3 text-sm font-semibold text-gray-950">Besiktningsman</h3>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {INSPECTOR_PARTY_FIELDS.map((field) => (
+                          <AssignmentPartiesInput
+                            key={field.key}
+                            field={field}
+                            value={assignmentParties[field.key]}
+                            disabled={locked}
+                            readOnly
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <DebouncedTextarea
+                    value={section.text}
+                    draftKey={`tu:${investigation.inspectionId}:${section.key}`}
+                    disabled={locked}
+                    rows={7}
+                    className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
+                    onValueChange={(value) => {
+                      const nextDraft = cloneDraftWithSection(draftRef.current, section.key, value)
+                      draftRef.current = nextDraft
+                      setDraft(nextDraft)
+                    }}
+                    onSave={(value) => saveSection(section.key, value)}
+                  />
+                )}
+              </article>
+            )
+          })}
         </section>
       </div>
     </main>

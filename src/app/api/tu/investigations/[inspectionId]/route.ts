@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import {
+  deleteTuInvestigation,
   getTuInvestigationById,
   normalizeTuReportDraft,
   requireTuContext,
@@ -77,5 +78,25 @@ export async function PATCH(
     const mapped = mapError(error)
     if (mapped) return mapped
     return jsonError('Kunde inte spara TU-utredning.', 500)
+  }
+}
+
+export async function DELETE(
+  _request: Request,
+  context: { params: Promise<{ inspectionId: string }> }
+) {
+  try {
+    const { inspectionId } = await context.params
+    const orgContext = await requireTuContext()
+    const result = await deleteTuInvestigation({
+      orgId: orgContext.orgId,
+      inspectionId,
+    })
+
+    return NextResponse.json(result)
+  } catch (error) {
+    const mapped = mapError(error)
+    if (mapped) return mapped
+    return jsonError('Kunde inte radera TU-utredning.', 500)
   }
 }

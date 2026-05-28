@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ChevronsLeft, FileText, Plus } from 'lucide-react'
+import { ArrowLeft, ChevronsLeft, FileText, Plus, Trash2 } from 'lucide-react'
 import Protected from '@/components/Protected'
 
 type InvestigationItem = {
@@ -128,6 +128,7 @@ export default function TuInvestigationsPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [currentPage, setCurrentPage] = useState(1)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     const loadInvestigations = async () => {
@@ -266,6 +267,31 @@ export default function TuInvestigationsPage() {
 
   const openInvestigation = (inspectionId: string) => {
     router.push(`/tu/investigations/${inspectionId}`)
+  }
+
+  const deleteInvestigation = async (item: InvestigationItem) => {
+    if (item.reportLockedAt) {
+      setError('Låsta utlåtanden kan inte raderas.')
+      return
+    }
+
+    const confirmed = window.confirm(`Radera utlåtandet "${item.title}"? Det går inte att ångra.`)
+    if (!confirmed) return
+
+    try {
+      setDeletingId(item.inspectionId)
+      setError(null)
+      const response = await fetch(`/api/tu/investigations/${encodeURIComponent(item.inspectionId)}`, {
+        method: 'DELETE',
+      })
+      const payload = (await response.json().catch(() => ({}))) as { error?: string }
+      if (!response.ok) throw new Error(payload.error ?? 'Kunde inte radera utlåtandet.')
+      setItems((prev) => prev.filter((row) => row.inspectionId !== item.inspectionId))
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera utlåtandet.')
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   return (
@@ -427,7 +453,7 @@ export default function TuInvestigationsPage() {
                         </td>
                         <td className="px-3 py-2 align-middle whitespace-nowrap font-medium">{getStatusLabel(item)}</td>
                         <td className="px-3 py-2 align-middle whitespace-nowrap">
-                          <div className="flex items-center justify-end">
+                          <div className="flex items-center justify-end gap-1">
                             <button
                               type="button"
                               onClick={(event) => {
@@ -440,6 +466,20 @@ export default function TuInvestigationsPage() {
                               className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-300 bg-white/95 text-violet-700 transition hover:bg-violet-50"
                             >
                               <FileText size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                void deleteInvestigation(item)
+                              }}
+                              disabled={deletingId === item.inspectionId}
+                              title={item.reportLockedAt ? 'Låsta utlåtanden kan inte raderas' : 'Radera utlåtande'}
+                              aria-label={item.reportLockedAt ? 'Låsta utlåtanden kan inte raderas' : 'Radera utlåtande'}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-rose-200 bg-white/95 text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <Trash2 size={13} />
                             </button>
                           </div>
                         </td>

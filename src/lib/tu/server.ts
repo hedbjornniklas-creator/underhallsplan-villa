@@ -224,6 +224,7 @@ type TuStorageClient = TuSupabaseClient & {
   storage: {
     from: (bucket: string) => {
       getPublicUrl: (path: string) => { data: { publicUrl: string } }
+      remove: (paths: string[]) => Promise<{ error: SupabaseError }>
     }
   }
 }
@@ -389,9 +390,14 @@ function buildTuAssignmentPartiesText(input: {
 
   const customerLines = [
     joinLine('Namn', assignment?.customer_name ?? inspection?.customer_name),
+    joinLine('Roll/beställartyp', assignment?.orderer_role),
+    joinLine('Person-/org.nr', assignment?.personal_identity_number),
     joinLine('Adress', customerAddress),
     joinLine('Telefon', assignment?.customer_phone ?? inspection?.customer_phone),
     joinLine('E-post', assignment?.customer_email ?? inspection?.customer_email),
+    joinLine('Fakturanamn', assignment?.invoice_name),
+    joinLine('Fakturaadress', assignment?.invoice_address),
+    joinLine('Fastighetsägare', assignment?.property_owner_name),
   ].filter(Boolean)
 
   const inspectorLines = [
@@ -1160,4 +1166,53 @@ export async function updateTuInvestigationDraft(input: {
     inspectionId: input.inspectionId,
     inspectorProfileId: input.updatedBy,
   })
+}
+
+export async function deleteTuInvestigation(input: {
+  orgId: string
+  inspectionId: string
+}) {
+  const admin = createSupabaseAdminClient() as unknown as TuStorageClient
+  const { data: detailData, error: detailError } = await admin
+    .from('technical_investigation_details')
+    .select('inspection_id,report_locked_at')
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .maybeSingle()
+
+  if (detailError) throw new Error(detailError.message ?? 'Kunde inte hämta TU-utredning.')
+  if (!detailData) throw new Error('TU_INVESTIGATION_NOT_FOUND')
+
+  const detail = detailData as Pick<TuDetailRow, 'inspection_id' | 'report_locked_at'>
+  if (detail.report_locked_at) throw new Error('TU_REPORT_LOCKED')
+
+  const { data: imageRows, error: imageError } = await admin
+    .from('technical_investigation_images')
+    .select('storage_bucket,file_path')
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', detail.inspection_id)
+
+  if (imageError) throw new Error(imageError.message ?? 'Kunde inte hämta TU-bilder.')
+
+  const pathsByBucket = new Map<string, string[]>()
+  for (const row of (imageRows ?? []) as Array<Pick<TuImageRow, 'storage_bucket' | 'file_path'>>) {
+    const bucket = row.storage_bucket?.trim() || 'inspection-images'
+    const path = row.file_path?.trim()
+    if (!path) continue
+    pathsByBucket.set(bucket, [...(pathsByBucket.get(bucket) ?? []), path])
+  }
+
+  for (const [bucket, paths] of pathsByBucket) {
+    const { error: storageError } = await admin.storage.from(bucket).remove(paths)
+    if (storageError) throw new Error(storageError.message ?? 'Kunde inte radera TU-bilder.')
+  }
+
+  const { error: deleteError } = await admin
+    .from('inspections')
+    .delete()
+    .eq('id', detail.inspection_id)
+
+  if (deleteError) throw new Error(deleteError.message ?? 'Kunde inte radera TU-utredning.')
+
+  return { inspectionId: detail.inspection_id }
 }
