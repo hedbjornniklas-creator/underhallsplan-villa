@@ -313,7 +313,9 @@ export default async function TuInvestigationPrintPage({
 
           <ImageAppendix images={appendixImages} />
         </div>
-        <CompanyFooter investigation={investigation} />
+        <div className="tu-print-screen-footer">
+          <CompanyFooter investigation={investigation} />
+        </div>
       </article>
     </main>
   )

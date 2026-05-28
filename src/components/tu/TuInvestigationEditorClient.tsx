@@ -516,6 +516,23 @@ function formatFileSize(bytes: number | null | undefined) {
   return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`
 }
 
+function getCollapsedSectionsStorageKey(inspectionId: string) {
+  return `tu:${inspectionId}:collapsed-sections`
+}
+
+function parseStoredCollapsedSections(value: string | null, allowedKeys: Set<string>) {
+  if (!value) return new Set<TuReportSectionKey>()
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (!Array.isArray(parsed)) return new Set<TuReportSectionKey>()
+    return new Set(
+      parsed.filter((key): key is TuReportSectionKey => typeof key === 'string' && allowedKeys.has(key))
+    )
+  } catch {
+    return new Set<TuReportSectionKey>()
+  }
+}
+
 export default function TuInvestigationEditorClient({
   initialInvestigation,
 }: {
@@ -566,6 +583,12 @@ export default function TuInvestigationEditorClient({
   useEffect(() => {
     assignmentPartiesRef.current = assignmentParties
   }, [assignmentParties])
+
+  useEffect(() => {
+    const allowedKeys = new Set(draftRef.current.sections.map((section) => section.key))
+    const stored = window.localStorage.getItem(getCollapsedSectionsStorageKey(initialInvestigation.inspectionId))
+    setCollapsedSections(parseStoredCollapsedSections(stored, allowedKeys))
+  }, [initialInvestigation.inspectionId])
 
   useEffect(() => {
     let cancelled = false
@@ -708,6 +731,10 @@ export default function TuInvestigationEditorClient({
       const next = new Set(current)
       if (next.has(key)) next.delete(key)
       else next.add(key)
+      window.localStorage.setItem(
+        getCollapsedSectionsStorageKey(investigation.inspectionId),
+        JSON.stringify(Array.from(next))
+      )
       return next
     })
   }

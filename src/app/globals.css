@@ -47,6 +47,42 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
       font-weight: 700;
       color: #111827;
     }
+
+    @bottom-left {
+      content: "Besiktningsbolaget Stockholm\AOrg.nr 559281-0823\ABryggvägen 7, 117 71, Stockholm";
+      white-space: pre;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+      line-height: 1.25;
+      color: #374151;
+      border-top: 0.5pt solid #d1d5db;
+      padding-top: 5mm;
+      width: 70mm;
+    }
+
+    @bottom-center {
+      content: "0735678716\Aniklas.h@bbsab.nu";
+      white-space: pre;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+      line-height: 1.25;
+      color: #374151;
+      border-top: 0.5pt solid #d1d5db;
+      padding-top: 5mm;
+      width: 45mm;
+      text-align: center;
+    }
+
+    @bottom-right {
+      content: "Skapat med BesiktApp";
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 7.5pt;
+      color: #6b7280;
+      border-top: 0.5pt solid #d1d5db;
+      padding-top: 5mm;
+      width: 36mm;
+      text-align: right;
+    }
   }
 
   html,
@@ -301,10 +337,7 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
   }
 
   .tu-print-footer {
-    position: fixed !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: -8mm !important;
+    position: static !important;
     display: grid !important;
     min-height: 12mm !important;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28mm !important;
@@ -313,6 +346,10 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     padding-top: 2mm !important;
     font-size: 8pt !important;
     line-height: 1.25 !important;
+  }
+
+  .tu-print-screen-footer {
+    display: none !important;
   }
 
   .tu-print-powered-by {
