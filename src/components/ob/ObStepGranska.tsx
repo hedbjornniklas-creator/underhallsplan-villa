@@ -1,7 +1,6 @@
 'use client'
 
-import { Pencil, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import ObStepAreamatning from './ObStepAreamatning'
 import ObStepForutsattningar from './ObStepForutsattningar'
 import ObStepFuktkontroll from './ObStepFuktkontroll'
@@ -84,7 +83,6 @@ export default function ObStepGranska({
   onInspectionUpdated,
   onInspectionAddonSelectionChanged,
 }: ObStepGranskaProps) {
-  const [activeTarget, setActiveTarget] = useState<EditableReviewTarget | null>(null)
   const availableSectionSet = useMemo(
     () => new Set<ObSectionKey>(availableSections),
     [availableSections]
@@ -94,31 +92,18 @@ export default function ObStepGranska({
   const reportSections = useMemo<ReviewSection[]>(() => {
     const sections: ReviewSection[] = [
       {
-        id: 'cover',
-        eyebrow: 'Omslag',
-        title: 'Utlåtandets grunduppgifter',
+        id: 'assignment',
+        eyebrow: apartmentInspection ? 'Uppdraget' : 'Grunduppgifter',
+        title: apartmentInspection ? 'Uppdrag och objekt' : 'Överlåtelsebesiktning',
         body:
-          'Det här motsvarar de uppgifter som läsaren möter först: objekt, uppdrag, datum och besiktningsman.',
+          'Uppdrag, objekt, beställare, omfattning och de uppgifter som visas först i utlåtandet.',
         target: 'grunddata',
         summary: [
           `Uppdrag: ${textOrDash(inspection.assignment_number)}`,
           `Besiktningsdatum: ${textOrDash(inspection.date)}`,
           `Roll: ${formatInspectionSide(inspection.inspection_side)}`,
-          `Besiktningsman: ${textOrDash(inspection.inspector_name)}`,
-        ],
-      },
-      {
-        id: 'assignment',
-        eyebrow: apartmentInspection ? 'Uppdraget' : 'Överlåtelsebesiktning',
-        title: textOrDash(property.name),
-        body:
-          'Objekt, beställare och omfattning samlas här eftersom de styr flera delar av utlåtandet.',
-        target: 'grunddata',
-        summary: [
           `Adress: ${joinAddress([property.address, property.postal_code, property.city])}`,
           `Fastighetsbeteckning: ${textOrDash(property.cadastral_id)}`,
-          `Beställare: ${textOrDash(property.customer_name ?? inspection.client_name)}`,
-          `Omfattning: ${textOrDash(inspection.scope)}`,
         ],
       },
       {
@@ -216,15 +201,6 @@ export default function ObStepGranska({
     return sections
   }, [apartmentInspection, availableSectionSet, inspection, property])
 
-  const activeSection =
-    activeTarget === null
-      ? null
-      : reportSections.find((section) => section.target === activeTarget) ?? null
-
-  function closePanel() {
-    setActiveTarget(null)
-  }
-
   function renderEditor(target: EditableReviewTarget) {
     switch (target) {
       case 'grunddata':
@@ -252,32 +228,6 @@ export default function ObStepGranska({
     }
   }
 
-  const panelContent = activeTarget ? (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-200 bg-white px-4 py-3 md:px-5">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700">
-            Redigera
-          </p>
-          <h2 className="text-lg font-semibold text-gray-950">
-            {activeSection?.title ?? EDITABLE_TARGET_LABELS[activeTarget]}
-          </h2>
-        </div>
-        <button
-          type="button"
-          onClick={closePanel}
-          aria-label="Stäng"
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-700 transition hover:bg-gray-100"
-        >
-          <X size={20} strokeWidth={2.25} />
-        </button>
-      </header>
-      <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-3 md:p-5">
-        {renderEditor(activeTarget)}
-      </div>
-    </div>
-  ) : null
-
   return (
     <div className="min-h-[calc(100vh-8rem)] w-full min-w-0 max-w-full">
       <div className="mx-auto w-full max-w-[1480px] space-y-4">
@@ -289,8 +239,9 @@ export default function ObStepGranska({
             <div>
               <h1 className="text-2xl font-semibold text-gray-950">Utlåtandet i arbetsordning</h1>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600">
-                Alla redigerbara delar ligger i samma ordning som de hör hemma i utlåtandet.
-                Klicka på en del för att öppna redigering i sidopanelen.
+                Alla redigerbara delar visas direkt på sidan i samma ordning som de hör hemma
+                i utlåtandet. Det är inte en PDF-förhandsgranskare, utan ett arbetsläge som
+                samlar ÖB-flikarna i ett löpande dokumentflöde.
               </p>
             </div>
             <div className="text-sm font-medium text-gray-500">
@@ -303,66 +254,56 @@ export default function ObStepGranska({
           {reportSections.map((section, index) => (
             <article
               key={section.id}
-              className="grid gap-4 rounded-2xl border border-gray-200 bg-white/95 p-4 shadow-sm ring-1 ring-black/5 md:grid-cols-[7.5rem_minmax(0,1fr)_auto] md:items-start md:p-5"
+              className="overflow-hidden rounded-2xl border border-gray-200 bg-white/95 shadow-sm ring-1 ring-black/5"
             >
-              <div>
-                <div className="inline-flex h-9 min-w-9 items-center justify-center rounded-full bg-indigo-50 px-3 text-sm font-bold text-indigo-700">
-                  {index + 1}
-                </div>
-                <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
-                  {section.eyebrow}
-                </p>
-              </div>
-
-              <div className="min-w-0">
-                <h2 className="text-lg font-semibold text-gray-950">{section.title}</h2>
-                <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600">{section.body}</p>
-                {section.summary.length > 0 ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {section.summary.map((item) => (
-                      <span
-                        key={item}
-                        className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-700"
-                      >
-                        {item}
-                      </span>
-                    ))}
+              <header className="grid gap-4 border-b border-gray-200 bg-white p-4 md:grid-cols-[7.5rem_minmax(0,1fr)] md:items-start md:p-5">
+                <div>
+                  <div className="inline-flex h-9 min-w-9 items-center justify-center rounded-full bg-indigo-50 px-3 text-sm font-bold text-indigo-700">
+                    {index + 1}
                   </div>
-                ) : null}
-              </div>
+                  <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
+                    {section.eyebrow}
+                  </p>
+                </div>
 
-              <div className="flex md:justify-end">
-                {section.target ? (
-                  <button
-                    type="button"
-                    onClick={() => setActiveTarget(section.target)}
-                    className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                  >
-                    <Pencil size={15} />
-                    Redigera
-                  </button>
-                ) : (
-                  <span className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-500">
-                    Automatiskt
-                  </span>
-                )}
-              </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-semibold text-gray-950">{section.title}</h2>
+                      <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600">{section.body}</p>
+                    </div>
+                    <span className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-500">
+                      {section.target ? EDITABLE_TARGET_LABELS[section.target] : 'Automatiskt'}
+                    </span>
+                  </div>
+                  {section.summary.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {section.summary.map((item) => (
+                        <span
+                          key={item}
+                          className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-700"
+                        >
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </header>
+
+              {section.target ? (
+                <div className="bg-slate-50 p-3 md:p-5">
+                  {renderEditor(section.target)}
+                </div>
+              ) : (
+                <div className="bg-slate-50 p-4 text-sm text-gray-600 md:p-5">
+                  Den här delen skapas automatiskt från utlåtandemallen och standardtexterna.
+                </div>
+              )}
             </article>
           ))}
         </section>
       </div>
-
-      {activeTarget && panelContent ? (
-        <>
-          <div className="fixed inset-0 z-50 hidden bg-black/20 lg:block" onClick={closePanel} />
-          <aside className="fixed inset-y-0 right-0 z-50 hidden w-full max-w-[1440px] border-l border-gray-200 bg-white shadow-2xl lg:flex lg:flex-col">
-            {panelContent}
-          </aside>
-          <section className="fixed inset-0 z-50 flex flex-col bg-white lg:hidden">
-            {panelContent}
-          </section>
-        </>
-      ) : null}
     </div>
   )
 }
