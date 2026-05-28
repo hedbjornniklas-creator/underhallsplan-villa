@@ -95,6 +95,7 @@ export type TuInvestigationDetails = TuInspectionSummary & {
   }
   property: TuPropertySummary | null
   assignment: AssignmentDetails | null
+  inspector: TuInspectorProfileRow | null
   reportDraft: TuReportDraft
   background: string | null
   basis: string | null
@@ -148,6 +149,8 @@ type TuInspectorProfileRow = {
   company_address: string | null
   company_postal_code: string | null
   company_city: string | null
+  logo_path: string | null
+  logo_url: string | null
   sbr_group: string | null
   sbr_status: string | null
   membership_number: string | null
@@ -347,6 +350,19 @@ function joinAddress(parts: Array<string | null | undefined>) {
   return cleanText(parts.filter(Boolean).join(', '))
 }
 
+function resolveTuPublicMediaUrl(path: string | null | undefined) {
+  const trimmed = cleanText(path)
+  if (!trimmed) return null
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed
+
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (trimmed.startsWith('/storage/')) return base ? `${base}${trimmed}` : trimmed
+  if (trimmed.startsWith('storage/')) return base ? `${base}/${trimmed}` : `/${trimmed}`
+  if (trimmed.startsWith('/')) return trimmed
+
+  return createSupabaseAdminClient().storage.from('property-media').getPublicUrl(trimmed).data.publicUrl
+}
+
 function buildTuAssignmentPartiesText(input: {
   assignment: AssignmentDetails | null
   inspection: InspectionRow | null
@@ -406,7 +422,7 @@ async function getTuInspectorProfile(input: {
   const { data, error } = await admin
     .from('profiles')
     .select(
-      'id,full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city'
+      'id,full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city,logo_path'
     )
     .eq('id', normalizedProfileId)
     .maybeSingle()
@@ -414,7 +430,7 @@ async function getTuInspectorProfile(input: {
   if (error || !data) return null
   const profile = data as Omit<
     TuInspectorProfileRow,
-    'sbr_group' | 'sbr_status' | 'membership_number' | 'certification_number'
+    'logo_url' | 'sbr_group' | 'sbr_status' | 'membership_number' | 'certification_number'
   >
   const { summary } = await resolveInspectorCertificationSummary(admin, {
     profileId: normalizedProfileId,
@@ -423,6 +439,7 @@ async function getTuInspectorProfile(input: {
 
   return {
     ...profile,
+    logo_url: resolveTuPublicMediaUrl(profile.logo_path),
     sbr_group: summary.sbr_group,
     sbr_status: summary.sbr_status,
     membership_number: summary.membership_number,
@@ -966,6 +983,7 @@ export async function getTuInvestigationById(input: {
     },
     property,
     assignment,
+    inspector,
     reportDraft,
     background: detail.background,
     basis: detail.basis,

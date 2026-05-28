@@ -389,7 +389,7 @@ function ReportIcon({ name }: { name: ReportIconName }) {
 
 const PDF_PHOTOS_PER_SEGMENT = 2
 const PDF_PHOTO_FRAME_WIDTH_MM = 60
-const PDF_PHOTO_FRAME_HEIGHT_MM = 72
+const PDF_PHOTO_MAX_HEIGHT_MM = 72
 
 const getInspectionPhotoUrls = (item: InspectionBlockItem) =>
   Array.isArray(item.photoUrls)
@@ -1586,7 +1586,7 @@ export default function ReportRendererClient({
     if (count <= 0) return 'Bilder'
     const start = Math.max(1, startIndex)
     const end = start + count - 1
-    return start === end ? `Bilder ${start}` : `Bilder ${start}-${end}`
+    return start === end ? `Bild ${start}` : `Bilder ${start}-${end}`
   }
 
   const renderInspectionItemContent = (
@@ -1643,6 +1643,7 @@ export default function ReportRendererClient({
               flexWrap: 'wrap',
               gap: mmToPx(3),
               justifyContent: urls.length === 1 ? 'flex-start' : 'center',
+              alignItems: 'flex-start',
               marginTop: mmToPx(2),
               width: '100%',
             }}
@@ -1652,9 +1653,8 @@ export default function ReportRendererClient({
                 key={`${keyPrefix}-photo-frame-${urlIndex}`}
                 style={{
                   width: mmToPx(PDF_PHOTO_FRAME_WIDTH_MM),
-                  height: mmToPx(PDF_PHOTO_FRAME_HEIGHT_MM),
                   display: 'flex',
-                  alignItems: 'center',
+                  alignItems: 'flex-start',
                   justifyContent: 'center',
                   backgroundColor: '#ffffff',
                 }}
@@ -1662,11 +1662,15 @@ export default function ReportRendererClient({
                 <ReportPhoto
                   src={url}
                   alt={`Foto ${urlIndex + 1}`}
-                  className="object-contain bg-white"
+                  className="bg-white"
                   style={{
-                    width: '100%',
-                    height: '100%',
+                    display: 'block',
+                    width: 'auto',
+                    height: 'auto',
+                    maxWidth: '100%',
+                    maxHeight: mmToPx(PDF_PHOTO_MAX_HEIGHT_MM),
                     objectFit: 'contain',
+                    objectPosition: 'top center',
                   }}
                   maxLongSidePx={PHOTO_POLICY.pdfMaxLongSidePx}
                   quality={PHOTO_POLICY.pdfQuality}
@@ -1851,6 +1855,7 @@ export default function ReportRendererClient({
             flexWrap: 'wrap',
             gap: mmToPx(3),
             justifyContent: urls.length === 1 ? 'flex-start' : 'center',
+            alignItems: 'flex-start',
             marginTop: mmToPx(2),
             width: '100%',
           }}
@@ -1860,9 +1865,8 @@ export default function ReportRendererClient({
               key={`${keyPrefix}-photo-frame-${urlIndex}`}
               style={{
                 width: mmToPx(PDF_PHOTO_FRAME_WIDTH_MM),
-                height: mmToPx(PDF_PHOTO_FRAME_HEIGHT_MM),
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: 'flex-start',
                 justifyContent: 'center',
                 backgroundColor: '#ffffff',
               }}
@@ -1870,11 +1874,15 @@ export default function ReportRendererClient({
               <ReportPhoto
                 src={url}
                 alt={`Foto ${urlIndex + 1}`}
-                className="object-contain bg-white"
+                className="bg-white"
                 style={{
-                  width: '100%',
-                  height: '100%',
+                  display: 'block',
+                  width: 'auto',
+                  height: 'auto',
+                  maxWidth: '100%',
+                  maxHeight: mmToPx(PDF_PHOTO_MAX_HEIGHT_MM),
                   objectFit: 'contain',
+                  objectPosition: 'top center',
                 }}
                 maxLongSidePx={PHOTO_POLICY.pdfMaxLongSidePx}
                 quality={PHOTO_POLICY.pdfQuality}

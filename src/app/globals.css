@@ -191,7 +191,7 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     width: 186mm !important;
     max-width: 186mm !important;
     margin: 0 auto !important;
-    padding: 12mm 0 !important;
+    padding: 12mm 0 26mm !important;
     box-shadow: none !important;
     overflow: visible !important;
   }
@@ -206,5 +206,19 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
   .tu-print-document img {
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  .tu-print-footer {
+    position: fixed !important;
+    left: 12mm !important;
+    right: 12mm !important;
+    bottom: 6mm !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    gap: 8mm !important;
+  }
+
+  .tu-print-footer-page::after {
+    content: "Sida " counter(page);
   }
 }
