@@ -1,21 +1,37 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Printer } from 'lucide-react'
 
 export default function TuPrintActions({
   backHref,
   autoPrint,
+  printTitle = 'Teknisk utredning',
 }: {
   backHref: string
   autoPrint: boolean
+  printTitle?: string
 }) {
+  const printWithTitle = useCallback(() => {
+    const previousTitle = document.title
+    document.title = printTitle
+
+    const restoreTitle = () => {
+      document.title = previousTitle
+      window.removeEventListener('afterprint', restoreTitle)
+    }
+
+    window.addEventListener('afterprint', restoreTitle)
+    window.print()
+    window.setTimeout(restoreTitle, 1000)
+  }, [printTitle])
+
   useEffect(() => {
     if (!autoPrint) return
-    const timeout = window.setTimeout(() => window.print(), 250)
+    const timeout = window.setTimeout(() => printWithTitle(), 250)
     return () => window.clearTimeout(timeout)
-  }, [autoPrint])
+  }, [autoPrint, printWithTitle])
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-4 print:hidden">
@@ -28,7 +44,7 @@ export default function TuPrintActions({
       </Link>
       <button
         type="button"
-        onClick={() => window.print()}
+        onClick={printWithTitle}
         className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
       >
         <Printer size={16} aria-hidden />

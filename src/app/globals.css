@@ -38,7 +38,7 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
 
   @page tu-print {
     size: A4;
-    margin: 12mm 12mm 24mm;
+    margin: 16mm 12mm 28mm;
 
     @bottom-right {
       content: "Sida " counter(page) " av " counter(pages);
@@ -223,13 +223,13 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
   }
 
   .tu-print-header {
-    margin-bottom: 8mm !important;
+    margin-bottom: 9mm !important;
     padding-bottom: 5mm !important;
   }
 
   .tu-print-header-logos {
-    gap: 5mm !important;
-    margin-bottom: 7mm !important;
+    gap: 0 !important;
+    margin-bottom: 9mm !important;
   }
 
   .tu-print-besiktapp-logo {
@@ -242,9 +242,9 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
 
   .tu-print-company-logo {
     width: auto !important;
-    height: 9mm !important;
-    max-width: 38mm !important;
-    max-height: 9mm !important;
+    height: 13mm !important;
+    max-width: 56mm !important;
+    max-height: 13mm !important;
     object-fit: contain !important;
   }
 
@@ -257,9 +257,9 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     row-gap: 6mm !important;
   }
 
-  .tu-print-details {
-    padding: 4mm !important;
-    border-radius: 2mm !important;
+  .tu-print-object-summary {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .tu-print-info-row {
@@ -292,11 +292,25 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     position: fixed !important;
     left: 12mm !important;
     right: 12mm !important;
-    bottom: 9mm !important;
-    display: flex !important;
-    justify-content: space-between !important;
+    bottom: 8mm !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) !important;
+    align-items: end !important;
     gap: 8mm !important;
     font-size: 8.5pt !important;
     line-height: 1.3 !important;
+  }
+
+  .tu-print-powered-by {
+    align-self: end !important;
+    white-space: nowrap !important;
+  }
+
+  .tu-print-powered-by img {
+    width: auto !important;
+    height: 4mm !important;
+    max-width: 20mm !important;
+    max-height: 4mm !important;
+    object-fit: contain !important;
   }
 }

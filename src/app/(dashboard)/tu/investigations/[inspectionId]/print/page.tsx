@@ -13,14 +13,6 @@ export const dynamic = 'force-dynamic'
 const EMPTY_PRINT_VALUES = new Set(['', '-', '--', 'ej angivet', 'ej angivet.'])
 const PARTY_HEADINGS = new Set(['Uppdragsgivare', 'Besiktningsman'])
 
-function formatDate(value: string | null | undefined) {
-  if (!value) return null
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleDateString('sv-SE')
-}
-
 function compact(parts: Array<string | null | undefined>) {
   const filtered = parts.map((part) => part?.trim()).filter(Boolean)
   return filtered.length > 0 ? filtered.join(', ') : null
@@ -102,14 +94,9 @@ function ReportSection({ title, text }: { title: string; text: string }) {
   )
 }
 
-function ObjectDetails({ investigation }: { investigation: TuInvestigationDetails }) {
+function ObjectSummary({ investigation }: { investigation: TuInvestigationDetails }) {
   const propertyAddress = compact([investigation.property?.address ?? investigation.propertyAddress])
   const propertyCity = compact([investigation.property?.postal_code, investigation.property?.city ?? investigation.propertyCity])
-  const customerAddress = compact([
-    investigation.inspection.customer_address,
-    compact([investigation.inspection.customer_postal_code, investigation.inspection.customer_city]),
-  ])
-  const inspectionDateTime = compact([formatDate(investigation.date), investigation.inspectionTime])
   const rows = [
     { label: 'Objekt', value: compact([propertyAddress, propertyCity]) },
     { label: 'Fastighetsbeteckning', value: investigation.objectType === 'villa' ? investigation.cadastralId : null },
@@ -119,19 +106,14 @@ function ObjectDetails({ investigation }: { investigation: TuInvestigationDetail
       label: 'Bostadsrättshavare',
       value: investigation.objectType === 'apartment' ? investigation.apartmentHolderName : null,
     },
-    { label: 'Besiktningsdatum', value: inspectionDateTime },
-    { label: 'Uppdragsgivare', value: investigation.inspection.customer_name },
-    { label: 'Uppdragsgivarens adress', value: customerAddress },
-    { label: 'Telefon', value: investigation.inspection.customer_phone },
-    { label: 'E-post', value: investigation.inspection.customer_email },
   ].filter((row) => normalizePrintableText(row.value))
 
   if (rows.length === 0) return null
 
   return (
-    <section className="tu-print-block tu-print-details rounded-md border border-gray-200 p-3">
-      <h2 className="mb-2 text-[15px] font-semibold text-gray-950">Uppgifter</h2>
-      <dl>
+    <section className="tu-print-object-summary">
+      <h2 className="tu-print-section-title border-b border-violet-200 pb-1 text-[15px] font-semibold text-violet-950">Objekt</h2>
+      <dl className="mt-2">
         {rows.map((row) => (
           <InfoRow key={row.label} label={row.label} value={row.value} />
         ))}
@@ -165,6 +147,11 @@ function CompanyFooter({ investigation }: { investigation: TuInvestigationDetail
         {leftLines.map((line) => (
           <div key={line}>{line}</div>
         ))}
+      </div>
+      <div className="tu-print-powered-by flex min-w-0 items-center justify-center gap-1.5 text-center text-[10px] text-gray-500">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/report-assets/BesiktApp.png" alt="BesiktApp" className="h-4 w-auto object-contain" />
+        <span>Skapat med BesiktApp</span>
       </div>
       <div className="min-w-0 text-right">
         {rightLines.map((line) => (
@@ -250,47 +237,33 @@ export default async function TuInvestigationPrintPage({
       <TuPrintActions
         backHref={`/tu/investigations/${encodeURIComponent(inspectionId)}`}
         autoPrint={autoPrint}
+        printTitle={investigation.title || 'Teknisk utredning'}
       />
       <article className="tu-print-document mx-auto my-4 w-full max-w-5xl bg-white px-6 py-8 shadow-sm md:px-10 print:my-0 print:shadow-none">
-        <header className="tu-print-header mb-7 flex items-start justify-between gap-6 border-b-2 border-violet-700 pb-4">
+        <header className="tu-print-header mb-8 border-b-2 border-violet-700 pb-5">
           <div className="min-w-0">
-            <div className="tu-print-header-logos mb-4 flex items-center justify-start gap-5">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/report-assets/BesiktApp.png"
-                alt="BesiktApp"
-                className="tu-print-besiktapp-logo h-10 w-auto object-contain"
-              />
+            <div className="tu-print-header-logos mb-7 flex items-center justify-start">
               {investigation.inspector?.logo_url ? (
-                <>
-                  <span className="h-8 w-px bg-gray-200" aria-hidden />
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                /* eslint-disable-next-line @next/next/no-img-element */
                   <img
                     src={investigation.inspector.logo_url}
                     alt={investigation.inspector.company_name ?? 'Företagslogga'}
-                    className="tu-print-company-logo h-10 w-auto object-contain"
+                    className="tu-print-company-logo h-12 w-auto object-contain"
                   />
-                </>
-              ) : null}
+              ) : (
+                <div className="text-base font-semibold text-gray-900">
+                  {investigation.inspector?.company_name ?? 'Besiktningsbolag'}
+                </div>
+              )}
             </div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-700">Teknisk utredning</p>
             <h1 className="tu-print-title mt-2 text-3xl font-semibold tracking-tight text-gray-950">{investigation.title}</h1>
             {objectLine ? <p className="mt-2 text-sm text-gray-600">{objectLine}</p> : null}
           </div>
-          {investigation.inspector?.logo_url ? (
-            <div className="hidden">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={investigation.inspector.logo_url}
-                alt={investigation.inspector.company_name ?? 'Företagslogga'}
-                className="max-h-16 max-w-44 object-contain"
-              />
-            </div>
-          ) : null}
         </header>
 
         <div className="tu-print-content space-y-6">
-          <ObjectDetails investigation={investigation} />
+          <ObjectSummary investigation={investigation} />
 
           {scopeText ? (
             <ReportSection title="Utredningens omfattning" text={scopeText} />
