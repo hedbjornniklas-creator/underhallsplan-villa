@@ -186,6 +186,7 @@ function getVisibleSections(
   if (showMoistureControl) {
     sections.push({ key: 'fuktkontroll', label: 'Fuktkontroll' })
   }
+  sections.push({ key: 'review', label: 'Granska' })
   sections.push({ key: 'delivery', label: 'Skicka utlåtande' })
 
   if (!isApartmentInspection) return sections
@@ -682,6 +683,7 @@ export default function InspectionDetailPage() {
                 activeSection === 'insida' ||
                 activeSection === 'utsida' ||
                 activeSection === 'runda' ||
+                activeSection === 'review' ||
                 activeSection === 'areamatning' ||
                 activeSection === 'fuktkontroll'
                   ? 'p-0 md:p-0'
@@ -706,6 +708,8 @@ export default function InspectionDetailPage() {
                 onPropertyUpdated={(updated) => setProperty(updated as Property)}
                 onInspectionUpdated={(updated) => setInspection(updated as Inspection)}
                 onInspectionAddonSelectionChanged={handleInspectionAddonSelectionChanged}
+                onSectionChange={setActiveSection}
+                availableSections={visibleSections.map((section) => section.key)}
               />
             </div>
           </div>
