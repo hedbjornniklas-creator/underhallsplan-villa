@@ -13,12 +13,15 @@ const TU_AI_MODEL = process.env.OPENAI_TU_TEXT_MODEL?.trim() || 'gpt-4o-mini'
 
 const EDITABLE_AI_SECTION_KEYS = new Set<TuReportSectionKey>([
   'background_scope',
+  'assignment_scope',
+  'construction_description',
   'basis_conditions',
   'observed_execution',
   'technical_assessment',
-  'accessibility',
   'time_assessment',
+  'continued_risk',
   'recommended_actions',
+  'closing_comments',
 ])
 
 type OpenAiResponse = {
@@ -173,6 +176,7 @@ export async function POST(
           'Du hjälper en svensk besiktningsman att skriva texter till ett utlåtande för teknisk utredning.',
           'Använd endast informationen i användarens instruktion och JSON-kontexten. Hitta inte på fakta, mätvärden, orsaker, ansvar eller åtgärder.',
           'Om något är osäkert, formulera det som en osäkerhet eller ett behov av fortsatt kontroll.',
+          'Avslutande kommentarer ska innehålla neutralt juridiskt skydd: uppdragets begränsning, att utlåtandet bygger på tillgängligt underlag och att dolda/ej åtkomliga förhållanden inte omfattas.',
           'Skriv sakligt, fackmässigt och neutralt på svenska. Undvik marknadsförande språk.',
           'Returnera endast giltig JSON enligt formatet {"suggestions":[{"sectionKey":"...","title":"...","text":"..."}]}.',
           'Skapa bara förslag för sectionKey som finns i kontexten.',

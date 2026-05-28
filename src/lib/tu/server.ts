@@ -20,12 +20,15 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 export type TuReportSectionKey =
   | 'assignment_parties'
   | 'background_scope'
+  | 'assignment_scope'
+  | 'construction_description'
   | 'basis_conditions'
   | 'observed_execution'
   | 'technical_assessment'
-  | 'accessibility'
   | 'time_assessment'
+  | 'continued_risk'
   | 'recommended_actions'
+  | 'closing_comments'
   | 'signature'
 
 export type TuObjectType = 'villa' | 'apartment'
@@ -230,15 +233,23 @@ type TuStorageClient = TuSupabaseClient & {
 
 export const TU_REPORT_SECTIONS: Array<Pick<TuReportSection, 'key' | 'title'>> = [
   { key: 'assignment_parties', title: 'Uppdragsgivare och besiktningsman' },
-  { key: 'background_scope', title: 'Bakgrund och uppdrag' },
+  { key: 'background_scope', title: 'Bakgrund' },
+  { key: 'assignment_scope', title: 'Uppdragets omfattning' },
+  { key: 'construction_description', title: 'Beskrivning av konstruktionen' },
   { key: 'basis_conditions', title: 'Underlag och besiktningsförutsättningar' },
-  { key: 'observed_execution', title: 'Observerat utförande' },
+  { key: 'observed_execution', title: 'Iakttagelser vid platsbesök' },
   { key: 'technical_assessment', title: 'Teknisk bedömning' },
-  { key: 'accessibility', title: 'Konstruktionens åtkomlighet' },
   { key: 'time_assessment', title: 'Tidsmässig bedömning' },
-  { key: 'recommended_actions', title: 'Rekommenderade åtgärder' },
+  { key: 'continued_risk', title: 'Bedömning av fortsatt risk' },
+  { key: 'recommended_actions', title: 'Rekommenderad fortsatt hantering' },
+  { key: 'closing_comments', title: 'Avslutande kommentarer' },
   { key: 'signature', title: 'Signering' },
 ]
+
+const DEFAULT_TU_SECTION_TEXT: Partial<Record<TuReportSectionKey, string>> = {
+  closing_comments:
+    'Detta utlåtande baseras på de uppgifter, handlingar och iakttagelser som varit tillgängliga vid utredningstillfället. Bedömningarna avser de förhållanden som kunnat konstateras inom ramen för uppdraget och ska inte ses som en fullständig garanti för dolda fel, framtida skadeutveckling eller förhållanden som inte varit åtkomliga för kontroll.',
+}
 
 function cleanText(value: string | null | undefined) {
   const normalized = value?.trim() ?? ''
@@ -281,7 +292,7 @@ export function createTuReportDraft(seed?: Partial<Record<TuReportSectionKey, st
     sections: TU_REPORT_SECTIONS.map((section) => ({
       key: section.key,
       title: section.title,
-      text: seed?.[section.key] ?? '',
+      text: seed?.[section.key] ?? DEFAULT_TU_SECTION_TEXT[section.key] ?? '',
     })),
   }
 }
@@ -309,8 +320,8 @@ export function normalizeTuReportDraft(value: unknown): TuReportDraft {
       const raw = byKey.get(section.key)
       return {
         key: section.key,
-        title: typeof raw?.title === 'string' && raw.title.trim() ? raw.title : section.title,
-        text: typeof raw?.text === 'string' ? raw.text : '',
+        title: section.title,
+        text: typeof raw?.text === 'string' ? raw.text : DEFAULT_TU_SECTION_TEXT[section.key] ?? '',
       }
     }),
   }
@@ -347,6 +358,18 @@ function upsertAssignmentPartiesSectionText(
       }
 
       return section
+    }),
+  }
+}
+
+function upsertAssignmentScopeSectionText(draft: TuReportDraft, scopeDescription: string | null): TuReportDraft {
+  const normalizedText = cleanText(scopeDescription)
+  if (!normalizedText) return draft
+
+  return {
+    sections: draft.sections.map((section) => {
+      if (section.key !== 'assignment_scope') return section
+      return section.text.trim() ? section : { ...section, text: normalizedText }
     }),
   }
 }
@@ -683,7 +706,7 @@ async function createTuDetail(input: {
       apartment_number: objectType === 'apartment' ? cleanText(input.apartmentNumber) : null,
       apartment_holder_name: objectType === 'apartment' ? cleanText(input.apartmentHolderName) : null,
       background: cleanText(input.scopeDescription),
-      report_draft: input.reportDraft ?? createTuReportDraft({ background_scope: input.scopeDescription ?? '' }),
+      report_draft: input.reportDraft ?? createTuReportDraft({ assignment_scope: input.scopeDescription ?? '' }),
       report_draft_updated_at: new Date().toISOString(),
       created_by: input.createdBy,
       updated_by: input.createdBy,
@@ -1043,9 +1066,12 @@ export async function getTuInvestigationById(input: {
     apartmentNumber: cleanText(summary.apartmentNumber) ?? assignmentApartmentNumber,
     apartmentHolderName: cleanText(summary.apartmentHolderName) ?? assignmentApartmentHolderName,
   } satisfies TuInspectionSummary
-  const reportDraft = upsertAssignmentPartiesSectionText(
-    normalizeTuReportDraft(detail.report_draft),
-    buildTuAssignmentPartiesText({ assignment, inspection, inspector })
+  const reportDraft = upsertAssignmentScopeSectionText(
+    upsertAssignmentPartiesSectionText(
+      normalizeTuReportDraft(detail.report_draft),
+      buildTuAssignmentPartiesText({ assignment, inspection, inspector })
+    ),
+    detail.scope_description
   )
 
   return {

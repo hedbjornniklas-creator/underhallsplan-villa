@@ -454,6 +454,10 @@ function getDroppedImageFiles(event: React.DragEvent) {
   return Array.from(event.dataTransfer.files).filter(isImageFile)
 }
 
+function getDroppedDocumentFile(event: React.DragEvent) {
+  return Array.from(event.dataTransfer.files).find((file) => !isImageFile(file)) ?? null
+}
+
 function sortTuImages(images: TuInvestigationImage[]) {
   return [...images].sort((a, b) => {
     if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
@@ -491,7 +495,6 @@ export default function TuInvestigationEditorClient({
   const [investigation, setInvestigation] = useState(initialInvestigation)
   const [draft, setDraft] = useState<TuReportDraft>(initialInvestigation.reportDraft)
   const [title, setTitle] = useState(initialInvestigation.title)
-  const [scopeDescription, setScopeDescription] = useState(initialInvestigation.scopeDescription ?? '')
   const [objectDetails, setObjectDetails] = useState<ObjectDetailsForm>(() =>
     buildObjectDetailsForm(initialInvestigation)
   )
@@ -508,6 +511,7 @@ export default function TuInvestigationEditorClient({
   const [documentsLoading, setDocumentsLoading] = useState(true)
   const [documentBusy, setDocumentBusy] = useState(false)
   const [documentError, setDocumentError] = useState<string | null>(null)
+  const [documentDropActive, setDocumentDropActive] = useState(false)
   const [bankDropActive, setBankDropActive] = useState(false)
   const [appendixDropActive, setAppendixDropActive] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Set<TuReportSectionKey>>(() => new Set())
@@ -615,7 +619,6 @@ export default function TuInvestigationEditorClient({
     try {
       await savePatch({
         title,
-        scopeDescription,
         objectType: nextObjectDetails.objectType,
         cadastralId: nextObjectDetails.cadastralId,
         brfName: nextObjectDetails.brfName,
@@ -925,6 +928,19 @@ export default function TuInvestigationEditorClient({
     }
   }
 
+  const handleDocumentDrop = async (event: React.DragEvent) => {
+    event.preventDefault()
+    setDocumentDropActive(false)
+    if (locked) return
+
+    const file = getDroppedDocumentFile(event)
+    if (!file) {
+      setDocumentError('Släpp en PDF-, Word-, Excel- eller textfil här.')
+      return
+    }
+    await uploadDocument(file)
+  }
+
   return (
     <main className="min-h-screen bg-violet-50/40">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-5 md:px-6">
@@ -1069,7 +1085,7 @@ export default function TuInvestigationEditorClient({
         </section>
 
         <section className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
-          <div className="grid gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+          <div className="grid gap-4">
             <label className="space-y-1">
               <span className="block text-xs font-medium text-gray-600">Rubrik</span>
               <input
@@ -1078,17 +1094,6 @@ export default function TuInvestigationEditorClient({
                 onBlur={() => void saveHeaderDetails()}
                 disabled={locked}
                 className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="block text-xs font-medium text-gray-600">Utredningens omfattning</span>
-              <textarea
-                value={scopeDescription}
-                onChange={(event) => setScopeDescription(event.target.value)}
-                onBlur={() => void saveHeaderDetails()}
-                disabled={locked}
-                rows={3}
-                className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
               />
             </label>
           </div>
@@ -1400,6 +1405,26 @@ export default function TuInvestigationEditorClient({
                 void uploadDocument(file)
               }}
             />
+          </div>
+
+          <div
+            onDragEnter={() => !locked && setDocumentDropActive(true)}
+            onDragLeave={() => setDocumentDropActive(false)}
+            onDragOver={(event) => {
+              if (locked || !hasExternalImageFiles(event)) return
+              event.preventDefault()
+              event.dataTransfer.dropEffect = 'copy'
+            }}
+            onDrop={(event) => void handleDocumentDrop(event)}
+            className={`mb-4 flex min-h-28 flex-col items-center justify-center rounded-lg border border-dashed px-4 py-5 text-center transition ${
+              documentDropActive
+                ? 'border-violet-500 bg-violet-50 text-violet-900'
+                : 'border-violet-200 bg-violet-50/50 text-gray-600'
+            } ${locked ? 'opacity-60' : ''}`}
+          >
+            <FileText size={24} className="mb-2 text-violet-500" aria-hidden />
+            <p className="text-sm font-medium">Släpp dokument här</p>
+            <p className="mt-1 text-xs text-gray-500">PDF, Word, Excel eller textfil. Max 25 MB.</p>
           </div>
 
           {documentsLoading ? (
