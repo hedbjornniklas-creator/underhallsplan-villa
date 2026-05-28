@@ -38,7 +38,7 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
 
   @page tu-print {
     size: A4;
-    margin: 0;
+    margin: 18mm 12mm 34mm;
 
     @top-right {
       content: "Sida " counter(page) " av " counter(pages);
@@ -205,7 +205,7 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     width: 100% !important;
     max-width: none !important;
     margin: 0 auto !important;
-    padding: 18mm 12mm 24mm !important;
+    padding: 0 !important;
     box-shadow: none !important;
     overflow: visible !important;
   }
@@ -300,9 +300,9 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
 
   .tu-print-footer {
     position: fixed !important;
-    left: 12mm !important;
-    right: 12mm !important;
-    bottom: 8mm !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
     display: grid !important;
     min-height: 12mm !important;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28mm !important;
