@@ -84,7 +84,7 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
   const normalized = normalizePrintableText(value)
   if (!normalized) return null
   return (
-    <div className="grid grid-cols-[42mm_minmax(0,1fr)] gap-3 border-b border-gray-200 py-2 text-sm">
+    <div className="tu-print-info-row grid grid-cols-[42mm_minmax(0,1fr)] gap-3 border-b border-gray-200 py-1.5 text-[13px] leading-5">
       <dt className="font-semibold text-gray-700">{label}</dt>
       <dd className="min-w-0 text-gray-950">{normalized}</dd>
     </div>
@@ -95,9 +95,9 @@ function ReportSection({ title, text }: { title: string; text: string }) {
   const normalized = normalizePrintableText(text)
   if (!normalized) return null
   return (
-    <section className="space-y-2">
-      <h2 className="border-b border-violet-200 pb-1 text-base font-semibold text-violet-950">{title}</h2>
-      <div className="whitespace-pre-wrap text-sm leading-7 text-gray-950">{normalized}</div>
+    <section className="tu-print-section space-y-2">
+      <h2 className="tu-print-section-title border-b border-violet-200 pb-1 text-[15px] font-semibold text-violet-950">{title}</h2>
+      <div className="tu-print-section-body whitespace-pre-wrap text-[13px] leading-6 text-gray-950">{normalized}</div>
     </section>
   )
 }
@@ -129,8 +129,8 @@ function ObjectDetails({ investigation }: { investigation: TuInvestigationDetail
   if (rows.length === 0) return null
 
   return (
-    <section className="tu-print-block rounded-md border border-gray-200 p-4">
-      <h2 className="mb-2 text-base font-semibold text-gray-950">Uppgifter</h2>
+    <section className="tu-print-block tu-print-details rounded-md border border-gray-200 p-3">
+      <h2 className="mb-2 text-[15px] font-semibold text-gray-950">Uppgifter</h2>
       <dl>
         {rows.map((row) => (
           <InfoRow key={row.label} label={row.label} value={row.value} />
@@ -160,7 +160,7 @@ function CompanyFooter({ investigation }: { investigation: TuInvestigationDetail
   if (leftLines.length === 0 && rightLines.length === 0) return null
 
   return (
-    <footer className="tu-print-footer border-t border-gray-300 bg-white pt-2 text-[11px] leading-4 text-gray-700">
+    <footer className="tu-print-footer border-t border-gray-300 bg-white pt-2 text-[10.5px] leading-4 text-gray-700">
       <div className="min-w-0">
         {leftLines.map((line) => (
           <div key={line}>{line}</div>
@@ -170,7 +170,6 @@ function CompanyFooter({ investigation }: { investigation: TuInvestigationDetail
         {rightLines.map((line) => (
           <div key={line}>{line}</div>
         ))}
-        <div className="tu-print-footer-page font-semibold text-gray-900" />
       </div>
     </footer>
   )
@@ -181,7 +180,7 @@ function ImageAppendix({ images }: { images: TuInvestigationImage[] }) {
 
   return (
     <section className="space-y-4">
-      <h2 className="border-b border-violet-200 pb-1 text-base font-semibold text-violet-950">Bildbilaga</h2>
+      <h2 className="tu-print-section-title border-b border-violet-200 pb-1 text-[15px] font-semibold text-violet-950">Bildbilaga</h2>
       <div className="grid gap-5 sm:grid-cols-2">
         {images.map((image, index) => (
           <figure key={image.id} className="tu-print-block break-inside-avoid-page rounded-md border border-gray-200 p-3">
@@ -253,9 +252,9 @@ export default async function TuInvestigationPrintPage({
         autoPrint={autoPrint}
       />
       <article className="tu-print-document mx-auto my-4 w-full max-w-5xl bg-white px-6 py-8 shadow-sm md:px-10 print:my-0 print:shadow-none">
-        <header className="mb-8 flex items-start justify-between gap-6 border-b-2 border-violet-700 pb-5">
+        <header className="tu-print-header mb-7 flex items-start justify-between gap-6 border-b-2 border-violet-700 pb-4">
           <div className="min-w-0">
-            <div className="tu-print-header-logos mb-5 flex items-center justify-start gap-5">
+            <div className="tu-print-header-logos mb-4 flex items-center justify-start gap-5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/report-assets/BesiktApp.png"
@@ -275,7 +274,7 @@ export default async function TuInvestigationPrintPage({
               ) : null}
             </div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-700">Teknisk utredning</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-gray-950">{investigation.title}</h1>
+            <h1 className="tu-print-title mt-2 text-3xl font-semibold tracking-tight text-gray-950">{investigation.title}</h1>
             {objectLine ? <p className="mt-2 text-sm text-gray-600">{objectLine}</p> : null}
           </div>
           {investigation.inspector?.logo_url ? (
@@ -290,7 +289,7 @@ export default async function TuInvestigationPrintPage({
           ) : null}
         </header>
 
-        <div className="space-y-7">
+        <div className="tu-print-content space-y-6">
           <ObjectDetails investigation={investigation} />
 
           {scopeText ? (
