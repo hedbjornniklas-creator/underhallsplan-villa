@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ChevronDown, ChevronUp, Image as ImageIcon, MoveDown, MoveUp, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, FileText, Image as ImageIcon, MoveDown, MoveUp, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import type { TuInvestigationDetails, TuReportDraft, TuReportSectionKey } from '@/lib/tu/server'
 
 const TU_IMAGE_DRAG_DATA_TYPE = 'application/x-tu-image-id'
 const IMAGE_FILE_ACCEPT = 'image/*'
+const DOCUMENT_FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain'
 
 type TuImageSectionKey = 'bank' | 'appendix'
 
@@ -29,6 +30,28 @@ type TuInvestigationImage = {
 type ImageApiResponse = {
   image?: TuInvestigationImage
   images?: TuInvestigationImage[]
+  error?: string
+}
+
+type TuInvestigationDocument = {
+  id: string
+  inspectionId: string
+  orgId: string
+  storageBucket: string
+  filePath: string
+  fileName: string | null
+  title: string | null
+  contentType: string | null
+  fileSizeBytes: number | null
+  uploadedBy: string | null
+  createdAt: string | null
+  updatedAt: string | null
+  signedUrl: string | null
+}
+
+type DocumentApiResponse = {
+  document?: TuInvestigationDocument
+  documents?: TuInvestigationDocument[]
   error?: string
 }
 
@@ -438,10 +461,26 @@ function sortTuImages(images: TuInvestigationImage[]) {
   })
 }
 
+function sortTuDocuments(documents: TuInvestigationDocument[]) {
+  return [...documents].sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+}
+
 function upsertImages(current: TuInvestigationImage[], updates: TuInvestigationImage[]) {
   const byId = new Map(current.map((image) => [image.id, image]))
   for (const image of updates) byId.set(image.id, image)
   return sortTuImages(Array.from(byId.values()))
+}
+
+function upsertDocument(current: TuInvestigationDocument[], document: TuInvestigationDocument) {
+  const byId = new Map(current.map((item) => [item.id, item]))
+  byId.set(document.id, document)
+  return sortTuDocuments(Array.from(byId.values()))
+}
+
+function formatFileSize(bytes: number | null | undefined) {
+  if (!bytes || bytes <= 0) return ''
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} kB`
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`
 }
 
 export default function TuInvestigationEditorClient({
@@ -465,6 +504,10 @@ export default function TuInvestigationEditorClient({
   const [imagesLoading, setImagesLoading] = useState(true)
   const [imageBusy, setImageBusy] = useState(false)
   const [imageError, setImageError] = useState<string | null>(null)
+  const [documents, setDocuments] = useState<TuInvestigationDocument[]>([])
+  const [documentsLoading, setDocumentsLoading] = useState(true)
+  const [documentBusy, setDocumentBusy] = useState(false)
+  const [documentError, setDocumentError] = useState<string | null>(null)
   const [bankDropActive, setBankDropActive] = useState(false)
   const [appendixDropActive, setAppendixDropActive] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Set<TuReportSectionKey>>(() => new Set())
@@ -477,6 +520,7 @@ export default function TuInvestigationEditorClient({
   const assignmentPartiesRef = useRef(assignmentParties)
   const bankFileInputRef = useRef<HTMLInputElement>(null)
   const appendixFileInputRef = useRef<HTMLInputElement>(null)
+  const documentFileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     draftRef.current = draft
@@ -511,6 +555,33 @@ export default function TuInvestigationEditorClient({
     }
 
     void loadImages()
+
+    return () => {
+      cancelled = true
+    }
+  }, [initialInvestigation.inspectionId])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadDocuments() {
+      setDocumentsLoading(true)
+      setDocumentError(null)
+      try {
+        const response = await fetch(`/api/tu/investigations/${initialInvestigation.inspectionId}/documents`)
+        const payload = (await response.json().catch(() => ({}))) as DocumentApiResponse
+        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte hämta TU-dokument.')
+        if (!cancelled) setDocuments(sortTuDocuments(payload.documents ?? []))
+      } catch (loadError) {
+        if (!cancelled) {
+          setDocumentError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta TU-dokument.')
+        }
+      } finally {
+        if (!cancelled) setDocumentsLoading(false)
+      }
+    }
+
+    void loadDocuments()
 
     return () => {
       cancelled = true
@@ -804,6 +875,53 @@ export default function TuInvestigationEditorClient({
 
     for (const update of updates) {
       await patchImage(update.id, { sortOrder: update.sortOrder })
+    }
+  }
+
+  const uploadDocument = async (file: File | null | undefined) => {
+    if (locked || !file) return
+
+    setDocumentBusy(true)
+    setDocumentError(null)
+    try {
+      const formData = new FormData()
+      formData.set('file', file)
+
+      const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}/documents`, {
+        method: 'POST',
+        body: formData,
+      })
+      const payload = (await response.json().catch(() => ({}))) as DocumentApiResponse
+      if (!response.ok || !payload.document) {
+        throw new Error(payload.error ?? 'Kunde inte ladda upp dokument.')
+      }
+      setDocuments((current) => upsertDocument(current, payload.document as TuInvestigationDocument))
+    } catch (uploadError) {
+      setDocumentError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp dokument.')
+    } finally {
+      setDocumentBusy(false)
+    }
+  }
+
+  const deleteDocument = async (documentId: string) => {
+    if (locked) return
+    if (!confirm('Ta bort dokumentet?')) return
+
+    setDocumentBusy(true)
+    setDocumentError(null)
+    try {
+      const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}/documents`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as DocumentApiResponse
+      if (!response.ok) throw new Error(payload.error ?? 'Kunde inte ta bort dokument.')
+      setDocuments((current) => current.filter((document) => document.id !== documentId))
+    } catch (deleteError) {
+      setDocumentError(deleteError instanceof Error ? deleteError.message : 'Kunde inte ta bort dokument.')
+    } finally {
+      setDocumentBusy(false)
     }
   }
 
@@ -1255,6 +1373,100 @@ export default function TuInvestigationEditorClient({
             )}
           </article>
         </section>
+
+        <section className="order-last rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-base font-semibold text-gray-950">Dokument</h2>
+              <p className="mt-1 text-sm text-gray-600">Lagra underlag som PDF, Word, Excel eller textfiler.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => documentFileInputRef.current?.click()}
+              disabled={locked || documentBusy}
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              <Upload size={16} aria-hidden />
+              Ladda upp dokument
+            </button>
+            <input
+              ref={documentFileInputRef}
+              type="file"
+              accept={DOCUMENT_FILE_ACCEPT}
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null
+                event.target.value = ''
+                void uploadDocument(file)
+              }}
+            />
+          </div>
+
+          {documentsLoading ? (
+            <div className="rounded-md border border-violet-100 bg-violet-50 px-3 py-2 text-sm text-violet-800">
+              Hämtar dokument...
+            </div>
+          ) : documents.length === 0 ? (
+            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-4 text-sm text-gray-600">
+              Inga dokument uppladdade.
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100 rounded-md border border-gray-200">
+              {documents.map((document) => (
+                <div
+                  key={document.id}
+                  className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-700">
+                      <FileText size={18} aria-hidden />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-gray-950">
+                        {document.title || document.fileName || 'Dokument'}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+                        {document.fileName ? <span>{document.fileName}</span> : null}
+                        {formatFileSize(document.fileSizeBytes) ? <span>{formatFileSize(document.fileSizeBytes)}</span> : null}
+                        {document.createdAt ? (
+                          <span>{new Date(document.createdAt).toLocaleDateString('sv-SE')}</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    {document.signedUrl ? (
+                      <a
+                        href={document.signedUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-9 items-center rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50"
+                      >
+                        Öppna
+                      </a>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void deleteDocument(document.id)}
+                      disabled={locked || documentBusy}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                      aria-label="Ta bort dokument"
+                      title="Ta bort dokument"
+                    >
+                      <Trash2 size={16} aria-hidden />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {documentError ? (
+          <div className="order-last rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+            {documentError}
+          </div>
+        ) : null}
 
         {imageError ? (
           <div className="order-last rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
