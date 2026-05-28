@@ -318,10 +318,17 @@ export function normalizeTuReportDraft(value: unknown): TuReportDraft {
   return {
     sections: TU_REPORT_SECTIONS.map((section) => {
       const raw = byKey.get(section.key)
+      const legacyText =
+        section.key === 'construction_description' && typeof byKey.get('accessibility')?.text === 'string'
+          ? (byKey.get('accessibility')?.text as string)
+          : ''
       return {
         key: section.key,
         title: section.title,
-        text: typeof raw?.text === 'string' ? raw.text : DEFAULT_TU_SECTION_TEXT[section.key] ?? '',
+        text:
+          typeof raw?.text === 'string'
+            ? raw.text
+            : legacyText || DEFAULT_TU_SECTION_TEXT[section.key] || '',
       }
     }),
   }

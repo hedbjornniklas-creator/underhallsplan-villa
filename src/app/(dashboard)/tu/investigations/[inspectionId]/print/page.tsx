@@ -266,7 +266,6 @@ export default async function TuInvestigationPrintPage({
   if (!investigation) notFound()
 
   const objectLine = compact([investigation.propertyAddress, investigation.propertyCity])
-  const scopeText = normalizePrintableText(investigation.scopeDescription)
   const printableSections = investigation.reportDraft.sections
     .map((section) => ({
       ...section,
@@ -307,10 +306,6 @@ export default async function TuInvestigationPrintPage({
         <div className="tu-print-content space-y-6">
           <ReportMeta investigation={investigation} />
           <ObjectSummary investigation={investigation} />
-
-          {scopeText ? (
-            <ReportSection title="Utredningens omfattning" text={scopeText} />
-          ) : null}
 
           {printableSections.map((section) => (
             <ReportSection key={section.key} title={section.title} text={section.text} />

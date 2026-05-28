@@ -418,6 +418,17 @@ function ObjectDetailsInput({
   )
 }
 
+function ReadOnlyInfoRow({ label, value }: { label: string; value: string | null | undefined }) {
+  const normalized = value?.trim()
+  if (!normalized) return null
+  return (
+    <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+      <dt className="text-xs font-medium text-gray-500">{label}</dt>
+      <dd className="mt-1 text-sm font-semibold text-gray-950">{normalized}</dd>
+    </div>
+  )
+}
+
 function cloneDraftWithSection(draft: TuReportDraft, key: TuReportSectionKey, text: string): TuReportDraft {
   return {
     sections: draft.sections.map((section) => (section.key === key ? { ...section, text } : section)),
@@ -436,6 +447,24 @@ function formatSavedAt(value: string | null) {
     dateStyle: 'short',
     timeStyle: 'short',
   })
+}
+
+function formatDisplayDate(value: string | null | undefined) {
+  if (!value) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString('sv-SE')
+}
+
+function formatDisplayTime(value: string | null | undefined) {
+  if (!value) return ''
+  const match = value.trim().match(/^(\d{2}):(\d{2})/)
+  return match ? `${match[1]}:${match[2]}` : value
+}
+
+function joinDisplay(parts: Array<string | null | undefined>) {
+  return parts.map((part) => part?.trim()).filter(Boolean).join(', ')
 }
 
 function isImageFile(file: File) {
@@ -735,6 +764,15 @@ export default function TuInvestigationEditorClient({
   const locked = Boolean(investigation.reportLockedAt)
   const bankImages = images.filter((image) => image.sectionKey !== 'appendix')
   const appendixImages = images.filter((image) => image.sectionKey === 'appendix')
+  const objectAddress = joinDisplay([
+    investigation.property?.address ?? investigation.propertyAddress,
+    joinDisplay([investigation.property?.postal_code, investigation.property?.city ?? investigation.propertyCity]),
+  ])
+  const customerName = investigation.assignment?.customer_name ?? investigation.inspection.customer_name
+  const customerContact = joinDisplay([
+    investigation.assignment?.customer_phone ?? investigation.inspection.customer_phone,
+    investigation.assignment?.customer_email ?? investigation.inspection.customer_email,
+  ])
 
   const uploadImages = async (files: File[], sectionKey: TuImageSectionKey) => {
     if (locked || files.length === 0) return
@@ -1163,6 +1201,26 @@ export default function TuInvestigationEditorClient({
                 )}
               </div>
             </div>
+            <dl className="mt-4 grid gap-3 border-t border-violet-100 pt-4 md:grid-cols-2 lg:grid-cols-3">
+              <ReadOnlyInfoRow
+                label="Objektadress"
+                value={objectAddress || investigation.propertyAddress || investigation.property?.address}
+              />
+              <ReadOnlyInfoRow
+                label="Arbetsnummer"
+                value={investigation.assignmentNumber ?? investigation.inspection.assignment_number}
+              />
+              <ReadOnlyInfoRow
+                label="Besiktningsdag"
+                value={formatDisplayDate(investigation.date ?? investigation.inspection.date)}
+              />
+              <ReadOnlyInfoRow
+                label="Tid"
+                value={formatDisplayTime(investigation.inspectionTime ?? investigation.inspection.inspection_time)}
+              />
+              <ReadOnlyInfoRow label="Beställare" value={customerName} />
+              <ReadOnlyInfoRow label="Kontakt" value={customerContact} />
+            </dl>
           </div>
         </section>
 
