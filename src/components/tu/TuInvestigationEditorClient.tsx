@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ChevronDown, ChevronUp, Image as ImageIcon, MoveDown, MoveUp, Printer, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, Image as ImageIcon, MoveDown, MoveUp, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import type { TuInvestigationDetails, TuReportDraft, TuReportSectionKey } from '@/lib/tu/server'
 
@@ -29,6 +29,18 @@ type TuInvestigationImage = {
 type ImageApiResponse = {
   image?: TuInvestigationImage
   images?: TuInvestigationImage[]
+  error?: string
+}
+
+type TuAiSuggestion = {
+  sectionKey: TuReportSectionKey
+  title: string
+  text: string
+}
+
+type TuAiResponse = {
+  model?: string
+  suggestions?: TuAiSuggestion[]
   error?: string
 }
 
@@ -389,6 +401,10 @@ function cloneDraftWithSection(draft: TuReportDraft, key: TuReportSectionKey, te
   }
 }
 
+function getAiSectionTitle(draft: TuReportDraft, key: TuReportSectionKey, fallback: string) {
+  return draft.sections.find((section) => section.key === key)?.title ?? fallback
+}
+
 function formatSavedAt(value: string | null) {
   if (!value) return 'Inte sparad'
   const parsed = new Date(value)
@@ -452,6 +468,10 @@ export default function TuInvestigationEditorClient({
   const [bankDropActive, setBankDropActive] = useState(false)
   const [appendixDropActive, setAppendixDropActive] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Set<TuReportSectionKey>>(() => new Set())
+  const [aiPrompt, setAiPrompt] = useState('')
+  const [aiSuggestions, setAiSuggestions] = useState<TuAiSuggestion[]>([])
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
   const draftRef = useRef(initialInvestigation.reportDraft)
   const objectDetailsRef = useRef(objectDetails)
   const assignmentPartiesRef = useRef(assignmentParties)
@@ -587,6 +607,55 @@ export default function TuInvestigationEditorClient({
       else next.add(key)
       return next
     })
+  }
+
+  const requestAiSuggestions = async (options?: { sectionKey?: TuReportSectionKey; fillEmpty?: boolean }) => {
+    if (locked || aiBusy) return
+    const prompt = aiPrompt.trim()
+    if (prompt.length < 8) {
+      setAiError('Skriv en lite tydligare instruktion till AI:n.')
+      return
+    }
+
+    setAiBusy(true)
+    setAiError(null)
+    try {
+      const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}/ai-draft`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          mode: options?.fillEmpty ? 'fill_empty' : 'suggest',
+          sectionKey: options?.sectionKey,
+        }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as TuAiResponse
+      if (!response.ok) throw new Error(payload.error ?? 'Kunde inte skapa AI-förslag.')
+      setAiSuggestions(payload.suggestions ?? [])
+      if ((payload.suggestions ?? []).length === 0) {
+        setAiError('AI:n hittade inga tomma eller relevanta sektioner att föreslå text till.')
+      }
+    } catch (requestError) {
+      setAiError(requestError instanceof Error ? requestError.message : 'Kunde inte skapa AI-förslag.')
+    } finally {
+      setAiBusy(false)
+    }
+  }
+
+  const applyAiSuggestion = async (suggestion: TuAiSuggestion, mode: 'replace' | 'append') => {
+    if (locked) return
+    const currentText = getSectionText(draftRef.current, suggestion.sectionKey)
+    const nextText =
+      mode === 'append' && currentText.trim()
+        ? `${currentText.trimEnd()}\n\n${suggestion.text.trim()}`
+        : suggestion.text.trim()
+
+    try {
+      await saveSection(suggestion.sectionKey, nextText)
+      setAiSuggestions((current) => current.filter((item) => item !== suggestion))
+    } catch {
+      // saveSection already reports the error.
+    }
   }
 
   const locked = Boolean(investigation.reportLockedAt)
@@ -782,6 +851,104 @@ export default function TuInvestigationEditorClient({
             Utlåtandet är låst och kan inte ändras.
           </div>
         ) : null}
+
+        <section className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Sparkles size={18} className="text-violet-700" aria-hidden />
+                <h2 className="text-base font-semibold text-gray-950">AI-textstöd</h2>
+              </div>
+              <p className="mt-1 text-sm text-gray-600">
+                Beskriv ärendet, observationer eller önskad ändring. Förslagen infogas först när du väljer det.
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 space-y-3">
+            <textarea
+              value={aiPrompt}
+              disabled={locked || aiBusy}
+              onChange={(event) => setAiPrompt(event.target.value)}
+              rows={4}
+              className="w-full resize-y rounded-md border border-violet-200 bg-white px-3 py-2 text-sm leading-6 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
+              placeholder="Exempel: Skriv ett sakligt utlåtande om drag och misstänkt otäthet vid fönster. Underlaget är okulär kontroll och uppgifter från bostadsrättshavaren."
+            />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void requestAiSuggestions()}
+                disabled={locked || aiBusy}
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+              >
+                <Sparkles size={16} aria-hidden />
+                {aiBusy ? 'Skapar förslag...' : 'Skapa textförslag'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void requestAiSuggestions({ fillEmpty: true })}
+                disabled={locked || aiBusy}
+                className="inline-flex h-10 items-center rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+              >
+                Fyll tomma sektioner
+              </button>
+              {aiSuggestions.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setAiSuggestions([])}
+                  disabled={aiBusy}
+                  className="inline-flex h-10 items-center rounded-md border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50"
+                >
+                  Rensa förslag
+                </button>
+              ) : null}
+            </div>
+            {aiError ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                {aiError}
+              </div>
+            ) : null}
+            {aiSuggestions.length > 0 ? (
+              <div className="space-y-3">
+                {aiSuggestions.map((suggestion, suggestionIndex) => (
+                  <article
+                    key={`${suggestion.sectionKey}:${suggestionIndex}`}
+                    className="rounded-md border border-violet-100 bg-violet-50/40 p-3"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-semibold text-violet-950">
+                          {getAiSectionTitle(draft, suggestion.sectionKey, suggestion.title)}
+                        </h3>
+                        <p className="mt-1 text-xs text-violet-700">AI-förslag, granska innan infogning.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void applyAiSuggestion(suggestion, 'replace')}
+                          disabled={locked || aiBusy}
+                          className="rounded-md bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-800 disabled:bg-gray-300"
+                        >
+                          Ersätt
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void applyAiSuggestion(suggestion, 'append')}
+                          disabled={locked || aiBusy}
+                          className="rounded-md border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:border-gray-200 disabled:text-gray-400"
+                        >
+                          Lägg till
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-3 whitespace-pre-wrap rounded-md border border-white bg-white px-3 py-2 text-sm leading-6 text-gray-800">
+                      {suggestion.text}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </section>
 
         <section className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
           <div className="grid gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
@@ -1106,16 +1273,30 @@ export default function TuInvestigationEditorClient({
                   <h2 className="text-base font-semibold text-gray-950">
                     {index + 1}. {section.title}
                   </h2>
-                  <button
-                    type="button"
-                    onClick={() => toggleSectionCollapsed(section.key)}
-                    aria-expanded={!collapsed}
-                    aria-controls={`tu-section-${section.key}`}
-                    title={collapsed ? 'Visa sektion' : 'Minimera sektion'}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50"
-                  >
-                    {collapsed ? <ChevronDown size={17} aria-hidden /> : <ChevronUp size={17} aria-hidden />}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {!isAssignmentParties && section.key !== 'signature' ? (
+                      <button
+                        type="button"
+                        onClick={() => void requestAiSuggestions({ sectionKey: section.key })}
+                        disabled={locked || aiBusy}
+                        title="Skapa AI-förslag för sektionen"
+                        className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                      >
+                        <Sparkles size={15} aria-hidden />
+                        AI
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => toggleSectionCollapsed(section.key)}
+                      aria-expanded={!collapsed}
+                      aria-controls={`tu-section-${section.key}`}
+                      title={collapsed ? 'Visa sektion' : 'Minimera sektion'}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50"
+                    >
+                      {collapsed ? <ChevronDown size={17} aria-hidden /> : <ChevronUp size={17} aria-hidden />}
+                    </button>
+                  </div>
                 </div>
 
                 {collapsed ? null : isAssignmentParties ? (
