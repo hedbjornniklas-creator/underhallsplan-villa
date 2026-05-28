@@ -166,7 +166,9 @@ function getAddress(item: AssignmentItem) {
   const apartmentObject = [item.brf_name, item.apartment_number ? `lgh ${item.apartment_number}` : null]
     .filter(Boolean)
     .join(', ')
-  return [line, postalCity].filter(Boolean).join(', ') || apartmentObject || item.cadastral_id || 'Adress saknas'
+  const address = [line, postalCity].filter(Boolean).join(', ')
+  const objectReference = apartmentObject || item.cadastral_id
+  return [address, objectReference].filter(Boolean).join(' - ') || 'Adress saknas'
 }
 
 function formatDate(raw: string | null) {

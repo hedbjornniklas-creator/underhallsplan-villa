@@ -147,6 +147,19 @@ function parsePrice(value: unknown) {
   return null
 }
 
+function normalizeRoleText(value: string | null | undefined) {
+  return (value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
+
+function roleLooksLikeApartment(value: string | null | undefined) {
+  const normalized = normalizeRoleText(value)
+  return normalized.includes('lagenhet') || normalized.includes('apartment') || normalized.includes('apt')
+}
+
 function toState(link: PublicLink): PublicState {
   const now = Date.now()
   const expiresAt = String(link.expires_at ?? '')
@@ -347,9 +360,30 @@ export async function POST(
       return jsonError('Ange en giltig tid.', 400)
     }
 
+    const cadastralId = typeof body.cadastralId === 'string' ? body.cadastralId.trim() : ''
+    const brfName = typeof body.brfName === 'string' ? body.brfName.trim() : ''
+    const apartmentNumber = typeof body.apartmentNumber === 'string' ? body.apartmentNumber.trim() : ''
+    const apartmentHolderName =
+      typeof body.apartmentHolderName === 'string' ? body.apartmentHolderName.trim() : ''
+    const propertyOwnerName =
+      typeof body.propertyOwnerName === 'string' ? body.propertyOwnerName.trim() : ''
+    const isApartmentObject = isTechnicalAssignment
+      ? roleLooksLikeApartment(assignment.orderer_role) || Boolean(brfName || apartmentNumber)
+      : termsRole === 'apartment'
+
+    if (isApartmentObject) {
+      if (!brfName || !apartmentNumber || (!isTechnicalAssignment && !apartmentHolderName)) {
+        return jsonError('Ange BRF och lägenhetsnummer.', 400)
+      }
+    } else if (!cadastralId || (!isTechnicalAssignment && !propertyOwnerName)) {
+      return jsonError('Ange fastighetsbeteckning.', 400)
+    }
+
     const roleLabel =
       termsRole === 'technical'
-        ? 'Teknisk utredning'
+        ? isApartmentObject
+          ? 'Teknisk utredning - Lägenhet'
+          : 'Teknisk utredning - Villa'
         : termsRole === 'buyer'
           ? 'Köpare'
           : termsRole === 'apartment'
@@ -416,13 +450,11 @@ export async function POST(
       property_city: typeof body.propertyCity === 'string' ? body.propertyCity.trim() : null,
       property_municipality:
         typeof body.propertyMunicipality === 'string' ? body.propertyMunicipality.trim() : null,
-      property_owner_name:
-        typeof body.propertyOwnerName === 'string' ? body.propertyOwnerName.trim() : null,
-      cadastral_id: typeof body.cadastralId === 'string' ? body.cadastralId.trim() : null,
-      brf_name: typeof body.brfName === 'string' ? body.brfName.trim() : null,
-      apartment_number: typeof body.apartmentNumber === 'string' ? body.apartmentNumber.trim() : null,
-      apartment_holder_name:
-        typeof body.apartmentHolderName === 'string' ? body.apartmentHolderName.trim() : null,
+      property_owner_name: isApartmentObject ? null : propertyOwnerName,
+      cadastral_id: isApartmentObject ? null : cadastralId,
+      brf_name: isApartmentObject ? brfName : null,
+      apartment_number: isApartmentObject ? apartmentNumber : null,
+      apartment_holder_name: isApartmentObject ? apartmentHolderName : null,
       scope_description:
         typeof body.scopeDescription === 'string' ? body.scopeDescription.trim() : assignment.scope_description,
       preferred_date: preferredDate,
@@ -449,7 +481,13 @@ export async function POST(
       .update({
         customer_postal_code: payload.customer_postal_code,
         customer_city: payload.customer_city,
+        property_owner_name: payload.property_owner_name,
+        cadastral_id: payload.cadastral_id,
+        brf_name: payload.brf_name,
+        apartment_number: payload.apartment_number,
+        apartment_holder_name: payload.apartment_holder_name,
         scope_description: payload.scope_description,
+        orderer_role: payload.orderer_role,
       })
       .eq('org_id', link.org_id)
       .eq('id', assignment.id)

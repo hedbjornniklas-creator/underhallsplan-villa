@@ -59,6 +59,17 @@ export async function PATCH(
     if ('scopeDescription' in body) {
       patch.scopeDescription = typeof body.scopeDescription === 'string' ? body.scopeDescription : null
     }
+    if ('objectType' in body) {
+      patch.objectType = body.objectType === 'apartment' ? 'apartment' : 'villa'
+    }
+    if ('cadastralId' in body) patch.cadastralId = typeof body.cadastralId === 'string' ? body.cadastralId : null
+    if ('brfName' in body) patch.brfName = typeof body.brfName === 'string' ? body.brfName : null
+    if ('apartmentNumber' in body) {
+      patch.apartmentNumber = typeof body.apartmentNumber === 'string' ? body.apartmentNumber : null
+    }
+    if ('apartmentHolderName' in body) {
+      patch.apartmentHolderName = typeof body.apartmentHolderName === 'string' ? body.apartmentHolderName : null
+    }
     if ('background' in body) patch.background = typeof body.background === 'string' ? body.background : null
     if ('basis' in body) patch.basis = typeof body.basis === 'string' ? body.basis : null
     if ('accessibility' in body) {

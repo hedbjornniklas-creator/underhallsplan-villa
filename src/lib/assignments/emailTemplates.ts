@@ -23,6 +23,7 @@ type AssignmentForEmail = {
   brf_name: string | null
   apartment_number: string | null
   apartment_holder_name: string | null
+  orderer_role?: string | null
 }
 
 type AssignmentAddonOrderForEmail = {
@@ -154,6 +155,15 @@ function termsRoleToLabel(role: TermsRole, format: 'html' | 'text' = 'text') {
   return format === 'html' ? 'Säljare' : 'Säljare'
 }
 
+function roleLooksLikeApartment(value: string | null | undefined) {
+  const normalized = (value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+  return normalized.includes('lagenhet') || normalized.includes('apartment') || normalized.includes('apt')
+}
+
 function buildObjectSection(
   termsRole: TermsRole,
   assignment: AssignmentForEmail,
@@ -163,7 +173,9 @@ function buildObjectSection(
   const isApartmentObject =
     termsRole === 'apartment' ||
     (assignment.assignment_type === 'TU' &&
-      (Boolean(assignment.brf_name?.trim()) || Boolean(assignment.apartment_number?.trim())))
+      (roleLooksLikeApartment(assignment.orderer_role) ||
+        Boolean(assignment.brf_name?.trim()) ||
+        Boolean(assignment.apartment_number?.trim())))
 
   if (isApartmentObject) {
     const brfName = toDisplayValue(assignment.brf_name)

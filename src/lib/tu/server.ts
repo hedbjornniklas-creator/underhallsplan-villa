@@ -26,7 +26,6 @@ export type TuReportSectionKey =
   | 'accessibility'
   | 'time_assessment'
   | 'recommended_actions'
-  | 'images'
   | 'signature'
 
 export type TuObjectType = 'villa' | 'apartment'
@@ -238,7 +237,6 @@ export const TU_REPORT_SECTIONS: Array<Pick<TuReportSection, 'key' | 'title'>> =
   { key: 'accessibility', title: 'Konstruktionens åtkomlighet' },
   { key: 'time_assessment', title: 'Tidsmässig bedömning' },
   { key: 'recommended_actions', title: 'Rekommenderade åtgärder' },
-  { key: 'images', title: 'Bilder' },
   { key: 'signature', title: 'Signering' },
 ]
 
@@ -249,6 +247,12 @@ function cleanText(value: string | null | undefined) {
 
 function normalizeTuObjectType(value: string | null | undefined): TuObjectType {
   return value === 'apartment' ? 'apartment' : 'villa'
+}
+
+function resolveTuDetailObjectType(detail: Pick<TuDetailRow, 'property_object_type' | 'brf_name' | 'apartment_number'>): TuObjectType {
+  if (normalizeTuObjectType(detail.property_object_type) === 'apartment') return 'apartment'
+  if (cleanText(detail.brf_name) || cleanText(detail.apartment_number)) return 'apartment'
+  return 'villa'
 }
 
 function inferTuObjectType(input: {
@@ -865,7 +869,7 @@ export async function convertTuAssignmentToInvestigation(input: {
 }
 
 function buildSummary(detail: TuDetailRow, inspection?: InspectionRow | null, property?: PropertyRow | null): TuInspectionSummary {
-  const objectType = normalizeTuObjectType(detail.property_object_type)
+  const objectType = resolveTuDetailObjectType(detail)
   return {
     inspectionId: detail.inspection_id,
     propertyId: detail.property_id ?? inspection?.property_id ?? null,
@@ -1027,13 +1031,25 @@ export async function getTuInvestigationById(input: {
     profileId: input.inspectorProfileId ?? assignment?.responsible_profile_id ?? detail.created_by,
     orgId: input.orgId,
   })
+  const summary = buildSummary(detail, inspection, property)
+  const assignmentBrfName = cleanText(assignment?.brf_name)
+  const assignmentApartmentNumber = cleanText(assignment?.apartment_number)
+  const assignmentApartmentHolderName = cleanText(assignment?.apartment_holder_name)
+  const hasApartmentAssignmentFields = Boolean(assignmentBrfName || assignmentApartmentNumber)
+  const resolvedSummary = {
+    ...summary,
+    objectType: summary.objectType === 'apartment' || hasApartmentAssignmentFields ? 'apartment' : summary.objectType,
+    brfName: cleanText(summary.brfName) ?? assignmentBrfName,
+    apartmentNumber: cleanText(summary.apartmentNumber) ?? assignmentApartmentNumber,
+    apartmentHolderName: cleanText(summary.apartmentHolderName) ?? assignmentApartmentHolderName,
+  } satisfies TuInspectionSummary
   const reportDraft = upsertAssignmentPartiesSectionText(
     normalizeTuReportDraft(detail.report_draft),
     buildTuAssignmentPartiesText({ assignment, inspection, inspector })
   )
 
   return {
-    ...buildSummary(detail, inspection, property),
+    ...resolvedSummary,
     orgId: detail.org_id,
     inspection: {
       id: detail.inspection_id,
@@ -1115,6 +1131,11 @@ export async function updateTuInvestigationDraft(input: {
   patch: {
     title?: string | null
     scopeDescription?: string | null
+    objectType?: TuObjectType | null
+    cadastralId?: string | null
+    brfName?: string | null
+    apartmentNumber?: string | null
+    apartmentHolderName?: string | null
     background?: string | null
     basis?: string | null
     accessibility?: string | null
@@ -1136,6 +1157,30 @@ export async function updateTuInvestigationDraft(input: {
 
   if ('title' in input.patch) payload.title = cleanText(input.patch.title) ?? existing.title
   if ('scopeDescription' in input.patch) payload.scope_description = cleanText(input.patch.scopeDescription)
+  const resolvedObjectType =
+    'objectType' in input.patch ? normalizeTuObjectType(input.patch.objectType) : existing.objectType
+  if (
+    'objectType' in input.patch ||
+    'brfName' in input.patch ||
+    'apartmentNumber' in input.patch ||
+    'apartmentHolderName' in input.patch
+  ) {
+    payload.property_object_type = resolvedObjectType
+    payload.brf_name =
+      resolvedObjectType === 'apartment'
+        ? cleanText('brfName' in input.patch ? input.patch.brfName : existing.brfName)
+        : null
+    payload.apartment_number =
+      resolvedObjectType === 'apartment'
+        ? cleanText('apartmentNumber' in input.patch ? input.patch.apartmentNumber : existing.apartmentNumber)
+        : null
+    payload.apartment_holder_name =
+      resolvedObjectType === 'apartment'
+        ? cleanText(
+            'apartmentHolderName' in input.patch ? input.patch.apartmentHolderName : existing.apartmentHolderName
+          )
+        : null
+  }
   if ('background' in input.patch) payload.background = cleanText(input.patch.background)
   if ('basis' in input.patch) payload.basis = cleanText(input.patch.basis)
   if ('accessibility' in input.patch) payload.accessibility = cleanText(input.patch.accessibility)
@@ -1151,6 +1196,20 @@ export async function updateTuInvestigationDraft(input: {
     .eq('inspection_id', input.inspectionId)
 
   if (error) throw new Error(error.message ?? 'Kunde inte spara TU-utredning.')
+
+  if (existing.propertyId && ('objectType' in input.patch || 'cadastralId' in input.patch)) {
+    const { error: propertyError } = await admin
+      .from('properties')
+      .update({
+        cadastral_id:
+          resolvedObjectType === 'villa'
+            ? cleanText('cadastralId' in input.patch ? input.patch.cadastralId : existing.cadastralId)
+            : null,
+      })
+      .eq('id', existing.propertyId)
+
+    if (propertyError) throw new Error(propertyError.message ?? 'Kunde inte spara TU-objekt.')
+  }
 
   if ('scopeDescription' in input.patch || 'reportDraft' in input.patch) {
     await admin

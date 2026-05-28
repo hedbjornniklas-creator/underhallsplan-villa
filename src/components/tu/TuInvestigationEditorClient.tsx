@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Image as ImageIcon, MoveDown, MoveUp, Printer, Save, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, Image as ImageIcon, MoveDown, MoveUp, Printer, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import type { TuInvestigationDetails, TuReportDraft, TuReportSectionKey } from '@/lib/tu/server'
 
@@ -55,6 +55,14 @@ type AssignmentPartiesFieldKey =
 
 type AssignmentPartiesForm = Record<AssignmentPartiesFieldKey, string>
 
+type ObjectDetailsForm = {
+  objectType: 'villa' | 'apartment'
+  cadastralId: string
+  brfName: string
+  apartmentNumber: string
+  apartmentHolderName: string
+}
+
 type AssignmentPartiesField = {
   key: AssignmentPartiesFieldKey
   label: string
@@ -106,6 +114,16 @@ const EMPTY_ASSIGNMENT_PARTIES_FORM: AssignmentPartiesForm = {
   inspectorStatus: '',
   inspectorMembershipNumber: '',
   inspectorCertificationNumber: '',
+}
+
+function buildObjectDetailsForm(investigation: TuInvestigationDetails): ObjectDetailsForm {
+  return {
+    objectType: investigation.objectType === 'apartment' ? 'apartment' : 'villa',
+    cadastralId: investigation.cadastralId ?? '',
+    brfName: investigation.brfName ?? '',
+    apartmentNumber: investigation.apartmentNumber ?? '',
+    apartmentHolderName: investigation.apartmentHolderName ?? '',
+  }
 }
 
 function cleanFieldValue(value: string | null | undefined) {
@@ -338,6 +356,33 @@ function AssignmentPartiesInput({
   )
 }
 
+function ObjectDetailsInput({
+  label,
+  value,
+  disabled,
+  onChange,
+  onBlur,
+}: {
+  label: string
+  value: string
+  disabled: boolean
+  onChange: (value: string) => void
+  onBlur: () => void
+}) {
+  return (
+    <label className="space-y-1">
+      <span className="block text-xs font-medium text-gray-600">{label}</span>
+      <input
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={onBlur}
+        className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
+      />
+    </label>
+  )
+}
+
 function cloneDraftWithSection(draft: TuReportDraft, key: TuReportSectionKey, text: string): TuReportDraft {
   return {
     sections: draft.sections.map((section) => (section.key === key ? { ...section, text } : section)),
@@ -392,6 +437,9 @@ export default function TuInvestigationEditorClient({
   const [draft, setDraft] = useState<TuReportDraft>(initialInvestigation.reportDraft)
   const [title, setTitle] = useState(initialInvestigation.title)
   const [scopeDescription, setScopeDescription] = useState(initialInvestigation.scopeDescription ?? '')
+  const [objectDetails, setObjectDetails] = useState<ObjectDetailsForm>(() =>
+    buildObjectDetailsForm(initialInvestigation)
+  )
   const [assignmentParties, setAssignmentParties] = useState<AssignmentPartiesForm>(() =>
     buildAssignmentPartiesForm(initialInvestigation)
   )
@@ -403,7 +451,9 @@ export default function TuInvestigationEditorClient({
   const [imageError, setImageError] = useState<string | null>(null)
   const [bankDropActive, setBankDropActive] = useState(false)
   const [appendixDropActive, setAppendixDropActive] = useState(false)
+  const [collapsedSections, setCollapsedSections] = useState<Set<TuReportSectionKey>>(() => new Set())
   const draftRef = useRef(initialInvestigation.reportDraft)
+  const objectDetailsRef = useRef(objectDetails)
   const assignmentPartiesRef = useRef(assignmentParties)
   const bankFileInputRef = useRef<HTMLInputElement>(null)
   const appendixFileInputRef = useRef<HTMLInputElement>(null)
@@ -411,6 +461,10 @@ export default function TuInvestigationEditorClient({
   useEffect(() => {
     draftRef.current = draft
   }, [draft])
+
+  useEffect(() => {
+    objectDetailsRef.current = objectDetails
+  }, [objectDetails])
 
   useEffect(() => {
     assignmentPartiesRef.current = assignmentParties
@@ -466,12 +520,33 @@ export default function TuInvestigationEditorClient({
     setSaveState('saved')
   }
 
-  const saveTitleAndScope = async () => {
+  const saveHeaderDetails = async (nextObjectDetails = objectDetailsRef.current) => {
     try {
-      await savePatch({ title, scopeDescription })
+      await savePatch({
+        title,
+        scopeDescription,
+        objectType: nextObjectDetails.objectType,
+        cadastralId: nextObjectDetails.cadastralId,
+        brfName: nextObjectDetails.brfName,
+        apartmentNumber: nextObjectDetails.apartmentNumber,
+        apartmentHolderName: nextObjectDetails.apartmentHolderName,
+      })
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara.')
     }
+  }
+
+  const updateObjectDetailsField = <K extends keyof ObjectDetailsForm>(
+    key: K,
+    value: ObjectDetailsForm[K],
+    saveImmediately = false
+  ) => {
+    setObjectDetails((current) => {
+      const next = { ...current, [key]: value }
+      objectDetailsRef.current = next
+      if (saveImmediately) void saveHeaderDetails(next)
+      return next
+    })
   }
 
   const saveSection = async (key: TuReportSectionKey, value: string) => {
@@ -503,6 +578,15 @@ export default function TuInvestigationEditorClient({
     } catch {
       // saveSection already shows the specific error state.
     }
+  }
+
+  const toggleSectionCollapsed = (key: TuReportSectionKey) => {
+    setCollapsedSections((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
   }
 
   const locked = Boolean(investigation.reportLockedAt)
@@ -706,7 +790,7 @@ export default function TuInvestigationEditorClient({
               <input
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
-                onBlur={() => void saveTitleAndScope()}
+                onBlur={() => void saveHeaderDetails()}
                 disabled={locked}
                 className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
               />
@@ -716,12 +800,79 @@ export default function TuInvestigationEditorClient({
               <textarea
                 value={scopeDescription}
                 onChange={(event) => setScopeDescription(event.target.value)}
-                onBlur={() => void saveTitleAndScope()}
+                onBlur={() => void saveHeaderDetails()}
                 disabled={locked}
                 rows={3}
                 className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
               />
             </label>
+          </div>
+          <div className="mt-4 border-t border-violet-100 pt-4">
+            <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+              <fieldset className="space-y-1">
+                <legend className="text-xs font-medium text-gray-600">Objekttyp</legend>
+                <div className="grid grid-cols-2 gap-1 rounded-md border border-gray-200 bg-gray-50 p-1">
+                  {[
+                    { value: 'villa' as const, label: 'Villa' },
+                    { value: 'apartment' as const, label: 'BRF/lgh' },
+                  ].map((option) => {
+                    const active = objectDetails.objectType === option.value
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        disabled={locked}
+                        aria-pressed={active}
+                        onClick={() => updateObjectDetailsField('objectType', option.value, true)}
+                        className={
+                          active
+                            ? 'rounded bg-violet-700 px-3 py-2 text-sm font-semibold text-white shadow-sm'
+                            : 'rounded px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-white disabled:text-gray-400'
+                        }
+                      >
+                        {option.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </fieldset>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                {objectDetails.objectType === 'apartment' ? (
+                  <>
+                    <ObjectDetailsInput
+                      label="BRF"
+                      value={objectDetails.brfName}
+                      disabled={locked}
+                      onChange={(value) => updateObjectDetailsField('brfName', value)}
+                      onBlur={() => void saveHeaderDetails()}
+                    />
+                    <ObjectDetailsInput
+                      label="Lägenhetsnummer"
+                      value={objectDetails.apartmentNumber}
+                      disabled={locked}
+                      onChange={(value) => updateObjectDetailsField('apartmentNumber', value)}
+                      onBlur={() => void saveHeaderDetails()}
+                    />
+                    <ObjectDetailsInput
+                      label="Bostadsrättshavare"
+                      value={objectDetails.apartmentHolderName}
+                      disabled={locked}
+                      onChange={(value) => updateObjectDetailsField('apartmentHolderName', value)}
+                      onBlur={() => void saveHeaderDetails()}
+                    />
+                  </>
+                ) : (
+                  <ObjectDetailsInput
+                    label="Fastighetsbeteckning"
+                    value={objectDetails.cadastralId}
+                    disabled={locked}
+                    onChange={(value) => updateObjectDetailsField('cadastralId', value)}
+                    onBlur={() => void saveHeaderDetails()}
+                  />
+                )}
+              </div>
+            </div>
           </div>
         </section>
 
@@ -947,6 +1098,7 @@ export default function TuInvestigationEditorClient({
         <section className="space-y-4">
           {draft.sections.map((section, index) => {
             const isAssignmentParties = section.key === 'assignment_parties'
+            const collapsed = collapsedSections.has(section.key)
 
             return (
               <article key={section.key} className="rounded-lg border border-violet-100 bg-white p-4 shadow-sm">
@@ -954,22 +1106,19 @@ export default function TuInvestigationEditorClient({
                   <h2 className="text-base font-semibold text-gray-950">
                     {index + 1}. {section.title}
                   </h2>
-                  {isAssignmentParties ? (
-                    <button
-                      type="button"
-                      onClick={() => void saveAssignmentParties()}
-                      disabled={locked}
-                      className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
-                    >
-                      <Save size={15} aria-hidden />
-                      Spara uppgifter
-                    </button>
-                  ) : (
-                    <Save size={16} className="text-violet-500" aria-hidden />
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => toggleSectionCollapsed(section.key)}
+                    aria-expanded={!collapsed}
+                    aria-controls={`tu-section-${section.key}`}
+                    title={collapsed ? 'Visa sektion' : 'Minimera sektion'}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50"
+                  >
+                    {collapsed ? <ChevronDown size={17} aria-hidden /> : <ChevronUp size={17} aria-hidden />}
+                  </button>
                 </div>
 
-                {isAssignmentParties ? (
+                {collapsed ? null : isAssignmentParties ? (
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div className="rounded-md border border-gray-200 bg-gray-50/60 p-3">
                       <h3 className="mb-3 text-sm font-semibold text-gray-950">Uppdragsgivare</h3>

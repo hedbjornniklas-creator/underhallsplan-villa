@@ -10,7 +10,7 @@ import {
 
 export const dynamic = 'force-dynamic'
 
-const EMPTY_PRINT_VALUES = new Set(['', '-', '--', 'ej angivet', 'ej angivet.'])
+const EMPTY_PRINT_VALUES = new Set(['-', '--', 'ej angivet', 'ej angivet.'])
 const PARTY_HEADINGS = new Set(['Uppdragsgivare', 'Besiktningsman'])
 
 function compact(parts: Array<string | null | undefined>) {

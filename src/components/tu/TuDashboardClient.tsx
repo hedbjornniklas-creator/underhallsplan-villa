@@ -127,7 +127,12 @@ function assignmentSortValue(item: TuAssignmentListItem) {
 }
 
 function getInvestigationAddress(item: TuInspectionSummary) {
-  return [item.propertyAddress, item.propertyCity].filter(Boolean).join(', ') || 'Adress saknas'
+  const address = [item.propertyAddress, item.propertyCity].filter(Boolean).join(', ')
+  const apartmentObject = [item.brfName, item.apartmentNumber ? `lgh ${item.apartmentNumber}` : null]
+    .filter(Boolean)
+    .join(', ')
+  const objectReference = item.objectType === 'apartment' ? apartmentObject : item.cadastralId
+  return [address, objectReference].filter(Boolean).join(' - ') || 'Adress saknas'
 }
 
 export default function TuDashboardClient({

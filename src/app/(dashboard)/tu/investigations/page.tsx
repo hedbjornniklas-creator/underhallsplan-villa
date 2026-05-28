@@ -17,6 +17,11 @@ type InvestigationItem = {
   customerEmail: string | null
   propertyAddress: string | null
   propertyCity: string | null
+  objectType: 'villa' | 'apartment'
+  cadastralId: string | null
+  brfName: string | null
+  apartmentNumber: string | null
+  apartmentHolderName: string | null
   scopeDescription: string | null
   reportLockedAt: string | null
   createdAt: string | null
@@ -96,7 +101,12 @@ function getStatusTabClass(key: StatusFilter, active: boolean) {
 }
 
 function getAddress(item: InvestigationItem) {
-  return [item.propertyAddress, item.propertyCity].filter(Boolean).join(', ') || 'Adress saknas'
+  const address = [item.propertyAddress, item.propertyCity].filter(Boolean).join(', ')
+  const apartmentObject = [item.brfName, item.apartmentNumber ? `lgh ${item.apartmentNumber}` : null]
+    .filter(Boolean)
+    .join(', ')
+  const objectReference = item.objectType === 'apartment' ? apartmentObject : item.cadastralId
+  return [address, objectReference].filter(Boolean).join(' - ') || 'Adress saknas'
 }
 
 function formatDate(raw: string | null) {
@@ -200,6 +210,7 @@ export default function TuInvestigationsPage() {
         item.customerEmail ?? '',
         item.scopeDescription ?? '',
         getAddress(item),
+        item.apartmentHolderName ?? '',
         getStatusLabel(item),
       ]
         .join(' ')
