@@ -290,16 +290,16 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     margin-bottom: 8mm;
   }
 
-  .tu-report-image-block img {
-    max-height: 104mm !important;
+  .tu-report-image-grid-block img {
+    max-height: 52mm !important;
   }
 
   .tu-report-page header img {
-    max-height: 24mm !important;
+    max-height: 18mm !important;
   }
 
   .tu-report-page footer img {
-    max-height: 4.5mm !important;
+    max-height: 4mm !important;
   }
 
   .tu-print-document {

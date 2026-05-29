@@ -7,11 +7,14 @@ const PAGE_WIDTH_MM = 210
 const PAGE_HEIGHT_MM = 297
 const PAGE_X_PADDING_MM = 18
 const PAGE_HEADER_TOP_MM = 9
-const PAGE_CONTENT_TOP_MM = 51
+const PAGE_CONTENT_TOP_MM = 43
 const PAGE_CONTENT_BOTTOM_MM = 62
 const CONTENT_WIDTH_MM = PAGE_WIDTH_MM - PAGE_X_PADDING_MM * 2
 const CONTENT_HEIGHT_MM = PAGE_HEIGHT_MM - PAGE_CONTENT_TOP_MM - PAGE_CONTENT_BOTTOM_MM
 const SECTION_CHUNK_TARGET_CHARS = 480
+const PAGE_PACKING_SAFETY_MM = 10
+const BLOCK_GAP_MM = 5
+const SECTION_GAP_MM = 6
 
 const mmToPxNumber = (mm: number) => (mm * 96) / 25.4
 const mm = (value: number) => `${value}mm`
@@ -81,8 +84,8 @@ type PrintableBlock =
     }
   | {
       id: string
-      type: 'image'
-      image: TuPrintImage
+      type: 'image-grid'
+      images: TuPrintImage[]
     }
 
 type PagePlan = {
@@ -145,9 +148,14 @@ function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[
 
   if (props.appendixImages.length > 0) {
     blocks.push({ id: 'appendix-title', type: 'appendix-title' })
-    props.appendixImages.forEach((image) => {
-      blocks.push({ id: `image-${image.id}`, type: 'image', image })
-    })
+    for (let index = 0; index < props.appendixImages.length; index += 4) {
+      const images = props.appendixImages.slice(index, index + 4)
+      blocks.push({
+        id: `image-grid-${images.map((image) => image.id).join('-')}`,
+        type: 'image-grid',
+        images,
+      })
+    }
   }
 
   return blocks
@@ -164,7 +172,7 @@ function readBlockHeight(element: HTMLElement) {
 }
 
 function createPagePlan(blocks: PrintableBlock[], heights: Map<string, number>): PagePlan {
-  const maxHeight = mmToPxNumber(CONTENT_HEIGHT_MM)
+  const maxHeight = mmToPxNumber(CONTENT_HEIGHT_MM - PAGE_PACKING_SAFETY_MM)
   const pages: PrintableBlock[][] = []
   let current: PrintableBlock[] = []
   let currentHeight = 0
@@ -197,8 +205,11 @@ function RowsBlock({
   if (rows.length === 0) return null
 
   return (
-    <section className="tu-report-block tu-report-rows-block">
-      <h2 className="border-b border-violet-200 pb-1 text-[15px] font-semibold leading-tight text-violet-950">
+    <section
+      className="tu-report-block tu-report-rows-block border-t border-violet-200 pt-3"
+      style={{ marginBottom: mm(BLOCK_GAP_MM) }}
+    >
+      <h2 className="text-[15px] font-semibold leading-tight text-violet-950">
         {title}
       </h2>
       <dl
@@ -234,9 +245,16 @@ function SectionBlock({
   continuation: boolean
 }) {
   return (
-    <section className="tu-report-block tu-report-section-block">
+    <section
+      className={
+        continuation
+          ? 'tu-report-block tu-report-section-block'
+          : 'tu-report-block tu-report-section-block border-t border-violet-200 pt-3'
+      }
+      style={{ marginBottom: mm(SECTION_GAP_MM) }}
+    >
       {!continuation ? (
-        <h2 className="border-b border-violet-200 pb-1 text-[15px] font-semibold leading-tight text-violet-950">
+        <h2 className="text-[15px] font-semibold leading-tight text-violet-950">
           {title}
         </h2>
       ) : null}
@@ -247,28 +265,35 @@ function SectionBlock({
   )
 }
 
-function ImageBlock({
-  image,
+function ImageGridBlock({
+  images,
   onImageReady,
 }: {
-  image: TuPrintImage
+  images: TuPrintImage[]
   onImageReady?: (id: string) => void
 }) {
   return (
-    <figure className="tu-report-block tu-report-image-block rounded-md border border-gray-200 p-3">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={image.src}
-        alt={image.caption}
-        data-tu-print-measure-image="true"
-        className="mx-auto h-auto max-h-[104mm] w-full rounded object-contain"
-        onLoad={() => onImageReady?.(image.id)}
-        onError={() => onImageReady?.(image.id)}
-      />
-      <figcaption className="mt-2 whitespace-pre-wrap text-[11px] leading-5 text-gray-700">
-        {image.caption}
-      </figcaption>
-    </figure>
+    <section
+      className="tu-report-block tu-report-image-grid-block grid grid-cols-2 gap-3"
+      style={{ marginBottom: mm(BLOCK_GAP_MM) }}
+    >
+      {images.map((image) => (
+        <figure key={image.id} className="rounded border border-gray-200 p-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={image.src}
+            alt={image.caption}
+            data-tu-print-measure-image="true"
+            className="mx-auto h-auto max-h-[52mm] w-full rounded object-contain"
+            onLoad={() => onImageReady?.(image.id)}
+            onError={() => onImageReady?.(image.id)}
+          />
+          <figcaption className="mt-1.5 max-h-[11mm] overflow-hidden whitespace-pre-wrap text-[10px] leading-4 text-gray-700">
+            {image.caption}
+          </figcaption>
+        </figure>
+      ))}
+    </section>
   )
 }
 
@@ -296,33 +321,23 @@ function PrintableBlockView({
   }
   if (block.type === 'appendix-title') {
     return (
-      <section className="tu-report-block tu-report-appendix-title">
-        <h2 className="border-b border-violet-200 pb-1 text-[15px] font-semibold leading-tight text-violet-950">
+      <section
+        className="tu-report-block tu-report-appendix-title border-t border-violet-200 pt-3"
+        style={{ marginBottom: mm(BLOCK_GAP_MM) }}
+      >
+        <h2 className="text-[15px] font-semibold leading-tight text-violet-950">
           Bildbilaga
         </h2>
       </section>
     )
   }
-  return <ImageBlock image={block.image} onImageReady={onImageReady} />
+  return <ImageGridBlock images={block.images} onImageReady={onImageReady} />
 }
 
-function getHeaderValueStyle(value: string, nowrap: boolean): CSSProperties {
-  const length = value.length
-  const fontSize = nowrap
-    ? length > 12
-      ? 17
-      : 20
-    : length > 52
-      ? 13
-      : length > 38
-        ? 15
-        : length > 24
-          ? 17
-          : 20
-
+function getHeaderValueStyle(nowrap: boolean): CSSProperties {
   return {
-    fontSize,
-    lineHeight: nowrap ? 1.05 : 1.08,
+    fontSize: '10pt',
+    lineHeight: nowrap ? 1.05 : 1.12,
     whiteSpace: nowrap ? 'nowrap' : 'normal',
   }
 }
@@ -337,11 +352,11 @@ function HeaderValue({
   nowrap?: boolean
 }) {
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col justify-start overflow-hidden px-2 py-1">
-      <div className="shrink-0 text-[11px] leading-none text-black">{label}</div>
+    <div className="flex h-full min-h-0 min-w-0 flex-col justify-start overflow-hidden px-1.5 py-1">
+      <div className="shrink-0 text-[6pt] leading-none text-black">{label}</div>
       <div
-        className="mt-1 min-w-0 overflow-hidden break-words font-medium text-black"
-        style={getHeaderValueStyle(value, nowrap)}
+        className="mt-0.5 min-w-0 overflow-hidden break-words font-medium text-black"
+        style={getHeaderValueStyle(nowrap)}
       >
         {value || '-'}
       </div>
@@ -368,9 +383,9 @@ function ReportHeader({
     <div
       className="tu-report-header-table grid overflow-hidden border border-black text-black"
       style={{
-        height: mm(33),
+        height: mm(25.5),
         gridTemplateColumns: '63mm 35mm 34mm 42mm',
-        gridTemplateRows: '11mm 11mm 11mm',
+        gridTemplateRows: '8.5mm 8.5mm 8.5mm',
       }}
     >
       <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
@@ -383,11 +398,11 @@ function ReportHeader({
         <div className="flex h-full items-center justify-center p-2">
           {companyLogoUrl ? (
             /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={companyLogoUrl}
-              alt={companyLogoAlt}
-              className="tu-report-header-logo h-auto max-h-[24mm] max-w-[38mm] object-contain"
-            />
+                <img
+                  src={companyLogoUrl}
+                  alt={companyLogoAlt}
+                  className="tu-report-header-logo h-auto max-h-[18mm] max-w-[37mm] object-contain"
+                />
           ) : (
             <span className="text-center text-[15px] font-semibold leading-tight text-gray-900">
               {companyLogoAlt}
@@ -472,31 +487,31 @@ function PageChrome({
       </div>
 
       <footer
-        className="absolute grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_32mm] items-end gap-6 border-t border-gray-300 pt-2 text-[10px] leading-4 text-gray-700"
+        className="absolute grid grid-cols-[minmax(0,62mm)_minmax(0,52mm)_32mm] items-end justify-between gap-4 border-t border-gray-300 pt-1.5 text-[9px] leading-[1.25] text-gray-700"
         style={{
           left: mm(PAGE_X_PADDING_MM),
           right: mm(PAGE_X_PADDING_MM),
-          bottom: mm(8),
-          minHeight: mm(17),
+          bottom: mm(7),
+          height: mm(18),
         }}
       >
-        <div className="min-w-0">
+        <div className="min-w-0 self-end">
           {footer.companyLines.map((line) => (
             <div key={line}>{line}</div>
           ))}
         </div>
-        <div className="min-w-0 text-center">
+        <div className="min-w-0 self-end text-center">
           {footer.contactLines.map((line) => (
             <div key={line}>{line}</div>
           ))}
         </div>
-        <div className="flex min-w-0 flex-col items-end justify-end gap-1 text-right text-[9px] text-gray-500">
+        <div className="flex min-w-0 flex-col items-end justify-end gap-1 self-end text-right text-[8px] text-gray-500">
           <span>Skapat med</span>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/report-assets/BesiktApp.png"
             alt="BesiktApp"
-            className="h-auto max-h-[4.5mm] max-w-[24mm] object-contain"
+            className="h-auto max-h-[4mm] max-w-[22mm] object-contain"
           />
         </div>
       </footer>
