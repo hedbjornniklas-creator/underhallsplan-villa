@@ -13,19 +13,43 @@ export default function TuPrintActions({
   autoPrint: boolean
   printTitle?: string
 }) {
+  const waitForPrintLayout = useCallback(async () => {
+    const root = document.querySelector('[data-tu-print-pagination-ready]')
+    if (!root || root.getAttribute('data-tu-print-pagination-ready') === '1') return
+
+    await new Promise<void>((resolve) => {
+      let observer: MutationObserver | null = null
+      const timeout = window.setTimeout(() => {
+        observer?.disconnect()
+        resolve()
+      }, 5000)
+      observer = new MutationObserver(() => {
+        if (root.getAttribute('data-tu-print-pagination-ready') !== '1') return
+        window.clearTimeout(timeout)
+        observer?.disconnect()
+        resolve()
+      })
+      observer.observe(root, { attributes: true, attributeFilter: ['data-tu-print-pagination-ready'] })
+    })
+  }, [])
+
   const printWithTitle = useCallback(() => {
-    const previousTitle = document.title
-    document.title = printTitle.trim() ? printTitle : '\u200B'
+    void (async () => {
+      await waitForPrintLayout()
 
-    const restoreTitle = () => {
-      document.title = previousTitle
-      window.removeEventListener('afterprint', restoreTitle)
-    }
+      const previousTitle = document.title
+      document.title = printTitle.trim() ? printTitle : '\u200B'
 
-    window.addEventListener('afterprint', restoreTitle)
-    window.print()
-    window.setTimeout(restoreTitle, 1000)
-  }, [printTitle])
+      const restoreTitle = () => {
+        document.title = previousTitle
+        window.removeEventListener('afterprint', restoreTitle)
+      }
+
+      window.addEventListener('afterprint', restoreTitle)
+      window.print()
+      window.setTimeout(restoreTitle, 1000)
+    })()
+  }, [printTitle, waitForPrintLayout])
 
   useEffect(() => {
     if (!autoPrint) return

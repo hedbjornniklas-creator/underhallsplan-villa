@@ -1,5 +1,10 @@
 import { notFound, redirect } from 'next/navigation'
 import TuPrintActions from '@/components/tu/TuPrintActions'
+import TuPrintPagedDocument, {
+  type TuPrintImage,
+  type TuPrintMetaRow,
+  type TuPrintSection,
+} from '@/components/tu/TuPrintPagedDocument'
 import {
   getTuInvestigationById,
   listTuInvestigationImages,
@@ -87,146 +92,63 @@ function normalizeSectionText(key: string, text: string) {
     : normalizePrintableText(text)
 }
 
-function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {
+function toPrintRow(label: string, value: string | null | undefined): TuPrintMetaRow | null {
   const normalized = normalizePrintableText(value)
-  if (!normalized) return null
-  return (
-    <div className="tu-print-info-row grid grid-cols-[42mm_minmax(0,1fr)] gap-3 border-b border-gray-200 py-1.5 text-[13px] leading-5">
-      <dt className="font-semibold text-gray-700">{label}</dt>
-      <dd className="min-w-0 text-gray-950">{normalized}</dd>
-    </div>
-  )
+  return normalized ? { label, value: normalized } : null
 }
 
-function ReportSection({ title, text }: { title: string; text: string }) {
-  const normalized = normalizePrintableText(text)
-  if (!normalized) return null
-  return (
-    <section className="tu-print-section space-y-2">
-      <h2 className="tu-print-section-title border-b border-violet-200 pb-1 text-[15px] font-semibold text-violet-950">{title}</h2>
-      <div className="tu-print-section-body whitespace-pre-wrap text-[13px] leading-6 text-gray-950">{normalized}</div>
-    </section>
-  )
-}
-
-function ReportMeta({ investigation }: { investigation: TuInvestigationDetails }) {
+function buildReportMetaRows(investigation: TuInvestigationDetails): TuPrintMetaRow[] {
   const assignment = investigation.assignment
-  const rows = [
-    { label: 'Arbetsnummer', value: investigation.assignmentNumber ?? investigation.inspection.assignment_number },
-    { label: 'Besiktningsdag', value: formatDate(investigation.date ?? investigation.inspection.date) },
-    { label: 'Tid', value: formatTime(investigation.inspectionTime ?? investigation.inspection.inspection_time) },
-    { label: 'Beställare', value: assignment?.customer_name ?? investigation.inspection.customer_name },
-    { label: 'Telefon', value: assignment?.customer_phone ?? investigation.inspection.customer_phone },
-    { label: 'E-post', value: assignment?.customer_email ?? investigation.inspection.customer_email },
-  ].filter((row) => normalizePrintableText(row.value))
-
-  if (rows.length === 0) return null
-
-  return (
-    <section className="tu-print-meta">
-      <dl className="tu-print-meta-grid grid gap-x-8 gap-y-2 sm:grid-cols-2">
-        {rows.map((row) => (
-          <div key={row.label} className="grid grid-cols-[34mm_minmax(0,1fr)] gap-3 border-b border-gray-200 pb-1.5">
-            <dt className="text-[12px] font-semibold text-gray-600">{row.label}</dt>
-            <dd className="min-w-0 text-[12px] text-gray-950">{normalizePrintableText(row.value)}</dd>
-          </div>
-        ))}
-      </dl>
-    </section>
-  )
+  return [
+    toPrintRow('Arbetsnummer', investigation.assignmentNumber ?? investigation.inspection.assignment_number),
+    toPrintRow('Besiktningsdag', formatDate(investigation.date ?? investigation.inspection.date)),
+    toPrintRow('Tid', formatTime(investigation.inspectionTime ?? investigation.inspection.inspection_time)),
+    toPrintRow('Beställare', assignment?.customer_name ?? investigation.inspection.customer_name),
+    toPrintRow('Telefon', assignment?.customer_phone ?? investigation.inspection.customer_phone),
+    toPrintRow('E-post', assignment?.customer_email ?? investigation.inspection.customer_email),
+  ].filter((row): row is TuPrintMetaRow => Boolean(row))
 }
 
-function ObjectSummary({ investigation }: { investigation: TuInvestigationDetails }) {
+function buildObjectRows(investigation: TuInvestigationDetails): TuPrintMetaRow[] {
   const propertyAddress = compact([investigation.property?.address ?? investigation.propertyAddress])
-  const propertyCity = compact([investigation.property?.postal_code, investigation.property?.city ?? investigation.propertyCity])
-  const rows = [
-    { label: 'Objekt', value: compact([propertyAddress, propertyCity]) },
-    { label: 'Fastighetsbeteckning', value: investigation.objectType === 'villa' ? investigation.cadastralId : null },
-    { label: 'BRF', value: investigation.objectType === 'apartment' ? investigation.brfName : null },
-    { label: 'Lägenhet', value: investigation.objectType === 'apartment' ? investigation.apartmentNumber : null },
-    {
-      label: 'Bostadsrättshavare',
-      value: investigation.objectType === 'apartment' ? investigation.apartmentHolderName : null,
-    },
-  ].filter((row) => normalizePrintableText(row.value))
+  const propertyCity = compact([
+    investigation.property?.postal_code,
+    investigation.property?.city ?? investigation.propertyCity,
+  ])
 
-  if (rows.length === 0) return null
-
-  return (
-    <section className="tu-print-object-summary">
-      <h2 className="tu-print-section-title border-b border-violet-200 pb-1 text-[15px] font-semibold text-violet-950">Objekt</h2>
-      <dl className="mt-2">
-        {rows.map((row) => (
-          <InfoRow key={row.label} label={row.label} value={row.value} />
-        ))}
-      </dl>
-    </section>
-  )
+  return [
+    toPrintRow('Objekt', compact([propertyAddress, propertyCity])),
+    toPrintRow('Fastighetsbeteckning', investigation.objectType === 'villa' ? investigation.cadastralId : null),
+    toPrintRow('BRF', investigation.objectType === 'apartment' ? investigation.brfName : null),
+    toPrintRow('Lägenhet', investigation.objectType === 'apartment' ? investigation.apartmentNumber : null),
+    toPrintRow(
+      'Bostadsrättshavare',
+      investigation.objectType === 'apartment' ? investigation.apartmentHolderName : null
+    ),
+  ].filter((row): row is TuPrintMetaRow => Boolean(row))
 }
 
-function CompanyFooter({ investigation }: { investigation: TuInvestigationDetails }) {
+function buildFooter(investigation: TuInvestigationDetails) {
   const inspector = investigation.inspector
   const companyAddress = compact([
     inspector?.company_address,
     compact([inspector?.company_postal_code, inspector?.company_city]),
   ])
-  const leftLines = [
+  const companyLines = [
     inspector?.company_name,
     inspector?.company_orgno ? `Org.nr ${inspector.company_orgno}` : null,
     companyAddress,
   ]
     .map((line) => normalizePrintableText(line))
     .filter(Boolean)
-  const rightLines = [inspector?.phone, inspector?.email]
+  const contactLines = [inspector?.phone, inspector?.email]
     .map((line) => normalizePrintableText(line))
     .filter(Boolean)
 
-  if (leftLines.length === 0 && rightLines.length === 0) return null
-
-  return (
-    <footer className="tu-print-footer border-t border-gray-300 bg-white pt-2 text-[10.5px] leading-4 text-gray-700">
-      <div className="min-w-0">
-        {leftLines.map((line) => (
-          <div key={line}>{line}</div>
-        ))}
-      </div>
-      <div className="min-w-0 text-center">
-        {rightLines.map((line) => (
-          <div key={line}>{line}</div>
-        ))}
-      </div>
-      <div className="tu-print-powered-by flex min-w-0 flex-col items-end justify-end gap-1 text-right text-[10px] text-gray-500">
-        <span>Skapat med</span>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/report-assets/BesiktApp.png" alt="BesiktApp" className="h-4 w-auto object-contain" />
-      </div>
-    </footer>
-  )
-}
-
-function ImageAppendix({ images }: { images: TuInvestigationImage[] }) {
-  if (images.length === 0) return null
-
-  return (
-    <section className="space-y-4">
-      <h2 className="tu-print-section-title border-b border-violet-200 pb-1 text-[15px] font-semibold text-violet-950">Bildbilaga</h2>
-      <div className="grid gap-5 sm:grid-cols-2">
-        {images.map((image, index) => (
-          <figure key={image.id} className="tu-print-block break-inside-avoid-page rounded-md border border-gray-200 p-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={image.publicUrl}
-              alt={image.caption ?? `Bild ${index + 1}`}
-              className="h-auto max-h-[95mm] w-full rounded object-contain"
-            />
-            <figcaption className="mt-2 whitespace-pre-wrap text-xs leading-5 text-gray-700">
-              {image.caption?.trim() || `Bild ${index + 1}`}
-            </figcaption>
-          </figure>
-        ))}
-      </div>
-    </section>
-  )
+  return {
+    companyLines,
+    contactLines,
+  }
 }
 
 export default async function TuInvestigationPrintPage({
@@ -266,12 +188,19 @@ export default async function TuInvestigationPrintPage({
   if (!investigation) notFound()
 
   const objectLine = compact([investigation.propertyAddress, investigation.propertyCity])
-  const printableSections = investigation.reportDraft.sections
+  const printableSections: TuPrintSection[] = investigation.reportDraft.sections
     .map((section) => ({
-      ...section,
+      key: section.key,
+      title: section.title,
       text: normalizeSectionText(section.key, section.text),
     }))
-    .filter((section) => section.text)
+    .filter((section) => Boolean(section.text))
+  const printableImages: TuPrintImage[] = appendixImages.map((image, index) => ({
+    id: image.id,
+    src: image.publicUrl,
+    caption: image.caption?.trim() || `Bild ${index + 1}`,
+  }))
+  const companyLogoAlt = investigation.inspector?.company_name ?? 'Besiktningsbolag'
 
   return (
     <main className="tu-print-root min-h-screen bg-neutral-100 text-gray-950 print:bg-white">
@@ -280,43 +209,18 @@ export default async function TuInvestigationPrintPage({
         autoPrint={autoPrint}
         printTitle=""
       />
-      <article className="tu-print-document mx-auto my-4 w-full max-w-5xl bg-white px-6 py-8 shadow-sm md:px-10 print:my-0 print:shadow-none">
-        <header className="tu-print-header mb-8 border-b-2 border-violet-700 pb-5">
-          <div className="min-w-0">
-            <div className="tu-print-header-logos mb-7 flex items-center justify-start">
-              {investigation.inspector?.logo_url ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={investigation.inspector.logo_url}
-                    alt={investigation.inspector.company_name ?? 'Företagslogga'}
-                    className="tu-print-company-logo h-12 w-auto object-contain"
-                  />
-              ) : (
-                <div className="text-base font-semibold text-gray-900">
-                  {investigation.inspector?.company_name ?? 'Besiktningsbolag'}
-                </div>
-              )}
-            </div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-700">Teknisk utredning</p>
-            <h1 className="tu-print-title mt-2 text-3xl font-semibold tracking-tight text-gray-950">{investigation.title}</h1>
-            {objectLine ? <p className="mt-2 text-sm text-gray-600">{objectLine}</p> : null}
-          </div>
-        </header>
-
-        <div className="tu-print-content space-y-6">
-          <ReportMeta investigation={investigation} />
-          <ObjectSummary investigation={investigation} />
-
-          {printableSections.map((section) => (
-            <ReportSection key={section.key} title={section.title} text={section.text} />
-          ))}
-
-          <ImageAppendix images={appendixImages} />
-        </div>
-        <div className="tu-print-screen-footer">
-          <CompanyFooter investigation={investigation} />
-        </div>
-      </article>
+      <TuPrintPagedDocument
+        title={investigation.title}
+        eyebrow="Teknisk utredning"
+        objectLine={objectLine}
+        companyLogoUrl={investigation.inspector?.logo_url ?? null}
+        companyLogoAlt={companyLogoAlt}
+        metaRows={buildReportMetaRows(investigation)}
+        objectRows={buildObjectRows(investigation)}
+        sections={printableSections}
+        appendixImages={printableImages}
+        footer={buildFooter(investigation)}
+      />
     </main>
   )
 }

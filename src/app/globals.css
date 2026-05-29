@@ -229,12 +229,77 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
   }
 
   .tu-print-root {
-    page: tu-print;
     width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     overflow: visible !important;
     background: #ffffff !important;
+  }
+
+  .tu-print-paged-document {
+    width: 210mm !important;
+    max-width: 210mm !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  .tu-print-measure {
+    display: none !important;
+  }
+
+  .tu-print-pages {
+    display: block !important;
+    gap: 0 !important;
+  }
+
+  .tu-report-page {
+    width: 210mm !important;
+    height: 297mm !important;
+    min-height: 297mm !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    outline: none !important;
+    break-after: page;
+    page-break-after: always;
+    overflow: hidden !important;
+  }
+
+  .tu-report-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .tu-report-page,
+  .tu-report-page * {
+    box-sizing: border-box;
+  }
+
+  .tu-report-block {
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+    margin-bottom: 5mm;
+  }
+
+  .tu-report-section-block {
+    margin-bottom: 6mm;
+  }
+
+  .tu-report-cover-block {
+    margin-bottom: 8mm;
+  }
+
+  .tu-report-image-block img {
+    max-height: 104mm !important;
+  }
+
+  .tu-report-page header img {
+    max-height: 13mm !important;
+  }
+
+  .tu-report-page footer img {
+    max-height: 4.5mm !important;
   }
 
   .tu-print-document {
