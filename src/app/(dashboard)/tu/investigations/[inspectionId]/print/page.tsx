@@ -152,11 +152,8 @@ function buildFooter(investigation: TuInvestigationDetails) {
   }
 }
 
-function resolveDocumentTitle(investigation: TuInvestigationDetails) {
-  const title = normalizePrintableText(investigation.title)
-  return title && title.toLowerCase() !== 'teknisk utredning'
-    ? title
-    : 'Fördjupad teknisk utredning'
+function resolveDocumentTitle() {
+  return 'Fördjupad teknisk utredning'
 }
 
 function buildHeader(investigation: TuInvestigationDetails): TuPrintHeader {
@@ -174,7 +171,7 @@ function buildHeader(investigation: TuInvestigationDetails): TuPrintHeader {
       : normalizePrintableText(investigation.cadastralId)
 
   return {
-    documentTitle: resolveDocumentTitle(investigation),
+    documentTitle: resolveDocumentTitle(),
     objectIdentifier: (objectIdentifier || address || '-').toLocaleUpperCase('sv-SE'),
     projectType: 'Teknisk utredning',
     date: formatDate(investigation.date ?? investigation.inspection.date) ?? '-',

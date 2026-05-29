@@ -8,10 +8,10 @@ const PAGE_HEIGHT_MM = 297
 const PAGE_X_PADDING_MM = 18
 const PAGE_HEADER_TOP_MM = 9
 const PAGE_CONTENT_TOP_MM = 51
-const PAGE_CONTENT_BOTTOM_MM = 45
+const PAGE_CONTENT_BOTTOM_MM = 62
 const CONTENT_WIDTH_MM = PAGE_WIDTH_MM - PAGE_X_PADDING_MM * 2
 const CONTENT_HEIGHT_MM = PAGE_HEIGHT_MM - PAGE_CONTENT_TOP_MM - PAGE_CONTENT_BOTTOM_MM
-const SECTION_CHUNK_TARGET_CHARS = 620
+const SECTION_CHUNK_TARGET_CHARS = 480
 
 const mmToPxNumber = (mm: number) => (mm * 96) / 25.4
 const mm = (value: number) => `${value}mm`
@@ -306,11 +306,43 @@ function PrintableBlockView({
   return <ImageBlock image={block.image} onImageReady={onImageReady} />
 }
 
-function HeaderValue({ label, value }: { label: string; value: string }) {
+function getHeaderValueStyle(value: string, nowrap: boolean): CSSProperties {
+  const length = value.length
+  const fontSize = nowrap
+    ? length > 12
+      ? 17
+      : 20
+    : length > 52
+      ? 13
+      : length > 38
+        ? 15
+        : length > 24
+          ? 17
+          : 20
+
+  return {
+    fontSize,
+    lineHeight: nowrap ? 1.05 : 1.08,
+    whiteSpace: nowrap ? 'nowrap' : 'normal',
+  }
+}
+
+function HeaderValue({
+  label,
+  value,
+  nowrap = false,
+}: {
+  label: string
+  value: string
+  nowrap?: boolean
+}) {
   return (
-    <div className="flex h-full min-w-0 flex-col justify-start px-2 py-1">
-      <div className="text-[11px] leading-none text-black">{label}</div>
-      <div className="mt-1 min-w-0 break-words text-[20px] font-medium leading-tight text-black">
+    <div className="flex h-full min-h-0 min-w-0 flex-col justify-start overflow-hidden px-2 py-1">
+      <div className="shrink-0 text-[11px] leading-none text-black">{label}</div>
+      <div
+        className="mt-1 min-w-0 overflow-hidden break-words font-medium text-black"
+        style={getHeaderValueStyle(value, nowrap)}
+      >
         {value || '-'}
       </div>
     </div>
@@ -333,59 +365,52 @@ function ReportHeader({
   const pageValue = `${pageNumber} (${totalPages})`
 
   return (
-    <table className="tu-report-header-table w-full border-collapse table-fixed border border-black text-black">
-      <colgroup>
-        <col style={{ width: '63mm' }} />
-        <col style={{ width: '35mm' }} />
-        <col style={{ width: '34mm' }} />
-        <col style={{ width: '42mm' }} />
-      </colgroup>
-      <tbody>
-        <tr className="h-[11mm]">
-          <td className="border border-black align-top">
-            <HeaderValue label="Dokument" value={header.documentTitle} />
-          </td>
-          <td className="border border-black align-top" colSpan={2}>
-            <HeaderValue label="Datum" value={header.date} />
-          </td>
-          <td className="border border-black align-middle" rowSpan={3}>
-            <div className="flex h-full items-center justify-center p-2">
-              {companyLogoUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={companyLogoUrl}
-                  alt={companyLogoAlt}
-                  className="tu-report-header-logo h-auto max-h-[24mm] max-w-[38mm] object-contain"
-                />
-              ) : (
-                <span className="text-center text-[15px] font-semibold leading-tight text-gray-900">
-                  {companyLogoAlt}
-                </span>
-              )}
-            </div>
-          </td>
-        </tr>
-        <tr className="h-[11mm]">
-          <td className="border border-black align-top">
-            <HeaderValue label="Objekt, Fastighetsbeteckning" value={header.objectIdentifier} />
-          </td>
-          <td className="border border-black align-top" colSpan={2}>
-            <HeaderValue label="Adress" value={header.address} />
-          </td>
-        </tr>
-        <tr className="h-[11mm]">
-          <td className="border border-black align-top">
-            <HeaderValue label="Projekttyp" value={header.projectType} />
-          </td>
-          <td className="border border-black align-top">
-            <HeaderValue label="Arbetsnummer" value={header.assignmentNumber} />
-          </td>
-          <td className="border border-black align-top">
-            <HeaderValue label="Sida" value={pageValue} />
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <div
+      className="tu-report-header-table grid overflow-hidden border border-black text-black"
+      style={{
+        height: mm(33),
+        gridTemplateColumns: '63mm 35mm 34mm 42mm',
+        gridTemplateRows: '11mm 11mm 11mm',
+      }}
+    >
+      <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
+        <HeaderValue label="Dokument" value={header.documentTitle} />
+      </div>
+      <div className="col-span-2 min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
+        <HeaderValue label="Datum" value={header.date} nowrap />
+      </div>
+      <div className="row-span-3 min-h-0 min-w-0 overflow-hidden border-black">
+        <div className="flex h-full items-center justify-center p-2">
+          {companyLogoUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={companyLogoUrl}
+              alt={companyLogoAlt}
+              className="tu-report-header-logo h-auto max-h-[24mm] max-w-[38mm] object-contain"
+            />
+          ) : (
+            <span className="text-center text-[15px] font-semibold leading-tight text-gray-900">
+              {companyLogoAlt}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
+        <HeaderValue label="Objekt, Fastighetsbeteckning" value={header.objectIdentifier} />
+      </div>
+      <div className="col-span-2 min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
+        <HeaderValue label="Adress" value={header.address} />
+      </div>
+      <div className="min-h-0 min-w-0 overflow-hidden border-r border-black">
+        <HeaderValue label="Projekttyp" value={header.projectType} />
+      </div>
+      <div className="min-h-0 min-w-0 overflow-hidden border-r border-black">
+        <HeaderValue label="Arbetsnummer" value={header.assignmentNumber} nowrap />
+      </div>
+      <div className="min-h-0 min-w-0 overflow-hidden border-r border-black">
+        <HeaderValue label="Sida" value={pageValue} nowrap />
+      </div>
+    </div>
   )
 }
 
@@ -435,7 +460,7 @@ function PageChrome({
       </header>
 
       <div
-        className="absolute"
+        className="absolute overflow-hidden"
         style={{
           top: mm(PAGE_CONTENT_TOP_MM),
           left: mm(PAGE_X_PADDING_MM),
