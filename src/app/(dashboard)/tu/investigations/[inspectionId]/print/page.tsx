@@ -4,6 +4,7 @@ import TuPrintPagedDocument, {
   type TuPrintHeader,
   type TuPrintImage,
   type TuPrintMetaRow,
+  type TuPrintPartiesSection,
   type TuPrintSection,
 } from '@/components/tu/TuPrintPagedDocument'
 import {
@@ -24,19 +25,8 @@ function compact(parts: Array<string | null | undefined>) {
   return filtered.length > 0 ? filtered.join(', ') : null
 }
 
-function formatDate(value: string | null | undefined) {
-  if (!value) return null
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleDateString('sv-SE')
-}
-
-function formatTime(value: string | null | undefined) {
-  if (!value) return null
-  const normalized = value.trim()
-  const match = normalized.match(/^(\d{2}):(\d{2})/)
-  return match ? `${match[1]}:${match[2]}` : normalized
+function formatReportDate(value: Date) {
+  return value.toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' })
 }
 
 function normalizePrintableText(value: string | null | undefined) {
@@ -98,35 +88,39 @@ function toPrintRow(label: string, value: string | null | undefined): TuPrintMet
   return normalized ? { label, value: normalized } : null
 }
 
-function buildReportMetaRows(investigation: TuInvestigationDetails): TuPrintMetaRow[] {
+function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPartiesSection {
   const assignment = investigation.assignment
-  return [
-    toPrintRow('Arbetsnummer', investigation.assignmentNumber ?? investigation.inspection.assignment_number),
-    toPrintRow('Besiktningsdag', formatDate(investigation.date ?? investigation.inspection.date)),
-    toPrintRow('Tid', formatTime(investigation.inspectionTime ?? investigation.inspection.inspection_time)),
-    toPrintRow('Beställare', assignment?.customer_name ?? investigation.inspection.customer_name),
-    toPrintRow('Telefon', assignment?.customer_phone ?? investigation.inspection.customer_phone),
-    toPrintRow('E-post', assignment?.customer_email ?? investigation.inspection.customer_email),
-  ].filter((row): row is TuPrintMetaRow => Boolean(row))
-}
-
-function buildObjectRows(investigation: TuInvestigationDetails): TuPrintMetaRow[] {
-  const propertyAddress = compact([investigation.property?.address ?? investigation.propertyAddress])
-  const propertyCity = compact([
-    investigation.property?.postal_code,
-    investigation.property?.city ?? investigation.propertyCity,
+  const inspector = investigation.inspector
+  const address = investigation.property?.address ?? investigation.propertyAddress
+  const postalCity = compact([
+    investigation.property?.postal_code ?? assignment?.property_postal_code,
+    investigation.property?.city ?? investigation.propertyCity ?? assignment?.property_city,
   ])
+  const cadastralOrApartment =
+    investigation.objectType === 'apartment'
+      ? compact([
+          investigation.brfName,
+          investigation.apartmentNumber ? `Lgh ${investigation.apartmentNumber}` : null,
+        ])
+      : investigation.cadastralId
 
-  return [
-    toPrintRow('Objekt', compact([propertyAddress, propertyCity])),
-    toPrintRow('Fastighetsbeteckning', investigation.objectType === 'villa' ? investigation.cadastralId : null),
-    toPrintRow('BRF', investigation.objectType === 'apartment' ? investigation.brfName : null),
-    toPrintRow('Lägenhet', investigation.objectType === 'apartment' ? investigation.apartmentNumber : null),
-    toPrintRow(
-      'Bostadsrättshavare',
-      investigation.objectType === 'apartment' ? investigation.apartmentHolderName : null
-    ),
-  ].filter((row): row is TuPrintMetaRow => Boolean(row))
+  return {
+    leftRows: [
+      toPrintRow('Besiktningsman', inspector?.full_name),
+      toPrintRow('Medlemsnummer SBR', inspector?.membership_number),
+      toPrintRow('Telefon', inspector?.phone),
+      toPrintRow('E-Post', inspector?.email),
+      toPrintRow('Närvarande', assignment?.customer_name ?? investigation.inspection.customer_name),
+    ].filter((row): row is TuPrintMetaRow => Boolean(row)),
+    rightRows: [
+      toPrintRow('Fastighetsägare', assignment?.property_owner_name ?? investigation.property?.owner_name),
+      toPrintRow('Beställare', assignment?.customer_name ?? investigation.inspection.customer_name),
+      toPrintRow('Fastighetsbeteckning', cadastralOrApartment),
+      toPrintRow('Kommun', assignment?.property_municipality ?? investigation.property?.municipality),
+      toPrintRow('Adress', address),
+      toPrintRow('Postnummer, ort', postalCity),
+    ].filter((row): row is TuPrintMetaRow => Boolean(row)),
+  }
 }
 
 function buildFooter(investigation: TuInvestigationDetails) {
@@ -153,7 +147,7 @@ function buildFooter(investigation: TuInvestigationDetails) {
 }
 
 function resolveDocumentTitle() {
-  return 'Fördjupad teknisk utredning'
+  return 'Teknisk utredning'
 }
 
 function buildHeader(investigation: TuInvestigationDetails): TuPrintHeader {
@@ -173,8 +167,8 @@ function buildHeader(investigation: TuInvestigationDetails): TuPrintHeader {
   return {
     documentTitle: resolveDocumentTitle(),
     objectIdentifier: (objectIdentifier || address || '-').toLocaleUpperCase('sv-SE'),
-    projectType: 'Teknisk utredning',
-    date: formatDate(investigation.date ?? investigation.inspection.date) ?? '-',
+    projectType: 'Fördjupad teknisk utredning',
+    reportDate: formatReportDate(new Date()),
     address: address ?? '-',
     assignmentNumber: investigation.assignmentNumber ?? investigation.inspection.assignment_number ?? '-',
   }
@@ -217,6 +211,7 @@ export default async function TuInvestigationPrintPage({
   if (!investigation) notFound()
 
   const printableSections: TuPrintSection[] = investigation.reportDraft.sections
+    .filter((section) => section.key !== 'assignment_parties')
     .map((section) => ({
       key: section.key,
       title: section.title,
@@ -241,8 +236,9 @@ export default async function TuInvestigationPrintPage({
         companyLogoUrl={investigation.inspector?.logo_url ?? null}
         companyLogoAlt={companyLogoAlt}
         header={buildHeader(investigation)}
-        metaRows={buildReportMetaRows(investigation)}
-        objectRows={buildObjectRows(investigation)}
+        parties={buildPartiesSection(investigation)}
+        metaRows={[]}
+        objectRows={[]}
         sections={printableSections}
         appendixImages={printableImages}
         footer={buildFooter(investigation)}

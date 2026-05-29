@@ -30,6 +30,11 @@ export type TuPrintSection = {
   text: string
 }
 
+export type TuPrintPartiesSection = {
+  leftRows: TuPrintMetaRow[]
+  rightRows: TuPrintMetaRow[]
+}
+
 export type TuPrintImage = {
   id: string
   src: string
@@ -40,7 +45,7 @@ export type TuPrintHeader = {
   documentTitle: string
   objectIdentifier: string
   projectType: string
-  date: string
+  reportDate: string
   address: string
   assignmentNumber: string
 }
@@ -49,6 +54,7 @@ export type TuPrintPagedDocumentProps = {
   companyLogoUrl: string | null
   companyLogoAlt: string
   header: TuPrintHeader
+  parties: TuPrintPartiesSection | null
   metaRows: TuPrintMetaRow[]
   objectRows: TuPrintMetaRow[]
   sections: TuPrintSection[]
@@ -60,6 +66,11 @@ export type TuPrintPagedDocumentProps = {
 }
 
 type PrintableBlock =
+  | {
+      id: string
+      type: 'parties'
+      parties: TuPrintPartiesSection
+    }
   | {
       id: string
       type: 'meta'
@@ -125,6 +136,9 @@ function chunkParagraph(paragraph: string) {
 function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[] {
   const blocks: PrintableBlock[] = []
 
+  if (props.parties && (props.parties.leftRows.length > 0 || props.parties.rightRows.length > 0)) {
+    blocks.push({ id: 'parties', type: 'parties', parties: props.parties })
+  }
   if (props.metaRows.length > 0) {
     blocks.push({ id: 'meta', type: 'meta', rows: props.metaRows })
   }
@@ -235,6 +249,36 @@ function RowsBlock({
   )
 }
 
+function PartyRows({ rows }: { rows: TuPrintMetaRow[] }) {
+  return (
+    <dl className="grid grid-cols-[38mm_minmax(0,1fr)] gap-x-5 gap-y-1">
+      {rows.map((row) => (
+        <div key={row.label} className="contents">
+          <dt className="text-[12pt] font-bold leading-[1.25] text-black">{row.label}</dt>
+          <dd className="min-w-0 whitespace-pre-wrap text-[12pt] leading-[1.25] text-black">
+            {row.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function PartiesBlock({ parties }: { parties: TuPrintPartiesSection }) {
+  return (
+    <section className="tu-report-block tu-report-parties-block" style={{ marginBottom: mm(SECTION_GAP_MM) }}>
+      <h2 className="mb-7 text-[18pt] font-normal leading-tight text-[#003f5f]">
+        1. Uppdragsgivare och besiktningsman
+      </h2>
+      <div className="grid grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)] gap-x-5">
+        <PartyRows rows={parties.leftRows} />
+        <div className="min-h-[33mm] bg-[#2f6ea3]" />
+        <PartyRows rows={parties.rightRows} />
+      </div>
+    </section>
+  )
+}
+
 function SectionBlock({
   title,
   text,
@@ -304,6 +348,9 @@ function PrintableBlockView({
   block: PrintableBlock
   onImageReady?: (id: string) => void
 }) {
+  if (block.type === 'parties') {
+    return <PartiesBlock parties={block.parties} />
+  }
   if (block.type === 'meta') {
     return <RowsBlock title="Uppgifter" rows={block.rows} />
   }
@@ -392,7 +439,7 @@ function ReportHeader({
         <HeaderValue label="Dokument" value={header.documentTitle} />
       </div>
       <div className="col-span-2 min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
-        <HeaderValue label="Datum" value={header.date} nowrap />
+        <HeaderValue label="Rapportdatum" value={header.reportDate} nowrap />
       </div>
       <div className="row-span-3 min-h-0 min-w-0 overflow-hidden border-black">
         <div className="flex h-full items-center justify-center p-2">
@@ -528,6 +575,7 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
     header,
     metaRows,
     objectRows,
+    parties,
     sections,
   } = props
   const blocks = useMemo(
@@ -540,6 +588,7 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
         header,
         metaRows,
         objectRows,
+        parties,
         sections,
       }),
     [
@@ -550,6 +599,7 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
       header,
       metaRows,
       objectRows,
+      parties,
       sections,
     ]
   )
