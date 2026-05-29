@@ -254,8 +254,8 @@ function PartyRows({ rows }: { rows: TuPrintMetaRow[] }) {
     <dl className="grid grid-cols-[38mm_minmax(0,1fr)] gap-x-5 gap-y-1">
       {rows.map((row) => (
         <div key={row.label} className="contents">
-          <dt className="text-[12pt] font-bold leading-[1.25] text-black">{row.label}</dt>
-          <dd className="min-w-0 whitespace-pre-wrap text-[12pt] leading-[1.25] text-black">
+          <dt className="text-[13px] font-semibold leading-5 text-gray-950">{row.label}</dt>
+          <dd className="min-w-0 whitespace-pre-wrap text-[13px] leading-5 text-gray-950">
             {row.value}
           </dd>
         </div>
@@ -267,8 +267,8 @@ function PartyRows({ rows }: { rows: TuPrintMetaRow[] }) {
 function PartiesBlock({ parties }: { parties: TuPrintPartiesSection }) {
   return (
     <section className="tu-report-block tu-report-parties-block" style={{ marginBottom: mm(SECTION_GAP_MM) }}>
-      <h2 className="mb-7 text-[18pt] font-normal leading-tight text-[#003f5f]">
-        1. Uppdragsgivare och besiktningsman
+      <h2 className="mb-6 text-[15px] font-semibold leading-tight text-violet-950">
+        Uppdragsgivare och besiktningsman
       </h2>
       <div className="grid grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)] gap-x-5">
         <PartyRows rows={parties.leftRows} />
