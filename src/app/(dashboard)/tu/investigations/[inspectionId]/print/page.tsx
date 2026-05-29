@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import TuPrintActions from '@/components/tu/TuPrintActions'
 import TuPrintPagedDocument, {
+  type TuPrintHeader,
   type TuPrintImage,
   type TuPrintMetaRow,
   type TuPrintSection,
@@ -151,6 +152,37 @@ function buildFooter(investigation: TuInvestigationDetails) {
   }
 }
 
+function resolveDocumentTitle(investigation: TuInvestigationDetails) {
+  const title = normalizePrintableText(investigation.title)
+  return title && title.toLowerCase() !== 'teknisk utredning'
+    ? title
+    : 'Fördjupad teknisk utredning'
+}
+
+function buildHeader(investigation: TuInvestigationDetails): TuPrintHeader {
+  const address = compact([
+    investigation.property?.address ?? investigation.propertyAddress,
+    investigation.property?.city ?? investigation.propertyCity,
+  ])
+  const apartmentIdentifier = compact([
+    investigation.brfName,
+    investigation.apartmentNumber ? `Lgh ${investigation.apartmentNumber}` : null,
+  ])
+  const objectIdentifier =
+    investigation.objectType === 'apartment'
+      ? apartmentIdentifier
+      : normalizePrintableText(investigation.cadastralId)
+
+  return {
+    documentTitle: resolveDocumentTitle(investigation),
+    objectIdentifier: (objectIdentifier || address || '-').toLocaleUpperCase('sv-SE'),
+    projectType: 'Teknisk utredning',
+    date: formatDate(investigation.date ?? investigation.inspection.date) ?? '-',
+    address: address ?? '-',
+    assignmentNumber: investigation.assignmentNumber ?? investigation.inspection.assignment_number ?? '-',
+  }
+}
+
 export default async function TuInvestigationPrintPage({
   params,
   searchParams,
@@ -187,7 +219,6 @@ export default async function TuInvestigationPrintPage({
 
   if (!investigation) notFound()
 
-  const objectLine = compact([investigation.propertyAddress, investigation.propertyCity])
   const printableSections: TuPrintSection[] = investigation.reportDraft.sections
     .map((section) => ({
       key: section.key,
@@ -210,11 +241,9 @@ export default async function TuInvestigationPrintPage({
         printTitle=""
       />
       <TuPrintPagedDocument
-        title={investigation.title}
-        eyebrow="Teknisk utredning"
-        objectLine={objectLine}
         companyLogoUrl={investigation.inspector?.logo_url ?? null}
         companyLogoAlt={companyLogoAlt}
+        header={buildHeader(investigation)}
         metaRows={buildReportMetaRows(investigation)}
         objectRows={buildObjectRows(investigation)}
         sections={printableSections}

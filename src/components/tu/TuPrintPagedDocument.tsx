@@ -6,10 +6,12 @@ import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
 const PAGE_WIDTH_MM = 210
 const PAGE_HEIGHT_MM = 297
 const PAGE_X_PADDING_MM = 18
-const PAGE_CONTENT_TOP_MM = 31
-const PAGE_CONTENT_BOTTOM_MM = 34
+const PAGE_HEADER_TOP_MM = 9
+const PAGE_CONTENT_TOP_MM = 51
+const PAGE_CONTENT_BOTTOM_MM = 45
 const CONTENT_WIDTH_MM = PAGE_WIDTH_MM - PAGE_X_PADDING_MM * 2
 const CONTENT_HEIGHT_MM = PAGE_HEIGHT_MM - PAGE_CONTENT_TOP_MM - PAGE_CONTENT_BOTTOM_MM
+const SECTION_CHUNK_TARGET_CHARS = 620
 
 const mmToPxNumber = (mm: number) => (mm * 96) / 25.4
 const mm = (value: number) => `${value}mm`
@@ -31,12 +33,19 @@ export type TuPrintImage = {
   caption: string
 }
 
+export type TuPrintHeader = {
+  documentTitle: string
+  objectIdentifier: string
+  projectType: string
+  date: string
+  address: string
+  assignmentNumber: string
+}
+
 export type TuPrintPagedDocumentProps = {
-  title: string
-  eyebrow: string
-  objectLine: string | null
   companyLogoUrl: string | null
   companyLogoAlt: string
+  header: TuPrintHeader
   metaRows: TuPrintMetaRow[]
   objectRows: TuPrintMetaRow[]
   sections: TuPrintSection[]
@@ -48,10 +57,6 @@ export type TuPrintPagedDocumentProps = {
 }
 
 type PrintableBlock =
-  | {
-      id: string
-      type: 'cover'
-    }
   | {
       id: string
       type: 'meta'
@@ -94,28 +99,28 @@ function splitParagraphs(text: string) {
 
 function chunkParagraph(paragraph: string) {
   const normalized = paragraph.trim()
-  if (normalized.length <= 1050) return [normalized]
+  if (normalized.length <= SECTION_CHUNK_TARGET_CHARS) return [normalized]
 
   const chunks: string[] = []
   let current = ''
-  const sentences = normalized.split(/(?<=[.!?])\s+/)
+  const tokens = normalized.split(/(\s+)/)
 
-  for (const sentence of sentences) {
-    const next = current ? `${current} ${sentence}` : sentence
-    if (current && next.length > 1050) {
+  for (const token of tokens) {
+    const next = `${current}${token}`
+    if (current.trim() && next.length > SECTION_CHUNK_TARGET_CHARS) {
       chunks.push(current)
-      current = sentence
+      current = token.trimStart()
       continue
     }
     current = next
   }
 
-  if (current) chunks.push(current)
+  if (current.trim()) chunks.push(current)
   return chunks.length > 0 ? chunks : [normalized]
 }
 
 function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[] {
-  const blocks: PrintableBlock[] = [{ id: 'cover', type: 'cover' }]
+  const blocks: PrintableBlock[] = []
 
   if (props.metaRows.length > 0) {
     blocks.push({ id: 'meta', type: 'meta', rows: props.metaRows })
@@ -178,28 +183,6 @@ function createPagePlan(blocks: PrintableBlock[], heights: Map<string, number>):
 
   if (current.length > 0) pages.push(current)
   return { pages }
-}
-
-function CoverBlock({
-  title,
-  eyebrow,
-  objectLine,
-}: {
-  title: string
-  eyebrow: string
-  objectLine: string | null
-}) {
-  return (
-    <section className="tu-report-block tu-report-cover-block">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-700">
-        {eyebrow}
-      </p>
-      <h1 className="mt-2 text-[28px] font-semibold leading-tight tracking-tight text-gray-950">
-        {title}
-      </h1>
-      {objectLine ? <p className="mt-2 text-[13px] leading-5 text-gray-600">{objectLine}</p> : null}
-    </section>
-  )
 }
 
 function RowsBlock({
@@ -291,22 +274,11 @@ function ImageBlock({
 
 function PrintableBlockView({
   block,
-  props,
   onImageReady,
 }: {
   block: PrintableBlock
-  props: TuPrintPagedDocumentProps
   onImageReady?: (id: string) => void
 }) {
-  if (block.type === 'cover') {
-    return (
-      <CoverBlock
-        title={props.title}
-        eyebrow={props.eyebrow}
-        objectLine={props.objectLine}
-      />
-    )
-  }
   if (block.type === 'meta') {
     return <RowsBlock title="Uppgifter" rows={block.rows} />
   }
@@ -334,10 +306,94 @@ function PrintableBlockView({
   return <ImageBlock image={block.image} onImageReady={onImageReady} />
 }
 
+function HeaderValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex h-full min-w-0 flex-col justify-start px-2 py-1">
+      <div className="text-[11px] leading-none text-black">{label}</div>
+      <div className="mt-1 min-w-0 break-words text-[20px] font-medium leading-tight text-black">
+        {value || '-'}
+      </div>
+    </div>
+  )
+}
+
+function ReportHeader({
+  header,
+  companyLogoUrl,
+  companyLogoAlt,
+  pageNumber,
+  totalPages,
+}: {
+  header: TuPrintHeader
+  companyLogoUrl: string | null
+  companyLogoAlt: string
+  pageNumber: number
+  totalPages: number
+}) {
+  const pageValue = `${pageNumber} (${totalPages})`
+
+  return (
+    <table className="tu-report-header-table w-full border-collapse table-fixed border border-black text-black">
+      <colgroup>
+        <col style={{ width: '63mm' }} />
+        <col style={{ width: '35mm' }} />
+        <col style={{ width: '34mm' }} />
+        <col style={{ width: '42mm' }} />
+      </colgroup>
+      <tbody>
+        <tr className="h-[11mm]">
+          <td className="border border-black align-top">
+            <HeaderValue label="Dokument" value={header.documentTitle} />
+          </td>
+          <td className="border border-black align-top" colSpan={2}>
+            <HeaderValue label="Datum" value={header.date} />
+          </td>
+          <td className="border border-black align-middle" rowSpan={3}>
+            <div className="flex h-full items-center justify-center p-2">
+              {companyLogoUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={companyLogoUrl}
+                  alt={companyLogoAlt}
+                  className="tu-report-header-logo h-auto max-h-[24mm] max-w-[38mm] object-contain"
+                />
+              ) : (
+                <span className="text-center text-[15px] font-semibold leading-tight text-gray-900">
+                  {companyLogoAlt}
+                </span>
+              )}
+            </div>
+          </td>
+        </tr>
+        <tr className="h-[11mm]">
+          <td className="border border-black align-top">
+            <HeaderValue label="Objekt, Fastighetsbeteckning" value={header.objectIdentifier} />
+          </td>
+          <td className="border border-black align-top" colSpan={2}>
+            <HeaderValue label="Adress" value={header.address} />
+          </td>
+        </tr>
+        <tr className="h-[11mm]">
+          <td className="border border-black align-top">
+            <HeaderValue label="Projekttyp" value={header.projectType} />
+          </td>
+          <td className="border border-black align-top">
+            <HeaderValue label="Arbetsnummer" value={header.assignmentNumber} />
+          </td>
+          <td className="border border-black align-top">
+            <HeaderValue label="Sida" value={pageValue} />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  )
+}
+
 function PageChrome({
   children,
   companyLogoUrl,
   companyLogoAlt,
+  header,
   footer,
   pageNumber,
   totalPages,
@@ -345,6 +401,7 @@ function PageChrome({
   children: ReactNode
   companyLogoUrl: string | null
   companyLogoAlt: string
+  header: TuPrintHeader
   footer: TuPrintPagedDocumentProps['footer']
   pageNumber: number
   totalPages: number
@@ -361,28 +418,20 @@ function PageChrome({
   return (
     <section className="tu-report-page bg-white shadow-sm ring-1 ring-gray-200" style={pageStyle}>
       <header
-        className="absolute flex items-start justify-between gap-6"
+        className="absolute"
         style={{
-          top: mm(11),
+          top: mm(PAGE_HEADER_TOP_MM),
           left: mm(PAGE_X_PADDING_MM),
           right: mm(PAGE_X_PADDING_MM),
         }}
       >
-        <div className="flex min-h-[13mm] min-w-0 items-start">
-          {companyLogoUrl ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={companyLogoUrl}
-              alt={companyLogoAlt}
-              className="h-auto max-h-[13mm] max-w-[58mm] object-contain"
-            />
-          ) : (
-            <span className="text-[12px] font-semibold text-gray-900">{companyLogoAlt}</span>
-          )}
-        </div>
-        <div className="shrink-0 pt-1 text-right text-[12px] font-semibold text-gray-950">
-          Sida {pageNumber} av {totalPages}
-        </div>
+        <ReportHeader
+          header={header}
+          companyLogoUrl={companyLogoUrl}
+          companyLogoAlt={companyLogoAlt}
+          pageNumber={pageNumber}
+          totalPages={totalPages}
+        />
       </header>
 
       <div
@@ -435,13 +484,11 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
     appendixImages,
     companyLogoAlt,
     companyLogoUrl,
-    eyebrow,
     footer,
+    header,
     metaRows,
-    objectLine,
     objectRows,
     sections,
-    title,
   } = props
   const blocks = useMemo(
     () =>
@@ -449,25 +496,21 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
         appendixImages,
         companyLogoAlt,
         companyLogoUrl,
-        eyebrow,
         footer,
+        header,
         metaRows,
-        objectLine,
         objectRows,
         sections,
-        title,
       }),
     [
       appendixImages,
       companyLogoAlt,
       companyLogoUrl,
-      eyebrow,
       footer,
+      header,
       metaRows,
-      objectLine,
       objectRows,
       sections,
-      title,
     ]
   )
   const [pagePlan, setPagePlan] = useState<PagePlan | null>(null)
@@ -531,7 +574,7 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
       >
         {blocks.map((block) => (
           <div key={block.id} data-tu-print-block-id={block.id}>
-            <PrintableBlockView block={block} props={props} onImageReady={markImageReady} />
+            <PrintableBlockView block={block} onImageReady={markImageReady} />
           </div>
         ))}
       </div>
@@ -548,12 +591,13 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
             key={`tu-print-page-${pageIndex}`}
             companyLogoUrl={props.companyLogoUrl}
             companyLogoAlt={props.companyLogoAlt}
+            header={props.header}
             footer={props.footer}
             pageNumber={pageIndex + 1}
             totalPages={totalPages}
           >
             {pageBlocks.map((block) => (
-              <PrintableBlockView key={block.id} block={block} props={props} />
+              <PrintableBlockView key={block.id} block={block} />
             ))}
           </PageChrome>
         ))}
