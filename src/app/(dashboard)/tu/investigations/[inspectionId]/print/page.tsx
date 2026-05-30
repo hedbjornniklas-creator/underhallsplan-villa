@@ -224,14 +224,10 @@ function buildSignature(
 
 export default async function TuInvestigationPrintPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ inspectionId: string }>
-  searchParams?: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { inspectionId } = await params
-  const resolvedSearchParams = searchParams ? await searchParams : {}
-  const autoPrint = resolvedSearchParams?.autoprint === '1'
 
   let investigation: TuInvestigationDetails | null = null
   let coverImages: TuInvestigationImage[] = []
@@ -294,7 +290,6 @@ export default async function TuInvestigationPrintPage({
     <main className="tu-print-root min-h-screen bg-neutral-100 text-gray-950 print:bg-white">
       <TuPrintActions
         backHref={`/tu/investigations/${encodeURIComponent(inspectionId)}`}
-        autoPrint={autoPrint}
         printTitle=""
       />
       <TuPrintPagedDocument

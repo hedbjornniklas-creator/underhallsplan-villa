@@ -1,16 +1,14 @@
 'use client'
 
-import { useCallback, useEffect } from 'react'
+import { useCallback } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Printer } from 'lucide-react'
 
 export default function TuPrintActions({
   backHref,
-  autoPrint,
   printTitle = '',
 }: {
   backHref: string
-  autoPrint: boolean
   printTitle?: string
 }) {
   const waitForPrintLayout = useCallback(async () => {
@@ -50,12 +48,6 @@ export default function TuPrintActions({
       window.setTimeout(restoreTitle, 1000)
     })()
   }, [printTitle, waitForPrintLayout])
-
-  useEffect(() => {
-    if (!autoPrint) return
-    const timeout = window.setTimeout(() => printWithTitle(), 250)
-    return () => window.clearTimeout(timeout)
-  }, [autoPrint, printWithTitle])
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-4 print:hidden">

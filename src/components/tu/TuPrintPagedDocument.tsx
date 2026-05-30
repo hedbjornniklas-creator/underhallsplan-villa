@@ -15,9 +15,35 @@ const SECTION_CHUNK_TARGET_CHARS = 480
 const PAGE_PACKING_SAFETY_MM = 10
 const BLOCK_GAP_MM = 5
 const SECTION_GAP_MM = 6
+const PRINT_IMAGE_POLICY = {
+  coverMaxLongSidePx: 1200,
+  appendixMaxLongSidePx: 900,
+  quality: 68,
+}
 
 const mmToPxNumber = (mm: number) => (mm * 96) / 25.4
 const mm = (value: number) => `${value}mm`
+
+function toPrintImageProxyUrl(src: string, maxLongSidePx: number) {
+  if (!src) return src
+  if (src.startsWith('data:')) return src
+  if (src.startsWith('/')) return src
+
+  const params = new URLSearchParams({
+    url: src,
+    max: String(maxLongSidePx),
+    q: String(PRINT_IMAGE_POLICY.quality),
+  })
+  return `/api/image-proxy?${params.toString()}`
+}
+
+function getCoverPrintImageSrc(src: string) {
+  return toPrintImageProxyUrl(src, PRINT_IMAGE_POLICY.coverMaxLongSidePx)
+}
+
+function getAppendixPrintImageSrc(src: string) {
+  return toPrintImageProxyUrl(src, PRINT_IMAGE_POLICY.appendixMaxLongSidePx)
+}
 
 export type TuPrintMetaRow = {
   label: string
@@ -225,6 +251,12 @@ function createPagePlan(blocks: PrintableBlock[], heights: Map<string, number>):
 
   for (const block of blocks) {
     const height = heights.get(block.id) ?? 0
+    if (block.type === 'appendix-title' && current.length > 0) {
+      pages.push(current)
+      current = []
+      currentHeight = 0
+    }
+
     if (current.length > 0 && currentHeight + height > maxHeight) {
       pages.push(current)
       current = []
@@ -453,7 +485,7 @@ function ImageGridBlock({
         <figure key={image.id} className="rounded border border-gray-200 p-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={image.src}
+            src={getAppendixPrintImageSrc(image.src)}
             alt={image.caption}
             data-tu-print-measure-image="true"
             className="mx-auto h-auto max-h-[52mm] w-full rounded object-contain"
@@ -674,7 +706,7 @@ function CoverPage({
           {coverImage ? (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
-              src={coverImage.src}
+              src={getCoverPrintImageSrc(coverImage.src)}
               alt={coverImage.caption || 'Omslagsbild'}
               className="max-h-full max-w-full object-contain"
             />
@@ -902,7 +934,7 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
         {coverImage ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
-            src={coverImage.src}
+            src={getCoverPrintImageSrc(coverImage.src)}
             alt=""
             data-tu-print-measure-image="true"
             onLoad={() => markImageReady(`cover-${coverImage.id}`)}

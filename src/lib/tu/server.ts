@@ -14,6 +14,7 @@ import {
   type AssignmentListItem,
 } from '@/lib/assignments/server'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import { formatCertificationDisplayLines } from '@/lib/certifications/display'
 import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
 import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
@@ -82,6 +83,20 @@ export type TuInspectionSummary = {
   reportLockedAt: string | null
   createdAt: string | null
   updatedAt: string | null
+}
+
+export type TuInspectorProfileCard = {
+  fullName: string | null
+  phone: string | null
+  email: string | null
+  companyName: string | null
+  companyOrgNo: string | null
+  companyAddress: string | null
+  companyPostalCode: string | null
+  companyCity: string | null
+  avatarUrl: string | null
+  logoUrl: string | null
+  credentialLines: string[]
 }
 
 export type TuInvestigationDetails = TuInspectionSummary & {
@@ -527,6 +542,36 @@ async function getTuInspectorProfile(input: {
     certification_number: summary.certification_number,
     certification_items: summary.all_selected_items,
   } satisfies TuInspectorProfileRow
+}
+
+export async function getTuInspectorProfileCard(input: {
+  profileId: string | null | undefined
+  orgId: string
+}): Promise<TuInspectorProfileCard | null> {
+  const profile = await getTuInspectorProfile(input)
+  if (!profile) return null
+
+  const fallbackCredentialLines = [
+    profile.sbr_group,
+    profile.sbr_status,
+    profile.membership_number ? `Medlemsnummer: ${profile.membership_number}` : null,
+    profile.certification_number ? `Certifieringsnummer: ${profile.certification_number}` : null,
+  ].filter((line): line is string => Boolean(line))
+  const credentialLines = formatCertificationDisplayLines(profile.certification_items).slice(0, 4)
+
+  return {
+    fullName: profile.full_name,
+    phone: profile.phone,
+    email: profile.email,
+    companyName: profile.company_name,
+    companyOrgNo: profile.company_orgno,
+    companyAddress: profile.company_address,
+    companyPostalCode: profile.company_postal_code,
+    companyCity: profile.company_city,
+    avatarUrl: profile.avatar_url,
+    logoUrl: profile.logo_url,
+    credentialLines: credentialLines.length > 0 ? credentialLines : fallbackCredentialLines,
+  }
 }
 
 export async function requireTuContext() {

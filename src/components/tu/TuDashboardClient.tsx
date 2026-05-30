@@ -7,14 +7,16 @@ import {
   ArrowLeft,
   CalendarDays,
   FileText,
+  IdCard,
   ListChecks,
   Mail,
   Plus,
   Send,
+  Settings,
   X,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
-import type { TuAssignmentListItem, TuInspectionSummary } from '@/lib/tu/server'
+import type { TuAssignmentListItem, TuInspectionSummary, TuInspectorProfileCard } from '@/lib/tu/server'
 
 type TuFormState = {
   objectType: 'villa' | 'apartment'
@@ -138,10 +140,12 @@ function getInvestigationAddress(item: TuInspectionSummary) {
 export default function TuDashboardClient({
   initialAssignments,
   initialInvestigations,
+  inspectorProfile,
   initialError,
 }: {
   initialAssignments: TuAssignmentListItem[]
   initialInvestigations: TuInspectionSummary[]
+  inspectorProfile: TuInspectorProfileCard | null
   initialError: string | null
 }) {
   const router = useRouter()
@@ -298,7 +302,7 @@ export default function TuDashboardClient({
             </div>
           ) : null}
 
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <ActionCard
               title="Skicka uppdragsbekräftelse"
               description="Snabbt utskick med omfattning, tid, pris, adress och kunduppgifter."
@@ -347,6 +351,7 @@ export default function TuDashboardClient({
                   : 'Inga utredningar ännu.'
               }
             />
+            <ProfileCard profile={inspectorProfile} />
           </section>
         </div>
 
@@ -470,6 +475,81 @@ function LinkCard({
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
         >
           Öppna lista
+        </Link>
+      </div>
+    </CardShell>
+  )
+}
+
+function ProfileCard({ profile }: { profile: TuInspectorProfileCard | null }) {
+  const [imageLoadError, setImageLoadError] = useState(false)
+  const imageSrc = imageLoadError ? null : profile?.avatarUrl ?? profile?.logoUrl ?? null
+  const name = profile?.fullName || 'Besiktningsman'
+  const company = profile?.companyName || 'Profiluppgifter saknas'
+  const address = [
+    profile?.companyAddress,
+    [profile?.companyPostalCode, profile?.companyCity].filter(Boolean).join(' '),
+  ]
+    .filter(Boolean)
+    .join(', ')
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('')
+
+  return (
+    <CardShell>
+      <CardHeading
+        title="Visitkort"
+        description="Profil, logga, underskrift och behörigheter för utlåtanden."
+        icon={<IdCard size={22} aria-hidden />}
+      />
+      <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/50 p-3">
+        <div className="flex items-start gap-3">
+          {imageSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={imageSrc}
+              alt="Profilbild"
+              className="h-14 w-14 shrink-0 rounded-full border border-white bg-white object-cover shadow-sm"
+              onError={() => setImageLoadError(true)}
+            />
+          ) : (
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-violet-100 bg-white text-sm font-semibold text-violet-700 shadow-sm">
+              {initials || 'TU'}
+            </div>
+          )}
+          <div className="min-w-0 text-sm">
+            <p className="truncate font-semibold text-slate-950">{name}</p>
+            <p className="truncate text-slate-700">{company}</p>
+            {profile?.email ? <p className="truncate text-xs text-slate-600">{profile.email}</p> : null}
+            {profile?.phone ? <p className="truncate text-xs text-slate-600">{profile.phone}</p> : null}
+          </div>
+        </div>
+
+        <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
+          {profile?.credentialLines.length ? (
+            profile.credentialLines.slice(0, 3).map((line) => (
+              <p key={line} className="truncate">
+                {line}
+              </p>
+            ))
+          ) : (
+            <p>Inga behörigheter valda.</p>
+          )}
+          {profile?.companyOrgNo ? <p className="truncate">Org.nr: {profile.companyOrgNo}</p> : null}
+          {address ? <p className="truncate">{address}</p> : null}
+        </div>
+      </div>
+      <div className="mt-auto pt-5">
+        <Link
+          href="/settings"
+          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+        >
+          <Settings size={16} aria-hidden />
+          Öppna profil
         </Link>
       </div>
     </CardShell>
