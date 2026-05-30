@@ -6,6 +6,7 @@ import TuPrintPagedDocument, {
   type TuPrintMetaRow,
   type TuPrintPartiesSection,
   type TuPrintSection,
+  type TuPrintSignature,
 } from '@/components/tu/TuPrintPagedDocument'
 import {
   getTuInvestigationById,
@@ -27,6 +28,15 @@ function compact(parts: Array<string | null | undefined>) {
 
 function formatReportDate(value: Date) {
   return value.toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' })
+}
+
+function formatReportDateLong(value: Date) {
+  return value.toLocaleDateString('sv-SE', {
+    timeZone: 'Europe/Stockholm',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
 }
 
 function normalizePrintableText(value: string | null | undefined) {
@@ -150,7 +160,7 @@ function resolveDocumentTitle() {
   return 'Teknisk utredning'
 }
 
-function buildHeader(investigation: TuInvestigationDetails): TuPrintHeader {
+function buildHeader(investigation: TuInvestigationDetails, reportDate: string): TuPrintHeader {
   const address = compact([
     investigation.property?.address ?? investigation.propertyAddress,
     investigation.property?.city ?? investigation.propertyCity,
@@ -168,9 +178,47 @@ function buildHeader(investigation: TuInvestigationDetails): TuPrintHeader {
     documentTitle: resolveDocumentTitle(),
     objectIdentifier: (objectIdentifier || address || '-').toLocaleUpperCase('sv-SE'),
     projectType: 'Fördjupad teknisk utredning',
-    reportDate: formatReportDate(new Date()),
+    reportDate,
     address: address ?? '-',
     assignmentNumber: investigation.assignmentNumber ?? investigation.inspection.assignment_number ?? '-',
+  }
+}
+
+function buildSignature(
+  investigation: TuInvestigationDetails,
+  reportDateLong: string
+): TuPrintSignature | null {
+  const inspector = investigation.inspector
+  if (!inspector) return null
+
+  const inspectorName = normalizePrintableText(inspector.full_name)
+  const credentialLines = (inspector.certification_items ?? [])
+    .map((item) => {
+      const name = normalizePrintableText(item.name)
+      if (!name) return null
+      const number = normalizePrintableText(item.number_value)
+      return number ? `${name} ${number}` : name
+    })
+    .filter((line): line is string => Boolean(line))
+
+  const hasSignatureData =
+    Boolean(inspectorName) ||
+    Boolean(inspector.avatar_url) ||
+    Boolean(inspector.signature_url) ||
+    credentialLines.length > 0
+  if (!hasSignatureData) return null
+
+  const location = normalizePrintableText(inspector.company_city)
+  const locationAndDate = location
+    ? `${location}, den ${reportDateLong}`
+    : `Den ${reportDateLong}`
+
+  return {
+    locationAndDate,
+    inspectorName: inspectorName || 'Besiktningsman',
+    avatarUrl: inspector.avatar_url ?? null,
+    signatureUrl: inspector.signature_url ?? null,
+    credentialLines,
   }
 }
 
@@ -216,8 +264,11 @@ export default async function TuInvestigationPrintPage({
 
   if (!investigation) notFound()
 
+  const reportDate = new Date()
+  const reportDateShort = formatReportDate(reportDate)
+  const reportDateLong = formatReportDateLong(reportDate)
   const printableSections: TuPrintSection[] = investigation.reportDraft.sections
-    .filter((section) => section.key !== 'assignment_parties')
+    .filter((section) => section.key !== 'assignment_parties' && section.key !== 'signature')
     .map((section) => ({
       key: section.key,
       title: section.title,
@@ -249,13 +300,14 @@ export default async function TuInvestigationPrintPage({
       <TuPrintPagedDocument
         companyLogoUrl={investigation.inspector?.logo_url ?? null}
         companyLogoAlt={companyLogoAlt}
-        header={buildHeader(investigation)}
+        header={buildHeader(investigation, reportDateShort)}
         coverTitle={normalizePrintableText(investigation.title) || 'Fördjupad teknisk utredning'}
         coverImage={coverImage}
         parties={buildPartiesSection(investigation)}
         metaRows={[]}
         objectRows={[]}
         sections={printableSections}
+        signature={buildSignature(investigation, reportDateLong)}
         appendixImages={printableImages}
         footer={buildFooter(investigation)}
       />

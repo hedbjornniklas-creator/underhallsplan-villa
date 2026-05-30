@@ -50,6 +50,14 @@ export type TuPrintHeader = {
   assignmentNumber: string
 }
 
+export type TuPrintSignature = {
+  locationAndDate: string
+  inspectorName: string
+  avatarUrl: string | null
+  signatureUrl: string | null
+  credentialLines: string[]
+}
+
 export type TuPrintPagedDocumentProps = {
   companyLogoUrl: string | null
   companyLogoAlt: string
@@ -60,6 +68,7 @@ export type TuPrintPagedDocumentProps = {
   metaRows: TuPrintMetaRow[]
   objectRows: TuPrintMetaRow[]
   sections: TuPrintSection[]
+  signature: TuPrintSignature | null
   appendixImages: TuPrintImage[]
   footer: {
     companyLines: string[]
@@ -94,6 +103,11 @@ type PrintableBlock =
   | {
       id: string
       type: 'appendix-title'
+    }
+  | {
+      id: string
+      type: 'signature'
+      signature: TuPrintSignature
     }
   | {
       id: string
@@ -143,6 +157,7 @@ function chunkParagraph(paragraph: string) {
 
 function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[] {
   const blocks: PrintableBlock[] = []
+  let signatureInserted = false
 
   if (props.parties && (props.parties.leftRows.length > 0 || props.parties.rightRows.length > 0)) {
     blocks.push({ id: 'parties', type: 'parties', parties: props.parties })
@@ -166,6 +181,15 @@ function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[
         continuation: index > 0,
       })
     })
+
+    if (section.key === 'closing_comments' && props.signature) {
+      blocks.push({ id: 'signature', type: 'signature', signature: props.signature })
+      signatureInserted = true
+    }
+  }
+
+  if (props.signature && !signatureInserted) {
+    blocks.push({ id: 'signature', type: 'signature', signature: props.signature })
   }
 
   if (props.appendixImages.length > 0) {
@@ -363,6 +387,56 @@ function SectionBlock({
   )
 }
 
+function SignatureBlock({ signature }: { signature: TuPrintSignature }) {
+  const hasCredentials = signature.credentialLines.length > 0
+
+  return (
+    <section
+      className="tu-report-block tu-report-signature-block border-t border-violet-200 pt-5"
+      style={{ marginTop: mm(4), marginBottom: mm(SECTION_GAP_MM) }}
+    >
+      <div className="w-[72mm]">
+        {signature.avatarUrl ? (
+          <div className="mb-2 h-[26mm] w-[26mm] overflow-hidden bg-white">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={signature.avatarUrl}
+              alt={signature.inspectorName}
+              className="h-full w-full object-cover"
+            />
+          </div>
+        ) : null}
+
+        <div className="text-[13px] font-semibold leading-5 text-gray-950">
+          {signature.locationAndDate}
+        </div>
+
+        {signature.signatureUrl ? (
+          <div className="mt-3 flex h-[16mm] w-[42mm] items-center overflow-hidden bg-white">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={signature.signatureUrl}
+              alt={`Underskrift ${signature.inspectorName}`}
+              className="max-h-full max-w-full object-contain"
+            />
+          </div>
+        ) : null}
+
+        <div className="mt-2 text-[13px] font-semibold leading-5 text-gray-950">
+          {signature.inspectorName}
+        </div>
+        {hasCredentials ? (
+          <div className="mt-0.5 space-y-0.5 text-[12px] leading-5 text-gray-950">
+            {signature.credentialLines.map((line) => (
+              <div key={line}>{line}</div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
 function ImageGridBlock({
   images,
   onImageReady,
@@ -431,6 +505,9 @@ function PrintableBlockView({
         </h2>
       </section>
     )
+  }
+  if (block.type === 'signature') {
+    return <SignatureBlock signature={block.signature} />
   }
   return <ImageGridBlock images={block.images} onImageReady={onImageReady} />
 }
@@ -729,6 +806,7 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
     objectRows,
     parties,
     sections,
+    signature,
   } = props
   const blocks = useMemo(
     () =>
@@ -744,6 +822,7 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
         objectRows,
         parties,
         sections,
+        signature,
       }),
     [
       appendixImages,
@@ -757,6 +836,7 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
       objectRows,
       parties,
       sections,
+      signature,
     ]
   )
   const [pagePlan, setPagePlan] = useState<PagePlan | null>(null)

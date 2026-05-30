@@ -20,7 +20,7 @@ type ProfileRow = {
   company_city: string | null
   avatar_path: string | null
   logo_path: string | null
-  signature_path: string | null
+  signature_path?: string | null
 }
 
 type ProfileForm = {
@@ -144,6 +144,11 @@ function normalizeTextInput(value: string) {
   return normalized.length > 0 ? normalized : null
 }
 
+function isMissingSignaturePathError(error: { message?: string | null; code?: string | null }) {
+  const message = `${error.code ?? ''} ${error.message ?? ''}`.toLowerCase()
+  return message.includes('signature_path') || message.includes('42703')
+}
+
 export default function ObSettingsPage() {
   const router = useRouter()
   const [userId, setUserId] = useState<string | null>(null)
@@ -154,6 +159,7 @@ export default function ObSettingsPage() {
   const [avatarLoadError, setAvatarLoadError] = useState(false)
   const [logoLoadError, setLogoLoadError] = useState(false)
   const [signatureLoadError, setSignatureLoadError] = useState(false)
+  const [signaturePathSupported, setSignaturePathSupported] = useState(true)
   const [orgId, setOrgId] = useState<string | null>(null)
   const [addonLoading, setAddonLoading] = useState(false)
   const [addonSaving, setAddonSaving] = useState(false)
@@ -213,7 +219,8 @@ export default function ObSettingsPage() {
 
       setUserId(user.id)
 
-      const { data, error: profileError } = await supabase
+      let signatureColumnAvailable = true
+      let profileResult = await supabase
         .from('profiles')
         .select(
           'id, full_name, phone, email, company_name, company_orgno, company_address, company_postal_code, company_city, avatar_path, logo_path, signature_path'
@@ -221,13 +228,26 @@ export default function ObSettingsPage() {
         .eq('id', user.id)
         .maybeSingle()
 
-      if (profileError) {
+      if (profileResult.error && isMissingSignaturePathError(profileResult.error)) {
+        signatureColumnAvailable = false
+        profileResult = await supabase
+          .from('profiles')
+          .select(
+            'id, full_name, phone, email, company_name, company_orgno, company_address, company_postal_code, company_city, avatar_path, logo_path'
+          )
+          .eq('id', user.id)
+          .maybeSingle()
+      }
+
+      setSignaturePathSupported(signatureColumnAvailable)
+
+      if (profileResult.error) {
         setError('Kunde inte hamta profil.')
         setLoading(false)
         return
       }
 
-      const profile = data as ProfileRow | null
+      const profile = profileResult.data as ProfileRow | null
       const loadedForm: ProfileForm = {
         full_name: profile?.full_name ?? '',
         phone: profile?.phone ?? '',
@@ -239,7 +259,7 @@ export default function ObSettingsPage() {
         company_city: profile?.company_city ?? '',
         avatar_path: profile?.avatar_path ?? null,
         logo_path: profile?.logo_path ?? null,
-        signature_path: profile?.signature_path ?? null,
+        signature_path: signatureColumnAvailable ? profile?.signature_path ?? null : null,
       }
       setForm(loadedForm)
       lastSavedProfileSnapshotRef.current = serializeProfileForm(loadedForm)
@@ -469,7 +489,9 @@ export default function ObSettingsPage() {
         company_city: form.company_city || null,
         avatar_path: form.avatar_path,
         logo_path: form.logo_path,
-        signature_path: form.signature_path,
+      }
+      if (signaturePathSupported) {
+        Object.assign(payload, { signature_path: form.signature_path })
       }
 
       const { error: saveError } = await supabase.from('profiles').upsert(payload)
@@ -486,7 +508,7 @@ export default function ObSettingsPage() {
     }, 700)
 
     return () => window.clearTimeout(timeoutId)
-  }, [form, loading, userId])
+  }, [form, loading, signaturePathSupported, userId])
 
   const handleAddonToggle = (addonServiceId: string, checked: boolean) => {
     setAddonRows((prev) =>
@@ -655,6 +677,11 @@ export default function ObSettingsPage() {
     field: 'avatar_path' | 'logo_path' | 'signature_path'
   ) => {
     if (!userId) return
+    if (field === 'signature_path' && !signaturePathSupported) {
+      setError('Signaturfältet saknas i databasen. Kör migrationen för signature_path först.')
+      event.target.value = ''
+      return
+    }
     const file = event.target.files?.[0]
     if (!file) return
 
@@ -795,45 +822,51 @@ export default function ObSettingsPage() {
                     </label>
                   </div>
 
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="text-center text-xs font-medium text-gray-600">Underskrift</div>
-                    <label className="group relative block h-[7.2rem] w-[12.6rem] cursor-pointer overflow-hidden rounded-md border border-gray-300 bg-white">
-                      {signatureSrc && !signatureLoadError ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={signatureSrc}
-                          alt="Underskrift"
-                          className="h-full w-full object-contain p-3"
-                          onError={() => setSignatureLoadError(true)}
+                  {signaturePathSupported ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="text-center text-xs font-medium text-gray-600">Underskrift</div>
+                      <label className="group relative block h-[7.2rem] w-[12.6rem] cursor-pointer overflow-hidden rounded-md border border-gray-300 bg-white">
+                        {signatureSrc && !signatureLoadError ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={signatureSrc}
+                            alt="Underskrift"
+                            className="h-full w-full object-contain p-3"
+                            onError={() => setSignatureLoadError(true)}
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-gray-50 text-xs text-gray-400">
+                            Ingen underskrift
+                          </div>
+                        )}
+                        <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/45 text-[11px] font-medium text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+                          Byt underskrift
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="sr-only"
+                          onChange={(event) => void handleImageUpload(event, 'signature_path')}
                         />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-gray-50 text-xs text-gray-400">
-                          Ingen underskrift
-                        </div>
-                      )}
-                      <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/45 text-[11px] font-medium text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-                        Byt underskrift
-                      </span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="sr-only"
-                        onChange={(event) => void handleImageUpload(event, 'signature_path')}
-                      />
-                    </label>
-                    {form.signature_path ? (
-                      <button
-                        type="button"
-                        onClick={() => setForm((prev) => ({ ...prev, signature_path: null }))}
-                        className="text-xs font-medium text-rose-700 hover:text-rose-900"
-                      >
-                        Ta bort underskrift
-                      </button>
-                    ) : null}
-                    <p className="max-w-[12.6rem] text-center text-[11px] leading-4 text-gray-500">
-                      Använd gärna PNG med transparent bakgrund.
-                    </p>
-                  </div>
+                      </label>
+                      {form.signature_path ? (
+                        <button
+                          type="button"
+                          onClick={() => setForm((prev) => ({ ...prev, signature_path: null }))}
+                          className="text-xs font-medium text-rose-700 hover:text-rose-900"
+                        >
+                          Ta bort underskrift
+                        </button>
+                      ) : null}
+                      <p className="max-w-[12.6rem] text-center text-[11px] leading-4 text-gray-500">
+                        Använd gärna PNG med transparent bakgrund.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                      Underskrift aktiveras när migrationen för profilers signaturfält har körts.
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-3">

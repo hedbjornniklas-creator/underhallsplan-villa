@@ -14,6 +14,7 @@ import {
   type AssignmentListItem,
 } from '@/lib/assignments/server'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
 import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
@@ -149,6 +150,8 @@ type TuInspectorProfileRow = {
   full_name: string | null
   email: string | null
   phone: string | null
+  avatar_path: string | null
+  avatar_url: string | null
   company_name: string | null
   company_orgno: string | null
   company_address: string | null
@@ -162,6 +165,7 @@ type TuInspectorProfileRow = {
   sbr_status: string | null
   membership_number: string | null
   certification_number: string | null
+  certification_items: InspectorCertificationListItem[]
 }
 
 type InspectionRow = {
@@ -405,6 +409,11 @@ function resolveTuPublicMediaUrl(path: string | null | undefined) {
   return createSupabaseAdminClient().storage.from('property-media').getPublicUrl(trimmed).data.publicUrl
 }
 
+function isMissingSignaturePathError(error: SupabaseError) {
+  const message = (error?.message ?? '').toLowerCase()
+  return message.includes('signature_path') || message.includes('42703')
+}
+
 function buildTuAssignmentPartiesText(input: {
   assignment: AssignmentDetails | null
   inspection: InspectionRow | null
@@ -466,19 +475,42 @@ async function getTuInspectorProfile(input: {
   if (!normalizedProfileId) return null
 
   const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
-  const { data, error } = await admin
+  let signatureColumnAvailable = true
+  let profileResult = await admin
     .from('profiles')
     .select(
-      'id,full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city,logo_path,signature_path'
+      'id,full_name,email,phone,avatar_path,company_name,company_orgno,company_address,company_postal_code,company_city,logo_path,signature_path'
     )
     .eq('id', normalizedProfileId)
     .maybeSingle()
 
-  if (error || !data) return null
-  const profile = data as Omit<
+  if (profileResult.error && isMissingSignaturePathError(profileResult.error)) {
+    signatureColumnAvailable = false
+    profileResult = await admin
+      .from('profiles')
+      .select(
+        'id,full_name,email,phone,avatar_path,company_name,company_orgno,company_address,company_postal_code,company_city,logo_path'
+      )
+      .eq('id', normalizedProfileId)
+      .maybeSingle()
+  }
+
+  if (profileResult.error || !profileResult.data) return null
+  const rawProfile = profileResult.data as Omit<
     TuInspectorProfileRow,
-    'logo_url' | 'signature_url' | 'sbr_group' | 'sbr_status' | 'membership_number' | 'certification_number'
+    | 'avatar_url'
+    | 'logo_url'
+    | 'signature_url'
+    | 'sbr_group'
+    | 'sbr_status'
+    | 'membership_number'
+    | 'certification_number'
+    | 'certification_items'
   >
+  const profile = {
+    ...rawProfile,
+    signature_path: signatureColumnAvailable ? rawProfile.signature_path ?? null : null,
+  }
   const { summary } = await resolveInspectorCertificationSummary(admin, {
     profileId: normalizedProfileId,
     orgId: input.orgId,
@@ -486,12 +518,14 @@ async function getTuInspectorProfile(input: {
 
   return {
     ...profile,
+    avatar_url: resolveTuPublicMediaUrl(profile.avatar_path),
     logo_url: resolveTuPublicMediaUrl(profile.logo_path),
     signature_url: resolveTuPublicMediaUrl(profile.signature_path),
     sbr_group: summary.sbr_group,
     sbr_status: summary.sbr_status,
     membership_number: summary.membership_number,
     certification_number: summary.certification_number,
+    certification_items: summary.all_selected_items,
   } satisfies TuInspectorProfileRow
 }
 
