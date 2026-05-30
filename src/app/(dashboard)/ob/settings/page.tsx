@@ -20,6 +20,7 @@ type ProfileRow = {
   company_city: string | null
   avatar_path: string | null
   logo_path: string | null
+  signature_path: string | null
 }
 
 type ProfileForm = {
@@ -33,6 +34,7 @@ type ProfileForm = {
   company_city: string
   avatar_path: string | null
   logo_path: string | null
+  signature_path: string | null
 }
 
 type AddonServiceRow = {
@@ -115,6 +117,7 @@ function serializeProfileForm(form: ProfileForm) {
     company_city: form.company_city ?? '',
     avatar_path: form.avatar_path ?? null,
     logo_path: form.logo_path ?? null,
+    signature_path: form.signature_path ?? null,
   })
 }
 
@@ -150,6 +153,7 @@ export default function ObSettingsPage() {
   const [success, setSuccess] = useState<string | null>(null)
   const [avatarLoadError, setAvatarLoadError] = useState(false)
   const [logoLoadError, setLogoLoadError] = useState(false)
+  const [signatureLoadError, setSignatureLoadError] = useState(false)
   const [orgId, setOrgId] = useState<string | null>(null)
   const [addonLoading, setAddonLoading] = useState(false)
   const [addonSaving, setAddonSaving] = useState(false)
@@ -175,6 +179,7 @@ export default function ObSettingsPage() {
     company_city: '',
     avatar_path: null,
     logo_path: null,
+    signature_path: null,
   })
 
   useEffect(() => {
@@ -184,6 +189,10 @@ export default function ObSettingsPage() {
   useEffect(() => {
     setLogoLoadError(false)
   }, [form.logo_path])
+
+  useEffect(() => {
+    setSignatureLoadError(false)
+  }, [form.signature_path])
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -207,7 +216,7 @@ export default function ObSettingsPage() {
       const { data, error: profileError } = await supabase
         .from('profiles')
         .select(
-          'id, full_name, phone, email, company_name, company_orgno, company_address, company_postal_code, company_city, avatar_path, logo_path'
+          'id, full_name, phone, email, company_name, company_orgno, company_address, company_postal_code, company_city, avatar_path, logo_path, signature_path'
         )
         .eq('id', user.id)
         .maybeSingle()
@@ -230,6 +239,7 @@ export default function ObSettingsPage() {
         company_city: profile?.company_city ?? '',
         avatar_path: profile?.avatar_path ?? null,
         logo_path: profile?.logo_path ?? null,
+        signature_path: profile?.signature_path ?? null,
       }
       setForm(loadedForm)
       lastSavedProfileSnapshotRef.current = serializeProfileForm(loadedForm)
@@ -249,7 +259,7 @@ export default function ObSettingsPage() {
     setAddonError(null)
     setAddonSuccess(null)
 
-    const { data: memberData, error: memberError } = await (supabase as any)
+    const { data: memberData, error: memberError } = await supabase
       .from('org_members')
       .select('org_id')
       .eq('profile_id', profileId)
@@ -275,7 +285,7 @@ export default function ObSettingsPage() {
       return null
     }
 
-    const { data: catalogData, error: catalogError } = await (supabase as any)
+    const { data: catalogData, error: catalogError } = await supabase
       .from('settings_addon_services')
       .select('id,key,name,description,sort_order,is_active')
       .eq('is_active', true)
@@ -298,7 +308,7 @@ export default function ObSettingsPage() {
       return activeOrgId
     }
 
-    const { data: profileAddonsData, error: profileAddonsError } = await (supabase as any)
+    const { data: profileAddonsData, error: profileAddonsError } = await supabase
       .from('profile_addon_services')
       .select('id,org_id,profile_id,addon_service_id,is_enabled,price_amount,currency')
       .eq('org_id', activeOrgId)
@@ -343,7 +353,7 @@ export default function ObSettingsPage() {
 
     let activeOrgId = activeOrgIdHint ?? null
     if (!activeOrgId) {
-      const { data: memberData, error: memberError } = await (supabase as any)
+      const { data: memberData, error: memberError } = await supabase
         .from('org_members')
         .select('org_id')
         .eq('profile_id', profileId)
@@ -370,7 +380,7 @@ export default function ObSettingsPage() {
       return
     }
 
-    const { data: catalogData, error: catalogError } = await (supabase as any)
+    const { data: catalogData, error: catalogError } = await supabase
       .from('settings_certifications')
       .select(
         'id,key,name,description,category,requires_number,requires_valid_to,number_label,valid_to_label,sort_order,is_active'
@@ -393,7 +403,7 @@ export default function ObSettingsPage() {
       return
     }
 
-    const { data: profileCertData, error: profileCertError } = await (supabase as any)
+    const { data: profileCertData, error: profileCertError } = await supabase
       .from('profile_certifications')
       .select('id,org_id,profile_id,certification_id,is_enabled,number_value,valid_to')
       .eq('org_id', activeOrgId)
@@ -459,6 +469,7 @@ export default function ObSettingsPage() {
         company_city: form.company_city || null,
         avatar_path: form.avatar_path,
         logo_path: form.logo_path,
+        signature_path: form.signature_path,
       }
 
       const { error: saveError } = await supabase.from('profiles').upsert(payload)
@@ -560,7 +571,7 @@ export default function ObSettingsPage() {
       })
     }
 
-    const { error: saveError } = await (supabase as any)
+    const { error: saveError } = await supabase
       .from('profile_addon_services')
       .upsert(rows, { onConflict: 'org_id,profile_id,addon_service_id' })
 
@@ -625,7 +636,7 @@ export default function ObSettingsPage() {
       })
     }
 
-    const { error: saveError } = await (supabase as any)
+    const { error: saveError } = await supabase
       .from('profile_certifications')
       .upsert(rows, { onConflict: 'org_id,profile_id,certification_id' })
 
@@ -641,7 +652,7 @@ export default function ObSettingsPage() {
 
   const handleImageUpload = async (
     event: ChangeEvent<HTMLInputElement>,
-    field: 'avatar_path' | 'logo_path'
+    field: 'avatar_path' | 'logo_path' | 'signature_path'
   ) => {
     if (!userId) return
     const file = event.target.files?.[0]
@@ -670,6 +681,7 @@ export default function ObSettingsPage() {
 
   const avatarSrc = resolvePublicMediaUrl(form.avatar_path)
   const logoSrc = resolvePublicMediaUrl(form.logo_path)
+  const signatureSrc = resolvePublicMediaUrl(form.signature_path)
   const handleBack = () => {
     if (typeof window !== 'undefined' && window.history.length > 1) {
       router.back()
@@ -781,6 +793,46 @@ export default function ObSettingsPage() {
                         onChange={(event) => void handleImageUpload(event, 'logo_path')}
                       />
                     </label>
+                  </div>
+
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="text-center text-xs font-medium text-gray-600">Underskrift</div>
+                    <label className="group relative block h-[7.2rem] w-[12.6rem] cursor-pointer overflow-hidden rounded-md border border-gray-300 bg-white">
+                      {signatureSrc && !signatureLoadError ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={signatureSrc}
+                          alt="Underskrift"
+                          className="h-full w-full object-contain p-3"
+                          onError={() => setSignatureLoadError(true)}
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-gray-50 text-xs text-gray-400">
+                          Ingen underskrift
+                        </div>
+                      )}
+                      <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/45 text-[11px] font-medium text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+                        Byt underskrift
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="sr-only"
+                        onChange={(event) => void handleImageUpload(event, 'signature_path')}
+                      />
+                    </label>
+                    {form.signature_path ? (
+                      <button
+                        type="button"
+                        onClick={() => setForm((prev) => ({ ...prev, signature_path: null }))}
+                        className="text-xs font-medium text-rose-700 hover:text-rose-900"
+                      >
+                        Ta bort underskrift
+                      </button>
+                    ) : null}
+                    <p className="max-w-[12.6rem] text-center text-[11px] leading-4 text-gray-500">
+                      Använd gärna PNG med transparent bakgrund.
+                    </p>
                   </div>
                 </div>
 

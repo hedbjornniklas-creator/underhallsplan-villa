@@ -1323,6 +1323,7 @@ export type Database = {
           phone: string | null
           sbr_group: string | null
           sbr_status: string | null
+          signature_path: string | null
         }
         Insert: {
           avatar_path?: string | null
@@ -1344,6 +1345,7 @@ export type Database = {
           phone?: string | null
           sbr_group?: string | null
           sbr_status?: string | null
+          signature_path?: string | null
         }
         Update: {
           avatar_path?: string | null
@@ -1365,6 +1367,7 @@ export type Database = {
           phone?: string | null
           sbr_group?: string | null
           sbr_status?: string | null
+          signature_path?: string | null
         }
         Relationships: []
       }

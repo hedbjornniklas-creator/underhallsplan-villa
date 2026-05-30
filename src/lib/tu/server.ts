@@ -156,6 +156,8 @@ type TuInspectorProfileRow = {
   company_city: string | null
   logo_path: string | null
   logo_url: string | null
+  signature_path: string | null
+  signature_url: string | null
   sbr_group: string | null
   sbr_status: string | null
   membership_number: string | null
@@ -467,7 +469,7 @@ async function getTuInspectorProfile(input: {
   const { data, error } = await admin
     .from('profiles')
     .select(
-      'id,full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city,logo_path'
+      'id,full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city,logo_path,signature_path'
     )
     .eq('id', normalizedProfileId)
     .maybeSingle()
@@ -475,7 +477,7 @@ async function getTuInspectorProfile(input: {
   if (error || !data) return null
   const profile = data as Omit<
     TuInspectorProfileRow,
-    'logo_url' | 'sbr_group' | 'sbr_status' | 'membership_number' | 'certification_number'
+    'logo_url' | 'signature_url' | 'sbr_group' | 'sbr_status' | 'membership_number' | 'certification_number'
   >
   const { summary } = await resolveInspectorCertificationSummary(admin, {
     profileId: normalizedProfileId,
@@ -485,6 +487,7 @@ async function getTuInspectorProfile(input: {
   return {
     ...profile,
     logo_url: resolveTuPublicMediaUrl(profile.logo_path),
+    signature_url: resolveTuPublicMediaUrl(profile.signature_path),
     sbr_group: summary.sbr_group,
     sbr_status: summary.sbr_status,
     membership_number: summary.membership_number,
