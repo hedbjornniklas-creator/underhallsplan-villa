@@ -89,6 +89,21 @@ async function hasAssignmentAccess(admin: AdminClient, orgId: string, inspection
   return Boolean(data)
 }
 
+async function hasTechnicalInvestigationAccess(admin: AdminClient, orgId: string, inspectionId: string) {
+  const { data, error } = await admin
+    .from('technical_investigation_details')
+    .select('inspection_id')
+    .eq('org_id', orgId)
+    .eq('inspection_id', inspectionId)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte verifiera access till utlåtandet.')
+  }
+
+  return Boolean(data)
+}
+
 async function isInspectionOwnedByUser(
   admin: AdminClient,
   propertyId: string | null,
@@ -141,6 +156,7 @@ export async function GET(
     const inspectionRow = inspection as InspectionForPdf
     const hasAccess =
       (await hasAssignmentAccess(admin, orgContext.orgId, inspectionId)) ||
+      (await hasTechnicalInvestigationAccess(admin, orgContext.orgId, inspectionId)) ||
       (await isInspectionOwnedByUser(admin, inspectionRow.property_id, orgContext.userId))
 
     if (!hasAccess) {

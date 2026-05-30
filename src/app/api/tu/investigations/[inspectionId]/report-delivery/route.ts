@@ -1,8 +1,13 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
+import { createHash } from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmailTemplates'
+import {
+  getPdfRenderDiagnostics,
+  renderPreviewPdf,
+} from '@/lib/report/pdfV2/renderPreviewPdf'
 import {
   getTuInvestigationById,
   listTuInvestigationImages,
@@ -12,10 +17,23 @@ import { createTuReportSnapshotPayloadV1 } from '@/lib/tu/reportSnapshot'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 
 const TEMPLATE_KEY = 'tu_report_delivery'
+const PDF_RENDER_TIMEOUT_MS = Number(process.env.REPORT_PDF_RENDER_TIMEOUT_MS ?? 60000)
+const REPORT_PDF_STORAGE_BUCKET = process.env.REPORT_PDF_STORAGE_BUCKET?.trim() || 'inspection-reports'
 
 type DeliveryAction = 'send_and_lock' | 'send_open' | 'lock_only'
+type PdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
+type AdminClient = ReturnType<typeof createSupabaseAdminClient>
+
+function normalizePdfStatus(value: unknown): PdfStatus {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'processing') return 'processing'
+  if (normalized === 'ready') return 'ready'
+  if (normalized === 'failed') return 'failed'
+  return 'pending'
+}
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
@@ -56,6 +74,149 @@ function parseExtraRecipients(value: unknown, primary: string | null) {
   return recipients
 }
 
+async function ensureReportPdfStorageBucket(admin: AdminClient) {
+  const { error } = await admin.storage.getBucket(REPORT_PDF_STORAGE_BUCKET)
+  if (!error) return
+
+  const { error: createError } = await admin.storage.createBucket(REPORT_PDF_STORAGE_BUCKET, {
+    public: false,
+    fileSizeLimit: 50 * 1024 * 1024,
+    allowedMimeTypes: ['application/pdf'],
+  })
+  if (createError) {
+    throw new Error(
+      `Kunde inte skapa storage bucket för PDF (${REPORT_PDF_STORAGE_BUCKET}): ${createError.message ?? createError}`
+    )
+  }
+}
+
+async function uploadReportPdfToStorage(
+  admin: AdminClient,
+  input: {
+    orgId: string
+    inspectionId: string
+    tokenHash: string
+    pdfBuffer: Buffer
+  }
+) {
+  await ensureReportPdfStorageBucket(admin)
+  const objectPath = `${input.orgId}/${input.inspectionId}/${Date.now()}-${input.tokenHash.slice(0, 16)}.pdf`
+  const { error } = await admin.storage
+    .from(REPORT_PDF_STORAGE_BUCKET)
+    .upload(objectPath, input.pdfBuffer, {
+      contentType: 'application/pdf',
+      cacheControl: '31536000',
+      upsert: false,
+    })
+
+  if (error) throw new Error(`Kunde inte spara PDF i Storage: ${error.message ?? error}`)
+  return {
+    bucket: REPORT_PDF_STORAGE_BUCKET,
+    path: objectPath,
+    sizeBytes: input.pdfBuffer.length,
+  }
+}
+
+async function setPdfJobStatus(
+  admin: AdminClient,
+  linkId: string,
+  patch: {
+    pdf_status?: PdfStatus
+    pdf_error?: string | null
+    pdf_attempts?: number
+    pdf_started_at?: string | null
+    pdf_generated_at?: string | null
+    pdf_storage_bucket?: string | null
+    pdf_storage_path?: string | null
+    pdf_size_bytes?: number | null
+    pdf_sha256?: string | null
+    pdf_base64?: string | null
+  }
+) {
+  const { error } = await admin
+    .from('inspection_report_links')
+    .update(patch)
+    .eq('id', linkId)
+    .is('revoked_at', null)
+
+  if (error) throw new Error(error.message ?? 'Kunde inte uppdatera PDF-status för rapportlänk.')
+}
+
+async function runTuReportPdfJobInBackground(input: {
+  linkId: string
+  orgId: string
+  inspectionId: string
+  tokenHash: string
+  previewReportUrl: string
+  cookieHeader: string | null
+}) {
+  const admin = createSupabaseAdminClient()
+
+  try {
+    const { data: link, error: linkError } = await admin
+      .from('inspection_report_links')
+      .select('id,pdf_attempts,revoked_at')
+      .eq('id', input.linkId)
+      .maybeSingle()
+
+    if (linkError) throw new Error(linkError.message ?? 'Kunde inte läsa rapportlänk för PDF-jobb.')
+    if (!link || link.revoked_at) return
+
+    const nextAttempts = Number((link as Record<string, unknown>).pdf_attempts ?? 0) + 1
+    await setPdfJobStatus(admin, input.linkId, {
+      pdf_status: 'processing',
+      pdf_error: null,
+      pdf_attempts: nextAttempts,
+      pdf_started_at: new Date().toISOString(),
+    })
+
+    const rendered = await renderPreviewPdf({
+      url: input.previewReportUrl,
+      cookieHeader: input.cookieHeader,
+      timeoutMs: PDF_RENDER_TIMEOUT_MS,
+      traceId: `tu:${input.inspectionId}:link:${input.linkId}`,
+    })
+    const pdfBuffer = Buffer.isBuffer(rendered) ? rendered : Buffer.from(rendered)
+    const pdfSha256 = createHash('sha256').update(pdfBuffer).digest('hex')
+    const storedPdf = await uploadReportPdfToStorage(admin, {
+      orgId: input.orgId,
+      inspectionId: input.inspectionId,
+      tokenHash: input.tokenHash,
+      pdfBuffer,
+    })
+
+    await setPdfJobStatus(admin, input.linkId, {
+      pdf_status: 'ready',
+      pdf_error: null,
+      pdf_generated_at: new Date().toISOString(),
+      pdf_storage_bucket: storedPdf.bucket,
+      pdf_storage_path: storedPdf.path,
+      pdf_size_bytes: storedPdf.sizeBytes,
+      pdf_sha256: pdfSha256,
+      pdf_base64: null,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Okänt fel vid PDF-generering.'
+    console.error('[tu.report-delivery.pdf-job] failed', {
+      linkId: input.linkId,
+      inspectionId: input.inspectionId,
+      error: message,
+      diagnostics: getPdfRenderDiagnostics(error),
+    })
+    try {
+      await setPdfJobStatus(admin, input.linkId, {
+        pdf_status: 'failed',
+        pdf_error: message.slice(0, 500),
+      })
+    } catch (updateError) {
+      console.error('[tu.report-delivery.pdf-job] failed to mark failed status', {
+        linkId: input.linkId,
+        error: updateError instanceof Error ? updateError.message : String(updateError),
+      })
+    }
+  }
+}
+
 function buildOrigin(request: Request) {
   const url = new URL(request.url)
   const forwardedProto = request.headers.get('x-forwarded-proto')
@@ -80,7 +241,7 @@ function getMailFromAddress() {
 }
 
 async function revokeOlderReportLinks(
-  admin: ReturnType<typeof createSupabaseAdminClient>,
+  admin: AdminClient,
   inspectionId: string,
   activeLinkId: string
 ) {
@@ -95,7 +256,7 @@ async function revokeOlderReportLinks(
 }
 
 async function createOutboundMessage(
-  admin: ReturnType<typeof createSupabaseAdminClient>,
+  admin: AdminClient,
   input: {
     orgId: string
     assignmentId: string | null
@@ -128,7 +289,7 @@ async function createOutboundMessage(
 }
 
 async function updateOutboundMessage(
-  admin: ReturnType<typeof createSupabaseAdminClient>,
+  admin: AdminClient,
   id: string,
   patch: {
     status: 'sent' | 'failed'
@@ -148,7 +309,7 @@ async function updateOutboundMessage(
 }
 
 async function getDeliveryHistory(
-  admin: ReturnType<typeof createSupabaseAdminClient>,
+  admin: AdminClient,
   inspectionId: string
 ) {
   const { data, error } = await admin
@@ -164,12 +325,12 @@ async function getDeliveryHistory(
 }
 
 async function getLatestReportLink(
-  admin: ReturnType<typeof createSupabaseAdminClient>,
+  admin: AdminClient,
   inspectionId: string
 ) {
   const { data, error } = await admin
     .from('inspection_report_links')
-    .select('id,created_at,pdf_status,pdf_error,revoked_at')
+    .select('id,created_at,pdf_status,pdf_error,revoked_at,pdf_storage_bucket,pdf_storage_path,pdf_base64')
     .eq('inspection_id', inspectionId)
     .is('revoked_at', null)
     .order('created_at', { ascending: false })
@@ -184,12 +345,15 @@ async function getLatestReportLink(
         pdf_status: string | null
         pdf_error: string | null
         revoked_at: string | null
+        pdf_storage_bucket: string | null
+        pdf_storage_path: string | null
+        pdf_base64: string | null
       }
     | null
 }
 
 async function lockTuInvestigation(
-  admin: ReturnType<typeof createSupabaseAdminClient>,
+  admin: AdminClient,
   input: {
     orgId: string
     inspectionId: string
@@ -222,6 +386,16 @@ async function lockTuInvestigation(
 
   if (inspectionError) throw new Error(inspectionError.message ?? 'Kunde inte låsa besiktningen.')
   return lockedAt
+}
+
+function getPdfDownloadUrl(inspectionId: string, activeLink: Awaited<ReturnType<typeof getLatestReportLink>>) {
+  if (!activeLink) return null
+  const hasStoragePdf =
+    String(activeLink.pdf_storage_bucket ?? '').trim().length > 0 &&
+    String(activeLink.pdf_storage_path ?? '').trim().length > 0
+  const hasLegacyPdf = String(activeLink.pdf_base64 ?? '').trim().length > 0
+  if (normalizePdfStatus(activeLink.pdf_status) !== 'ready' || (!hasStoragePdf && !hasLegacyPdf)) return null
+  return `/api/report-v2/${encodeURIComponent(inspectionId)}/pdf`
 }
 
 function resolveDefaultRecipient(investigation: Awaited<ReturnType<typeof getTuInvestigationById>>) {
@@ -276,6 +450,8 @@ export async function GET(
       hasActiveLink: Boolean(activeLink),
       pdfStatus: activeLink?.pdf_status ?? null,
       pdfError: activeLink?.pdf_error ?? null,
+      downloadUrl: getPdfDownloadUrl(inspectionId, activeLink),
+      publicLink: null,
       history,
     })
   } catch (error) {
@@ -322,41 +498,54 @@ export async function POST(
     const sentRecipients: string[] = []
     const failedRecipients: Array<{ email: string; error: string }> = []
 
-      const [coverImages, appendixImages] = await Promise.all([
-        listTuInvestigationImages({ orgId: org.orgId, inspectionId, sectionKey: 'cover' }),
-        listTuInvestigationImages({ orgId: org.orgId, inspectionId, sectionKey: 'appendix' }),
-      ])
-      const snapshotPayload = createTuReportSnapshotPayloadV1({
-        investigation,
-        coverImages,
-        appendixImages,
+    const [coverImages, appendixImages] = await Promise.all([
+      listTuInvestigationImages({ orgId: org.orgId, inspectionId, sectionKey: 'cover' }),
+      listTuInvestigationImages({ orgId: org.orgId, inspectionId, sectionKey: 'appendix' }),
+    ])
+    const snapshotPayload = createTuReportSnapshotPayloadV1({
+      investigation,
+      coverImages,
+      appendixImages,
+    })
+    const token = generateAssignmentToken()
+    const tokenHash = hashAssignmentToken(token)
+
+    const { data: linkData, error: linkError } = await admin
+      .from('inspection_report_links')
+      .insert({
+        org_id: org.orgId,
+        inspection_id: inspectionId,
+        assignment_id: investigation.assignmentId,
+        token_hash: tokenHash,
+        delivery_mode: 'link_only',
+        snapshot_schema_version: 'tu_v1',
+        snapshot_payload: snapshotPayload,
+        pdf_status: 'pending',
+        pdf_error: null,
+        pdf_attempts: 0,
+        pdf_started_at: null,
+        pdf_generated_at: null,
+        created_by: org.userId,
       })
-      const token = generateAssignmentToken()
-      const tokenHash = hashAssignmentToken(token)
+      .select('id')
+      .single()
 
-      const { data: linkData, error: linkError } = await admin
-        .from('inspection_report_links')
-        .insert({
-          org_id: org.orgId,
-          inspection_id: inspectionId,
-          assignment_id: investigation.assignmentId,
-          token_hash: tokenHash,
-          delivery_mode: 'link_only',
-          snapshot_schema_version: 'tu_v1',
-          snapshot_payload: snapshotPayload,
-          pdf_status: 'pending',
-          pdf_error: null,
-          pdf_attempts: 0,
-          created_by: org.userId,
-        })
-        .select('id')
-        .single()
+    if (linkError || !linkData) throw new Error(linkError?.message ?? 'Kunde inte skapa rapportlänk.')
+    linkId = linkData.id as string
+    await revokeOlderReportLinks(admin, inspectionId, linkId)
 
-      if (linkError || !linkData) throw new Error(linkError?.message ?? 'Kunde inte skapa rapportlänk.')
-      linkId = linkData.id as string
-      await revokeOlderReportLinks(admin, inspectionId, linkId)
-
-      publicLink = `${resolvePublicBaseUrl(request)}/rapport/${encodeURIComponent(token)}`
+    const publicBaseUrl = resolvePublicBaseUrl(request)
+    publicLink = `${publicBaseUrl}/rapport/${encodeURIComponent(token)}`
+    after(async () => {
+      await runTuReportPdfJobInBackground({
+        linkId,
+        orgId: org.orgId,
+        inspectionId,
+        tokenHash,
+        previewReportUrl: `${publicBaseUrl}/tu/investigations/${encodeURIComponent(inspectionId)}/print?pdf=1`,
+        cookieHeader: request.headers.get('cookie'),
+      })
+    })
 
     if (action !== 'lock_only') {
       const recipients = [
@@ -439,6 +628,7 @@ export async function POST(
       hasActiveLink: Boolean(activeLink),
       pdfStatus: activeLink?.pdf_status ?? null,
       pdfError: activeLink?.pdf_error ?? null,
+      downloadUrl: getPdfDownloadUrl(inspectionId, activeLink),
       linkId,
     })
   } catch (error) {

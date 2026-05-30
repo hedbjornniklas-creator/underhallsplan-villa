@@ -923,7 +923,8 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
 
   return (
     <div
-      className="tu-print-paged-document"
+      className="report-root tu-print-paged-document"
+      data-report-pagination-ready={pagePlan ? '1' : '0'}
       data-tu-print-pagination-ready={pagePlan ? '1' : '0'}
     >
       <div

@@ -290,6 +290,7 @@ export default async function TuInvestigationPrintPage({
     <main className="tu-print-root min-h-screen bg-neutral-100 text-gray-950 print:bg-white">
       <TuPrintActions
         backHref={`/tu/investigations/${encodeURIComponent(inspectionId)}`}
+        inspectionId={inspectionId}
         printTitle=""
       />
       <TuPrintPagedDocument

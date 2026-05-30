@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ChevronDown, ChevronUp, FileText, Image as ImageIcon, LockKeyhole, MoveDown, MoveUp, Printer, Send, Sparkles, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, FileText, Image as ImageIcon, MoveDown, MoveUp, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import type { TuInvestigationDetails, TuReportDraft, TuReportSectionKey } from '@/lib/tu/server'
 
@@ -53,34 +53,6 @@ type DocumentApiResponse = {
   document?: TuInvestigationDocument
   documents?: TuInvestigationDocument[]
   error?: string
-}
-
-type TuReportDeliveryHistoryItem = {
-  id: string
-  recipient_email: string | null
-  status: 'pending' | 'sent' | 'failed' | string | null
-  sent_at: string | null
-  created_at: string | null
-  error_message: string | null
-  subject: string | null
-}
-
-type TuReportDeliveryMeta = {
-  reportLockedAt: string | null
-  inspectionStatus: string | null
-  defaultRecipientEmail: string | null
-  ordererEmail: string | null
-  hasActiveLink: boolean
-  pdfStatus: string | null
-  pdfError: string | null
-  history: TuReportDeliveryHistoryItem[]
-}
-
-type TuReportDeliveryResponse = TuReportDeliveryMeta & {
-  error?: string
-  publicLink?: string
-  sentRecipients?: string[]
-  failedRecipients?: Array<{ email: string; error: string }>
 }
 
 type TuAiSuggestion = {
@@ -495,33 +467,6 @@ function joinDisplay(parts: Array<string | null | undefined>) {
   return parts.map((part) => part?.trim()).filter(Boolean).join(', ')
 }
 
-function isValidEmail(value: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
-}
-
-function getDefaultDeliveryRecipient(investigation: TuInvestigationDetails) {
-  return (
-    investigation.assignment?.customer_email ??
-    investigation.inspection.customer_email ??
-    investigation.customerEmail ??
-    ''
-  )
-}
-
-function parseExtraRecipientsInput(value: string) {
-  return value
-    .split(/[\n,;]+/)
-    .map((part) => part.trim().toLowerCase())
-    .filter((part, index, all) => part && isValidEmail(part) && all.indexOf(part) === index)
-}
-
-function deliveryStatusLabel(value: string | null | undefined) {
-  if (value === 'sent') return 'Skickad'
-  if (value === 'failed') return 'Misslyckades'
-  if (value === 'pending') return 'Väntar'
-  return value || 'Okänd'
-}
-
 function isImageFile(file: File) {
   return file.type.toLowerCase().startsWith('image/')
 }
@@ -621,15 +566,6 @@ export default function TuInvestigationEditorClient({
   const [aiSuggestions, setAiSuggestions] = useState<TuAiSuggestion[]>([])
   const [aiBusy, setAiBusy] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
-  const [deliveryMeta, setDeliveryMeta] = useState<TuReportDeliveryMeta | null>(null)
-  const [deliveryLoading, setDeliveryLoading] = useState(true)
-  const [deliveryBusy, setDeliveryBusy] = useState(false)
-  const [deliveryError, setDeliveryError] = useState<string | null>(null)
-  const [deliveryResult, setDeliveryResult] = useState<string | null>(null)
-  const [deliveryRecipient, setDeliveryRecipient] = useState(() =>
-    getDefaultDeliveryRecipient(initialInvestigation)
-  )
-  const [deliveryExtraRecipients, setDeliveryExtraRecipients] = useState('')
   const draftRef = useRef(initialInvestigation.reportDraft)
   const objectDetailsRef = useRef(objectDetails)
   const assignmentPartiesRef = useRef(assignmentParties)
@@ -704,38 +640,6 @@ export default function TuInvestigationEditorClient({
     }
 
     void loadDocuments()
-
-    return () => {
-      cancelled = true
-    }
-  }, [initialInvestigation.inspectionId])
-
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadDeliveryMeta() {
-      setDeliveryLoading(true)
-      setDeliveryError(null)
-      try {
-        const response = await fetch(
-          `/api/tu/investigations/${initialInvestigation.inspectionId}/report-delivery`,
-          { cache: 'no-store' }
-        )
-        const payload = (await response.json().catch(() => ({}))) as TuReportDeliveryResponse
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte hämta utskicksstatus.')
-        if (cancelled) return
-        setDeliveryMeta(payload)
-        setDeliveryRecipient((current) => current.trim() || payload.defaultRecipientEmail || '')
-      } catch (loadError) {
-        if (!cancelled) {
-          setDeliveryError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta utskicksstatus.')
-        }
-      } finally {
-        if (!cancelled) setDeliveryLoading(false)
-      }
-    }
-
-    void loadDeliveryMeta()
 
     return () => {
       cancelled = true
@@ -883,66 +787,6 @@ export default function TuInvestigationEditorClient({
       setAiSuggestions((current) => current.filter((item) => item !== suggestion))
     } catch {
       // saveSection already reports the error.
-    }
-  }
-
-  const handleReportDelivery = async (action: 'send_and_lock' | 'send_open' | 'lock_only') => {
-    const normalizedRecipient = deliveryRecipient.trim().toLowerCase()
-    if (action !== 'lock_only' && !isValidEmail(normalizedRecipient)) {
-      setDeliveryError('Ange en giltig huvudmottagare.')
-      setDeliveryResult(null)
-      return
-    }
-
-    setDeliveryBusy(true)
-    setDeliveryError(null)
-    setDeliveryResult(null)
-
-    try {
-      const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}/report-delivery`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          primary_recipient: normalizedRecipient,
-          extra_recipients: parseExtraRecipientsInput(deliveryExtraRecipients),
-        }),
-      })
-      const payload = (await response.json().catch(() => ({}))) as TuReportDeliveryResponse
-      if (!response.ok) throw new Error(payload.error ?? 'Kunde inte skicka eller låsa utlåtandet.')
-
-      setDeliveryMeta(payload)
-      if (payload.reportLockedAt) {
-        setInvestigation((current) => ({
-          ...current,
-          status: payload.inspectionStatus ?? current.status,
-          reportLockedAt: payload.reportLockedAt ?? current.reportLockedAt,
-        }))
-      }
-
-      const failedText =
-        payload.failedRecipients && payload.failedRecipients.length > 0
-          ? ` Misslyckade mottagare: ${payload.failedRecipients.map((item) => item.email).join(', ')}.`
-          : ''
-      if (action === 'lock_only') {
-        setDeliveryResult(
-          payload.publicLink
-            ? `Utlåtandet låstes utan utskick. Digital länk: ${payload.publicLink}`
-            : 'Utlåtandet låstes utan utskick.'
-        )
-      } else {
-        const sentCount = payload.sentRecipients?.length ?? 0
-        const lockText = action === 'send_and_lock' ? ' Utlåtandet är låst.' : ' Utlåtandet är fortsatt upplåst.'
-        setDeliveryResult(`Utlåtandet skickades till ${sentCount} mottagare.${failedText}${lockText}`)
-      }
-    } catch (deliveryRequestError) {
-      setDeliveryError(
-        deliveryRequestError instanceof Error
-          ? deliveryRequestError.message
-          : 'Kunde inte skicka eller låsa utlåtandet.'
-      )
-    } finally {
-      setDeliveryBusy(false)
     }
   }
 
@@ -1212,7 +1056,7 @@ export default function TuInvestigationEditorClient({
                 className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
               >
                 <Printer size={16} aria-hidden />
-                Skriv ut
+                Förhandsgranska och skicka
               </Link>
               <div className="rounded-md border border-violet-200 bg-white px-3 py-2 text-xs text-gray-600 shadow-sm">
                 {saveState === 'saving' ? 'Sparar...' : `Sparad: ${formatSavedAt(investigation.updatedAt)}`}
@@ -1231,129 +1075,6 @@ export default function TuInvestigationEditorClient({
             Utlåtandet är låst och kan inte ändras.
           </div>
         ) : null}
-
-        <section className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-700">
-                Skicka och lås
-              </p>
-              <h2 className="mt-1 text-lg font-semibold text-gray-950">Digitalt TU-utlåtande</h2>
-              <p className="mt-1 text-sm leading-6 text-gray-600">
-                Skapar en fryst digital version. Välj om utlåtandet ska låsas samtidigt som det skickas.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2 text-xs">
-              <span
-                className={`inline-flex rounded-full border px-2 py-1 font-medium ${
-                  locked
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : 'border-amber-200 bg-amber-50 text-amber-800'
-                }`}
-              >
-                {locked ? 'Låst' : 'Upplåst'}
-              </span>
-              {deliveryMeta?.hasActiveLink ? (
-                <span className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-2 py-1 font-medium text-violet-800">
-                  Digital länk finns
-                </span>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-gray-700">Huvudmottagare</span>
-              <input
-                type="email"
-                value={deliveryRecipient}
-                onChange={(event) => setDeliveryRecipient(event.target.value)}
-                placeholder="namn@epost.se"
-                disabled={deliveryBusy}
-                className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
-              />
-              <p className="text-[11px] text-gray-500">
-                Föreslagen mottagare: {deliveryMeta?.ordererEmail || getDefaultDeliveryRecipient(investigation) || 'Saknas'}
-              </p>
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-gray-700">Extra mottagare</span>
-              <textarea
-                value={deliveryExtraRecipients}
-                onChange={(event) => setDeliveryExtraRecipients(event.target.value)}
-                rows={3}
-                placeholder="namn@epost.se, annan@epost.se"
-                disabled={deliveryBusy}
-                className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
-              />
-            </label>
-          </div>
-
-          {deliveryLoading ? (
-            <p className="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
-              Hämtar utskicksstatus...
-            </p>
-          ) : null}
-
-          {deliveryError ? (
-            <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {deliveryError}
-            </p>
-          ) : null}
-
-          {deliveryResult ? (
-            <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-              {deliveryResult}
-            </p>
-          ) : null}
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void handleReportDelivery('send_and_lock')}
-              disabled={deliveryBusy || !isValidEmail(deliveryRecipient)}
-              className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-violet-100 disabled:text-violet-700"
-            >
-              <Send size={16} aria-hidden />
-              {locked ? 'Skicka låst version' : 'Skicka och lås'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleReportDelivery('send_open')}
-              disabled={deliveryBusy || locked || !isValidEmail(deliveryRecipient)}
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 text-sm font-semibold text-amber-800 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Skicka utan låsning
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleReportDelivery('lock_only')}
-              disabled={deliveryBusy || locked}
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <LockKeyhole size={16} aria-hidden />
-              Lås utan utskick
-            </button>
-          </div>
-
-          {deliveryMeta?.history?.length ? (
-            <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3">
-              <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
-                Leveranshistorik
-              </h3>
-              <div className="mt-2 space-y-2">
-                {deliveryMeta.history.slice(0, 4).map((item) => (
-                  <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                    <span className="font-medium text-gray-900">{item.recipient_email || '-'}</span>
-                    <span className="text-xs text-gray-600">
-                      {deliveryStatusLabel(item.status)} · {formatSavedAt(item.sent_at ?? item.created_at)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-        </section>
 
         <section className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
