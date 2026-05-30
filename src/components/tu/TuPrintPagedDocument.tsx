@@ -478,21 +478,21 @@ function ImageGridBlock({
 }) {
   return (
     <section
-      className="tu-report-block tu-report-image-grid-block grid grid-cols-2 gap-3"
+      className="tu-report-block tu-report-image-grid-block grid grid-cols-2 gap-2"
       style={{ marginBottom: mm(BLOCK_GAP_MM) }}
     >
       {images.map((image) => (
-        <figure key={image.id} className="rounded border border-gray-200 p-2">
+        <figure key={image.id} className="p-1">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={getAppendixPrintImageSrc(image.src)}
             alt={image.caption}
             data-tu-print-measure-image="true"
-            className="mx-auto h-auto max-h-[52mm] w-full rounded object-contain"
+            className="mx-auto h-[66mm] w-full rounded object-contain"
             onLoad={() => onImageReady?.(image.id)}
             onError={() => onImageReady?.(image.id)}
           />
-          <figcaption className="mt-1.5 max-h-[11mm] overflow-hidden whitespace-pre-wrap text-[10px] leading-4 text-gray-700">
+          <figcaption className="mt-1 max-h-[8mm] overflow-hidden whitespace-pre-wrap text-[9px] leading-3 text-gray-700">
             {image.caption}
           </figcaption>
         </figure>
@@ -529,8 +529,8 @@ function PrintableBlockView({
   if (block.type === 'appendix-title') {
     return (
       <section
-        className="tu-report-block tu-report-appendix-title border-t border-violet-200 pt-3"
-        style={{ marginBottom: mm(BLOCK_GAP_MM) }}
+        className="tu-report-block tu-report-appendix-title border-t border-violet-200 pt-2"
+        style={{ marginBottom: mm(3) }}
       >
         <h2 className="text-[15px] font-semibold leading-tight text-violet-950">
           Bildbilaga

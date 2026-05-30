@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { hashAssignmentToken } from '@/lib/assignments/tokens'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { buildInspectionReportShareEmail } from '@/lib/inspections/reportEmailTemplates'
+import { getTuSnapshotEmailMeta, isTuReportSnapshotPayloadV1 } from '@/lib/tu/reportSnapshot'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -100,6 +101,10 @@ function normalizedSnapshotText(value: unknown) {
 }
 
 function extractAssignmentNumberFromSnapshot(snapshotPayload: unknown): string | null {
+  if (isTuReportSnapshotPayloadV1(snapshotPayload)) {
+    return snapshotPayload.meta.assignmentNumber
+  }
+
   if (!snapshotPayload || typeof snapshotPayload !== 'object') return null
   const snapshot = snapshotPayload as Record<string, unknown>
   const reportData = snapshot.reportData
@@ -326,12 +331,18 @@ export async function POST(
       .maybeSingle()
     const orgName = String((orgData as { name?: string | null } | null)?.name ?? '').trim() || null
 
+    const tuSnapshot = isTuReportSnapshotPayloadV1(link.snapshot_payload)
+      ? link.snapshot_payload
+      : null
     const mock = getSnapshotMock(link.snapshot_payload)
     const properties = getNestedRecord(mock, 'properties')
     const inspections = getNestedRecord(mock, 'inspections')
-    const propertyAddress = normalizedSnapshotText(properties.address)
+    const tuMeta = tuSnapshot ? getTuSnapshotEmailMeta(tuSnapshot) : null
+    const propertyAddress = tuMeta?.propertyAddress ?? normalizedSnapshotText(properties.address)
     const inspectionDate =
-      normalizedSnapshotText(inspections.date) ?? normalizedSnapshotText(inspections.date_time)
+      tuMeta?.reportDate ??
+      normalizedSnapshotText(inspections.date) ??
+      normalizedSnapshotText(inspections.date_time)
     const detailsUrl = `${resolvePublicBaseUrl(request)}/rapport/${encodeURIComponent(normalizedToken)}`
     const emailContent = buildInspectionReportShareEmail({
       orgName,

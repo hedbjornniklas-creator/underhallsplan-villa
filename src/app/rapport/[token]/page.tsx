@@ -8,6 +8,11 @@ import {
 } from '@/lib/report/reportSnapshotPayload'
 import ReportSnapshotView from '@/components/report/ReportSnapshotView'
 import ReportShareButton from '@/components/report/ReportShareButton'
+import TuPublicReportSnapshotView from '@/components/tu/TuPublicReportSnapshotView'
+import {
+  isTuReportSnapshotPayloadV1,
+  type TuReportSnapshotPayloadV1,
+} from '@/lib/tu/reportSnapshot'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -77,6 +82,9 @@ export default async function PublicReportPage({
   if (!data) notFound()
   if (data.revoked_at) return <InactiveReportLinkMessage />
 
+  const tuSnapshot: TuReportSnapshotPayloadV1 | null = isTuReportSnapshotPayloadV1(data.snapshot_payload)
+    ? data.snapshot_payload
+    : null
   const snapshot: ReportSnapshotPayloadV1 | null = isReportSnapshotPayloadV1(data.snapshot_payload)
     ? data.snapshot_payload
     : null
@@ -94,6 +102,17 @@ export default async function PublicReportPage({
   const pdfDownloadUrl = pdfStatus === 'ready' && hasStoredPdf ? `${pdfInlineUrl}?download=1` : null
   const shareEndpoint = `/api/reports/public/${encodeURIComponent(normalizedToken)}`
   const shareUrl = `/rapport/${encodeURIComponent(normalizedToken)}`
+
+  if (tuSnapshot) {
+    return (
+      <TuPublicReportSnapshotView
+        snapshot={tuSnapshot}
+        pdfDownloadUrl={pdfDownloadUrl}
+        shareEndpoint={shareEndpoint}
+        shareUrl={shareUrl}
+      />
+    )
+  }
 
   if (!snapshot) {
     return (

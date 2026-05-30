@@ -1,0 +1,337 @@
+import type {
+  TuPrintHeader,
+  TuPrintImage,
+  TuPrintMetaRow,
+  TuPrintPagedDocumentProps,
+  TuPrintPartiesSection,
+  TuPrintSection,
+  TuPrintSignature,
+} from '@/components/tu/TuPrintPagedDocument'
+import type { TuInvestigationDetails, TuInvestigationImage } from '@/lib/tu/server'
+
+const EMPTY_PRINT_VALUES = new Set(['-', '--', 'ej angivet', 'ej angivet.'])
+const PARTY_HEADINGS = new Set(['Uppdragsgivare', 'Besiktningsman'])
+
+export type TuPrintPayload = Pick<
+  TuPrintPagedDocumentProps,
+  | 'companyLogoUrl'
+  | 'companyLogoAlt'
+  | 'header'
+  | 'coverTitle'
+  | 'coverImage'
+  | 'parties'
+  | 'metaRows'
+  | 'objectRows'
+  | 'sections'
+  | 'signature'
+  | 'appendixImages'
+  | 'footer'
+>
+
+export type TuReportSnapshotPayloadV1 = {
+  schema: 'tu_report_snapshot_v1'
+  module: 'TU'
+  inspectionId: string
+  createdAt: string
+  report: TuPrintPayload
+  meta: {
+    assignmentNumber: string | null
+    propertyAddress: string | null
+    reportDate: string
+    customerName: string | null
+  }
+}
+
+function compact(parts: Array<string | null | undefined>) {
+  const filtered = parts.map((part) => part?.trim()).filter(Boolean)
+  return filtered.length > 0 ? filtered.join(', ') : null
+}
+
+function formatReportDate(value: Date) {
+  return value.toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' })
+}
+
+function formatReportDateLong(value: Date) {
+  return value.toLocaleDateString('sv-SE', {
+    timeZone: 'Europe/Stockholm',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+function normalizePrintableText(value: string | null | undefined) {
+  const lines = String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => !EMPTY_PRINT_VALUES.has(line.trim().toLowerCase()))
+
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+function normalizeAssignmentPartiesText(value: string) {
+  const cleaned = normalizePrintableText(value)
+  if (!cleaned) return ''
+
+  const lines = cleaned.split('\n')
+  const segments: string[] = []
+  let currentHeading: string | null = null
+  let currentRows: string[] = []
+  const standaloneRows: string[] = []
+
+  const flush = () => {
+    if (!currentHeading) return
+    const rows = currentRows.map((line) => line.trim()).filter(Boolean)
+    if (rows.length > 0) {
+      segments.push([currentHeading, ...rows].join('\n'))
+    }
+    currentHeading = null
+    currentRows = []
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (PARTY_HEADINGS.has(trimmed)) {
+      flush()
+      currentHeading = trimmed
+      continue
+    }
+    if (currentHeading) {
+      currentRows.push(line)
+    } else if (trimmed) {
+      standaloneRows.push(line)
+    }
+  }
+  flush()
+
+  return [...standaloneRows, ...segments].join('\n\n').trim()
+}
+
+function normalizeSectionText(key: string, text: string) {
+  return key === 'assignment_parties'
+    ? normalizeAssignmentPartiesText(text)
+    : normalizePrintableText(text)
+}
+
+function toPrintRow(label: string, value: string | null | undefined): TuPrintMetaRow | null {
+  const normalized = normalizePrintableText(value)
+  return normalized ? { label, value: normalized } : null
+}
+
+function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPartiesSection {
+  const assignment = investigation.assignment
+  const inspector = investigation.inspector
+  const address = investigation.property?.address ?? investigation.propertyAddress
+  const postalCity = compact([
+    investigation.property?.postal_code ?? assignment?.property_postal_code,
+    investigation.property?.city ?? investigation.propertyCity ?? assignment?.property_city,
+  ])
+  const cadastralOrApartment =
+    investigation.objectType === 'apartment'
+      ? compact([
+          investigation.brfName,
+          investigation.apartmentNumber ? `Lgh ${investigation.apartmentNumber}` : null,
+        ])
+      : investigation.cadastralId
+
+  return {
+    leftRows: [
+      toPrintRow('Besiktningsman', inspector?.full_name),
+      toPrintRow('Medlemsnummer SBR', inspector?.membership_number),
+      toPrintRow('Telefon', inspector?.phone),
+      toPrintRow('E-Post', inspector?.email),
+      toPrintRow('Närvarande', assignment?.customer_name ?? investigation.inspection.customer_name),
+    ].filter((row): row is TuPrintMetaRow => Boolean(row)),
+    rightRows: [
+      toPrintRow('Fastighetsägare', assignment?.property_owner_name ?? investigation.property?.owner_name),
+      toPrintRow('Beställare', assignment?.customer_name ?? investigation.inspection.customer_name),
+      toPrintRow('Fastighetsbeteckning', cadastralOrApartment),
+      toPrintRow('Kommun', assignment?.property_municipality ?? investigation.property?.municipality),
+      toPrintRow('Adress', address),
+      toPrintRow('Postnummer, ort', postalCity),
+    ].filter((row): row is TuPrintMetaRow => Boolean(row)),
+  }
+}
+
+function buildFooter(investigation: TuInvestigationDetails) {
+  const inspector = investigation.inspector
+  const companyAddress = compact([
+    inspector?.company_address,
+    compact([inspector?.company_postal_code, inspector?.company_city]),
+  ])
+  const companyLines = [
+    inspector?.company_name,
+    inspector?.company_orgno ? `Org.nr ${inspector.company_orgno}` : null,
+    companyAddress,
+  ]
+    .map((line) => normalizePrintableText(line))
+    .filter(Boolean)
+  const contactLines = [inspector?.phone, inspector?.email]
+    .map((line) => normalizePrintableText(line))
+    .filter(Boolean)
+
+  return {
+    companyLines,
+    contactLines,
+  }
+}
+
+function buildHeader(investigation: TuInvestigationDetails, reportDate: string): TuPrintHeader {
+  const address = compact([
+    investigation.property?.address ?? investigation.propertyAddress,
+    investigation.property?.city ?? investigation.propertyCity,
+  ])
+  const apartmentIdentifier = compact([
+    investigation.brfName,
+    investigation.apartmentNumber ? `Lgh ${investigation.apartmentNumber}` : null,
+  ])
+  const objectIdentifier =
+    investigation.objectType === 'apartment'
+      ? apartmentIdentifier
+      : normalizePrintableText(investigation.cadastralId)
+
+  return {
+    documentTitle: 'Teknisk utredning',
+    objectIdentifier: (objectIdentifier || address || '-').toLocaleUpperCase('sv-SE'),
+    projectType: 'Fördjupad teknisk utredning',
+    reportDate,
+    address: address ?? '-',
+    assignmentNumber: investigation.assignmentNumber ?? investigation.inspection.assignment_number ?? '-',
+  }
+}
+
+function buildSignature(
+  investigation: TuInvestigationDetails,
+  reportDateLong: string
+): TuPrintSignature | null {
+  const inspector = investigation.inspector
+  if (!inspector) return null
+
+  const inspectorName = normalizePrintableText(inspector.full_name)
+  const credentialLines = (inspector.certification_items ?? [])
+    .map((item) => {
+      const name = normalizePrintableText(item.name)
+      if (!name) return null
+      const number = normalizePrintableText(item.number_value)
+      return number ? `${name} ${number}` : name
+    })
+    .filter((line): line is string => Boolean(line))
+
+  const hasSignatureData =
+    Boolean(inspectorName) ||
+    Boolean(inspector.avatar_url) ||
+    Boolean(inspector.signature_url) ||
+    credentialLines.length > 0
+  if (!hasSignatureData) return null
+
+  const location = normalizePrintableText(inspector.company_city)
+  const locationAndDate = location
+    ? `${location}, den ${reportDateLong}`
+    : `Den ${reportDateLong}`
+
+  return {
+    locationAndDate,
+    inspectorName: inspectorName || 'Besiktningsman',
+    avatarUrl: inspector.avatar_url ?? null,
+    signatureUrl: inspector.signature_url ?? null,
+    credentialLines,
+  }
+}
+
+export function buildTuPrintPayload(input: {
+  investigation: TuInvestigationDetails
+  coverImages: TuInvestigationImage[]
+  appendixImages: TuInvestigationImage[]
+  reportDate?: Date
+}): TuPrintPayload {
+  const reportDate = input.reportDate ?? new Date()
+  const reportDateShort = formatReportDate(reportDate)
+  const reportDateLong = formatReportDateLong(reportDate)
+  const investigation = input.investigation
+  const printableSections: TuPrintSection[] = investigation.reportDraft.sections
+    .filter((section) => section.key !== 'assignment_parties' && section.key !== 'signature')
+    .map((section) => ({
+      key: section.key,
+      title: section.title,
+      text: normalizeSectionText(section.key, section.text),
+    }))
+    .filter((section) => Boolean(section.text))
+  const appendixImages: TuPrintImage[] = input.appendixImages.map((image, index) => ({
+    id: image.id,
+    src: image.publicUrl,
+    caption: image.caption?.trim() || `Bild ${index + 1}`,
+  }))
+  const coverImageSource = input.coverImages[0] ?? null
+  const coverImage: TuPrintImage | null = coverImageSource
+    ? {
+        id: coverImageSource.id,
+        src: coverImageSource.publicUrl,
+        caption: coverImageSource.caption?.trim() || 'Omslagsbild',
+      }
+    : null
+
+  return {
+    companyLogoUrl: investigation.inspector?.logo_url ?? null,
+    companyLogoAlt: investigation.inspector?.company_name ?? 'Besiktningsbolag',
+    header: buildHeader(investigation, reportDateShort),
+    coverTitle: normalizePrintableText(investigation.title) || 'Fördjupad teknisk utredning',
+    coverImage,
+    parties: buildPartiesSection(investigation),
+    metaRows: [],
+    objectRows: [],
+    sections: printableSections,
+    signature: buildSignature(investigation, reportDateLong),
+    appendixImages,
+    footer: buildFooter(investigation),
+  }
+}
+
+export function createTuReportSnapshotPayloadV1(input: {
+  investigation: TuInvestigationDetails
+  coverImages: TuInvestigationImage[]
+  appendixImages: TuInvestigationImage[]
+  createdAt?: Date
+}): TuReportSnapshotPayloadV1 {
+  const createdAt = input.createdAt ?? new Date()
+  const report = buildTuPrintPayload({
+    investigation: input.investigation,
+    coverImages: input.coverImages,
+    appendixImages: input.appendixImages,
+    reportDate: createdAt,
+  })
+
+  return {
+    schema: 'tu_report_snapshot_v1',
+    module: 'TU',
+    inspectionId: input.investigation.inspectionId,
+    createdAt: createdAt.toISOString(),
+    report,
+    meta: {
+      assignmentNumber:
+        input.investigation.assignmentNumber ?? input.investigation.inspection.assignment_number ?? null,
+      propertyAddress:
+        input.investigation.property?.address ?? input.investigation.propertyAddress ?? null,
+      reportDate: report.header.reportDate,
+      customerName:
+        input.investigation.assignment?.customer_name ??
+        input.investigation.inspection.customer_name ??
+        null,
+    },
+  }
+}
+
+export function isTuReportSnapshotPayloadV1(value: unknown): value is TuReportSnapshotPayloadV1 {
+  if (!value || typeof value !== 'object') return false
+  const payload = value as Partial<TuReportSnapshotPayloadV1>
+  return payload.schema === 'tu_report_snapshot_v1' && payload.module === 'TU' && Boolean(payload.report)
+}
+
+export function getTuSnapshotEmailMeta(snapshot: TuReportSnapshotPayloadV1) {
+  return {
+    assignmentNumber: snapshot.meta.assignmentNumber,
+    propertyAddress: snapshot.meta.propertyAddress ?? snapshot.report.header.address,
+    reportDate: snapshot.meta.reportDate,
+    customerName: snapshot.meta.customerName,
+  }
+}
