@@ -111,7 +111,7 @@ export type TuInvestigationImage = {
   id: string
   inspectionId: string
   orgId: string
-  sectionKey: 'bank' | 'appendix'
+  sectionKey: 'bank' | 'appendix' | 'cover'
   storageBucket: string
   filePath: string
   publicUrl: string
@@ -1110,8 +1110,10 @@ export async function getTuInvestigationById(input: {
 const TU_IMAGE_COLUMNS =
   'id,inspection_id,org_id,section_key,storage_bucket,file_path,caption,sort_order,uploaded_by,created_at,updated_at'
 
-function normalizeTuImageSectionKey(value: string | null | undefined): 'bank' | 'appendix' {
-  return value === 'appendix' ? 'appendix' : 'bank'
+function normalizeTuImageSectionKey(value: string | null | undefined): 'bank' | 'appendix' | 'cover' {
+  if (value === 'appendix') return 'appendix'
+  if (value === 'cover') return 'cover'
+  return 'bank'
 }
 
 function mapTuInvestigationImage(row: TuImageRow, admin: TuStorageClient): TuInvestigationImage {
@@ -1135,7 +1137,7 @@ function mapTuInvestigationImage(row: TuImageRow, admin: TuStorageClient): TuInv
 export async function listTuInvestigationImages(input: {
   orgId: string
   inspectionId: string
-  sectionKey?: 'bank' | 'appendix'
+  sectionKey?: 'bank' | 'appendix' | 'cover'
 }): Promise<TuInvestigationImage[]> {
   const admin = createSupabaseAdminClient() as unknown as TuStorageClient
   let query = admin

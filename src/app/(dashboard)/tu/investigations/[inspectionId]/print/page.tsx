@@ -186,6 +186,7 @@ export default async function TuInvestigationPrintPage({
   const autoPrint = resolvedSearchParams?.autoprint === '1'
 
   let investigation: TuInvestigationDetails | null = null
+  let coverImages: TuInvestigationImage[] = []
   let appendixImages: TuInvestigationImage[] = []
 
   try {
@@ -196,6 +197,11 @@ export default async function TuInvestigationPrintPage({
       inspectorProfileId: context.userId,
     })
     if (!investigation) notFound()
+    coverImages = await listTuInvestigationImages({
+      orgId: context.orgId,
+      inspectionId,
+      sectionKey: 'cover',
+    })
     appendixImages = await listTuInvestigationImages({
       orgId: context.orgId,
       inspectionId,
@@ -223,6 +229,14 @@ export default async function TuInvestigationPrintPage({
     src: image.publicUrl,
     caption: image.caption?.trim() || `Bild ${index + 1}`,
   }))
+  const coverImageSource = coverImages[0] ?? null
+  const coverImage: TuPrintImage | null = coverImageSource
+    ? {
+        id: coverImageSource.id,
+        src: coverImageSource.publicUrl,
+        caption: coverImageSource.caption?.trim() || 'Omslagsbild',
+      }
+    : null
   const companyLogoAlt = investigation.inspector?.company_name ?? 'Besiktningsbolag'
 
   return (
@@ -236,6 +250,8 @@ export default async function TuInvestigationPrintPage({
         companyLogoUrl={investigation.inspector?.logo_url ?? null}
         companyLogoAlt={companyLogoAlt}
         header={buildHeader(investigation)}
+        coverTitle={normalizePrintableText(investigation.title) || 'Fördjupad teknisk utredning'}
+        coverImage={coverImage}
         parties={buildPartiesSection(investigation)}
         metaRows={[]}
         objectRows={[]}

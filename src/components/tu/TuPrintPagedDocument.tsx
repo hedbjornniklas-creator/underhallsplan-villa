@@ -54,6 +54,8 @@ export type TuPrintPagedDocumentProps = {
   companyLogoUrl: string | null
   companyLogoAlt: string
   header: TuPrintHeader
+  coverTitle: string
+  coverImage: TuPrintImage | null
   parties: TuPrintPartiesSection | null
   metaRows: TuPrintMetaRow[]
   objectRows: TuPrintMetaRow[]
@@ -101,6 +103,12 @@ type PrintableBlock =
 
 type PagePlan = {
   pages: PrintableBlock[][]
+}
+
+type TocEntry = {
+  id: string
+  label: string
+  pageNumber: number | null
 }
 
 function splitParagraphs(text: string) {
@@ -205,6 +213,52 @@ function createPagePlan(blocks: PrintableBlock[], heights: Map<string, number>):
 
   if (current.length > 0) pages.push(current)
   return { pages }
+}
+
+function buildTocEntries(props: TuPrintPagedDocumentProps, pages: PrintableBlock[][]): TocEntry[] {
+  const pageById = new Map<string, number>()
+
+  pages.forEach((pageBlocks, pageIndex) => {
+    const pageNumber = pageIndex + 2
+    for (const block of pageBlocks) {
+      if (block.type === 'parties' && !pageById.has('parties')) {
+        pageById.set('parties', pageNumber)
+      }
+      if (block.type === 'section' && !pageById.has(`section:${block.sectionKey}`)) {
+        pageById.set(`section:${block.sectionKey}`, pageNumber)
+      }
+      if (block.type === 'appendix-title' && !pageById.has('appendix')) {
+        pageById.set('appendix', pageNumber)
+      }
+    }
+  })
+
+  const entries: TocEntry[] = []
+  if (props.parties && (props.parties.leftRows.length > 0 || props.parties.rightRows.length > 0)) {
+    entries.push({
+      id: 'parties',
+      label: 'Uppdragsgivare och besiktningsman',
+      pageNumber: pageById.get('parties') ?? null,
+    })
+  }
+
+  for (const section of props.sections) {
+    entries.push({
+      id: `section:${section.key}`,
+      label: section.title,
+      pageNumber: pageById.get(`section:${section.key}`) ?? null,
+    })
+  }
+
+  if (props.appendixImages.length > 0) {
+    entries.push({
+      id: 'appendix',
+      label: 'Bilder från fastigheten',
+      pageNumber: pageById.get('appendix') ?? null,
+    })
+  }
+
+  return entries
 }
 
 function RowsBlock({
@@ -476,6 +530,102 @@ function ReportHeader({
   )
 }
 
+function CoverPage({
+  companyLogoUrl,
+  companyLogoAlt,
+  coverImage,
+  coverTitle,
+  header,
+  pageNumber,
+  tocEntries,
+  totalPages,
+}: {
+  companyLogoUrl: string | null
+  companyLogoAlt: string
+  coverImage: TuPrintImage | null
+  coverTitle: string
+  header: TuPrintHeader
+  pageNumber: number
+  tocEntries: TocEntry[]
+  totalPages: number
+}) {
+  const pageStyle = {
+    width: mm(PAGE_WIDTH_MM),
+    height: mm(PAGE_HEIGHT_MM),
+    minHeight: mm(PAGE_HEIGHT_MM),
+    position: 'relative',
+    overflow: 'hidden',
+    backgroundColor: '#ffffff',
+  } satisfies CSSProperties
+
+  return (
+    <section className="tu-report-page bg-white shadow-sm ring-1 ring-gray-200" style={pageStyle}>
+      <header
+        className="absolute"
+        style={{
+          top: mm(PAGE_HEADER_TOP_MM),
+          left: mm(PAGE_X_PADDING_MM),
+          right: mm(PAGE_X_PADDING_MM),
+        }}
+      >
+        <ReportHeader
+          header={header}
+          companyLogoUrl={companyLogoUrl}
+          companyLogoAlt={companyLogoAlt}
+          pageNumber={pageNumber}
+          totalPages={totalPages}
+        />
+      </header>
+
+      <div
+        className="absolute flex flex-col items-center text-gray-950"
+        style={{
+          top: mm(50),
+          left: mm(PAGE_X_PADDING_MM),
+          right: mm(PAGE_X_PADDING_MM),
+          bottom: mm(16),
+        }}
+      >
+        <div className="max-w-[150mm] text-center text-[16px] font-medium leading-7 text-violet-950">
+          {coverTitle}
+        </div>
+        <div className="mt-6 text-center text-[10px] font-bold uppercase tracking-wide text-black">
+          {header.objectIdentifier}
+        </div>
+
+        <div className="mt-7 flex h-[72mm] w-[112mm] items-center justify-center overflow-hidden bg-white">
+          {coverImage ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={coverImage.src}
+              alt={coverImage.caption || 'Omslagsbild'}
+              className="max-h-full max-w-full object-contain"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center border border-dashed border-violet-200 text-[11px] text-gray-500">
+              Ingen omslagsbild vald
+            </div>
+          )}
+        </div>
+
+        <div className="mt-9 w-[150mm] self-center">
+          <h2 className="text-[13px] font-medium text-violet-950">Innehåll</h2>
+          <ol className="mt-2 space-y-1.5 text-[9px] leading-tight text-black">
+            {tocEntries.map((entry, index) => (
+              <li key={entry.id} className="grid grid-cols-[7mm_minmax(0,max-content)_minmax(12mm,1fr)_9mm] items-end gap-1">
+                <span className="text-right">{index + 1}.</span>
+                <span className="min-w-0 font-semibold">{entry.label}</span>
+                <span className="mb-1 border-b border-dotted border-black" aria-hidden />
+                <span className="text-right font-semibold">{entry.pageNumber ?? ''}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function PageChrome({
   children,
   companyLogoUrl,
@@ -571,6 +721,8 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
     appendixImages,
     companyLogoAlt,
     companyLogoUrl,
+    coverImage,
+    coverTitle,
     footer,
     header,
     metaRows,
@@ -584,6 +736,8 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
         appendixImages,
         companyLogoAlt,
         companyLogoUrl,
+        coverImage,
+        coverTitle,
         footer,
         header,
         metaRows,
@@ -595,6 +749,8 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
       appendixImages,
       companyLogoAlt,
       companyLogoUrl,
+      coverImage,
+      coverTitle,
       footer,
       header,
       metaRows,
@@ -605,7 +761,7 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
   )
   const [pagePlan, setPagePlan] = useState<PagePlan | null>(null)
   const [readyImageIds, setReadyImageIds] = useState<Set<string>>(() => new Set())
-  const totalImageCount = appendixImages.length
+  const totalImageCount = appendixImages.length + (coverImage ? 1 : 0)
 
   const markImageReady = useCallback((id: string) => {
     setReadyImageIds((current) => {
@@ -650,7 +806,8 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
   }, [blocks, readyImageIds.size, totalImageCount])
 
   const pages = pagePlan?.pages ?? []
-  const totalPages = Math.max(1, pages.length)
+  const totalPages = Math.max(1, pages.length + 1)
+  const tocEntries = pagePlan ? buildTocEntries(props, pages) : []
 
   return (
     <div
@@ -662,6 +819,16 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
         aria-hidden="true"
         style={{ width: mm(CONTENT_WIDTH_MM) }}
       >
+        {coverImage ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={coverImage.src}
+            alt=""
+            data-tu-print-measure-image="true"
+            onLoad={() => markImageReady(`cover-${coverImage.id}`)}
+            onError={() => markImageReady(`cover-${coverImage.id}`)}
+          />
+        ) : null}
         {blocks.map((block) => (
           <div key={block.id} data-tu-print-block-id={block.id}>
             <PrintableBlockView block={block} onImageReady={markImageReady} />
@@ -676,6 +843,16 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
       ) : null}
 
       <div className="tu-print-pages flex flex-col gap-4">
+        <CoverPage
+          companyLogoUrl={companyLogoUrl}
+          companyLogoAlt={companyLogoAlt}
+          coverImage={coverImage}
+          coverTitle={coverTitle}
+          header={header}
+          pageNumber={1}
+          tocEntries={tocEntries}
+          totalPages={totalPages}
+        />
         {pages.map((pageBlocks, pageIndex) => (
           <PageChrome
             key={`tu-print-page-${pageIndex}`}
@@ -683,7 +860,7 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
             companyLogoAlt={props.companyLogoAlt}
             header={props.header}
             footer={props.footer}
-            pageNumber={pageIndex + 1}
+            pageNumber={pageIndex + 2}
             totalPages={totalPages}
           >
             {pageBlocks.map((block) => (

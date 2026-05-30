@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic'
 const IMAGE_BUCKET = 'inspection-images'
 const BANK_SECTION_KEY = 'bank'
 const APPENDIX_SECTION_KEY = 'appendix'
+const COVER_SECTION_KEY = 'cover'
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -108,7 +109,10 @@ function cleanText(value: unknown) {
 
 function normalizeSectionKey(value: unknown) {
   if (typeof value !== 'string') return BANK_SECTION_KEY
-  return value.trim() === APPENDIX_SECTION_KEY ? APPENDIX_SECTION_KEY : BANK_SECTION_KEY
+  const normalized = value.trim()
+  if (normalized === APPENDIX_SECTION_KEY) return APPENDIX_SECTION_KEY
+  if (normalized === COVER_SECTION_KEY) return COVER_SECTION_KEY
+  return BANK_SECTION_KEY
 }
 
 function resolveFileExtension(file: File) {

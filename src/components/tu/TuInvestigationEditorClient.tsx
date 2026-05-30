@@ -10,7 +10,7 @@ const TU_IMAGE_DRAG_DATA_TYPE = 'application/x-tu-image-id'
 const IMAGE_FILE_ACCEPT = 'image/*'
 const DOCUMENT_FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain'
 
-type TuImageSectionKey = 'bank' | 'appendix'
+type TuImageSectionKey = 'bank' | 'appendix' | 'cover'
 
 type TuInvestigationImage = {
   id: string
@@ -558,6 +558,7 @@ export default function TuInvestigationEditorClient({
   const [documentBusy, setDocumentBusy] = useState(false)
   const [documentError, setDocumentError] = useState<string | null>(null)
   const [documentDropActive, setDocumentDropActive] = useState(false)
+  const [coverDropActive, setCoverDropActive] = useState(false)
   const [bankDropActive, setBankDropActive] = useState(false)
   const [appendixDropActive, setAppendixDropActive] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Set<TuReportSectionKey>>(() => new Set())
@@ -568,6 +569,7 @@ export default function TuInvestigationEditorClient({
   const draftRef = useRef(initialInvestigation.reportDraft)
   const objectDetailsRef = useRef(objectDetails)
   const assignmentPartiesRef = useRef(assignmentParties)
+  const coverFileInputRef = useRef<HTMLInputElement>(null)
   const bankFileInputRef = useRef<HTMLInputElement>(null)
   const appendixFileInputRef = useRef<HTMLInputElement>(null)
   const documentFileInputRef = useRef<HTMLInputElement>(null)
@@ -789,7 +791,9 @@ export default function TuInvestigationEditorClient({
   }
 
   const locked = Boolean(investigation.reportLockedAt)
-  const bankImages = images.filter((image) => image.sectionKey !== 'appendix')
+  const coverImages = images.filter((image) => image.sectionKey === 'cover')
+  const coverImage = coverImages[0] ?? null
+  const bankImages = images.filter((image) => image.sectionKey === 'bank')
   const appendixImages = images.filter((image) => image.sectionKey === 'appendix')
   const objectAddress = joinDisplay([
     investigation.property?.address ?? investigation.propertyAddress,
@@ -812,6 +816,15 @@ export default function TuInvestigationEditorClient({
     setImageBusy(true)
     setImageError(null)
     try {
+      if (sectionKey === 'cover') {
+        for (const image of coverImages) {
+          await patchImage(image.id, {
+            sectionKey: 'bank',
+            sortOrder: firstSortOrderForSection('bank', image.id),
+          })
+        }
+      }
+
       const formData = new FormData()
       formData.set('sectionKey', sectionKey)
       for (const file of imageFiles) formData.append('files', file)
@@ -878,13 +891,24 @@ export default function TuInvestigationEditorClient({
   const firstSortOrderForSection = (sectionKey: TuImageSectionKey, excludeImageId: string) => {
     const sectionImages = images.filter((image) => {
       if (image.id === excludeImageId) return false
-      return sectionKey === 'appendix' ? image.sectionKey === 'appendix' : image.sectionKey !== 'appendix'
+      return image.sectionKey === sectionKey
     })
     if (sectionImages.length === 0) return 10
     return Math.min(...sectionImages.map((image) => image.sortOrder)) - 10
   }
 
   const moveImageToSection = async (imageId: string, sectionKey: TuImageSectionKey) => {
+    if (sectionKey === 'cover') {
+      for (const image of coverImages) {
+        if (image.id !== imageId) {
+          await patchImage(image.id, {
+            sectionKey: 'bank',
+            sortOrder: firstSortOrderForSection('bank', image.id),
+          })
+        }
+      }
+    }
+
     await patchImage(imageId, {
       sectionKey,
       sortOrder: firstSortOrderForSection(sectionKey, imageId),
@@ -893,13 +917,14 @@ export default function TuInvestigationEditorClient({
 
   const handleDropToSection = async (event: React.DragEvent, sectionKey: TuImageSectionKey) => {
     event.preventDefault()
+    setCoverDropActive(false)
     setBankDropActive(false)
     setAppendixDropActive(false)
     if (locked) return
 
     const droppedFiles = getDroppedImageFiles(event)
     if (droppedFiles.length > 0) {
-      await uploadImages(droppedFiles, sectionKey)
+      await uploadImages(sectionKey === 'cover' ? droppedFiles.slice(0, 1) : droppedFiles, sectionKey)
       return
     }
 
@@ -1251,6 +1276,92 @@ export default function TuInvestigationEditorClient({
           </div>
         </section>
 
+        <section className="order-last rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-base font-semibold text-gray-950">Omslagsbild</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Välj den bild som ska visas på rapportens förstasida.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => coverFileInputRef.current?.click()}
+              disabled={locked || imageBusy}
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              <Upload size={16} aria-hidden />
+              Ladda upp omslag
+            </button>
+            <input
+              ref={coverFileInputRef}
+              type="file"
+              accept={IMAGE_FILE_ACCEPT}
+              className="hidden"
+              onChange={(event) => {
+                const files = Array.from(event.target.files ?? []).slice(0, 1)
+                event.target.value = ''
+                void uploadImages(files, 'cover')
+              }}
+            />
+          </div>
+
+          <div
+            onDragEnter={() => !locked && setCoverDropActive(true)}
+            onDragLeave={() => setCoverDropActive(false)}
+            onDragOver={handleDragOverDropZone}
+            onDrop={(event) => void handleDropToSection(event, 'cover')}
+            className={`flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed px-4 py-5 text-center transition ${
+              coverDropActive
+                ? 'border-violet-500 bg-violet-50 text-violet-900'
+                : 'border-violet-200 bg-violet-50/50 text-gray-600'
+            } ${locked ? 'opacity-60' : ''}`}
+          >
+            {coverImage ? (
+              <div className="grid w-full gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={coverImage.publicUrl}
+                  alt={coverImage.caption ?? 'Omslagsbild'}
+                  className="aspect-[4/3] w-full rounded-md object-cover"
+                />
+                <div className="text-left">
+                  <p className="text-sm font-semibold text-gray-950">Vald omslagsbild</p>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Dra hit en annan bild från bildbanken om du vill byta.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void moveImageToSection(coverImage.id, 'bank')}
+                      disabled={locked || imageBusy}
+                      className="rounded-md border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                    >
+                      Flytta till bildbank
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void deleteImage(coverImage.id)}
+                      disabled={locked || imageBusy}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                      aria-label="Ta bort omslagsbild"
+                      title="Ta bort omslagsbild"
+                    >
+                      <Trash2 size={15} aria-hidden />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <ImageIcon size={24} className="mb-2 text-violet-500" aria-hidden />
+                <p className="text-sm font-medium">Släpp omslagsbild här</p>
+                <p className="mt-1 text-xs text-gray-500">Du kan även använda knappen ovan eller dra från bildbanken.</p>
+              </>
+            )}
+          </div>
+        </section>
+
         <section className="order-last grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <article className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1320,6 +1431,14 @@ export default function TuInvestigationEditorClient({
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={image.publicUrl} alt={image.caption ?? 'TU-bild'} className="aspect-square w-full object-cover" />
                     <div className="space-y-2 p-2">
+                      <button
+                        type="button"
+                        onClick={() => void moveImageToSection(image.id, 'cover')}
+                        disabled={locked || imageBusy}
+                        className="w-full rounded-md bg-violet-700 px-2 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                      >
+                        Använd som omslag
+                      </button>
                       <button
                         type="button"
                         onClick={() => void moveImageToSection(image.id, 'appendix')}
@@ -1445,6 +1564,14 @@ export default function TuInvestigationEditorClient({
                         className="rounded-md border border-violet-200 px-2 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
                       >
                         Bildbank
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void moveImageToSection(image.id, 'cover')}
+                        disabled={locked || imageBusy}
+                        className="rounded-md border border-violet-200 px-2 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                      >
+                        Omslag
                       </button>
                       <button
                         type="button"
