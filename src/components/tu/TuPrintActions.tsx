@@ -27,6 +27,7 @@ type DeliveryResponse = {
   pdfError: string | null
   downloadUrl: string | null
   publicLink: string | null
+  digitalUrl: string | null
   sentRecipients?: string[]
   failedRecipients?: Array<{ email: string; error: string }>
   history: DeliveryHistoryItem[]
@@ -67,6 +68,16 @@ function pdfStatusLabel(value: string | null | undefined) {
   return 'PDF väntar'
 }
 
+function pdfStatusMessage(meta: DeliveryResponse | null) {
+  if (!meta?.hasActiveLink) return 'Ingen digital version eller PDF har skapats ännu.'
+  if (meta.pdfStatus === 'ready') return 'PDF är klar och kan laddas ner.'
+  if (meta.pdfStatus === 'processing') return 'PDF skapas i bakgrunden. Uppdatera status om länken inte visas automatiskt.'
+  if (meta.pdfStatus === 'failed') {
+    return meta.pdfError ? `PDF-generering misslyckades: ${meta.pdfError}` : 'PDF-generering misslyckades.'
+  }
+  return 'PDF-jobbet väntar på att starta.'
+}
+
 export default function TuPrintActions({
   backHref,
   inspectionId,
@@ -84,9 +95,9 @@ export default function TuPrintActions({
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<string | null>(null)
 
-  const loadMeta = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+  const loadMeta = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoading(true)
+    if (!options?.silent) setError(null)
     try {
       const response = await fetch(`/api/tu/investigations/${inspectionId}/report-delivery`, {
         cache: 'no-store',
@@ -101,7 +112,7 @@ export default function TuPrintActions({
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta leveransstatus.')
     } finally {
-      setLoading(false)
+      if (!options?.silent) setLoading(false)
     }
   }, [inspectionId])
 
@@ -112,7 +123,7 @@ export default function TuPrintActions({
   useEffect(() => {
     if (meta?.pdfStatus !== 'pending' && meta?.pdfStatus !== 'processing') return
     const timer = window.setInterval(() => {
-      void loadMeta()
+      void loadMeta({ silent: true })
     }, 4000)
     return () => window.clearInterval(timer)
   }, [loadMeta, meta?.pdfStatus])
@@ -179,7 +190,10 @@ export default function TuPrintActions({
       const payload = (await response.json().catch(() => ({}))) as DeliveryResponse
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte hantera utlåtandet.')
 
-      setMeta(payload)
+      setMeta((current) => ({
+        ...payload,
+        publicLink: payload.publicLink ?? current?.publicLink ?? null,
+      }))
       const failedText =
         payload.failedRecipients && payload.failedRecipients.length > 0
           ? ` Misslyckade mottagare: ${payload.failedRecipients.map((item) => item.email).join(', ')}.`
@@ -200,8 +214,18 @@ export default function TuPrintActions({
 
   const locked = Boolean(meta?.reportLockedAt)
   const downloadUrl = meta?.downloadUrl ?? null
-  const publicLink = meta?.publicLink ?? null
+  const digitalReportUrl = meta?.publicLink ?? meta?.digitalUrl ?? null
   const canSend = !busyAction && isValidEmail(recipient)
+  const statusText = loading
+    ? 'Hämtar leveransstatus...'
+    : error
+      ? error
+      : result ?? pdfStatusMessage(meta)
+  const statusClassName = error
+    ? 'border-rose-200 bg-rose-50 text-rose-800'
+    : result
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+      : 'border-slate-200 bg-slate-50 text-slate-700'
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-3 px-4 py-4 print:hidden">
@@ -279,21 +303,9 @@ export default function TuPrintActions({
           </label>
         </div>
 
-        {loading ? (
-          <p className="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
-            Hämtar leveransstatus...
-          </p>
-        ) : null}
-        {error ? (
-          <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-            {error}
-          </p>
-        ) : null}
-        {result ? (
-          <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-            {result}
-          </p>
-        ) : null}
+        <p className={`mt-3 min-h-12 rounded-md border px-3 py-2 text-sm ${statusClassName}`}>
+          {statusText}
+        </p>
 
         <div className="mt-4 flex flex-wrap gap-2">
           <button
@@ -340,18 +352,16 @@ export default function TuPrintActions({
               className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
             >
               <Download size={16} aria-hidden />
-              Ladda ner skapad PDF
+              {locked ? 'Ladda ner senaste låsta PDF' : 'Ladda ner senaste PDF'}
             </a>
           ) : (
             <span className="inline-flex h-10 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
-              {meta?.pdfStatus === 'processing' || meta?.pdfStatus === 'pending'
-                ? 'PDF genereras i bakgrunden...'
-                : 'Ingen skapad PDF att ladda ner ännu.'}
+              {meta?.hasActiveLink ? pdfStatusMessage(meta) : 'Ingen skapad PDF att ladda ner ännu.'}
             </span>
           )}
-          {publicLink ? (
+          {digitalReportUrl ? (
             <a
-              href={publicLink}
+              href={digitalReportUrl}
               target="_blank"
               rel="noreferrer"
               className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"

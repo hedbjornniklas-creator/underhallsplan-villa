@@ -398,6 +398,14 @@ function getPdfDownloadUrl(inspectionId: string, activeLink: Awaited<ReturnType<
   return `/api/report-v2/${encodeURIComponent(inspectionId)}/pdf`
 }
 
+function getDashboardDigitalReportUrl(
+  inspectionId: string,
+  activeLink: Awaited<ReturnType<typeof getLatestReportLink>>
+) {
+  if (!activeLink) return null
+  return `/tu/investigations/${encodeURIComponent(inspectionId)}/digital`
+}
+
 function resolveDefaultRecipient(investigation: Awaited<ReturnType<typeof getTuInvestigationById>>) {
   if (!investigation) return null
   return normalizeEmail(
@@ -451,6 +459,7 @@ export async function GET(
       pdfStatus: activeLink?.pdf_status ?? null,
       pdfError: activeLink?.pdf_error ?? null,
       downloadUrl: getPdfDownloadUrl(inspectionId, activeLink),
+      digitalUrl: getDashboardDigitalReportUrl(inspectionId, activeLink),
       publicLink: null,
       history,
     })
@@ -629,6 +638,7 @@ export async function POST(
       pdfStatus: activeLink?.pdf_status ?? null,
       pdfError: activeLink?.pdf_error ?? null,
       downloadUrl: getPdfDownloadUrl(inspectionId, activeLink),
+      digitalUrl: getDashboardDigitalReportUrl(inspectionId, activeLink),
       linkId,
     })
   } catch (error) {

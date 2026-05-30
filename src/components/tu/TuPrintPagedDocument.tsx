@@ -955,7 +955,7 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
         </div>
       ) : null}
 
-      <div className="tu-print-pages flex flex-col gap-4">
+      <div className="tu-print-pages flex flex-col items-center gap-4">
         <CoverPage
           companyLogoUrl={companyLogoUrl}
           companyLogoAlt={companyLogoAlt}

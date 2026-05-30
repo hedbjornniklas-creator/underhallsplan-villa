@@ -9,8 +9,8 @@ export default function TuPublicReportSnapshotView({
   pdfDownloadUrl,
 }: {
   snapshot: TuReportSnapshotPayloadV1
-  shareEndpoint: string
-  shareUrl: string
+  shareEndpoint: string | null
+  shareUrl: string | null
   pdfDownloadUrl: string | null
 }) {
   const report = snapshot.report

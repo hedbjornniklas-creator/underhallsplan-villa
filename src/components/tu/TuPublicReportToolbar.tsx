@@ -10,8 +10,8 @@ export default function TuPublicReportToolbar({
   shareUrl,
   pdfDownloadUrl,
 }: {
-  shareEndpoint: string
-  shareUrl: string
+  shareEndpoint: string | null
+  shareUrl: string | null
   pdfDownloadUrl: string | null
 }) {
   const printReport = useCallback(() => {
@@ -48,7 +48,9 @@ export default function TuPublicReportToolbar({
         <h1 className="text-lg font-semibold text-slate-950">Teknisk utredning</h1>
       </div>
       <div className="flex flex-wrap gap-2">
-        <ReportShareButton shareEndpoint={shareEndpoint} shareUrl={shareUrl} />
+        {shareEndpoint && shareUrl ? (
+          <ReportShareButton shareEndpoint={shareEndpoint} shareUrl={shareUrl} />
+        ) : null}
         {pdfDownloadUrl ? (
           <Link
             href={pdfDownloadUrl}
