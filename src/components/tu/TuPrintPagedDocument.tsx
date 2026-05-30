@@ -488,7 +488,7 @@ function ImageGridBlock({
             src={getAppendixPrintImageSrc(image.src)}
             alt={image.caption}
             data-tu-print-measure-image="true"
-            className="mx-auto h-[66mm] w-full rounded object-contain"
+            className="h-[66mm] w-full rounded object-contain object-left"
             onLoad={() => onImageReady?.(image.id)}
             onError={() => onImageReady?.(image.id)}
           />

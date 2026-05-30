@@ -5,11 +5,13 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft,
+  ArrowRight,
   CalendarDays,
   FileText,
   IdCard,
   ListChecks,
   Mail,
+  Play,
   Plus,
   Send,
   Settings,
@@ -137,6 +139,21 @@ function getInvestigationAddress(item: TuInspectionSummary) {
   return [address, objectReference].filter(Boolean).join(' - ') || 'Adress saknas'
 }
 
+function getAssignmentAddress(item: TuAssignmentListItem) {
+  const line = item.property_address ?? item.preliminary_address
+  const postalCity = [item.property_postal_code, item.property_city].filter(Boolean).join(' ')
+  const apartmentObject = [item.brf_name, item.apartment_number ? `lgh ${item.apartment_number}` : null]
+    .filter(Boolean)
+    .join(', ')
+  const address = [line, postalCity].filter(Boolean).join(', ')
+  const objectReference = apartmentObject || item.cadastral_id
+  return [address, objectReference].filter(Boolean).join(' - ') || 'Adress saknas'
+}
+
+function canStartAssignmentInvestigation(item: TuAssignmentListItem) {
+  return item.status === 'ordered' && !item.inspection_id && !item.archived_at
+}
+
 export default function TuDashboardClient({
   initialAssignments,
   initialInvestigations,
@@ -154,19 +171,28 @@ export default function TuDashboardClient({
   const [form, setForm] = useState<TuFormState>(EMPTY_TU_FORM)
   const [scratchForm, setScratchForm] = useState<ScratchFormState>(EMPTY_SCRATCH_FORM)
   const [dialog, setDialog] = useState<'quick' | 'scratch' | null>(null)
+  const [selectedAssignment, setSelectedAssignment] = useState<TuAssignmentListItem | null>(null)
   const [error, setError] = useState<string | null>(initialError)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
   const latestAssignments = useMemo(
-    () => [...assignments].sort((a, b) => assignmentSortValue(b) - assignmentSortValue(a)).slice(0, 3),
+    () => [...assignments].sort((a, b) => assignmentSortValue(b) - assignmentSortValue(a)).slice(0, 4),
     [assignments]
   )
-  const acceptedAssignments = useMemo(
-    () => assignments.filter((assignment) => assignment.status === 'ordered' && !assignment.inspection_id),
+  const startableAssignments = useMemo(
+    () =>
+      assignments
+        .filter(canStartAssignmentInvestigation)
+        .sort((a, b) => assignmentSortValue(b) - assignmentSortValue(a))
+        .slice(0, 4),
     [assignments]
   )
-  const latestInvestigations = useMemo(() => investigations.slice(0, 3), [investigations])
+  const acceptedAssignmentCount = useMemo(
+    () => assignments.filter(canStartAssignmentInvestigation).length,
+    [assignments]
+  )
+  const latestInvestigations = useMemo(() => investigations.slice(0, 4), [investigations])
 
   const updateForm = <K extends keyof TuFormState>(key: K, value: TuFormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }))
@@ -256,6 +282,28 @@ export default function TuDashboardClient({
     }
   }
 
+  const startInvestigationFromAssignment = async () => {
+    if (!selectedAssignment || !canStartAssignmentInvestigation(selectedAssignment)) return
+
+    setBusy(`assignment-${selectedAssignment.id}`)
+    setError(null)
+    setNotice(null)
+    try {
+      const response = await fetch(`/api/tu/assignments/${selectedAssignment.id}/convert`, { method: 'POST' })
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; inspectionId?: string }
+        | null
+      if (!response.ok) throw new Error(payload?.error ?? 'Kunde inte starta utredning.')
+      if (!payload?.inspectionId) throw new Error('Konverteringen saknar utrednings-id.')
+      setSelectedAssignment(null)
+      router.push(`/tu/investigations/${payload.inspectionId}`)
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : 'Kunde inte starta utredning.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <Protected>
       <main className="relative min-h-full overflow-hidden">
@@ -285,7 +333,7 @@ export default function TuDashboardClient({
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 sm:flex sm:items-center">
                 <StatPill label="Uppdrag" value={assignments.length} />
-                <StatPill label="Godkända" value={acceptedAssignments.length} />
+                <StatPill label="Godkända" value={acceptedAssignmentCount} />
                 <StatPill label="Utredningar" value={investigations.length} />
               </div>
             </div>
@@ -302,55 +350,20 @@ export default function TuDashboardClient({
             </div>
           ) : null}
 
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            <ActionCard
-              title="Skicka uppdragsbekräftelse"
-              description="Snabbt utskick med omfattning, tid, pris, adress och kunduppgifter."
-              icon={<Send size={22} aria-hidden />}
-              actionLabel="Skicka"
-              onAction={() => setDialog('quick')}
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <AssignmentConfirmationsCard
+              assignments={latestAssignments}
+              busy={busy}
+              onOpenDialog={() => setDialog('quick')}
+              onStartAssignment={setSelectedAssignment}
             />
-            <LinkCard
-              title="Uppdragsbekräftelser"
-              description="Visa, filtrera och hantera skickade, godkända och arkiverade uppdrag."
-              icon={<ListChecks size={22} aria-hidden />}
-              href="/tu/assignments"
-              footer={
-                latestAssignments.length > 0
-                  ? latestAssignments.map((assignment) => (
-                      <MiniRow
-                        key={assignment.id}
-                        title={assignment.customer_name || assignment.customer_email}
-                        meta={`${formatDate(assignment.preferred_date)} · ${statusLabel(assignment.status)}`}
-                      />
-                    ))
-                  : 'Inga uppdragsbekräftelser ännu.'
-              }
+            <StartInvestigationCard
+              acceptedAssignments={startableAssignments}
+              busy={busy}
+              onOpenDialog={() => setDialog('scratch')}
+              onStartAssignment={setSelectedAssignment}
             />
-            <ActionCard
-              title="Starta utredning"
-              description="Skapa en teknisk utredning från scratch när uppdragsbekräftelse inte behövs."
-              icon={<Plus size={22} aria-hidden />}
-              actionLabel="Ny utredning"
-              onAction={() => setDialog('scratch')}
-            />
-            <LinkCard
-              title="Utredningar"
-              description="Öppna och fortsätt arbeta i pågående tekniska utredningar."
-              icon={<FileText size={22} aria-hidden />}
-              href="/tu/investigations"
-              footer={
-                latestInvestigations.length > 0
-                  ? latestInvestigations.map((investigation) => (
-                      <MiniRow
-                        key={investigation.inspectionId}
-                        title={investigation.title}
-                        meta={`${formatDate(investigation.date)} · ${getInvestigationAddress(investigation)}`}
-                      />
-                    ))
-                  : 'Inga utredningar ännu.'
-              }
-            />
+            <InvestigationsCard investigations={latestInvestigations} />
             <ProfileCard profile={inspectorProfile} />
           </section>
         </div>
@@ -372,6 +385,15 @@ export default function TuDashboardClient({
             onClose={() => setDialog(null)}
             onChange={updateScratchForm}
             onSubmit={createScratchInvestigation}
+          />
+        ) : null}
+
+        {selectedAssignment ? (
+          <StartFromAssignmentDialog
+            assignment={selectedAssignment}
+            busy={busy === `assignment-${selectedAssignment.id}`}
+            onClose={() => setSelectedAssignment(null)}
+            onSubmit={startInvestigationFromAssignment}
           />
         ) : null}
       </main>
@@ -421,62 +443,135 @@ function CardHeading({
   )
 }
 
-function ActionCard({
-  title,
-  description,
-  icon,
-  actionLabel,
-  onAction,
+function AssignmentConfirmationsCard({
+  assignments,
+  busy,
+  onOpenDialog,
+  onStartAssignment,
 }: {
-  title: string
-  description: string
-  icon: React.ReactNode
-  actionLabel: string
-  onAction: () => void
+  assignments: TuAssignmentListItem[]
+  busy: string | null
+  onOpenDialog: () => void
+  onStartAssignment: (assignment: TuAssignmentListItem) => void
 }) {
   return (
     <CardShell>
-      <CardHeading title={title} description={description} icon={icon} />
-      <div className="mt-auto pt-5">
+      <CardHeading
+        title="Uppdragsbekräftelser"
+        description="Skicka ny bekräftelse och följ senaste uppdrag."
+        icon={<ListChecks size={22} aria-hidden />}
+      />
+      <div className="mt-3">
         <button
           type="button"
-          onClick={onAction}
+          onClick={onOpenDialog}
+          disabled={busy === 'quick-send'}
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
         >
-          {actionLabel}
+          <Send size={16} aria-hidden />
+          Skicka uppdragsbekräftelse
         </button>
+      </div>
+      <div className="mt-3 min-h-0 flex-1 rounded-lg border border-violet-100 bg-white/70 p-2">
+        {assignments.length > 0 ? (
+          <ul className="h-full space-y-1 overflow-auto pr-1">
+            {assignments.map((assignment) => (
+              <AssignmentMiniRow
+                key={assignment.id}
+                assignment={assignment}
+                onStartAssignment={onStartAssignment}
+              />
+            ))}
+          </ul>
+        ) : (
+          <ListEmptyState>Inga uppdragsbekräftelser ännu.</ListEmptyState>
+        )}
+      </div>
+      <CardFooterLink href="/tu/assignments" label="Öppna alla uppdrag" />
+    </CardShell>
+  )
+}
+
+function StartInvestigationCard({
+  acceptedAssignments,
+  busy,
+  onOpenDialog,
+  onStartAssignment,
+}: {
+  acceptedAssignments: TuAssignmentListItem[]
+  busy: string | null
+  onOpenDialog: () => void
+  onStartAssignment: (assignment: TuAssignmentListItem) => void
+}) {
+  return (
+    <CardShell>
+      <CardHeading
+        title="Starta utredning"
+        description="Skapa från scratch eller från godkänd bekräftelse."
+        icon={<Plus size={22} aria-hidden />}
+      />
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={onOpenDialog}
+          disabled={busy === 'scratch'}
+          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-wait disabled:bg-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+        >
+          <Plus size={16} aria-hidden />
+          Ny utredning
+        </button>
+      </div>
+      <div className="mt-3 min-h-0 flex-1 rounded-lg border border-violet-100 bg-white/70 p-2">
+        <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          Godkända uppdrag
+        </h3>
+        {acceptedAssignments.length > 0 ? (
+          <ul className="space-y-1 overflow-auto pr-1">
+            {acceptedAssignments.map((assignment) => (
+              <li key={assignment.id}>
+                <button
+                  type="button"
+                  onClick={() => onStartAssignment(assignment)}
+                  className="block w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                >
+                  <span className="block truncate text-xs font-medium text-slate-950">
+                    {assignment.customer_name || assignment.customer_email}
+                  </span>
+                  <span className="block truncate text-[11px] text-slate-600">
+                    {formatDate(assignment.preferred_date)} · {getAssignmentAddress(assignment)}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <ListEmptyState>Inga godkända uppdrag att starta.</ListEmptyState>
+        )}
       </div>
     </CardShell>
   )
 }
 
-function LinkCard({
-  title,
-  description,
-  icon,
-  href,
-  footer,
-}: {
-  title: string
-  description: string
-  icon: React.ReactNode
-  href: string
-  footer: React.ReactNode
-}) {
+function InvestigationsCard({ investigations }: { investigations: TuInspectionSummary[] }) {
   return (
     <CardShell>
-      <CardHeading title={title} description={description} icon={icon} />
-      <div className="mt-4 min-h-0 flex-1 space-y-2 overflow-hidden text-sm text-slate-600">
-        {footer}
+      <CardHeading
+        title="Mina utredningar"
+        description="Öppna och fortsätt arbeta i utlåtanden."
+        icon={<FileText size={22} aria-hidden />}
+      />
+      <div className="mt-3 min-h-0 flex-1 rounded-lg border border-violet-100 bg-white/70 p-2">
+        {investigations.length > 0 ? (
+          <ul className="h-full space-y-1 overflow-auto pr-1">
+            {investigations.map((investigation) => (
+              <InvestigationMiniRow key={investigation.inspectionId} investigation={investigation} />
+            ))}
+          </ul>
+        ) : (
+          <ListEmptyState>Inga utredningar ännu.</ListEmptyState>
+        )}
       </div>
-      <div className="mt-5">
-        <Link
-          href={href}
-          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
-        >
-          Öppna lista
-        </Link>
-      </div>
+      <CardFooterLink href="/tu/investigations" label="Öppna alla utredningar" />
     </CardShell>
   )
 }
@@ -545,7 +640,7 @@ function ProfileCard({ profile }: { profile: TuInspectorProfileCard | null }) {
       </div>
       <div className="mt-auto pt-5">
         <Link
-          href="/settings"
+          href="/ob/settings"
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
         >
           <Settings size={16} aria-hidden />
@@ -556,11 +651,179 @@ function ProfileCard({ profile }: { profile: TuInspectorProfileCard | null }) {
   )
 }
 
-function MiniRow({ title, meta }: { title: string; meta: string }) {
+function AssignmentMiniRow({
+  assignment,
+  onStartAssignment,
+}: {
+  assignment: TuAssignmentListItem
+  onStartAssignment: (assignment: TuAssignmentListItem) => void
+}) {
+  const title = assignment.customer_name || assignment.customer_email
+  const meta = `${formatDate(assignment.preferred_date)} · ${statusLabel(assignment.status)}`
+  const address = getAssignmentAddress(assignment)
+
+  if (assignment.inspection_id) {
+    return (
+      <li>
+        <Link
+          href={`/tu/investigations/${encodeURIComponent(assignment.inspection_id)}`}
+          className="block rounded-md border border-slate-200 bg-white px-2 py-1.5 transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+        >
+          <span className="block truncate text-xs font-medium text-slate-950">{title}</span>
+          <span className="block truncate text-[11px] text-slate-600">{meta}</span>
+          <span className="mt-0.5 block truncate text-[10px] font-medium text-violet-700">
+            Öppna utredning · {address}
+          </span>
+        </Link>
+      </li>
+    )
+  }
+
+  if (canStartAssignmentInvestigation(assignment)) {
+    return (
+      <li>
+        <button
+          type="button"
+          onClick={() => onStartAssignment(assignment)}
+          className="block w-full rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-left transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+        >
+          <span className="block truncate text-xs font-medium text-slate-950">{title}</span>
+          <span className="block truncate text-[11px] text-slate-700">{meta}</span>
+          <span className="mt-0.5 block truncate text-[10px] font-semibold text-amber-800">
+            Starta utredning · {address}
+          </span>
+        </button>
+      </li>
+    )
+  }
+
   return (
-    <div className="rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-2">
-      <p className="truncate text-sm font-medium text-slate-950">{title}</p>
-      <p className="mt-0.5 truncate text-xs text-slate-600">{meta}</p>
+    <li>
+      <Link
+        href="/tu/assignments"
+        className="block rounded-md border border-slate-200 bg-white px-2 py-1.5 transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+      >
+        <span className="block truncate text-xs font-medium text-slate-950">{title}</span>
+        <span className="block truncate text-[11px] text-slate-600">{meta}</span>
+        <span className="mt-0.5 block truncate text-[10px] text-slate-500">{address}</span>
+      </Link>
+    </li>
+  )
+}
+
+function InvestigationMiniRow({ investigation }: { investigation: TuInspectionSummary }) {
+  return (
+    <li>
+      <Link
+        href={`/tu/investigations/${encodeURIComponent(investigation.inspectionId)}`}
+        className="block rounded-md border border-slate-200 bg-white px-2 py-1.5 transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+      >
+        <span className="block truncate text-xs font-medium text-slate-950">{investigation.title}</span>
+        <span className="block truncate text-[11px] text-slate-600">
+          {formatDate(investigation.date)} · {getInvestigationAddress(investigation)}
+        </span>
+        <span className="mt-0.5 block truncate text-[10px] font-medium text-violet-700">
+          Öppna utlåtande
+        </span>
+      </Link>
+    </li>
+  )
+}
+
+function CardFooterLink({ href, label }: { href: string; label: string }) {
+  return (
+    <div className="mt-3">
+      <Link
+        href={href}
+        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+      >
+        {label}
+        <ArrowRight size={15} aria-hidden />
+      </Link>
+    </div>
+  )
+}
+
+function ListEmptyState({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-full min-h-[92px] items-center justify-center rounded-md border border-dashed border-violet-200 bg-violet-50/40 px-3 text-center text-xs text-slate-500">
+      {children}
+    </div>
+  )
+}
+
+function StartFromAssignmentDialog({
+  assignment,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  assignment: TuAssignmentListItem
+  busy: boolean
+  onClose: () => void
+  onSubmit: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-950/55 p-0 sm:items-center sm:p-4">
+      <section
+        role="dialog"
+        aria-modal="true"
+        className="w-full rounded-t-2xl border border-violet-100 bg-white p-4 shadow-2xl sm:max-w-md sm:rounded-2xl"
+      >
+        <header className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">Starta utredning?</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              En teknisk utredning skapas från uppdragsbekräftelsen.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            aria-label="Stäng"
+            title="Stäng"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="mt-4 rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-2 text-sm text-slate-700">
+          <p className="truncate">
+            <span className="font-medium text-slate-950">Kund:</span>{' '}
+            {assignment.customer_name || assignment.customer_email}
+          </p>
+          <p className="truncate">
+            <span className="font-medium text-slate-950">Objekt:</span>{' '}
+            {getAssignmentAddress(assignment)}
+          </p>
+          <p>
+            <span className="font-medium text-slate-950">Datum:</span>{' '}
+            {formatDate(assignment.preferred_date)}
+          </p>
+        </div>
+
+        <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            Avbryt
+          </button>
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={busy}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-wait disabled:bg-violet-300"
+          >
+            <Play size={15} aria-hidden />
+            {busy ? 'Startar...' : 'Starta utredning'}
+          </button>
+        </div>
+      </section>
     </div>
   )
 }
