@@ -1618,7 +1618,7 @@ export default function TuInvestigationEditorClient({
               <div>
                 <h2 className="text-base font-semibold text-gray-950">Bildbank</h2>
                 <p className="mt-1 text-sm text-gray-600">
-                  {bankImages.length} bild{bankImages.length === 1 ? '' : 'er'} i banken.
+                  {bankImages.length} bild{bankImages.length === 1 ? '' : 'er'} · max {MAX_IMAGE_FILES_PER_UPLOAD} åt gången · max 15 MB/bild
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -1652,7 +1652,7 @@ export default function TuInvestigationEditorClient({
               onDragLeave={() => setBankDropActive(false)}
               onDragOver={handleDragOverDropZone}
               onDrop={(event) => void handleDropToSection(event, 'bank')}
-              className={`mb-4 flex min-h-28 flex-col items-center justify-center rounded-lg border border-dashed px-4 py-5 text-center transition ${
+              className={`mb-4 flex ${bankImages.length > 0 ? 'min-h-16 py-3' : 'min-h-28 py-5'} flex-col items-center justify-center rounded-lg border border-dashed px-4 text-center transition ${
                 bankDropActive
                   ? 'border-violet-500 bg-violet-50 text-violet-900'
                   : 'border-violet-200 bg-violet-50/50 text-gray-600'
@@ -1674,46 +1674,50 @@ export default function TuInvestigationEditorClient({
             ) : (
               <div className="max-h-[560px] overflow-y-auto pr-1">
                 <div className={getTuImageGridClass(imageViewCount)}>
-                {bankImages.map((image) => (
-                  <div
-                    key={image.id}
-                    draggable={!locked}
-                    onDragStart={(event) => {
-                      event.dataTransfer.effectAllowed = 'move'
-                      event.dataTransfer.setData(TU_IMAGE_DRAG_DATA_TYPE, image.id)
-                    }}
-                    className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setPreviewImageId(image.id)}
-                      className="group block w-full overflow-hidden text-left focus:outline-none focus:ring-2 focus:ring-violet-300"
-                      aria-label="Visa bild"
-                      title="Visa bild"
+                  {bankImages.map((image) => (
+                    <div
+                      key={image.id}
+                      draggable={!locked}
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = 'move'
+                        event.dataTransfer.setData(TU_IMAGE_DRAG_DATA_TYPE, image.id)
+                      }}
+                      className="group relative overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm"
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={image.publicUrl} alt={image.caption ?? 'TU-bild'} className={getTuImageClass(imageViewCount)} />
-                    </button>
-                    <div className="space-y-2 p-2">
                       <button
                         type="button"
-                        onClick={() => void moveImageToSection(image.id, 'cover')}
-                        disabled={locked || imageBusy}
-                        className="w-full rounded-md bg-violet-700 px-2 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                        onClick={() => setPreviewImageId(image.id)}
+                        className="block w-full overflow-hidden text-left focus:outline-none focus:ring-2 focus:ring-violet-300"
+                        aria-label="Visa bild"
+                        title="Visa bild"
                       >
-                        Använd som omslag
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={image.publicUrl} alt={image.caption ?? 'TU-bild'} className={getTuImageClass(imageViewCount)} />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => void moveImageToSection(image.id, 'appendix')}
-                        disabled={locked || imageBusy}
-                        className="w-full rounded-md border border-violet-200 px-2 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
-                      >
-                        Lägg i bilaga
-                      </button>
+                      <div className="absolute bottom-1 right-1 flex gap-1 rounded-md bg-white/90 p-1 shadow-sm ring-1 ring-black/5">
+                        <button
+                          type="button"
+                          onClick={() => void moveImageToSection(image.id, 'cover')}
+                          disabled={locked || imageBusy}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded bg-violet-700 text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                          aria-label="Använd som omslag"
+                          title="Använd som omslag"
+                        >
+                          <ImageIcon size={14} aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void moveImageToSection(image.id, 'appendix')}
+                          disabled={locked || imageBusy}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                          aria-label="Lägg i bilaga"
+                          title="Lägg i bilaga"
+                        >
+                          <MoveDown size={14} aria-hidden />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
                 </div>
               </div>
             )}
@@ -1755,7 +1759,7 @@ export default function TuInvestigationEditorClient({
               onDragLeave={() => setAppendixDropActive(false)}
               onDragOver={handleDragOverDropZone}
               onDrop={(event) => void handleDropToSection(event, 'appendix')}
-              className={`mb-4 flex min-h-28 flex-col items-center justify-center rounded-lg border border-dashed px-4 py-5 text-center transition ${
+              className={`mb-4 flex ${appendixImages.length > 0 ? 'min-h-16 py-3' : 'min-h-28 py-5'} flex-col items-center justify-center rounded-lg border border-dashed px-4 text-center transition ${
                 appendixDropActive
                   ? 'border-violet-500 bg-violet-50 text-violet-900'
                   : 'border-violet-200 bg-violet-50/50 text-gray-600'
@@ -1780,7 +1784,7 @@ export default function TuInvestigationEditorClient({
                       event.dataTransfer.effectAllowed = 'move'
                       event.dataTransfer.setData(TU_IMAGE_DRAG_DATA_TYPE, image.id)
                     }}
-                    className="grid gap-3 rounded-md border border-gray-200 bg-white p-2 shadow-sm sm:grid-cols-[112px_minmax(0,1fr)_auto]"
+                    className="grid gap-3 rounded-md border border-gray-200 bg-white p-2 shadow-sm sm:grid-cols-[112px_minmax(0,1fr)]"
                   >
                     <button
                       type="button"
@@ -1792,8 +1796,62 @@ export default function TuInvestigationEditorClient({
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={image.publicUrl} alt={image.caption ?? 'Bilagebild'} className="aspect-square w-full object-cover" />
                     </button>
-                    <label className="min-w-0 space-y-1">
-                      <span className="block text-xs font-medium text-gray-600">Bildtext</span>
+                    <div className="min-w-0 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-gray-600">Bildtext</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => void handleMoveAppendixImage(image.id, -1)}
+                            disabled={locked || imageBusy || index === 0}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
+                            aria-label="Flytta upp"
+                            title="Flytta upp"
+                          >
+                            <MoveUp size={15} aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleMoveAppendixImage(image.id, 1)}
+                            disabled={locked || imageBusy || index === appendixImages.length - 1}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
+                            aria-label="Flytta ned"
+                            title="Flytta ned"
+                          >
+                            <MoveDown size={15} aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void moveImageToSection(image.id, 'bank')}
+                            disabled={locked || imageBusy}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                            aria-label="Flytta till bildbank"
+                            title="Flytta till bildbank"
+                          >
+                            <ImageIcon size={15} aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void moveImageToSection(image.id, 'cover')}
+                            disabled={locked || imageBusy}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-violet-700 text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                            aria-label="Använd som omslag"
+                            title="Använd som omslag"
+                          >
+                            <Upload size={15} aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteImage(image.id)}
+                            disabled={locked || imageBusy}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                            aria-label="Ta bort bild"
+                            title="Ta bort bild"
+                          >
+                            <Trash2 size={15} aria-hidden />
+                          </button>
+                        </div>
+                      </div>
                       <textarea
                         value={image.caption ?? ''}
                         rows={3}
@@ -1810,54 +1868,6 @@ export default function TuInvestigationEditorClient({
                         className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
                         placeholder="Kort beskrivande text"
                       />
-                    </label>
-                    <div className="flex items-center gap-2 sm:flex-col sm:items-stretch">
-                      <button
-                        type="button"
-                        onClick={() => void handleMoveAppendixImage(image.id, -1)}
-                        disabled={locked || imageBusy || index === 0}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
-                        aria-label="Flytta upp"
-                        title="Flytta upp"
-                      >
-                        <MoveUp size={16} aria-hidden />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleMoveAppendixImage(image.id, 1)}
-                        disabled={locked || imageBusy || index === appendixImages.length - 1}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
-                        aria-label="Flytta ned"
-                        title="Flytta ned"
-                      >
-                        <MoveDown size={16} aria-hidden />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void moveImageToSection(image.id, 'bank')}
-                        disabled={locked || imageBusy}
-                        className="rounded-md border border-violet-200 px-2 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
-                      >
-                        Bildbank
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void moveImageToSection(image.id, 'cover')}
-                        disabled={locked || imageBusy}
-                        className="rounded-md border border-violet-200 px-2 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
-                      >
-                        Omslag
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void deleteImage(image.id)}
-                        disabled={locked || imageBusy}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
-                        aria-label="Ta bort bild"
-                        title="Ta bort bild"
-                      >
-                        <Trash2 size={16} aria-hidden />
-                      </button>
                     </div>
                   </div>
                 ))}
