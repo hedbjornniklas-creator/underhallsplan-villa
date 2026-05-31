@@ -39,6 +39,25 @@ function formatReportDateLong(value: Date) {
   })
 }
 
+function formatInspectionDate(value: string | null | undefined) {
+  const normalized = normalizePrintableText(value)
+  if (!normalized) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized
+
+  const parsed = new Date(normalized)
+  if (Number.isNaN(parsed.getTime())) return normalized
+
+  return parsed.toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' })
+}
+
+function formatInspectionTime(value: string | null | undefined) {
+  const normalized = normalizePrintableText(value)
+  if (!normalized) return null
+
+  const match = normalized.match(/^(\d{2}):(\d{2})/)
+  return match ? `${match[1]}:${match[2]}` : normalized
+}
+
 function normalizePrintableText(value: string | null | undefined) {
   const lines = String(value ?? '')
     .replace(/\r\n/g, '\n')
@@ -113,6 +132,10 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
           investigation.apartmentNumber ? `Lgh ${investigation.apartmentNumber}` : null,
         ])
       : investigation.cadastralId
+  const inspectionDateTime = compact([
+    formatInspectionDate(assignment?.preferred_date ?? investigation.inspection.date),
+    formatInspectionTime(assignment?.preferred_time ?? investigation.inspection.inspection_time),
+  ])
 
   return {
     leftRows: [
@@ -121,9 +144,10 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
       toPrintRow('Telefon', inspector?.phone),
       toPrintRow('E-Post', inspector?.email),
       toPrintRow('Närvarande', assignment?.customer_name ?? investigation.inspection.customer_name),
+      toPrintRow('Besiktningsdag', inspectionDateTime),
     ].filter((row): row is TuPrintMetaRow => Boolean(row)),
     rightRows: [
-      toPrintRow('Fastighetsägare', assignment?.property_owner_name ?? investigation.property?.owner_name),
+      toPrintRow('Fastighetsägare', assignment?.property_owner_name),
       toPrintRow('Beställare', assignment?.customer_name ?? investigation.inspection.customer_name),
       toPrintRow('Fastighetsbeteckning', cadastralOrApartment),
       toPrintRow('Kommun', assignment?.property_municipality ?? investigation.property?.municipality),

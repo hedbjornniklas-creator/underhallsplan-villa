@@ -380,7 +380,7 @@ function PartiesBlock({ parties }: { parties: TuPrintPartiesSection }) {
       <h2 className="mb-6 text-[15px] font-semibold leading-tight text-violet-950">
         Uppdragsgivare och besiktningsman
       </h2>
-      <div className="grid grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)] gap-x-5">
+      <div className="grid gap-x-5" style={{ gridTemplateColumns: '0.86fr 1px 1.14fr' }}>
         <PartyRows rows={parties.leftRows} />
         <div className="min-h-[33mm] bg-[#2f6ea3]" />
         <PartyRows rows={parties.rightRows} />

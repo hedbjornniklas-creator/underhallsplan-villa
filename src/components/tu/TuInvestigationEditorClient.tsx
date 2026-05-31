@@ -14,7 +14,7 @@ const MAX_IMAGE_FILES_PER_UPLOAD = 20
 const MAX_IMAGE_UPLOAD_BYTES = 15 * 1024 * 1024
 
 type TuImageSectionKey = 'bank' | 'appendix' | 'cover'
-type TuImageViewCount = 15 | 9 | 1
+type TuImageViewCount = 9 | 4 | 1
 
 type TuInvestigationImage = {
   id: string
@@ -561,8 +561,8 @@ function buildImageUploadContext(files: File[]) {
 
 function getTuImageGridClass(viewCount: TuImageViewCount) {
   if (viewCount === 1) return 'grid grid-cols-1 gap-3'
-  if (viewCount === 15) return 'grid grid-cols-3 gap-1.5 sm:grid-cols-5 sm:gap-2'
-  return 'grid grid-cols-2 gap-2 sm:grid-cols-3'
+  if (viewCount === 4) return 'grid grid-cols-2 gap-2.5'
+  return 'grid grid-cols-3 gap-2'
 }
 
 function getTuImageClass(viewCount: TuImageViewCount) {
@@ -608,7 +608,7 @@ export default function TuInvestigationEditorClient({
   const [imageBusy, setImageBusy] = useState(false)
   const [imageError, setImageError] = useState<string | null>(null)
   const [imageUploadProgress, setImageUploadProgress] = useState<string | null>(null)
-  const [imageViewCount, setImageViewCount] = useState<TuImageViewCount>(15)
+  const [imageViewCount, setImageViewCount] = useState<TuImageViewCount>(9)
   const [previewImageId, setPreviewImageId] = useState<string | null>(null)
   const [documents, setDocuments] = useState<TuInvestigationDocument[]>([])
   const [documentsLoading, setDocumentsLoading] = useState(true)
@@ -978,7 +978,7 @@ export default function TuInvestigationEditorClient({
   }
 
   const renderImageViewCountButtons = () => {
-    const imageViewCounts: TuImageViewCount[] = [15, 9, 1]
+    const imageViewCounts: TuImageViewCount[] = [9, 4, 1]
     return (
       <div className="flex flex-wrap gap-2">
         {imageViewCounts.map((count) => (
@@ -997,14 +997,14 @@ export default function TuInvestigationEditorClient({
             <span
               aria-hidden="true"
               className={
-                count === 15
+                count === 9
                   ? 'grid h-5 w-5 grid-cols-3 gap-0.5'
-                  : count === 9
+                  : count === 4
                     ? 'grid h-5 w-5 grid-cols-2 gap-0.5'
                     : 'grid h-5 w-5 grid-cols-1 gap-0.5'
               }
             >
-              {Array.from({ length: count === 15 ? 9 : count === 9 ? 4 : 1 }).map((_, index) => (
+              {Array.from({ length: count }).map((_, index) => (
                 <span
                   key={index}
                   className={`rounded-[1px] ${imageViewCount === count ? 'bg-white' : 'bg-gray-600'}`}
@@ -1575,11 +1575,11 @@ export default function TuInvestigationEditorClient({
                       type="button"
                       onClick={() => void deleteImage(coverImage.id)}
                       disabled={locked || imageBusy}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                      className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
                       aria-label="Ta bort omslagsbild"
                       title="Ta bort omslagsbild"
                     >
-                      <Trash2 size={15} aria-hidden />
+                      <Trash2 size={10} aria-hidden />
                     </button>
                   </div>
                 </div>
@@ -1694,26 +1694,26 @@ export default function TuInvestigationEditorClient({
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={image.publicUrl} alt={image.caption ?? 'TU-bild'} className={getTuImageClass(imageViewCount)} />
                       </button>
-                      <div className="absolute bottom-1 right-1 flex gap-1 rounded-md bg-white/90 p-1 shadow-sm ring-1 ring-black/5">
+                      <div className="absolute bottom-1 right-1 flex gap-0.5 rounded bg-white/90 p-0.5 shadow-sm ring-1 ring-black/5">
                         <button
                           type="button"
                           onClick={() => void moveImageToSection(image.id, 'cover')}
                           disabled={locked || imageBusy}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded bg-violet-700 text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                          className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] bg-violet-700 text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                           aria-label="Använd som omslag"
                           title="Använd som omslag"
                         >
-                          <ImageIcon size={14} aria-hidden />
+                          <ImageIcon size={10} aria-hidden />
                         </button>
                         <button
                           type="button"
                           onClick={() => void moveImageToSection(image.id, 'appendix')}
                           disabled={locked || imageBusy}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                          className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
                           aria-label="Lägg i bilaga"
                           title="Lägg i bilaga"
                         >
-                          <MoveDown size={14} aria-hidden />
+                          <MoveDown size={10} aria-hidden />
                         </button>
                       </div>
                     </div>
@@ -1804,51 +1804,51 @@ export default function TuInvestigationEditorClient({
                             type="button"
                             onClick={() => void handleMoveAppendixImage(image.id, -1)}
                             disabled={locked || imageBusy || index === 0}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
                             aria-label="Flytta upp"
                             title="Flytta upp"
                           >
-                            <MoveUp size={15} aria-hidden />
+                            <MoveUp size={10} aria-hidden />
                           </button>
                           <button
                             type="button"
                             onClick={() => void handleMoveAppendixImage(image.id, 1)}
                             disabled={locked || imageBusy || index === appendixImages.length - 1}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
                             aria-label="Flytta ned"
                             title="Flytta ned"
                           >
-                            <MoveDown size={15} aria-hidden />
+                            <MoveDown size={10} aria-hidden />
                           </button>
                           <button
                             type="button"
                             onClick={() => void moveImageToSection(image.id, 'bank')}
                             disabled={locked || imageBusy}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
                             aria-label="Flytta till bildbank"
                             title="Flytta till bildbank"
                           >
-                            <ImageIcon size={15} aria-hidden />
+                            <ImageIcon size={10} aria-hidden />
                           </button>
                           <button
                             type="button"
                             onClick={() => void moveImageToSection(image.id, 'cover')}
                             disabled={locked || imageBusy}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-violet-700 text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] bg-violet-700 text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                             aria-label="Använd som omslag"
                             title="Använd som omslag"
                           >
-                            <Upload size={15} aria-hidden />
+                            <Upload size={10} aria-hidden />
                           </button>
                           <button
                             type="button"
                             onClick={() => void deleteImage(image.id)}
                             disabled={locked || imageBusy}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
                             aria-label="Ta bort bild"
                             title="Ta bort bild"
                           >
-                            <Trash2 size={15} aria-hidden />
+                            <Trash2 size={10} aria-hidden />
                           </button>
                         </div>
                       </div>
