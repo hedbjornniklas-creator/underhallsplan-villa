@@ -19,6 +19,7 @@ type SupabaseError = {
 
 type SupabaseListResponse<T> = { data: T[] | null; error: SupabaseError }
 type SupabaseSingleResponse<T> = Promise<{ data: T | null; error: SupabaseError }>
+type SignedUploadData = { signedUrl: string; path: string; token: string }
 
 type QueryBuilder<T = Record<string, unknown>> = {
   then: <TResult1 = SupabaseListResponse<T>, TResult2 = never>(
@@ -42,6 +43,7 @@ type StorageBucket = {
     body: Blob,
     options?: { cacheControl?: string; upsert?: boolean; contentType?: string | undefined }
   ) => Promise<{ error: SupabaseError }>
+  createSignedUploadUrl: (path: string) => Promise<{ data: SignedUploadData | null; error: SupabaseError }>
   remove: (paths: string[]) => Promise<{ error: SupabaseError }>
   getPublicUrl: (path: string) => { data: { publicUrl: string } }
 }
@@ -72,6 +74,17 @@ const IMAGE_COLUMNS =
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
+}
+
+function jsonDetailedError(message: string, status: number, detail: unknown) {
+  const detailText = detail instanceof Error ? detail.message : String(detail ?? '')
+  return NextResponse.json(
+    {
+      error: message,
+      detail: detailText.slice(0, 600),
+    },
+    { status }
+  )
 }
 
 function mapError(error: unknown) {
@@ -115,18 +128,57 @@ function normalizeSectionKey(value: unknown) {
   return BANK_SECTION_KEY
 }
 
-function resolveFileExtension(file: File) {
-  const fromName = file.name.split('.').pop()?.trim().toLowerCase() ?? ''
+function resolveFileExtensionFromMetadata(fileName: string | null | undefined, contentType: string | null | undefined) {
+  const fromName = fileName?.split('.').pop()?.trim().toLowerCase() ?? ''
   const normalizedNameExt = fromName.replace(/[^a-z0-9]/g, '')
   if (normalizedNameExt.length > 0) return normalizedNameExt
 
-  const mime = (file.type || '').toLowerCase()
+  const mime = (contentType || '').toLowerCase()
   if (mime === 'image/jpeg') return 'jpg'
   if (mime === 'image/png') return 'png'
   if (mime === 'image/webp') return 'webp'
   if (mime === 'image/heic') return 'heic'
   if (mime === 'image/heif') return 'heif'
   return 'jpg'
+}
+
+function resolveFileExtension(file: File) {
+  return resolveFileExtensionFromMetadata(file.name, file.type)
+}
+
+function isImageUploadCandidate(fileName: unknown, contentType: unknown) {
+  const mime = typeof contentType === 'string' ? contentType.trim().toLowerCase() : ''
+  if (mime.startsWith('image/')) return true
+  const name = typeof fileName === 'string' ? fileName : ''
+  return /\.(avif|gif|heic|heif|jpe?g|png|tiff?|webp)$/i.test(name)
+}
+
+function parseFileSize(value: unknown) {
+  const size = Number(value)
+  if (!Number.isFinite(size)) return null
+  return Math.round(size)
+}
+
+function buildStoredImagePath(inspectionId: string, sectionKey: string, fileName: string | null, contentType: string | null) {
+  const ext = resolveFileExtensionFromMetadata(fileName, contentType)
+  const storedName = `${Date.now()}-${randomUUID().slice(0, 8)}.${ext}`
+  return `${inspectionId}/technical-investigations/${sectionKey}/${storedName}`
+}
+
+function validateImageUploadMetadata(fileName: unknown, contentType: unknown, fileSize: unknown) {
+  const size = parseFileSize(fileSize)
+  if (!isImageUploadCandidate(fileName, contentType)) return 'Endast bildfiler är tillåtna.'
+  if (size === null || size <= 0) return 'Tom fil kan inte laddas upp.'
+  if (size > MAX_UPLOAD_BYTES) return 'Filen är för stor (max 15 MB).'
+  return null
+}
+
+function validateCompletedUploadPath(inspectionId: string, sectionKey: string, filePath: unknown) {
+  const path = typeof filePath === 'string' ? filePath.trim() : ''
+  const prefix = `${inspectionId}/technical-investigations/${sectionKey}/`
+  if (!path.startsWith(prefix)) return null
+  if (path.includes('..') || path.includes('\\')) return null
+  return path
 }
 
 function getFormFiles(formData: FormData) {
@@ -183,6 +235,56 @@ async function readImageRow(
   return data as TuInvestigationImageRow | null
 }
 
+async function getNextSortOrder(admin: TuImageSupabaseClient, orgId: string, inspectionId: string) {
+  const { data: currentImages, error } = await admin
+    .from('technical_investigation_images')
+    .select('sort_order')
+    .eq('org_id', orgId)
+    .eq('inspection_id', inspectionId)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+
+  if (error) throw new Error(error.message ?? 'Kunde inte läsa befintliga bilder.')
+
+  const maxSort = Array.isArray(currentImages)
+    ? Number((currentImages[0] as { sort_order?: unknown } | undefined)?.sort_order ?? 0)
+    : 0
+  return Number.isFinite(maxSort) ? maxSort + 10 : 10
+}
+
+async function insertImageRow(
+  admin: TuImageSupabaseClient,
+  params: {
+    inspectionId: string
+    orgId: string
+    userId: string
+    sectionKey: string
+    filePath: string
+    sortOrder: number
+  }
+) {
+  const { data: insertedImage, error } = await admin
+    .from('technical_investigation_images')
+    .insert({
+      inspection_id: params.inspectionId,
+      org_id: params.orgId,
+      section_key: params.sectionKey,
+      storage_bucket: IMAGE_BUCKET,
+      file_path: params.filePath,
+      sort_order: params.sortOrder,
+      uploaded_by: params.userId,
+    })
+    .select(IMAGE_COLUMNS)
+    .single()
+
+  if (error) {
+    await admin.storage.from(IMAGE_BUCKET).remove([params.filePath])
+    throw new Error(error.message ?? 'Kunde inte spara bildrad.')
+  }
+
+  return mapImage(insertedImage as TuInvestigationImageRow, admin)
+}
+
 export async function GET(
   _request: Request,
   context: { params: Promise<{ inspectionId: string }> }
@@ -224,13 +326,61 @@ export async function POST(
 
     await assertInvestigation(orgContext.orgId, inspectionId, { editable: true })
 
+    const requestContentType = request.headers.get('content-type') ?? ''
+    if (requestContentType.includes('application/json')) {
+      const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+      const action = cleanText(body.action)
+      const sectionKey = normalizeSectionKey(body.sectionKey ?? body.section_key)
+
+      if (action === 'createSignedUpload') {
+        const fileName = cleanText(body.fileName ?? body.file_name)
+        const contentType = cleanText(body.contentType ?? body.content_type)
+        const validationError = validateImageUploadMetadata(fileName, contentType, body.fileSize ?? body.file_size)
+        if (validationError) return jsonError(validationError, 400)
+
+        const filePath = buildStoredImagePath(inspectionId, sectionKey, fileName, contentType)
+        const { data, error } = await admin.storage.from(IMAGE_BUCKET).createSignedUploadUrl(filePath)
+        if (error) throw new Error(error.message ?? 'Kunde inte skapa uppladdningslänk.')
+        if (!data?.token) throw new Error('Supabase returnerade ingen uppladdningstoken.')
+
+        return NextResponse.json({
+          ok: true,
+          upload: {
+            bucket: IMAGE_BUCKET,
+            filePath,
+            token: data.token,
+            publicUrl: admin.storage.from(IMAGE_BUCKET).getPublicUrl(filePath).data.publicUrl,
+          },
+        })
+      }
+
+      if (action === 'completeSignedUpload') {
+        const filePath = validateCompletedUploadPath(inspectionId, sectionKey, body.filePath ?? body.file_path)
+        if (!filePath) return jsonError('Ogiltig bildsökväg.', 400)
+
+        const sortOrder = await getNextSortOrder(admin, orgContext.orgId, inspectionId)
+        const image = await insertImageRow(admin, {
+          inspectionId,
+          orgId: orgContext.orgId,
+          userId: orgContext.userId,
+          sectionKey,
+          filePath,
+          sortOrder,
+        })
+
+        return NextResponse.json({ ok: true, image, images: [image] }, { status: 201 })
+      }
+
+      return jsonError('Ogiltig bilduppladdningsåtgärd.', 400)
+    }
+
     const formData = await request.formData()
     const sectionKey = normalizeSectionKey(formData.get('sectionKey'))
     const files = getFormFiles(formData)
     if (files.length === 0) return jsonError('Fil saknas.', 400)
 
     for (const file of files) {
-      if (!file.type.toLowerCase().startsWith('image/')) {
+      if (!isImageUploadCandidate(file.name, file.type)) {
         return jsonError('Endast bildfiler är tillåtna.', 400)
       }
       if (file.size <= 0) return jsonError('Tom fil kan inte laddas upp.', 400)
@@ -293,7 +443,10 @@ export async function POST(
   } catch (error) {
     const mapped = mapError(error)
     if (mapped) return mapped
-    return jsonError('Kunde inte ladda upp TU-bild.', 500)
+    console.error('[tu.images.POST] failed to upload images', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return jsonDetailedError('Kunde inte ladda upp TU-bild.', 500, error)
   }
 }
 

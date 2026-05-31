@@ -4,11 +4,14 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, ChevronDown, ChevronUp, FileText, Image as ImageIcon, MoveDown, MoveUp, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
+import { supabase } from '@/lib/supabaseClient'
 import type { TuInvestigationDetails, TuReportDraft, TuReportSectionKey } from '@/lib/tu/server'
 
 const TU_IMAGE_DRAG_DATA_TYPE = 'application/x-tu-image-id'
 const IMAGE_FILE_ACCEPT = 'image/*'
 const DOCUMENT_FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain'
+const MAX_IMAGE_FILES_PER_UPLOAD = 20
+const MAX_IMAGE_UPLOAD_BYTES = 15 * 1024 * 1024
 
 type TuImageSectionKey = 'bank' | 'appendix' | 'cover'
 
@@ -30,7 +33,14 @@ type TuInvestigationImage = {
 type ImageApiResponse = {
   image?: TuInvestigationImage
   images?: TuInvestigationImage[]
+  upload?: {
+    bucket: string
+    filePath: string
+    token: string
+    publicUrl: string
+  }
   error?: string
+  detail?: string
 }
 
 type TuInvestigationDocument = {
@@ -468,7 +478,8 @@ function joinDisplay(parts: Array<string | null | undefined>) {
 }
 
 function isImageFile(file: File) {
-  return file.type.toLowerCase().startsWith('image/')
+  if (file.type.toLowerCase().startsWith('image/')) return true
+  return /\.(avif|gif|heic|heif|jpe?g|png|tiff?|webp)$/i.test(file.name)
 }
 
 function hasDraggedTuImage(event: React.DragEvent) {
@@ -516,6 +527,37 @@ function formatFileSize(bytes: number | null | undefined) {
   return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`
 }
 
+function formatFileSizeForError(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} kB`
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`
+}
+
+async function readApiError(response: Response, fallback: string) {
+  const contentType = response.headers.get('content-type') ?? ''
+  if (contentType.includes('application/json')) {
+    const payload = (await response.json().catch(() => ({}))) as { error?: unknown; detail?: unknown }
+    const message = typeof payload.error === 'string' ? payload.error.trim() : ''
+    const detail = typeof payload.detail === 'string' ? payload.detail.trim() : ''
+    return [message, detail].filter(Boolean).join(' ')
+  }
+
+  const text = (await response.text().catch(() => '')).trim()
+  if (text) return `${fallback} Servern svarade ${response.status}: ${text.slice(0, 400)}`
+  return `${fallback} Servern svarade ${response.status}.`
+}
+
+function buildImageUploadContext(files: File[]) {
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+  const largest = files.reduce<File | null>((current, file) => {
+    if (!current || file.size > current.size) return file
+    return current
+  }, null)
+  const parts = [`${files.length} bild${files.length === 1 ? '' : 'er'}`]
+  if (totalBytes > 0) parts.push(`totalt ${formatFileSizeForError(totalBytes)}`)
+  if (largest) parts.push(`största fil ${largest.name} (${formatFileSizeForError(largest.size)})`)
+  return parts.join(', ')
+}
+
 function getCollapsedSectionsStorageKey(inspectionId: string) {
   return `tu:${inspectionId}:collapsed-sections`
 }
@@ -553,6 +595,7 @@ export default function TuInvestigationEditorClient({
   const [imagesLoading, setImagesLoading] = useState(true)
   const [imageBusy, setImageBusy] = useState(false)
   const [imageError, setImageError] = useState<string | null>(null)
+  const [imageUploadProgress, setImageUploadProgress] = useState<string | null>(null)
   const [documents, setDocuments] = useState<TuInvestigationDocument[]>([])
   const [documentsLoading, setDocumentsLoading] = useState(true)
   const [documentBusy, setDocumentBusy] = useState(false)
@@ -573,6 +616,7 @@ export default function TuInvestigationEditorClient({
   const bankFileInputRef = useRef<HTMLInputElement>(null)
   const appendixFileInputRef = useRef<HTMLInputElement>(null)
   const documentFileInputRef = useRef<HTMLInputElement>(null)
+  const imageErrorRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     draftRef.current = draft
@@ -585,6 +629,11 @@ export default function TuInvestigationEditorClient({
   useEffect(() => {
     assignmentPartiesRef.current = assignmentParties
   }, [assignmentParties])
+
+  useEffect(() => {
+    if (!imageError) return
+    imageErrorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [imageError])
 
   useEffect(() => {
     const allowedKeys = new Set(draftRef.current.sections.map((section) => section.key))
@@ -812,9 +861,21 @@ export default function TuInvestigationEditorClient({
       setImageError('Endast bildfiler kan laddas upp.')
       return
     }
+    if (imageFiles.length > MAX_IMAGE_FILES_PER_UPLOAD) {
+      setImageError(`Ladda upp max ${MAX_IMAGE_FILES_PER_UPLOAD} bilder åt gången.`)
+      return
+    }
+    const tooLargeFile = imageFiles.find((file) => file.size > MAX_IMAGE_UPLOAD_BYTES)
+    if (tooLargeFile) {
+      setImageError(
+        `${tooLargeFile.name} är för stor (${formatFileSizeForError(tooLargeFile.size)}). Max per originalbild är 15 MB.`
+      )
+      return
+    }
 
     setImageBusy(true)
     setImageError(null)
+    setImageUploadProgress(`Startar uppladdning av ${imageFiles.length} bild${imageFiles.length === 1 ? '' : 'er'}...`)
     try {
       if (sectionKey === 'cover') {
         for (const image of coverImages) {
@@ -825,21 +886,71 @@ export default function TuInvestigationEditorClient({
         }
       }
 
-      const formData = new FormData()
-      formData.set('sectionKey', sectionKey)
-      for (const file of imageFiles) formData.append('files', file)
+      const uploadedImages: TuInvestigationImage[] = []
+      for (const [index, originalFile] of imageFiles.entries()) {
+        const position = `${index + 1}/${imageFiles.length}`
+        setImageUploadProgress(`Skapar uppladdningslänk ${position}: ${originalFile.name}`)
+        const signedResponse = await fetch(`/api/tu/investigations/${investigation.inspectionId}/images`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'createSignedUpload',
+            sectionKey,
+            fileName: originalFile.name,
+            contentType: originalFile.type,
+            fileSize: originalFile.size,
+          }),
+        })
+        if (!signedResponse.ok) {
+          const message = await readApiError(signedResponse, 'Kunde inte skapa uppladdningslänk.')
+          throw new Error(`${message} (${buildImageUploadContext([originalFile])})`)
+        }
+        const signedPayload = (await signedResponse.json().catch(() => ({}))) as ImageApiResponse
+        const upload = signedPayload.upload
+        if (!upload?.bucket || !upload.filePath || !upload.token) {
+          throw new Error(`Servern saknade uppladdningsuppgifter för ${originalFile.name}.`)
+        }
 
-      const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}/images`, {
-        method: 'POST',
-        body: formData,
-      })
-      const payload = (await response.json().catch(() => ({}))) as ImageApiResponse
-      if (!response.ok) throw new Error(payload.error ?? 'Kunde inte ladda upp bilder.')
-      setImages((current) => upsertImages(current, payload.images ?? []))
+        setImageUploadProgress(`Laddar upp originalbild ${position}: ${originalFile.name}`)
+        const { error: storageError } = await supabase.storage
+          .from(upload.bucket)
+          .uploadToSignedUrl(upload.filePath, upload.token, originalFile, {
+            contentType: originalFile.type || undefined,
+          })
+
+        if (storageError) {
+          throw new Error(
+            `Supabase kunde inte ta emot ${originalFile.name}: ${storageError.message ?? 'okänt storage-fel'}.`
+          )
+        }
+
+        setImageUploadProgress(`Sparar bildrad ${position}: ${originalFile.name}`)
+        const completeResponse = await fetch(`/api/tu/investigations/${investigation.inspectionId}/images`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'completeSignedUpload',
+            sectionKey,
+            filePath: upload.filePath,
+          }),
+        })
+        if (!completeResponse.ok) {
+          const message = await readApiError(completeResponse, 'Bilden laddades upp men kunde inte sparas i listan.')
+          throw new Error(`${message} (${buildImageUploadContext([originalFile])})`)
+        }
+        const completePayload = (await completeResponse.json().catch(() => ({}))) as ImageApiResponse
+        const nextImages = completePayload.images ?? (completePayload.image ? [completePayload.image] : [])
+        uploadedImages.push(...nextImages)
+        setImages((current) => upsertImages(current, nextImages))
+      }
+      setImageUploadProgress(`Uppladdning klar: ${uploadedImages.length} bild${uploadedImages.length === 1 ? '' : 'er'}.`)
     } catch (uploadError) {
       setImageError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp bilder.')
     } finally {
       setImageBusy(false)
+      window.setTimeout(() => {
+        setImageUploadProgress(null)
+      }, 3500)
     }
   }
 
@@ -1363,6 +1474,24 @@ export default function TuInvestigationEditorClient({
         </section>
 
         <section className="order-last grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          {imageError ? (
+            <div
+              ref={imageErrorRef}
+              className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 lg:col-span-2"
+              aria-live="polite"
+            >
+              {imageError}
+            </div>
+          ) : null}
+          {imageUploadProgress ? (
+            <div
+              className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-900 lg:col-span-2"
+              aria-live="polite"
+            >
+              {imageUploadProgress}
+            </div>
+          ) : null}
+
           <article className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -1702,12 +1831,6 @@ export default function TuInvestigationEditorClient({
         {documentError ? (
           <div className="order-last rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
             {documentError}
-          </div>
-        ) : null}
-
-        {imageError ? (
-          <div className="order-last rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-            {imageError}
           </div>
         ) : null}
 
