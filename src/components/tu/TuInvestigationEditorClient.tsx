@@ -14,6 +14,7 @@ const MAX_IMAGE_FILES_PER_UPLOAD = 20
 const MAX_IMAGE_UPLOAD_BYTES = 15 * 1024 * 1024
 
 type TuImageSectionKey = 'bank' | 'appendix' | 'cover'
+type TuImageViewCount = 15 | 9 | 1
 
 type TuInvestigationImage = {
   id: string
@@ -558,6 +559,17 @@ function buildImageUploadContext(files: File[]) {
   return parts.join(', ')
 }
 
+function getTuImageGridClass(viewCount: TuImageViewCount) {
+  if (viewCount === 1) return 'grid grid-cols-1 gap-3'
+  if (viewCount === 15) return 'grid grid-cols-3 gap-1.5 sm:grid-cols-5 sm:gap-2'
+  return 'grid grid-cols-2 gap-2 sm:grid-cols-3'
+}
+
+function getTuImageClass(viewCount: TuImageViewCount) {
+  if (viewCount === 1) return 'max-h-[430px] w-full object-contain bg-gray-100'
+  return 'aspect-square w-full object-cover transition group-hover:scale-[1.02]'
+}
+
 function getCollapsedSectionsStorageKey(inspectionId: string) {
   return `tu:${inspectionId}:collapsed-sections`
 }
@@ -596,6 +608,8 @@ export default function TuInvestigationEditorClient({
   const [imageBusy, setImageBusy] = useState(false)
   const [imageError, setImageError] = useState<string | null>(null)
   const [imageUploadProgress, setImageUploadProgress] = useState<string | null>(null)
+  const [imageViewCount, setImageViewCount] = useState<TuImageViewCount>(15)
+  const [previewImageId, setPreviewImageId] = useState<string | null>(null)
   const [documents, setDocuments] = useState<TuInvestigationDocument[]>([])
   const [documentsLoading, setDocumentsLoading] = useState(true)
   const [documentBusy, setDocumentBusy] = useState(false)
@@ -844,6 +858,9 @@ export default function TuInvestigationEditorClient({
   const coverImage = coverImages[0] ?? null
   const bankImages = images.filter((image) => image.sectionKey === 'bank')
   const appendixImages = images.filter((image) => image.sectionKey === 'appendix')
+  const previewImages = [...coverImages, ...bankImages, ...appendixImages]
+  const previewImage = previewImages.find((image) => image.id === previewImageId) ?? null
+  const previewImageIndex = previewImage ? previewImages.findIndex((image) => image.id === previewImage.id) : -1
   const objectAddress = joinDisplay([
     investigation.property?.address ?? investigation.propertyAddress,
     joinDisplay([investigation.property?.postal_code, investigation.property?.city ?? investigation.propertyCity]),
@@ -952,6 +969,102 @@ export default function TuInvestigationEditorClient({
         setImageUploadProgress(null)
       }, 3500)
     }
+  }
+
+  const showPreviewImageAtOffset = (offset: number) => {
+    if (previewImages.length === 0 || previewImageIndex < 0) return
+    const nextIndex = (previewImageIndex + offset + previewImages.length) % previewImages.length
+    setPreviewImageId(previewImages[nextIndex]?.id ?? null)
+  }
+
+  const renderImageViewCountButtons = () => {
+    const imageViewCounts: TuImageViewCount[] = [15, 9, 1]
+    return (
+      <div className="flex flex-wrap gap-2">
+        {imageViewCounts.map((count) => (
+          <button
+            key={count}
+            type="button"
+            onClick={() => setImageViewCount(count)}
+            className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition ${
+              imageViewCount === count
+                ? 'border-violet-700 bg-violet-700 text-white'
+                : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+            aria-label={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
+            title={`Visa ${count} bild${count === 1 ? '' : 'er'}`}
+          >
+            <span
+              aria-hidden="true"
+              className={
+                count === 15
+                  ? 'grid h-5 w-5 grid-cols-3 gap-0.5'
+                  : count === 9
+                    ? 'grid h-5 w-5 grid-cols-2 gap-0.5'
+                    : 'grid h-5 w-5 grid-cols-1 gap-0.5'
+              }
+            >
+              {Array.from({ length: count === 15 ? 9 : count === 9 ? 4 : 1 }).map((_, index) => (
+                <span
+                  key={index}
+                  className={`rounded-[1px] ${imageViewCount === count ? 'bg-white' : 'bg-gray-600'}`}
+                />
+              ))}
+            </span>
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  const renderImagePreview = () => {
+    if (!previewImage) return null
+    const canNavigate = previewImages.length > 1 && previewImageIndex >= 0
+
+    return (
+      <div className="fixed inset-0 z-[90] bg-black/85 p-4" role="dialog" aria-modal="true">
+        <div className="flex h-full flex-col">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-xs font-semibold text-white/75">
+              {canNavigate ? `${previewImageIndex + 1} / ${previewImages.length}` : ''}
+            </div>
+            <button
+              type="button"
+              onClick={() => setPreviewImageId(null)}
+              className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20"
+            >
+              Stäng
+            </button>
+          </div>
+          <div className="relative min-h-0 flex-1">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={previewImage.publicUrl} alt={previewImage.caption ?? ''} className="h-full w-full object-contain" />
+            {canNavigate ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => showPreviewImageAtOffset(-1)}
+                  className="absolute left-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-black/40 text-2xl leading-none text-white shadow-lg transition hover:bg-black/60"
+                  aria-label="Föregående bild"
+                  title="Föregående bild"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  onClick={() => showPreviewImageAtOffset(1)}
+                  className="absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-black/40 text-2xl leading-none text-white shadow-lg transition hover:bg-black/60"
+                  aria-label="Nästa bild"
+                  title="Nästa bild"
+                >
+                  ›
+                </button>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    )
   }
 
   const patchImage = async (imageId: string, patch: Record<string, unknown>) => {
@@ -1430,12 +1543,20 @@ export default function TuInvestigationEditorClient({
           >
             {coverImage ? (
               <div className="grid w-full gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={coverImage.publicUrl}
-                  alt={coverImage.caption ?? 'Omslagsbild'}
-                  className="aspect-[4/3] w-full rounded-md object-cover"
-                />
+                <button
+                  type="button"
+                  onClick={() => setPreviewImageId(coverImage.id)}
+                  className="block overflow-hidden rounded-md text-left focus:outline-none focus:ring-2 focus:ring-violet-300"
+                  aria-label="Visa omslagsbild"
+                  title="Visa bild"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={coverImage.publicUrl}
+                    alt={coverImage.caption ?? 'Omslagsbild'}
+                    className="aspect-[4/3] w-full object-cover"
+                  />
+                </button>
                 <div className="text-left">
                   <p className="text-sm font-semibold text-gray-950">Vald omslagsbild</p>
                   <p className="mt-1 text-sm text-gray-600">
@@ -1496,17 +1617,22 @@ export default function TuInvestigationEditorClient({
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="text-base font-semibold text-gray-950">Bildbank</h2>
-                <p className="mt-1 text-sm text-gray-600">Ladda upp bilder och dra dem till bildbilagan.</p>
+                <p className="mt-1 text-sm text-gray-600">
+                  {bankImages.length} bild{bankImages.length === 1 ? '' : 'er'} i banken.
+                </p>
               </div>
-              <button
-                type="button"
-                onClick={() => bankFileInputRef.current?.click()}
-                disabled={locked || imageBusy}
-                className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
-              >
-                <Upload size={16} aria-hidden />
-                Ladda upp
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {renderImageViewCountButtons()}
+                <button
+                  type="button"
+                  onClick={() => bankFileInputRef.current?.click()}
+                  disabled={locked || imageBusy}
+                  className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                >
+                  <Upload size={16} aria-hidden />
+                  Ladda upp
+                </button>
+              </div>
               <input
                 ref={bankFileInputRef}
                 type="file"
@@ -1546,7 +1672,8 @@ export default function TuInvestigationEditorClient({
                 Bildbanken är tom.
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="max-h-[560px] overflow-y-auto pr-1">
+                <div className={getTuImageGridClass(imageViewCount)}>
                 {bankImages.map((image) => (
                   <div
                     key={image.id}
@@ -1557,8 +1684,16 @@ export default function TuInvestigationEditorClient({
                     }}
                     className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm"
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={image.publicUrl} alt={image.caption ?? 'TU-bild'} className="aspect-square w-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setPreviewImageId(image.id)}
+                      className="group block w-full overflow-hidden text-left focus:outline-none focus:ring-2 focus:ring-violet-300"
+                      aria-label="Visa bild"
+                      title="Visa bild"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={image.publicUrl} alt={image.caption ?? 'TU-bild'} className={getTuImageClass(imageViewCount)} />
+                    </button>
                     <div className="space-y-2 p-2">
                       <button
                         type="button"
@@ -1579,6 +1714,7 @@ export default function TuInvestigationEditorClient({
                     </div>
                   </div>
                 ))}
+                </div>
               </div>
             )}
           </article>
@@ -1587,7 +1723,9 @@ export default function TuInvestigationEditorClient({
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="text-base font-semibold text-gray-950">Bildbilaga</h2>
-                <p className="mt-1 text-sm text-gray-600">Placera bilder och skriv en kort bildtext.</p>
+                <p className="mt-1 text-sm text-gray-600">
+                  {appendixImages.length} bild{appendixImages.length === 1 ? '' : 'er'} i bilagan.
+                </p>
               </div>
               <button
                 type="button"
@@ -1633,7 +1771,7 @@ export default function TuInvestigationEditorClient({
                 Bildbilagan är tom.
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="max-h-[640px] space-y-3 overflow-y-auto pr-1">
                 {appendixImages.map((image, index) => (
                   <div
                     key={image.id}
@@ -1644,8 +1782,16 @@ export default function TuInvestigationEditorClient({
                     }}
                     className="grid gap-3 rounded-md border border-gray-200 bg-white p-2 shadow-sm sm:grid-cols-[112px_minmax(0,1fr)_auto]"
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={image.publicUrl} alt={image.caption ?? 'Bilagebild'} className="aspect-square w-full rounded-md object-cover sm:w-28" />
+                    <button
+                      type="button"
+                      onClick={() => setPreviewImageId(image.id)}
+                      className="block overflow-hidden rounded-md text-left focus:outline-none focus:ring-2 focus:ring-violet-300 sm:w-28"
+                      aria-label="Visa bilagebild"
+                      title="Visa bild"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={image.publicUrl} alt={image.caption ?? 'Bilagebild'} className="aspect-square w-full object-cover" />
+                    </button>
                     <label className="min-w-0 space-y-1">
                       <span className="block text-xs font-medium text-gray-600">Bildtext</span>
                       <textarea
@@ -1923,6 +2069,7 @@ export default function TuInvestigationEditorClient({
             )
           })}
         </section>
+        {renderImagePreview()}
       </div>
     </main>
   )
