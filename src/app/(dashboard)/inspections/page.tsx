@@ -334,27 +334,19 @@ function PdfDownloadActionButton({
   enabled: boolean
 }) {
   if (!enabled) {
-    return (
-      <span
-        aria-label="PDF inte tillgänglig ännu"
-        title="PDF inte tillgänglig ännu"
-        className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white/70 text-slate-300 shadow-sm ring-1 ring-white/80"
-      >
-        <Download size={13} strokeWidth={1.9} />
-      </span>
-    )
+    return null
   }
 
   return (
     <Link
       href={href}
       onClick={(event) => event.stopPropagation()}
-      aria-label="Hämta PDF"
-      title="Hämta PDF"
+      aria-label="Ladda ner gällande PDF"
+      title="Ladda ner gällande PDF"
       className="group inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white/95 text-slate-700 shadow-sm ring-1 ring-white/80 transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
     >
       <Download size={13} strokeWidth={1.9} />
-      <span className="sr-only">Hämta PDF</span>
+      <span className="sr-only">Ladda ner gällande PDF</span>
     </Link>
   )
 }
@@ -1083,8 +1075,7 @@ export default function InspectionsPage() {
                       const dateText = row.date ?? new Date(row.created_at).toLocaleDateString('sv-SE')
                       const customer = getCustomerText(row)
                       const downloadHref = `/api/report-v2/${row.id}/pdf`
-                      const canDownloadPdf =
-                        getStatusBucket(row.status) === 'completed' && Boolean(row.hasReadyPdf)
+                      const canDownloadPdf = Boolean(row.hasReadyPdf)
                       const isLocked = Boolean(row.locked_at)
                       const isUnlockingThis = unlockSubmitting && unlockTarget?.id === row.id
 
@@ -1137,8 +1128,7 @@ export default function InspectionsPage() {
                 {pagedRows.map((row) => {
                   const dateText = row.date ?? new Date(row.created_at).toLocaleDateString('sv-SE')
                   const downloadHref = `/api/report-v2/${row.id}/pdf`
-                  const canDownloadPdf =
-                    getStatusBucket(row.status) === 'completed' && Boolean(row.hasReadyPdf)
+                  const canDownloadPdf = Boolean(row.hasReadyPdf)
                   const isLocked = Boolean(row.locked_at)
                   const isUnlockingThis = unlockSubmitting && unlockTarget?.id === row.id
 
