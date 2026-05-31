@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ChevronsLeft, FileText, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronsLeft, Download, FileText, Plus, Trash2 } from 'lucide-react'
 import Protected from '@/components/Protected'
 
 type InvestigationItem = {
@@ -24,6 +24,7 @@ type InvestigationItem = {
   apartmentHolderName: string | null
   scopeDescription: string | null
   reportLockedAt: string | null
+  hasReadyPdf?: boolean
   createdAt: string | null
   updatedAt: string | null
 }
@@ -125,6 +126,20 @@ function timestamp(value: string | null) {
   if (!value) return 0
   const parsed = new Date(value).getTime()
   return Number.isNaN(parsed) ? 0 : parsed
+}
+
+function PdfDownloadActionButton({ inspectionId }: { inspectionId: string }) {
+  return (
+    <a
+      href={`/api/report-v2/${encodeURIComponent(inspectionId)}/pdf`}
+      onClick={(event) => event.stopPropagation()}
+      title="Ladda ner gällande PDF"
+      aria-label="Ladda ner gällande PDF"
+      className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-violet-200 bg-white/95 text-violet-700 transition hover:bg-violet-50"
+    >
+      <Download size={13} />
+    </a>
+  )
 }
 
 export default function TuInvestigationsPage() {
@@ -478,6 +493,9 @@ export default function TuInvestigationsPage() {
                             >
                               <FileText size={13} />
                             </button>
+                            {item.hasReadyPdf ? (
+                              <PdfDownloadActionButton inspectionId={item.inspectionId} />
+                            ) : null}
                             <button
                               type="button"
                               onClick={(event) => {

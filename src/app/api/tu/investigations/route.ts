@@ -1,8 +1,18 @@
 import { NextResponse } from 'next/server'
+import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createScratchTuInvestigation, listTuInvestigations, requireTuContext } from '@/lib/tu/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+type ReportLinkPdfLite = {
+  inspection_id: string
+  pdf_base64: string | null
+  pdf_storage_bucket: string | null
+  pdf_storage_path: string | null
+  pdf_status: string | null
+  created_at: string | null
+}
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
@@ -21,11 +31,64 @@ function mapAccessError(error: unknown) {
   return null
 }
 
+function normalizePdfStatus(value: string | null | undefined): 'pending' | 'processing' | 'ready' | 'failed' {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+  if (normalized === 'processing') return 'processing'
+  if (normalized === 'ready') return 'ready'
+  if (normalized === 'failed') return 'failed'
+  return 'pending'
+}
+
+function hasReadyPdf(row: ReportLinkPdfLite | null | undefined) {
+  if (!row) return false
+  const hasStoredPdf =
+    String(row.pdf_storage_bucket ?? '').trim().length > 0 &&
+    String(row.pdf_storage_path ?? '').trim().length > 0
+  const hasLegacyPdf = String(row.pdf_base64 ?? '').trim().length > 0
+  return normalizePdfStatus(row.pdf_status) === 'ready' && (hasStoredPdf || hasLegacyPdf)
+}
+
+async function listLatestReportLinks(inspectionIds: string[]) {
+  if (inspectionIds.length === 0) return new Map<string, ReportLinkPdfLite>()
+
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('inspection_report_links')
+    .select('inspection_id,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,created_at')
+    .in('inspection_id', inspectionIds)
+    .is('revoked_at', null)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error('[api/tu/investigations] failed to read report link PDF status', {
+      error: error.message ?? error,
+    })
+    return new Map<string, ReportLinkPdfLite>()
+  }
+
+  const latestByInspectionId = new Map<string, ReportLinkPdfLite>()
+  for (const row of (Array.isArray(data) ? data : []) as ReportLinkPdfLite[]) {
+    if (!latestByInspectionId.has(row.inspection_id)) {
+      latestByInspectionId.set(row.inspection_id, row)
+    }
+  }
+
+  return latestByInspectionId
+}
+
 export async function GET() {
   try {
     const context = await requireTuContext()
     const items = await listTuInvestigations(context.orgId)
-    return NextResponse.json({ items })
+    const reportLinks = await listLatestReportLinks(items.map((item) => item.inspectionId))
+    return NextResponse.json({
+      items: items.map((item) => ({
+        ...item,
+        hasReadyPdf: hasReadyPdf(reportLinks.get(item.inspectionId)),
+      })),
+    })
   } catch (error) {
     const accessError = mapAccessError(error)
     if (accessError) return accessError

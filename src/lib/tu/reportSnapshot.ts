@@ -153,10 +153,8 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
           investigation.apartmentNumber ? `Lgh ${investigation.apartmentNumber}` : null,
         ])
       : investigation.cadastralId
-  const inspectionDateTime = compact([
-    formatInspectionDate(assignment?.preferred_date ?? investigation.inspection.date),
-    formatInspectionTime(assignment?.preferred_time ?? investigation.inspection.inspection_time),
-  ])
+  const inspectionDate = formatInspectionDate(assignment?.preferred_date ?? investigation.inspection.date)
+  const inspectionTime = formatInspectionTime(assignment?.preferred_time ?? investigation.inspection.inspection_time)
 
   return {
     leftRows: [
@@ -165,7 +163,8 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
       toPrintRow('Telefon', inspector?.phone),
       toPrintRow('E-Post', inspector?.email),
       toPrintRow('Närvarande', assignment?.customer_name ?? investigation.inspection.customer_name),
-      toPrintRow('Besiktningsdag', inspectionDateTime),
+      toPrintRow('Besiktningsdag', inspectionDate),
+      toPrintRow('Klockslag', inspectionTime),
     ].filter((row): row is TuPrintMetaRow => Boolean(row)),
     rightRows: [
       toPrintRow('Fastighetsägare', assignment?.property_owner_name),
