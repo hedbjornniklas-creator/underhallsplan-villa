@@ -546,8 +546,8 @@ function PrintableBlockView({
 
 function getHeaderValueStyle(nowrap: boolean): CSSProperties {
   return {
-    fontSize: '10pt',
-    lineHeight: nowrap ? 1.05 : 1.12,
+    fontSize: '9.6pt',
+    lineHeight: 1.22,
     whiteSpace: nowrap ? 'nowrap' : 'normal',
   }
 }
@@ -562,10 +562,10 @@ function HeaderValue({
   nowrap?: boolean
 }) {
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col justify-start overflow-hidden px-1.5 py-1">
-      <div className="shrink-0 text-[6pt] leading-none text-black">{label}</div>
+    <div className="flex h-full min-h-0 min-w-0 flex-col justify-start overflow-hidden px-1.5 py-0.5">
+      <div className="shrink-0 text-[6pt] leading-[1.15] text-black">{label}</div>
       <div
-        className="mt-0.5 min-w-0 overflow-hidden break-words font-medium text-black"
+        className="min-w-0 overflow-hidden break-words pb-0.5 font-medium text-black"
         style={getHeaderValueStyle(nowrap)}
       >
         {value || '-'}
