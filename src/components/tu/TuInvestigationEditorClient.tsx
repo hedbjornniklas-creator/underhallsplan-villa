@@ -232,7 +232,9 @@ function parseAssignmentPartiesText(text: string) {
       }
       if (label === 'adress') parsed.customerAddress = value
       if (label === 'telefon') parsed.customerPhone = value
-      if (label === 'e-post') parsed.customerEmail = value
+      if (label === 'e-post' || label === 'e.post' || label === 'e-mail' || label === 'email') {
+        parsed.customerEmail = value
+      }
       if (label === 'närvarande') parsed.customerAttendees = value
       if (label === 'fakturanamn') parsed.invoiceName = value
       if (label === 'fakturaadress') parsed.invoiceAddress = value
@@ -245,7 +247,9 @@ function parseAssignmentPartiesText(text: string) {
       if (label === 'org.nr') parsed.inspectorOrgNo = value
       if (label === 'adress') parsed.inspectorAddress = value
       if (label === 'telefon') parsed.inspectorPhone = value
-      if (label === 'e-post') parsed.inspectorEmail = value
+      if (label === 'e-post' || label === 'e.post' || label === 'e-mail' || label === 'email') {
+        parsed.inspectorEmail = value
+      }
       if (label === 'sbr') parsed.inspectorSbrGroup = value
       if (label === 'status') parsed.inspectorStatus = value
       if (label === 'medlemsnummer') parsed.inspectorMembershipNumber = value

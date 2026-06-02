@@ -189,7 +189,9 @@ function parseAssignmentPartiesFields(value: string | null | undefined): Assignm
         parsed.customerRole = fieldValue
       }
       if (label === 'telefon') parsed.customerPhone = fieldValue
-      if (label === 'e-post') parsed.customerEmail = fieldValue
+      if (label === 'e-post' || label === 'e.post' || label === 'e-mail' || label === 'email') {
+        parsed.customerEmail = fieldValue
+      }
       if (label === 'närvarande') parsed.customerAttendees = fieldValue
       if (label === 'fastighetsägare') parsed.propertyOwnerName = fieldValue
     }
@@ -199,7 +201,9 @@ function parseAssignmentPartiesFields(value: string | null | undefined): Assignm
       if (label === 'namn') parsed.inspectorName = fieldValue
       if (label === 'medlemsnummer') parsed.inspectorMembershipNumber = fieldValue
       if (label === 'telefon') parsed.inspectorPhone = fieldValue
-      if (label === 'e-post') parsed.inspectorEmail = fieldValue
+      if (label === 'e-post' || label === 'e.post' || label === 'e-mail' || label === 'email') {
+        parsed.inspectorEmail = fieldValue
+      }
     }
   }
 
@@ -214,19 +218,13 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
   const assignmentParties = parseAssignmentPartiesFields(assignmentPartiesText)
   const customerName =
     assignmentParties.customerName ?? assignment?.customer_name ?? investigation.inspection.customer_name
-  const customerRole = assignmentParties.hasCustomerRows ? assignmentParties.customerRole : assignment?.orderer_role
+  const customerRole = assignmentParties.customerRole ?? assignment?.orderer_role
   const customerPhone =
-    assignmentParties.hasCustomerRows
-      ? assignmentParties.customerPhone
-      : assignment?.customer_phone ?? investigation.inspection.customer_phone
+    assignmentParties.customerPhone ?? assignment?.customer_phone ?? investigation.inspection.customer_phone
   const customerEmail =
-    assignmentParties.hasCustomerRows
-      ? assignmentParties.customerEmail
-      : assignment?.customer_email ?? investigation.inspection.customer_email
+    assignmentParties.customerEmail ?? assignment?.customer_email ?? investigation.inspection.customer_email
   const customerAttendees = assignmentParties.customerAttendees ?? customerName
-  const propertyOwnerName = assignmentParties.hasCustomerRows
-    ? assignmentParties.propertyOwnerName
-    : assignment?.property_owner_name
+  const propertyOwnerName = assignmentParties.propertyOwnerName ?? assignment?.property_owner_name
   const address = investigation.property?.address ?? investigation.propertyAddress
   const postalCity = compact([
     investigation.property?.postal_code ?? assignment?.property_postal_code,
