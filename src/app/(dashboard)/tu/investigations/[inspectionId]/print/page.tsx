@@ -202,9 +202,7 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
     assignmentParties.hasCustomerRows
       ? assignmentParties.customerEmail
       : assignment?.customer_email ?? investigation.inspection.customer_email
-  const customerAttendees = assignmentParties.hasCustomerRows
-    ? assignmentParties.customerAttendees
-    : customerName
+  const customerAttendees = assignmentParties.customerAttendees ?? customerName
   const propertyOwnerName = assignmentParties.hasCustomerRows
     ? assignmentParties.propertyOwnerName
     : assignment?.property_owner_name
