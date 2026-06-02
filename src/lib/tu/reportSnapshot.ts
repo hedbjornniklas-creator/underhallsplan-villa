@@ -138,9 +138,92 @@ function toPrintRow(label: string, value: string | null | undefined): TuPrintMet
   return normalized ? { label, value: normalized } : null
 }
 
+type AssignmentPartiesFields = {
+  customerName?: string | null
+  customerRole?: string | null
+  customerPhone?: string | null
+  customerEmail?: string | null
+  propertyOwnerName?: string | null
+  inspectorName?: string | null
+  inspectorMembershipNumber?: string | null
+  inspectorPhone?: string | null
+  inspectorEmail?: string | null
+  hasCustomerRows: boolean
+  hasInspectorRows: boolean
+}
+
+function parseAssignmentPartiesFields(value: string | null | undefined): AssignmentPartiesFields {
+  const parsed: AssignmentPartiesFields = {
+    hasCustomerRows: false,
+    hasInspectorRows: false,
+  }
+  const text = normalizeAssignmentPartiesText(value ?? '')
+  let activeBlock: 'customer' | 'inspector' | null = null
+
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim()
+    if (!line) continue
+
+    const normalizedHeading = line.toLowerCase()
+    if (normalizedHeading === 'uppdragsgivare') {
+      activeBlock = 'customer'
+      continue
+    }
+    if (normalizedHeading === 'besiktningsman') {
+      activeBlock = 'inspector'
+      continue
+    }
+
+    const separatorIndex = line.indexOf(':')
+    if (!activeBlock || separatorIndex < 0) continue
+
+    const label = line.slice(0, separatorIndex).trim().toLowerCase()
+    const fieldValue = normalizePrintableText(line.slice(separatorIndex + 1))
+    if (!fieldValue) continue
+
+    if (activeBlock === 'customer') {
+      parsed.hasCustomerRows = true
+      if (label === 'namn') parsed.customerName = fieldValue
+      if (label === 'roll/beställartyp' || label === 'roll' || label === 'beställartyp') {
+        parsed.customerRole = fieldValue
+      }
+      if (label === 'telefon') parsed.customerPhone = fieldValue
+      if (label === 'e-post') parsed.customerEmail = fieldValue
+      if (label === 'fastighetsägare') parsed.propertyOwnerName = fieldValue
+    }
+
+    if (activeBlock === 'inspector') {
+      parsed.hasInspectorRows = true
+      if (label === 'namn') parsed.inspectorName = fieldValue
+      if (label === 'medlemsnummer') parsed.inspectorMembershipNumber = fieldValue
+      if (label === 'telefon') parsed.inspectorPhone = fieldValue
+      if (label === 'e-post') parsed.inspectorEmail = fieldValue
+    }
+  }
+
+  return parsed
+}
+
 function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPartiesSection {
   const assignment = investigation.assignment
   const inspector = investigation.inspector
+  const assignmentPartiesText =
+    investigation.reportDraft.sections.find((section) => section.key === 'assignment_parties')?.text ?? ''
+  const assignmentParties = parseAssignmentPartiesFields(assignmentPartiesText)
+  const customerName =
+    assignmentParties.customerName ?? assignment?.customer_name ?? investigation.inspection.customer_name
+  const customerRole = assignmentParties.hasCustomerRows ? assignmentParties.customerRole : assignment?.orderer_role
+  const customerPhone =
+    assignmentParties.hasCustomerRows
+      ? assignmentParties.customerPhone
+      : assignment?.customer_phone ?? investigation.inspection.customer_phone
+  const customerEmail =
+    assignmentParties.hasCustomerRows
+      ? assignmentParties.customerEmail
+      : assignment?.customer_email ?? investigation.inspection.customer_email
+  const propertyOwnerName = assignmentParties.hasCustomerRows
+    ? assignmentParties.propertyOwnerName
+    : assignment?.property_owner_name
   const address = investigation.property?.address ?? investigation.propertyAddress
   const postalCity = compact([
     investigation.property?.postal_code ?? assignment?.property_postal_code,
@@ -158,17 +241,20 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
 
   return {
     leftRows: [
-      toPrintRow('Besiktningsman', inspector?.full_name),
-      toPrintRow('Medlemsnummer SBR', inspector?.membership_number),
-      toPrintRow('Telefon', inspector?.phone),
-      toPrintRow('E-Post', inspector?.email),
-      toPrintRow('Närvarande', assignment?.customer_name ?? investigation.inspection.customer_name),
+      toPrintRow('Besiktningsman', assignmentParties.inspectorName ?? inspector?.full_name),
+      toPrintRow('Medlemsnummer SBR', assignmentParties.inspectorMembershipNumber ?? inspector?.membership_number),
+      toPrintRow('Telefon', assignmentParties.inspectorPhone ?? inspector?.phone),
+      toPrintRow('E-Post', assignmentParties.inspectorEmail ?? inspector?.email),
+      toPrintRow('Närvarande', customerName),
       toPrintRow('Besiktningsdag', inspectionDate),
       toPrintRow('Klockslag', inspectionTime),
     ].filter((row): row is TuPrintMetaRow => Boolean(row)),
     rightRows: [
-      toPrintRow('Fastighetsägare', assignment?.property_owner_name),
-      toPrintRow('Beställare', assignment?.customer_name ?? investigation.inspection.customer_name),
+      toPrintRow('Uppdragsgivare', customerName),
+      toPrintRow('Roll/beställartyp', customerRole),
+      toPrintRow('Telefon', customerPhone),
+      toPrintRow('E-post', customerEmail),
+      toPrintRow('Fastighetsägare', propertyOwnerName),
       toPrintRow('Fastighetsbeteckning', cadastralOrApartment),
       toPrintRow('Kommun', assignment?.property_municipality ?? investigation.property?.municipality),
       toPrintRow('Adress', address),

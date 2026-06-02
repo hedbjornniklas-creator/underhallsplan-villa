@@ -506,6 +506,13 @@ function sortTuImages(images: TuInvestigationImage[]) {
   })
 }
 
+function sortTuImagesNewestFirst(images: TuInvestigationImage[]) {
+  return [...images].sort((a, b) => {
+    if (a.sortOrder !== b.sortOrder) return b.sortOrder - a.sortOrder
+    return (b.createdAt ?? '').localeCompare(a.createdAt ?? '')
+  })
+}
+
 function sortTuDocuments(documents: TuInvestigationDocument[]) {
   return [...documents].sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
 }
@@ -858,6 +865,7 @@ export default function TuInvestigationEditorClient({
   const coverImage = coverImages[0] ?? null
   const bankImages = images.filter((image) => image.sectionKey === 'bank')
   const appendixImages = images.filter((image) => image.sectionKey === 'appendix')
+  const appendixImagesForEditor = sortTuImagesNewestFirst(appendixImages)
   const previewImages = [...coverImages, ...bankImages, ...appendixImages]
   const previewImage = previewImages.find((image) => image.id === previewImageId) ?? null
   const previewImageIndex = previewImage ? previewImages.findIndex((image) => image.id === previewImage.id) : -1
@@ -1121,6 +1129,15 @@ export default function TuInvestigationEditorClient({
     return Math.min(...sectionImages.map((image) => image.sortOrder)) - 10
   }
 
+  const lastSortOrderForSection = (sectionKey: TuImageSectionKey, excludeImageId: string) => {
+    const sectionImages = images.filter((image) => {
+      if (image.id === excludeImageId) return false
+      return image.sectionKey === sectionKey
+    })
+    if (sectionImages.length === 0) return 10
+    return Math.max(...sectionImages.map((image) => image.sortOrder)) + 10
+  }
+
   const moveImageToSection = async (imageId: string, sectionKey: TuImageSectionKey) => {
     if (sectionKey === 'cover') {
       for (const image of coverImages) {
@@ -1135,7 +1152,10 @@ export default function TuInvestigationEditorClient({
 
     await patchImage(imageId, {
       sectionKey,
-      sortOrder: firstSortOrderForSection(sectionKey, imageId),
+      sortOrder:
+        sectionKey === 'appendix'
+          ? lastSortOrderForSection(sectionKey, imageId)
+          : firstSortOrderForSection(sectionKey, imageId),
     })
   }
 
@@ -1767,7 +1787,9 @@ export default function TuInvestigationEditorClient({
             >
               <ImageIcon size={24} className="mb-2 text-violet-500" aria-hidden />
               <p className="text-sm font-medium">Släpp bilder i bilagan</p>
-              <p className="mt-1 text-xs text-gray-500">Bilderna visas i den ordning de ligger här.</p>
+              <p className="mt-1 text-xs text-gray-500">
+                Senaste bilden visas överst här. Utskriften följer ordningen bilderna lades till.
+              </p>
             </div>
 
             {appendixImages.length === 0 ? (
@@ -1776,50 +1798,56 @@ export default function TuInvestigationEditorClient({
               </div>
             ) : (
               <div className="max-h-[640px] space-y-3 overflow-y-auto pr-1">
-                {appendixImages.map((image, index) => (
-                  <div
-                    key={image.id}
-                    draggable={!locked}
-                    onDragStart={(event) => {
-                      event.dataTransfer.effectAllowed = 'move'
-                      event.dataTransfer.setData(TU_IMAGE_DRAG_DATA_TYPE, image.id)
-                    }}
-                    className="grid gap-3 rounded-md border border-gray-200 bg-white p-2 shadow-sm sm:grid-cols-[112px_minmax(0,1fr)]"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setPreviewImageId(image.id)}
-                      className="block overflow-hidden rounded-md text-left focus:outline-none focus:ring-2 focus:ring-violet-300 sm:w-28"
-                      aria-label="Visa bilagebild"
-                      title="Visa bild"
+                {appendixImagesForEditor.map((image) => {
+                  const printIndex = appendixImages.findIndex((appendixImage) => appendixImage.id === image.id)
+                  const printNumber = printIndex >= 0 ? printIndex + 1 : null
+
+                  return (
+                    <div
+                      key={image.id}
+                      draggable={!locked}
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = 'move'
+                        event.dataTransfer.setData(TU_IMAGE_DRAG_DATA_TYPE, image.id)
+                      }}
+                      className="grid gap-3 rounded-md border border-gray-200 bg-white p-2 shadow-sm sm:grid-cols-[112px_minmax(0,1fr)]"
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={image.publicUrl} alt={image.caption ?? 'Bilagebild'} className="aspect-square w-full object-cover" />
-                    </button>
-                    <div className="min-w-0 space-y-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-xs font-medium text-gray-600">Bildtext</span>
-                        <div className="flex flex-wrap gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => void handleMoveAppendixImage(image.id, -1)}
-                            disabled={locked || imageBusy || index === 0}
-                            className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
-                            aria-label="Flytta upp"
-                            title="Flytta upp"
-                          >
-                            <MoveUp size={10} aria-hidden />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleMoveAppendixImage(image.id, 1)}
-                            disabled={locked || imageBusy || index === appendixImages.length - 1}
-                            className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
-                            aria-label="Flytta ned"
-                            title="Flytta ned"
-                          >
-                            <MoveDown size={10} aria-hidden />
-                          </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewImageId(image.id)}
+                        className="block overflow-hidden rounded-md text-left focus:outline-none focus:ring-2 focus:ring-violet-300 sm:w-28"
+                        aria-label="Visa bilagebild"
+                        title="Visa bild"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={image.publicUrl} alt={image.caption ?? 'Bilagebild'} className="aspect-square w-full object-cover" />
+                      </button>
+                      <div className="min-w-0 space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-gray-600">
+                            Bildtext{printNumber ? ` · Utskrift #${printNumber}` : ''}
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => void handleMoveAppendixImage(image.id, -1)}
+                              disabled={locked || imageBusy || printIndex <= 0}
+                              className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
+                              aria-label="Flytta tidigare i utskrift"
+                              title="Flytta tidigare i utskrift"
+                            >
+                              <MoveUp size={10} aria-hidden />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleMoveAppendixImage(image.id, 1)}
+                              disabled={locked || imageBusy || printIndex < 0 || printIndex === appendixImages.length - 1}
+                              className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
+                              aria-label="Flytta senare i utskrift"
+                              title="Flytta senare i utskrift"
+                            >
+                              <MoveDown size={10} aria-hidden />
+                            </button>
                           <button
                             type="button"
                             onClick={() => void moveImageToSection(image.id, 'bank')}
@@ -1870,7 +1898,8 @@ export default function TuInvestigationEditorClient({
                       />
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </article>
