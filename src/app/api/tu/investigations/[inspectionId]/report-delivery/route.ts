@@ -52,6 +52,39 @@ function normalizeEmail(value: unknown) {
   return normalized && isValidEmail(normalized) ? normalized : null
 }
 
+function resolveReportDraftRecipientEmail(
+  investigation: NonNullable<Awaited<ReturnType<typeof getTuInvestigationById>>>
+) {
+  const assignmentPartiesText =
+    investigation.reportDraft.sections.find((section) => section.key === 'assignment_parties')?.text ?? ''
+  let activeBlock: 'customer' | 'inspector' | null = null
+
+  for (const rawLine of assignmentPartiesText.replace(/\r\n/g, '\n').split('\n')) {
+    const line = rawLine.trim()
+    if (!line) continue
+
+    const heading = line.toLowerCase()
+    if (heading === 'uppdragsgivare') {
+      activeBlock = 'customer'
+      continue
+    }
+    if (heading === 'besiktningsman') {
+      activeBlock = 'inspector'
+      continue
+    }
+
+    const separatorIndex = line.indexOf(':')
+    if (activeBlock !== 'customer' || separatorIndex < 0) continue
+
+    const label = line.slice(0, separatorIndex).trim().toLowerCase()
+    if (label !== 'e-post' && label !== 'e.post' && label !== 'e-mail' && label !== 'email') continue
+
+    return normalizeEmail(line.slice(separatorIndex + 1))
+  }
+
+  return null
+}
+
 function parseAction(value: unknown): DeliveryAction {
   const normalized = normalizeText(value)
   if (normalized === 'send_open') return 'send_open'
@@ -409,7 +442,8 @@ function getDashboardDigitalReportUrl(
 function resolveDefaultRecipient(investigation: Awaited<ReturnType<typeof getTuInvestigationById>>) {
   if (!investigation) return null
   return normalizeEmail(
-    investigation.assignment?.customer_email ??
+    resolveReportDraftRecipientEmail(investigation) ??
+      investigation.assignment?.customer_email ??
       investigation.inspection.customer_email ??
       investigation.customerEmail
   )
