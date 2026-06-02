@@ -455,6 +455,7 @@ function buildTuAssignmentPartiesText(input: {
     joinLine('Adress', customerAddress),
     joinLine('Telefon', assignment?.customer_phone ?? inspection?.customer_phone),
     joinLine('E-post', assignment?.customer_email ?? inspection?.customer_email),
+    joinLine('Närvarande', assignment?.customer_name ?? inspection?.customer_name),
     joinLine('Fakturanamn', assignment?.invoice_name),
     joinLine('Fakturaadress', assignment?.invoice_address),
     joinLine('Fastighetsägare', assignment?.property_owner_name),

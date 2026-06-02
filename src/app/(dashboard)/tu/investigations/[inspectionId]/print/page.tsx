@@ -122,6 +122,7 @@ type AssignmentPartiesFields = {
   customerRole?: string | null
   customerPhone?: string | null
   customerEmail?: string | null
+  customerAttendees?: string | null
   propertyOwnerName?: string | null
   inspectorName?: string | null
   inspectorMembershipNumber?: string | null
@@ -168,6 +169,7 @@ function parseAssignmentPartiesFields(value: string | null | undefined): Assignm
       }
       if (label === 'telefon') parsed.customerPhone = fieldValue
       if (label === 'e-post') parsed.customerEmail = fieldValue
+      if (label === 'närvarande') parsed.customerAttendees = fieldValue
       if (label === 'fastighetsägare') parsed.propertyOwnerName = fieldValue
     }
 
@@ -200,6 +202,9 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
     assignmentParties.hasCustomerRows
       ? assignmentParties.customerEmail
       : assignment?.customer_email ?? investigation.inspection.customer_email
+  const customerAttendees = assignmentParties.hasCustomerRows
+    ? assignmentParties.customerAttendees
+    : customerName
   const propertyOwnerName = assignmentParties.hasCustomerRows
     ? assignmentParties.propertyOwnerName
     : assignment?.property_owner_name
@@ -215,6 +220,8 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
           investigation.apartmentNumber ? `Lgh ${investigation.apartmentNumber}` : null,
         ])
       : investigation.cadastralId
+  const objectIdentifierLabel =
+    investigation.objectType === 'apartment' ? 'BRF/lägenhet' : 'Fastighetsbeteckning'
   const inspectionDate = formatInspectionDate(assignment?.preferred_date ?? investigation.inspection.date)
   const inspectionTime = formatInspectionTime(assignment?.preferred_time ?? investigation.inspection.inspection_time)
 
@@ -224,7 +231,7 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
       toPrintRow('Medlemsnummer SBR', assignmentParties.inspectorMembershipNumber ?? inspector?.membership_number),
       toPrintRow('Telefon', assignmentParties.inspectorPhone ?? inspector?.phone),
       toPrintRow('E-Post', assignmentParties.inspectorEmail ?? inspector?.email),
-      toPrintRow('Närvarande', customerName),
+      toPrintRow('Närvarande', customerAttendees),
       toPrintRow('Besiktningsdag', inspectionDate),
       toPrintRow('Klockslag', inspectionTime),
     ].filter((row): row is TuPrintMetaRow => Boolean(row)),
@@ -234,7 +241,7 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
       toPrintRow('Telefon', customerPhone),
       toPrintRow('E-post', customerEmail),
       toPrintRow('Fastighetsägare', propertyOwnerName),
-      toPrintRow('Fastighetsbeteckning', cadastralOrApartment),
+      toPrintRow(objectIdentifierLabel, cadastralOrApartment),
       toPrintRow('Kommun', assignment?.property_municipality ?? investigation.property?.municipality),
       toPrintRow('Adress', address),
       toPrintRow('Postnummer, ort', postalCity),
@@ -285,6 +292,8 @@ function buildHeader(investigation: TuInvestigationDetails, reportDate: string):
 
   return {
     documentTitle: resolveDocumentTitle(),
+    objectIdentifierLabel:
+      investigation.objectType === 'apartment' ? 'Objekt, BRF/lägenhet' : 'Objekt, Fastighetsbeteckning',
     objectIdentifier: (objectIdentifier || address || '-').toLocaleUpperCase('sv-SE'),
     projectType: 'Fördjupad teknisk utredning',
     reportDate,

@@ -85,6 +85,7 @@ type AssignmentPartiesFieldKey =
   | 'customerAddress'
   | 'customerPhone'
   | 'customerEmail'
+  | 'customerAttendees'
   | 'invoiceName'
   | 'invoiceAddress'
   | 'propertyOwnerName'
@@ -122,6 +123,7 @@ const CUSTOMER_PARTY_FIELDS: AssignmentPartiesField[] = [
   { key: 'customerAddress', label: 'Adress', multiline: true },
   { key: 'customerPhone', label: 'Telefon' },
   { key: 'customerEmail', label: 'E-post' },
+  { key: 'customerAttendees', label: 'Närvarande' },
   { key: 'invoiceName', label: 'Fakturanamn' },
   { key: 'invoiceAddress', label: 'Fakturaadress', multiline: true },
   { key: 'propertyOwnerName', label: 'Fastighetsägare' },
@@ -147,6 +149,7 @@ const EMPTY_ASSIGNMENT_PARTIES_FORM: AssignmentPartiesForm = {
   customerAddress: '',
   customerPhone: '',
   customerEmail: '',
+  customerAttendees: '',
   invoiceName: '',
   invoiceAddress: '',
   propertyOwnerName: '',
@@ -230,6 +233,7 @@ function parseAssignmentPartiesText(text: string) {
       if (label === 'adress') parsed.customerAddress = value
       if (label === 'telefon') parsed.customerPhone = value
       if (label === 'e-post') parsed.customerEmail = value
+      if (label === 'närvarande') parsed.customerAttendees = value
       if (label === 'fakturanamn') parsed.invoiceName = value
       if (label === 'fakturaadress') parsed.invoiceAddress = value
       if (label === 'fastighetsägare') parsed.propertyOwnerName = value
@@ -282,6 +286,7 @@ function buildAssignmentPartiesForm(investigation: TuInvestigationDetails): Assi
   )
   assignIfPresent(base, 'customerPhone', assignment?.customer_phone ?? inspection.customer_phone)
   assignIfPresent(base, 'customerEmail', assignment?.customer_email ?? inspection.customer_email)
+  assignIfPresent(base, 'customerAttendees', assignment?.customer_name ?? inspection.customer_name)
   assignIfPresent(base, 'invoiceName', assignment?.invoice_name)
   assignIfPresent(base, 'invoiceAddress', assignment?.invoice_address)
   assignIfPresent(base, 'propertyOwnerName', assignment?.property_owner_name)
@@ -329,6 +334,7 @@ function buildAssignmentPartiesText(form: AssignmentPartiesForm) {
     buildLine('Adress', form.customerAddress),
     buildLine('Telefon', form.customerPhone),
     buildLine('E-post', form.customerEmail),
+    buildLine('Närvarande', form.customerAttendees),
     buildLine('Fakturanamn', form.invoiceName),
     buildLine('Fakturaadress', form.invoiceAddress),
     buildLine('Fastighetsägare', form.propertyOwnerName),

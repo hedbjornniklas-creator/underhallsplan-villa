@@ -69,6 +69,7 @@ export type TuPrintImage = {
 
 export type TuPrintHeader = {
   documentTitle: string
+  objectIdentifierLabel: string
   objectIdentifier: string
   projectType: string
   reportDate: string
@@ -159,6 +160,19 @@ function splitParagraphs(text: string) {
     .filter(Boolean)
 }
 
+function isListIntroParagraph(paragraph: string) {
+  return /:\s*$/.test(paragraph.trim())
+}
+
+function startsWithListItem(paragraph: string) {
+  const firstLine = paragraph
+    .split('\n')
+    .map((line) => line.trim())
+    .find(Boolean)
+
+  return Boolean(firstLine && /^(?:[-–—•*]\s+|\d+[.)]\s+)/.test(firstLine))
+}
+
 function chunkParagraph(paragraph: string) {
   const normalized = paragraph.trim()
   if (normalized.length <= SECTION_CHUNK_TARGET_CHARS) return [normalized]
@@ -181,6 +195,33 @@ function chunkParagraph(paragraph: string) {
   return chunks.length > 0 ? chunks : [normalized]
 }
 
+function chunkSectionText(text: string) {
+  const paragraphs = splitParagraphs(text)
+  const chunks: string[] = []
+
+  for (let index = 0; index < paragraphs.length; index += 1) {
+    const paragraph = paragraphs[index]
+    const nextParagraph = paragraphs[index + 1]
+
+    if (
+      nextParagraph &&
+      isListIntroParagraph(paragraph) &&
+      startsWithListItem(nextParagraph)
+    ) {
+      const combined = `${paragraph}\n\n${nextParagraph}`
+      if (combined.length <= SECTION_CHUNK_TARGET_CHARS * 2) {
+        chunks.push(combined)
+        index += 1
+        continue
+      }
+    }
+
+    chunks.push(...chunkParagraph(paragraph))
+  }
+
+  return chunks
+}
+
 function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[] {
   const blocks: PrintableBlock[] = []
   let signatureInserted = false
@@ -196,7 +237,7 @@ function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[
   }
 
   for (const section of props.sections) {
-    const chunks = splitParagraphs(section.text).flatMap(chunkParagraph)
+    const chunks = chunkSectionText(section.text)
     chunks.forEach((chunk, index) => {
       blocks.push({
         id: `section-${section.key}-${index}`,
@@ -621,7 +662,7 @@ function ReportHeader({
         </div>
       </div>
       <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
-        <HeaderValue label="Objekt, Fastighetsbeteckning" value={header.objectIdentifier} />
+        <HeaderValue label={header.objectIdentifierLabel} value={header.objectIdentifier} />
       </div>
       <div className="col-span-2 min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
         <HeaderValue label="Adress" value={header.address} />
