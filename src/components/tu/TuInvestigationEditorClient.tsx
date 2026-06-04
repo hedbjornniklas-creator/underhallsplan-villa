@@ -175,7 +175,9 @@ function normalizeSectionTypeOptions(options: TuReportSectionTypeOption[] | unde
       return true
     })
 
-  return normalized
+  return normalized.sort(
+    (left, right) => left.title.localeCompare(right.title, 'sv') || left.key.localeCompare(right.key, 'sv')
+  )
 }
 
 function getSectionTypeOption(options: TuReportSectionTypeOption[], key: TuReportSectionKey) {
