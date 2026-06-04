@@ -80,6 +80,7 @@ export type TuInspectionSummary = {
   assignmentId: string | null
   assignmentNumber: string | null
   title: string
+  projectType: string | null
   objectType: TuObjectType
   status: string | null
   date: string | null
@@ -157,6 +158,7 @@ type TuDetailRow = {
   assignment_id: string | null
   property_id: string | null
   title: string | null
+  project_type: string | null
   property_object_type: string | null
   scope_description: string | null
   brf_name: string | null
@@ -894,6 +896,7 @@ async function createTuDetail(input: {
   assignmentId?: string | null
   propertyId: string
   title?: string | null
+  projectType?: string | null
   objectType?: TuObjectType | null
   scopeDescription?: string | null
   brfName?: string | null
@@ -912,6 +915,7 @@ async function createTuDetail(input: {
       assignment_id: input.assignmentId ?? null,
       property_id: input.propertyId,
       title: cleanText(input.title) ?? 'Teknisk utredning',
+      project_type: cleanText(input.projectType) ?? 'Fördjupad teknisk utredning',
       property_object_type: objectType,
       scope_description: cleanText(input.scopeDescription),
       brf_name: objectType === 'apartment' ? cleanText(input.brfName) : null,
@@ -1111,6 +1115,7 @@ function buildSummary(detail: TuDetailRow, inspection?: InspectionRow | null, pr
     assignmentId: detail.assignment_id,
     assignmentNumber: inspection?.assignment_number ?? null,
     title: detail.title ?? 'Teknisk utredning',
+    projectType: detail.project_type,
     objectType,
     status: inspection?.status ?? null,
     date: inspection?.date ?? null,
@@ -1171,7 +1176,7 @@ export async function listTuInvestigations(orgId: string): Promise<TuInspectionS
   const { data: detailData, error: detailError } = await admin
     .from('technical_investigation_details')
     .select(
-      'inspection_id,org_id,assignment_id,property_id,title,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,report_locked_at,created_by,created_at,updated_at'
+      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,report_locked_at,created_by,created_at,updated_at'
     )
     .eq('org_id', orgId)
     .order('updated_at', { ascending: false })
@@ -1226,7 +1231,7 @@ export async function getTuInvestigationById(input: {
   const { data: detailData, error: detailError } = await admin
     .from('technical_investigation_details')
     .select(
-      'inspection_id,org_id,assignment_id,property_id,title,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,report_locked_at,created_by,created_at,updated_at'
+      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,report_locked_at,created_by,created_at,updated_at'
     )
     .eq('org_id', input.orgId)
     .eq('inspection_id', input.inspectionId)
@@ -1370,6 +1375,7 @@ export async function updateTuInvestigationDraft(input: {
   updatedBy: string
   patch: {
     title?: string | null
+    projectType?: string | null
     scopeDescription?: string | null
     objectType?: TuObjectType | null
     cadastralId?: string | null
@@ -1396,6 +1402,9 @@ export async function updateTuInvestigationDraft(input: {
   }
 
   if ('title' in input.patch) payload.title = cleanText(input.patch.title) ?? existing.title
+  if ('projectType' in input.patch) {
+    payload.project_type = cleanText(input.patch.projectType) ?? existing.projectType ?? 'Fördjupad teknisk utredning'
+  }
   if ('scopeDescription' in input.patch) payload.scope_description = cleanText(input.patch.scopeDescription)
   const resolvedObjectType =
     'objectType' in input.patch ? normalizeTuObjectType(input.patch.objectType) : existing.objectType

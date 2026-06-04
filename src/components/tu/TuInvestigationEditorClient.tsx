@@ -729,6 +729,7 @@ export default function TuInvestigationEditorClient({
   )
   const [draft, setDraft] = useState<TuReportDraft>(initialInvestigation.reportDraft)
   const [title, setTitle] = useState(initialInvestigation.title)
+  const [projectType, setProjectType] = useState(initialInvestigation.projectType ?? 'Fördjupad teknisk utredning')
   const [objectDetails, setObjectDetails] = useState<ObjectDetailsForm>(() =>
     buildObjectDetailsForm(initialInvestigation)
   )
@@ -887,6 +888,7 @@ export default function TuInvestigationEditorClient({
     try {
       await savePatch({
         title,
+        projectType,
         objectType: nextObjectDetails.objectType,
         cadastralId: nextObjectDetails.cadastralId,
         brfName: nextObjectDetails.brfName,
@@ -1750,12 +1752,22 @@ export default function TuInvestigationEditorClient({
         </section>
 
         <section className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
-          <div className="grid gap-4">
+          <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-1">
               <span className="block text-xs font-medium text-gray-600">Rubrik</span>
               <input
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
+                onBlur={() => void saveHeaderDetails()}
+                disabled={locked}
+                className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="block text-xs font-medium text-gray-600">Projekttyp</span>
+              <input
+                value={projectType}
+                onChange={(event) => setProjectType(event.target.value)}
                 onBlur={() => void saveHeaderDetails()}
                 disabled={locked}
                 className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
@@ -2396,6 +2408,7 @@ export default function TuInvestigationEditorClient({
 
           {visibleSections.map((section, index) => {
             const sectionId = getSectionInstanceId(section)
+            const sectionNumberLabel = String(index + 1)
             const isAssignmentParties = section.key === 'assignment_parties'
             const isProtected = PROTECTED_SECTION_KEYS.has(section.key)
             const collapsed = collapsedSections.has(sectionId)
@@ -2409,7 +2422,7 @@ export default function TuInvestigationEditorClient({
               <article key={sectionId} className="rounded-lg border border-violet-100 bg-white p-4 shadow-sm">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                    <span className="text-base font-semibold text-gray-950">{index + 1}.</span>
+                    <span className="text-base font-semibold text-gray-950">{sectionNumberLabel}.</span>
                     {isProtected ? (
                       <h2 className="text-base font-semibold text-gray-950">{section.title}</h2>
                     ) : (
@@ -2560,6 +2573,9 @@ export default function TuInvestigationEditorClient({
                               className="rounded-md border border-gray-200 bg-white p-3 shadow-sm"
                             >
                               <div className="mb-2 flex flex-wrap items-center gap-2">
+                                <span className="min-w-[2.75rem] text-sm font-semibold text-violet-900">
+                                  {sectionNumberLabel}.{subsectionIndex + 1}
+                                </span>
                                 <input
                                   value={subsection.title}
                                   disabled={locked}

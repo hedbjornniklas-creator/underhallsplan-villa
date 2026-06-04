@@ -56,6 +56,7 @@ export async function PATCH(
     const patch: Parameters<typeof updateTuInvestigationDraft>[0]['patch'] = {}
 
     if ('title' in body) patch.title = typeof body.title === 'string' ? body.title : null
+    if ('projectType' in body) patch.projectType = typeof body.projectType === 'string' ? body.projectType : null
     if ('scopeDescription' in body) {
       patch.scopeDescription = typeof body.scopeDescription === 'string' ? body.scopeDescription : null
     }

@@ -305,11 +305,11 @@ function buildHeader(investigation: TuInvestigationDetails, reportDate: string):
       : normalizePrintableText(investigation.cadastralId)
 
   return {
-    documentTitle: 'Teknisk utredning',
+    documentTitle: normalizePrintableText(investigation.title) || 'Teknisk utredning',
     objectIdentifierLabel:
       investigation.objectType === 'apartment' ? 'Objekt, BRF/lägenhet' : 'Objekt, Fastighetsbeteckning',
     objectIdentifier: (objectIdentifier || address || '-').toLocaleUpperCase('sv-SE'),
-    projectType: 'Fördjupad teknisk utredning',
+    projectType: normalizePrintableText(investigation.projectType) || 'Fördjupad teknisk utredning',
     reportDate,
     address: address ?? '-',
     assignmentNumber: investigation.assignmentNumber ?? investigation.inspection.assignment_number ?? '-',

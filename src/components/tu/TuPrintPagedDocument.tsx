@@ -121,6 +121,7 @@ type PrintableBlock =
       id: string
       type: 'parties'
       parties: TuPrintPartiesSection
+      numberLabel: string
     }
   | {
       id: string
@@ -137,6 +138,7 @@ type PrintableBlock =
       type: 'section'
       sectionId: string
       sectionKey: string
+      numberLabel: string
       title: string
       text: string
       continuation: boolean
@@ -144,6 +146,7 @@ type PrintableBlock =
   | {
       id: string
       type: 'subsection'
+      numberLabel: string
       title: string
       text: string
       continuation: boolean
@@ -169,6 +172,7 @@ type PagePlan = {
 
 type TocEntry = {
   id: string
+  numberLabel: string | null
   label: string
   pageNumber: number | null
 }
@@ -358,9 +362,16 @@ function chunkSectionText(text: string) {
 function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[] {
   const blocks: PrintableBlock[] = []
   let signatureInserted = false
+  let sectionNumber = 0
 
   if (props.parties && (props.parties.leftRows.length > 0 || props.parties.rightRows.length > 0)) {
-    blocks.push({ id: 'parties', type: 'parties', parties: props.parties })
+    sectionNumber += 1
+    blocks.push({
+      id: 'parties',
+      type: 'parties',
+      parties: props.parties,
+      numberLabel: String(sectionNumber),
+    })
   }
   if (props.metaRows.length > 0) {
     blocks.push({ id: 'meta', type: 'meta', rows: props.metaRows })
@@ -375,6 +386,8 @@ function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[
       section.subsections?.filter((subsection) => subsection.title.trim() && subsection.text.trim()) ?? []
     const shouldPrintSectionHeader = chunks.length > 0 || printableSubsections.length > 0
     const sectionChunks = chunks.length > 0 ? chunks : shouldPrintSectionHeader ? [''] : []
+    if (shouldPrintSectionHeader) sectionNumber += 1
+    const numberLabel = String(sectionNumber)
 
     sectionChunks.forEach((chunk, index) => {
       blocks.push({
@@ -382,18 +395,21 @@ function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[
         type: 'section',
         sectionId: section.id,
         sectionKey: section.key,
+        numberLabel,
         title: section.title,
         text: chunk,
         continuation: index > 0,
       })
     })
 
-    printableSubsections.forEach((subsection) => {
+    printableSubsections.forEach((subsection, subsectionIndex) => {
+      const subsectionNumberLabel = `${numberLabel}.${subsectionIndex + 1}`
       const subsectionChunks = chunkSectionText(subsection.text)
       subsectionChunks.forEach((chunk, index) => {
         blocks.push({
           id: `subsection-${section.id}-${subsection.id}-${index}`,
           type: 'subsection',
+          numberLabel: subsectionNumberLabel,
           title: subsection.title,
           text: chunk,
           continuation: index > 0,
@@ -483,17 +499,22 @@ function buildTocEntries(props: TuPrintPagedDocumentProps, pages: PrintableBlock
   })
 
   const entries: TocEntry[] = []
+  let sectionNumber = 0
   if (props.parties && (props.parties.leftRows.length > 0 || props.parties.rightRows.length > 0)) {
+    sectionNumber += 1
     entries.push({
       id: 'parties',
+      numberLabel: String(sectionNumber),
       label: 'Uppdragsgivare och besiktningsman',
       pageNumber: pageById.get('parties') ?? null,
     })
   }
 
   for (const section of props.sections) {
+    sectionNumber += 1
     entries.push({
       id: `section:${section.id}`,
+      numberLabel: String(sectionNumber),
       label: section.title,
       pageNumber: pageById.get(`section:${section.id}`) ?? null,
     })
@@ -502,6 +523,7 @@ function buildTocEntries(props: TuPrintPagedDocumentProps, pages: PrintableBlock
   if (props.appendixImages.length > 0) {
     entries.push({
       id: 'appendix',
+      numberLabel: null,
       label: 'Bilder från fastigheten',
       pageNumber: pageById.get('appendix') ?? null,
     })
@@ -523,7 +545,7 @@ function RowsBlock({
 
   return (
     <section
-      className="tu-report-block tu-report-rows-block border-t border-violet-200 pt-3"
+      className="tu-report-block tu-report-rows-block border-t border-violet-200 pt-5"
       style={{ marginBottom: mm(BLOCK_GAP_MM) }}
     >
       <h2 className="text-[15px] font-semibold leading-tight text-violet-950">
@@ -573,11 +595,17 @@ function PartyRows({ rows }: { rows: TuPrintMetaRow[] }) {
   )
 }
 
-function PartiesBlock({ parties }: { parties: TuPrintPartiesSection }) {
+function PartiesBlock({
+  numberLabel,
+  parties,
+}: {
+  numberLabel: string
+  parties: TuPrintPartiesSection
+}) {
   return (
     <section className="tu-report-block tu-report-parties-block" style={{ marginBottom: mm(SECTION_GAP_MM) }}>
       <h2 className="mb-6 text-[15px] font-semibold leading-tight text-violet-950">
-        Uppdragsgivare och besiktningsman
+        {numberLabel}. Uppdragsgivare och besiktningsman
       </h2>
       <div className="grid gap-x-5" style={{ gridTemplateColumns: '0.86fr 1px 1.14fr' }}>
         <PartyRows rows={parties.leftRows} />
@@ -589,10 +617,12 @@ function PartiesBlock({ parties }: { parties: TuPrintPartiesSection }) {
 }
 
 function SectionBlock({
+  numberLabel,
   title,
   text,
   continuation,
 }: {
+  numberLabel: string
   title: string
   text: string
   continuation: boolean
@@ -602,13 +632,13 @@ function SectionBlock({
       className={
         continuation
           ? 'tu-report-block tu-report-section-block'
-          : 'tu-report-block tu-report-section-block border-t border-violet-200 pt-3'
+          : 'tu-report-block tu-report-section-block border-t border-violet-200 pt-5'
       }
       style={{ marginBottom: mm(SECTION_GAP_MM) }}
     >
       {!continuation ? (
         <h2 className="text-[15px] font-semibold leading-tight text-violet-950">
-          {title}
+          {numberLabel}. {title}
         </h2>
       ) : null}
       {text.trim() ? (
@@ -626,10 +656,12 @@ function SectionBlock({
 }
 
 function SubsectionBlock({
+  numberLabel,
   title,
   text,
   continuation,
 }: {
+  numberLabel: string
   title: string
   text: string
   continuation: boolean
@@ -641,7 +673,7 @@ function SubsectionBlock({
     >
       {!continuation ? (
         <h3 className="text-[13px] font-semibold leading-tight text-gray-950">
-          {title}
+          {numberLabel}. {title}
         </h3>
       ) : null}
       <div className={continuation ? '' : 'mt-1.5'}>
@@ -715,17 +747,17 @@ function ImageGridBlock({
 }) {
   return (
     <section
-      className="tu-report-block tu-report-image-grid-block grid grid-cols-2 gap-2"
+      className="tu-report-block tu-report-image-grid-block grid grid-cols-2 gap-x-5 gap-y-4"
       style={{ marginBottom: mm(BLOCK_GAP_MM) }}
     >
       {images.map((image) => (
-        <figure key={image.id} className="p-1">
+        <figure key={image.id} className="grid h-[78mm] grid-rows-[1fr_auto]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={getAppendixPrintImageSrc(image.src)}
             alt={image.caption}
             data-tu-print-measure-image="true"
-            className="h-[66mm] w-full rounded object-contain object-left"
+            className="h-full w-full object-contain object-left-bottom"
             onLoad={() => onImageReady?.(image.id)}
             onError={() => onImageReady?.(image.id)}
           />
@@ -746,7 +778,7 @@ function PrintableBlockView({
   onImageReady?: (id: string) => void
 }) {
   if (block.type === 'parties') {
-    return <PartiesBlock parties={block.parties} />
+    return <PartiesBlock numberLabel={block.numberLabel} parties={block.parties} />
   }
   if (block.type === 'meta') {
     return <RowsBlock title="Uppgifter" rows={block.rows} />
@@ -757,6 +789,7 @@ function PrintableBlockView({
   if (block.type === 'section') {
     return (
       <SectionBlock
+        numberLabel={block.numberLabel}
         title={block.title}
         text={block.text}
         continuation={block.continuation}
@@ -766,6 +799,7 @@ function PrintableBlockView({
   if (block.type === 'subsection') {
     return (
       <SubsectionBlock
+        numberLabel={block.numberLabel}
         title={block.title}
         text={block.text}
         continuation={block.continuation}
@@ -948,7 +982,7 @@ function CoverPage({
           {header.objectIdentifier}
         </div>
 
-        <div className="mt-7 flex h-[72mm] w-[112mm] items-center justify-center overflow-hidden bg-white">
+        <div className="mt-7 flex h-[88mm] w-[142mm] items-center justify-center overflow-hidden bg-white">
           {coverImage ? (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
@@ -964,11 +998,13 @@ function CoverPage({
         </div>
 
         <div className="mt-9 w-[150mm] self-center">
-          <h2 className="text-[13px] font-medium text-violet-950">Innehåll</h2>
-          <ol className="mt-2 space-y-1.5 text-[9px] leading-tight text-black">
-            {tocEntries.map((entry, index) => (
+          <h2 className="text-[15px] font-medium text-violet-950">Innehåll</h2>
+          <ol className="mt-2.5 space-y-2 text-[11px] leading-snug text-black">
+            {tocEntries.map((entry) => (
               <li key={entry.id} className="grid grid-cols-[7mm_minmax(0,max-content)_minmax(12mm,1fr)_9mm] items-end gap-1">
-                <span className="text-right">{index + 1}.</span>
+                <span className="text-right">
+                  {entry.numberLabel ? `${entry.numberLabel}.` : ''}
+                </span>
                 <span className="min-w-0 font-semibold">{entry.label}</span>
                 <span className="mb-1 border-b border-dotted border-black" aria-hidden />
                 <span className="text-right font-semibold">{entry.pageNumber ?? ''}</span>
@@ -1039,7 +1075,7 @@ function PageChrome({
       </div>
 
       <footer
-        className="absolute grid grid-cols-[minmax(0,62mm)_minmax(0,52mm)_32mm] items-end justify-between gap-4 border-t border-gray-300 pt-1.5 text-[9px] leading-[1.25] text-gray-700"
+        className="absolute grid grid-cols-3 items-end gap-4 border-t border-gray-300 pt-1.5 text-[9px] leading-[1.25] text-gray-700"
         style={{
           left: mm(PAGE_X_PADDING_MM),
           right: mm(PAGE_X_PADDING_MM),
@@ -1057,7 +1093,8 @@ function PageChrome({
             <div key={line}>{line}</div>
           ))}
         </div>
-        <div className="flex min-w-0 flex-col items-end justify-end gap-1 self-end text-right text-[8px] text-gray-500">
+        <div className="flex min-w-0 justify-end self-end">
+          <div className="flex flex-col items-start justify-end gap-1 text-left text-[8px] text-gray-500">
           <span>Skapat med</span>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -1065,6 +1102,7 @@ function PageChrome({
             alt="BesiktApp"
             className="h-auto max-h-[4mm] max-w-[22mm] object-contain"
           />
+          </div>
         </div>
       </footer>
     </section>
