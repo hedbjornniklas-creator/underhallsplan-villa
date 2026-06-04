@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, ChevronDown, ChevronUp, FileText, Image as ImageIcon, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
+import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import { supabase } from '@/lib/supabaseClient'
 import type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
 import type {
@@ -82,6 +83,11 @@ type TuAiSuggestion = {
 type TuAiResponse = {
   model?: string
   suggestions?: TuAiSuggestion[]
+  error?: string
+}
+
+type TuSavePatchResponse = {
+  investigation?: TuInvestigationDetails
   error?: string
 }
 
@@ -730,7 +736,6 @@ export default function TuInvestigationEditorClient({
     buildAssignmentPartiesForm(initialInvestigation)
   )
   const [error, setError] = useState<string | null>(null)
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [images, setImages] = useState<TuInvestigationImage[]>([])
   const [imagesLoading, setImagesLoading] = useState(true)
   const [imageBusy, setImageBusy] = useState(false)
@@ -760,6 +765,35 @@ export default function TuInvestigationEditorClient({
   const appendixFileInputRef = useRef<HTMLInputElement>(null)
   const documentFileInputRef = useRef<HTMLInputElement>(null)
   const imageErrorRef = useRef<HTMLDivElement>(null)
+
+  const saveTuPatch = useCallback(
+    async (body: Record<string, unknown>): Promise<TuSavePatchResponse> => {
+      const response = await fetch(`/api/tu/investigations/${initialInvestigation.inspectionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const payload = (await response.json().catch(() => ({}))) as TuSavePatchResponse
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Kunde inte spara TU-utredningen.')
+      }
+      return payload
+    },
+    [initialInvestigation.inspectionId]
+  )
+
+  const autosave = useAutosaveQueue<Record<string, unknown>, TuSavePatchResponse>({
+    save: saveTuPatch,
+    mergePayload: (previous, next) => ({ ...previous, ...next }),
+    onSaved: (payload) => {
+      if (payload.investigation) {
+        setInvestigation(payload.investigation)
+      }
+    },
+    onError: (saveError) => {
+      setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara.')
+    },
+  })
 
   useEffect(() => {
     draftRef.current = draft
@@ -844,26 +878,9 @@ export default function TuInvestigationEditorClient({
   }, [initialInvestigation.inspectionId])
 
   const savePatch = async (body: Record<string, unknown>) => {
-    setSaveState('saving')
     setError(null)
-    const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const payload = await response.json().catch(() => ({}))
-    if (!response.ok) {
-      setSaveState('idle')
-      throw new Error(payload.error ?? 'Kunde inte spara TU-utredningen.')
-    }
-    if (payload.investigation) {
-      setInvestigation(payload.investigation)
-      if (payload.investigation.reportDraft) {
-        setDraft(payload.investigation.reportDraft)
-        draftRef.current = payload.investigation.reportDraft
-      }
-    }
-    setSaveState('saved')
+    autosave.resetError()
+    await autosave.enqueue(body)
   }
 
   const saveHeaderDetails = async (nextObjectDetails = objectDetailsRef.current) => {
@@ -1180,6 +1197,15 @@ export default function TuInvestigationEditorClient({
     investigation.assignment?.customer_phone ?? investigation.inspection.customer_phone,
     investigation.assignment?.customer_email ?? investigation.inspection.customer_email,
   ])
+  const autosaveSavedAt = autosave.lastSavedAt
+    ? formatSavedAt(autosave.lastSavedAt.toISOString())
+    : formatSavedAt(investigation.updatedAt)
+  const autosaveStatusText =
+    autosave.status === 'saving'
+      ? 'Sparar...'
+      : autosave.status === 'error'
+        ? 'Kunde inte spara'
+        : `Sparad: ${autosaveSavedAt}`
 
   const uploadImages = async (files: File[], sectionKey: TuImageSectionKey) => {
     if (locked || files.length === 0) return
@@ -1604,8 +1630,11 @@ export default function TuInvestigationEditorClient({
                 <Printer size={16} aria-hidden />
                 Förhandsgranska och skicka
               </Link>
-              <div className="rounded-md border border-violet-200 bg-white px-3 py-2 text-xs text-gray-600 shadow-sm">
-                {saveState === 'saving' ? 'Sparar...' : `Sparad: ${formatSavedAt(investigation.updatedAt)}`}
+              <div
+                className="inline-flex h-10 min-w-[190px] items-center justify-center whitespace-nowrap rounded-md border border-violet-200 bg-white px-3 text-xs text-gray-600 shadow-sm"
+                aria-live="polite"
+              >
+                {autosaveStatusText}
               </div>
             </div>
           </div>
