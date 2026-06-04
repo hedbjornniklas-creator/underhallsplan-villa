@@ -18,10 +18,7 @@ import { formatCertificationDisplayLines } from '@/lib/certifications/display'
 import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
 import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import {
-  TU_STANDARD_REPORT_SECTION_TYPES,
-  type TuReportSectionTypeOption,
-} from '@/lib/tu/reportSectionTypes'
+import type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
 
 export type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
 
@@ -280,11 +277,8 @@ type TuStorageClient = TuSupabaseClient & {
 
 export const TU_REPORT_SECTIONS: Array<Pick<TuReportSection, 'key' | 'title'>> = [
   { key: 'assignment_parties', title: 'Uppdragsgivare och besiktningsman' },
-  ...TU_STANDARD_REPORT_SECTION_TYPES.map(({ key, title }) => ({ key, title })),
   { key: 'signature', title: 'Signering' },
 ]
-
-export const TU_EDITABLE_REPORT_SECTION_TYPES: TuReportSectionTypeOption[] = TU_STANDARD_REPORT_SECTION_TYPES
 
 const TU_REPORT_SECTION_BY_KEY = new Map<string, Pick<TuReportSection, 'key' | 'title'>>(
   TU_REPORT_SECTIONS.map((section) => [section.key, section])
@@ -472,15 +466,15 @@ export async function listTuReportSectionTypeOptions(): Promise<TuReportSectionT
     .order('title', { ascending: true })
 
   if (error) {
-    console.warn('[tu] falling back to built-in section types', error.message)
-    return TU_EDITABLE_REPORT_SECTION_TYPES
+    console.warn('[tu] could not load section types from settings_tu_report_section_types', error.message)
+    return []
   }
 
   const rows = ((data ?? []) as TuReportSectionTypeRow[])
     .map(mapTuReportSectionType)
     .filter((item): item is TuReportSectionTypeOption => Boolean(item))
 
-  return rows.length > 0 ? rows : TU_EDITABLE_REPORT_SECTION_TYPES
+  return rows
 }
 
 function extractTuInspectorBlock(text: string) {

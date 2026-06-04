@@ -5,10 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, ChevronDown, ChevronUp, FileText, Image as ImageIcon, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import { supabase } from '@/lib/supabaseClient'
-import {
-  TU_STANDARD_REPORT_SECTION_TYPES,
-  type TuReportSectionTypeOption,
-} from '@/lib/tu/reportSectionTypes'
+import type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
 import type {
   TuInvestigationDetails,
   TuReportDraft,
@@ -152,13 +149,11 @@ const INSPECTOR_PARTY_FIELDS: AssignmentPartiesField[] = [
   { key: 'inspectorCertificationNumber', label: 'Certifieringsnummer' },
 ]
 
-const DEFAULT_TU_SECTION_TYPE_OPTIONS: TuReportSectionTypeOption[] = TU_STANDARD_REPORT_SECTION_TYPES
-
 const PROTECTED_SECTION_KEYS = new Set<string>(['assignment_parties'])
 const HIDDEN_SECTION_KEYS = new Set<string>(['signature'])
 
 function normalizeSectionTypeOptions(options: TuReportSectionTypeOption[] | undefined) {
-  const source = options && options.length > 0 ? options : DEFAULT_TU_SECTION_TYPE_OPTIONS
+  const source = options ?? []
   const seen = new Set<string>()
   const normalized = source
     .map((option) => ({
@@ -180,7 +175,7 @@ function normalizeSectionTypeOptions(options: TuReportSectionTypeOption[] | unde
       return true
     })
 
-  return normalized.length > 0 ? normalized : DEFAULT_TU_SECTION_TYPE_OPTIONS
+  return normalized
 }
 
 function getSectionTypeOption(options: TuReportSectionTypeOption[], key: TuReportSectionKey) {
@@ -750,9 +745,7 @@ export default function TuInvestigationEditorClient({
   const [bankDropActive, setBankDropActive] = useState(false)
   const [appendixDropActive, setAppendixDropActive] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set())
-  const [newSectionKey, setNewSectionKey] = useState<TuReportSectionKey>(
-    sectionTypeOptions[0]?.key ?? 'background_scope'
-  )
+  const [newSectionKey, setNewSectionKey] = useState<TuReportSectionKey>(sectionTypeOptions[0]?.key ?? '')
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiSuggestions, setAiSuggestions] = useState<TuAiSuggestion[]>([])
   const [aiBusy, setAiBusy] = useState(false)
@@ -780,7 +773,7 @@ export default function TuInvestigationEditorClient({
 
   useEffect(() => {
     if (sectionTypeOptions.some((option) => option.key === newSectionKey)) return
-    setNewSectionKey(sectionTypeOptions[0]?.key ?? 'background_scope')
+    setNewSectionKey(sectionTypeOptions[0]?.key ?? '')
   }, [newSectionKey, sectionTypeOptions])
 
   useEffect(() => {
@@ -954,6 +947,10 @@ export default function TuInvestigationEditorClient({
 
   const addReportSection = async () => {
     if (locked) return
+    if (!sectionTypeOptions.some((option) => option.key === newSectionKey)) {
+      setError('Det saknas aktiva TU-rubriker i admin. Lägg in rubriker innan du lägger till fler delar.')
+      return
+    }
     const sections = [...draftRef.current.sections]
     const signatureIndex = sections.findIndex((section) => section.key === 'signature')
     const nextSection = createReportSection(newSectionKey, sectionTypeOptions)
@@ -2336,7 +2333,7 @@ export default function TuInvestigationEditorClient({
                   <span className="block text-xs font-medium text-gray-600">Ny del</span>
                   <select
                     value={newSectionKey}
-                    disabled={locked}
+                    disabled={locked || sectionTypeOptions.length === 0}
                     onChange={(event) => setNewSectionKey(event.target.value as TuReportSectionKey)}
                     className="h-10 min-w-[240px] rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
                   >
@@ -2350,7 +2347,7 @@ export default function TuInvestigationEditorClient({
                 <button
                   type="button"
                   onClick={() => void addReportSection()}
-                  disabled={locked}
+                  disabled={locked || sectionTypeOptions.length === 0}
                   className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                 >
                   <Plus size={16} aria-hidden />
@@ -2358,6 +2355,12 @@ export default function TuInvestigationEditorClient({
                 </button>
               </div>
             </div>
+            {sectionTypeOptions.length === 0 ? (
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Det finns inga aktiva TU-rubriker i admin. Kör seed-migrationen eller lägg in rubriker i
+                admin innan nya delar kan läggas till.
+              </div>
+            ) : null}
           </div>
 
           {visibleSections.map((section, index) => {
