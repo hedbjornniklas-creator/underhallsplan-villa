@@ -23,6 +23,11 @@ const PRINT_IMAGE_POLICY = {
 
 const mmToPxNumber = (mm: number) => (mm * 96) / 25.4
 const mm = (value: number) => `${value}mm`
+const PRINT_TEXT_STYLE = {
+  overflowWrap: 'normal',
+  wordBreak: 'normal',
+  hyphens: 'none',
+} satisfies CSSProperties
 
 function toPrintImageProxyUrl(src: string, maxLongSidePx: number) {
   if (!src) return src
@@ -168,16 +173,23 @@ type TocEntry = {
   pageNumber: number | null
 }
 
+function normalizeTextNewlines(text: string) {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+}
+
 function splitParagraphs(text: string) {
-  return text
-    .replace(/\r\n/g, '\n')
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean)
+  return normalizeTextNewlines(text)
+    .split(/\n[ \t]*\n+/)
+    .map((paragraph) => paragraph.replace(/^[ \t\n]+|[ \t\n]+$/g, ''))
+    .filter((paragraph) => paragraph.trim())
 }
 
 function isListIntroParagraph(paragraph: string) {
   return /:\s*$/.test(paragraph.trim())
+}
+
+function isListItemLine(line: string) {
+  return /^(?:[-–—•*]\s+|\d+[.)]\s+)/.test(line.trim())
 }
 
 function startsWithListItem(paragraph: string) {
@@ -186,11 +198,11 @@ function startsWithListItem(paragraph: string) {
     .map((line) => line.trim())
     .find(Boolean)
 
-  return Boolean(firstLine && /^(?:[-–—•*]\s+|\d+[.)]\s+)/.test(firstLine))
+  return Boolean(firstLine && isListItemLine(firstLine))
 }
 
-function chunkParagraph(paragraph: string) {
-  const normalized = paragraph.trim()
+function chunkLongTextAtWords(text: string) {
+  const normalized = text.trim()
   if (normalized.length <= SECTION_CHUNK_TARGET_CHARS) return [normalized]
 
   const chunks: string[] = []
@@ -200,20 +212,117 @@ function chunkParagraph(paragraph: string) {
   for (const token of tokens) {
     const next = `${current}${token}`
     if (current.trim() && next.length > SECTION_CHUNK_TARGET_CHARS) {
-      chunks.push(current)
+      chunks.push(current.trimEnd())
       current = token.trimStart()
       continue
     }
     current = next
   }
 
-  if (current.trim()) chunks.push(current)
+  if (current.trim()) chunks.push(current.trimEnd())
   return chunks.length > 0 ? chunks : [normalized]
+}
+
+function chunkParagraph(paragraph: string) {
+  const normalized = paragraph.trim()
+  if (normalized.length <= SECTION_CHUNK_TARGET_CHARS) return [normalized]
+
+  const sentenceMatches =
+    normalized.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g) ?? [normalized]
+  const chunks: string[] = []
+  let current = ''
+
+  for (const rawSentence of sentenceMatches) {
+    const sentence = rawSentence.trim()
+    if (!sentence) continue
+
+    if (sentence.length > SECTION_CHUNK_TARGET_CHARS) {
+      if (current.trim()) {
+        chunks.push(current.trimEnd())
+        current = ''
+      }
+      chunks.push(...chunkLongTextAtWords(sentence))
+      continue
+    }
+
+    const next = current ? `${current} ${sentence}` : sentence
+    if (current.trim() && next.length > SECTION_CHUNK_TARGET_CHARS) {
+      chunks.push(current.trimEnd())
+      current = sentence
+      continue
+    }
+    current = next
+  }
+
+  if (current.trim()) chunks.push(current.trimEnd())
+  return chunks.length > 0 ? chunks : chunkLongTextAtWords(normalized)
+}
+
+function splitListParagraph(paragraph: string) {
+  const lines = paragraph.split('\n')
+  const firstListIndex = lines.findIndex((line) => isListItemLine(line))
+  if (firstListIndex < 0) return null
+
+  const intro = lines.slice(0, firstListIndex).join('\n').trim()
+  const items: string[] = []
+  let currentItem = ''
+
+  for (const line of lines.slice(firstListIndex)) {
+    if (isListItemLine(line)) {
+      if (currentItem.trim()) items.push(currentItem.trimEnd())
+      currentItem = line.trimEnd()
+      continue
+    }
+    currentItem = currentItem ? `${currentItem}\n${line.trimEnd()}` : line.trimEnd()
+  }
+
+  if (currentItem.trim()) items.push(currentItem.trimEnd())
+  return { intro, items }
+}
+
+function chunkListParagraph(paragraph: string) {
+  const list = splitListParagraph(paragraph)
+  if (!list) return chunkParagraph(paragraph)
+
+  const chunks: string[] = []
+  let current = list.intro
+  let hasListItemInCurrent = false
+
+  for (const item of list.items) {
+    const next = current ? `${current}\n${item}` : item
+    if (
+      current.trim() &&
+      hasListItemInCurrent &&
+      next.length > SECTION_CHUNK_TARGET_CHARS
+    ) {
+      chunks.push(current.trimEnd())
+      current = item
+    } else {
+      current = next
+    }
+    hasListItemInCurrent = true
+  }
+
+  if (current.trim()) chunks.push(current.trimEnd())
+  return chunks.length > 0 ? chunks : chunkParagraph(paragraph)
+}
+
+function appendChunkUnit(chunks: string[], current: string, unit: string) {
+  if (!unit.trim()) return current
+
+  const next = current ? `${current}\n\n${unit}` : unit
+  if (current.trim() && next.length > SECTION_CHUNK_TARGET_CHARS) {
+    chunks.push(current.trimEnd())
+    return unit
+  }
+
+  return next
 }
 
 function chunkSectionText(text: string) {
   const paragraphs = splitParagraphs(text)
   const chunks: string[] = []
+  let currentChunk = ''
 
   for (let index = 0; index < paragraphs.length; index += 1) {
     const paragraph = paragraphs[index]
@@ -226,15 +335,23 @@ function chunkSectionText(text: string) {
     ) {
       const combined = `${paragraph}\n\n${nextParagraph}`
       if (combined.length <= SECTION_CHUNK_TARGET_CHARS * 2) {
-        chunks.push(combined)
+        for (const unit of chunkListParagraph(combined)) {
+          currentChunk = appendChunkUnit(chunks, currentChunk, unit)
+        }
         index += 1
         continue
       }
     }
 
-    chunks.push(...chunkParagraph(paragraph))
+    const paragraphChunks = splitListParagraph(paragraph)
+      ? chunkListParagraph(paragraph)
+      : chunkParagraph(paragraph)
+    for (const unit of paragraphChunks) {
+      currentChunk = appendChunkUnit(chunks, currentChunk, unit)
+    }
   }
 
+  if (currentChunk.trim()) chunks.push(currentChunk.trimEnd())
   return chunks
 }
 
@@ -425,7 +542,10 @@ function RowsBlock({
             className="grid grid-cols-[34mm_minmax(0,1fr)] gap-3 border-b border-gray-200 pb-1.5"
           >
             <dt className="text-[12px] font-semibold text-gray-600">{row.label}</dt>
-            <dd className="min-w-0 whitespace-pre-wrap text-[12px] leading-5 text-gray-950">
+            <dd
+              className="min-w-0 whitespace-pre-wrap text-[12px] leading-5 text-gray-950"
+              style={PRINT_TEXT_STYLE}
+            >
               {row.value}
             </dd>
           </div>
@@ -441,7 +561,10 @@ function PartyRows({ rows }: { rows: TuPrintMetaRow[] }) {
       {rows.map((row) => (
         <div key={row.label} className="contents">
           <dt className="text-[13px] font-semibold leading-5 text-gray-950">{row.label}</dt>
-          <dd className="min-w-0 whitespace-pre-wrap text-[13px] leading-5 text-gray-950">
+          <dd
+            className="min-w-0 whitespace-pre-wrap text-[13px] leading-5 text-gray-950"
+            style={PRINT_TEXT_STYLE}
+          >
             {row.value}
           </dd>
         </div>
@@ -490,7 +613,12 @@ function SectionBlock({
       ) : null}
       {text.trim() ? (
         <div className={continuation ? '' : 'mt-2'}>
-          <p className="whitespace-pre-wrap text-[13px] leading-6 text-gray-950">{text}</p>
+          <p
+            className="whitespace-pre-wrap text-[13px] leading-6 text-gray-950"
+            style={PRINT_TEXT_STYLE}
+          >
+            {text}
+          </p>
         </div>
       ) : null}
     </section>
@@ -517,7 +645,12 @@ function SubsectionBlock({
         </h3>
       ) : null}
       <div className={continuation ? '' : 'mt-1.5'}>
-        <p className="whitespace-pre-wrap text-[13px] leading-6 text-gray-950">{text}</p>
+        <p
+          className="whitespace-pre-wrap text-[13px] leading-6 text-gray-950"
+          style={PRINT_TEXT_STYLE}
+        >
+          {text}
+        </p>
       </div>
     </section>
   )

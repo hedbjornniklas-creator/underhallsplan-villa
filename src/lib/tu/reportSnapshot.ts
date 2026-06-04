@@ -82,11 +82,12 @@ function formatInspectionTime(value: string | null | undefined) {
 function normalizePrintableText(value: string | null | undefined) {
   const lines = String(value ?? '')
     .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
     .split('\n')
     .map((line) => line.trimEnd())
     .filter((line) => !EMPTY_PRINT_VALUES.has(line.trim().toLowerCase()))
 
-  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  return lines.join('\n').trim()
 }
 
 function normalizeAssignmentPartiesText(value: string) {
