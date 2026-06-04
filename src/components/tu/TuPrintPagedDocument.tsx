@@ -751,11 +751,11 @@ function ImageGridBlock({
 }) {
   return (
     <section
-      className="tu-report-block tu-report-image-grid-block grid grid-cols-2 gap-x-5 gap-y-5"
+      className="tu-report-block tu-report-image-grid-block grid grid-cols-2 gap-x-6 gap-y-6"
       style={{ marginBottom: mm(BLOCK_GAP_MM) }}
     >
       {images.map((image) => (
-        <figure key={image.id} className="grid h-[70mm] grid-rows-[1fr_auto]">
+        <figure key={image.id} className="grid h-[62mm] grid-rows-[minmax(0,1fr)_auto]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={getAppendixPrintImageSrc(image.src)}
