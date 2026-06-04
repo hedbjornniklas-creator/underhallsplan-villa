@@ -8,6 +8,7 @@ export type BesiktAppAdminTab =
   | 'forutsattningar'
   | 'addon-services'
   | 'eb'
+  | 'tu-sections'
 
 export const BESIKTAPP_ADMIN_TABS: {
   key: BesiktAppAdminTab
@@ -43,6 +44,11 @@ export const BESIKTAPP_ADMIN_TABS: {
     key: 'eb',
     label: 'Entreprenadbesiktning',
     description: 'Styr gemensamma EB-val som besiktningstyper, fack, noteringsstatusar och beteckningar.',
+  },
+  {
+    key: 'tu-sections',
+    label: 'TU-rubriker',
+    description: 'Styr vilka deltyper och rubriker som kan väljas i tekniska utredningar.',
   },
   {
     key: 'certifications',

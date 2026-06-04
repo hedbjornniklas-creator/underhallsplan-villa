@@ -1,11 +1,18 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, ChevronDown, ChevronUp, FileText, Image as ImageIcon, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import { supabase } from '@/lib/supabaseClient'
-import type { TuInvestigationDetails, TuReportDraft, TuReportSection, TuReportSectionKey } from '@/lib/tu/server'
+import type {
+  TuInvestigationDetails,
+  TuReportDraft,
+  TuReportSection,
+  TuReportSectionKey,
+  TuReportSectionTypeOption,
+  TuReportSubsection,
+} from '@/lib/tu/server'
 
 const TU_IMAGE_DRAG_DATA_TYPE = 'application/x-tu-image-id'
 const IMAGE_FILE_ACCEPT = 'image/*'
@@ -78,11 +85,6 @@ type TuAiResponse = {
   error?: string
 }
 
-type TuSectionTypeOption = {
-  key: TuReportSectionKey
-  title: string
-}
-
 type AssignmentPartiesFieldKey =
   | 'customerName'
   | 'customerRole'
@@ -147,7 +149,7 @@ const INSPECTOR_PARTY_FIELDS: AssignmentPartiesField[] = [
   { key: 'inspectorCertificationNumber', label: 'Certifieringsnummer' },
 ]
 
-const TU_SECTION_TYPE_OPTIONS: TuSectionTypeOption[] = [
+const DEFAULT_TU_SECTION_TYPE_OPTIONS: TuReportSectionTypeOption[] = [
   { key: 'background_scope', title: 'Bakgrund' },
   { key: 'assignment_scope', title: 'Uppdragets omfattning' },
   { key: 'construction_description', title: 'Beskrivning av konstruktionen' },
@@ -160,28 +162,68 @@ const TU_SECTION_TYPE_OPTIONS: TuSectionTypeOption[] = [
   { key: 'closing_comments', title: 'Avslutande kommentarer' },
 ]
 
-const PROTECTED_SECTION_KEYS = new Set<TuReportSectionKey>(['assignment_parties'])
+const PROTECTED_SECTION_KEYS = new Set<string>(['assignment_parties'])
+const HIDDEN_SECTION_KEYS = new Set<string>(['signature'])
 
-function getSectionTypeOption(key: TuReportSectionKey) {
-  return TU_SECTION_TYPE_OPTIONS.find((option) => option.key === key) ?? null
+function normalizeSectionTypeOptions(options: TuReportSectionTypeOption[] | undefined) {
+  const source = options && options.length > 0 ? options : DEFAULT_TU_SECTION_TYPE_OPTIONS
+  const seen = new Set<string>()
+  const normalized = source
+    .map((option) => ({
+      ...option,
+      key: option.key.trim(),
+      title: cleanFieldValue(option.title),
+    }))
+    .filter(
+      (option) =>
+        option.key &&
+        option.title &&
+        !PROTECTED_SECTION_KEYS.has(option.key) &&
+        !HIDDEN_SECTION_KEYS.has(option.key)
+    )
+    .filter((option) => {
+      const normalizedKey = option.key.toLowerCase()
+      if (seen.has(normalizedKey)) return false
+      seen.add(normalizedKey)
+      return true
+    })
+
+  return normalized.length > 0 ? normalized : DEFAULT_TU_SECTION_TYPE_OPTIONS
+}
+
+function getSectionTypeOption(options: TuReportSectionTypeOption[], key: TuReportSectionKey) {
+  return options.find((option) => option.key === key) ?? null
 }
 
 function createSectionInstanceId(key: TuReportSectionKey) {
   return `${key}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-function createReportSection(key: TuReportSectionKey): TuReportSection {
-  const option = getSectionTypeOption(key)
+function createSubsectionInstanceId(sectionId: string) {
+  return `${sectionId}-subsection-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function createReportSection(key: TuReportSectionKey, options: TuReportSectionTypeOption[]): TuReportSection {
+  const option = getSectionTypeOption(options, key)
   return {
     id: createSectionInstanceId(key),
     key,
     title: option?.title ?? 'Ny del',
     text: '',
+    subsections: [],
   }
 }
 
 function getSectionInstanceId(section: Pick<TuReportSection, 'id' | 'key'>) {
   return section.id || section.key
+}
+
+function createReportSubsection(sectionId: string): TuReportSubsection {
+  return {
+    id: createSubsectionInstanceId(sectionId),
+    title: 'Underrubrik',
+    text: '',
+  }
 }
 
 const EMPTY_ASSIGNMENT_PARTIES_FORM: AssignmentPartiesForm = {
@@ -511,6 +553,25 @@ function cloneDraftWithSectionId(draft: TuReportDraft, sectionId: string, text: 
   }
 }
 
+function cloneDraftWithSubsection(
+  draft: TuReportDraft,
+  sectionId: string,
+  subsectionId: string,
+  patch: Partial<Pick<TuReportSubsection, 'title' | 'text'>>
+): TuReportDraft {
+  return {
+    sections: draft.sections.map((section) => {
+      if (getSectionInstanceId(section) !== sectionId) return section
+      return {
+        ...section,
+        subsections: (section.subsections ?? []).map((subsection) =>
+          subsection.id === subsectionId ? { ...subsection, ...patch } : subsection
+        ),
+      }
+    }),
+  }
+}
+
 function getAiSectionTitle(draft: TuReportDraft, key: TuReportSectionKey, fallback: string) {
   return draft.sections.find((section) => section.key === key)?.title ?? fallback
 }
@@ -661,10 +722,16 @@ function parseStoredCollapsedSections(value: string | null, allowedKeys: Set<str
 
 export default function TuInvestigationEditorClient({
   initialInvestigation,
+  sectionTypeOptions: initialSectionTypeOptions,
 }: {
   initialInvestigation: TuInvestigationDetails
+  sectionTypeOptions?: TuReportSectionTypeOption[]
 }) {
   const [investigation, setInvestigation] = useState(initialInvestigation)
+  const sectionTypeOptions = useMemo(
+    () => normalizeSectionTypeOptions(initialSectionTypeOptions),
+    [initialSectionTypeOptions]
+  )
   const [draft, setDraft] = useState<TuReportDraft>(initialInvestigation.reportDraft)
   const [title, setTitle] = useState(initialInvestigation.title)
   const [objectDetails, setObjectDetails] = useState<ObjectDetailsForm>(() =>
@@ -691,7 +758,9 @@ export default function TuInvestigationEditorClient({
   const [bankDropActive, setBankDropActive] = useState(false)
   const [appendixDropActive, setAppendixDropActive] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set())
-  const [newSectionKey, setNewSectionKey] = useState<TuReportSectionKey>('background_scope')
+  const [newSectionKey, setNewSectionKey] = useState<TuReportSectionKey>(
+    sectionTypeOptions[0]?.key ?? 'background_scope'
+  )
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiSuggestions, setAiSuggestions] = useState<TuAiSuggestion[]>([])
   const [aiBusy, setAiBusy] = useState(false)
@@ -716,6 +785,11 @@ export default function TuInvestigationEditorClient({
   useEffect(() => {
     assignmentPartiesRef.current = assignmentParties
   }, [assignmentParties])
+
+  useEffect(() => {
+    if (sectionTypeOptions.some((option) => option.key === newSectionKey)) return
+    setNewSectionKey(sectionTypeOptions[0]?.key ?? 'background_scope')
+  }, [newSectionKey, sectionTypeOptions])
 
   useEffect(() => {
     if (!imageError) return
@@ -890,7 +964,7 @@ export default function TuInvestigationEditorClient({
     if (locked) return
     const sections = [...draftRef.current.sections]
     const signatureIndex = sections.findIndex((section) => section.key === 'signature')
-    const nextSection = createReportSection(newSectionKey)
+    const nextSection = createReportSection(newSectionKey, sectionTypeOptions)
     if (signatureIndex >= 0) {
       sections.splice(signatureIndex, 0, nextSection)
     } else {
@@ -924,7 +998,7 @@ export default function TuInvestigationEditorClient({
     if (locked) return
     const sections = [...draftRef.current.sections]
     const visibleSectionIds = sections
-      .filter((section) => section.key !== 'signature')
+      .filter((section) => !HIDDEN_SECTION_KEYS.has(section.key))
       .map((section) => getSectionInstanceId(section))
     const visibleIndex = visibleSectionIds.indexOf(sectionId)
     const targetSectionId = visibleSectionIds[visibleIndex + direction]
@@ -946,7 +1020,7 @@ export default function TuInvestigationEditorClient({
 
   const changeReportSectionType = async (sectionId: string, key: TuReportSectionKey) => {
     if (locked) return
-    const option = getSectionTypeOption(key)
+    const option = getSectionTypeOption(sectionTypeOptions, key)
     if (!option) return
     const nextDraft = {
       sections: draftRef.current.sections.map((section) =>
@@ -961,6 +1035,87 @@ export default function TuInvestigationEditorClient({
     }
     try {
       await saveDraft(nextDraft, 'Kunde inte byta deltyp.')
+    } catch {
+      // saveDraft shows the specific error.
+    }
+  }
+
+  const addReportSubsection = async (sectionId: string) => {
+    if (locked) return
+    const nextDraft = {
+      sections: draftRef.current.sections.map((section) =>
+        getSectionInstanceId(section) === sectionId
+          ? {
+              ...section,
+              subsections: [...(section.subsections ?? []), createReportSubsection(sectionId)],
+            }
+          : section
+      ),
+    }
+    try {
+      await saveDraft(nextDraft, 'Kunde inte lägga till underrubrik.')
+    } catch {
+      // saveDraft shows the specific error.
+    }
+  }
+
+  const updateReportSubsectionTitle = (sectionId: string, subsectionId: string, title: string) => {
+    const nextDraft = cloneDraftWithSubsection(draftRef.current, sectionId, subsectionId, { title })
+    draftRef.current = nextDraft
+    setDraft(nextDraft)
+  }
+
+  const saveReportSubsectionTitle = async (sectionId: string, subsectionId: string, title: string) => {
+    const cleanedTitle = cleanFieldValue(title) || 'Underrubrik'
+    const nextDraft = cloneDraftWithSubsection(draftRef.current, sectionId, subsectionId, { title: cleanedTitle })
+    try {
+      await saveDraft(nextDraft, 'Kunde inte spara underrubrik.')
+    } catch {
+      // saveDraft shows the specific error.
+    }
+  }
+
+  const saveReportSubsectionText = async (sectionId: string, subsectionId: string, text: string) => {
+    const nextDraft = cloneDraftWithSubsection(draftRef.current, sectionId, subsectionId, { text })
+    await saveDraft(nextDraft, 'Kunde inte spara underrubrik.')
+  }
+
+  const removeReportSubsection = async (sectionId: string, subsectionId: string) => {
+    if (locked) return
+    const nextDraft = {
+      sections: draftRef.current.sections.map((section) =>
+        getSectionInstanceId(section) === sectionId
+          ? {
+              ...section,
+              subsections: (section.subsections ?? []).filter((subsection) => subsection.id !== subsectionId),
+            }
+          : section
+      ),
+    }
+    try {
+      await saveDraft(nextDraft, 'Kunde inte ta bort underrubrik.')
+    } catch {
+      // saveDraft shows the specific error.
+    }
+  }
+
+  const moveReportSubsection = async (sectionId: string, subsectionId: string, direction: -1 | 1) => {
+    if (locked) return
+    const section = draftRef.current.sections.find((item) => getSectionInstanceId(item) === sectionId)
+    const subsections = [...(section?.subsections ?? [])]
+    const index = subsections.findIndex((subsection) => subsection.id === subsectionId)
+    const targetIndex = index + direction
+    if (index < 0 || targetIndex < 0 || targetIndex >= subsections.length) return
+    const current = subsections[index]
+    subsections[index] = subsections[targetIndex]
+    subsections[targetIndex] = current
+    const nextDraft = {
+      sections: draftRef.current.sections.map((item) =>
+        getSectionInstanceId(item) === sectionId ? { ...item, subsections } : item
+      ),
+    }
+    try {
+      await saveDraft(nextDraft, 'Kunde inte flytta underrubrik.')
     } catch {
       // saveDraft shows the specific error.
     }
@@ -1016,7 +1171,7 @@ export default function TuInvestigationEditorClient({
   }
 
   const locked = Boolean(investigation.reportLockedAt)
-  const visibleSections = draft.sections.filter((section) => section.key !== 'signature')
+  const visibleSections = draft.sections.filter((section) => !HIDDEN_SECTION_KEYS.has(section.key))
   const coverImages = images.filter((image) => image.sectionKey === 'cover')
   const coverImage = coverImages[0] ?? null
   const bankImages = images.filter((image) => image.sectionKey === 'bank')
@@ -2193,7 +2348,7 @@ export default function TuInvestigationEditorClient({
                     onChange={(event) => setNewSectionKey(event.target.value as TuReportSectionKey)}
                     className="h-10 min-w-[240px] rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
                   >
-                    {TU_SECTION_TYPE_OPTIONS.map((option) => (
+                    {sectionTypeOptions.map((option) => (
                       <option key={option.key} value={option.key}>
                         {option.title}
                       </option>
@@ -2220,6 +2375,9 @@ export default function TuInvestigationEditorClient({
             const collapsed = collapsedSections.has(sectionId)
             const canMoveUp = index > 1 && !isProtected
             const canMoveDown = index < visibleSections.length - 1 && !isProtected
+            const sectionOptions = sectionTypeOptions.some((option) => option.key === section.key)
+              ? sectionTypeOptions
+              : [{ key: section.key, title: section.title }, ...sectionTypeOptions]
 
             return (
               <article key={sectionId} className="rounded-lg border border-violet-100 bg-white p-4 shadow-sm">
@@ -2238,7 +2396,7 @@ export default function TuInvestigationEditorClient({
                         className="h-9 min-w-[260px] rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
                         aria-label="Välj deltyp"
                       >
-                        {TU_SECTION_TYPE_OPTIONS.map((option) => (
+                        {sectionOptions.map((option) => (
                           <option key={option.key} value={option.key}>
                             {option.title}
                           </option>
@@ -2247,7 +2405,7 @@ export default function TuInvestigationEditorClient({
                     )}
                   </div>
                   <div className="flex items-center gap-1.5">
-                    {!isAssignmentParties && section.key !== 'signature' ? (
+                    {!isAssignmentParties && !HIDDEN_SECTION_KEYS.has(section.key) ? (
                       <button
                         type="button"
                         onClick={() => void requestAiSuggestions({ sectionKey: section.key })}
@@ -2335,19 +2493,106 @@ export default function TuInvestigationEditorClient({
                     </div>
                   </div>
                 ) : (
-                  <DebouncedTextarea
-                    value={section.text}
-                    draftKey={`tu:${investigation.inspectionId}:${sectionId}`}
-                    disabled={locked}
-                    rows={7}
-                    className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
-                    onValueChange={(value) => {
-                      const nextDraft = cloneDraftWithSectionId(draftRef.current, sectionId, value)
-                      draftRef.current = nextDraft
-                      setDraft(nextDraft)
-                    }}
-                    onSave={(value) => saveSectionById(sectionId, value)}
-                  />
+                  <div className="space-y-4">
+                    <DebouncedTextarea
+                      value={section.text}
+                      draftKey={`tu:${investigation.inspectionId}:${sectionId}`}
+                      disabled={locked}
+                      rows={7}
+                      className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
+                      onValueChange={(value) => {
+                        const nextDraft = cloneDraftWithSectionId(draftRef.current, sectionId, value)
+                        draftRef.current = nextDraft
+                        setDraft(nextDraft)
+                      }}
+                      onSave={(value) => saveSectionById(sectionId, value)}
+                    />
+
+                    <div className="rounded-md border border-gray-200 bg-gray-50/60 p-3">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="text-sm font-semibold text-gray-950">Underrubriker</h3>
+                        <button
+                          type="button"
+                          onClick={() => void addReportSubsection(sectionId)}
+                          disabled={locked}
+                          className="inline-flex h-8 items-center gap-2 rounded-md border border-violet-200 bg-white px-2.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                        >
+                          <Plus size={14} aria-hidden />
+                          Lägg till underrubrik
+                        </button>
+                      </div>
+
+                      {(section.subsections ?? []).length === 0 ? (
+                        <div className="rounded-md border border-dashed border-gray-200 bg-white px-3 py-3 text-sm text-gray-500">
+                          Inga underrubriker tillagda.
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {(section.subsections ?? []).map((subsection, subsectionIndex, allSubsections) => (
+                            <div
+                              key={subsection.id}
+                              className="rounded-md border border-gray-200 bg-white p-3 shadow-sm"
+                            >
+                              <div className="mb-2 flex flex-wrap items-center gap-2">
+                                <input
+                                  value={subsection.title}
+                                  disabled={locked}
+                                  onChange={(event) =>
+                                    updateReportSubsectionTitle(sectionId, subsection.id, event.target.value)
+                                  }
+                                  onBlur={(event) =>
+                                    void saveReportSubsectionTitle(sectionId, subsection.id, event.target.value)
+                                  }
+                                  className="h-9 min-w-[220px] flex-1 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
+                                  aria-label="Underrubrik"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => void moveReportSubsection(sectionId, subsection.id, -1)}
+                                  disabled={locked || subsectionIndex === 0}
+                                  title="Flytta underrubrik upp"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                                >
+                                  <MoveUp size={14} aria-hidden />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void moveReportSubsection(sectionId, subsection.id, 1)}
+                                  disabled={locked || subsectionIndex === allSubsections.length - 1}
+                                  title="Flytta underrubrik ned"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                                >
+                                  <MoveDown size={14} aria-hidden />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void removeReportSubsection(sectionId, subsection.id)}
+                                  disabled={locked}
+                                  title="Ta bort underrubrik"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                                >
+                                  <Trash2 size={14} aria-hidden />
+                                </button>
+                              </div>
+                              <DebouncedTextarea
+                                value={subsection.text}
+                                draftKey={`tu:${investigation.inspectionId}:${sectionId}:${subsection.id}`}
+                                disabled={locked}
+                                rows={4}
+                                className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
+                                onValueChange={(value) => {
+                                  const nextDraft = cloneDraftWithSubsection(draftRef.current, sectionId, subsection.id, { text: value })
+                                  draftRef.current = nextDraft
+                                  setDraft(nextDraft)
+                                }}
+                                onSave={(value) => saveReportSubsectionText(sectionId, subsection.id, value)}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 )}
               </article>
             )

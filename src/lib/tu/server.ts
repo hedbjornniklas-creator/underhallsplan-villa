@@ -19,7 +19,7 @@ import type { InspectorCertificationListItem } from '@/lib/certifications/profil
 import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
-export type TuReportSectionKey =
+export type TuReportSystemSectionKey =
   | 'assignment_parties'
   | 'background_scope'
   | 'assignment_scope'
@@ -33,13 +33,32 @@ export type TuReportSectionKey =
   | 'closing_comments'
   | 'signature'
 
+export type TuReportSectionKey = string
+
 export type TuObjectType = 'villa' | 'apartment'
+
+export type TuReportSectionTypeOption = {
+  id?: string
+  key: TuReportSectionKey
+  title: string
+  description?: string | null
+  sortOrder?: number
+  isActive?: boolean
+  isSystem?: boolean
+}
+
+export type TuReportSubsection = {
+  id: string
+  title: string
+  text: string
+}
 
 export type TuReportSection = {
   id: string
   key: TuReportSectionKey
   title: string
   text: string
+  subsections?: TuReportSubsection[]
 }
 
 export type TuReportDraft = {
@@ -216,6 +235,16 @@ type TuImageRow = {
   updated_at: string | null
 }
 
+type TuReportSectionTypeRow = {
+  id: string
+  key: string
+  title: string
+  description: string | null
+  sort_order: number | null
+  is_active: boolean | null
+  is_system: boolean | null
+}
+
 type SupabaseError = {
   message?: string
 } | null
@@ -268,15 +297,25 @@ export const TU_REPORT_SECTIONS: Array<Pick<TuReportSection, 'key' | 'title'>> =
   { key: 'signature', title: 'Signering' },
 ]
 
-const TU_REPORT_SECTION_BY_KEY = new Map<TuReportSectionKey, Pick<TuReportSection, 'key' | 'title'>>(
+export const TU_EDITABLE_REPORT_SECTION_TYPES: TuReportSectionTypeOption[] = TU_REPORT_SECTIONS.filter(
+  (section) => section.key !== 'assignment_parties' && section.key !== 'signature'
+).map((section, index) => ({
+  key: section.key,
+  title: section.title,
+  sortOrder: (index + 1) * 100,
+  isActive: true,
+  isSystem: true,
+}))
+
+const TU_REPORT_SECTION_BY_KEY = new Map<string, Pick<TuReportSection, 'key' | 'title'>>(
   TU_REPORT_SECTIONS.map((section) => [section.key, section])
 )
 
 function isTuReportSectionKey(value: unknown): value is TuReportSectionKey {
-  return typeof value === 'string' && TU_REPORT_SECTION_BY_KEY.has(value as TuReportSectionKey)
+  return typeof value === 'string' && value.trim() !== '' && /^[a-z0-9_]+$/.test(value.trim())
 }
 
-const DEFAULT_TU_SECTION_TEXT: Partial<Record<TuReportSectionKey, string>> = {
+const DEFAULT_TU_SECTION_TEXT: Partial<Record<string, string>> = {
   closing_comments:
     'Detta utlåtande baseras på de uppgifter, handlingar och iakttagelser som varit tillgängliga vid utredningstillfället. Bedömningarna avser de förhållanden som kunnat konstateras inom ramen för uppdraget och ska inte ses som en fullständig garanti för dolda fel, framtida skadeutveckling eller förhållanden som inte varit åtkomliga för kontroll.',
 }
@@ -317,15 +356,42 @@ function toPropertyName(address: string | null, fallback: string) {
   return cleanText(address) ?? fallback
 }
 
-export function createTuReportDraft(seed?: Partial<Record<TuReportSectionKey, string>>): TuReportDraft {
+export function createTuReportDraft(seed?: Partial<Record<string, string>>): TuReportDraft {
   return {
     sections: TU_REPORT_SECTIONS.map((section) => ({
       id: section.key,
       key: section.key,
       title: section.title,
       text: seed?.[section.key] ?? DEFAULT_TU_SECTION_TEXT[section.key] ?? '',
+      subsections: [],
     })),
   }
+}
+
+function normalizeTuReportSubsections(value: unknown, sectionId: string): TuReportSubsection[] {
+  if (!Array.isArray(value)) return []
+
+  const usedIds = new Set<string>()
+  return value
+    .map((item, index) => {
+      if (!item || typeof item !== 'object') return null
+      const rawId = cleanText((item as { id?: unknown }).id as string | null | undefined)
+      const baseId = rawId ?? `${sectionId}-subsection-${index + 1}`
+      let id = baseId
+      let duplicateCount = 2
+      while (usedIds.has(id)) {
+        id = `${baseId}-${duplicateCount}`
+        duplicateCount += 1
+      }
+      usedIds.add(id)
+
+      return {
+        id,
+        title: cleanText((item as { title?: unknown }).title as string | null | undefined) ?? 'Underrubrik',
+        text: typeof (item as { text?: unknown }).text === 'string' ? (item as { text: string }).text : '',
+      }
+    })
+    .filter((item): item is TuReportSubsection => Boolean(item))
 }
 
 export function normalizeTuReportDraft(value: unknown): TuReportDraft {
@@ -337,7 +403,7 @@ export function normalizeTuReportDraft(value: unknown): TuReportDraft {
 
   const normalizedSections: TuReportSection[] = []
   const usedIds = new Set<string>()
-  const keyCounts = new Map<TuReportSectionKey, number>()
+  const keyCounts = new Map<string, number>()
   let legacyAccessibilityText = ''
 
   for (const section of rawSections) {
@@ -378,6 +444,7 @@ export function normalizeTuReportDraft(value: unknown): TuReportDraft {
           : sectionKey === 'construction_description'
             ? legacyAccessibilityText || DEFAULT_TU_SECTION_TEXT[sectionKey] || ''
             : DEFAULT_TU_SECTION_TEXT[sectionKey] || '',
+      subsections: normalizeTuReportSubsections((section as { subsections?: unknown }).subsections, id),
     })
   }
 
@@ -391,6 +458,7 @@ export function normalizeTuReportDraft(value: unknown): TuReportDraft {
         key: 'assignment_parties',
         title: assignmentPartiesSection.title,
         text: DEFAULT_TU_SECTION_TEXT.assignment_parties ?? '',
+        subsections: [],
       })
     }
   }
@@ -398,6 +466,42 @@ export function normalizeTuReportDraft(value: unknown): TuReportDraft {
   return {
     sections: normalizedSections,
   }
+}
+
+function mapTuReportSectionType(row: TuReportSectionTypeRow): TuReportSectionTypeOption | null {
+  if (!isTuReportSectionKey(row.key)) return null
+  const title = cleanText(row.title)
+  if (!title) return null
+  return {
+    id: row.id,
+    key: row.key.trim(),
+    title,
+    description: row.description,
+    sortOrder: row.sort_order ?? 100,
+    isActive: Boolean(row.is_active),
+    isSystem: Boolean(row.is_system),
+  }
+}
+
+export async function listTuReportSectionTypeOptions(): Promise<TuReportSectionTypeOption[]> {
+  const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
+  const { data, error } = await admin
+    .from('settings_tu_report_section_types')
+    .select('id, key, title, description, sort_order, is_active, is_system')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+    .order('title', { ascending: true })
+
+  if (error) {
+    console.warn('[tu] falling back to built-in section types', error.message)
+    return TU_EDITABLE_REPORT_SECTION_TYPES
+  }
+
+  const rows = ((data ?? []) as TuReportSectionTypeRow[])
+    .map(mapTuReportSectionType)
+    .filter((item): item is TuReportSectionTypeOption => Boolean(item))
+
+  return rows.length > 0 ? rows : TU_EDITABLE_REPORT_SECTION_TYPES
 }
 
 function extractTuInspectorBlock(text: string) {

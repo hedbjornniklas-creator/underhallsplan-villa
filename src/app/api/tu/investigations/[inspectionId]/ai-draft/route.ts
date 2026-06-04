@@ -11,18 +11,7 @@ export const dynamic = 'force-dynamic'
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const TU_AI_MODEL = process.env.OPENAI_TU_TEXT_MODEL?.trim() || 'gpt-4o-mini'
 
-const EDITABLE_AI_SECTION_KEYS = new Set<TuReportSectionKey>([
-  'background_scope',
-  'assignment_scope',
-  'construction_description',
-  'basis_conditions',
-  'observed_execution',
-  'technical_assessment',
-  'time_assessment',
-  'continued_risk',
-  'recommended_actions',
-  'closing_comments',
-])
+const NON_EDITABLE_AI_SECTION_KEYS = new Set<string>(['assignment_parties', 'signature'])
 
 type OpenAiResponse = {
   output_text?: string
@@ -66,7 +55,11 @@ function extractText(payload: OpenAiResponse) {
   )
 }
 
-function parseSuggestions(text: string): AiSuggestion[] {
+function isEditableAiSectionKey(value: unknown): value is TuReportSectionKey {
+  return typeof value === 'string' && value.trim() !== '' && !NON_EDITABLE_AI_SECTION_KEYS.has(value)
+}
+
+function parseSuggestions(text: string, allowedSectionKeys: Set<string>): AiSuggestion[] {
   const cleaned = text
     .trim()
     .replace(/^```json\s*/i, '')
@@ -86,7 +79,7 @@ function parseSuggestions(text: string): AiSuggestion[] {
       const sectionKey = (item as { sectionKey?: unknown }).sectionKey
       const title = (item as { title?: unknown }).title
       const suggestionText = (item as { text?: unknown }).text
-      if (typeof sectionKey !== 'string' || !EDITABLE_AI_SECTION_KEYS.has(sectionKey as TuReportSectionKey)) return null
+      if (typeof sectionKey !== 'string' || !allowedSectionKeys.has(sectionKey)) return null
       if (typeof suggestionText !== 'string' || !suggestionText.trim()) return null
       return {
         sectionKey: sectionKey as TuReportSectionKey,
@@ -118,15 +111,12 @@ export async function POST(
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
     const mode = body.mode === 'fill_empty' ? 'fill_empty' : 'suggest'
-    const targetSectionKey =
-      typeof body.sectionKey === 'string' && EDITABLE_AI_SECTION_KEYS.has(body.sectionKey as TuReportSectionKey)
-        ? (body.sectionKey as TuReportSectionKey)
-        : null
+    const targetSectionKey = isEditableAiSectionKey(body.sectionKey) ? body.sectionKey : null
 
     if (prompt.length < 8) return jsonError('Skriv en lite tydligare instruktion till AI:n.', 400)
 
     const allowedSections = investigation.reportDraft.sections
-      .filter((section) => EDITABLE_AI_SECTION_KEYS.has(section.key))
+      .filter((section) => isEditableAiSectionKey(section.key))
       .filter((section) => !targetSectionKey || section.key === targetSectionKey)
       .filter((section) => mode !== 'fill_empty' || !section.text.trim())
 
@@ -199,7 +189,7 @@ export async function POST(
     }
 
     const text = extractText((await response.json()) as OpenAiResponse)
-    const suggestions = parseSuggestions(text)
+    const suggestions = parseSuggestions(text, new Set(allowedSections.map((section) => section.key)))
 
     return NextResponse.json({ model: TU_AI_MODEL, suggestions })
   } catch (error) {

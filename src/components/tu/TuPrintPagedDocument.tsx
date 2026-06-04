@@ -55,6 +55,13 @@ export type TuPrintSection = {
   key: string
   title: string
   text: string
+  subsections?: TuPrintSubsection[]
+}
+
+export type TuPrintSubsection = {
+  id: string
+  title: string
+  text: string
 }
 
 export type TuPrintPartiesSection = {
@@ -125,6 +132,13 @@ type PrintableBlock =
       type: 'section'
       sectionId: string
       sectionKey: string
+      title: string
+      text: string
+      continuation: boolean
+    }
+  | {
+      id: string
+      type: 'subsection'
       title: string
       text: string
       continuation: boolean
@@ -240,7 +254,12 @@ function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[
 
   for (const section of props.sections) {
     const chunks = chunkSectionText(section.text)
-    chunks.forEach((chunk, index) => {
+    const printableSubsections =
+      section.subsections?.filter((subsection) => subsection.title.trim() && subsection.text.trim()) ?? []
+    const shouldPrintSectionHeader = chunks.length > 0 || printableSubsections.length > 0
+    const sectionChunks = chunks.length > 0 ? chunks : shouldPrintSectionHeader ? [''] : []
+
+    sectionChunks.forEach((chunk, index) => {
       blocks.push({
         id: `section-${section.id}-${index}`,
         type: 'section',
@@ -249,6 +268,19 @@ function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[
         title: section.title,
         text: chunk,
         continuation: index > 0,
+      })
+    })
+
+    printableSubsections.forEach((subsection) => {
+      const subsectionChunks = chunkSectionText(subsection.text)
+      subsectionChunks.forEach((chunk, index) => {
+        blocks.push({
+          id: `subsection-${section.id}-${subsection.id}-${index}`,
+          type: 'subsection',
+          title: subsection.title,
+          text: chunk,
+          continuation: index > 0,
+        })
       })
     })
 
@@ -456,7 +488,35 @@ function SectionBlock({
           {title}
         </h2>
       ) : null}
-      <div className={continuation ? '' : 'mt-2'}>
+      {text.trim() ? (
+        <div className={continuation ? '' : 'mt-2'}>
+          <p className="whitespace-pre-wrap text-[13px] leading-6 text-gray-950">{text}</p>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function SubsectionBlock({
+  title,
+  text,
+  continuation,
+}: {
+  title: string
+  text: string
+  continuation: boolean
+}) {
+  return (
+    <section
+      className="tu-report-block tu-report-subsection-block"
+      style={{ marginBottom: mm(BLOCK_GAP_MM) }}
+    >
+      {!continuation ? (
+        <h3 className="text-[13px] font-semibold leading-tight text-gray-950">
+          {title}
+        </h3>
+      ) : null}
+      <div className={continuation ? '' : 'mt-1.5'}>
         <p className="whitespace-pre-wrap text-[13px] leading-6 text-gray-950">{text}</p>
       </div>
     </section>
@@ -564,6 +624,15 @@ function PrintableBlockView({
   if (block.type === 'section') {
     return (
       <SectionBlock
+        title={block.title}
+        text={block.text}
+        continuation={block.continuation}
+      />
+    )
+  }
+  if (block.type === 'subsection') {
+    return (
+      <SubsectionBlock
         title={block.title}
         text={block.text}
         continuation={block.continuation}

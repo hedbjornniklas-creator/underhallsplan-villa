@@ -6,6 +6,7 @@ import type { Database } from '@/types/supabase'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import EbSettingsPanel from '@/components/eb/EbSettingsPanel'
+import TuReportSectionTypesAdminPanel from '@/components/tu/TuReportSectionTypesAdminPanel'
 import ForutsattningarSettingsPage from '@/app/(app)/settings/forutsattningar/page'
 import ObUtsidaSettingsPage from '@/app/(app)/settings/ob-utsida/page'
 import {
@@ -223,13 +224,15 @@ export default function AdminClient() {
         ? 'addon-services'
       : search.get('tab') === 'eb'
         ? 'eb'
+      : search.get('tab') === 'tu-sections'
+        ? 'tu-sections'
         : 'docs') as AdminTab
   const [tab, setTab] = useState<AdminTab>(initialTab)
 
   // Synka tab <-> URL
   useEffect(() => {
     const t = search.get('tab')
-    if (t === 'docs' || t === 'comps' || t === 'control-points' || t === 'exterior-items' || t === 'room-types' || t === 'certifications' || t === 'forutsattningar' || t === 'addon-services' || t === 'eb') setTab(t)
+    if (t === 'docs' || t === 'comps' || t === 'control-points' || t === 'exterior-items' || t === 'room-types' || t === 'certifications' || t === 'forutsattningar' || t === 'addon-services' || t === 'eb' || t === 'tu-sections') setTab(t)
   }, [search])
   const setTabAndPush = (t: AdminTab) => {
     setTab(t)
@@ -1590,6 +1593,7 @@ export default function AdminClient() {
         {tab === 'forutsattningar' && <ForutsattningarSettingsPage />}
         {tab === 'exterior-items' && <ObUtsidaSettingsPage />}
         {tab === 'eb' && <EbSettingsPanel />}
+        {tab === 'tu-sections' && <TuReportSectionTypesAdminPanel />}
 
         {tab === 'docs' && (
           <div className="bg-white rounded-xl shadow p-4">

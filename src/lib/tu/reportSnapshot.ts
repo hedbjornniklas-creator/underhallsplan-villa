@@ -370,8 +370,15 @@ export function buildTuPrintPayload(input: {
       key: section.key,
       title: section.title,
       text: normalizeSectionText(section.key, section.text),
+      subsections: (section.subsections ?? [])
+        .map((subsection) => ({
+          id: subsection.id,
+          title: normalizePrintableText(subsection.title),
+          text: normalizePrintableText(subsection.text),
+        }))
+        .filter((subsection) => Boolean(subsection.title && subsection.text)),
     }))
-    .filter((section) => Boolean(section.text))
+    .filter((section) => Boolean(section.text || (section.subsections && section.subsections.length > 0)))
   const appendixImages: TuPrintImage[] = input.appendixImages.map((image, index) => ({
     id: image.id,
     src: image.publicUrl,
