@@ -245,7 +245,16 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
   }
 
   .tu-print-measure {
-    display: none !important;
+    display: block !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: -10000px !important;
+    width: 174mm !important;
+    height: auto !important;
+    overflow: visible !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
   }
 
   .tu-print-pages {
