@@ -751,11 +751,11 @@ function ImageGridBlock({
 }) {
   return (
     <section
-      className="tu-report-block tu-report-image-grid-block grid grid-cols-2 gap-x-6 gap-y-6"
+      className="tu-report-block tu-report-image-grid-block grid grid-cols-2 gap-x-5 gap-y-5"
       style={{ marginBottom: mm(BLOCK_GAP_MM) }}
     >
       {images.map((image) => (
-        <figure key={image.id} className="grid h-[62mm] grid-rows-[minmax(0,1fr)_auto]">
+        <figure key={image.id} className="grid h-[66mm] grid-rows-[minmax(0,1fr)_auto]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={getAppendixPrintImageSrc(image.src)}
@@ -1104,7 +1104,7 @@ function PageChrome({
           ))}
         </div>
         <div className="flex min-w-0 justify-end self-end">
-          <div className="flex flex-col items-start justify-end gap-1 text-left text-[8px] text-gray-500">
+          <div className="flex flex-col items-center justify-end gap-1 text-center text-[8px] text-gray-500">
           <span>Skapat med</span>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
