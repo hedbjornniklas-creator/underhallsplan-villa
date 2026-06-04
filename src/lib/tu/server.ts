@@ -36,6 +36,7 @@ export type TuReportSectionKey =
 export type TuObjectType = 'villa' | 'apartment'
 
 export type TuReportSection = {
+  id: string
   key: TuReportSectionKey
   title: string
   text: string
@@ -267,6 +268,14 @@ export const TU_REPORT_SECTIONS: Array<Pick<TuReportSection, 'key' | 'title'>> =
   { key: 'signature', title: 'Signering' },
 ]
 
+const TU_REPORT_SECTION_BY_KEY = new Map<TuReportSectionKey, Pick<TuReportSection, 'key' | 'title'>>(
+  TU_REPORT_SECTIONS.map((section) => [section.key, section])
+)
+
+function isTuReportSectionKey(value: unknown): value is TuReportSectionKey {
+  return typeof value === 'string' && TU_REPORT_SECTION_BY_KEY.has(value as TuReportSectionKey)
+}
+
 const DEFAULT_TU_SECTION_TEXT: Partial<Record<TuReportSectionKey, string>> = {
   closing_comments:
     'Detta utlåtande baseras på de uppgifter, handlingar och iakttagelser som varit tillgängliga vid utredningstillfället. Bedömningarna avser de förhållanden som kunnat konstateras inom ramen för uppdraget och ska inte ses som en fullständig garanti för dolda fel, framtida skadeutveckling eller förhållanden som inte varit åtkomliga för kontroll.',
@@ -311,6 +320,7 @@ function toPropertyName(address: string | null, fallback: string) {
 export function createTuReportDraft(seed?: Partial<Record<TuReportSectionKey, string>>): TuReportDraft {
   return {
     sections: TU_REPORT_SECTIONS.map((section) => ({
+      id: section.key,
       key: section.key,
       title: section.title,
       text: seed?.[section.key] ?? DEFAULT_TU_SECTION_TEXT[section.key] ?? '',
@@ -325,33 +335,68 @@ export function normalizeTuReportDraft(value: unknown): TuReportDraft {
     ? ((value as { sections: unknown[] }).sections)
     : []
 
-  const byKey = new Map<string, { title?: unknown; text?: unknown }>()
+  const normalizedSections: TuReportSection[] = []
+  const usedIds = new Set<string>()
+  const keyCounts = new Map<TuReportSectionKey, number>()
+  let legacyAccessibilityText = ''
+
   for (const section of rawSections) {
     if (!section || typeof section !== 'object') continue
-    const key = (section as { key?: unknown }).key
-    if (typeof key !== 'string') continue
-    byKey.set(key, {
-      title: (section as { title?: unknown }).title,
-      text: (section as { text?: unknown }).text,
+
+    const rawKey = (section as { key?: unknown }).key
+    const sectionKey = rawKey === 'accessibility' ? 'construction_description' : rawKey
+    if (rawKey === 'accessibility' && typeof (section as { text?: unknown }).text === 'string') {
+      legacyAccessibilityText = (section as { text: string }).text
+    }
+    if (!isTuReportSectionKey(sectionKey)) continue
+
+    const defaultSection = TU_REPORT_SECTION_BY_KEY.get(sectionKey) ?? {
+      key: sectionKey,
+      title: sectionKey,
+    }
+    const rawId = cleanText((section as { id?: unknown }).id as string | null | undefined)
+    const nextCount = (keyCounts.get(sectionKey) ?? 0) + 1
+    keyCounts.set(sectionKey, nextCount)
+    const baseId = rawId ?? (nextCount === 1 ? sectionKey : `${sectionKey}-${nextCount}`)
+    let id = baseId
+    let duplicateCount = 2
+    while (usedIds.has(id)) {
+      id = `${baseId}-${duplicateCount}`
+      duplicateCount += 1
+    }
+    usedIds.add(id)
+
+    const rawTitle = cleanText((section as { title?: unknown }).title as string | null | undefined)
+    const rawText = (section as { text?: unknown }).text
+    normalizedSections.push({
+      id,
+      key: sectionKey,
+      title: rawTitle ?? defaultSection.title,
+      text:
+        typeof rawText === 'string'
+          ? rawText
+          : sectionKey === 'construction_description'
+            ? legacyAccessibilityText || DEFAULT_TU_SECTION_TEXT[sectionKey] || ''
+            : DEFAULT_TU_SECTION_TEXT[sectionKey] || '',
     })
   }
 
+  if (normalizedSections.length === 0) return createTuReportDraft()
+
+  if (!normalizedSections.some((section) => section.key === 'assignment_parties')) {
+    const assignmentPartiesSection = TU_REPORT_SECTION_BY_KEY.get('assignment_parties')
+    if (assignmentPartiesSection) {
+      normalizedSections.unshift({
+        id: 'assignment_parties',
+        key: 'assignment_parties',
+        title: assignmentPartiesSection.title,
+        text: DEFAULT_TU_SECTION_TEXT.assignment_parties ?? '',
+      })
+    }
+  }
+
   return {
-    sections: TU_REPORT_SECTIONS.map((section) => {
-      const raw = byKey.get(section.key)
-      const legacyText =
-        section.key === 'construction_description' && typeof byKey.get('accessibility')?.text === 'string'
-          ? (byKey.get('accessibility')?.text as string)
-          : ''
-      return {
-        key: section.key,
-        title: section.title,
-        text:
-          typeof raw?.text === 'string'
-            ? raw.text
-            : legacyText || DEFAULT_TU_SECTION_TEXT[section.key] || '',
-      }
-    }),
+    sections: normalizedSections,
   }
 }
 

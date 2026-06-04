@@ -384,6 +384,7 @@ export default async function TuInvestigationPrintPage({
   const printableSections: TuPrintSection[] = investigation.reportDraft.sections
     .filter((section) => section.key !== 'assignment_parties' && section.key !== 'signature')
     .map((section) => ({
+      id: section.id,
       key: section.key,
       title: section.title,
       text: normalizeSectionText(section.key, section.text),

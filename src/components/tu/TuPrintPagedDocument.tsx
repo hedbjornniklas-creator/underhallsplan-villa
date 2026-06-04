@@ -51,6 +51,7 @@ export type TuPrintMetaRow = {
 }
 
 export type TuPrintSection = {
+  id: string
   key: string
   title: string
   text: string
@@ -122,6 +123,7 @@ type PrintableBlock =
   | {
       id: string
       type: 'section'
+      sectionId: string
       sectionKey: string
       title: string
       text: string
@@ -240,8 +242,9 @@ function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[
     const chunks = chunkSectionText(section.text)
     chunks.forEach((chunk, index) => {
       blocks.push({
-        id: `section-${section.key}-${index}`,
+        id: `section-${section.id}-${index}`,
         type: 'section',
+        sectionId: section.id,
         sectionKey: section.key,
         title: section.title,
         text: chunk,
@@ -321,8 +324,8 @@ function buildTocEntries(props: TuPrintPagedDocumentProps, pages: PrintableBlock
       if (block.type === 'parties' && !pageById.has('parties')) {
         pageById.set('parties', pageNumber)
       }
-      if (block.type === 'section' && !pageById.has(`section:${block.sectionKey}`)) {
-        pageById.set(`section:${block.sectionKey}`, pageNumber)
+      if (block.type === 'section' && !pageById.has(`section:${block.sectionId}`)) {
+        pageById.set(`section:${block.sectionId}`, pageNumber)
       }
       if (block.type === 'appendix-title' && !pageById.has('appendix')) {
         pageById.set('appendix', pageNumber)
@@ -341,9 +344,9 @@ function buildTocEntries(props: TuPrintPagedDocumentProps, pages: PrintableBlock
 
   for (const section of props.sections) {
     entries.push({
-      id: `section:${section.key}`,
+      id: `section:${section.id}`,
       label: section.title,
-      pageNumber: pageById.get(`section:${section.key}`) ?? null,
+      pageNumber: pageById.get(`section:${section.id}`) ?? null,
     })
   }
 

@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ChevronDown, ChevronUp, FileText, Image as ImageIcon, MoveDown, MoveUp, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, FileText, Image as ImageIcon, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import { supabase } from '@/lib/supabaseClient'
-import type { TuInvestigationDetails, TuReportDraft, TuReportSectionKey } from '@/lib/tu/server'
+import type { TuInvestigationDetails, TuReportDraft, TuReportSection, TuReportSectionKey } from '@/lib/tu/server'
 
 const TU_IMAGE_DRAG_DATA_TYPE = 'application/x-tu-image-id'
 const IMAGE_FILE_ACCEPT = 'image/*'
@@ -78,6 +78,11 @@ type TuAiResponse = {
   error?: string
 }
 
+type TuSectionTypeOption = {
+  key: TuReportSectionKey
+  title: string
+}
+
 type AssignmentPartiesFieldKey =
   | 'customerName'
   | 'customerRole'
@@ -141,6 +146,43 @@ const INSPECTOR_PARTY_FIELDS: AssignmentPartiesField[] = [
   { key: 'inspectorMembershipNumber', label: 'Medlemsnummer' },
   { key: 'inspectorCertificationNumber', label: 'Certifieringsnummer' },
 ]
+
+const TU_SECTION_TYPE_OPTIONS: TuSectionTypeOption[] = [
+  { key: 'background_scope', title: 'Bakgrund' },
+  { key: 'assignment_scope', title: 'Uppdragets omfattning' },
+  { key: 'construction_description', title: 'Beskrivning av konstruktionen' },
+  { key: 'basis_conditions', title: 'Underlag och besiktningsförutsättningar' },
+  { key: 'observed_execution', title: 'Iakttagelser vid platsbesök' },
+  { key: 'technical_assessment', title: 'Teknisk bedömning' },
+  { key: 'time_assessment', title: 'Tidsmässig bedömning' },
+  { key: 'continued_risk', title: 'Bedömning av fortsatt risk' },
+  { key: 'recommended_actions', title: 'Rekommenderad fortsatt hantering' },
+  { key: 'closing_comments', title: 'Avslutande kommentarer' },
+]
+
+const PROTECTED_SECTION_KEYS = new Set<TuReportSectionKey>(['assignment_parties'])
+
+function getSectionTypeOption(key: TuReportSectionKey) {
+  return TU_SECTION_TYPE_OPTIONS.find((option) => option.key === key) ?? null
+}
+
+function createSectionInstanceId(key: TuReportSectionKey) {
+  return `${key}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function createReportSection(key: TuReportSectionKey): TuReportSection {
+  const option = getSectionTypeOption(key)
+  return {
+    id: createSectionInstanceId(key),
+    key,
+    title: option?.title ?? 'Ny del',
+    text: '',
+  }
+}
+
+function getSectionInstanceId(section: Pick<TuReportSection, 'id' | 'key'>) {
+  return section.id || section.key
+}
 
 const EMPTY_ASSIGNMENT_PARTIES_FORM: AssignmentPartiesForm = {
   customerName: '',
@@ -451,8 +493,21 @@ function ReadOnlyInfoRow({ label, value }: { label: string; value: string | null
 }
 
 function cloneDraftWithSection(draft: TuReportDraft, key: TuReportSectionKey, text: string): TuReportDraft {
+  let updated = false
   return {
-    sections: draft.sections.map((section) => (section.key === key ? { ...section, text } : section)),
+    sections: draft.sections.map((section) => {
+      if (updated || section.key !== key) return section
+      updated = true
+      return { ...section, text }
+    }),
+  }
+}
+
+function cloneDraftWithSectionId(draft: TuReportDraft, sectionId: string, text: string): TuReportDraft {
+  return {
+    sections: draft.sections.map((section) =>
+      getSectionInstanceId(section) === sectionId ? { ...section, text } : section
+    ),
   }
 }
 
@@ -592,15 +647,15 @@ function getCollapsedSectionsStorageKey(inspectionId: string) {
 }
 
 function parseStoredCollapsedSections(value: string | null, allowedKeys: Set<string>) {
-  if (!value) return new Set<TuReportSectionKey>()
+  if (!value) return new Set<string>()
   try {
     const parsed = JSON.parse(value) as unknown
-    if (!Array.isArray(parsed)) return new Set<TuReportSectionKey>()
+    if (!Array.isArray(parsed)) return new Set<string>()
     return new Set(
-      parsed.filter((key): key is TuReportSectionKey => typeof key === 'string' && allowedKeys.has(key))
+      parsed.filter((key): key is string => typeof key === 'string' && allowedKeys.has(key))
     )
   } catch {
-    return new Set<TuReportSectionKey>()
+    return new Set<string>()
   }
 }
 
@@ -635,7 +690,8 @@ export default function TuInvestigationEditorClient({
   const [coverDropActive, setCoverDropActive] = useState(false)
   const [bankDropActive, setBankDropActive] = useState(false)
   const [appendixDropActive, setAppendixDropActive] = useState(false)
-  const [collapsedSections, setCollapsedSections] = useState<Set<TuReportSectionKey>>(() => new Set())
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set())
+  const [newSectionKey, setNewSectionKey] = useState<TuReportSectionKey>('background_scope')
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiSuggestions, setAiSuggestions] = useState<TuAiSuggestion[]>([])
   const [aiBusy, setAiBusy] = useState(false)
@@ -667,7 +723,7 @@ export default function TuInvestigationEditorClient({
   }, [imageError])
 
   useEffect(() => {
-    const allowedKeys = new Set(draftRef.current.sections.map((section) => section.key))
+    const allowedKeys = new Set(draftRef.current.sections.map((section) => getSectionInstanceId(section)))
     const stored = window.localStorage.getItem(getCollapsedSectionsStorageKey(initialInvestigation.inspectionId))
     setCollapsedSections(parseStoredCollapsedSections(stored, allowedKeys))
   }, [initialInvestigation.inspectionId])
@@ -777,16 +833,25 @@ export default function TuInvestigationEditorClient({
     })
   }
 
-  const saveSection = async (key: TuReportSectionKey, value: string) => {
-    const nextDraft = cloneDraftWithSection(draftRef.current, key, value)
+  const saveDraft = async (nextDraft: TuReportDraft, errorMessage = 'Kunde inte spara utlåtandet.') => {
     draftRef.current = nextDraft
     setDraft(nextDraft)
     try {
       await savePatch({ reportDraft: nextDraft })
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara avsnittet.')
+      setError(saveError instanceof Error ? saveError.message : errorMessage)
       throw saveError
     }
+  }
+
+  const saveSection = async (key: TuReportSectionKey, value: string) => {
+    const nextDraft = cloneDraftWithSection(draftRef.current, key, value)
+    await saveDraft(nextDraft, 'Kunde inte spara avsnittet.')
+  }
+
+  const saveSectionById = async (sectionId: string, value: string) => {
+    const nextDraft = cloneDraftWithSectionId(draftRef.current, sectionId, value)
+    await saveDraft(nextDraft, 'Kunde inte spara avsnittet.')
   }
 
   const updateAssignmentPartiesField = (field: AssignmentPartiesFieldKey, value: string) => {
@@ -808,17 +873,97 @@ export default function TuInvestigationEditorClient({
     }
   }
 
-  const toggleSectionCollapsed = (key: TuReportSectionKey) => {
+  const toggleSectionCollapsedById = (sectionId: string) => {
     setCollapsedSections((current) => {
       const next = new Set(current)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
+      if (next.has(sectionId)) next.delete(sectionId)
+      else next.add(sectionId)
       window.localStorage.setItem(
         getCollapsedSectionsStorageKey(investigation.inspectionId),
         JSON.stringify(Array.from(next))
       )
       return next
     })
+  }
+
+  const addReportSection = async () => {
+    if (locked) return
+    const sections = [...draftRef.current.sections]
+    const signatureIndex = sections.findIndex((section) => section.key === 'signature')
+    const nextSection = createReportSection(newSectionKey)
+    if (signatureIndex >= 0) {
+      sections.splice(signatureIndex, 0, nextSection)
+    } else {
+      sections.push(nextSection)
+    }
+    const nextDraft = {
+      sections,
+    }
+    try {
+      await saveDraft(nextDraft, 'Kunde inte lägga till del.')
+    } catch {
+      // saveDraft shows the specific error.
+    }
+  }
+
+  const removeReportSection = async (sectionId: string) => {
+    if (locked) return
+    const section = draftRef.current.sections.find((item) => getSectionInstanceId(item) === sectionId)
+    if (!section || PROTECTED_SECTION_KEYS.has(section.key)) return
+    const nextDraft = {
+      sections: draftRef.current.sections.filter((item) => getSectionInstanceId(item) !== sectionId),
+    }
+    try {
+      await saveDraft(nextDraft, 'Kunde inte ta bort del.')
+    } catch {
+      // saveDraft shows the specific error.
+    }
+  }
+
+  const moveReportSection = async (sectionId: string, direction: -1 | 1) => {
+    if (locked) return
+    const sections = [...draftRef.current.sections]
+    const visibleSectionIds = sections
+      .filter((section) => section.key !== 'signature')
+      .map((section) => getSectionInstanceId(section))
+    const visibleIndex = visibleSectionIds.indexOf(sectionId)
+    const targetSectionId = visibleSectionIds[visibleIndex + direction]
+    if (visibleIndex < 0 || !targetSectionId) return
+    const index = sections.findIndex((section) => getSectionInstanceId(section) === sectionId)
+    const targetIndex = sections.findIndex((section) => getSectionInstanceId(section) === targetSectionId)
+    if (index < 0 || targetIndex < 0) return
+    const current = sections[index]
+    const target = sections[targetIndex]
+    if (current.key === 'assignment_parties' || target.key === 'assignment_parties') return
+    sections[index] = target
+    sections[targetIndex] = current
+    try {
+      await saveDraft({ sections }, 'Kunde inte flytta del.')
+    } catch {
+      // saveDraft shows the specific error.
+    }
+  }
+
+  const changeReportSectionType = async (sectionId: string, key: TuReportSectionKey) => {
+    if (locked) return
+    const option = getSectionTypeOption(key)
+    if (!option) return
+    const nextDraft = {
+      sections: draftRef.current.sections.map((section) =>
+        getSectionInstanceId(section) === sectionId
+          ? {
+              ...section,
+              key,
+              title: option.title,
+            }
+          : section
+      ),
+    }
+    try {
+      await saveDraft(nextDraft, 'Kunde inte byta deltyp.')
+    } catch {
+      // saveDraft shows the specific error.
+    }
   }
 
   const requestAiSuggestions = async (options?: { sectionKey?: TuReportSectionKey; fillEmpty?: boolean }) => {
@@ -871,6 +1016,7 @@ export default function TuInvestigationEditorClient({
   }
 
   const locked = Boolean(investigation.reportLockedAt)
+  const visibleSections = draft.sections.filter((section) => section.key !== 'signature')
   const coverImages = images.filter((image) => image.sectionKey === 'cover')
   const coverImage = coverImages[0] ?? null
   const bankImages = images.filter((image) => image.sectionKey === 'bank')
@@ -2030,17 +2176,77 @@ export default function TuInvestigationEditorClient({
         ) : null}
 
         <section className="space-y-4">
-          {draft.sections.map((section, index) => {
+          <div className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-gray-950">Utlåtandets delar</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Lägg till, flytta, ta bort och byt typ på de delar som ska ingå i utlåtandet.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <label className="space-y-1">
+                  <span className="block text-xs font-medium text-gray-600">Ny del</span>
+                  <select
+                    value={newSectionKey}
+                    disabled={locked}
+                    onChange={(event) => setNewSectionKey(event.target.value as TuReportSectionKey)}
+                    className="h-10 min-w-[240px] rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
+                  >
+                    {TU_SECTION_TYPE_OPTIONS.map((option) => (
+                      <option key={option.key} value={option.key}>
+                        {option.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void addReportSection()}
+                  disabled={locked}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                >
+                  <Plus size={16} aria-hidden />
+                  Lägg till del
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {visibleSections.map((section, index) => {
+            const sectionId = getSectionInstanceId(section)
             const isAssignmentParties = section.key === 'assignment_parties'
-            const collapsed = collapsedSections.has(section.key)
+            const isProtected = PROTECTED_SECTION_KEYS.has(section.key)
+            const collapsed = collapsedSections.has(sectionId)
+            const canMoveUp = index > 1 && !isProtected
+            const canMoveDown = index < visibleSections.length - 1 && !isProtected
 
             return (
-              <article key={section.key} className="rounded-lg border border-violet-100 bg-white p-4 shadow-sm">
+              <article key={sectionId} className="rounded-lg border border-violet-100 bg-white p-4 shadow-sm">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-base font-semibold text-gray-950">
-                    {index + 1}. {section.title}
-                  </h2>
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                    <span className="text-base font-semibold text-gray-950">{index + 1}.</span>
+                    {isProtected ? (
+                      <h2 className="text-base font-semibold text-gray-950">{section.title}</h2>
+                    ) : (
+                      <select
+                        value={section.key}
+                        disabled={locked}
+                        onChange={(event) =>
+                          void changeReportSectionType(sectionId, event.target.value as TuReportSectionKey)
+                        }
+                        className="h-9 min-w-[260px] rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
+                        aria-label="Välj deltyp"
+                      >
+                        {TU_SECTION_TYPE_OPTIONS.map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {option.title}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
                     {!isAssignmentParties && section.key !== 'signature' ? (
                       <button
                         type="button"
@@ -2055,11 +2261,40 @@ export default function TuInvestigationEditorClient({
                     ) : null}
                     <button
                       type="button"
-                      onClick={() => toggleSectionCollapsed(section.key)}
+                      onClick={() => void moveReportSection(sectionId, -1)}
+                      disabled={locked || !canMoveUp}
+                      title="Flytta upp"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                    >
+                      <MoveUp size={15} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void moveReportSection(sectionId, 1)}
+                      disabled={locked || !canMoveDown}
+                      title="Flytta ned"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                    >
+                      <MoveDown size={15} aria-hidden />
+                    </button>
+                    {!isProtected ? (
+                      <button
+                        type="button"
+                        onClick={() => void removeReportSection(sectionId)}
+                        disabled={locked}
+                        title="Ta bort del"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                      >
+                        <Trash2 size={15} aria-hidden />
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => toggleSectionCollapsedById(sectionId)}
                       aria-expanded={!collapsed}
-                      aria-controls={`tu-section-${section.key}`}
+                      aria-controls={`tu-section-${sectionId}`}
                       title={collapsed ? 'Visa sektion' : 'Minimera sektion'}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50"
                     >
                       {collapsed ? <ChevronDown size={17} aria-hidden /> : <ChevronUp size={17} aria-hidden />}
                     </button>
@@ -2102,16 +2337,16 @@ export default function TuInvestigationEditorClient({
                 ) : (
                   <DebouncedTextarea
                     value={section.text}
-                    draftKey={`tu:${investigation.inspectionId}:${section.key}`}
+                    draftKey={`tu:${investigation.inspectionId}:${sectionId}`}
                     disabled={locked}
                     rows={7}
                     className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
                     onValueChange={(value) => {
-                      const nextDraft = cloneDraftWithSection(draftRef.current, section.key, value)
+                      const nextDraft = cloneDraftWithSectionId(draftRef.current, sectionId, value)
                       draftRef.current = nextDraft
                       setDraft(nextDraft)
                     }}
-                    onSave={(value) => saveSection(section.key, value)}
+                    onSave={(value) => saveSectionById(sectionId, value)}
                   />
                 )}
               </article>
