@@ -468,6 +468,16 @@ export async function renderPreviewPdf(params: {
       }
       mark('report_ready', { timeoutMs: reportReadyTimeoutMs })
 
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            window.requestAnimationFrame(() => {
+              window.requestAnimationFrame(() => resolve())
+            })
+          })
+      )
+      mark('layout_settled_after_report_ready')
+
       const pdf = await page.pdf({
         format: 'A4',
         printBackground: true,
