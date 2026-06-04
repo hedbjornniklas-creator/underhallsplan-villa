@@ -52,6 +52,32 @@ type SettingsClient = {
   from: (table: string) => SettingsQuery
 }
 
+function buildStandardSectionTypePayload() {
+  return TU_STANDARD_REPORT_SECTION_TYPES.map((section) => ({
+    key: section.key,
+    title: section.title,
+    description: section.description ?? null,
+    sort_order: section.sortOrder ?? 100,
+    is_active: section.isActive ?? true,
+    is_system: true,
+  }))
+}
+
+async function upsertStandardSectionTypes(settingsClient: SettingsClient) {
+  const { data, error } = await settingsClient
+    .from('settings_tu_report_section_types')
+    .upsert(buildStandardSectionTypePayload(), { onConflict: 'key' })
+    .select('id, key, title, description, sort_order, is_active, is_system')
+    .order('sort_order', { ascending: true })
+    .order('title', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return (data ?? []) as TuReportSectionTypeRow[]
+}
+
 const EMPTY_DRAFT: TuReportSectionTypeDraft = {
   key: '',
   title: '',
@@ -115,7 +141,28 @@ export default function TuReportSectionTypesAdminPanel() {
         return
       }
 
-      setRows((data ?? []) as TuReportSectionTypeRow[])
+      const rows = (data ?? []) as TuReportSectionTypeRow[]
+      if (rows.length === 0) {
+        try {
+          const seededRows = await upsertStandardSectionTypes(settingsClient)
+          if (cancelled) return
+          setRows(seededRows)
+          setLoading(false)
+          return
+        } catch (seedError) {
+          if (cancelled) return
+          setRows([])
+          setError(
+            `Kunde inte lägga in standardrubriker automatiskt. Kontrollera tabellens rättigheter och unik index på key. (${
+              seedError instanceof Error ? seedError.message : 'Okänt fel'
+            })`
+          )
+          setLoading(false)
+          return
+        }
+      }
+
+      setRows(rows)
       setLoading(false)
     }
 
@@ -144,29 +191,14 @@ export default function TuReportSectionTypesAdminPanel() {
 
   const seedStandardRows = async () => {
     setError(null)
-    const payload = TU_STANDARD_REPORT_SECTION_TYPES.map((section) => ({
-      key: section.key,
-      title: section.title,
-      description: section.description ?? null,
-      sort_order: section.sortOrder ?? 100,
-      is_active: section.isActive ?? true,
-      is_system: true,
-    }))
-
-    const { data, error: seedError } = await settingsClient
-      .from('settings_tu_report_section_types')
-      .upsert(payload, { onConflict: 'key' })
-      .select('id, key, title, description, sort_order, is_active, is_system')
-      .order('sort_order', { ascending: true })
-      .order('title', { ascending: true })
-
-    if (seedError) {
-      setError(seedError.message)
+    try {
+      const seededRows = await upsertStandardSectionTypes(settingsClient)
+      setRows(seededRows)
+      setDraft(null)
+    } catch (seedError) {
+      setError(seedError instanceof Error ? seedError.message : 'Kunde inte lägga in standardrubriker.')
       return
     }
-
-    setRows((data ?? []) as TuReportSectionTypeRow[])
-    setDraft(null)
   }
 
   const saveDraft = async () => {
