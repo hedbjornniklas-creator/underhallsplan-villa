@@ -621,18 +621,22 @@ function SectionBlock({
   title,
   text,
   continuation,
+  showDivider,
 }: {
   numberLabel: string
   title: string
   text: string
   continuation: boolean
+  showDivider: boolean
 }) {
   return (
     <section
       className={
         continuation
           ? 'tu-report-block tu-report-section-block'
-          : 'tu-report-block tu-report-section-block border-t border-violet-200 pt-5'
+          : showDivider
+            ? 'tu-report-block tu-report-section-block border-t border-violet-200 pt-4'
+            : 'tu-report-block tu-report-section-block'
       }
       style={{ marginBottom: mm(SECTION_GAP_MM) }}
     >
@@ -773,9 +777,11 @@ function ImageGridBlock({
 function PrintableBlockView({
   block,
   onImageReady,
+  isFirstOnPage = false,
 }: {
   block: PrintableBlock
   onImageReady?: (id: string) => void
+  isFirstOnPage?: boolean
 }) {
   if (block.type === 'parties') {
     return <PartiesBlock numberLabel={block.numberLabel} parties={block.parties} />
@@ -793,6 +799,7 @@ function PrintableBlockView({
         title={block.title}
         text={block.text}
         continuation={block.continuation}
+        showDivider={!isFirstOnPage}
       />
     )
   }
@@ -1263,8 +1270,8 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
             pageNumber={pageIndex + 2}
             totalPages={totalPages}
           >
-            {pageBlocks.map((block) => (
-              <PrintableBlockView key={block.id} block={block} />
+            {pageBlocks.map((block, blockIndex) => (
+              <PrintableBlockView key={block.id} block={block} isFirstOnPage={blockIndex === 0} />
             ))}
           </PageChrome>
         ))}
