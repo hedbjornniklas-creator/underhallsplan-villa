@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { TU_STANDARD_REPORT_SECTION_TYPES } from '@/lib/tu/reportSectionTypes'
 
 type TuReportSectionTypeRow = {
   id: string
@@ -36,6 +37,7 @@ type SettingsQuery = {
   select: (columns: string) => SettingsQuery
   order: (column: string, options?: { ascending?: boolean }) => SettingsQuery
   insert: (values: unknown) => SettingsQuery
+  upsert: (values: unknown, options?: { onConflict?: string }) => SettingsQuery
   update: (values: unknown) => SettingsQuery
   delete: () => SettingsQuery
   eq: (column: string, value: unknown) => SettingsQuery
@@ -140,6 +142,33 @@ export default function TuReportSectionTypesAdminPanel() {
     })
   }
 
+  const seedStandardRows = async () => {
+    setError(null)
+    const payload = TU_STANDARD_REPORT_SECTION_TYPES.map((section) => ({
+      key: section.key,
+      title: section.title,
+      description: section.description ?? null,
+      sort_order: section.sortOrder ?? 100,
+      is_active: section.isActive ?? true,
+      is_system: true,
+    }))
+
+    const { data, error: seedError } = await settingsClient
+      .from('settings_tu_report_section_types')
+      .upsert(payload, { onConflict: 'key' })
+      .select('id, key, title, description, sort_order, is_active, is_system')
+      .order('sort_order', { ascending: true })
+      .order('title', { ascending: true })
+
+    if (seedError) {
+      setError(seedError.message)
+      return
+    }
+
+    setRows((data ?? []) as TuReportSectionTypeRow[])
+    setDraft(null)
+  }
+
   const saveDraft = async () => {
     if (!draft) return
     const title = draft.title.trim()
@@ -242,6 +271,13 @@ export default function TuReportSectionTypesAdminPanel() {
             className="h-9 rounded bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-700"
           >
             + Ny deltyp
+          </button>
+          <button
+            type="button"
+            onClick={() => void seedStandardRows()}
+            className="h-9 rounded border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 hover:bg-violet-50"
+          >
+            Lägg in standardrubriker
           </button>
         </div>
       </div>

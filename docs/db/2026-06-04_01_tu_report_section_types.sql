@@ -25,6 +25,9 @@ create table if not exists public.settings_tu_report_section_types (
 create unique index if not exists settings_tu_report_section_types_key_unique_idx
   on public.settings_tu_report_section_types (lower(key));
 
+create unique index if not exists settings_tu_report_section_types_key_plain_unique_idx
+  on public.settings_tu_report_section_types (key);
+
 create index if not exists settings_tu_report_section_types_active_sort_idx
   on public.settings_tu_report_section_types (is_active, sort_order, title);
 
@@ -67,10 +70,11 @@ values
   ('continued_risk', 'Bedömning av fortsatt risk', 'Bedömning av fortsatt risk eller skadeutveckling.', 800, true, true),
   ('recommended_actions', 'Rekommenderad fortsatt hantering', 'Rekommenderad fortsatt hantering eller åtgärdsinriktning.', 900, true, true),
   ('closing_comments', 'Avslutande kommentarer', 'Avslutande kommentarer och juridiskt skydd.', 1000, true, true)
-on conflict ((lower(key))) do update
+on conflict (key) do update
 set
   title = excluded.title,
   description = excluded.description,
   sort_order = excluded.sort_order,
+  is_active = excluded.is_active,
   is_system = true,
   updated_at = now();

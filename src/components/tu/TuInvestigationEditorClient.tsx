@@ -5,12 +5,15 @@ import Link from 'next/link'
 import { ArrowLeft, ChevronDown, ChevronUp, FileText, Image as ImageIcon, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import { supabase } from '@/lib/supabaseClient'
+import {
+  TU_STANDARD_REPORT_SECTION_TYPES,
+  type TuReportSectionTypeOption,
+} from '@/lib/tu/reportSectionTypes'
 import type {
   TuInvestigationDetails,
   TuReportDraft,
   TuReportSection,
   TuReportSectionKey,
-  TuReportSectionTypeOption,
   TuReportSubsection,
 } from '@/lib/tu/server'
 
@@ -149,18 +152,7 @@ const INSPECTOR_PARTY_FIELDS: AssignmentPartiesField[] = [
   { key: 'inspectorCertificationNumber', label: 'Certifieringsnummer' },
 ]
 
-const DEFAULT_TU_SECTION_TYPE_OPTIONS: TuReportSectionTypeOption[] = [
-  { key: 'background_scope', title: 'Bakgrund' },
-  { key: 'assignment_scope', title: 'Uppdragets omfattning' },
-  { key: 'construction_description', title: 'Beskrivning av konstruktionen' },
-  { key: 'basis_conditions', title: 'Underlag och besiktningsförutsättningar' },
-  { key: 'observed_execution', title: 'Iakttagelser vid platsbesök' },
-  { key: 'technical_assessment', title: 'Teknisk bedömning' },
-  { key: 'time_assessment', title: 'Tidsmässig bedömning' },
-  { key: 'continued_risk', title: 'Bedömning av fortsatt risk' },
-  { key: 'recommended_actions', title: 'Rekommenderad fortsatt hantering' },
-  { key: 'closing_comments', title: 'Avslutande kommentarer' },
-]
+const DEFAULT_TU_SECTION_TYPE_OPTIONS: TuReportSectionTypeOption[] = TU_STANDARD_REPORT_SECTION_TYPES
 
 const PROTECTED_SECTION_KEYS = new Set<string>(['assignment_parties'])
 const HIDDEN_SECTION_KEYS = new Set<string>(['signature'])

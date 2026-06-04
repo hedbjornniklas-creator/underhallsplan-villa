@@ -18,6 +18,12 @@ import { formatCertificationDisplayLines } from '@/lib/certifications/display'
 import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
 import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import {
+  TU_STANDARD_REPORT_SECTION_TYPES,
+  type TuReportSectionTypeOption,
+} from '@/lib/tu/reportSectionTypes'
+
+export type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
 
 export type TuReportSystemSectionKey =
   | 'assignment_parties'
@@ -36,16 +42,6 @@ export type TuReportSystemSectionKey =
 export type TuReportSectionKey = string
 
 export type TuObjectType = 'villa' | 'apartment'
-
-export type TuReportSectionTypeOption = {
-  id?: string
-  key: TuReportSectionKey
-  title: string
-  description?: string | null
-  sortOrder?: number
-  isActive?: boolean
-  isSystem?: boolean
-}
 
 export type TuReportSubsection = {
   id: string
@@ -284,28 +280,11 @@ type TuStorageClient = TuSupabaseClient & {
 
 export const TU_REPORT_SECTIONS: Array<Pick<TuReportSection, 'key' | 'title'>> = [
   { key: 'assignment_parties', title: 'Uppdragsgivare och besiktningsman' },
-  { key: 'background_scope', title: 'Bakgrund' },
-  { key: 'assignment_scope', title: 'Uppdragets omfattning' },
-  { key: 'construction_description', title: 'Beskrivning av konstruktionen' },
-  { key: 'basis_conditions', title: 'Underlag och besiktningsförutsättningar' },
-  { key: 'observed_execution', title: 'Iakttagelser vid platsbesök' },
-  { key: 'technical_assessment', title: 'Teknisk bedömning' },
-  { key: 'time_assessment', title: 'Tidsmässig bedömning' },
-  { key: 'continued_risk', title: 'Bedömning av fortsatt risk' },
-  { key: 'recommended_actions', title: 'Rekommenderad fortsatt hantering' },
-  { key: 'closing_comments', title: 'Avslutande kommentarer' },
+  ...TU_STANDARD_REPORT_SECTION_TYPES.map(({ key, title }) => ({ key, title })),
   { key: 'signature', title: 'Signering' },
 ]
 
-export const TU_EDITABLE_REPORT_SECTION_TYPES: TuReportSectionTypeOption[] = TU_REPORT_SECTIONS.filter(
-  (section) => section.key !== 'assignment_parties' && section.key !== 'signature'
-).map((section, index) => ({
-  key: section.key,
-  title: section.title,
-  sortOrder: (index + 1) * 100,
-  isActive: true,
-  isSystem: true,
-}))
+export const TU_EDITABLE_REPORT_SECTION_TYPES: TuReportSectionTypeOption[] = TU_STANDARD_REPORT_SECTION_TYPES
 
 const TU_REPORT_SECTION_BY_KEY = new Map<string, Pick<TuReportSection, 'key' | 'title'>>(
   TU_REPORT_SECTIONS.map((section) => [section.key, section])
