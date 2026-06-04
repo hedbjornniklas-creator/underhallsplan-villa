@@ -975,10 +975,13 @@ function CoverPage({
           bottom: mm(16),
         }}
       >
-        <div className="max-w-[150mm] text-center text-[16px] font-medium leading-7 text-violet-950">
+        <div className="text-center text-[16px] font-medium leading-6 text-violet-950">
+          Utlåtande över
+        </div>
+        <div className="mt-1 max-w-[150mm] text-center text-[32px] font-medium leading-tight text-violet-950">
           {coverTitle}
         </div>
-        <div className="mt-6 text-center text-[10px] font-bold uppercase tracking-wide text-black">
+        <div className="mt-7 text-center text-[10px] font-bold uppercase tracking-wide text-black">
           {header.objectIdentifier}
         </div>
 
@@ -998,8 +1001,8 @@ function CoverPage({
         </div>
 
         <div className="mt-9 w-[150mm] self-center">
-          <h2 className="text-[15px] font-medium text-violet-950">Innehåll</h2>
-          <ol className="mt-2.5 space-y-2 text-[11px] leading-snug text-black">
+          <h2 className="text-[17px] font-medium text-violet-950">Innehåll</h2>
+          <ol className="mt-3 space-y-2 text-[12px] leading-snug text-black">
             {tocEntries.map((entry) => (
               <li key={entry.id} className="grid grid-cols-[7mm_minmax(0,max-content)_minmax(12mm,1fr)_9mm] items-end gap-1">
                 <span className="text-right">

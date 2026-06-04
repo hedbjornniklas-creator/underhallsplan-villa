@@ -224,7 +224,7 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
     assignmentParties.customerPhone ?? assignment?.customer_phone ?? investigation.inspection.customer_phone
   const customerEmail =
     assignmentParties.customerEmail ?? assignment?.customer_email ?? investigation.inspection.customer_email
-  const customerAttendees = assignmentParties.customerAttendees ?? customerName
+  const customerAttendees = assignmentParties.customerAttendees
   const propertyOwnerName = assignmentParties.propertyOwnerName ?? assignment?.property_owner_name
   const address = investigation.property?.address ?? investigation.propertyAddress
   const postalCity = compact([

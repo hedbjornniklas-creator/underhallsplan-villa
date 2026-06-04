@@ -369,7 +369,6 @@ function buildAssignmentPartiesForm(investigation: TuInvestigationDetails): Assi
   )
   assignIfPresent(base, 'customerPhone', assignment?.customer_phone ?? inspection.customer_phone)
   assignIfPresent(base, 'customerEmail', assignment?.customer_email ?? inspection.customer_email)
-  assignIfPresent(base, 'customerAttendees', assignment?.customer_name ?? inspection.customer_name)
   assignIfPresent(base, 'invoiceName', assignment?.invoice_name)
   assignIfPresent(base, 'invoiceAddress', assignment?.invoice_address)
   assignIfPresent(base, 'propertyOwnerName', assignment?.property_owner_name)
