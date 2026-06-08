@@ -25,6 +25,8 @@ import {
 import Protected from '@/components/Protected'
 import type {
   EbInspectionDocument,
+  EbInspectionCheckpoint,
+  EbInspectionCheckpointStatus,
   EbInspectionReport,
   EbInspectionRound,
   EbInvitationParticipant,
@@ -131,6 +133,11 @@ type InspectionDocumentsResponse = {
   error?: string
 }
 
+type InspectionCheckpointsResponse = {
+  checkpoints?: EbInspectionCheckpoint[]
+  error?: string
+}
+
 type ReportDraftResponse = {
   report?: EbInspectionReport
   reportDraft?: {
@@ -172,9 +179,22 @@ const REPORT_SECTION_SOURCE_LABELS: Record<EbReportDraftSection['source'], strin
   inspection: 'Besiktning',
   participants: 'Parter och närvarande',
   notes: 'Noteringar',
+  checkpoints: 'Kontrollpunkter',
   standard_text: 'Standardtext',
   manual: 'Manuell',
 }
+
+const CHECKPOINT_STATUS_OPTIONS: Array<{
+  value: EbInspectionCheckpointStatus
+  label: string
+}> = [
+  { value: 'not_checked', label: 'Ej kontrollerat' },
+  { value: 'ok', label: 'OK' },
+  { value: 'deviation', label: 'Avvikelse' },
+  { value: 'not_applicable', label: 'Ej aktuellt' },
+  { value: 'not_accessible', label: 'Ej åtkomligt' },
+  { value: 'not_verifiable', label: 'Ej verifierbart' },
+]
 
 function inputClassName() {
   return 'w-full rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-950 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100'
@@ -445,6 +465,50 @@ function sortImages(images: EbNoteImage[]) {
     }
     return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
   })
+}
+
+function sortCheckpoints(checkpoints: EbInspectionCheckpoint[]) {
+  return [...checkpoints].sort((left, right) => {
+    if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder
+    return left.title.localeCompare(right.title, 'sv-SE')
+  })
+}
+
+function groupedCheckpoints(checkpoints: EbInspectionCheckpoint[]) {
+  const groups: Array<{ key: string; label: string; checkpoints: EbInspectionCheckpoint[] }> = []
+  const byKey = new Map<string, { key: string; label: string; checkpoints: EbInspectionCheckpoint[] }>()
+
+  for (const checkpoint of sortCheckpoints(checkpoints)) {
+    const groupKey = checkpoint.groupKey || 'other'
+    const existing = byKey.get(groupKey)
+    if (existing) {
+      existing.checkpoints.push(checkpoint)
+      continue
+    }
+    const group = {
+      key: groupKey,
+      label: checkpoint.groupLabel || 'Övrigt',
+      checkpoints: [checkpoint],
+    }
+    byKey.set(groupKey, group)
+    groups.push(group)
+  }
+
+  return groups
+}
+
+function checkpointStatusLabel(status: EbInspectionCheckpointStatus) {
+  return CHECKPOINT_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? 'Ej kontrollerat'
+}
+
+function checkpointStatusClassName(status: EbInspectionCheckpointStatus) {
+  if (status === 'ok') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
+  if (status === 'deviation') return 'border-rose-200 bg-rose-50 text-rose-700'
+  if (status === 'not_accessible' || status === 'not_verifiable') {
+    return 'border-amber-200 bg-amber-50 text-amber-800'
+  }
+  if (status === 'not_applicable') return 'border-gray-200 bg-gray-50 text-gray-600'
+  return 'border-slate-200 bg-white text-slate-600'
 }
 
 function moveNoteInOrder(notes: EbNote[], noteId: string, direction: 'up' | 'down') {
@@ -907,6 +971,7 @@ export default function EbInspectionRoundClient({
     buildInspectionDetailsForm(initialRound.inspection)
   )
   const [documents, setDocuments] = useState<EbInspectionDocument[]>(initialRound.inspectionDocuments)
+  const [checkpoints, setCheckpoints] = useState<EbInspectionCheckpoint[]>(initialRound.checkpoints)
   const [participants, setParticipants] = useState<EditableParticipant[]>(() =>
     initialRound.participants.map(toLocalParticipant)
   )
@@ -920,6 +985,7 @@ export default function EbInspectionRoundClient({
   const [inspectionSaving, setInspectionSaving] = useState(false)
   const [participantsSaving, setParticipantsSaving] = useState(false)
   const [documentsSaving, setDocumentsSaving] = useState(false)
+  const [checkpointsSaving, setCheckpointsSaving] = useState(false)
   const [reportDraftSaving, setReportDraftSaving] = useState(false)
   const [reviewMessage, setReviewMessage] = useState<string | null>(null)
   const isLocked = Boolean(round.inspection.reportLockedAt)
@@ -945,6 +1011,7 @@ export default function EbInspectionRoundClient({
     return map
   }, [round.images])
   const allImages = useMemo(() => sortImages(round.images), [round.images])
+  const checkpointGroups = useMemo(() => groupedCheckpoints(checkpoints), [checkpoints])
   const imageBankImages = useMemo(
     () => allImages.filter((image) => showLinkedImages || !image.noteId),
     [allImages, showLinkedImages]
@@ -1281,6 +1348,60 @@ export default function EbInspectionRoundClient({
       setReviewMessage(saveError instanceof Error ? saveError.message : 'Kunde inte spara granskade handlingar.')
     } finally {
       setDocumentsSaving(false)
+    }
+  }
+
+  const updateCheckpoint = <K extends keyof EbInspectionCheckpoint>(
+    checkpointId: string,
+    field: K,
+    value: EbInspectionCheckpoint[K]
+  ) => {
+    setCheckpoints((current) =>
+      current.map((checkpoint) =>
+        checkpoint.id === checkpointId ? { ...checkpoint, [field]: value } : checkpoint
+      )
+    )
+  }
+
+  const saveCheckpoints = async () => {
+    if (isLocked) {
+      setReviewMessage(lockedMessage)
+      return
+    }
+    if (checkpointsSaving) return
+
+    try {
+      setCheckpointsSaving(true)
+      setReviewMessage(null)
+      const response = await fetch(
+        `/api/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/checkpoints`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            checkpoints: checkpoints.map((checkpoint) => ({
+              id: checkpoint.id,
+              checkpointKey: checkpoint.checkpointKey,
+              status: checkpoint.status,
+              comment: checkpoint.comment,
+              noteId: checkpoint.noteId,
+            })),
+          }),
+        }
+      )
+      const payload = (await response.json().catch(() => ({}))) as InspectionCheckpointsResponse
+
+      if (!response.ok || !payload.checkpoints) {
+        throw new Error(payload.error ?? 'Kunde inte spara kontrollpunkter.')
+      }
+
+      setCheckpoints(payload.checkpoints)
+      setRound((current) => ({ ...current, checkpoints: payload.checkpoints ?? current.checkpoints }))
+      setReviewMessage('Kontrollpunkterna är sparade.')
+    } catch (saveError) {
+      setReviewMessage(saveError instanceof Error ? saveError.message : 'Kunde inte spara kontrollpunkter.')
+    } finally {
+      setCheckpointsSaving(false)
     }
   }
 
@@ -1860,6 +1981,92 @@ export default function EbInspectionRoundClient({
             >
               <InspectionDocumentsEditor documents={documents} onChange={setDocuments} />
             </ReviewSection>
+
+            {round.project.projectTemplateKey === 'drainage_foundation' || checkpoints.length > 0 ? (
+              <ReviewSection
+                title="Kontrollunderlag dränering"
+                description="Status och kommentarer för mallens kontrollpunkter."
+                action={
+                  <button
+                    type="button"
+                    onClick={() => void saveCheckpoints()}
+                    disabled={isLocked || checkpointsSaving || checkpoints.length === 0}
+                    className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                  >
+                    {checkpointsSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                    {checkpointsSaving ? 'Sparar...' : 'Spara'}
+                  </button>
+                }
+              >
+                {checkpoints.length === 0 ? (
+                  <p className="rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-3 text-sm text-gray-600">
+                    Inga kontrollpunkter är skapade för besiktningen.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    {checkpointGroups.map((group) => (
+                      <section key={group.key} className="overflow-hidden rounded-md border border-emerald-100 bg-white">
+                        <div className="flex items-center justify-between gap-3 border-b border-emerald-100 bg-emerald-50/50 px-3 py-2">
+                          <h3 className="text-sm font-semibold text-gray-950">{group.label}</h3>
+                          <span className="text-xs font-medium text-gray-500">{group.checkpoints.length} st</span>
+                        </div>
+                        <div className="divide-y divide-emerald-100">
+                          {group.checkpoints.map((checkpoint) => (
+                            <div key={checkpoint.id} className="grid gap-3 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_12rem_minmax(14rem,0.75fr)]">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-sm font-semibold text-gray-950">{checkpoint.title}</p>
+                                  {checkpoint.photoRequired ? (
+                                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                                      Foto
+                                    </span>
+                                  ) : null}
+                                  <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${checkpointStatusClassName(checkpoint.status)}`}>
+                                    {checkpointStatusLabel(checkpoint.status)}
+                                  </span>
+                                </div>
+                                {checkpoint.guidance ? (
+                                  <p className="mt-1 text-xs leading-5 text-gray-600">{checkpoint.guidance}</p>
+                                ) : null}
+                                {checkpoint.verificationMethod ? (
+                                  <p className="mt-1 text-xs leading-5 text-gray-500">{checkpoint.verificationMethod}</p>
+                                ) : null}
+                              </div>
+                              <select
+                                value={checkpoint.status}
+                                onChange={(event) =>
+                                  updateCheckpoint(
+                                    checkpoint.id,
+                                    'status',
+                                    event.target.value as EbInspectionCheckpointStatus
+                                  )
+                                }
+                                disabled={isLocked}
+                                className={inputClassName()}
+                              >
+                                {CHECKPOINT_STATUS_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <textarea
+                                value={checkpoint.comment ?? ''}
+                                onChange={(event) => updateCheckpoint(checkpoint.id, 'comment', event.target.value)}
+                                disabled={isLocked}
+                                rows={3}
+                                placeholder="Kommentar"
+                                className={`${inputClassName()} resize-y leading-6`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                )}
+              </ReviewSection>
+            ) : null}
 
             <ReviewSection
               title="Utlåtandeuppgifter"

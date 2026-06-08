@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
-import { updateEbProject } from '@/lib/eb/server'
+import {
+  updateEbProject,
+  type EbDrainageInspectionStage,
+  type EbDrainageSystem,
+  type EbProjectTemplateKey,
+} from '@/lib/eb/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -49,6 +54,12 @@ export async function PATCH(
       orgId: org.orgId,
       projectId,
       title,
+      projectTemplateKey: (toText(body.projectTemplateKey) || null) as EbProjectTemplateKey | null,
+      drainageSystem: (toText(body.drainageSystem) || null) as EbDrainageSystem | null,
+      drainageInspectionStage: (toText(body.drainageInspectionStage) || null) as
+        | EbDrainageInspectionStage
+        | null,
+      drainageGuidanceVersion: toText(body.drainageGuidanceVersion) || null,
       contractName: toText(body.contractName) || null,
       objectDescription: toText(body.objectDescription) || null,
       propertyDesignation: toText(body.propertyDesignation) || null,

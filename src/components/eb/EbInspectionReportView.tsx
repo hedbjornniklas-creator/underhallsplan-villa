@@ -7,6 +7,7 @@ import { ArrowLeft, ClipboardCheck, Printer } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import type {
   EbInspectionDocument,
+  EbInspectionCheckpoint,
   EbInspectionReport,
   EbNote,
   EbNoteImage,
@@ -37,6 +38,45 @@ function sortImages(images: EbNoteImage[]) {
     }
     return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
   })
+}
+
+function sortCheckpoints(checkpoints: EbInspectionCheckpoint[]) {
+  return [...checkpoints].sort((left, right) => {
+    if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder
+    return left.title.localeCompare(right.title, 'sv-SE')
+  })
+}
+
+function groupedCheckpoints(checkpoints: EbInspectionCheckpoint[]) {
+  const groups: Array<{ key: string; label: string; checkpoints: EbInspectionCheckpoint[] }> = []
+  const byKey = new Map<string, { key: string; label: string; checkpoints: EbInspectionCheckpoint[] }>()
+
+  for (const checkpoint of sortCheckpoints(checkpoints)) {
+    const groupKey = checkpoint.groupKey || 'other'
+    const existing = byKey.get(groupKey)
+    if (existing) {
+      existing.checkpoints.push(checkpoint)
+      continue
+    }
+    const group = {
+      key: groupKey,
+      label: checkpoint.groupLabel || 'Övrigt',
+      checkpoints: [checkpoint],
+    }
+    byKey.set(groupKey, group)
+    groups.push(group)
+  }
+
+  return groups
+}
+
+function checkpointStatusLabel(status: EbInspectionCheckpoint['status']) {
+  if (status === 'ok') return 'OK'
+  if (status === 'deviation') return 'Avvikelse'
+  if (status === 'not_applicable') return 'Ej aktuellt'
+  if (status === 'not_accessible') return 'Ej åtkomligt'
+  if (status === 'not_verifiable') return 'Ej verifierbart'
+  return 'Ej kontrollerat'
 }
 
 function detailLine(parts: Array<string | null | undefined>) {
@@ -519,6 +559,54 @@ function TestingDocumentationReport({
           </p>
         ))}
       </div>
+    </ReportSection>
+  )
+}
+
+function DrainageChecklistReport({ report }: { report: EbInspectionReport }) {
+  const groups = groupedCheckpoints(report.checkpoints)
+
+  return (
+    <ReportSection title="Kontrollunderlag dränering">
+      {groups.length === 0 ? (
+        <p className="text-[10.5pt] leading-[1.35] text-black">
+          Ingen dräneringskontrollista är registrerad för besiktningen.
+        </p>
+      ) : (
+        <div className="space-y-3 text-[9.5pt] leading-[1.25] text-black">
+          {report.project.drainageGuidanceVersion ? (
+            <p>Anvisning/version: {report.project.drainageGuidanceVersion}</p>
+          ) : null}
+          {groups.map((group) => (
+            <section key={group.key} className="break-inside-avoid">
+              <h3 className="mb-1 text-[10pt] font-bold text-black">{group.label}</h3>
+              <div className="grid border-t border-l border-black/50">
+                <div className="grid grid-cols-[46mm_24mm_1fr] bg-neutral-100 font-bold">
+                  <div className="border-r border-b border-black/50 px-1.5 py-1">Kontrollpunkt</div>
+                  <div className="border-r border-b border-black/50 px-1.5 py-1">Status</div>
+                  <div className="border-r border-b border-black/50 px-1.5 py-1">Kommentar</div>
+                </div>
+                {group.checkpoints.map((checkpoint) => (
+                  <div key={checkpoint.id} className="grid grid-cols-[46mm_24mm_1fr]">
+                    <div className="border-r border-b border-black/50 px-1.5 py-1">
+                      <p>{checkpoint.title}</p>
+                      {checkpoint.photoRequired ? (
+                        <p className="mt-0.5 text-[8pt] italic">Fotounderlag krävs/efterfrågas.</p>
+                      ) : null}
+                    </div>
+                    <div className="border-r border-b border-black/50 px-1.5 py-1">
+                      {checkpointStatusLabel(checkpoint.status)}
+                    </div>
+                    <div className="whitespace-pre-wrap border-r border-b border-black/50 px-1.5 py-1">
+                      {checkpoint.comment?.trim() || '-'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
     </ReportSection>
   )
 }
@@ -1080,6 +1168,8 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
             <PreviousInspectionsReport key={section.key} report={report} />
           ) : isTestingDocumentationSection(section) ? (
             <TestingDocumentationReport key={section.key} report={report} section={section} />
+          ) : section.key === 'drainage_checklist' ? (
+            <DrainageChecklistReport key={section.key} report={report} />
           ) : section.key === 'defects_appendices' ? (
             <div key={section.key}>
               <DefectsConditionsReport report={report} displayNumberByNoteId={displayNumberByNoteId} />

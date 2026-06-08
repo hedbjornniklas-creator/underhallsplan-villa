@@ -34,6 +34,7 @@ const sourceLabels: Record<EbReportDraftSection['source'], string> = {
   inspection: 'Besiktning',
   participants: 'Parter och närvarande',
   notes: 'Noteringar',
+  checkpoints: 'Kontrollpunkter',
   standard_text: 'Standardtext',
   manual: 'Manuell',
 }
@@ -43,6 +44,7 @@ const sourceHints: Record<EbReportDraftSection['source'], string> = {
   inspection: 'Besiktningsuppgifter fylls i Uppgifter på besiktningen.',
   participants: 'Parter, mottagare och närvarande hanteras i Uppgifter på besiktningen.',
   notes: 'Noteringar, beteckningar och bilder hanteras i Granska eller mobil runda.',
+  checkpoints: 'Kontrollpunkter hanteras i Granska.',
   standard_text: 'Texten är standardtext för utlåtandet och justeras här innan utskrift.',
   manual: 'Denna punkt fylls i här i utlåtandeutkastet.',
 }

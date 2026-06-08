@@ -6,6 +6,10 @@ import type { EbProjectAgreementItem, EbProjectAgreementItemKind, EbProjectListI
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 
 export type EbProjectFormState = {
+  projectTemplateKey: string
+  drainageSystem: string
+  drainageInspectionStage: string
+  drainageGuidanceVersion: string
   title: string
   contractName: string
   objectDescription: string
@@ -34,6 +38,10 @@ export type EbProjectFormState = {
 }
 
 export const EMPTY_EB_PROJECT_FORM: EbProjectFormState = {
+  projectTemplateKey: '',
+  drainageSystem: '',
+  drainageInspectionStage: '',
+  drainageGuidanceVersion: '',
   title: '',
   contractName: '',
   objectDescription: '',
@@ -69,7 +77,27 @@ const STANDARD_AGREEMENT_OPTIONS = [
   { value: 'HF17', label: 'HF 17' },
 ]
 
-type EbProjectFormTab = 'object' | 'agreement' | 'contractors'
+const PROJECT_TEMPLATE_OPTIONS = [
+  { value: '', label: 'Ingen särskild mall' },
+  { value: 'drainage_foundation', label: 'Dränering och fuktskydd grund/källarvägg' },
+]
+
+const DRAINAGE_SYSTEM_OPTIONS = [
+  { value: 'generic', label: 'Allmän mall' },
+  { value: 'isodran', label: 'Isodrän' },
+  { value: 'pordran', label: 'Pordrän' },
+  { value: 'other', label: 'Annat system' },
+]
+
+const DRAINAGE_STAGE_OPTIONS = [
+  { value: '', label: 'Ej satt' },
+  { value: 'before_backfill', label: 'Före återfyllning' },
+  { value: 'after_backfill', label: 'Efter återfyllning' },
+  { value: 'partial', label: 'Delvis återfyllt / delvis åtkomligt' },
+  { value: 'final', label: 'Slutkontroll' },
+]
+
+type EbProjectFormTab = 'object' | 'template' | 'agreement' | 'contractors'
 
 function createAgreementItem(kind: EbProjectAgreementItemKind, sortOrder: number): EbProjectAgreementItem {
   const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -89,6 +117,10 @@ function createAgreementItem(kind: EbProjectAgreementItemKind, sortOrder: number
 
 export function buildEbProjectForm(project: EbProjectListItem): EbProjectFormState {
   return {
+    projectTemplateKey: project.projectTemplateKey ?? '',
+    drainageSystem: project.drainageSystem ?? '',
+    drainageInspectionStage: project.drainageInspectionStage ?? '',
+    drainageGuidanceVersion: project.drainageGuidanceVersion ?? '',
     title: project.title ?? '',
     contractName: project.contractName ?? '',
     objectDescription: project.objectDescription ?? '',
@@ -153,6 +185,7 @@ export default function EbProjectForm({
   const vocabulary = resolveEbAgreementVocabulary(form.standardAgreement)
   const tabs: Array<{ key: EbProjectFormTab; label: string }> = [
     { key: 'object', label: 'Objekt & beställare' },
+    { key: 'template', label: 'Mall' },
     { key: 'agreement', label: 'Avtal' },
     { key: 'contractors', label: vocabulary.contractorPluralLabel },
   ]
@@ -179,6 +212,18 @@ export default function EbProjectForm({
 
   const removeAgreementItem = (id: string) => {
     onChange('agreementItems', form.agreementItems.filter((item) => item.id !== id))
+  }
+
+  const updateTemplateKey = (value: string) => {
+    onChange('projectTemplateKey', value)
+    if (value === 'drainage_foundation') {
+      if (!form.drainageSystem) onChange('drainageSystem', 'generic')
+      if (form.notePrefix === 'BES') onChange('notePrefix', 'DRÄN')
+      return
+    }
+    onChange('drainageSystem', '')
+    onChange('drainageInspectionStage', '')
+    onChange('drainageGuidanceVersion', '')
   }
 
   const renderAgreementRows = (
@@ -403,6 +448,66 @@ export default function EbProjectForm({
                 />
               </EbProjectFieldLabel>
             </div>
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'template' ? (
+        <section>
+          <h3 className="text-sm font-semibold text-gray-950">Mall</h3>
+          <div className="mt-3 grid gap-4 md:grid-cols-2">
+            <EbProjectFieldLabel label="Projektmall">
+              <select
+                value={form.projectTemplateKey}
+                onChange={(event) => updateTemplateKey(event.target.value)}
+                className={ebProjectInputClassName()}
+              >
+                {PROJECT_TEMPLATE_OPTIONS.map((option) => (
+                  <option key={option.value || 'none'} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </EbProjectFieldLabel>
+
+            {form.projectTemplateKey === 'drainage_foundation' ? (
+              <>
+                <EbProjectFieldLabel label="System">
+                  <select
+                    value={form.drainageSystem || 'generic'}
+                    onChange={(event) => onChange('drainageSystem', event.target.value)}
+                    className={ebProjectInputClassName()}
+                  >
+                    {DRAINAGE_SYSTEM_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </EbProjectFieldLabel>
+                <EbProjectFieldLabel label="Besiktningsläge">
+                  <select
+                    value={form.drainageInspectionStage}
+                    onChange={(event) => onChange('drainageInspectionStage', event.target.value)}
+                    className={ebProjectInputClassName()}
+                  >
+                    {DRAINAGE_STAGE_OPTIONS.map((option) => (
+                      <option key={option.value || 'none'} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </EbProjectFieldLabel>
+                <EbProjectFieldLabel label="Anvisning/version">
+                  <input
+                    value={form.drainageGuidanceVersion}
+                    onChange={(event) => onChange('drainageGuidanceVersion', event.target.value)}
+                    placeholder="Exempel: Isodrän arbetsinstruktion källare 2026"
+                    className={ebProjectInputClassName()}
+                  />
+                </EbProjectFieldLabel>
+              </>
+            ) : null}
           </div>
         </section>
       ) : null}

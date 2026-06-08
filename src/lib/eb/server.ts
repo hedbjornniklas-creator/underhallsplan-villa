@@ -17,6 +17,16 @@ export type EbInspectionDocumentStatus = 'present' | 'missing' | 'na'
 export type EbProjectAgreementItemKind = 'change_order' | 'other'
 export type EbDefectNoErrorPartsPolicy = 'not_listed' | 'listed_with_dash'
 export type EbReportPdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
+export type EbProjectTemplateKey = 'drainage_foundation'
+export type EbDrainageSystem = 'generic' | 'isodran' | 'pordran' | 'other'
+export type EbDrainageInspectionStage = 'before_backfill' | 'after_backfill' | 'partial' | 'final'
+export type EbInspectionCheckpointStatus =
+  | 'not_checked'
+  | 'ok'
+  | 'deviation'
+  | 'not_applicable'
+  | 'not_accessible'
+  | 'not_verifiable'
 
 export type EbPreviousInspectionItem = {
   key: string
@@ -100,6 +110,10 @@ export type EbProjectListItem = {
   orgId: string
   ownerProfileId: string
   propertyId: string | null
+  projectTemplateKey: EbProjectTemplateKey | null
+  drainageSystem: EbDrainageSystem | null
+  drainageInspectionStage: EbDrainageInspectionStage | null
+  drainageGuidanceVersion: string | null
   title: string
   contractName: string | null
   objectDescription: string | null
@@ -224,6 +238,27 @@ export type EbProjectAttachment = {
   createdAt: string | null
 }
 
+export type EbInspectionCheckpoint = {
+  id: string
+  projectId: string
+  inspectionId: string
+  checkpointKey: string
+  templateKey: string
+  systemKey: EbDrainageSystem
+  groupKey: string
+  groupLabel: string
+  title: string
+  guidance: string | null
+  verificationMethod: string | null
+  sourceUrl: string | null
+  photoRequired: boolean
+  status: EbInspectionCheckpointStatus
+  comment: string | null
+  noteId: string | null
+  sortOrder: number
+  updatedAt: string | null
+}
+
 export type EbInspectionRound = {
   project: EbProjectListItem
   inspection: EbInspectionSummary
@@ -233,6 +268,7 @@ export type EbInspectionRound = {
   notes: EbNote[]
   images: EbNoteImage[]
   suggestions: EbNoteSuggestion[]
+  checkpoints: EbInspectionCheckpoint[]
 }
 
 export type EbReportSectionStatus = 'draft' | 'complete' | 'missing' | 'not_applicable'
@@ -242,6 +278,7 @@ export type EbReportSectionSource =
   | 'inspection'
   | 'participants'
   | 'notes'
+  | 'checkpoints'
   | 'standard_text'
   | 'manual'
 
@@ -336,11 +373,29 @@ export type SaveEbInspectionDocumentsInput = {
   documents: EbInspectionDocument[]
 }
 
+export type SaveEbInspectionCheckpointsInput = {
+  orgId: string
+  requestedByUserId: string
+  projectId: string
+  inspectionId: string
+  checkpoints: Array<{
+    id?: string | null
+    checkpointKey?: string | null
+    status?: EbInspectionCheckpointStatus | null
+    comment?: string | null
+    noteId?: string | null
+  }>
+}
+
 type EbProjectRow = {
   id: string
   org_id: string
   owner_profile_id: string
   property_id: string | null
+  project_template_key?: string | null
+  drainage_system?: string | null
+  drainage_inspection_stage?: string | null
+  drainage_guidance_version?: string | null
   title: string
   contract_name: string | null
   object_description: string | null
@@ -550,6 +605,42 @@ type EbProjectAttachmentRow = {
   created_at: string | null
 }
 
+type EbTemplateCheckpointRow = {
+  id: string
+  template_key: string
+  key: string
+  system_key: string | null
+  group_key: string
+  group_label: string
+  title: string
+  guidance: string | null
+  verification_method: string | null
+  source_url: string | null
+  photo_required: boolean | null
+  sort_order: number | null
+}
+
+type EbInspectionCheckpointRow = {
+  id: string
+  eb_project_id: string
+  inspection_id: string
+  checkpoint_key: string
+  template_key: string
+  system_key: string | null
+  group_key: string
+  group_label: string
+  title: string
+  guidance: string | null
+  verification_method: string | null
+  source_url: string | null
+  photo_required: boolean | null
+  status: string | null
+  comment: string | null
+  note_id: string | null
+  sort_order: number | null
+  updated_at: string | null
+}
+
 type DocumentTypeRow = {
   id: string
   code: string
@@ -593,6 +684,10 @@ export type CreateEbProjectInput = {
   orgId: string
   requestedByUserId: string
   title: string
+  projectTemplateKey?: EbProjectTemplateKey | null
+  drainageSystem?: EbDrainageSystem | null
+  drainageInspectionStage?: EbDrainageInspectionStage | null
+  drainageGuidanceVersion?: string | null
   contractName?: string | null
   objectDescription?: string | null
   propertyDesignation?: string | null
@@ -735,6 +830,17 @@ const PARTY_KEY_VALUES = ['client', 'contractor', 'other'] as const
 const AFTER_INSPECTION_REQUESTED_BY_VALUES = ['client', 'contractor'] as const
 const PREVIOUS_INSPECTION_STATUS_VALUES = ['performed', 'not_performed', 'not_applicable'] as const
 const DEFECT_NO_ERROR_PARTS_POLICY_VALUES = ['not_listed', 'listed_with_dash'] as const
+const PROJECT_TEMPLATE_KEY_VALUES = ['drainage_foundation'] as const
+const DRAINAGE_SYSTEM_VALUES = ['generic', 'isodran', 'pordran', 'other'] as const
+const DRAINAGE_INSPECTION_STAGE_VALUES = ['before_backfill', 'after_backfill', 'partial', 'final'] as const
+const CHECKPOINT_STATUS_VALUES = [
+  'not_checked',
+  'ok',
+  'deviation',
+  'not_applicable',
+  'not_accessible',
+  'not_verifiable',
+] as const
 const EB_MISSING_DOCUMENT_NOTE_SOURCE = 'eb_missing_document'
 const INSPECTION_DOCUMENT_STATUS_VALUES = ['present', 'missing', 'na'] as const
 const EB_DOCUMENT_TYPE_CODE_ORDER = [
@@ -755,6 +861,13 @@ const EB_DOCUMENT_TYPE_CODE_ORDER = [
   'EB_DOC_IMKANALER_SAKKUNNIG',
   'EB_DOC_RELATIONSHANDLINGAR',
   'EB_DOC_DRIFT_SKOTSELINSTRUKTION',
+  'EB_DOC_DRAINAGE_CONTRACT',
+  'EB_DOC_DRAINAGE_DRAWING',
+  'EB_DOC_DRAINAGE_STORMWATER_DRAWING',
+  'EB_DOC_DRAINAGE_PHOTO_DOCUMENTATION',
+  'EB_DOC_DRAINAGE_SELF_CHECK',
+  'EB_DOC_DRAINAGE_RELATION_DRAWING',
+  'EB_DOC_DRAINAGE_ISOCERT',
 ] as const
 const EB_DOCUMENT_TYPE_ORDER: ReadonlyMap<string, number> = new Map(
   EB_DOCUMENT_TYPE_CODE_ORDER.map((code, index) => [code, (index + 1) * 10])
@@ -835,6 +948,36 @@ function normalizeDefectNoErrorPartsPolicy(
   return DEFECT_NO_ERROR_PARTS_POLICY_VALUES.includes(normalized as EbDefectNoErrorPartsPolicy)
     ? (normalized as EbDefectNoErrorPartsPolicy)
     : null
+}
+
+function normalizeProjectTemplateKey(value: string | null | undefined): EbProjectTemplateKey | null {
+  const normalized = normalizeText(value)
+  return PROJECT_TEMPLATE_KEY_VALUES.includes(normalized as EbProjectTemplateKey)
+    ? (normalized as EbProjectTemplateKey)
+    : null
+}
+
+function normalizeDrainageSystem(value: string | null | undefined): EbDrainageSystem | null {
+  const normalized = normalizeText(value)
+  return DRAINAGE_SYSTEM_VALUES.includes(normalized as EbDrainageSystem)
+    ? (normalized as EbDrainageSystem)
+    : null
+}
+
+function normalizeDrainageInspectionStage(
+  value: string | null | undefined
+): EbDrainageInspectionStage | null {
+  const normalized = normalizeText(value)
+  return DRAINAGE_INSPECTION_STAGE_VALUES.includes(normalized as EbDrainageInspectionStage)
+    ? (normalized as EbDrainageInspectionStage)
+    : null
+}
+
+function normalizeCheckpointStatus(value: string | null | undefined): EbInspectionCheckpointStatus {
+  const normalized = normalizeText(value)
+  return CHECKPOINT_STATUS_VALUES.includes(normalized as EbInspectionCheckpointStatus)
+    ? (normalized as EbInspectionCheckpointStatus)
+    : 'not_checked'
 }
 
 function normalizePartyKey(value: string | null | undefined): EbPartyKey | null {
@@ -1044,6 +1187,16 @@ function isMissingColumnError(error: { code?: string | null; message?: string | 
   )
 }
 
+function isMissingRelationError(error: { code?: string | null; message?: string | null; details?: string | null }) {
+  const text = [error.code, error.message, error.details].filter(Boolean).join(' ').toLowerCase()
+  return (
+    text.includes('42p01') ||
+    text.includes('relation') && text.includes('does not exist') ||
+    text.includes('could not find') && text.includes('table') ||
+    text.includes('schema cache') && text.includes('table')
+  )
+}
+
 function toPropertyName(input: {
   address?: string | null
   propertyDesignation?: string | null
@@ -1160,6 +1313,10 @@ function mapProject(
     orgId: project.org_id,
     ownerProfileId: project.owner_profile_id,
     propertyId: project.property_id ?? null,
+    projectTemplateKey: normalizeProjectTemplateKey(project.project_template_key),
+    drainageSystem: normalizeDrainageSystem(project.drainage_system),
+    drainageInspectionStage: normalizeDrainageInspectionStage(project.drainage_inspection_stage),
+    drainageGuidanceVersion: project.drainage_guidance_version ?? null,
     title: project.title,
     contractName: project.contract_name ?? null,
     objectDescription: project.object_description ?? null,
@@ -1196,9 +1353,9 @@ async function fetchProjectsByOrg(orgId: string, projectId?: string) {
   const admin = createSupabaseAdminClient()
   const baseSelect =
     'id,org_id,owner_profile_id,property_id,title,contract_name,object_description,property_designation,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,client_address,client_postal_code,client_city,contractor_name,contractor_org_no,contractor_address,contractor_postal_code,contractor_city,status,created_at,updated_at'
-  const withProjectIdentifiersSelect =
-    'id,org_id,owner_profile_id,property_id,title,contract_name,object_description,property_designation,brf_apartment_number,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,client_address,client_postal_code,client_city,contractor_name,contractor_org_no,contractor_address,contractor_postal_code,contractor_city,status,created_at,updated_at'
-  const withAgreementItemsSelect = `${withProjectIdentifiersSelect},agreement_items`
+  const withTemplateSelect =
+    'id,org_id,owner_profile_id,property_id,project_template_key,drainage_system,drainage_inspection_stage,drainage_guidance_version,title,contract_name,object_description,property_designation,brf_apartment_number,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,client_address,client_postal_code,client_city,contractor_name,contractor_org_no,contractor_address,contractor_postal_code,contractor_city,status,created_at,updated_at'
+  const withAgreementItemsSelect = `${withTemplateSelect},agreement_items`
   let query = admin
     .from('eb_projects')
     .select(withAgreementItemsSelect)
@@ -1842,6 +1999,29 @@ function mapNote(
   }
 }
 
+function mapInspectionCheckpoint(row: EbInspectionCheckpointRow): EbInspectionCheckpoint {
+  return {
+    id: row.id,
+    projectId: row.eb_project_id,
+    inspectionId: row.inspection_id,
+    checkpointKey: row.checkpoint_key,
+    templateKey: row.template_key,
+    systemKey: normalizeDrainageSystem(row.system_key) ?? 'generic',
+    groupKey: row.group_key,
+    groupLabel: row.group_label,
+    title: row.title,
+    guidance: row.guidance ?? null,
+    verificationMethod: row.verification_method ?? null,
+    sourceUrl: row.source_url ?? null,
+    photoRequired: row.photo_required ?? false,
+    status: normalizeCheckpointStatus(row.status),
+    comment: row.comment ?? null,
+    noteId: row.note_id ?? null,
+    sortOrder: row.sort_order ?? 100,
+    updatedAt: row.updated_at ?? null,
+  }
+}
+
 function mapNoteImage(row: EbNoteImageRow, publicUrl: string): EbNoteImage {
   return {
     id: row.id,
@@ -2059,6 +2239,121 @@ async function listEbNoteSuggestions(input: {
   return ((data ?? []) as EbNoteSuggestionRow[]).map(mapSuggestion)
 }
 
+function shouldUseEbTemplateCheckpoints(project: EbProjectListItem) {
+  return project.projectTemplateKey === 'drainage_foundation'
+}
+
+function checkpointSystemsForProject(project: EbProjectListItem) {
+  const system = project.drainageSystem ?? 'generic'
+  return system === 'generic' ? ['generic'] : ['generic', system]
+}
+
+async function listTemplateCheckpointsForProject(project: EbProjectListItem) {
+  if (!shouldUseEbTemplateCheckpoints(project)) return []
+
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('settings_eb_template_checkpoints')
+    .select(
+      'id,template_key,key,system_key,group_key,group_label,title,guidance,verification_method,source_url,photo_required,sort_order'
+    )
+    .eq('template_key', project.projectTemplateKey)
+    .in('system_key', checkpointSystemsForProject(project))
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    if (isMissingRelationError(error)) return []
+    throw new Error(error.message ?? 'Kunde inte hämta EB-mallens kontrollpunkter.')
+  }
+
+  return (data ?? []) as EbTemplateCheckpointRow[]
+}
+
+async function seedEbInspectionCheckpoints(input: {
+  orgId: string
+  requestedByUserId: string
+  project: EbProjectListItem
+  inspection: EbInspectionSummary
+}) {
+  if (!shouldUseEbTemplateCheckpoints(input.project)) return
+  if (input.inspection.reportLockedAt) return
+
+  const templateCheckpoints = await listTemplateCheckpointsForProject(input.project)
+  if (templateCheckpoints.length === 0) return
+
+  const admin = createSupabaseAdminClient()
+  const rows = templateCheckpoints.map((checkpoint) => ({
+    org_id: input.orgId,
+    eb_project_id: input.project.id,
+    inspection_id: input.inspection.inspectionId,
+    template_checkpoint_id: checkpoint.id,
+    checkpoint_key: checkpoint.key,
+    template_key: checkpoint.template_key,
+    system_key: normalizeDrainageSystem(checkpoint.system_key) ?? 'generic',
+    group_key: checkpoint.group_key,
+    group_label: checkpoint.group_label,
+    title: checkpoint.title,
+    guidance: checkpoint.guidance,
+    verification_method: checkpoint.verification_method,
+    source_url: checkpoint.source_url,
+    photo_required: checkpoint.photo_required ?? false,
+    status: 'not_checked',
+    sort_order: checkpoint.sort_order ?? 100,
+    created_by: input.requestedByUserId,
+    updated_by: input.requestedByUserId,
+  }))
+
+  const { error } = await admin
+    .from('eb_inspection_checkpoints')
+    .upsert(rows, {
+      onConflict: 'inspection_id,checkpoint_key',
+      ignoreDuplicates: true,
+    })
+
+  if (error) {
+    if (isMissingRelationError(error)) return
+    throw new Error(error.message ?? 'Kunde inte skapa EB-kontrollpunkter.')
+  }
+}
+
+async function listEbInspectionCheckpoints(input: {
+  orgId: string
+  requestedByUserId: string
+  project: EbProjectListItem
+  inspection: EbInspectionSummary
+}) {
+  const admin = createSupabaseAdminClient()
+  const selectColumns =
+    'id,eb_project_id,inspection_id,checkpoint_key,template_key,system_key,group_key,group_label,title,guidance,verification_method,source_url,photo_required,status,comment,note_id,sort_order,updated_at'
+
+  const fetchRows = async () => {
+    const result = await admin
+      .from('eb_inspection_checkpoints')
+      .select(selectColumns)
+      .eq('org_id', input.orgId)
+      .eq('eb_project_id', input.project.id)
+      .eq('inspection_id', input.inspection.inspectionId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true })
+
+    if (result.error) {
+      if (isMissingRelationError(result.error)) return []
+      throw new Error(result.error.message ?? 'Kunde inte hämta EB-kontrollpunkter.')
+    }
+
+    return (result.data ?? []) as EbInspectionCheckpointRow[]
+  }
+
+  let rows = await fetchRows()
+  if (rows.length === 0 && shouldUseEbTemplateCheckpoints(input.project) && !input.inspection.reportLockedAt) {
+    await seedEbInspectionCheckpoints(input)
+    rows = await fetchRows()
+  }
+
+  return rows.map(mapInspectionCheckpoint)
+}
+
 export async function getEbInspectionRound(input: {
   orgId: string
   requestedByUserId: string
@@ -2066,11 +2361,17 @@ export async function getEbInspectionRound(input: {
   inspectionId: string
 }): Promise<EbInspectionRound> {
   const { project, inspection } = await getEbInspectionRoundBase(input)
-  const [disciplines, markers, statuses, suggestions] = await Promise.all([
+  const [disciplines, markers, statuses, suggestions, checkpoints] = await Promise.all([
     listEbDisciplines(input),
     listEbNoteMarkers(),
     listEbNoteStatuses(),
     listEbNoteSuggestions({ orgId: input.orgId, profileId: input.requestedByUserId }),
+    listEbInspectionCheckpoints({
+      orgId: input.orgId,
+      requestedByUserId: input.requestedByUserId,
+      project,
+      inspection,
+    }),
   ])
   const [notes, images] = await Promise.all([
     listEbNotes({
@@ -2091,7 +2392,79 @@ export async function getEbInspectionRound(input: {
     notes,
     images,
     suggestions,
+    checkpoints,
   }
+}
+
+export async function saveEbInspectionCheckpoints(
+  input: SaveEbInspectionCheckpointsInput
+): Promise<EbInspectionCheckpoint[]> {
+  await assertEbInspectionEditable(input)
+  const { project, inspection } = await getEbInspectionRoundBase(input)
+  await seedEbInspectionCheckpoints({
+    orgId: input.orgId,
+    requestedByUserId: input.requestedByUserId,
+    project,
+    inspection,
+  })
+
+  const currentRows = await listEbInspectionCheckpoints({
+    orgId: input.orgId,
+    requestedByUserId: input.requestedByUserId,
+    project,
+    inspection,
+  })
+  const byId = new Map(currentRows.map((checkpoint) => [checkpoint.id, checkpoint]))
+  const byKey = new Map(currentRows.map((checkpoint) => [checkpoint.checkpointKey, checkpoint]))
+  const updates = input.checkpoints
+    .map((checkpoint) => {
+      const existing =
+        (checkpoint.id ? byId.get(checkpoint.id) : null) ??
+        (checkpoint.checkpointKey ? byKey.get(checkpoint.checkpointKey) : null)
+      if (!existing) return null
+
+      return {
+        id: existing.id,
+        status: normalizeCheckpointStatus(checkpoint.status),
+        comment: normalizeText(checkpoint.comment),
+        note_id: normalizeText(checkpoint.noteId),
+      }
+    })
+    .filter((checkpoint): checkpoint is NonNullable<typeof checkpoint> => Boolean(checkpoint))
+
+  if (updates.length === 0) {
+    return currentRows
+  }
+
+  const admin = createSupabaseAdminClient()
+  const results = await Promise.all(
+    updates.map((checkpoint) =>
+      admin
+        .from('eb_inspection_checkpoints')
+        .update({
+          status: checkpoint.status,
+          comment: checkpoint.comment,
+          note_id: checkpoint.note_id,
+          updated_by: input.requestedByUserId,
+        })
+        .eq('org_id', input.orgId)
+        .eq('eb_project_id', input.projectId)
+        .eq('inspection_id', input.inspectionId)
+        .eq('id', checkpoint.id)
+    )
+  )
+
+  const error = results.find((result) => result.error)?.error
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte spara EB-kontrollpunkter.')
+  }
+
+  return listEbInspectionCheckpoints({
+    orgId: input.orgId,
+    requestedByUserId: input.requestedByUserId,
+    project,
+    inspection,
+  })
 }
 
 export async function getEbInspectionReport(input: {
@@ -2217,6 +2590,7 @@ function isEbReportSource(value: unknown): value is EbReportSectionSource {
     value === 'inspection' ||
     value === 'participants' ||
     value === 'notes' ||
+    value === 'checkpoints' ||
     value === 'standard_text' ||
     value === 'manual'
   )
@@ -2352,6 +2726,16 @@ export async function createEbProjectWithInitialSlb(
   const normalizedContractorAddress = normalizeText(input.contractorAddress)
   const normalizedContractorPostalCode = normalizeText(input.contractorPostalCode)
   const normalizedContractorCity = normalizeText(input.contractorCity)
+  const projectTemplateKey = normalizeProjectTemplateKey(input.projectTemplateKey)
+  const drainageSystem = projectTemplateKey === 'drainage_foundation'
+    ? normalizeDrainageSystem(input.drainageSystem) ?? 'generic'
+    : null
+  const drainageInspectionStage = projectTemplateKey === 'drainage_foundation'
+    ? normalizeDrainageInspectionStage(input.drainageInspectionStage)
+    : null
+  const drainageGuidanceVersion = projectTemplateKey === 'drainage_foundation'
+    ? normalizeText(input.drainageGuidanceVersion)
+    : null
   const agreementItems = normalizeAgreementItems(input.agreementItems)
   let propertyId: string | null = null
   let inspectionId: string | null = null
@@ -2410,6 +2794,10 @@ export async function createEbProjectWithInitialSlb(
         property_id: propertyId,
         owner_profile_id: input.requestedByUserId,
         created_by: input.requestedByUserId,
+        project_template_key: projectTemplateKey,
+        drainage_system: drainageSystem,
+        drainage_inspection_stage: drainageInspectionStage,
+        drainage_guidance_version: drainageGuidanceVersion,
         title,
         contract_name: normalizeText(input.contractName),
         object_description: normalizeText(input.objectDescription),
@@ -2423,7 +2811,7 @@ export async function createEbProjectWithInitialSlb(
         contract_form: normalizeText(input.contractForm),
         procurement_form: normalizeText(input.procurementForm),
         contract_date: normalizeDate(input.contractDate),
-        note_prefix: 'BES',
+        note_prefix: projectTemplateKey === 'drainage_foundation' ? 'DRÄN' : 'BES',
         client_name: normalizedClientName,
         client_org_no: normalizedClientOrgNo,
         client_address: normalizedClientAddress,
@@ -2512,11 +2900,25 @@ export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbPr
   const normalizedContractorPostalCode = normalizeText(input.contractorPostalCode)
   const normalizedContractorCity = normalizeText(input.contractorCity)
   const normalizedNotePrefix = normalizeText(input.notePrefix) ?? 'BES'
+  const projectTemplateKey = normalizeProjectTemplateKey(input.projectTemplateKey)
+  const drainageSystem = projectTemplateKey === 'drainage_foundation'
+    ? normalizeDrainageSystem(input.drainageSystem) ?? 'generic'
+    : null
+  const drainageInspectionStage = projectTemplateKey === 'drainage_foundation'
+    ? normalizeDrainageInspectionStage(input.drainageInspectionStage)
+    : null
+  const drainageGuidanceVersion = projectTemplateKey === 'drainage_foundation'
+    ? normalizeText(input.drainageGuidanceVersion)
+    : null
   const agreementItems = normalizeAgreementItems(input.agreementItems)
 
   const { error } = await admin
     .from('eb_projects')
     .update({
+      project_template_key: projectTemplateKey,
+      drainage_system: drainageSystem,
+      drainage_inspection_stage: drainageInspectionStage,
+      drainage_guidance_version: drainageGuidanceVersion,
       title,
       contract_name: normalizeText(input.contractName),
       object_description: normalizeText(input.objectDescription),
@@ -3325,6 +3727,31 @@ function afterInspectionRequestedByReportLabel(value: EbAfterInspectionRequested
   return 'beställaren / hantverkaren'
 }
 
+function drainageSystemLabel(value: EbDrainageSystem | null) {
+  if (value === 'isodran') return 'Isodrän'
+  if (value === 'pordran') return 'Pordrän'
+  if (value === 'other') return 'Annat system'
+  if (value === 'generic') return 'Allmän dräneringsmall'
+  return null
+}
+
+function drainageInspectionStageLabel(value: EbDrainageInspectionStage | null) {
+  if (value === 'before_backfill') return 'Före återfyllning'
+  if (value === 'after_backfill') return 'Efter återfyllning'
+  if (value === 'partial') return 'Delvis återfyllt / delvis åtkomligt'
+  if (value === 'final') return 'Slutkontroll'
+  return null
+}
+
+function checkpointStatusLabel(value: EbInspectionCheckpointStatus) {
+  if (value === 'ok') return 'OK'
+  if (value === 'deviation') return 'Avvikelse'
+  if (value === 'not_applicable') return 'Ej aktuellt'
+  if (value === 'not_accessible') return 'Ej åtkomligt'
+  if (value === 'not_verifiable') return 'Ej verifierbart'
+  return 'Ej kontrollerat'
+}
+
 function reportParticipantRow(participant: EbInvitationParticipant) {
   const name = [participant.companyName, participant.personName].map(normalizeText).filter(Boolean).join(', ')
   const contact = [participant.email, participant.phone].map(normalizeText).filter(Boolean).join(', ')
@@ -3342,6 +3769,40 @@ function reportParticipantRow(participant: EbInvitationParticipant) {
 
 function hasText(value: string | null | undefined) {
   return Boolean(normalizeText(value))
+}
+
+function ebDrainageChecklistReportText(round: EbInspectionRound) {
+  if (round.checkpoints.length === 0) {
+    return 'Ingen dräneringskontrollista är registrerad för besiktningen.'
+  }
+
+  const statusCounts = new Map<EbInspectionCheckpointStatus, number>()
+  for (const checkpoint of round.checkpoints) {
+    statusCounts.set(checkpoint.status, (statusCounts.get(checkpoint.status) ?? 0) + 1)
+  }
+
+  const statusSummary = CHECKPOINT_STATUS_VALUES
+    .map((status) => {
+      const count = statusCounts.get(status)
+      return count ? `${checkpointStatusLabel(status)}: ${count}` : null
+    })
+    .filter(Boolean)
+    .join(', ')
+
+  const notVerifiableCount =
+    (statusCounts.get('not_accessible') ?? 0) + (statusCounts.get('not_verifiable') ?? 0)
+
+  return reportList([
+    optionalReportLine('Mall', 'Dränering och fuktskydd grund/källarvägg'),
+    optionalReportLine('System', drainageSystemLabel(round.project.drainageSystem)),
+    optionalReportLine('Besiktningsläge', drainageInspectionStageLabel(round.project.drainageInspectionStage)),
+    optionalReportLine('Anvisning/version', round.project.drainageGuidanceVersion),
+    `Kontrollpunkter: ${round.checkpoints.length}`,
+    statusSummary ? `Status: ${statusSummary}` : null,
+    notVerifiableCount > 0
+      ? `${notVerifiableCount} kontrollpunkter är markerade som ej åtkomliga eller ej verifierbara.`
+      : null,
+  ])
 }
 
 function ebStandardText(id: StandardTextId) {
@@ -3648,6 +4109,8 @@ function buildEbReportDraft(input: {
   const today = now.slice(0, 10)
   const existingByKey = new Map(storedDraft.sections.map((section) => [section.key, section]))
   const noteCount = round.notes.length
+  const checkpointCount = round.checkpoints.length
+  const drainageChecklistRelevant = shouldUseEbTemplateCheckpoints(round.project) || checkpointCount > 0
   const notAccessibleNotes = round.notes.filter((note) => note.statusKey === 'not_accessible')
   const participantRows = participants.map(reportParticipantRow)
   const presentParticipantRows =
@@ -3832,6 +4295,16 @@ function buildEbReportDraft(input: {
       status: includedAttachments.length > 0 ? 'complete' : 'draft',
       isRelevant: true,
       text: appendices,
+      updatedAt: null,
+    },
+    {
+      key: 'drainage_checklist',
+      title: 'Kontrollunderlag dränering',
+      sbrPoint: null,
+      source: 'checkpoints',
+      status: checkpointCount > 0 ? 'complete' : 'draft',
+      isRelevant: drainageChecklistRelevant,
+      text: ebDrainageChecklistReportText(round),
       updatedAt: null,
     },
     {
@@ -4049,6 +4522,9 @@ function buildEbReportDraft(input: {
         return section
       }
       if (section.key === 'testing_documentation') {
+        return section
+      }
+      if (section.key === 'drainage_checklist') {
         return section
       }
       if (section.key === 'conflict_of_interest' && !conflictOfInterestRelevant) {
