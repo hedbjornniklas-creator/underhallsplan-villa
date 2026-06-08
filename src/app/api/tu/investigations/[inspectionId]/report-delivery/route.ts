@@ -13,7 +13,10 @@ import {
   listTuInvestigationImages,
   requireTuContext,
 } from '@/lib/tu/server'
-import { createTuReportSnapshotPayloadV1 } from '@/lib/tu/reportSnapshot'
+import {
+  createTuReportSnapshotPayloadV1,
+  type TuReportDeliveryDocument,
+} from '@/lib/tu/reportSnapshot'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,6 +29,17 @@ const REPORT_PDF_STORAGE_BUCKET = process.env.REPORT_PDF_STORAGE_BUCKET?.trim() 
 type DeliveryAction = 'send_and_lock' | 'send_open' | 'lock_only'
 type PdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
+
+type TuDeliveryDocumentRow = {
+  id: string
+  storage_bucket: string | null
+  file_path: string
+  file_name: string | null
+  title: string | null
+  content_type: string | null
+  file_size_bytes: number | null
+  created_at: string | null
+}
 
 function normalizePdfStatus(value: unknown): PdfStatus {
   const normalized = String(value ?? '').trim().toLowerCase()
@@ -431,6 +445,41 @@ function getPdfDownloadUrl(inspectionId: string, activeLink: Awaited<ReturnType<
   return `/api/report-v2/${encodeURIComponent(inspectionId)}/pdf`
 }
 
+async function listTuDeliveryDocuments(
+  admin: AdminClient,
+  input: {
+    orgId: string
+    inspectionId: string
+  }
+): Promise<TuReportDeliveryDocument[]> {
+  const { data, error } = await admin
+    .from('technical_investigation_documents')
+    .select('id,storage_bucket,file_path,file_name,title,content_type,file_size_bytes,created_at')
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('include_in_delivery', true)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    const message = String(error.message ?? '')
+    if (message.includes('include_in_delivery')) return []
+    throw new Error(error.message ?? 'Kunde inte hämta markerade TU-dokument.')
+  }
+
+  return ((data ?? []) as TuDeliveryDocumentRow[])
+    .map((row) => ({
+      id: row.id,
+      storageBucket: row.storage_bucket?.trim() || 'tu-investigation-documents',
+      filePath: row.file_path,
+      fileName: row.file_name,
+      title: row.title,
+      contentType: row.content_type,
+      fileSizeBytes: row.file_size_bytes,
+      createdAt: row.created_at,
+    }))
+    .filter((document) => document.filePath.trim().length > 0)
+}
+
 function getDashboardDigitalReportUrl(
   inspectionId: string,
   activeLink: Awaited<ReturnType<typeof getLatestReportLink>>
@@ -477,9 +526,10 @@ export async function GET(
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
 
-    const [history, activeLink] = await Promise.all([
+    const [history, activeLink, deliveryDocuments] = await Promise.all([
       getDeliveryHistory(admin, inspectionId),
       getLatestReportLink(admin, inspectionId),
+      listTuDeliveryDocuments(admin, { orgId: org.orgId, inspectionId }),
     ])
     const ordererEmail = resolveDefaultRecipient(investigation)
 
@@ -495,6 +545,7 @@ export async function GET(
       downloadUrl: getPdfDownloadUrl(inspectionId, activeLink),
       digitalUrl: getDashboardDigitalReportUrl(inspectionId, activeLink),
       publicLink: null,
+      deliveryDocuments,
       history,
     })
   } catch (error) {
@@ -541,14 +592,16 @@ export async function POST(
     const sentRecipients: string[] = []
     const failedRecipients: Array<{ email: string; error: string }> = []
 
-    const [coverImages, appendixImages] = await Promise.all([
+    const [coverImages, appendixImages, deliveryDocuments] = await Promise.all([
       listTuInvestigationImages({ orgId: org.orgId, inspectionId, sectionKey: 'cover' }),
       listTuInvestigationImages({ orgId: org.orgId, inspectionId, sectionKey: 'appendix' }),
+      listTuDeliveryDocuments(admin, { orgId: org.orgId, inspectionId }),
     ])
     const snapshotPayload = createTuReportSnapshotPayloadV1({
       investigation,
       coverImages,
       appendixImages,
+      deliveryDocuments,
     })
     const token = generateAssignmentToken()
     const tokenHash = hashAssignmentToken(token)
@@ -673,6 +726,7 @@ export async function POST(
       pdfError: activeLink?.pdf_error ?? null,
       downloadUrl: getPdfDownloadUrl(inspectionId, activeLink),
       digitalUrl: getDashboardDigitalReportUrl(inspectionId, activeLink),
+      deliveryDocuments,
       linkId,
     })
   } catch (error) {

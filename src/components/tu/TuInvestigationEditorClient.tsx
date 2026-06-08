@@ -62,6 +62,7 @@ type TuInvestigationDocument = {
   title: string | null
   contentType: string | null
   fileSizeBytes: number | null
+  includeInDelivery: boolean
   uploadedBy: string | null
   createdAt: string | null
   updatedAt: string | null
@@ -1189,6 +1190,7 @@ export default function TuInvestigationEditorClient({
   const previewImages = [...coverImages, ...bankImages, ...appendixImages]
   const previewImage = previewImages.find((image) => image.id === previewImageId) ?? null
   const previewImageIndex = previewImage ? previewImages.findIndex((image) => image.id === previewImage.id) : -1
+  const deliveryDocumentCount = documents.filter((document) => document.includeInDelivery).length
   const objectAddress = joinDisplay([
     investigation.property?.address ?? investigation.propertyAddress,
     joinDisplay([investigation.property?.postal_code, investigation.property?.city ?? investigation.propertyCity]),
@@ -1586,6 +1588,27 @@ export default function TuInvestigationEditorClient({
       setDocuments((current) => current.filter((document) => document.id !== documentId))
     } catch (deleteError) {
       setDocumentError(deleteError instanceof Error ? deleteError.message : 'Kunde inte ta bort dokument.')
+    } finally {
+      setDocumentBusy(false)
+    }
+  }
+
+  const patchDocument = async (documentId: string, patch: Record<string, unknown>) => {
+    if (locked) return
+
+    setDocumentBusy(true)
+    setDocumentError(null)
+    try {
+      const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}/documents`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId, ...patch }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as DocumentApiResponse
+      if (!response.ok || !payload.document) throw new Error(payload.error ?? 'Kunde inte spara dokument.')
+      setDocuments((current) => upsertDocument(current, payload.document as TuInvestigationDocument))
+    } catch (patchError) {
+      setDocumentError(patchError instanceof Error ? patchError.message : 'Kunde inte spara dokument.')
     } finally {
       setDocumentBusy(false)
     }
@@ -2251,7 +2274,12 @@ export default function TuInvestigationEditorClient({
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-base font-semibold text-gray-950">Dokument</h2>
-              <p className="mt-1 text-sm text-gray-600">Lagra underlag som PDF, Word, Excel eller textfiler.</p>
+              <p className="mt-1 text-sm text-gray-600">
+                Lagra underlag som PDF, Word, Excel eller textfiler.
+                {documents.length > 0
+                  ? ` ${deliveryDocumentCount} av ${documents.length} dokument inkluderas i leveransen.`
+                  : ''}
+              </p>
             </div>
             <button
               type="button"
@@ -2328,6 +2356,18 @@ export default function TuInvestigationEditorClient({
                     </div>
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <label className="inline-flex min-h-9 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800">
+                      <input
+                        type="checkbox"
+                        checked={document.includeInDelivery}
+                        disabled={locked || documentBusy}
+                        onChange={(event) =>
+                          void patchDocument(document.id, { includeInDelivery: event.target.checked })
+                        }
+                        className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-500 disabled:cursor-not-allowed"
+                      />
+                      Inkludera i leverans
+                    </label>
                     {document.signedUrl ? (
                       <a
                         href={document.signedUrl}

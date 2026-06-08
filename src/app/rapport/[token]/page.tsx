@@ -104,12 +104,23 @@ export default async function PublicReportPage({
   const shareUrl = `/rapport/${encodeURIComponent(normalizedToken)}`
 
   if (tuSnapshot) {
+    const deliveryDocuments = (tuSnapshot.deliveryDocuments ?? []).map((document) => ({
+      id: document.id,
+      title: document.title,
+      fileName: document.fileName,
+      contentType: document.contentType,
+      fileSizeBytes: document.fileSizeBytes,
+      createdAt: document.createdAt,
+      downloadUrl: `/api/reports/public/${encodeURIComponent(normalizedToken)}?documentId=${encodeURIComponent(document.id)}&download=1`,
+    }))
+
     return (
       <TuPublicReportSnapshotView
         snapshot={tuSnapshot}
         pdfDownloadUrl={pdfDownloadUrl}
         shareEndpoint={shareEndpoint}
         shareUrl={shareUrl}
+        deliveryDocuments={deliveryDocuments}
       />
     )
   }

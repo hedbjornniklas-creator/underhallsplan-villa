@@ -69,13 +69,14 @@ type TuDocumentRow = {
   title: string | null
   content_type: string | null
   file_size_bytes: number | null
+  include_in_delivery: boolean | null
   uploaded_by: string | null
   created_at: string | null
   updated_at: string | null
 }
 
 const DOCUMENT_COLUMNS =
-  'id,inspection_id,org_id,storage_bucket,file_path,file_name,title,content_type,file_size_bytes,uploaded_by,created_at,updated_at'
+  'id,inspection_id,org_id,storage_bucket,file_path,file_name,title,content_type,file_size_bytes,include_in_delivery,uploaded_by,created_at,updated_at'
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
@@ -111,6 +112,15 @@ function normalizeUuid(value: unknown) {
   const normalized = cleanText(value)?.toLowerCase() ?? null
   if (!normalized || !UUID_PATTERN.test(normalized)) return null
   return normalized
+}
+
+function normalizeBoolean(value: unknown) {
+  if (typeof value === 'boolean') return value
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true
+  if (normalized === 'false' || normalized === '0' || normalized === 'no') return false
+  return null
 }
 
 function normalizeFileExtension(file: File) {
@@ -172,6 +182,7 @@ async function mapDocument(row: TuDocumentRow, admin: TuDocumentSupabaseClient) 
     title: row.title,
     contentType: row.content_type,
     fileSizeBytes: row.file_size_bytes,
+    includeInDelivery: row.include_in_delivery === true,
     uploadedBy: row.uploaded_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -278,6 +289,7 @@ export async function POST(
         title: cleanText(formData.get('title')) ?? fileEntry.name ?? fileName,
         content_type: contentType,
         file_size_bytes: fileEntry.size,
+        include_in_delivery: false,
         uploaded_by: orgContext.userId,
       })
       .select(DOCUMENT_COLUMNS)
@@ -300,6 +312,50 @@ export async function POST(
     const mapped = mapError(error)
     if (mapped) return mapped
     return jsonError('Kunde inte ladda upp TU-dokument.', 500)
+  }
+}
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ inspectionId: string }> }
+) {
+  try {
+    const { inspectionId } = await context.params
+    const orgContext = await requireTuContext()
+    const admin = createSupabaseAdminClient() as unknown as TuDocumentSupabaseClient
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const documentId = normalizeUuid(body.documentId ?? body.document_id)
+
+    if (!documentId) return jsonError('Ogiltigt document_id.', 400)
+    await assertInvestigation(orgContext.orgId, inspectionId, { editable: true })
+
+    const patch: Record<string, unknown> = {}
+    if ('includeInDelivery' in body || 'include_in_delivery' in body) {
+      const includeInDelivery = normalizeBoolean(body.includeInDelivery ?? body.include_in_delivery)
+      if (includeInDelivery === null) return jsonError('Ogiltigt värde för leveransmarkering.', 400)
+      patch.include_in_delivery = includeInDelivery
+    }
+    if ('title' in body) {
+      patch.title = cleanText(body.title)
+    }
+    if (Object.keys(patch).length === 0) return jsonError('Ingen ändring angiven.', 400)
+
+    const { data, error } = await admin
+      .from('technical_investigation_documents')
+      .update(patch)
+      .eq('id', documentId)
+      .eq('org_id', orgContext.orgId)
+      .eq('inspection_id', inspectionId)
+      .select(DOCUMENT_COLUMNS)
+      .single()
+
+    if (error || !data) throw new Error(error?.message ?? 'Kunde inte spara dokument.')
+
+    return NextResponse.json({ ok: true, document: await mapDocument(data as TuDocumentRow, admin) })
+  } catch (error) {
+    const mapped = mapError(error)
+    if (mapped) return mapped
+    return jsonError('Kunde inte spara TU-dokument.', 500)
   }
 }
 

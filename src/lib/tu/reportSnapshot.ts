@@ -34,12 +34,24 @@ export type TuReportSnapshotPayloadV1 = {
   inspectionId: string
   createdAt: string
   report: TuPrintPayload
+  deliveryDocuments?: TuReportDeliveryDocument[]
   meta: {
     assignmentNumber: string | null
     propertyAddress: string | null
     reportDate: string
     customerName: string | null
   }
+}
+
+export type TuReportDeliveryDocument = {
+  id: string
+  storageBucket: string
+  filePath: string
+  fileName: string | null
+  title: string | null
+  contentType: string | null
+  fileSizeBytes: number | null
+  createdAt: string | null
 }
 
 function compact(parts: Array<string | null | undefined>) {
@@ -414,6 +426,7 @@ export function createTuReportSnapshotPayloadV1(input: {
   investigation: TuInvestigationDetails
   coverImages: TuInvestigationImage[]
   appendixImages: TuInvestigationImage[]
+  deliveryDocuments?: TuReportDeliveryDocument[]
   createdAt?: Date
 }): TuReportSnapshotPayloadV1 {
   const createdAt = input.createdAt ?? new Date()
@@ -430,6 +443,7 @@ export function createTuReportSnapshotPayloadV1(input: {
     inspectionId: input.investigation.inspectionId,
     createdAt: createdAt.toISOString(),
     report,
+    deliveryDocuments: input.deliveryDocuments ?? [],
     meta: {
       assignmentNumber:
         input.investigation.assignmentNumber ?? input.investigation.inspection.assignment_number ?? null,

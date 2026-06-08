@@ -1,5 +1,7 @@
 import TuPrintPagedDocument from '@/components/tu/TuPrintPagedDocument'
-import TuPublicReportToolbar from '@/components/tu/TuPublicReportToolbar'
+import TuPublicReportToolbar, {
+  type TuPublicDeliveryDocumentLink,
+} from '@/components/tu/TuPublicReportToolbar'
 import type { TuReportSnapshotPayloadV1 } from '@/lib/tu/reportSnapshot'
 
 export default function TuPublicReportSnapshotView({
@@ -7,11 +9,13 @@ export default function TuPublicReportSnapshotView({
   shareEndpoint,
   shareUrl,
   pdfDownloadUrl,
+  deliveryDocuments = [],
 }: {
   snapshot: TuReportSnapshotPayloadV1
   shareEndpoint: string | null
   shareUrl: string | null
   pdfDownloadUrl: string | null
+  deliveryDocuments?: TuPublicDeliveryDocumentLink[]
 }) {
   const report = snapshot.report
 
@@ -21,6 +25,7 @@ export default function TuPublicReportSnapshotView({
         shareEndpoint={shareEndpoint}
         shareUrl={shareUrl}
         pdfDownloadUrl={pdfDownloadUrl}
+        deliveryDocuments={deliveryDocuments}
       />
       <TuPrintPagedDocument
         companyLogoUrl={report.companyLogoUrl}

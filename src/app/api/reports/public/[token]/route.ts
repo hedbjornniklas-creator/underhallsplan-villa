@@ -3,7 +3,11 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { hashAssignmentToken } from '@/lib/assignments/tokens'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { buildInspectionReportShareEmail } from '@/lib/inspections/reportEmailTemplates'
-import { getTuSnapshotEmailMeta, isTuReportSnapshotPayloadV1 } from '@/lib/tu/reportSnapshot'
+import {
+  getTuSnapshotEmailMeta,
+  isTuReportSnapshotPayloadV1,
+  type TuReportDeliveryDocument,
+} from '@/lib/tu/reportSnapshot'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -77,6 +81,12 @@ const sanitizeFilenamePart = (value: string | null | undefined) => {
 const buildReportFileName = (assignmentNumber: string | null | undefined) => {
   const safeAssignment = sanitizeFilenamePart(assignmentNumber)
   return safeAssignment ? `Utlåtande (${safeAssignment}).pdf` : 'Utlåtande.pdf'
+}
+
+const buildDocumentFileName = (document: TuReportDeliveryDocument) => {
+  const fromTitle = sanitizeFilenamePart(document.title)
+  const fromFileName = sanitizeFilenamePart(document.fileName)
+  return fromTitle || fromFileName || 'Underlag'
 }
 
 function getSnapshotMock(snapshotPayload: unknown): Record<string, unknown> {
@@ -257,6 +267,45 @@ async function createSignedPdfUrl(
   }
 }
 
+async function createSignedDocumentUrl(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  document: TuReportDeliveryDocument,
+  asAttachment: boolean,
+  linkId: string
+) {
+  try {
+    const bucket = String(document.storageBucket ?? '').trim()
+    const path = String(document.filePath ?? '').trim()
+    if (!bucket || !path) return null
+
+    const { data, error } = await admin.storage
+      .from(bucket)
+      .createSignedUrl(path, REPORT_PDF_SIGNED_URL_TTL_SECONDS, {
+        download: asAttachment ? buildDocumentFileName(document) : false,
+      })
+
+    if (error || !data?.signedUrl) {
+      console.error('[reports.public] document signed url failed', {
+        linkId,
+        bucket,
+        path,
+        documentId: document.id,
+        error: error?.message ?? error ?? null,
+      })
+      return null
+    }
+
+    return data.signedUrl
+  } catch (signedUrlError) {
+    console.error('[reports.public] document signed url exception', {
+      linkId,
+      documentId: document.id,
+      error: signedUrlError instanceof Error ? signedUrlError.message : String(signedUrlError),
+    })
+    return null
+  }
+}
+
 export async function POST(
   request: Request,
   context: { params: Promise<{ token: string }> }
@@ -431,7 +480,35 @@ export async function GET(
       return notFoundResponse()
     }
 
-    const asAttachment = new URL(request.url).searchParams.get('download') === '1'
+    const requestUrl = new URL(request.url)
+    const asAttachment = requestUrl.searchParams.get('download') === '1'
+    const requestedDocumentId = String(requestUrl.searchParams.get('documentId') ?? '').trim()
+
+    if (requestedDocumentId) {
+      const snapshotPayload = (data as Record<string, unknown>).snapshot_payload
+      const tuSnapshot = isTuReportSnapshotPayloadV1(snapshotPayload) ? snapshotPayload : null
+      const document =
+        tuSnapshot?.deliveryDocuments?.find((item) => item.id === requestedDocumentId) ?? null
+
+      if (!document) {
+        return notFoundResponse()
+      }
+
+      const signedUrl = await createSignedDocumentUrl(
+        admin,
+        document,
+        asAttachment,
+        String(data.id)
+      )
+      if (!signedUrl) {
+        return new NextResponse('Kunde inte skapa säker nedladdningslänk för dokumentet.', {
+          status: 500,
+        })
+      }
+
+      return NextResponse.redirect(signedUrl, 302)
+    }
+
     let assignmentNumber = extractAssignmentNumberFromSnapshot(
       (data as Record<string, unknown>).snapshot_payload
     )

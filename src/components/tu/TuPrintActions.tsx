@@ -16,6 +16,13 @@ type DeliveryHistoryItem = {
   subject: string | null
 }
 
+type DeliveryDocumentItem = {
+  id: string
+  title: string | null
+  fileName: string | null
+  fileSizeBytes: number | null
+}
+
 type DeliveryResponse = {
   error?: string
   reportLockedAt: string | null
@@ -31,6 +38,7 @@ type DeliveryResponse = {
   sentRecipients?: string[]
   failedRecipients?: Array<{ email: string; error: string }>
   history: DeliveryHistoryItem[]
+  deliveryDocuments?: DeliveryDocumentItem[]
 }
 
 function isValidEmail(value: string) {
@@ -76,6 +84,12 @@ function pdfStatusMessage(meta: DeliveryResponse | null) {
     return meta.pdfError ? `PDF-generering misslyckades: ${meta.pdfError}` : 'PDF-generering misslyckades.'
   }
   return 'PDF-jobbet väntar på att starta.'
+}
+
+function formatFileSize(value: number | null | undefined) {
+  if (!value || value < 1) return null
+  if (value < 1024 * 1024) return `${Math.ceil(value / 1024)} kB`
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
 export default function TuPrintActions({
@@ -302,6 +316,29 @@ export default function TuPrintActions({
             />
           </label>
         </div>
+
+        {meta?.deliveryDocuments?.length ? (
+          <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-800">
+              Underlag i digital leverans
+            </h3>
+            <div className="mt-2 grid gap-2 md:grid-cols-2">
+              {meta.deliveryDocuments.map((document) => {
+                const label = document.title?.trim() || document.fileName?.trim() || 'Underlag'
+                const size = formatFileSize(document.fileSizeBytes)
+                return (
+                  <div
+                    key={document.id}
+                    className="rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <span className="block truncate font-medium text-gray-950">{label}</span>
+                    {size ? <span className="text-xs text-gray-500">{size}</span> : null}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ) : null}
 
         <p className={`mt-3 min-h-12 rounded-md border px-3 py-2 text-sm ${statusClassName}`}>
           {statusText}
