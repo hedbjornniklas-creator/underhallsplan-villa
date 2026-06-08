@@ -16,6 +16,7 @@ export type EbPreviousInspectionStatus = 'performed' | 'not_performed' | 'not_ap
 export type EbInspectionDocumentStatus = 'present' | 'missing' | 'na'
 export type EbProjectAgreementItemKind = 'change_order' | 'other'
 export type EbDefectNoErrorPartsPolicy = 'not_listed' | 'listed_with_dash'
+export type EbReportPdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
 
 export type EbPreviousInspectionItem = {
   key: string
@@ -86,6 +87,11 @@ export type EbInspectionSummary = {
   defectNumberingExplanation: string | null
   defectNoErrorPartsPolicy: EbDefectNoErrorPartsPolicy | null
   reportLockedAt: string | null
+  reportLockedBy: string | null
+  reportPdfStatus: EbReportPdfStatus | null
+  reportPdfError: string | null
+  reportPdfDownloadUrl: string | null
+  reportPdfCreatedAt: string | null
   createdAt: string | null
 }
 
@@ -400,6 +406,7 @@ type EbInspectionDetailRow = {
   invitation_subject?: string | null
   invitation_body?: string | null
   report_locked_at: string | null
+  report_locked_by?: string | null
   report_draft?: unknown
   report_draft_updated_at?: string | null
   created_at: string | null
@@ -414,6 +421,16 @@ type InspectionRow = {
   client_name: string | null
   assignment_number: string | null
   created_at: string | null
+}
+
+type EbReportLinkRow = {
+  inspection_id: string
+  created_at: string | null
+  pdf_status: string | null
+  pdf_error: string | null
+  pdf_storage_bucket: string | null
+  pdf_storage_path: string | null
+  pdf_base64: string | null
 }
 
 type EbDisciplineSettingRow = {
@@ -1040,11 +1057,33 @@ function toPropertyName(input: {
   )
 }
 
+function normalizeEbReportPdfStatus(value: unknown): EbReportPdfStatus {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'processing') return 'processing'
+  if (normalized === 'ready') return 'ready'
+  if (normalized === 'failed') return 'failed'
+  return 'pending'
+}
+
+function getEbReportPdfDownloadUrl(inspectionId: string, link: EbReportLinkRow | undefined) {
+  if (!link) return null
+  const hasStoragePdf =
+    String(link.pdf_storage_bucket ?? '').trim().length > 0 &&
+    String(link.pdf_storage_path ?? '').trim().length > 0
+  const hasLegacyPdf = String(link.pdf_base64 ?? '').trim().length > 0
+  if (normalizeEbReportPdfStatus(link.pdf_status) !== 'ready' || (!hasStoragePdf && !hasLegacyPdf)) {
+    return null
+  }
+  return `/api/report-v2/${encodeURIComponent(inspectionId)}/pdf`
+}
+
 function mapInspectionSummary(
   detail: EbInspectionDetailRow,
-  inspection: InspectionRow | undefined
+  inspection: InspectionRow | undefined,
+  reportLink?: EbReportLinkRow
 ): EbInspectionSummary {
   const variant = toVariant(detail.inspection_variant)
+  const reportPdfStatus = reportLink ? normalizeEbReportPdfStatus(reportLink.pdf_status) : null
 
   return {
     inspectionId: detail.inspection_id,
@@ -1084,6 +1123,11 @@ function mapInspectionSummary(
     defectNumberingExplanation: detail.defect_numbering_explanation ?? null,
     defectNoErrorPartsPolicy: normalizeDefectNoErrorPartsPolicy(detail.defect_no_error_parts_policy),
     reportLockedAt: detail.report_locked_at ?? null,
+    reportLockedBy: detail.report_locked_by ?? null,
+    reportPdfStatus,
+    reportPdfError: reportLink?.pdf_error ?? null,
+    reportPdfDownloadUrl: getEbReportPdfDownloadUrl(detail.inspection_id, reportLink),
+    reportPdfCreatedAt: reportLink?.created_at ?? null,
     createdAt: inspection?.created_at ?? detail.created_at ?? null,
   }
 }
@@ -1091,10 +1135,17 @@ function mapInspectionSummary(
 function mapProject(
   project: EbProjectRow,
   detailsByProjectId: Map<string, EbInspectionDetailRow[]>,
-  inspectionsById: Map<string, InspectionRow>
+  inspectionsById: Map<string, InspectionRow>,
+  reportLinksByInspectionId: Map<string, EbReportLinkRow>
 ): EbProjectListItem {
   const inspections = (detailsByProjectId.get(project.id) ?? [])
-    .map((detail) => mapInspectionSummary(detail, inspectionsById.get(detail.inspection_id)))
+    .map((detail) =>
+      mapInspectionSummary(
+        detail,
+        inspectionsById.get(detail.inspection_id),
+        reportLinksByInspectionId.get(detail.inspection_id)
+      )
+    )
     .sort((left, right) => {
       if (left.sequenceNo !== right.sequenceNo) return left.sequenceNo - right.sequenceNo
       return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
@@ -1191,7 +1242,7 @@ async function fetchDetailsForProjects(orgId: string, projectIds: string[]) {
   const baseSelect =
     'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,report_locked_at,created_at'
   const withStructuredReportSelect =
-    'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,inspector_appointed_by,invitation_method,invitation_date,approval_status,approval_note,requires_continued_final_inspection,continued_final_inspection_date,continued_final_inspection_time,warranty_period_years,warranty_end_date,warranty_scope,default_remedy_deadline,after_inspection_requested,after_inspection_requested_by,after_inspection_due_date,after_inspection_notice_in_report,inspection_cost_distribution,report_distribution_date,previous_inspections,defect_numbering_explanation,defect_no_error_parts_policy,report_locked_at,created_at'
+    'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,inspector_appointed_by,invitation_method,invitation_date,approval_status,approval_note,requires_continued_final_inspection,continued_final_inspection_date,continued_final_inspection_time,warranty_period_years,warranty_end_date,warranty_scope,default_remedy_deadline,after_inspection_requested,after_inspection_requested_by,after_inspection_due_date,after_inspection_notice_in_report,inspection_cost_distribution,report_distribution_date,previous_inspections,defect_numbering_explanation,defect_no_error_parts_policy,report_locked_at,report_locked_by,created_at'
   const { data, error } = await admin
     .from('eb_inspection_details')
     .select(withStructuredReportSelect)
@@ -1237,10 +1288,40 @@ async function fetchInspectionsByIds(inspectionIds: string[]) {
   return new Map(((data ?? []) as InspectionRow[]).map((inspection) => [inspection.id, inspection]))
 }
 
+async function fetchLatestReportLinksByInspectionIds(inspectionIds: string[]) {
+  if (inspectionIds.length === 0) return new Map<string, EbReportLinkRow>()
+
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('inspection_report_links')
+    .select(
+      'inspection_id,created_at,pdf_status,pdf_error,pdf_storage_bucket,pdf_storage_path,pdf_base64'
+    )
+    .in('inspection_id', inspectionIds)
+    .is('revoked_at', null)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta sparade EB-PDF:er.')
+  }
+
+  const linksByInspectionId = new Map<string, EbReportLinkRow>()
+  for (const row of (data ?? []) as EbReportLinkRow[]) {
+    if (!linksByInspectionId.has(row.inspection_id)) {
+      linksByInspectionId.set(row.inspection_id, row)
+    }
+  }
+  return linksByInspectionId
+}
+
 async function buildProjectItems(projectRows: EbProjectRow[]) {
   const projectIds = projectRows.map((project) => project.id)
   const details = await fetchDetailsForProjects(projectRows[0]?.org_id ?? '', projectIds)
-  const inspectionsById = await fetchInspectionsByIds(details.map((detail) => detail.inspection_id))
+  const inspectionIds = details.map((detail) => detail.inspection_id)
+  const [inspectionsById, reportLinksByInspectionId] = await Promise.all([
+    fetchInspectionsByIds(inspectionIds),
+    fetchLatestReportLinksByInspectionIds(inspectionIds),
+  ])
   const detailsByProjectId = new Map<string, EbInspectionDetailRow[]>()
 
   for (const detail of details) {
@@ -1249,7 +1330,9 @@ async function buildProjectItems(projectRows: EbProjectRow[]) {
     detailsByProjectId.set(detail.eb_project_id, rows)
   }
 
-  return projectRows.map((project) => mapProject(project, detailsByProjectId, inspectionsById))
+  return projectRows.map((project) =>
+    mapProject(project, detailsByProjectId, inspectionsById, reportLinksByInspectionId)
+  )
 }
 
 export async function listEbProjects(orgId: string): Promise<EbProjectListItem[]> {
@@ -1616,6 +1699,7 @@ async function syncMissingDocumentNotes(input: {
 export async function saveEbInspectionDocuments(
   input: SaveEbInspectionDocumentsInput
 ): Promise<EbInspectionDocument[]> {
+  await assertEbInspectionEditable(input)
   const roundBase = await getEbInspectionRoundBase(input)
 
   const documentTypes = await listEbDocumentTypes()
@@ -1787,6 +1871,44 @@ async function getEbInspectionRoundBase(input: {
   }
 
   return { project, inspection }
+}
+
+export async function assertEbInspectionEditable(input: {
+  orgId: string
+  projectId: string
+  inspectionId: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const { data: detail, error: detailError } = await admin
+    .from('eb_inspection_details')
+    .select('inspection_id,report_locked_at')
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+    .maybeSingle()
+
+  if (detailError) {
+    throw new Error(detailError.message ?? 'Kunde inte kontrollera EB-låsning.')
+  }
+  if (!detail) {
+    throw new Error('EB_INSPECTION_NOT_FOUND')
+  }
+  if ((detail as { report_locked_at?: string | null }).report_locked_at) {
+    throw new Error('EB_REPORT_LOCKED')
+  }
+
+  const { data: inspection, error: inspectionError } = await admin
+    .from('inspections')
+    .select('id,locked_at')
+    .eq('id', input.inspectionId)
+    .maybeSingle()
+
+  if (inspectionError) {
+    throw new Error(inspectionError.message ?? 'Kunde inte kontrollera besiktningslåsning.')
+  }
+  if ((inspection as { locked_at?: string | null } | null)?.locked_at) {
+    throw new Error('EB_REPORT_LOCKED')
+  }
 }
 
 async function listEbDisciplines(input: {
@@ -2578,6 +2700,8 @@ export async function updateEbInspection(input: UpdateEbInspectionInput): Promis
     throw new Error('EB_INSPECTION_NOT_FOUND')
   }
 
+  await assertEbInspectionEditable(input)
+
   const admin = createSupabaseAdminClient()
   const { error: inspectionError } = await admin
     .from('inspections')
@@ -2773,6 +2897,7 @@ async function buildEbNoteContext(input: {
 }
 
 export async function createEbNote(input: SaveEbNoteInput): Promise<EbNote> {
+  await assertEbInspectionEditable(input)
   const admin = createSupabaseAdminClient()
   const context = await buildEbNoteContext(input)
   const noteText = normalizeText(input.noteText)
@@ -2845,6 +2970,7 @@ export async function createEbNote(input: SaveEbNoteInput): Promise<EbNote> {
 }
 
 export async function updateEbNote(input: SaveEbNoteInput & { noteId: string }): Promise<EbNote> {
+  await assertEbInspectionEditable(input)
   const admin = createSupabaseAdminClient()
   const context = await buildEbNoteContext(input)
   const noteText = normalizeText(input.noteText)
@@ -2917,6 +3043,7 @@ export async function updateEbNote(input: SaveEbNoteInput & { noteId: string }):
 }
 
 export async function deleteEbNote(input: DeleteEbNoteInput) {
+  await assertEbInspectionEditable(input)
   await getEbInspectionRoundBase(input)
   const admin = createSupabaseAdminClient()
   const { error: imageDetachError } = await admin
@@ -2947,6 +3074,7 @@ export async function deleteEbNote(input: DeleteEbNoteInput) {
 }
 
 export async function reorderEbNote(input: ReorderEbNoteInput) {
+  await assertEbInspectionEditable(input)
   await getEbInspectionRoundBase(input)
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
@@ -3008,6 +3136,7 @@ export async function reorderEbNote(input: ReorderEbNoteInput) {
 }
 
 export async function reorderEbNotes(input: ReorderEbNotesInput) {
+  await assertEbInspectionEditable(input)
   await getEbInspectionRoundBase(input)
   const orderedNoteIds = Array.from(
     new Set(input.orderedNoteIds.map((id) => normalizeText(id)).filter(Boolean) as string[])
@@ -3961,6 +4090,7 @@ function buildEbReportDraft(input: {
 }
 
 export async function saveEbReportDraft(input: SaveEbReportDraftInput): Promise<EbReportDraft> {
+  await assertEbInspectionEditable(input)
   const round = await getEbInspectionRound(input)
   const participants = await listParticipantsForInspection(input)
   const resolvedParticipants = participants.length > 0 ? participants : buildDefaultParticipants(round.project)
@@ -4306,6 +4436,7 @@ function resolveRecipientName(participant: EbInvitationParticipant) {
 }
 
 export async function sendEbInvitation(input: SendEbInvitationInput): Promise<SendEbInvitationResult> {
+  await assertEbInspectionEditable(input)
   await getEbInvitationContext(input)
   const subject = normalizeText(input.subject)
   const body = normalizeText(input.body)
@@ -4443,6 +4574,7 @@ export async function sendEbInvitation(input: SendEbInvitationInput): Promise<Se
 }
 
 export async function saveEbInvitationDraft(input: SaveEbInvitationDraftInput): Promise<EbInvitationContext> {
+  await assertEbInspectionEditable(input)
   await getEbInvitationContext(input)
   const participants = input.participants.map(normalizeParticipantInput).filter(participantHasContent)
 

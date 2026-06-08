@@ -48,6 +48,7 @@ function mapError(error: unknown, fallback: string) {
   }
   if (message === 'EB_PROJECT_NOT_FOUND') return jsonError('Entreprenaden hittades inte.', 404)
   if (message === 'EB_INSPECTION_NOT_FOUND') return jsonError('Besiktningen hittades inte.', 404)
+  if (message === 'EB_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'EB_NOTE_NOT_FOUND') return jsonError('Noteringen hittades inte.', 404)
   if (message === 'EB_DISCIPLINE_REQUIRED') return jsonError('Välj fack innan noteringen sparas.', 400)
   if (message === 'EB_NOTE_TEXT_REQUIRED') return jsonError('Skriv en noteringstext.', 400)

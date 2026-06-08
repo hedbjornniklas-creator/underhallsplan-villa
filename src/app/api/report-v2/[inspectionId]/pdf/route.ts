@@ -45,6 +45,7 @@ type InspectionForPdf = {
   id: string
   status: string | null
   assignment_number: string | null
+  date: string | null
   property_id: string | null
 }
 
@@ -54,9 +55,9 @@ const sanitizeFilenamePart = (value: string | null | undefined) => {
   return raw.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim()
 }
 
-const buildReportFileName = (assignmentNumber: string | null | undefined) => {
-  const safeAssignment = sanitizeFilenamePart(assignmentNumber)
-  return safeAssignment ? `Utlåtande (${safeAssignment}).pdf` : 'Utlåtande.pdf'
+const buildReportFileName = (inspectionDate: string | null | undefined) => {
+  const safeDate = sanitizeFilenamePart(inspectionDate)
+  return safeDate ? `Utlåtande ${safeDate}.pdf` : 'Utlåtande.pdf'
 }
 
 async function createSignedPdfUrl(
@@ -104,6 +105,21 @@ async function hasTechnicalInvestigationAccess(admin: AdminClient, orgId: string
   return Boolean(data)
 }
 
+async function hasEbInspectionAccess(admin: AdminClient, orgId: string, inspectionId: string) {
+  const { data, error } = await admin
+    .from('eb_inspection_details')
+    .select('inspection_id')
+    .eq('org_id', orgId)
+    .eq('inspection_id', inspectionId)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte verifiera access till EB-utlåtandet.')
+  }
+
+  return Boolean(data)
+}
+
 async function isInspectionOwnedByUser(
   admin: AdminClient,
   propertyId: string | null,
@@ -141,7 +157,7 @@ export async function GET(
 
     const { data: inspection, error: inspectionError } = await admin
       .from('inspections')
-      .select('id,status,assignment_number,property_id')
+      .select('id,status,assignment_number,date,property_id')
       .eq('id', inspectionId)
       .maybeSingle()
 
@@ -157,6 +173,7 @@ export async function GET(
     const hasAccess =
       (await hasAssignmentAccess(admin, orgContext.orgId, inspectionId)) ||
       (await hasTechnicalInvestigationAccess(admin, orgContext.orgId, inspectionId)) ||
+      (await hasEbInspectionAccess(admin, orgContext.orgId, inspectionId)) ||
       (await isInspectionOwnedByUser(admin, inspectionRow.property_id, orgContext.userId))
 
     if (!hasAccess) {
@@ -165,7 +182,7 @@ export async function GET(
       })
     }
 
-    const fileName = buildReportFileName(inspectionRow.assignment_number)
+    const fileName = buildReportFileName(inspectionRow.date)
 
     const { data: linkRows, error: linkError } = await admin
       .from('inspection_report_links')

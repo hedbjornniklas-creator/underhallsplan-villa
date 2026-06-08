@@ -341,6 +341,8 @@ export default function EbInspectionMobileRoundClient({
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const isLocked = Boolean(round.inspection.reportLockedAt)
+  const lockedMessage = 'Utlåtandet är låst och kan inte ändras.'
 
   const activeDiscipline =
     round.disciplines.find((discipline) => discipline.id === activeDisciplineId) ?? null
@@ -465,6 +467,10 @@ export default function EbInspectionMobileRoundClient({
   }
 
   const openNewNote = () => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
     if (!activeDisciplineId) {
       setError('Fack saknas för rundan.')
       return
@@ -531,6 +537,9 @@ export default function EbInspectionMobileRoundClient({
   }
 
   const saveCurrentNote = async () => {
+    if (isLocked) {
+      throw new Error(lockedMessage)
+    }
     if (!activeDisciplineId) {
       throw new Error('Fack saknas för rundan.')
     }
@@ -563,6 +572,10 @@ export default function EbInspectionMobileRoundClient({
   }
 
   const uploadImage = async (file: File) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
     if (uploadingImage) return
 
     try {
@@ -602,6 +615,10 @@ export default function EbInspectionMobileRoundClient({
   }
 
   const deleteImage = async (image: EbNoteImage) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
     if (!editingNote || deletingImageId) return
     const confirmed = window.confirm('Radera bilden?')
     if (!confirmed) return
@@ -650,6 +667,10 @@ export default function EbInspectionMobileRoundClient({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
     if (saving || !activeDisciplineId) return
 
     try {
@@ -664,6 +685,10 @@ export default function EbInspectionMobileRoundClient({
   }
 
   const handleSaveAndNew = async () => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
     if (saving || !activeDisciplineId) return
 
     try {
@@ -680,6 +705,10 @@ export default function EbInspectionMobileRoundClient({
   }
 
   const handleDelete = async (note: EbNote) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
     if (deletingId) return
     const confirmed = window.confirm(`Radera ${round.project.notePrefix} ${note.noteNumber}?`)
     if (!confirmed) return
@@ -783,10 +812,17 @@ export default function EbInspectionMobileRoundClient({
         </header>
 
         <div className="mx-auto w-full max-w-4xl px-3 py-3">
+          {isLocked ? (
+            <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+              Utlåtandet är låst och visas i läsläge.
+            </div>
+          ) : null}
+
           <section className="grid grid-cols-[1fr_auto_auto] gap-2">
             <button
               type="button"
               onClick={openNewNote}
+              disabled={isLocked}
               className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800"
             >
               <Plus size={16} />
@@ -902,6 +938,7 @@ export default function EbInspectionMobileRoundClient({
             <button
               type="button"
               onClick={openNewNote}
+              disabled={isLocked}
               className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white"
             >
               <Plus size={16} />
@@ -1062,7 +1099,7 @@ export default function EbInspectionMobileRoundClient({
                           <button
                             type="button"
                             onClick={() => cameraInputRef.current?.click()}
-                            disabled={uploadingImage}
+                            disabled={isLocked || uploadingImage}
                             className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                             aria-label="Kamera"
                             title="Kamera"
@@ -1072,7 +1109,7 @@ export default function EbInspectionMobileRoundClient({
                           <button
                             type="button"
                             onClick={() => galleryInputRef.current?.click()}
-                            disabled={uploadingImage}
+                            disabled={isLocked || uploadingImage}
                             className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
                             aria-label="Bild"
                             title="Bild"
@@ -1115,7 +1152,7 @@ export default function EbInspectionMobileRoundClient({
                               <button
                                 type="button"
                                 onClick={() => void deleteImage(image)}
-                                disabled={deletingImageId === image.id}
+                                disabled={isLocked || deletingImageId === image.id}
                                 className="absolute right-1 top-1 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
                                 aria-label="Radera bild"
                                 title="Radera bild"
@@ -1236,7 +1273,7 @@ export default function EbInspectionMobileRoundClient({
                       <button
                         type="button"
                         onClick={() => void handleDelete(editingNote)}
-                        disabled={deletingId === editingNote.id}
+                        disabled={isLocked || deletingId === editingNote.id}
                         className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                         aria-label="Radera"
                         title="Radera"
@@ -1251,7 +1288,7 @@ export default function EbInspectionMobileRoundClient({
                     <button
                       type="button"
                       onClick={() => void handleSaveAndNew()}
-                      disabled={saving || !activeDisciplineId}
+                      disabled={isLocked || saving || !activeDisciplineId}
                       className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <Plus size={16} />
@@ -1259,7 +1296,7 @@ export default function EbInspectionMobileRoundClient({
                     </button>
                     <button
                       type="submit"
-                      disabled={saving || !activeDisciplineId}
+                      disabled={isLocked || saving || !activeDisciplineId}
                       className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                     >
                       {saving ? (

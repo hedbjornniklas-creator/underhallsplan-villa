@@ -64,6 +64,7 @@ function mapError(error: unknown, fallback: string) {
   }
   if (message === 'EB_PROJECT_NOT_FOUND') return jsonError('Entreprenaden hittades inte.', 404)
   if (message === 'EB_INSPECTION_NOT_FOUND') return jsonError('Besiktningen hittades inte.', 404)
+  if (message === 'EB_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'INVITATION_SUBJECT_REQUIRED') return jsonError('Ange ämne.', 400)
   if (message === 'INVITATION_BODY_REQUIRED') return jsonError('Ange kallelsetext.', 400)
   if (message === 'INVITATION_RECIPIENT_REQUIRED') {

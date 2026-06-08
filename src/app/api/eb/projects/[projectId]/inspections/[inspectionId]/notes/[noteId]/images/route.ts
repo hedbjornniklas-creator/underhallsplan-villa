@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
-import { EB_NOTE_IMAGE_BUCKET } from '@/lib/eb/server'
+import { assertEbInspectionEditable, EB_NOTE_IMAGE_BUCKET } from '@/lib/eb/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
@@ -79,6 +79,7 @@ function mapError(error: unknown, fallback: string) {
     return jsonError('EB kräver egen modulbehörighet.', 403)
   }
   if (message === 'EB_NOTE_NOT_FOUND') return jsonError('Noteringen hittades inte.', 404)
+  if (message === 'EB_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   return jsonError(message || fallback, 500)
 }
 
@@ -92,6 +93,7 @@ export async function POST(
     const { projectId, inspectionId, noteId } = await context.params
     const org = await requireEbContext()
     const admin = createSupabaseAdminClient()
+    await assertEbInspectionEditable({ orgId: org.orgId, projectId, inspectionId })
 
     const { data: noteRow, error: noteError } = await admin
       .from('eb_notes')
@@ -199,6 +201,7 @@ export async function DELETE(
 
     const org = await requireEbContext()
     const admin = createSupabaseAdminClient()
+    await assertEbInspectionEditable({ orgId: org.orgId, projectId, inspectionId })
 
     const { data: noteRow, error: noteError } = await admin
       .from('eb_notes')
@@ -268,6 +271,7 @@ export async function PATCH(
 
     const org = await requireEbContext()
     const admin = createSupabaseAdminClient()
+    await assertEbInspectionEditable({ orgId: org.orgId, projectId, inspectionId })
 
     const { data: noteRow, error: noteError } = await admin
       .from('eb_notes')

@@ -922,6 +922,8 @@ export default function EbInspectionRoundClient({
   const [documentsSaving, setDocumentsSaving] = useState(false)
   const [reportDraftSaving, setReportDraftSaving] = useState(false)
   const [reviewMessage, setReviewMessage] = useState<string | null>(null)
+  const isLocked = Boolean(round.inspection.reportLockedAt)
+  const lockedMessage = 'Utlåtandet är låst och kan inte ändras.'
 
   const activeDiscipline = round.disciplines.find((discipline) => discipline.id === activeDisciplineId) ?? null
   const filteredNotes = useMemo(
@@ -1049,6 +1051,11 @@ export default function EbInspectionRoundClient({
   }, [])
 
   const persistNoteOrder = async (notesToSave: EbNote[], version: number) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      setOrderSaving(false)
+      return
+    }
     setOrderSaving(true)
     try {
       const response = await fetch(`${notesBasePath}/reorder`, {
@@ -1079,6 +1086,10 @@ export default function EbInspectionRoundClient({
   }
 
   const scheduleNoteOrderSave = (notesToSave: EbNote[]) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
     if (orderSaveTimerRef.current) {
       clearTimeout(orderSaveTimerRef.current)
     }
@@ -1159,6 +1170,10 @@ export default function EbInspectionRoundClient({
   }
 
   const saveInspectionDetails = async () => {
+    if (isLocked) {
+      setReviewMessage(lockedMessage)
+      return
+    }
     if (inspectionSaving) return
 
     try {
@@ -1204,6 +1219,10 @@ export default function EbInspectionRoundClient({
   }
 
   const saveParticipants = async () => {
+    if (isLocked) {
+      setReviewMessage(lockedMessage)
+      return
+    }
     if (participantsSaving || invitationLoading || !invitationLoaded) return
 
     try {
@@ -1236,6 +1255,10 @@ export default function EbInspectionRoundClient({
   }
 
   const saveDocuments = async () => {
+    if (isLocked) {
+      setReviewMessage(lockedMessage)
+      return
+    }
     if (documentsSaving) return
 
     try {
@@ -1262,6 +1285,10 @@ export default function EbInspectionRoundClient({
   }
 
   const saveReportDraft = async () => {
+    if (isLocked) {
+      setReviewMessage(lockedMessage)
+      return
+    }
     if (reportDraftSaving) return
 
     try {
@@ -1346,6 +1373,9 @@ export default function EbInspectionRoundClient({
   }
 
   const saveCurrentNote = async () => {
+    if (isLocked) {
+      throw new Error(lockedMessage)
+    }
     const disciplineId =
       editingNote?.disciplineId ?? activeDisciplineId ?? round.disciplines[0]?.id ?? null
     if (saving || !disciplineId) return null
@@ -1397,6 +1427,10 @@ export default function EbInspectionRoundClient({
   }
 
   const handleNewNote = () => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
     setEditingNote(null)
     setActiveDisciplineId((current) => current ?? round.disciplines[0]?.id ?? null)
     setForm(createInitialForm(round))
@@ -1405,6 +1439,10 @@ export default function EbInspectionRoundClient({
   }
 
   const handleMoveNote = (note: EbNote, direction: 'up' | 'down') => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
     const movedNotes = moveNoteInOrder(notesRef.current, note.id, direction)
     if (!movedNotes) return
 
@@ -1415,6 +1453,10 @@ export default function EbInspectionRoundClient({
   }
 
   const uploadImage = async (file: File) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
     if (uploadingImage) return
 
     try {
@@ -1451,6 +1493,10 @@ export default function EbInspectionRoundClient({
   }
 
   const detachImage = async (image: EbNoteImage) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
     if (!editingNote || deletingImageId) return
 
     try {
@@ -1474,6 +1520,10 @@ export default function EbInspectionRoundClient({
   }
 
   const attachImage = async (imageId: string) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
     if (!editingNote || movingImageId) return
 
     try {
@@ -1497,6 +1547,10 @@ export default function EbInspectionRoundClient({
   }
 
   const handleDelete = async (note: EbNote) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
     if (deletingId) return
     const confirmed = window.confirm(`Radera ${round.project.notePrefix} ${note.noteNumber}?`)
     if (!confirmed) return
@@ -1604,6 +1658,12 @@ export default function EbInspectionRoundClient({
             </div>
           </header>
 
+          {isLocked ? (
+            <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 shadow-sm">
+              Utlåtandet är låst och visas i läsläge.
+            </p>
+          ) : null}
+
           {reviewMessage ? (
             <p className="mt-4 rounded-md border border-emerald-100 bg-white/90 px-3 py-2 text-sm font-medium text-gray-700 shadow-sm">
               {reviewMessage}
@@ -1638,7 +1698,7 @@ export default function EbInspectionRoundClient({
                 <button
                   type="button"
                   onClick={() => void saveInspectionDetails()}
-                  disabled={inspectionSaving}
+                  disabled={isLocked || inspectionSaving}
                   className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 >
                   {inspectionSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -1717,7 +1777,7 @@ export default function EbInspectionRoundClient({
                 <button
                   type="button"
                   onClick={() => void saveParticipants()}
-                  disabled={participantsSaving || invitationLoading || !invitationLoaded}
+                  disabled={isLocked || participantsSaving || invitationLoading || !invitationLoaded}
                   className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 >
                   {participantsSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -1769,7 +1829,7 @@ export default function EbInspectionRoundClient({
                 <button
                   type="button"
                   onClick={() => void saveInspectionDetails()}
-                  disabled={inspectionSaving}
+                  disabled={isLocked || inspectionSaving}
                   className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 >
                   {inspectionSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -1790,7 +1850,7 @@ export default function EbInspectionRoundClient({
                 <button
                   type="button"
                   onClick={() => void saveDocuments()}
-                  disabled={documentsSaving}
+                  disabled={isLocked || documentsSaving}
                   className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 >
                   {documentsSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -1808,7 +1868,7 @@ export default function EbInspectionRoundClient({
                 <button
                   type="button"
                   onClick={() => void saveInspectionDetails()}
-                  disabled={inspectionSaving}
+                  disabled={isLocked || inspectionSaving}
                   className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 >
                   {inspectionSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -2001,7 +2061,7 @@ export default function EbInspectionRoundClient({
                 <button
                   type="button"
                   onClick={() => void saveInspectionDetails()}
-                  disabled={inspectionSaving}
+                  disabled={isLocked || inspectionSaving}
                   className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 >
                   {inspectionSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -2040,7 +2100,7 @@ export default function EbInspectionRoundClient({
                 <button
                   type="button"
                   onClick={() => void saveReportDraft()}
-                  disabled={reportDraftSaving}
+                  disabled={isLocked || reportDraftSaving}
                   className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 >
                   {reportDraftSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -2138,6 +2198,7 @@ export default function EbInspectionRoundClient({
                   <button
                     type="button"
                     onClick={handleNewNote}
+                    disabled={isLocked}
                     className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-emerald-700 px-3 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                   >
                     <Plus size={14} />
@@ -2180,7 +2241,7 @@ export default function EbInspectionRoundClient({
                               event.stopPropagation()
                               if (canMoveUp) handleMoveNote(note, 'up')
                             }}
-                            disabled={!canMoveUp}
+                            disabled={isLocked || !canMoveUp}
                             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                             aria-label="Flytta upp"
                             title="Flytta upp"
@@ -2193,7 +2254,7 @@ export default function EbInspectionRoundClient({
                               event.stopPropagation()
                               if (canMoveDown) handleMoveNote(note, 'down')
                             }}
-                            disabled={!canMoveDown}
+                            disabled={isLocked || !canMoveDown}
                             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                             aria-label="Flytta ned"
                             title="Flytta ned"
@@ -2247,7 +2308,7 @@ export default function EbInspectionRoundClient({
                     onClick={() => {
                       if (previousEditingNote) handleEdit(previousEditingNote)
                     }}
-                    disabled={!previousEditingNote}
+                  disabled={isLocked || !previousEditingNote}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-base font-semibold text-gray-800 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
                     aria-label="Föregående notering"
                     title="Föregående notering"
@@ -2259,7 +2320,7 @@ export default function EbInspectionRoundClient({
                     onClick={() => {
                       if (nextEditingNote) handleEdit(nextEditingNote)
                     }}
-                    disabled={!nextEditingNote}
+                  disabled={isLocked || !nextEditingNote}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-base font-semibold text-gray-800 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
                     aria-label="Nästa notering"
                     title="Nästa notering"
@@ -2391,7 +2452,7 @@ export default function EbInspectionRoundClient({
                       <button
                         type="button"
                         onClick={() => cameraInputRef.current?.click()}
-                        disabled={uploadingImage || !editingNote}
+                        disabled={isLocked || uploadingImage || !editingNote}
                         className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                         aria-label="Kamera"
                         title="Kamera"
@@ -2401,7 +2462,7 @@ export default function EbInspectionRoundClient({
                       <button
                         type="button"
                         onClick={() => galleryInputRef.current?.click()}
-                        disabled={uploadingImage || !editingNote}
+                        disabled={isLocked || uploadingImage || !editingNote}
                         className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
                         aria-label="Bild"
                         title="Bild"
@@ -2419,7 +2480,7 @@ export default function EbInspectionRoundClient({
                           <button
                             type="button"
                             onClick={() => void detachImage(image)}
-                            disabled={deletingImageId === image.id}
+                            disabled={isLocked || deletingImageId === image.id}
                             className="absolute right-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
                             aria-label="Koppla loss bild"
                             title="Koppla loss"
@@ -2540,7 +2601,7 @@ export default function EbInspectionRoundClient({
                   <button
                     type="button"
                     onClick={() => void handleDelete(editingNote)}
-                    disabled={deletingId === editingNote.id}
+                    disabled={isLocked || deletingId === editingNote.id}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-rose-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {deletingId === editingNote.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
@@ -2550,7 +2611,7 @@ export default function EbInspectionRoundClient({
 
                 <button
                   type="submit"
-                  disabled={saving || round.disciplines.length === 0}
+                  disabled={isLocked || saving || round.disciplines.length === 0}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 >
                   {saving ? <Loader2 size={16} className="animate-spin" /> : editingNote ? <Save size={16} /> : <Plus size={16} />}
@@ -2621,7 +2682,7 @@ export default function EbInspectionRoundClient({
                                   if (!image.noteId) void attachImage(image.id)
                                   else if (note) handleEdit(note)
                                 }}
-                                disabled={movingImageId === image.id}
+                                disabled={isLocked || movingImageId === image.id}
                                 className={
                                   linkedToCurrent
                                     ? 'relative overflow-hidden rounded-md border-2 border-emerald-600 bg-white text-left'

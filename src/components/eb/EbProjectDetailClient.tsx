@@ -7,13 +7,16 @@ import {
   ArrowLeft,
   CalendarDays,
   ClipboardCheck,
+  Download,
   FileText,
+  Lock,
   Loader2,
   Pencil,
   Plus,
   Send,
   Smartphone,
   Trash2,
+  Unlock,
   UserPlus,
   X,
 } from 'lucide-react'
@@ -80,6 +83,19 @@ type InspectionDocumentsResponse = {
 
 type SendInvitationResponse = {
   sentCount?: number
+  project?: EbProjectListItem
+  error?: string
+}
+
+type ReportDeliveryResponse = {
+  project?: EbProjectListItem
+  downloadUrl?: string | null
+  pdfStatus?: string | null
+  error?: string
+}
+
+type UnlockInspectionResponse = {
+  ok?: boolean
   project?: EbProjectListItem
   error?: string
 }
@@ -176,6 +192,28 @@ function getStatusLabel(status: string | null) {
   if (normalized === 'completed') return 'Klar'
   if (normalized === 'archived') return 'Arkiverad'
   return status ?? 'Pågående'
+}
+
+function getPdfStatusLabel(inspection: EbInspectionSummary) {
+  if (inspection.reportPdfDownloadUrl) return 'PDF sparad'
+  if (inspection.reportPdfStatus === 'pending' || inspection.reportPdfStatus === 'processing') {
+    return 'PDF skapas'
+  }
+  if (inspection.reportPdfStatus === 'failed') return 'PDF misslyckades'
+  return 'Ingen sparad PDF'
+}
+
+function getPdfStatusClassName(inspection: EbInspectionSummary) {
+  if (inspection.reportPdfDownloadUrl) {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-800'
+  }
+  if (inspection.reportPdfStatus === 'pending' || inspection.reportPdfStatus === 'processing') {
+    return 'border-amber-200 bg-amber-50 text-amber-800'
+  }
+  if (inspection.reportPdfStatus === 'failed') {
+    return 'border-rose-200 bg-rose-50 text-rose-700'
+  }
+  return 'border-gray-200 bg-gray-50 text-gray-600'
 }
 
 function inputClassName() {
@@ -1902,6 +1940,8 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [detailsInspection, setDetailsInspection] = useState<EbInspectionSummary | null>(null)
   const [invitationInspection, setInvitationInspection] = useState<EbInspectionSummary | null>(null)
+  const [reportActionInspectionId, setReportActionInspectionId] = useState<string | null>(null)
+  const [reportActionError, setReportActionError] = useState<string | null>(null)
   const addressLine = [currentProject.address, currentProject.postalCode, currentProject.city]
     .filter(Boolean)
     .join(', ')
@@ -1928,6 +1968,66 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
   const handleUpdated = (updatedProject: EbProjectListItem) => {
     setCurrentProject(updatedProject)
     router.refresh()
+  }
+
+  const handleLockInspection = async (inspection: EbInspectionSummary) => {
+    if (reportActionInspectionId) return
+
+    try {
+      setReportActionInspectionId(inspection.inspectionId)
+      setReportActionError(null)
+
+      const response = await fetch(
+        `/api/eb/projects/${currentProject.id}/inspections/${inspection.inspectionId}/report-delivery`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'lock_only' }),
+        }
+      )
+      const payload = (await response.json().catch(() => ({}))) as ReportDeliveryResponse
+      if (!response.ok || !payload.project) {
+        throw new Error(payload.error ?? 'Kunde inte låsa utlåtandet.')
+      }
+
+      setCurrentProject(payload.project)
+      router.refresh()
+    } catch (error) {
+      setReportActionError(error instanceof Error ? error.message : 'Kunde inte låsa utlåtandet.')
+    } finally {
+      setReportActionInspectionId(null)
+    }
+  }
+
+  const handleUnlockInspection = async (inspection: EbInspectionSummary) => {
+    if (reportActionInspectionId) return
+    const reason = window.prompt('Ange anledning till upplåsning, minst 10 tecken:')
+    if (!reason) return
+
+    try {
+      setReportActionInspectionId(inspection.inspectionId)
+      setReportActionError(null)
+
+      const response = await fetch(
+        `/api/eb/projects/${currentProject.id}/inspections/${inspection.inspectionId}/unlock`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason }),
+        }
+      )
+      const payload = (await response.json().catch(() => ({}))) as UnlockInspectionResponse
+      if (!response.ok || !payload.project) {
+        throw new Error(payload.error ?? 'Kunde inte låsa upp utlåtandet.')
+      }
+
+      setCurrentProject(payload.project)
+      router.refresh()
+    } catch (error) {
+      setReportActionError(error instanceof Error ? error.message : 'Kunde inte låsa upp utlåtandet.')
+    } finally {
+      setReportActionInspectionId(null)
+    }
   }
 
   return (
@@ -2008,6 +2108,12 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                 <span className="text-xs font-medium text-gray-500">{currentProject.inspections.length} st</span>
               </div>
 
+              {reportActionError ? (
+                <div className="border-b border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {reportActionError}
+                </div>
+              ) : null}
+
               {currentProject.inspections.length === 0 ? (
                 <div className="px-4 py-10 text-center text-sm text-gray-600">Ingen besiktning skapad.</div>
               ) : (
@@ -2016,6 +2122,8 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                     const parentInspection = inspection.parentInspectionId
                       ? currentProject.inspections.find((item) => item.inspectionId === inspection.parentInspectionId)
                       : null
+                    const isLocked = Boolean(inspection.reportLockedAt)
+                    const isWorking = reportActionInspectionId === inspection.inspectionId
 
                     return (
                       <article key={inspection.inspectionId} className="p-4">
@@ -2034,6 +2142,21 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                                 </span>
                                 <span className="inline-flex rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
                                   {getStatusLabel(inspection.status)}
+                                </span>
+                                <span
+                                  className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                                    isLocked
+                                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                      : 'border-amber-200 bg-amber-50 text-amber-800'
+                                  }`}
+                                >
+                                  {isLocked ? 'Låst' : 'Utkast'}
+                                </span>
+                                <span
+                                  className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getPdfStatusClassName(inspection)}`}
+                                  title={inspection.reportPdfError ?? undefined}
+                                >
+                                  {getPdfStatusLabel(inspection)}
                                 </span>
                               </div>
                               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
@@ -2072,6 +2195,43 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                               <FileText size={16} />
                               Utlåtande
                             </Link>
+                            {inspection.reportPdfDownloadUrl ? (
+                              <Link
+                                href={inspection.reportPdfDownloadUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                              >
+                                <Download size={16} />
+                                PDF
+                              </Link>
+                            ) : (
+                              <span className="inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-400">
+                                <Download size={16} />
+                                PDF
+                              </span>
+                            )}
+                            {isLocked ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleUnlockInspection(inspection)}
+                                disabled={Boolean(reportActionInspectionId)}
+                                className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {isWorking ? <Loader2 size={16} className="animate-spin" /> : <Unlock size={16} />}
+                                Lås upp
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => void handleLockInspection(inspection)}
+                                disabled={Boolean(reportActionInspectionId)}
+                                className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {isWorking ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}
+                                Lås och spara PDF
+                              </button>
+                            )}
                           </div>
                         </div>
                       </article>
