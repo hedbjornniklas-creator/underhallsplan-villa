@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Download, ExternalLink, LockKeyhole, Printer, RefreshCw, Send } from 'lucide-react'
+import { ArrowLeft, Download, ExternalLink, LockKeyhole, LockOpen, Printer, RefreshCw, Send } from 'lucide-react'
 
 type DeliveryAction = 'send_and_lock' | 'send_open' | 'lock_only'
 
@@ -23,6 +23,14 @@ type DeliveryDocumentItem = {
   fileSizeBytes: number | null
 }
 
+type DeliveryActivityLogEntry = {
+  id: string
+  type: 'report_sent' | 'report_unlocked'
+  title: string
+  subtitle: string | null
+  occurred_at: string | null
+}
+
 type DeliveryResponse = {
   error?: string
   reportLockedAt: string | null
@@ -38,6 +46,7 @@ type DeliveryResponse = {
   sentRecipients?: string[]
   failedRecipients?: Array<{ email: string; error: string }>
   history: DeliveryHistoryItem[]
+  activityLog?: DeliveryActivityLogEntry[]
   deliveryDocuments?: DeliveryDocumentItem[]
 }
 
@@ -106,6 +115,9 @@ export default function TuPrintActions({
   const [extraRecipients, setExtraRecipients] = useState('')
   const [loading, setLoading] = useState(true)
   const [busyAction, setBusyAction] = useState<DeliveryAction | null>(null)
+  const [unlockOpen, setUnlockOpen] = useState(false)
+  const [unlockReason, setUnlockReason] = useState('')
+  const [unlockBusy, setUnlockBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<string | null>(null)
 
@@ -226,10 +238,54 @@ export default function TuPrintActions({
     }
   }
 
+  const runUnlock = async () => {
+    const reason = unlockReason.trim()
+    if (reason.length < 10) {
+      setError('Ange en anledning pÃ¥ minst 10 tecken.')
+      setResult(null)
+      return
+    }
+
+    setUnlockBusy(true)
+    setError(null)
+    setResult(null)
+    try {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/unlock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as { error?: string }
+      if (!response.ok) throw new Error(payload.error ?? 'Kunde inte lÃ¥sa upp utlÃ¥tandet.')
+
+      setMeta((current) =>
+        current
+          ? {
+              ...current,
+              reportLockedAt: null,
+              hasActiveLink: false,
+              downloadUrl: null,
+              digitalUrl: null,
+              publicLink: null,
+            }
+          : current
+      )
+      setUnlockOpen(false)
+      setUnlockReason('')
+      setResult('UtlÃ¥tandet Ã¤r upplÃ¥st fÃ¶r redigering. Tidigare digital rapportlÃ¤nk har spÃ¤rrats.')
+      await loadMeta({ silent: true })
+    } catch (unlockError) {
+      setError(unlockError instanceof Error ? unlockError.message : 'Kunde inte lÃ¥sa upp utlÃ¥tandet.')
+    } finally {
+      setUnlockBusy(false)
+    }
+  }
+
   const locked = Boolean(meta?.reportLockedAt)
   const downloadUrl = meta?.downloadUrl ?? null
   const digitalReportUrl = meta?.publicLink ?? meta?.digitalUrl ?? null
-  const canSend = !busyAction && isValidEmail(recipient)
+  const canSend = !busyAction && !unlockBusy && isValidEmail(recipient)
+  const unlockEvents = meta?.activityLog?.filter((item) => item.type === 'report_unlocked') ?? []
   const statusText = loading
     ? 'Hämtar leveransstatus...'
     : error
@@ -297,7 +353,7 @@ export default function TuPrintActions({
               value={recipient}
               onChange={(event) => setRecipient(event.target.value)}
               placeholder="namn@epost.se"
-              disabled={Boolean(busyAction)}
+              disabled={Boolean(busyAction) || unlockBusy}
               className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
             />
             <p className="text-[11px] text-gray-500">
@@ -311,7 +367,7 @@ export default function TuPrintActions({
               onChange={(event) => setExtraRecipients(event.target.value)}
               rows={3}
               placeholder="namn@epost.se, annan@epost.se"
-              disabled={Boolean(busyAction)}
+              disabled={Boolean(busyAction) || unlockBusy}
               className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
             />
           </label>
@@ -365,7 +421,7 @@ export default function TuPrintActions({
           <button
             type="button"
             onClick={() => void runDelivery('lock_only')}
-            disabled={Boolean(busyAction)}
+            disabled={Boolean(busyAction) || unlockBusy}
             className="inline-flex h-10 items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <LockKeyhole size={16} aria-hidden />
@@ -373,8 +429,17 @@ export default function TuPrintActions({
           </button>
           <button
             type="button"
+            onClick={() => setUnlockOpen(true)}
+            disabled={!locked || Boolean(busyAction) || unlockBusy}
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-rose-300 bg-rose-50 px-3 text-sm font-semibold text-rose-800 shadow-sm transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <LockOpen size={16} aria-hidden />
+            {unlockBusy ? 'Låser upp...' : 'Lås upp'}
+          </button>
+          <button
+            type="button"
             onClick={() => void loadMeta()}
-            disabled={loading || Boolean(busyAction)}
+            disabled={loading || Boolean(busyAction) || unlockBusy}
             className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
           >
             <RefreshCw size={16} aria-hidden />
@@ -426,7 +491,75 @@ export default function TuPrintActions({
             </div>
           </div>
         ) : null}
+
+        {unlockEvents.length ? (
+          <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 p-3">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-rose-700">
+              Upplåsningshistorik
+            </h3>
+            <div className="mt-2 space-y-2">
+              {unlockEvents.slice(0, 4).map((item) => (
+                <div key={item.id} className="flex flex-wrap items-start justify-between gap-2 text-sm">
+                  <span className="font-medium text-gray-900">{item.subtitle || 'Ingen anledning sparad'}</span>
+                  <span className="text-xs text-gray-600">{formatSavedAt(item.occurred_at)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </section>
+      {unlockOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded-lg border border-gray-200 bg-white p-4 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-gray-950">Lås upp TU-utlåtande</h2>
+                <p className="mt-1 text-sm leading-6 text-gray-600">
+                  Ange varför utlåtandet öppnas igen. Den tidigare digitala rapportlänken spärras.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUnlockOpen(false)}
+                disabled={unlockBusy}
+                className="rounded-md border border-gray-200 px-2 py-1 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+              >
+                Stäng
+              </button>
+            </div>
+            <label className="mt-4 block space-y-1">
+              <span className="text-xs font-medium text-gray-700">Anledning</span>
+              <textarea
+                value={unlockReason}
+                onChange={(event) => setUnlockReason(event.target.value)}
+                rows={4}
+                disabled={unlockBusy}
+                className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none transition focus:border-rose-500 focus:ring-2 focus:ring-rose-100 disabled:bg-gray-100 disabled:text-gray-500"
+              />
+            </label>
+            <p className="mt-1 text-xs text-gray-500">{unlockReason.trim().length}/10 tecken</p>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setUnlockOpen(false)}
+                disabled={unlockBusy}
+                className="inline-flex h-10 items-center rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:opacity-60"
+              >
+                Avbryt
+              </button>
+              <button
+                type="button"
+                onClick={() => void runUnlock()}
+                disabled={unlockBusy || unlockReason.trim().length < 10}
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-rose-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-rose-100 disabled:text-rose-700"
+              >
+                <LockOpen size={16} aria-hidden />
+                {unlockBusy ? 'Låser upp...' : 'Lås upp'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

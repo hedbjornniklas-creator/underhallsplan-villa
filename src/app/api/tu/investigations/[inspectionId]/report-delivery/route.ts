@@ -30,6 +30,32 @@ type DeliveryAction = 'send_and_lock' | 'send_open' | 'lock_only'
 type PdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 
+type OutboundMessageRow = {
+  id: string
+  recipient_email: string | null
+  status: string | null
+  sent_at: string | null
+  created_at: string | null
+  error_message: string | null
+  subject: string | null
+}
+
+type InspectionUnlockLogRow = {
+  id: string
+  reason: string | null
+  performed_by: string | null
+  performed_at: string | null
+  created_at: string | null
+}
+
+type DeliveryActivityLogEntry = {
+  id: string
+  type: 'report_sent' | 'report_unlocked'
+  title: string
+  subtitle: string | null
+  occurred_at: string | null
+}
+
 type TuDeliveryDocumentRow = {
   id: string
   storage_bucket: string | null
@@ -358,7 +384,7 @@ async function updateOutboundMessage(
 async function getDeliveryHistory(
   admin: AdminClient,
   inspectionId: string
-) {
+): Promise<OutboundMessageRow[]> {
   const { data, error } = await admin
     .from('outbound_messages')
     .select('id,recipient_email,status,sent_at,created_at,error_message,subject')
@@ -368,7 +394,79 @@ async function getDeliveryHistory(
     .limit(10)
 
   if (error) throw new Error(error.message ?? 'Kunde inte hämta leveranshistorik.')
-  return data ?? []
+  return (Array.isArray(data) ? data : []) as OutboundMessageRow[]
+}
+
+function toTimestampValue(value: string | null | undefined) {
+  if (!value) return 0
+  const ts = Date.parse(value)
+  return Number.isFinite(ts) ? ts : 0
+}
+
+async function getUnlockHistory(
+  admin: AdminClient,
+  orgId: string,
+  inspectionId: string
+): Promise<InspectionUnlockLogRow[]> {
+  const { data, error } = await admin
+    .from('inspection_lock_events')
+    .select('id,reason,performed_by,performed_at,created_at')
+    .eq('org_id', orgId)
+    .eq('inspection_id', inspectionId)
+    .eq('action', 'unlock')
+    .order('performed_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+    .limit(10)
+
+  if (error) {
+    const message = String(error.message ?? '')
+    const normalized = message.toLowerCase()
+    if (
+      normalized.includes('inspection_lock_events') ||
+      normalized.includes('42p01') ||
+      normalized.includes('does not exist')
+    ) {
+      return []
+    }
+    throw new Error(message || 'Kunde inte hämta upplåsningshistorik.')
+  }
+
+  return (Array.isArray(data) ? data : []) as InspectionUnlockLogRow[]
+}
+
+function buildDeliveryActivityLog(input: {
+  history: OutboundMessageRow[]
+  unlockHistory: InspectionUnlockLogRow[]
+}): DeliveryActivityLogEntry[] {
+  const sendEntries: DeliveryActivityLogEntry[] = input.history.map((row) => {
+    const title =
+      row.status === 'sent'
+        ? 'Skickade utlåtande'
+        : row.status === 'failed'
+          ? 'Misslyckat utskick'
+          : 'Skickning pågår'
+    const errorText = String(row.error_message ?? '').trim()
+    const recipient = String(row.recipient_email ?? '').trim()
+    return {
+      id: `report_sent:${row.id}`,
+      type: 'report_sent',
+      title,
+      subtitle: errorText ? `${recipient || '-'} (${errorText})` : recipient || null,
+      occurred_at: row.sent_at ?? row.created_at,
+    }
+  })
+
+  const unlockEntries: DeliveryActivityLogEntry[] = input.unlockHistory.map((row) => ({
+    id: `report_unlocked:${row.id}`,
+    type: 'report_unlocked',
+    title: 'Låste upp utlåtande',
+    subtitle: row.reason,
+    occurred_at: row.performed_at ?? row.created_at,
+  }))
+
+  return [...sendEntries, ...unlockEntries].sort(
+    (a, b) => toTimestampValue(b.occurred_at) - toTimestampValue(a.occurred_at)
+  )
 }
 
 async function getLatestReportLink(
@@ -526,12 +624,14 @@ export async function GET(
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
 
-    const [history, activeLink, deliveryDocuments] = await Promise.all([
+    const [history, unlockHistory, activeLink, deliveryDocuments] = await Promise.all([
       getDeliveryHistory(admin, inspectionId),
+      getUnlockHistory(admin, org.orgId, inspectionId),
       getLatestReportLink(admin, inspectionId),
       listTuDeliveryDocuments(admin, { orgId: org.orgId, inspectionId }),
     ])
     const ordererEmail = resolveDefaultRecipient(investigation)
+    const activityLog = buildDeliveryActivityLog({ history, unlockHistory })
 
     return NextResponse.json({
       inspectionId,
@@ -547,6 +647,7 @@ export async function GET(
       publicLink: null,
       deliveryDocuments,
       history,
+      activityLog,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
@@ -704,10 +805,12 @@ export async function POST(
       }))
     }
 
-    const [history, activeLink] = await Promise.all([
+    const [history, unlockHistory, activeLink] = await Promise.all([
       getDeliveryHistory(admin, inspectionId),
+      getUnlockHistory(admin, org.orgId, inspectionId),
       getLatestReportLink(admin, inspectionId),
     ])
+    const activityLog = buildDeliveryActivityLog({ history, unlockHistory })
 
     return NextResponse.json({
       inspectionId,
@@ -721,6 +824,7 @@ export async function POST(
       sentRecipients,
       failedRecipients,
       history,
+      activityLog,
       hasActiveLink: Boolean(activeLink),
       pdfStatus: activeLink?.pdf_status ?? null,
       pdfError: activeLink?.pdf_error ?? null,
