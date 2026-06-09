@@ -676,41 +676,49 @@ function renderHandlingarDocumentRows(
   const normalizedRows = rows.length > 0 ? rows : [parseInspectionDocumentReportLine('--')]
 
   return (
-    <div
+    <table
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: mmToPx(gapMm),
+        width: '100%',
+        tableLayout: 'fixed',
+        borderCollapse: 'collapse',
       }}
     >
-      {normalizedRows.map((row, rowIndex) => {
-        const statusText = [row.statusText, row.note ? `. ${row.note}` : '']
-          .filter(Boolean)
-          .join('')
+      <colgroup>
+        <col style={{ width: mmToPx(58) }} />
+        <col style={{ width: mmToPx(4) }} />
+        <col />
+      </colgroup>
+      <tbody>
+        {normalizedRows.map((row, rowIndex) => {
+          const statusText = [row.statusText, row.note ? `. ${row.note}` : '']
+            .filter(Boolean)
+            .join('')
+          const cellStyle = {
+            padding: 0,
+            paddingBottom: rowIndex === normalizedRows.length - 1 ? 0 : mmToPx(gapMm),
+            verticalAlign: 'baseline',
+          } as const
 
-        if (!row.statusText) {
-          return <div key={`handlingar-document-${rowIndex}`}>{row.title || '\u00A0'}</div>
-        }
+          if (!row.statusText) {
+            return (
+              <tr key={`handlingar-document-${rowIndex}`}>
+                <td colSpan={3} style={cellStyle}>{row.title || '\u00A0'}</td>
+              </tr>
+            )
+          }
 
-        return (
-          <div
-            key={`handlingar-document-${rowIndex}`}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: `${mmToPx(58)}px ${mmToPx(3)}px minmax(0, 1fr)`,
-              columnGap: mmToPx(1),
-              alignItems: 'baseline',
-            }}
-          >
-            <div style={{ minWidth: 0 }}>{row.title}</div>
-            <div style={{ textAlign: 'center' }}>-</div>
-            <div style={{ whiteSpace: 'pre-wrap' }}>
-              {statusText}
-            </div>
-          </div>
-        )
-      })}
-    </div>
+          return (
+            <tr key={`handlingar-document-${rowIndex}`}>
+              <td style={{ ...cellStyle, overflowWrap: 'anywhere' }}>{row.title}</td>
+              <td style={{ ...cellStyle, textAlign: 'center' }}>-</td>
+              <td style={{ ...cellStyle, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                {statusText}
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
   )
 }
 
