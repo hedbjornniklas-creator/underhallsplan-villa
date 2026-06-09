@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ChevronsLeft, Download, FileText, Loader2, LockOpen, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronsLeft, Download, Loader2, LockOpen, Plus, Trash2 } from 'lucide-react'
 import Protected from '@/components/Protected'
 
 type InvestigationItem = {
@@ -579,19 +579,6 @@ export default function TuInvestigationsPage() {
                         <td className="px-3 py-2 align-middle whitespace-nowrap font-medium">{getStatusLabel(item)}</td>
                         <td className="px-3 py-2 align-middle whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1">
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.preventDefault()
-                                event.stopPropagation()
-                                openInvestigation(item.inspectionId)
-                              }}
-                              title="Öppna utredning"
-                              aria-label="Öppna utredning"
-                              className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-300 bg-white/95 text-violet-700 transition hover:bg-violet-50"
-                            >
-                              <FileText size={13} />
-                            </button>
                             {item.hasReadyPdf ? (
                               <PdfDownloadActionButton inspectionId={item.inspectionId} />
                             ) : null}

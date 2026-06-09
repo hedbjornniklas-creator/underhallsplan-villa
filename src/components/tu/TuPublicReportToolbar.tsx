@@ -1,8 +1,7 @@
 'use client'
 
-import { useCallback } from 'react'
 import Link from 'next/link'
-import { Download, FileText, Printer } from 'lucide-react'
+import { Download, FileText } from 'lucide-react'
 import ReportShareButton from '@/components/report/ReportShareButton'
 
 export type TuPublicDeliveryDocumentLink = {
@@ -32,31 +31,6 @@ export default function TuPublicReportToolbar({
   pdfDownloadUrl: string | null
   deliveryDocuments?: TuPublicDeliveryDocumentLink[]
 }) {
-  const printReport = useCallback(() => {
-    const run = async () => {
-      const root = document.querySelector('[data-tu-print-pagination-ready]')
-      if (root && root.getAttribute('data-tu-print-pagination-ready') !== '1') {
-        await new Promise<void>((resolve) => {
-          let observer: MutationObserver | null = null
-          const timeout = window.setTimeout(() => {
-            observer?.disconnect()
-            resolve()
-          }, 5000)
-          observer = new MutationObserver(() => {
-            if (root.getAttribute('data-tu-print-pagination-ready') !== '1') return
-            window.clearTimeout(timeout)
-            observer?.disconnect()
-            resolve()
-          })
-          observer.observe(root, { attributes: true, attributeFilter: ['data-tu-print-pagination-ready'] })
-        })
-      }
-      window.print()
-    }
-
-    void run()
-  }, [])
-
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-4 print:hidden">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -81,14 +55,6 @@ export default function TuPublicReportToolbar({
               Ladda ner PDF
             </Link>
           ) : null}
-          <button
-            type="button"
-            onClick={printReport}
-            className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
-          >
-            <Printer size={16} aria-hidden />
-            Skriv ut / Spara PDF
-          </button>
         </div>
       </div>
 
