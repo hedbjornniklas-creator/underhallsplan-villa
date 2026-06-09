@@ -9,6 +9,7 @@ import {
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+const DELIVERY_DOCUMENT_SIGNED_URL_TTL_SECONDS = 60 * 10
 
 function normalizePdfStatus(value: unknown): 'pending' | 'processing' | 'ready' | 'failed' {
   const normalized = String(value ?? '').trim().toLowerCase()
@@ -70,6 +71,31 @@ export default async function TuInvestigationDigitalReportPage({
       pdfStatus === 'ready' && hasStoredPdf
         ? `/api/report-v2/${encodeURIComponent(inspectionId)}/pdf`
         : null
+    const deliveryDocuments = (
+      await Promise.all(
+        (snapshot.deliveryDocuments ?? []).map(async (document) => {
+          const bucket = document.storageBucket?.trim()
+          const path = document.filePath?.trim()
+          if (!bucket || !path) return null
+
+          const { data: signedDocument } = await admin.storage
+            .from(bucket)
+            .createSignedUrl(path, DELIVERY_DOCUMENT_SIGNED_URL_TTL_SECONDS)
+          const downloadUrl = signedDocument?.signedUrl ?? null
+          if (!downloadUrl) return null
+
+          return {
+            id: document.id,
+            title: document.title,
+            fileName: document.fileName,
+            contentType: document.contentType,
+            fileSizeBytes: document.fileSizeBytes,
+            createdAt: document.createdAt,
+            downloadUrl,
+          }
+        })
+      )
+    ).filter((document): document is NonNullable<typeof document> => Boolean(document))
 
     return (
       <TuPublicReportSnapshotView
@@ -77,6 +103,7 @@ export default async function TuInvestigationDigitalReportPage({
         pdfDownloadUrl={pdfDownloadUrl}
         shareEndpoint={null}
         shareUrl={`/tu/investigations/${encodeURIComponent(inspectionId)}/digital`}
+        deliveryDocuments={deliveryDocuments}
       />
     )
   } catch (error) {
