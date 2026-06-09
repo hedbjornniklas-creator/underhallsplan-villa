@@ -313,6 +313,39 @@ function splitHandlingarTextForPdf(text: string) {
   return chunks.length > 0 ? chunks : [normalized]
 }
 
+function getHandlingarDocumentRowText(row: InspectionDocumentReportLineParts) {
+  const statusText = [row.statusText, row.note ? `. ${row.note}` : '']
+    .filter(Boolean)
+    .join('')
+  return statusText ? `${row.title} - ${statusText}` : row.title
+}
+
+function splitHandlingarDocumentRowsForPdf(rows: InspectionDocumentReportLineParts[]) {
+  if (rows.length === 0) return [[]]
+
+  const chunks: InspectionDocumentReportLineParts[][] = []
+  let current: InspectionDocumentReportLineParts[] = []
+  let currentLines = 0
+
+  const pushCurrent = () => {
+    if (current.length > 0) chunks.push(current)
+    current = []
+    currentLines = 0
+  }
+
+  rows.forEach((row) => {
+    const lineCount = estimateHandlingarPdfLineCount(getHandlingarDocumentRowText(row))
+    if (current.length > 0 && currentLines + lineCount > HANDLINGAR_PDF_CHUNK_MAX_LINES) {
+      pushCurrent()
+    }
+    current.push(row)
+    currentLines += lineCount
+  })
+
+  pushCurrent()
+  return chunks.length > 0 ? chunks : [rows]
+}
+
 const interpolateAssignmentDate = (text: string, data: ReportDataV2) => {
   const assignmentDate = String(
     getValueAtPath(data, 'mock.inspections.assignment_confirmation_date') ?? ''
@@ -430,20 +463,23 @@ const renderBlock = (
     const labelStyle = { width: '27%', fontWeight: 600 } as const
     const valueStyle = { width: '73%' } as const
 
+    const providedRowChunks =
+      providedRows.length > 0
+        ? splitHandlingarDocumentRowsForPdf(providedRows)
+        : splitHandlingarTextForPdf(providedText).map((chunk) =>
+            chunk
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .map((line) => parseInspectionDocumentReportLine(line))
+          )
+
     return [
-      ...splitHandlingarTextForPdf(providedText).map((chunk, index) => (
+      ...providedRowChunks.map((rows, index) => (
         <View key={`handlingar-provided-${index}`} style={styles.row} wrap={false}>
           <Text style={labelStyle}>{index === 0 ? block.labels.provided : '\u00A0'}</Text>
           <View style={valueStyle}>
-            {renderDocumentRowsPdf(
-              chunk
-                ? chunk
-                    .split(/\r?\n/)
-                    .map((line) => line.trim())
-                    .filter(Boolean)
-                    .map((line) => parseInspectionDocumentReportLine(line))
-                : providedRows
-            )}
+            {renderDocumentRowsPdf(rows)}
           </View>
         </View>
       )),

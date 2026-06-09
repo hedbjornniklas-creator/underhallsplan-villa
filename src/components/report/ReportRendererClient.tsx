@@ -221,6 +221,7 @@ type HandlingarRowEntry = {
   type: 'handlingarRow'
   label: string
   value: string
+  documentRows?: InspectionDocumentReportLineParts[]
   labelWidthMm: number
   marginTopMm: number
   marginBottomMm: number
@@ -635,6 +636,39 @@ function splitHandlingarTextForPages(text: string) {
   return chunks.length > 0 ? chunks : [normalized]
 }
 
+function getHandlingarDocumentRowText(row: InspectionDocumentReportLineParts) {
+  const statusText = [row.statusText, row.note ? `. ${row.note}` : '']
+    .filter(Boolean)
+    .join('')
+  return statusText ? `${row.title} - ${statusText}` : row.title
+}
+
+function splitHandlingarDocumentRowsForPages(rows: InspectionDocumentReportLineParts[]) {
+  if (rows.length === 0) return [[]]
+
+  const chunks: InspectionDocumentReportLineParts[][] = []
+  let current: InspectionDocumentReportLineParts[] = []
+  let currentLines = 0
+
+  const pushCurrent = () => {
+    if (current.length > 0) chunks.push(current)
+    current = []
+    currentLines = 0
+  }
+
+  rows.forEach((row) => {
+    const lineCount = estimateHandlingarLineCount(getHandlingarDocumentRowText(row))
+    if (current.length > 0 && currentLines + lineCount > HANDLINGAR_CHUNK_MAX_LINES) {
+      pushCurrent()
+    }
+    current.push(row)
+    currentLines += lineCount
+  })
+
+  pushCurrent()
+  return chunks.length > 0 ? chunks : [rows]
+}
+
 function renderHandlingarDocumentRows(
   rows: InspectionDocumentReportLineParts[],
   gapMm = 1.5
@@ -663,8 +697,8 @@ function renderHandlingarDocumentRows(
             key={`handlingar-document-${rowIndex}`}
             style={{
               display: 'grid',
-              gridTemplateColumns: `${mmToPx(58)}px ${mmToPx(4)}px minmax(0, 1fr)`,
-              columnGap: mmToPx(1.5),
+              gridTemplateColumns: `${mmToPx(58)}px ${mmToPx(3)}px minmax(0, 1fr)`,
+              columnGap: mmToPx(1),
               alignItems: 'baseline',
             }}
           >
@@ -1002,6 +1036,7 @@ export default function ReportRendererClient({
           const rowGap = block.rowGapMm ?? 6
           const emptyPlaceholder = block.emptyPlaceholder ?? '--'
           const provided = getMockList(mockData, 'mock.documents.provided')
+          const providedRows = getInspectionDocumentRows(mockData)
           const acquisitionText = getMockValue(
             mockData,
             'mock.disclosures.acquisition_text'
@@ -1026,8 +1061,41 @@ export default function ReportRendererClient({
             value: string,
             marginTopMm: number,
             marginBottomMm: number,
-            format: HandlingarRowEntry['format'] = 'text'
+            format: HandlingarRowEntry['format'] = 'text',
+            documentRows?: InspectionDocumentReportLineParts[]
           ) => {
+            if (format === 'documents' && documentRows && documentRows.length > 0) {
+              const rowChunks = splitHandlingarDocumentRowsForPages(documentRows)
+              rowChunks.forEach((rows, chunkIndex) => {
+                const isFirstChunk = chunkIndex === 0
+                const isLastChunk = chunkIndex === rowChunks.length - 1
+                entries.push({
+                  kind: 'block',
+                  id: `${section.id}-handlingar-${blockIndex}-${rowKey}-${chunkIndex}`,
+                  sectionId: section.id,
+                  sectionStartOnNewPage:
+                    section.startOnNewPage &&
+                    blockIndex === 0 &&
+                    rowKey === 'provided' &&
+                    isFirstChunk,
+                  block: {
+                    type: 'handlingarRow',
+                    label: isFirstChunk ? label : '',
+                    value: rows.map((row) => row.text).join('\n'),
+                    documentRows: rows,
+                    labelWidthMm: labelWidth,
+                    marginTopMm: isFirstChunk ? marginTopMm : 0,
+                    marginBottomMm: isLastChunk
+                      ? marginBottomMm
+                      : HANDLINGAR_CONTINUED_CHUNK_GAP_MM,
+                    splittable: rowChunks.length > 1,
+                    format,
+                  },
+                })
+              })
+              return
+            }
+
             const chunks = splitHandlingarTextForPages(value)
             chunks.forEach((chunk, chunkIndex) => {
               const isFirstChunk = chunkIndex === 0
@@ -1063,7 +1131,8 @@ export default function ReportRendererClient({
             provided.length > 0 ? provided.join('\n') : emptyPlaceholder,
             block.marginTopMm,
             rowGap,
-            'documents'
+            'documents',
+            providedRows
           )
           appendHandlingarRow('info', block.labels.info, infoText, 0, rowGap)
           appendHandlingarRow(
@@ -2538,7 +2607,9 @@ export default function ReportRendererClient({
     if (block.type === 'handlingarRow') {
       const documentRows =
         block.format === 'documents'
-          ? block.value
+          ? block.documentRows && block.documentRows.length > 0
+            ? block.documentRows
+            : block.value
               .split(/\r?\n/)
               .map((line) => line.trim())
               .filter(Boolean)
