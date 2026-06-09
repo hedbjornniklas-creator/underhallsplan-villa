@@ -739,7 +739,7 @@ export async function POST(
         orgId: org.orgId,
         inspectionId,
         tokenHash,
-        previewReportUrl: `${publicBaseUrl}/tu/investigations/${encodeURIComponent(inspectionId)}/print?pdf=1`,
+        previewReportUrl: `${publicLink}?pdf=1`,
         cookieHeader: request.headers.get('cookie'),
       })
     })

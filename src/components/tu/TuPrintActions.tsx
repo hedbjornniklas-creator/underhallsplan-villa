@@ -263,16 +263,14 @@ export default function TuPrintActions({
           ? {
               ...current,
               reportLockedAt: null,
-              hasActiveLink: false,
-              downloadUrl: null,
-              digitalUrl: null,
-              publicLink: null,
             }
           : current
       )
       setUnlockOpen(false)
       setUnlockReason('')
-      setResult('UtlÃ¥tandet Ã¤r upplÃ¥st fÃ¶r redigering. Tidigare digital rapportlÃ¤nk har spÃ¤rrats.')
+      setResult(
+        'Utlåtandet är upplåst för redigering. Publicerad digital version och PDF ligger kvar tills en ny version publiceras.'
+      )
       await loadMeta({ silent: true })
     } catch (unlockError) {
       setError(unlockError instanceof Error ? unlockError.message : 'Kunde inte lÃ¥sa upp utlÃ¥tandet.')
@@ -282,6 +280,8 @@ export default function TuPrintActions({
   }
 
   const locked = Boolean(meta?.reportLockedAt)
+  const hasPublishedVersion = Boolean(meta?.hasActiveLink)
+  const unlockedWithPublishedVersion = !locked && hasPublishedVersion
   const downloadUrl = meta?.downloadUrl ?? null
   const digitalReportUrl = meta?.publicLink ?? meta?.digitalUrl ?? null
   const canSend = !busyAction && !unlockBusy && isValidEmail(recipient)
@@ -317,28 +317,33 @@ export default function TuPrintActions({
         </button>
       </div>
 
-      <section className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-700">
-              Förhandsgranska och skicka
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Publicering
             </p>
-            <h2 className="mt-1 text-lg font-semibold text-gray-950">Leverera TU-utlåtandet</h2>
+            <h2 className="mt-1 text-xl font-semibold text-gray-950">Leverera TU-utlåtandet</h2>
             <p className="mt-1 text-sm leading-6 text-gray-600">
-              Skapa en fryst digital version, lås utlåtandet och generera PDF för nedladdning.
+              Skapa en fryst publicerad version, lås utlåtandet och generera PDF för nedladdning.
             </p>
+            {unlockedWithPublishedVersion ? (
+              <p className="mt-2 max-w-3xl rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-5 text-amber-900">
+                Utlåtandet är upplåst för redigering. Mottagare ser fortfarande den publicerade versionen tills du publicerar en ny.
+              </p>
+            ) : null}
           </div>
-          <div className="flex flex-wrap gap-2 text-xs">
-            <span className={`rounded-full border px-2 py-1 font-medium ${locked ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+          <div className="flex flex-wrap justify-end gap-2 text-xs">
+            <span className={`rounded-full border px-2.5 py-1 font-medium ${locked ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
               {locked ? 'Låst' : 'Upplåst'}
             </span>
-            {meta?.hasActiveLink ? (
-              <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-1 font-medium text-violet-800">
-                Digital version skapad
+            {hasPublishedVersion ? (
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-medium text-slate-700">
+                Publicerad version finns
               </span>
             ) : null}
             {meta?.pdfStatus ? (
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 font-medium text-slate-700">
+              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-medium text-slate-700">
                 {pdfStatusLabel(meta.pdfStatus)}
               </span>
             ) : null}
@@ -400,12 +405,31 @@ export default function TuPrintActions({
           {statusText}
         </p>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-5 border-t border-slate-200 pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-950">Publicera ny version</h3>
+              <p className="text-xs leading-5 text-slate-500">
+                En ny publicering ersätter tidigare aktiv länk först när den skapas.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadMeta()}
+              disabled={loading || Boolean(busyAction) || unlockBusy}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+            >
+              <RefreshCw size={14} aria-hidden />
+              Uppdatera
+            </button>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => void runDelivery('send_and_lock')}
             disabled={!canSend}
-            className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-violet-100 disabled:text-violet-700"
+            className="inline-flex h-10 items-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
           >
             <Send size={16} aria-hidden />
             {busyAction === 'send_and_lock' ? 'Skickar...' : locked ? 'Skicka låst version' : 'Skicka och lås'}
@@ -414,7 +438,7 @@ export default function TuPrintActions({
             type="button"
             onClick={() => void runDelivery('send_open')}
             disabled={!canSend || locked}
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 text-sm font-semibold text-amber-800 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Skicka utan låsning
           </button>
@@ -422,7 +446,7 @@ export default function TuPrintActions({
             type="button"
             onClick={() => void runDelivery('lock_only')}
             disabled={Boolean(busyAction) || unlockBusy}
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <LockKeyhole size={16} aria-hidden />
             {busyAction === 'lock_only' ? 'Skapar PDF...' : 'Skapa PDF och lås'}
@@ -431,33 +455,33 @@ export default function TuPrintActions({
             type="button"
             onClick={() => setUnlockOpen(true)}
             disabled={!locked || Boolean(busyAction) || unlockBusy}
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-rose-300 bg-rose-50 px-3 text-sm font-semibold text-rose-800 shadow-sm transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-rose-200 bg-white px-3 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <LockOpen size={16} aria-hidden />
             {unlockBusy ? 'Låser upp...' : 'Lås upp'}
           </button>
-          <button
-            type="button"
-            onClick={() => void loadMeta()}
-            disabled={loading || Boolean(busyAction) || unlockBusy}
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
-          >
-            <RefreshCw size={16} aria-hidden />
-            Uppdatera status
-          </button>
+          </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-5 border-t border-slate-200 pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-950">Publicerad version</h3>
+              <p className="text-xs leading-5 text-slate-500">
+                Det här är den version mottagaren ser tills en ny publicering ersätter den.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
           {downloadUrl ? (
             <a
               href={downloadUrl}
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
             >
-              <Download size={16} aria-hidden />
+              <Download size={14} aria-hidden />
               {locked ? 'Ladda ner senaste låsta PDF' : 'Ladda ner senaste PDF'}
             </a>
           ) : (
-            <span className="inline-flex h-10 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
+            <span className="inline-flex min-h-9 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-xs text-slate-600">
               {meta?.hasActiveLink ? pdfStatusMessage(meta) : 'Ingen skapad PDF att ladda ner ännu.'}
             </span>
           )}
@@ -466,12 +490,14 @@ export default function TuPrintActions({
               href={digitalReportUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-900 bg-white px-3 text-xs font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50"
             >
-              <ExternalLink size={16} aria-hidden />
+              <ExternalLink size={14} aria-hidden />
               Öppna digitalt utlåtande
             </a>
           ) : null}
+            </div>
+          </div>
         </div>
 
         {meta?.history?.length ? (
@@ -515,7 +541,7 @@ export default function TuPrintActions({
               <div>
                 <h2 className="text-base font-semibold text-gray-950">Lås upp TU-utlåtande</h2>
                 <p className="mt-1 text-sm leading-6 text-gray-600">
-                  Ange varför utlåtandet öppnas igen. Den tidigare digitala rapportlänken spärras.
+                  Ange varför utlåtandet öppnas igen. Publicerad digital version och PDF ligger kvar tills en ny version publiceras.
                 </p>
               </div>
               <button

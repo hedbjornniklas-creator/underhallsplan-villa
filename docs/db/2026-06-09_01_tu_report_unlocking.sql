@@ -2,7 +2,7 @@
 -- Date: 2026-06-09
 -- Scope:
 -- 1) Unlock TU reports consistently with the global inspection lock
--- 2) Revoke active digital report links when a locked TU report is reopened
+-- 2) Keep active digital report links available until a new version is published
 -- 3) Log unlock reasons in the shared inspection lock event table
 
 create or replace function public.unlock_tu_investigation_report(
@@ -59,11 +59,6 @@ begin
     report_locked_by = null
   where org_id = p_org_id
     and inspection_id = p_inspection_id;
-
-  update public.inspection_report_links
-  set revoked_at = now()
-  where inspection_id = p_inspection_id
-    and revoked_at is null;
 
   insert into public.inspection_lock_events (
     org_id,
