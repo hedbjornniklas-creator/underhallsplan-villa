@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import TuPublicReportSnapshotView from '@/components/tu/TuPublicReportSnapshotView'
+import TuPrintPagedDocument from '@/components/tu/TuPrintPagedDocument'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getTuInvestigationById, requireTuContext } from '@/lib/tu/server'
 import {
@@ -29,10 +30,14 @@ type ReportLinkRow = {
 
 export default async function TuInvestigationDigitalReportPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ inspectionId: string }>
+  searchParams?: Promise<{ pdf?: string }>
 }) {
   const { inspectionId } = await params
+  const resolvedSearchParams = await searchParams
+  const isPdfRender = resolvedSearchParams?.pdf === '1'
 
   try {
     const context = await requireTuContext()
@@ -96,6 +101,27 @@ export default async function TuInvestigationDigitalReportPage({
         })
       )
     ).filter((document): document is NonNullable<typeof document> => Boolean(document))
+
+    if (isPdfRender) {
+      return (
+        <main className="min-h-screen bg-white text-gray-950">
+          <TuPrintPagedDocument
+            companyLogoUrl={snapshot.report.companyLogoUrl}
+            companyLogoAlt={snapshot.report.companyLogoAlt}
+            header={snapshot.report.header}
+            coverTitle={snapshot.report.coverTitle}
+            coverImage={snapshot.report.coverImage}
+            parties={snapshot.report.parties}
+            metaRows={snapshot.report.metaRows}
+            objectRows={snapshot.report.objectRows}
+            sections={snapshot.report.sections}
+            signature={snapshot.report.signature}
+            appendixImages={snapshot.report.appendixImages}
+            footer={snapshot.report.footer}
+          />
+        </main>
+      )
+    }
 
     return (
       <TuPublicReportSnapshotView

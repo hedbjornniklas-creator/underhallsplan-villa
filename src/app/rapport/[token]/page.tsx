@@ -8,6 +8,7 @@ import {
 } from '@/lib/report/reportSnapshotPayload'
 import ReportSnapshotView from '@/components/report/ReportSnapshotView'
 import ReportShareButton from '@/components/report/ReportShareButton'
+import TuPrintPagedDocument from '@/components/tu/TuPrintPagedDocument'
 import TuPublicReportSnapshotView from '@/components/tu/TuPublicReportSnapshotView'
 import {
   isTuReportSnapshotPayloadV1,
@@ -58,10 +59,14 @@ function InactiveReportLinkMessage() {
 
 export default async function PublicReportPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>
+  searchParams?: Promise<{ pdf?: string }>
 }) {
   const { token } = await params
+  const resolvedSearchParams = await searchParams
+  const isPdfRender = resolvedSearchParams?.pdf === '1'
   const normalizedToken = token?.trim() ?? ''
   if (normalizedToken.length < 20) notFound()
 
@@ -104,6 +109,27 @@ export default async function PublicReportPage({
   const shareUrl = `/rapport/${encodeURIComponent(normalizedToken)}`
 
   if (tuSnapshot) {
+    if (isPdfRender) {
+      return (
+        <main className="min-h-screen bg-white text-gray-950">
+          <TuPrintPagedDocument
+            companyLogoUrl={tuSnapshot.report.companyLogoUrl}
+            companyLogoAlt={tuSnapshot.report.companyLogoAlt}
+            header={tuSnapshot.report.header}
+            coverTitle={tuSnapshot.report.coverTitle}
+            coverImage={tuSnapshot.report.coverImage}
+            parties={tuSnapshot.report.parties}
+            metaRows={tuSnapshot.report.metaRows}
+            objectRows={tuSnapshot.report.objectRows}
+            sections={tuSnapshot.report.sections}
+            signature={tuSnapshot.report.signature}
+            appendixImages={tuSnapshot.report.appendixImages}
+            footer={tuSnapshot.report.footer}
+          />
+        </main>
+      )
+    }
+
     const deliveryDocuments = (tuSnapshot.deliveryDocuments ?? []).map((document) => ({
       id: document.id,
       title: document.title,

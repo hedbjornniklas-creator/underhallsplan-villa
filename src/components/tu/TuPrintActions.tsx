@@ -115,6 +115,7 @@ export default function TuPrintActions({
   const [extraRecipients, setExtraRecipients] = useState('')
   const [loading, setLoading] = useState(true)
   const [busyAction, setBusyAction] = useState<DeliveryAction | null>(null)
+  const [regeneratingPdf, setRegeneratingPdf] = useState(false)
   const [unlockOpen, setUnlockOpen] = useState(false)
   const [unlockReason, setUnlockReason] = useState('')
   const [unlockBusy, setUnlockBusy] = useState(false)
@@ -279,12 +280,37 @@ export default function TuPrintActions({
     }
   }
 
+  const runRegeneratePdf = async () => {
+    setRegeneratingPdf(true)
+    setError(null)
+    setResult(null)
+    try {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/report-delivery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'regenerate_pdf' }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as DeliveryResponse
+      if (!response.ok) throw new Error(payload.error ?? 'Kunde inte starta om PDF-genereringen.')
+
+      setMeta((current) => ({
+        ...payload,
+        publicLink: payload.publicLink ?? current?.publicLink ?? null,
+      }))
+      setResult('PDF-genereringen har startats om. Statusen uppdateras automatiskt.')
+    } catch (pdfError) {
+      setError(pdfError instanceof Error ? pdfError.message : 'Kunde inte starta om PDF-genereringen.')
+    } finally {
+      setRegeneratingPdf(false)
+    }
+  }
+
   const locked = Boolean(meta?.reportLockedAt)
   const hasPublishedVersion = Boolean(meta?.hasActiveLink)
   const unlockedWithPublishedVersion = !locked && hasPublishedVersion
   const downloadUrl = meta?.downloadUrl ?? null
   const digitalReportUrl = meta?.publicLink ?? meta?.digitalUrl ?? null
-  const canSend = !busyAction && !unlockBusy && isValidEmail(recipient)
+  const canSend = !busyAction && !unlockBusy && !regeneratingPdf && isValidEmail(recipient)
   const unlockEvents = meta?.activityLog?.filter((item) => item.type === 'report_unlocked') ?? []
   const statusText = loading
     ? 'Hämtar leveransstatus...'
@@ -415,8 +441,8 @@ export default function TuPrintActions({
             </div>
             <button
               type="button"
-              onClick={() => void loadMeta()}
-              disabled={loading || Boolean(busyAction) || unlockBusy}
+            onClick={() => void loadMeta()}
+              disabled={loading || Boolean(busyAction) || unlockBusy || regeneratingPdf}
               className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
             >
               <RefreshCw size={14} aria-hidden />
@@ -445,7 +471,7 @@ export default function TuPrintActions({
           <button
             type="button"
             onClick={() => void runDelivery('lock_only')}
-            disabled={Boolean(busyAction) || unlockBusy}
+            disabled={Boolean(busyAction) || unlockBusy || regeneratingPdf}
             className="inline-flex h-10 items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <LockKeyhole size={16} aria-hidden />
@@ -454,7 +480,7 @@ export default function TuPrintActions({
           <button
             type="button"
             onClick={() => setUnlockOpen(true)}
-            disabled={!locked || Boolean(busyAction) || unlockBusy}
+            disabled={!locked || Boolean(busyAction) || unlockBusy || regeneratingPdf}
             className="inline-flex h-10 items-center gap-2 rounded-md border border-rose-200 bg-white px-3 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <LockOpen size={16} aria-hidden />
@@ -485,6 +511,17 @@ export default function TuPrintActions({
               {meta?.hasActiveLink ? pdfStatusMessage(meta) : 'Ingen skapad PDF att ladda ner ännu.'}
             </span>
           )}
+          {meta?.hasActiveLink && meta.pdfStatus === 'failed' ? (
+            <button
+              type="button"
+              onClick={() => void runRegeneratePdf()}
+              disabled={regeneratingPdf || Boolean(busyAction) || unlockBusy}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RefreshCw size={14} aria-hidden />
+              {regeneratingPdf ? 'Startar om PDF...' : 'Generera PDF igen'}
+            </button>
+          ) : null}
           {digitalReportUrl ? (
             <a
               href={digitalReportUrl}

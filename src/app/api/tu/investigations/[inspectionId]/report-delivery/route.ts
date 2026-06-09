@@ -27,6 +27,7 @@ const PDF_RENDER_TIMEOUT_MS = Number(process.env.REPORT_PDF_RENDER_TIMEOUT_MS ??
 const REPORT_PDF_STORAGE_BUCKET = process.env.REPORT_PDF_STORAGE_BUCKET?.trim() || 'inspection-reports'
 
 type DeliveryAction = 'send_and_lock' | 'send_open' | 'lock_only'
+type ReportDeliveryPostAction = DeliveryAction | 'regenerate_pdf'
 type PdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 
@@ -125,8 +126,9 @@ function resolveReportDraftRecipientEmail(
   return null
 }
 
-function parseAction(value: unknown): DeliveryAction {
+function parseAction(value: unknown): ReportDeliveryPostAction {
   const normalized = normalizeText(value)
+  if (normalized === 'regenerate_pdf') return 'regenerate_pdf'
   if (normalized === 'send_open') return 'send_open'
   if (normalized === 'lock_only') return 'lock_only'
   return 'send_and_lock'
@@ -475,7 +477,7 @@ async function getLatestReportLink(
 ) {
   const { data, error } = await admin
     .from('inspection_report_links')
-    .select('id,created_at,pdf_status,pdf_error,revoked_at,pdf_storage_bucket,pdf_storage_path,pdf_base64')
+    .select('id,org_id,token_hash,created_at,pdf_status,pdf_error,revoked_at,pdf_storage_bucket,pdf_storage_path,pdf_base64')
     .eq('inspection_id', inspectionId)
     .is('revoked_at', null)
     .order('created_at', { ascending: false })
@@ -486,6 +488,8 @@ async function getLatestReportLink(
   return data as
     | {
         id: string
+        org_id: string | null
+        token_hash: string | null
         created_at: string | null
         pdf_status: string | null
         pdf_error: string | null
@@ -679,6 +683,76 @@ export async function POST(
       inspectorProfileId: org.userId,
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
+
+    if (action === 'regenerate_pdf') {
+      const latestLink = await getLatestReportLink(admin, inspectionId)
+      if (!latestLink) {
+        return jsonError('Det finns ingen publicerad rapportlänk att generera PDF för.', 400)
+      }
+      if (latestLink.org_id !== org.orgId) {
+        return jsonError('Rapportlänken tillhör inte din organisation.', 403)
+      }
+
+      const tokenHash = String(latestLink.token_hash ?? '').trim()
+      if (!tokenHash) {
+        return jsonError('Rapportlänken saknar token för PDF-generering.', 500)
+      }
+
+      const latestStatus = normalizePdfStatus(latestLink.pdf_status)
+      const shouldSchedulePdfJob = latestStatus !== 'pending' && latestStatus !== 'processing'
+      if (shouldSchedulePdfJob) {
+        await setPdfJobStatus(admin, latestLink.id, {
+          pdf_status: 'pending',
+          pdf_error: null,
+          pdf_attempts: 0,
+          pdf_started_at: null,
+          pdf_generated_at: null,
+          pdf_storage_bucket: null,
+          pdf_storage_path: null,
+          pdf_size_bytes: null,
+          pdf_sha256: null,
+          pdf_base64: null,
+        })
+
+        const publicBaseUrl = resolvePublicBaseUrl(request)
+        after(async () => {
+          await runTuReportPdfJobInBackground({
+            linkId: latestLink.id,
+            orgId: org.orgId,
+            inspectionId,
+            tokenHash,
+            previewReportUrl: `${publicBaseUrl}/tu/investigations/${encodeURIComponent(inspectionId)}/digital?pdf=1`,
+            cookieHeader: request.headers.get('cookie'),
+          })
+        })
+      }
+
+      const [history, unlockHistory, activeLink, deliveryDocuments] = await Promise.all([
+        getDeliveryHistory(admin, inspectionId),
+        getUnlockHistory(admin, org.orgId, inspectionId),
+        getLatestReportLink(admin, inspectionId),
+        listTuDeliveryDocuments(admin, { orgId: org.orgId, inspectionId }),
+      ])
+      const ordererEmail = resolveDefaultRecipient(investigation)
+      const activityLog = buildDeliveryActivityLog({ history, unlockHistory })
+
+      return NextResponse.json({
+        inspectionId,
+        reportLockedAt: investigation.reportLockedAt,
+        inspectionStatus: investigation.status,
+        defaultRecipientEmail: ordererEmail,
+        ordererEmail,
+        hasActiveLink: Boolean(activeLink),
+        pdfStatus: activeLink?.pdf_status ?? null,
+        pdfError: activeLink?.pdf_error ?? null,
+        downloadUrl: getPdfDownloadUrl(inspectionId, activeLink),
+        digitalUrl: getDashboardDigitalReportUrl(inspectionId, activeLink),
+        publicLink: null,
+        deliveryDocuments,
+        history,
+        activityLog,
+      })
+    }
 
     const primaryRecipient =
       action === 'lock_only'
