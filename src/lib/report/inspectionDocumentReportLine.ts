@@ -15,6 +15,7 @@ const DOCUMENT_STATUS_GAP = '\u00A0\u00A0\u00A0\u00A0'
 const DOCUMENT_STATUS_PATTERN = /(Inte tillhandahållen|Tillhandahållen)(?:\.\s*(.*))?$/u
 
 const trimText = (value: string | null | undefined) => (value ?? '').trim()
+const repairDocumentLineText = (value: string) => value.replace(/\u00c3\u00a5/g, '\u00e5')
 
 export function formatInspectionDocumentReportLineParts(
   document: InspectionDocumentReportLineInput
@@ -44,7 +45,7 @@ export function formatInspectionDocumentReportLine(
 export function parseInspectionDocumentReportLine(
   line: string
 ): InspectionDocumentReportLineParts {
-  const text = trimText(line)
+  const text = repairDocumentLineText(trimText(line))
   const match = text.match(DOCUMENT_STATUS_PATTERN)
   if (!match?.index) {
     return { title: text, statusText: '', note: '', text }

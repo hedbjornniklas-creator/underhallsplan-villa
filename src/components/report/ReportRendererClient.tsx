@@ -663,12 +663,13 @@ function renderHandlingarDocumentRows(
             key={`handlingar-document-${rowIndex}`}
             style={{
               display: 'grid',
-              gridTemplateColumns: `minmax(0, 1fr) ${mmToPx(48)}px`,
-              columnGap: mmToPx(8),
+              gridTemplateColumns: `${mmToPx(58)}px ${mmToPx(4)}px minmax(0, 1fr)`,
+              columnGap: mmToPx(1.5),
               alignItems: 'baseline',
             }}
           >
             <div style={{ minWidth: 0 }}>{row.title}</div>
+            <div style={{ textAlign: 'center' }}>-</div>
             <div style={{ whiteSpace: 'pre-wrap' }}>
               {statusText}
             </div>

@@ -237,8 +237,9 @@ const renderDocumentRowsPdf = (rows: InspectionDocumentReportLineParts[]) => {
 
     return (
       <View key={`document-row-${index}`} style={{ flexDirection: 'row', marginBottom: 2 }} wrap={false}>
-        <Text style={{ width: '58%', paddingRight: 12 }}>{row.title}</Text>
-        <Text style={{ width: '42%' }}>{statusText}</Text>
+        <Text style={{ width: '48%', paddingRight: 6 }}>{row.title}</Text>
+        <Text style={{ width: '4%', textAlign: 'center' }}>-</Text>
+        <Text style={{ width: '48%', paddingLeft: 6 }}>{statusText}</Text>
       </View>
     )
   })
