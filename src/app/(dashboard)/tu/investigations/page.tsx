@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ChevronsLeft, Download, FileText, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronsLeft, Download, FileText, Loader2, LockOpen, Plus, Trash2 } from 'lucide-react'
 import Protected from '@/components/Protected'
 
 type InvestigationItem = {
@@ -142,6 +142,38 @@ function PdfDownloadActionButton({ inspectionId }: { inspectionId: string }) {
   )
 }
 
+function UnlockInvestigationActionButton({
+  onClick,
+  disabled,
+  busy,
+}: {
+  onClick: () => void
+  disabled: boolean
+  busy: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onClick()
+      }}
+      disabled={disabled}
+      aria-label="Lås upp TU-utlåtande"
+      title="Lås upp TU-utlåtande"
+      className="inline-flex h-6 items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 text-[11px] font-medium text-amber-800 transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      {busy ? (
+        <Loader2 size={12} strokeWidth={2.1} className="animate-spin" />
+      ) : (
+        <LockOpen size={12} strokeWidth={2.1} />
+      )}
+      Lås upp
+    </button>
+  )
+}
+
 export default function TuInvestigationsPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -154,6 +186,10 @@ export default function TuInvestigationsPage() {
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [currentPage, setCurrentPage] = useState(1)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [unlockTarget, setUnlockTarget] = useState<InvestigationItem | null>(null)
+  const [unlockReason, setUnlockReason] = useState('')
+  const [unlockSubmitting, setUnlockSubmitting] = useState(false)
+  const [unlockError, setUnlockError] = useState<string | null>(null)
 
   useEffect(() => {
     const loadInvestigations = async () => {
@@ -317,6 +353,69 @@ export default function TuInvestigationsPage() {
       setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera utlåtandet.')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const openUnlockDialog = (item: InvestigationItem) => {
+    setError(null)
+    setUnlockError(null)
+    setUnlockTarget(item)
+    setUnlockReason('')
+  }
+
+  const closeUnlockDialog = () => {
+    if (unlockSubmitting) return
+    setUnlockTarget(null)
+    setUnlockReason('')
+    setUnlockError(null)
+  }
+
+  const submitUnlock = async () => {
+    if (!unlockTarget || unlockSubmitting) return
+
+    const reason = unlockReason.trim()
+    if (reason.length < 10) {
+      setUnlockError('Anledning för upplåsning måste vara minst 10 tecken.')
+      return
+    }
+
+    try {
+      setUnlockSubmitting(true)
+      setUnlockError(null)
+      setError(null)
+
+      const response = await fetch(`/api/tu/investigations/${encodeURIComponent(unlockTarget.inspectionId)}/unlock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      })
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'Kunde inte låsa upp TU-utlåtandet.')
+      }
+
+      const now = new Date().toISOString()
+      setItems((prev) =>
+        prev.map((row) =>
+          row.inspectionId === unlockTarget.inspectionId
+            ? {
+                ...row,
+                reportLockedAt: null,
+                updatedAt: now,
+              }
+            : row
+        )
+      )
+
+      setUnlockTarget(null)
+      setUnlockReason('')
+      setUnlockError(null)
+      router.refresh()
+    } catch (submitError) {
+      setUnlockError(submitError instanceof Error ? submitError.message : 'Kunde inte låsa upp TU-utlåtandet.')
+    } finally {
+      setUnlockSubmitting(false)
     }
   }
 
@@ -496,6 +595,13 @@ export default function TuInvestigationsPage() {
                             {item.hasReadyPdf ? (
                               <PdfDownloadActionButton inspectionId={item.inspectionId} />
                             ) : null}
+                            {item.reportLockedAt ? (
+                              <UnlockInvestigationActionButton
+                                onClick={() => openUnlockDialog(item)}
+                                disabled={unlockSubmitting}
+                                busy={unlockSubmitting && unlockTarget?.inspectionId === item.inspectionId}
+                              />
+                            ) : null}
                             <button
                               type="button"
                               onClick={(event) => {
@@ -542,6 +648,86 @@ export default function TuInvestigationsPage() {
                 </div>
               </footer>
             </>
+          ) : null}
+
+          {unlockTarget ? (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="tuUnlockDialogTitle"
+            >
+              <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-4 shadow-xl">
+                <h2 id="tuUnlockDialogTitle" className="text-base font-semibold text-gray-900">
+                  Lås upp TU-utlåtande
+                </h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Ange anledning till upplåsning (minst 10 tecken).
+                </p>
+
+                <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  Publicerad digital version och PDF ligger kvar tills en ny version publiceras.
+                </div>
+
+                <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                  <div>
+                    <span className="font-medium">Utlåtande:</span> {unlockTarget.title}
+                  </div>
+                  <div className="mt-1">
+                    <span className="font-medium">Adress:</span> {getAddress(unlockTarget)}
+                  </div>
+                  {unlockTarget.customerName || unlockTarget.customerEmail ? (
+                    <div className="mt-1">
+                      <span className="font-medium">Kund:</span>{' '}
+                      {unlockTarget.customerName || unlockTarget.customerEmail}
+                    </div>
+                  ) : null}
+                </div>
+
+                <label className="mt-3 block text-xs font-medium text-gray-700" htmlFor="tuUnlockReason">
+                  Anledning
+                </label>
+                <textarea
+                  id="tuUnlockReason"
+                  value={unlockReason}
+                  onChange={(event) => setUnlockReason(event.target.value)}
+                  rows={4}
+                  autoFocus
+                  disabled={unlockSubmitting}
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:cursor-not-allowed disabled:bg-gray-100"
+                  placeholder="Exempel: Beställaren har inkommit med ändringar efter utskick."
+                />
+
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <div className="text-xs text-rose-700">{unlockError}</div>
+                  <div className="shrink-0 text-xs text-gray-500">{unlockReason.trim().length}/10 tecken</div>
+                </div>
+
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeUnlockDialog}
+                    disabled={unlockSubmitting}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Avbryt
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void submitUnlock()}
+                    disabled={unlockSubmitting}
+                    className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {unlockSubmitting ? (
+                      <Loader2 size={14} strokeWidth={2.2} className="animate-spin" />
+                    ) : (
+                      <LockOpen size={14} strokeWidth={2.2} />
+                    )}
+                    Lås upp
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : null}
         </div>
       </main>
