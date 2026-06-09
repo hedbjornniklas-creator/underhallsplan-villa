@@ -2,7 +2,7 @@
 -- Date: 2026-06-08
 -- Scope:
 -- 1) Track who locked an EB report
--- 2) Lock/unlock EB reports consistently with the global inspection lock
+-- 2) Lock/unlock EB reports consistently with the global inspection lock while keeping published links active until a new version is published
 -- 3) Protect EB inspection data with the shared locked-inspection write guard
 
 alter table public.eb_inspection_details
@@ -131,11 +131,6 @@ begin
   where org_id = p_org_id
     and eb_project_id = p_project_id
     and inspection_id = p_inspection_id;
-
-  update public.inspection_report_links
-  set revoked_at = now()
-  where inspection_id = p_inspection_id
-    and revoked_at is null;
 
   insert into public.inspection_lock_events (
     org_id,
