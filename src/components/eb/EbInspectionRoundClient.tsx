@@ -146,6 +146,10 @@ type ReportDraftResponse = {
   error?: string
 }
 
+const IMAGE_UPLOAD_MAX_EDGE = 1600
+const IMAGE_UPLOAD_JPEG_QUALITY = 0.72
+const IMAGE_UPLOAD_REENCODE_THRESHOLD_BYTES = 900 * 1024
+
 const DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION =
   'Fönster, dörrar, väggar etc numreras från vänster till höger. Vägg 1 = vägg till vänster om entrévägg. Vägg 2 = nästa vägg till höger om vägg 1 osv.'
 
@@ -465,6 +469,81 @@ function sortImages(images: EbNoteImage[]) {
     }
     return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
   })
+}
+
+function imageFileNameAsJpeg(name: string) {
+  const baseName = name.replace(/\.[^.]+$/, '').trim()
+  return `${baseName || 'bild'}.jpg`
+}
+
+function loadImageFromFile(file: File) {
+  return new Promise<{ image: HTMLImageElement; objectUrl: string }>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file)
+    const image = new Image()
+    image.onload = () => resolve({ image, objectUrl })
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('Kunde inte läsa bilden.'))
+    }
+    image.src = objectUrl
+  })
+}
+
+function canvasToJpegBlob(canvas: HTMLCanvasElement) {
+  return new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, 'image/jpeg', IMAGE_UPLOAD_JPEG_QUALITY)
+  })
+}
+
+async function prepareImageForUpload(file: File) {
+  const contentType = file.type.toLowerCase()
+  if (
+    typeof document === 'undefined' ||
+    typeof URL === 'undefined' ||
+    !contentType.startsWith('image/') ||
+    contentType === 'image/gif' ||
+    contentType === 'image/svg+xml'
+  ) {
+    return file
+  }
+
+  let objectUrl: string | null = null
+
+  try {
+    const loaded = await loadImageFromFile(file)
+    objectUrl = loaded.objectUrl
+    const { image } = loaded
+    const sourceWidth = image.naturalWidth
+    const sourceHeight = image.naturalHeight
+    if (sourceWidth <= 0 || sourceHeight <= 0) return file
+
+    const scale = Math.min(1, IMAGE_UPLOAD_MAX_EDGE / Math.max(sourceWidth, sourceHeight))
+    const shouldResize = scale < 1
+    const shouldReencode =
+      file.size > IMAGE_UPLOAD_REENCODE_THRESHOLD_BYTES || contentType !== 'image/jpeg'
+    if (!shouldResize && !shouldReencode) return file
+
+    const targetWidth = Math.max(1, Math.round(sourceWidth * scale))
+    const targetHeight = Math.max(1, Math.round(sourceHeight * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = targetWidth
+    canvas.height = targetHeight
+    const context = canvas.getContext('2d')
+    if (!context) return file
+
+    context.drawImage(image, 0, 0, targetWidth, targetHeight)
+    const blob = await canvasToJpegBlob(canvas)
+    if (!blob || blob.size >= file.size * 0.98) return file
+
+    return new File([blob], imageFileNameAsJpeg(file.name), {
+      type: 'image/jpeg',
+      lastModified: file.lastModified,
+    })
+  } catch {
+    return file
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
+  }
 }
 
 function sortCheckpoints(checkpoints: EbInspectionCheckpoint[]) {
@@ -1587,8 +1666,12 @@ export default function EbInspectionRoundClient({
       if (!note) return
       setSaving(false)
 
+      const thumbnailFile = await prepareImageForUpload(file)
       const formData = new FormData()
       formData.append('file', file)
+      if (thumbnailFile !== file) {
+        formData.append('thumbnail', thumbnailFile)
+      }
       const response = await fetch(`${notesBasePath}/${note.id}/images`, {
         method: 'POST',
         body: formData,
@@ -2683,7 +2766,13 @@ export default function EbInspectionRoundClient({
                     <div className={imageViewCount === 1 ? 'grid grid-cols-1 gap-2' : imageViewCount === 4 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-2'}>
                       {(imagesByNoteId.get(editingNote.id) ?? []).slice(0, imageViewCount).map((image) => (
                         <div key={image.id} className="relative overflow-hidden rounded-md border border-emerald-100 bg-white">
-                          <img src={image.publicUrl} alt={image.label ?? 'Bild'} className="aspect-square w-full object-cover" />
+                          <img
+                            src={image.thumbnailUrl ?? image.publicUrl}
+                            alt={image.label ?? 'Bild'}
+                            loading="lazy"
+                            decoding="async"
+                            className="aspect-square w-full object-cover"
+                          />
                           <button
                             type="button"
                             onClick={() => void detachImage(image)}
@@ -2896,7 +2985,13 @@ export default function EbInspectionRoundClient({
                                     : 'relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-300 disabled:cursor-wait disabled:opacity-60'
                                 }
                               >
-                                <img src={image.publicUrl} alt={image.label ?? 'Bild'} className="aspect-square w-full object-cover" />
+                                <img
+                                  src={image.thumbnailUrl ?? image.publicUrl}
+                                  alt={image.label ?? 'Bild'}
+                                  loading="lazy"
+                                  decoding="async"
+                                  className="aspect-square w-full object-cover"
+                                />
                                 <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-gray-700">
                                   {note ? `${round.project.notePrefix} ${displayNumberByNoteId.get(note.id) ?? note.noteNumber ?? ''}` : 'Okopplad'}
                                 </span>

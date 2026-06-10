@@ -23,6 +23,10 @@ type AttachmentEditState = {
   documentNote: string
 }
 
+const IMAGE_UPLOAD_MAX_EDGE = 1600
+const IMAGE_UPLOAD_JPEG_QUALITY = 0.72
+const IMAGE_UPLOAD_REENCODE_THRESHOLD_BYTES = 900 * 1024
+
 function buildAttachmentEditState(attachment: EbProjectAttachment): AttachmentEditState {
   return {
     title: attachment.title ?? '',
@@ -55,6 +59,81 @@ function formatFileSize(value: number | null) {
 
 function attachmentTitle(attachment: EbProjectAttachment) {
   return attachment.title || attachment.fileName || 'Bilaga'
+}
+
+function imageFileNameAsJpeg(name: string) {
+  const baseName = name.replace(/\.[^.]+$/, '').trim()
+  return `${baseName || 'bild'}.jpg`
+}
+
+function loadImageFromFile(file: File) {
+  return new Promise<{ image: HTMLImageElement; objectUrl: string }>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file)
+    const image = new Image()
+    image.onload = () => resolve({ image, objectUrl })
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('Kunde inte läsa bilden.'))
+    }
+    image.src = objectUrl
+  })
+}
+
+function canvasToJpegBlob(canvas: HTMLCanvasElement) {
+  return new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, 'image/jpeg', IMAGE_UPLOAD_JPEG_QUALITY)
+  })
+}
+
+async function prepareImageForUpload(file: File) {
+  const contentType = file.type.toLowerCase()
+  if (
+    typeof document === 'undefined' ||
+    typeof URL === 'undefined' ||
+    !contentType.startsWith('image/') ||
+    contentType === 'image/gif' ||
+    contentType === 'image/svg+xml'
+  ) {
+    return file
+  }
+
+  let objectUrl: string | null = null
+
+  try {
+    const loaded = await loadImageFromFile(file)
+    objectUrl = loaded.objectUrl
+    const { image } = loaded
+    const sourceWidth = image.naturalWidth
+    const sourceHeight = image.naturalHeight
+    if (sourceWidth <= 0 || sourceHeight <= 0) return file
+
+    const scale = Math.min(1, IMAGE_UPLOAD_MAX_EDGE / Math.max(sourceWidth, sourceHeight))
+    const shouldResize = scale < 1
+    const shouldReencode =
+      file.size > IMAGE_UPLOAD_REENCODE_THRESHOLD_BYTES || contentType !== 'image/jpeg'
+    if (!shouldResize && !shouldReencode) return file
+
+    const targetWidth = Math.max(1, Math.round(sourceWidth * scale))
+    const targetHeight = Math.max(1, Math.round(sourceHeight * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = targetWidth
+    canvas.height = targetHeight
+    const context = canvas.getContext('2d')
+    if (!context) return file
+
+    context.drawImage(image, 0, 0, targetWidth, targetHeight)
+    const blob = await canvasToJpegBlob(canvas)
+    if (!blob || blob.size >= file.size * 0.98) return file
+
+    return new File([blob], imageFileNameAsJpeg(file.name), {
+      type: 'image/jpeg',
+      lastModified: file.lastModified,
+    })
+  } catch {
+    return file
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
+  }
 }
 
 function metadataInputClassName() {
@@ -216,9 +295,13 @@ export default function EbProjectAttachmentsPanel({
       setError(null)
 
       for (const file of uploadFiles) {
+        const thumbnailFile = attachmentType === 'image' ? await prepareImageForUpload(file) : file
         const formData = new FormData()
         formData.set('attachmentType', attachmentType)
         formData.set('file', file)
+        if (attachmentType === 'image' && thumbnailFile !== file) {
+          formData.set('thumbnail', thumbnailFile)
+        }
 
         const response = await fetch(`/api/eb/projects/${projectId}/attachments`, {
           method: 'POST',
@@ -475,8 +558,10 @@ export default function EbProjectAttachmentsPanel({
                     <a href={attachment.signedUrl} target="_blank" rel="noreferrer" className="block">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={attachment.signedUrl}
+                        src={attachment.signedThumbnailUrl ?? attachment.signedUrl}
                         alt={attachmentTitle(attachment)}
+                        loading="lazy"
+                        decoding="async"
                         className="aspect-[4/3] w-full object-cover"
                       />
                     </a>

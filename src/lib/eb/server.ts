@@ -202,9 +202,11 @@ export type EbNoteImage = {
   noteId: string | null
   inspectionId: string
   filePath: string
+  thumbnailFilePath: string | null
   label: string | null
   sortOrder: number
   publicUrl: string
+  thumbnailUrl: string | null
   createdAt: string | null
 }
 
@@ -234,6 +236,7 @@ export type EbProjectAttachment = {
   documentNumber: string | null
   documentNote: string | null
   signedUrl: string | null
+  signedThumbnailUrl: string | null
   uploadedBy: string | null
   createdAt: string | null
 }
@@ -581,6 +584,7 @@ type EbNoteImageRow = {
   inspection_id: string
   eb_note_id: string | null
   file_path: string
+  thumbnail_file_path?: string | null
   label: string | null
   sort_order: number | null
   created_at: string | null
@@ -593,6 +597,7 @@ type EbProjectAttachmentRow = {
   title: string | null
   storage_bucket: string | null
   file_path: string
+  thumbnail_file_path?: string | null
   file_name: string | null
   content_type: string | null
   file_size_bytes: number | null
@@ -1506,6 +1511,7 @@ async function mapProjectAttachment(row: EbProjectAttachmentRow): Promise<EbProj
   const admin = createSupabaseAdminClient()
   const storageBucket = row.storage_bucket ?? EB_PROJECT_ATTACHMENTS_BUCKET
   let signedUrl: string | null = null
+  let signedThumbnailUrl: string | null = null
 
   if (row.file_path) {
     const { data, error } = await admin.storage
@@ -1514,6 +1520,16 @@ async function mapProjectAttachment(row: EbProjectAttachmentRow): Promise<EbProj
 
     if (!error) {
       signedUrl = data?.signedUrl ?? null
+    }
+  }
+
+  if (row.thumbnail_file_path) {
+    const { data, error } = await admin.storage
+      .from(storageBucket)
+      .createSignedUrl(row.thumbnail_file_path, EB_ATTACHMENT_SIGNED_URL_SECONDS)
+
+    if (!error) {
+      signedThumbnailUrl = data?.signedUrl ?? null
     }
   }
 
@@ -1533,6 +1549,7 @@ async function mapProjectAttachment(row: EbProjectAttachmentRow): Promise<EbProj
     documentNumber: row.document_number ?? null,
     documentNote: row.document_note ?? null,
     signedUrl,
+    signedThumbnailUrl,
     uploadedBy: row.uploaded_by ?? null,
     createdAt: row.created_at ?? null,
   }
@@ -1551,7 +1568,7 @@ export async function listEbProjectAttachments(input: {
   const baseSelect =
     'id,eb_project_id,attachment_type,title,storage_bucket,file_path,file_name,content_type,file_size_bytes,uploaded_by,created_at'
   const withReportMetadataSelect =
-    'id,eb_project_id,attachment_type,title,storage_bucket,file_path,file_name,content_type,file_size_bytes,include_in_report,littera,document_date,document_number,document_note,uploaded_by,created_at'
+    'id,eb_project_id,attachment_type,title,storage_bucket,file_path,thumbnail_file_path,file_name,content_type,file_size_bytes,include_in_report,littera,document_date,document_number,document_note,uploaded_by,created_at'
   const { data, error } = await admin
     .from('eb_project_attachments')
     .select(withReportMetadataSelect)
@@ -2012,15 +2029,17 @@ function mapInspectionCheckpoint(row: EbInspectionCheckpointRow): EbInspectionCh
   }
 }
 
-function mapNoteImage(row: EbNoteImageRow, publicUrl: string): EbNoteImage {
+function mapNoteImage(row: EbNoteImageRow, publicUrl: string, thumbnailUrl: string | null): EbNoteImage {
   return {
     id: row.id,
     noteId: row.eb_note_id ?? null,
     inspectionId: row.inspection_id,
     filePath: row.file_path,
+    thumbnailFilePath: row.thumbnail_file_path ?? null,
     label: row.label ?? null,
     sortOrder: row.sort_order ?? 100,
     publicUrl,
+    thumbnailUrl,
     createdAt: row.created_at ?? null,
   }
 }
@@ -2189,11 +2208,11 @@ async function listEbNotes(input: {
   )
 }
 
-async function listEbNoteImages(input: { inspectionId: string }) {
+async function listEbNoteImagesLegacy(input: { inspectionId: string }) {
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
     .from('inspection_images')
-    .select('id,inspection_id,eb_note_id,file_path,label,sort_order,created_at')
+    .select('id,inspection_id,eb_note_id,file_path,thumbnail_file_path,label,sort_order,created_at')
     .eq('inspection_id', input.inspectionId)
     .like('file_path', `${input.inspectionId}/eb-notes/%`)
     .order('sort_order', { ascending: true })
@@ -2204,8 +2223,32 @@ async function listEbNoteImages(input: { inspectionId: string }) {
   }
 
   return ((data ?? []) as EbNoteImageRow[]).map((row) =>
-    mapNoteImage(row, admin.storage.from(EB_NOTE_IMAGE_BUCKET).getPublicUrl(row.file_path).data.publicUrl)
+    mapNoteImage(row, admin.storage.from(EB_NOTE_IMAGE_BUCKET).getPublicUrl(row.file_path).data.publicUrl, null)
   )
+}
+
+async function listEbNoteImages(input: { inspectionId: string }) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('inspection_images')
+    .select('id,inspection_id,eb_note_id,file_path,thumbnail_file_path,label,sort_order,created_at')
+    .eq('inspection_id', input.inspectionId)
+    .like('file_path', `${input.inspectionId}/eb-notes/%`)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    if (isMissingColumnError(error)) return listEbNoteImagesLegacy(input)
+    throw new Error(error.message ?? 'Kunde inte hämta EB-bilder.')
+  }
+
+  return ((data ?? []) as EbNoteImageRow[]).map((row) => {
+    const publicUrl = admin.storage.from(EB_NOTE_IMAGE_BUCKET).getPublicUrl(row.file_path).data.publicUrl
+    const thumbnailUrl = row.thumbnail_file_path
+      ? admin.storage.from(EB_NOTE_IMAGE_BUCKET).getPublicUrl(row.thumbnail_file_path).data.publicUrl
+      : null
+    return mapNoteImage(row, publicUrl, thumbnailUrl)
+  })
 }
 
 async function listEbNoteSuggestions(input: {
@@ -2972,7 +3015,7 @@ export async function deleteEbInspection(input: {
 
   const { data: imageRows, error: imageError } = await admin
     .from('inspection_images')
-    .select('file_path')
+    .select('file_path,thumbnail_file_path')
     .eq('inspection_id', input.inspectionId)
     .like('file_path', `${input.inspectionId}/eb-notes/%`)
 
@@ -2980,8 +3023,8 @@ export async function deleteEbInspection(input: {
     throw new Error(imageError.message ?? 'Kunde inte hämta EB-bilder.')
   }
 
-  const imagePaths = ((imageRows ?? []) as Array<{ file_path?: string | null }>)
-    .map((row) => row.file_path?.trim())
+  const imagePaths = ((imageRows ?? []) as Array<{ file_path?: string | null; thumbnail_file_path?: string | null }>)
+    .flatMap((row) => [row.file_path?.trim(), row.thumbnail_file_path?.trim()])
     .filter((path): path is string => Boolean(path))
 
   if (imagePaths.length > 0) {

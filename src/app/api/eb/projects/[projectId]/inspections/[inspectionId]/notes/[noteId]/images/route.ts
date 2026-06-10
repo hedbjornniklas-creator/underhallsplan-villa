@@ -26,23 +26,27 @@ function mapImage(row: {
   inspection_id: string
   eb_note_id: string | null
   file_path: string
+  thumbnail_file_path?: string | null
   label: string | null
   sort_order: number | null
   created_at: string | null
 }) {
-  const publicUrl = createSupabaseAdminClient()
-    .storage
-    .from(EB_NOTE_IMAGE_BUCKET)
-    .getPublicUrl(row.file_path).data.publicUrl
+  const storage = createSupabaseAdminClient().storage.from(EB_NOTE_IMAGE_BUCKET)
+  const publicUrl = storage.getPublicUrl(row.file_path).data.publicUrl
+  const thumbnailUrl = row.thumbnail_file_path
+    ? storage.getPublicUrl(row.thumbnail_file_path).data.publicUrl
+    : null
 
   return {
     id: row.id,
     noteId: row.eb_note_id ?? null,
     inspectionId: row.inspection_id,
     filePath: row.file_path,
+    thumbnailFilePath: row.thumbnail_file_path ?? null,
     label: row.label,
     sortOrder: row.sort_order ?? 100,
     publicUrl,
+    thumbnailUrl,
     createdAt: row.created_at ?? null,
   }
 }
@@ -88,6 +92,7 @@ export async function POST(
   context: { params: Promise<{ projectId: string; inspectionId: string; noteId: string }> }
 ) {
   let uploadedPath: string | null = null
+  let uploadedThumbnailPath: string | null = null
 
   try {
     const { projectId, inspectionId, noteId } = await context.params
@@ -113,6 +118,7 @@ export async function POST(
 
     const formData = await request.formData()
     const fileEntry = formData.get('file')
+    const thumbnailEntry = formData.get('thumbnail')
     if (!(fileEntry instanceof File)) return jsonError('Fil saknas.', 400)
     if (!fileEntry.type.toLowerCase().startsWith('image/')) {
       return jsonError('Endast bildfiler är tillåtna.', 400)
@@ -141,6 +147,9 @@ export async function POST(
     const capturedAt = new Date().toISOString()
     const fileName = `${Date.now()}-${randomUUID().slice(0, 8)}.${resolveFileExtension(fileEntry)}`
     const filePath = `${inspectionId}/eb-notes/${noteId}/${capturedAt.slice(0, 10)}/${fileName}`
+    const thumbnailPath = thumbnailEntry instanceof File
+      ? `${inspectionId}/eb-notes/${noteId}/${capturedAt.slice(0, 10)}/thumb-${fileName.replace(/\.[^.]+$/, '.jpg')}`
+      : null
 
     const { error: uploadError } = await admin.storage.from(EB_NOTE_IMAGE_BUCKET).upload(filePath, fileEntry, {
       cacheControl: '3600',
@@ -153,38 +162,47 @@ export async function POST(
     }
     uploadedPath = filePath
 
+    if (thumbnailEntry instanceof File && thumbnailPath) {
+      const { error: thumbnailUploadError } = await admin.storage.from(EB_NOTE_IMAGE_BUCKET).upload(
+        thumbnailPath,
+        thumbnailEntry,
+        {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: thumbnailEntry.type || 'image/jpeg',
+        }
+      )
+
+      if (thumbnailUploadError) {
+        throw new Error(thumbnailUploadError.message ?? 'Kunde inte ladda upp miniatyrbild.')
+      }
+      uploadedThumbnailPath = thumbnailPath
+    }
+
     const { data: insertedImage, error: insertError } = await admin
       .from('inspection_images')
       .insert({
         inspection_id: inspectionId,
         eb_note_id: noteId,
         file_path: filePath,
+        thumbnail_file_path: thumbnailPath,
         label: null,
         sort_order: sortOrder,
       })
-      .select('id,inspection_id,eb_note_id,file_path,label,sort_order,created_at')
+      .select('id,inspection_id,eb_note_id,file_path,thumbnail_file_path,label,sort_order,created_at')
       .single()
 
     if (insertError) {
       throw new Error(insertError.message ?? 'Kunde inte spara bildrad.')
     }
 
-    const publicUrl = admin.storage.from(EB_NOTE_IMAGE_BUCKET).getPublicUrl(filePath).data.publicUrl
-    return NextResponse.json({
-      image: {
-        id: insertedImage.id,
-        noteId: insertedImage.eb_note_id,
-        inspectionId: insertedImage.inspection_id,
-        filePath: insertedImage.file_path,
-        label: insertedImage.label,
-        sortOrder: insertedImage.sort_order ?? sortOrder,
-        publicUrl,
-        createdAt: insertedImage.created_at ?? null,
-      },
-    })
+    return NextResponse.json({ image: mapImage(insertedImage) })
   } catch (error) {
     if (uploadedPath) {
       await createSupabaseAdminClient().storage.from(EB_NOTE_IMAGE_BUCKET).remove([uploadedPath])
+    }
+    if (uploadedThumbnailPath) {
+      await createSupabaseAdminClient().storage.from(EB_NOTE_IMAGE_BUCKET).remove([uploadedThumbnailPath])
     }
     return mapError(error, 'Kunde inte ladda upp bild.')
   }
@@ -221,7 +239,7 @@ export async function DELETE(
 
     const { data: imageRow, error: imageError } = await admin
       .from('inspection_images')
-      .select('id,file_path')
+      .select('id,file_path,thumbnail_file_path')
       .eq('id', imageId)
       .eq('inspection_id', inspectionId)
       .eq('eb_note_id', noteId)
@@ -232,9 +250,11 @@ export async function DELETE(
     }
     if (!imageRow?.id) return jsonError('Bilden hittades inte.', 404)
 
-    const filePath = String(imageRow.file_path ?? '').trim()
-    if (filePath.length > 0) {
-      const { error: storageDeleteError } = await admin.storage.from(EB_NOTE_IMAGE_BUCKET).remove([filePath])
+    const filePaths = [imageRow.file_path, imageRow.thumbnail_file_path]
+      .map((path) => String(path ?? '').trim())
+      .filter(Boolean)
+    if (filePaths.length > 0) {
+      const { error: storageDeleteError } = await admin.storage.from(EB_NOTE_IMAGE_BUCKET).remove(filePaths)
       if (storageDeleteError) {
         throw new Error(storageDeleteError.message ?? 'Kunde inte ta bort bildfil.')
       }
@@ -291,7 +311,7 @@ export async function PATCH(
 
     const { data: imageRow, error: imageError } = await admin
       .from('inspection_images')
-      .select('id,inspection_id,eb_note_id,file_path,label,sort_order,created_at')
+      .select('id,inspection_id,eb_note_id,file_path,thumbnail_file_path,label,sort_order,created_at')
       .eq('id', imageId)
       .eq('inspection_id', inspectionId)
       .like('file_path', `${inspectionId}/eb-notes/%`)
@@ -308,7 +328,7 @@ export async function PATCH(
       .update({ eb_note_id: nextNoteId })
       .eq('id', imageId)
       .eq('inspection_id', inspectionId)
-      .select('id,inspection_id,eb_note_id,file_path,label,sort_order,created_at')
+      .select('id,inspection_id,eb_note_id,file_path,thumbnail_file_path,label,sort_order,created_at')
       .single()
 
     if (updateError || !updatedImage) {

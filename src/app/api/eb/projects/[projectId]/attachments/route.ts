@@ -142,6 +142,7 @@ export async function POST(
   context: { params: Promise<{ projectId: string }> }
 ) {
   let uploadedPath: string | null = null
+  let uploadedThumbnailPath: string | null = null
 
   try {
     const { projectId } = await context.params
@@ -152,6 +153,7 @@ export async function POST(
     const formData = await request.formData()
     const fileEntry = formData.get('file')
     if (!(fileEntry instanceof File)) return jsonError('Fil saknas.', 400)
+    const thumbnailEntry = formData.get('thumbnail')
 
     const attachmentType = toAttachmentType(formData.get('attachmentType'), fileEntry)
     const extension = normalizeFileExtension(fileEntry)
@@ -162,6 +164,9 @@ export async function POST(
     const admin = createSupabaseAdminClient()
     const fileName = safeStoredFileName(fileEntry, extension)
     const filePath = `${projectId}/${attachmentType}/${fileName}`
+    const thumbnailPath = attachmentType === 'image' && thumbnailEntry instanceof File
+      ? `${projectId}/${attachmentType}/thumb-${fileName.replace(/\.[^.]+$/, '.jpg')}`
+      : null
     uploadedPath = filePath
 
     const { error: uploadError } = await admin.storage
@@ -176,6 +181,21 @@ export async function POST(
       throw new Error(uploadError.message ?? 'Kunde inte ladda upp bilaga.')
     }
 
+    if (thumbnailEntry instanceof File && thumbnailPath) {
+      const { error: thumbnailUploadError } = await admin.storage
+        .from(EB_PROJECT_ATTACHMENTS_BUCKET)
+        .upload(thumbnailPath, thumbnailEntry, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: thumbnailEntry.type || 'image/jpeg',
+        })
+
+      if (thumbnailUploadError) {
+        throw new Error(thumbnailUploadError.message ?? 'Kunde inte ladda upp miniatyrbild.')
+      }
+      uploadedThumbnailPath = thumbnailPath
+    }
+
     const { error: insertError } = await admin.from('eb_project_attachments').insert({
       org_id: org.orgId,
       eb_project_id: projectId,
@@ -183,6 +203,7 @@ export async function POST(
       title: toText(formData.get('title')) || fileEntry.name || fileName,
       storage_bucket: EB_PROJECT_ATTACHMENTS_BUCKET,
       file_path: filePath,
+      thumbnail_file_path: thumbnailPath,
       file_name: fileEntry.name || fileName,
       content_type: contentType,
       file_size_bytes: fileEntry.size,
@@ -190,8 +211,11 @@ export async function POST(
     })
 
     if (insertError) {
-      await admin.storage.from(EB_PROJECT_ATTACHMENTS_BUCKET).remove([filePath])
+      await admin.storage.from(EB_PROJECT_ATTACHMENTS_BUCKET).remove(
+        [filePath, thumbnailPath].filter((path): path is string => Boolean(path))
+      )
       uploadedPath = null
+      uploadedThumbnailPath = null
       throw new Error(insertError.message ?? 'Kunde inte spara bilaga.')
     }
 
@@ -204,6 +228,9 @@ export async function POST(
   } catch (error) {
     if (uploadedPath) {
       await createSupabaseAdminClient().storage.from(EB_PROJECT_ATTACHMENTS_BUCKET).remove([uploadedPath])
+    }
+    if (uploadedThumbnailPath) {
+      await createSupabaseAdminClient().storage.from(EB_PROJECT_ATTACHMENTS_BUCKET).remove([uploadedThumbnailPath])
     }
     return mapError(error, 'Kunde inte ladda upp bilaga.')
   }

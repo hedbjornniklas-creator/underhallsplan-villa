@@ -118,7 +118,7 @@ export async function DELETE(
     const admin = createSupabaseAdminClient()
     const { data: attachment, error: fetchError } = await admin
       .from('eb_project_attachments')
-      .select('id,storage_bucket,file_path')
+      .select('id,storage_bucket,file_path,thumbnail_file_path')
       .eq('org_id', org.orgId)
       .eq('eb_project_id', projectId)
       .eq('id', attachmentId)
@@ -132,9 +132,11 @@ export async function DELETE(
     }
 
     const storageBucket = String(attachment.storage_bucket ?? EB_PROJECT_ATTACHMENTS_BUCKET).trim()
-    const filePath = String(attachment.file_path ?? '').trim()
-    if (filePath) {
-      const { error: removeError } = await admin.storage.from(storageBucket).remove([filePath])
+    const filePaths = [attachment.file_path, attachment.thumbnail_file_path]
+      .map((path) => String(path ?? '').trim())
+      .filter(Boolean)
+    if (filePaths.length > 0) {
+      const { error: removeError } = await admin.storage.from(storageBucket).remove(filePaths)
       if (removeError) {
         throw new Error(removeError.message ?? 'Kunde inte ta bort filen.')
       }

@@ -585,10 +585,13 @@ export default function EbInspectionMobileRoundClient({
       const note = editingNote ?? (await saveCurrentNote())
       setSaving(false)
       setImageUploadStatus('Optimerar bild...')
-      const uploadFile = await prepareImageForUpload(file)
+      const thumbnailFile = await prepareImageForUpload(file)
       setImageUploadStatus('Laddar upp bild...')
       const formData = new FormData()
-      formData.append('file', uploadFile)
+      formData.append('file', file)
+      if (thumbnailFile !== file) {
+        formData.append('thumbnail', thumbnailFile)
+      }
       const response = await fetch(`${notesBasePath}/${note.id}/images`, {
         method: 'POST',
         body: formData,
@@ -920,8 +923,10 @@ export default function EbInspectionMobileRoundClient({
                       {(imagesByNoteId.get(note.id) ?? []).slice(0, 8).map((image) => (
                         <img
                           key={image.id}
-                          src={image.publicUrl}
+                          src={image.thumbnailUrl ?? image.publicUrl}
                           alt={image.label ?? 'Bild'}
+                          loading="lazy"
+                          decoding="async"
                           className="h-14 w-14 shrink-0 rounded-md border border-emerald-100 object-cover"
                         />
                       ))}
@@ -1145,8 +1150,10 @@ export default function EbInspectionMobileRoundClient({
                           {(imagesByNoteId.get(editingNote.id) ?? []).map((image) => (
                             <div key={image.id} className="relative overflow-hidden rounded-md border border-emerald-100 bg-white">
                               <img
-                                src={image.publicUrl}
+                                src={image.thumbnailUrl ?? image.publicUrl}
                                 alt={image.label ?? 'Bild'}
+                                loading="lazy"
+                                decoding="async"
                                 className="aspect-square w-full object-cover"
                               />
                               <button
