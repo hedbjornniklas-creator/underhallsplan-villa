@@ -147,7 +147,7 @@ const EB_PAGE_CONTENT_TOP_MM = 36
 const EB_PAGE_CONTENT_BOTTOM_MM = 25
 const EB_PAGE_CONTENT_WIDTH_MM = EB_PAGE_WIDTH_MM - EB_PAGE_X_PADDING_MM * 2
 const EB_PAGE_CONTENT_HEIGHT_MM = EB_PAGE_HEIGHT_MM - EB_PAGE_CONTENT_TOP_MM - EB_PAGE_CONTENT_BOTTOM_MM
-const EB_PAGE_PACKING_SAFETY_MM = 4
+const EB_PAGE_PACKING_SAFETY_MM = 12
 const HIDDEN_REPORT_SECTION_KEYS = new Set([
   'inspection_type',
   'not_accessible',
@@ -635,61 +635,72 @@ function TestingDocumentationReport({
   )
 }
 
-function DrainageChecklistReport({ report }: { report: EbInspectionReport }) {
-  const printableCheckpoints = printableDrainageCheckpoints(report)
-  const groups = numberedCheckpointGroups(printableCheckpoints)
-  const hasPhotoRequiredCheckpoints = printableCheckpoints.some((checkpoint) => checkpoint.photoRequired)
-
+function DrainageChecklistIntroReport({
+  guidanceVersion,
+  hasPhotoRequiredCheckpoints,
+  hasCheckpoints,
+}: {
+  guidanceVersion: string | null | undefined
+  hasPhotoRequiredCheckpoints: boolean
+  hasCheckpoints: boolean
+}) {
   return (
     <ReportSection title="Kontrollunderlag dränering">
-      {groups.length === 0 ? (
+      {!hasCheckpoints ? (
         <p className="text-[10.5pt] leading-[1.35] text-black">
           Ingen dräneringskontrollista är registrerad för besiktningen.
         </p>
       ) : (
-        <div className="space-y-3 text-[9.5pt] leading-[1.25] text-black">
-          {report.project.drainageGuidanceVersion ? (
-            <p>Anvisning/version: {report.project.drainageGuidanceVersion}</p>
-          ) : null}
+        <div className="space-y-2 text-[9.5pt] leading-[1.25] text-black">
+          {guidanceVersion ? <p>Anvisning/version: {guidanceVersion}</p> : null}
           {hasPhotoRequiredCheckpoints ? (
             <p className="text-[9pt]">
               Kontrollpunkter märkta med foto ska verifieras med fotounderlag eller egenkontroll när momentet inte
               är direkt åtkomligt vid besiktningen.
             </p>
           ) : null}
-          {groups.map((group) => (
-            <section key={group.key} className="break-inside-avoid">
-              <h3 className="mb-1 text-[10pt] font-bold text-black">{group.label}</h3>
-              <div className="grid border-t border-l border-black/50">
-                <div className="grid grid-cols-[10mm_42mm_24mm_1fr] bg-neutral-100 font-bold">
-                  <div className="border-r border-b border-black/50 px-1.5 py-1">Nr</div>
-                  <div className="border-r border-b border-black/50 px-1.5 py-1">Kontrollpunkt</div>
-                  <div className="border-r border-b border-black/50 px-1.5 py-1">Status</div>
-                  <div className="border-r border-b border-black/50 px-1.5 py-1">Kommentar</div>
-                </div>
-                {group.checkpoints.map(({ checkpoint, number }) => (
-                  <div key={checkpoint.id} className="grid grid-cols-[10mm_42mm_24mm_1fr]">
-                    <div className="border-r border-b border-black/50 px-1.5 py-1">{number}</div>
-                    <div className="border-r border-b border-black/50 px-1.5 py-1">
-                      <p>{checkpoint.title}</p>
-                      {checkpoint.photoRequired ? (
-                        <p className="mt-0.5 text-[8pt] italic">Foto</p>
-                      ) : null}
-                    </div>
-                    <div className="border-r border-b border-black/50 px-1.5 py-1">
-                      {checkpointStatusLabel(checkpoint.status)}
-                    </div>
-                    <div className="whitespace-pre-wrap border-r border-b border-black/50 px-1.5 py-1">
-                      {checkpoint.comment?.trim() || '-'}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ))}
         </div>
       )}
     </ReportSection>
+  )
+}
+
+function DrainageChecklistGroupReport({
+  groupLabel,
+  checkpoints,
+}: {
+  groupLabel: string
+  checkpoints: ReturnType<typeof numberedCheckpointGroups>[number]['checkpoints']
+}) {
+  return (
+    <section className="eb-report-section break-inside-avoid text-[9.5pt] leading-[1.25] text-black">
+      <h3 className="mb-1 text-[10pt] font-bold text-black">{groupLabel}</h3>
+      <div className="grid border-t border-l border-black/50">
+        <div className="grid grid-cols-[10mm_42mm_24mm_1fr] bg-neutral-100 font-bold">
+          <div className="border-r border-b border-black/50 px-1.5 py-1">Nr</div>
+          <div className="border-r border-b border-black/50 px-1.5 py-1">Kontrollpunkt</div>
+          <div className="border-r border-b border-black/50 px-1.5 py-1">Status</div>
+          <div className="border-r border-b border-black/50 px-1.5 py-1">Kommentar</div>
+        </div>
+        {checkpoints.map(({ checkpoint, number }) => (
+          <div key={checkpoint.id} className="grid grid-cols-[10mm_42mm_24mm_1fr]">
+            <div className="border-r border-b border-black/50 px-1.5 py-1">{number}</div>
+            <div className="border-r border-b border-black/50 px-1.5 py-1">
+              <p>{checkpoint.title}</p>
+              {checkpoint.photoRequired ? (
+                <p className="mt-0.5 text-[8pt] italic">Foto</p>
+              ) : null}
+            </div>
+            <div className="border-r border-b border-black/50 px-1.5 py-1">
+              {checkpointStatusLabel(checkpoint.status)}
+            </div>
+            <div className="whitespace-pre-wrap border-r border-b border-black/50 px-1.5 py-1">
+              {checkpoint.comment?.trim() || '-'}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -1431,7 +1442,11 @@ function EbReportPageChrome({
 }
 
 function EbPrintableBlockView({ block }: { block: EbPrintableBlock }) {
-  return <div className="eb-report-block">{block.node}</div>
+  return (
+    <div className="eb-report-block" style={{ marginBottom: mm(4) }}>
+      {block.node}
+    </div>
+  )
 }
 
 function EbPrintPagedDocument({
@@ -1623,10 +1638,32 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
         continue
       }
       if (section.key === 'drainage_checklist') {
+        const printableCheckpoints = printableDrainageCheckpoints(report)
+        const groups = numberedCheckpointGroups(printableCheckpoints)
+        const hasPhotoRequiredCheckpoints = printableCheckpoints.some((checkpoint) => checkpoint.photoRequired)
         blocks.push({
           id: `section-${section.key}`,
-          node: <DrainageChecklistReport report={report} />,
+          node: (
+            <DrainageChecklistIntroReport
+              guidanceVersion={report.project.drainageGuidanceVersion}
+              hasCheckpoints={groups.length > 0}
+              hasPhotoRequiredCheckpoints={hasPhotoRequiredCheckpoints}
+            />
+          ),
         })
+        for (const group of groups) {
+          chunkArray(group.checkpoints, 4).forEach((checkpointChunk, chunkIndex) => {
+            blocks.push({
+              id: `drainage-checklist-${group.key}-${chunkIndex}`,
+              node: (
+                <DrainageChecklistGroupReport
+                  checkpoints={checkpointChunk}
+                  groupLabel={chunkIndex === 0 ? group.label : `${group.label} (forts.)`}
+                />
+              ),
+            })
+          })
+        }
         continue
       }
       if (section.key === 'defects_appendices') {
@@ -1690,24 +1727,28 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
       })
     }
 
+    let photoBlockIndex = 0
     notes
       .map((note) => ({
         note,
         images: imagesByNoteId.get(note.id) ?? [],
       }))
       .filter((item) => item.images.length > 0)
-      .forEach(({ note, images }, photoIndex) => {
-        blocks.push({
-          id: `photo-${note.id}`,
-          startsNewPage: photoIndex === 0,
-          node: (
-            <PhotoAppendixNoteArticle
-              checkpointNumber={checkpointNumberByNote.get(note.id)}
-              images={images}
-              note={note}
-              showTitle={photoIndex === 0}
-            />
-          ),
+      .forEach(({ note, images }) => {
+        chunkArray(images, 4).forEach((imageChunk, imageChunkIndex) => {
+          blocks.push({
+            id: `photo-${note.id}-${imageChunkIndex}`,
+            startsNewPage: photoBlockIndex === 0,
+            node: (
+              <PhotoAppendixNoteArticle
+                checkpointNumber={checkpointNumberByNote.get(note.id)}
+                images={imageChunk}
+                note={note}
+                showTitle={photoBlockIndex === 0}
+              />
+            ),
+          })
+          photoBlockIndex += 1
         })
       })
 
