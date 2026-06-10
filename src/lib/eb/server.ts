@@ -313,6 +313,10 @@ export type EbInspectionReport = EbInspectionRound & {
     inspectorAvatarUrl: string | null
     inspectorSignatureUrl: string | null
     besiktAppLogoUrl: string
+    footer: {
+      companyLines: string[]
+      contactLines: string[]
+    }
   }
 }
 
@@ -685,6 +689,12 @@ type ProfileContactRow = {
   id: string
   full_name: string | null
   email: string | null
+  phone: string | null
+  company_name: string | null
+  company_orgno: string | null
+  company_address: string | null
+  company_postal_code: string | null
+  company_city: string | null
   certification_number: string | null
   avatar_path: string | null
   logo_path: string | null
@@ -912,6 +922,25 @@ function resolveProfileAvatarUrl(profile: ProfileContactRow | null | undefined) 
 
 function resolveProfileSignatureUrl(profile: ProfileContactRow | null | undefined) {
   return resolvePublicMediaUrl(profile?.signature_path)
+}
+
+function buildProfileFooter(profile: ProfileContactRow | null | undefined) {
+  const postalCity = [profile?.company_postal_code, profile?.company_city]
+    .map((part) => normalizeText(part))
+    .filter(Boolean)
+    .join(' ')
+  const companyLines = [
+    normalizeText(profile?.company_name),
+    profile?.company_orgno ? `Org.nr ${profile.company_orgno}` : null,
+    normalizeText(profile?.company_address),
+    postalCity || null,
+  ].filter((line): line is string => Boolean(line))
+  const contactLines = [
+    normalizeText(profile?.phone),
+    normalizeText(profile?.email),
+  ].filter((line): line is string => Boolean(line))
+
+  return { companyLines, contactLines }
 }
 
 function normalizeDate(value: string | null | undefined) {
@@ -2558,6 +2587,7 @@ export async function getEbInspectionReport(input: {
       inspectorAvatarUrl,
       inspectorSignatureUrl,
       besiktAppLogoUrl: BESIKTAPP_REPORT_LOGO_SRC,
+      footer: buildProfileFooter(inspectorProfile),
     },
     reportDraft: buildEbReportDraft({
       round,
@@ -4759,6 +4789,7 @@ function buildInvitationBody(input: {
 async function getProfileContact(profileId: string) {
   const admin = createSupabaseAdminClient()
   const selectAttempts = [
+    'id,full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path,logo_path,logo_url,signature_path,certification_number',
     'id,full_name,email,avatar_path,logo_path,logo_url,signature_path,certification_number',
     'id,full_name,email,avatar_path,logo_path,logo_url,certification_number',
     'id,full_name,email,avatar_path,logo_path,logo_url',
@@ -4786,6 +4817,12 @@ async function getProfileContact(profileId: string) {
       id: row.id,
       full_name: row.full_name ?? null,
       email: row.email ?? null,
+      phone: row.phone ?? null,
+      company_name: row.company_name ?? null,
+      company_orgno: row.company_orgno ?? null,
+      company_address: row.company_address ?? null,
+      company_postal_code: row.company_postal_code ?? null,
+      company_city: row.company_city ?? null,
       certification_number: row.certification_number ?? null,
       avatar_path: row.avatar_path ?? null,
       logo_path: row.logo_path ?? null,
@@ -4816,6 +4853,19 @@ async function buildInspectorReportText(input: {
 
   return [
     inspector?.full_name ? reportLine('Besiktningsman', inspector.full_name) : null,
+    inspector?.company_name ? reportLine('Företag', inspector.company_name) : null,
+    inspector?.company_orgno ? reportLine('Org.nr', inspector.company_orgno) : null,
+    inspector?.company_address ? reportLine('Adress', inspector.company_address) : null,
+    inspector?.company_postal_code || inspector?.company_city
+      ? reportLine(
+          'Postadress',
+          [inspector.company_postal_code, inspector.company_city]
+            .map((part) => normalizeText(part))
+            .filter(Boolean)
+            .join(' ')
+        )
+      : null,
+    inspector?.phone ? reportLine('Telefon', inspector.phone) : null,
     inspector?.email ? reportLine('E-post', inspector.email) : null,
     certificationName ? reportLine('Certifiering', certificationName) : null,
     certificationName && summary.certification_number

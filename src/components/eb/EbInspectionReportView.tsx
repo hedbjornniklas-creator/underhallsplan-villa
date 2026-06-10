@@ -4,7 +4,14 @@
 
 import Link from 'next/link'
 import { ArrowLeft, ClipboardCheck, Printer } from 'lucide-react'
-import { useEffect, type ReactNode } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 import type {
   EbInspectionDocument,
   EbInspectionCheckpoint,
@@ -107,6 +114,15 @@ const SBR_LOGO_SRC = '/report-assets/sbr-logo.png'
 const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[16pt] font-bold uppercase leading-tight text-black'
 const REPORT_SECTION_HEADING_CLASS_NAME = 'mb-2 text-[12pt] font-bold leading-tight text-black'
 const REPORT_APPENDIX_HEADING_CLASS_NAME = 'mb-3 text-[13pt] font-bold uppercase leading-tight text-black'
+const EB_PAGE_WIDTH_MM = 210
+const EB_PAGE_HEIGHT_MM = 297
+const EB_PAGE_X_PADDING_MM = 12
+const EB_PAGE_HEADER_TOP_MM = 7
+const EB_PAGE_CONTENT_TOP_MM = 36
+const EB_PAGE_CONTENT_BOTTOM_MM = 25
+const EB_PAGE_CONTENT_WIDTH_MM = EB_PAGE_WIDTH_MM - EB_PAGE_X_PADDING_MM * 2
+const EB_PAGE_CONTENT_HEIGHT_MM = EB_PAGE_HEIGHT_MM - EB_PAGE_CONTENT_TOP_MM - EB_PAGE_CONTENT_BOTTOM_MM
+const EB_PAGE_PACKING_SAFETY_MM = 4
 const HIDDEN_REPORT_SECTION_KEYS = new Set([
   'inspection_type',
   'not_accessible',
@@ -123,6 +139,9 @@ const HIDDEN_REPORT_SECTION_KEYS = new Set([
 ])
 const DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION =
   'Fönster, dörrar, väggar etc numreras från vänster till höger. Vägg 1 = vägg till vänster om entrévägg. Vägg 2 = nästa vägg till höger om vägg 1 osv.'
+
+const mm = (value: number) => `${value}mm`
+const mmToPxNumber = (value: number) => (value * 96) / 25.4
 
 function normalizeReportText(value: string) {
   return value.replace(/\r\n/g, '\n').replace(/\\n/g, '\n').trim()
@@ -968,7 +987,13 @@ function isTestingDocumentationSection(section: EbInspectionReport['reportDraft'
   )
 }
 
-function ReportHeader({ report }: { report: EbInspectionReport }) {
+function ReportHeader({
+  report,
+  showLogos = true,
+}: {
+  report: EbInspectionReport
+  showLogos?: boolean
+}) {
   const propertyDesignation = report.project.propertyDesignation?.trim()
   const brfApartmentNumber = report.project.brfApartmentNumber?.trim()
   const streetAndCity = detailLine([report.project.address, report.project.city])
@@ -976,28 +1001,32 @@ function ReportHeader({ report }: { report: EbInspectionReport }) {
 
   return (
     <header className="mb-8">
-      <div className="grid min-h-[18mm] grid-cols-[60mm_1fr_60mm] items-start gap-4">
-        <div className="flex min-h-[16mm] items-start justify-start">
-          {report.branding.inspectorLogoUrl ? (
-            <img
-              src={report.branding.inspectorLogoUrl}
-              alt="Besiktningsmannens logotyp"
-              className="eb-report-header-logo h-[16mm] max-h-[16mm] w-auto max-w-[52mm] object-contain"
-            />
-          ) : null}
-        </div>
-        <div aria-hidden="true" />
-        <div className="flex min-h-[16mm] items-start justify-end">
-          <img
-            src={report.branding.besiktAppLogoUrl}
-            alt="BesiktApp"
-            className="eb-report-header-logo h-[16mm] max-h-[16mm] w-auto max-w-[52mm] object-contain"
-          />
-        </div>
-      </div>
-      <div className="mt-3 h-[1.5px] w-full bg-[#2f7d55]" />
+      {showLogos ? (
+        <>
+          <div className="grid min-h-[18mm] grid-cols-[60mm_1fr_60mm] items-start gap-4">
+            <div className="flex min-h-[16mm] items-start justify-start">
+              {report.branding.inspectorLogoUrl ? (
+                <img
+                  src={report.branding.inspectorLogoUrl}
+                  alt="Besiktningsmannens logotyp"
+                  className="eb-report-header-logo h-[16mm] max-h-[16mm] w-auto max-w-[52mm] object-contain"
+                />
+              ) : null}
+            </div>
+            <div aria-hidden="true" />
+            <div className="flex min-h-[16mm] items-start justify-end">
+              <img
+                src={report.branding.besiktAppLogoUrl}
+                alt="BesiktApp"
+                className="eb-report-header-logo h-[16mm] max-h-[16mm] w-auto max-w-[52mm] object-contain"
+              />
+            </div>
+          </div>
+          <div className="mt-3 h-[1.5px] w-full bg-[#2f7d55]" />
+        </>
+      ) : null}
 
-      <dl className="mt-3 grid gap-y-1 text-[10.5pt] leading-snug text-black">
+      <dl className={`${showLogos ? 'mt-3' : ''} grid gap-y-1 text-[10.5pt] leading-snug text-black`}>
         {propertyDesignation ? (
           <div className="grid grid-cols-[38mm_1fr] gap-x-4">
             <dt className="font-bold">Fastighetsbeteckning</dt>
@@ -1048,10 +1077,16 @@ function reportImageSrc(image: EbNoteImage) {
   return `/api/image-proxy?${params.toString()}`
 }
 
+function noteLocationLine(note: EbNote) {
+  return detailLine([note.room, note.location, note.placeDetail])
+}
+
 function NoteTable({
   notes,
+  startIndex = 0,
 }: {
   notes: EbNote[]
+  startIndex?: number
 }) {
   if (notes.length === 0) {
     return <p className="text-[10.5pt] text-black">Inga noteringar registrerade.</p>
@@ -1075,7 +1110,7 @@ function NoteTable({
               {note.markerKey || ''}
             </td>
             <td className="align-top border border-[#8db1d7] px-1.5 py-1.5">
-              {noteNumber(index)}
+              {noteNumber(startIndex + index)}
             </td>
             <td className="align-top border border-[#8db1d7] px-1.5 py-1.5">
               {detailLine([note.room, note.location, note.placeDetail]) !== '-'
@@ -1093,87 +1128,573 @@ function NoteTable({
   )
 }
 
-function PhotoAppendix({
+function PhotoAppendixNoteArticle({
   report,
-  notes,
-  imagesByNoteId,
+  note,
+  index,
+  images,
+  showTitle = false,
 }: {
   report: EbInspectionReport
-  notes: EbNote[]
-  imagesByNoteId: Map<string, EbNoteImage[]>
+  note: EbNote
+  index: number
+  images: EbNoteImage[]
+  showTitle?: boolean
 }) {
-  const notesWithImages = notes
-    .map((note, index) => ({
-      note,
-      index,
-      images: imagesByNoteId.get(note.id) ?? [],
-    }))
-    .filter((item) => item.images.length > 0)
-
-  if (notesWithImages.length === 0) return null
+  const location = noteLocationLine(note)
 
   return (
-    <section className="eb-report-section mt-8 break-before-page">
-      <h2 className={REPORT_APPENDIX_HEADING_CLASS_NAME}>FOTOBILAGA</h2>
-      <div className="space-y-5">
-        {notesWithImages.map(({ note, index, images }) => (
-          <article key={note.id} className="break-inside-avoid">
-            <div className="mb-2 text-[10pt] leading-snug text-black">
-              <p className="font-bold">
-                {noteReference(report, index)} {note.markerKey ? `(${note.markerKey})` : ''}
-              </p>
-              {detailLine([note.room, note.location, note.placeDetail]) !== '-' ? (
-                <p>Del/Rum: {detailLine([note.room, note.location, note.placeDetail])}</p>
-              ) : null}
-              {note.noteText?.trim() ? (
-                <p className="whitespace-pre-wrap">Notering: {note.noteText}</p>
-              ) : null}
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              {images.map((image) => (
-                <figure key={image.id} className="break-inside-avoid">
-                  <img
-                    src={reportImageSrc(image)}
-                    alt={`Bild till ${noteReference(report, index)}`}
-                    className="h-[62mm] w-full border border-gray-300 object-contain"
-                  />
-                </figure>
-              ))}
-            </div>
-          </article>
+    <section className="eb-report-section break-inside-avoid">
+      {showTitle ? <h2 className={REPORT_APPENDIX_HEADING_CLASS_NAME}>FOTOBILAGA</h2> : null}
+      <article>
+        <div className="mb-2 text-[10pt] leading-snug text-black">
+          <p className="font-bold">
+            {noteReference(report, index)} {note.markerKey ? `(${note.markerKey})` : ''}
+          </p>
+          {location !== '-' ? <p>Del/Rum: {location}</p> : null}
+          {note.noteText?.trim() ? (
+            <p className="whitespace-pre-wrap">Notering: {note.noteText}</p>
+          ) : null}
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          {images.map((image) => (
+            <figure key={image.id} className="break-inside-avoid">
+              <img
+                src={reportImageSrc(image)}
+                alt={`Bild till ${noteReference(report, index)}`}
+                className="h-[62mm] w-full border border-gray-300 object-contain"
+              />
+            </figure>
+          ))}
+        </div>
+      </article>
+    </section>
+  )
+}
+
+type EbPrintableBlock = {
+  id: string
+  node: ReactNode
+  startsNewPage?: boolean
+}
+
+type EbPagePlan = {
+  pages: EbPrintableBlock[][]
+  blocks: EbPrintableBlock[]
+}
+
+type EbPagePlanPages = Pick<EbPagePlan, 'pages'>
+
+function chunkArray<T>(items: T[], chunkSize: number) {
+  const chunks: T[][] = []
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize))
+  }
+  return chunks
+}
+
+function readEbBlockHeight(element: HTMLElement) {
+  const target = element.firstElementChild instanceof HTMLElement ? element.firstElementChild : element
+  const rect = target.getBoundingClientRect()
+  const style = window.getComputedStyle(target)
+  const marginTop = Number.parseFloat(style.marginTop || '0') || 0
+  const marginBottom = Number.parseFloat(style.marginBottom || '0') || 0
+  return rect.height + marginTop + marginBottom
+}
+
+function createEbPagePlan(blocks: EbPrintableBlock[], heights: Map<string, number>): EbPagePlanPages {
+  const maxHeight = mmToPxNumber(EB_PAGE_CONTENT_HEIGHT_MM - EB_PAGE_PACKING_SAFETY_MM)
+  const pages: EbPrintableBlock[][] = []
+  let current: EbPrintableBlock[] = []
+  let currentHeight = 0
+
+  for (const block of blocks) {
+    const height = heights.get(block.id) ?? 0
+
+    if (block.startsNewPage && current.length > 0) {
+      pages.push(current)
+      current = []
+      currentHeight = 0
+    }
+
+    if (current.length > 0 && currentHeight + height > maxHeight) {
+      pages.push(current)
+      current = []
+      currentHeight = 0
+    }
+
+    current.push(block)
+    currentHeight += height
+  }
+
+  if (current.length > 0) pages.push(current)
+  return { pages }
+}
+
+function EbHeaderValue({
+  label,
+  value,
+  nowrap = false,
+}: {
+  label: string
+  value: string
+  nowrap?: boolean
+}) {
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-col justify-start overflow-hidden px-1.5 py-0.5">
+      <div className="shrink-0 text-[6pt] leading-[1.15] text-black">{label}</div>
+      <div
+        className={`min-w-0 overflow-hidden pb-0.5 font-medium text-black ${
+          nowrap ? 'whitespace-nowrap' : 'break-words'
+        }`}
+      >
+        {value || '-'}
+      </div>
+    </div>
+  )
+}
+
+function EbPageHeader({
+  report,
+  pageNumber,
+  totalPages,
+}: {
+  report: EbInspectionReport
+  pageNumber: number
+  totalPages: number
+}) {
+  const propertyDesignation = report.project.propertyDesignation?.trim()
+  const brfApartmentNumber = report.project.brfApartmentNumber?.trim()
+  const objectIdentifier = propertyDesignation || brfApartmentNumber || '-'
+  const objectIdentifierLabel = propertyDesignation ? 'Fastighetsbeteckning' : 'Objekt'
+  const pageValue = `${pageNumber} (${totalPages})`
+
+  return (
+    <div
+      className="eb-report-header-table grid overflow-hidden border border-black text-[8pt] leading-tight text-black"
+      style={{
+        height: mm(21),
+        gridTemplateColumns: '58mm 42mm 52mm 34mm',
+        gridTemplateRows: '10.5mm 10.5mm',
+      }}
+    >
+      <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
+        <EbHeaderValue label="Dokument" value={reportDocumentTitle(report)} />
+      </div>
+      <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
+        <EbHeaderValue label="Besiktningsdatum" value={report.inspection.date ?? '-'} nowrap />
+      </div>
+      <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
+        <EbHeaderValue label="Besiktningstyp" value={report.inspection.variantLabel} />
+      </div>
+      <div className="row-span-2 min-h-0 min-w-0 overflow-hidden">
+        <div className="flex h-full items-center justify-center p-1.5">
+          {report.branding.inspectorLogoUrl ? (
+            <img
+              src={report.branding.inspectorLogoUrl}
+              alt="Besiktningsmannens logotyp"
+              className="eb-report-header-logo h-auto max-h-[16mm] max-w-[30mm] object-contain"
+            />
+          ) : (
+            <span className="text-center text-[8pt] font-semibold">{reportPrintTitle(report)}</span>
+          )}
+        </div>
+      </div>
+      <div className="min-h-0 min-w-0 overflow-hidden border-r border-black">
+        <EbHeaderValue label={objectIdentifierLabel} value={objectIdentifier} />
+      </div>
+      <div className="col-span-1 min-h-0 min-w-0 overflow-hidden border-r border-black">
+        <EbHeaderValue label="Adress" value={detailLine([report.project.address, report.project.city])} />
+      </div>
+      <div className="min-h-0 min-w-0 overflow-hidden border-r border-black">
+        <EbHeaderValue label="Sida" value={pageValue} nowrap />
+      </div>
+    </div>
+  )
+}
+
+function EbPageFooter({ report }: { report: EbInspectionReport }) {
+  const inspector = signatureRows(report)
+  const fallbackContactLines = inspector.details
+    .filter((row) => row.label === 'Telefon' || row.label === 'E-post')
+    .map((row) => row.value)
+  const companyLines =
+    report.branding.footer.companyLines.length > 0
+      ? report.branding.footer.companyLines
+      : inspector.name !== '-'
+        ? [inspector.name]
+        : []
+  const contactLines =
+    report.branding.footer.contactLines.length > 0 ? report.branding.footer.contactLines : fallbackContactLines
+
+  return (
+    <footer
+      className="absolute grid grid-cols-3 items-end gap-4 border-t border-gray-300 pt-1.5 text-[8px] leading-[1.25] text-gray-700"
+      style={{
+        left: mm(EB_PAGE_X_PADDING_MM),
+        right: mm(EB_PAGE_X_PADDING_MM),
+        bottom: mm(6),
+        height: mm(15),
+      }}
+    >
+      <div className="min-w-0 self-end">
+        {companyLines.map((line) => (
+          <div key={line}>{line}</div>
         ))}
       </div>
+      <div className="min-w-0 self-end text-center">
+        {contactLines.map((line) => (
+          <div key={line}>{line}</div>
+        ))}
+      </div>
+      <div className="flex min-w-0 justify-end self-end">
+        <div className="flex flex-col items-center justify-end gap-1 text-center text-[8px] text-gray-500">
+          <span>Skapat med</span>
+          <img
+            src={report.branding.besiktAppLogoUrl}
+            alt="BesiktApp"
+            className="h-auto max-h-[4mm] max-w-[22mm] object-contain"
+          />
+        </div>
+      </div>
+    </footer>
+  )
+}
+
+function EbReportPageChrome({
+  report,
+  pageNumber,
+  totalPages,
+  children,
+}: {
+  report: EbInspectionReport
+  pageNumber: number
+  totalPages: number
+  children: ReactNode
+}) {
+  const pageStyle = {
+    width: mm(EB_PAGE_WIDTH_MM),
+    height: mm(EB_PAGE_HEIGHT_MM),
+    minHeight: mm(EB_PAGE_HEIGHT_MM),
+    position: 'relative',
+    overflow: 'hidden',
+    backgroundColor: '#ffffff',
+  } satisfies CSSProperties
+
+  return (
+    <section className="eb-report-page bg-white shadow-sm ring-1 ring-gray-200" style={pageStyle}>
+      <header
+        className="absolute"
+        style={{
+          top: mm(EB_PAGE_HEADER_TOP_MM),
+          left: mm(EB_PAGE_X_PADDING_MM),
+          right: mm(EB_PAGE_X_PADDING_MM),
+        }}
+      >
+        <EbPageHeader report={report} pageNumber={pageNumber} totalPages={totalPages} />
+      </header>
+
+      <div
+        className="absolute overflow-hidden"
+        style={{
+          top: mm(EB_PAGE_CONTENT_TOP_MM),
+          left: mm(EB_PAGE_X_PADDING_MM),
+          right: mm(EB_PAGE_X_PADDING_MM),
+          bottom: mm(EB_PAGE_CONTENT_BOTTOM_MM),
+        }}
+      >
+        {children}
+      </div>
+
+      <EbPageFooter report={report} />
     </section>
+  )
+}
+
+function EbPrintableBlockView({ block }: { block: EbPrintableBlock }) {
+  return <div className="eb-report-block">{block.node}</div>
+}
+
+function EbPrintPagedDocument({
+  report,
+  blocks,
+}: {
+  report: EbInspectionReport
+  blocks: EbPrintableBlock[]
+}) {
+  const [pagePlan, setPagePlan] = useState<EbPagePlan | null>(null)
+  const [measureVersion, setMeasureVersion] = useState(0)
+
+  useLayoutEffect(() => {
+    const measureRoot = document.querySelector<HTMLElement>('.eb-print-measure')
+    const images = Array.from(measureRoot?.querySelectorAll<HTMLImageElement>('img') ?? [])
+    const imagesReady = images.every((image) => image.complete)
+
+    if (!imagesReady) {
+      const timeout = window.setTimeout(() => setMeasureVersion((version) => version + 1), 80)
+      return () => window.clearTimeout(timeout)
+    }
+
+    let cancelled = false
+    const frame = window.requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        if (cancelled) return
+        const heights = new Map<string, number>()
+        for (const block of blocks) {
+          const element = document.querySelector<HTMLElement>(`[data-eb-print-block-id="${block.id}"]`)
+          if (!element) continue
+          heights.set(block.id, readEbBlockHeight(element))
+        }
+        setPagePlan({ ...createEbPagePlan(blocks, heights), blocks })
+      }, 40)
+    })
+
+    return () => {
+      cancelled = true
+      window.cancelAnimationFrame(frame)
+    }
+  }, [blocks, measureVersion])
+
+  const pagePlanReady = pagePlan?.blocks === blocks
+  const pages = pagePlanReady ? pagePlan.pages : []
+  const totalPages = Math.max(1, pages.length)
+
+  return (
+    <div
+      className="report-root eb-print-paged-document"
+      data-eb-print-pagination-ready={pagePlanReady ? '1' : '0'}
+      data-report-pagination-ready={pagePlanReady ? '1' : '0'}
+    >
+      <div
+        className="eb-print-measure pointer-events-none absolute left-[-10000px] top-0 opacity-0"
+        aria-hidden="true"
+        style={{ width: mm(EB_PAGE_CONTENT_WIDTH_MM) }}
+      >
+        {blocks.map((block) => (
+          <div key={block.id} data-eb-print-block-id={block.id}>
+            <EbPrintableBlockView block={block} />
+          </div>
+        ))}
+      </div>
+
+      {!pagePlanReady ? (
+        <div className="mx-auto my-8 max-w-5xl rounded-md border border-emerald-100 bg-white p-6 text-sm text-gray-600 shadow-sm print:hidden">
+          Förbereder utskriftslayout...
+        </div>
+      ) : null}
+
+      <div className="eb-print-pages flex flex-col items-center gap-4">
+        {pages.map((pageBlocks, pageIndex) => (
+          <EbReportPageChrome
+            key={`eb-print-page-${pageIndex}`}
+            report={report}
+            pageNumber={pageIndex + 1}
+            totalPages={totalPages}
+          >
+            {pageBlocks.map((block) => (
+              <EbPrintableBlockView key={block.id} block={block} />
+            ))}
+          </EbReportPageChrome>
+        ))}
+      </div>
+    </div>
   )
 }
 
 export default function EbInspectionReportView({ report }: EbInspectionReportViewProps) {
   const printTitle = reportPrintTitle(report)
-  const notes = sortNotes(report.notes)
-  const displayNumberByNoteId = new Map(notes.map((note, index) => [note.id, index + 1]))
+  const notes = useMemo(() => sortNotes(report.notes), [report.notes])
+  const displayNumberByNoteId = useMemo(
+    () => new Map(notes.map((note, index) => [note.id, index + 1])),
+    [notes]
+  )
   const drainageReport = isDrainageReport(report)
   const preliminaryInspection = report.inspection.variant === 'FB'
-  const printableSections = report.reportDraft.sections.filter(
-    (section) =>
-      section.isRelevant &&
-      !HIDDEN_REPORT_SECTION_KEYS.has(section.key) &&
-      !(preliminaryInspection && (section.key === 'reclamation_notice' || section.key === 'remedy_deadline')) &&
-      !(drainageReport && section.key === 'defects_appendices') &&
-      !(drainageReport && (section.key === 'testing_documentation' || section.key === 'contract_documents')) &&
-      !(section.key === 'previous_inspections_tests' && report.inspection.previousInspections.every((row) => !row.status && !row.date?.trim())) &&
-      section.status !== 'missing' &&
-      hasPrintableReportText(section.text)
+  const printableSections = useMemo(
+    () =>
+      report.reportDraft.sections.filter(
+        (section) =>
+          section.isRelevant &&
+          !HIDDEN_REPORT_SECTION_KEYS.has(section.key) &&
+          !(preliminaryInspection && (section.key === 'reclamation_notice' || section.key === 'remedy_deadline')) &&
+          !(drainageReport && section.key === 'defects_appendices') &&
+          !(drainageReport && (section.key === 'testing_documentation' || section.key === 'contract_documents')) &&
+          !(
+            section.key === 'previous_inspections_tests' &&
+            report.inspection.previousInspections.every((row) => !row.status && !row.date?.trim())
+          ) &&
+          section.status !== 'missing' &&
+          hasPrintableReportText(section.text)
+      ),
+    [drainageReport, preliminaryInspection, report.inspection.previousInspections, report.reportDraft.sections]
   )
-  const scopeSection = printableSections.find((section) => section.key === 'scope') ?? null
-  const reportSections = printableSections.filter((section) => section.key !== 'scope')
-  const imagesByNoteId = new Map<string, EbNoteImage[]>()
-  for (const image of report.images) {
-    if (!image.noteId) continue
-    imagesByNoteId.set(image.noteId, [...(imagesByNoteId.get(image.noteId) ?? []), image])
-  }
-  for (const [noteId, images] of imagesByNoteId) {
-    imagesByNoteId.set(noteId, sortImages(images))
-  }
+  const scopeSection = useMemo(
+    () => printableSections.find((section) => section.key === 'scope') ?? null,
+    [printableSections]
+  )
+  const reportSections = useMemo(
+    () => printableSections.filter((section) => section.key !== 'scope'),
+    [printableSections]
+  )
+  const imagesByNoteId = useMemo(() => {
+    const grouped = new Map<string, EbNoteImage[]>()
+    for (const image of report.images) {
+      if (!image.noteId) continue
+      grouped.set(image.noteId, [...(grouped.get(image.noteId) ?? []), image])
+    }
+    for (const [noteId, images] of grouped) {
+      grouped.set(noteId, sortImages(images))
+    }
+    return grouped
+  }, [report.images])
+  const reportBlocks = useMemo<EbPrintableBlock[]>(() => {
+    const blocks: EbPrintableBlock[] = [
+      {
+        id: 'report-intro',
+        node: <ReportHeader report={report} showLogos={false} />,
+      },
+    ]
+
+    if (scopeSection) {
+      blocks.push({
+        id: `section-${scopeSection.key}`,
+        node: (
+          <ReportSection title={scopeSection.title}>
+            <ReportText text={scopeSection.text} />
+          </ReportSection>
+        ),
+      })
+    }
+
+    for (const section of reportSections) {
+      if (section.key === 'inspectors') {
+        blocks.push({
+          id: `section-${section.key}`,
+          node: <InspectorReport report={report} section={section} />,
+        })
+        continue
+      }
+      if (section.key === 'participants') {
+        blocks.push({
+          id: `section-${section.key}`,
+          node: <ParticipantsReport report={report} />,
+        })
+        continue
+      }
+      if (section.key === 'summons') {
+        blocks.push({
+          id: `section-${section.key}`,
+          node: <SummonsReport report={report} section={section} />,
+        })
+        continue
+      }
+      if (section.key === 'previous_inspections_tests') {
+        blocks.push({
+          id: `section-${section.key}`,
+          node: <PreviousInspectionsReport report={report} />,
+        })
+        continue
+      }
+      if (isTestingDocumentationSection(section)) {
+        blocks.push({
+          id: `section-${section.key}`,
+          node: <TestingDocumentationReport report={report} section={section} />,
+        })
+        continue
+      }
+      if (section.key === 'drainage_checklist') {
+        blocks.push({
+          id: `section-${section.key}`,
+          node: <DrainageChecklistReport report={report} />,
+        })
+        continue
+      }
+      if (section.key === 'defects_appendices') {
+        blocks.push({
+          id: 'defects-conditions',
+          node: <DefectsConditionsReport report={report} displayNumberByNoteId={displayNumberByNoteId} />,
+        })
+        chunkArray(notes, 8).forEach((chunk, chunkIndex) => {
+          blocks.push({
+            id: `note-table-${chunkIndex}`,
+            node: (
+              <section className="eb-report-section mt-4">
+                <NoteTable notes={chunk} startIndex={chunkIndex * 8} />
+              </section>
+            ),
+          })
+        })
+        blocks.push({
+          id: 'deduction-agreement-summary',
+          node: <DeductionAgreementSummary report={report} />,
+        })
+        continue
+      }
+      if (section.key === 'contract_documents') {
+        blocks.push({
+          id: `section-${section.key}`,
+          node: (
+            <ReportSection title={section.title} headingMarker>
+              <ReportText text={section.text} />
+            </ReportSection>
+          ),
+        })
+        continue
+      }
+      if (section.key === 'approval_decision') {
+        blocks.push({
+          id: `section-${section.key}`,
+          node: <ApprovalDecisionReport report={report} />,
+        })
+        continue
+      }
+      if (section.key === 'distribution_list') {
+        blocks.push({
+          id: `section-${section.key}`,
+          node: <DistributionListReport report={report} />,
+        })
+        continue
+      }
+
+      blocks.push({
+        id: `section-${section.key}`,
+        node: (
+          <ReportSection title={section.title}>
+            {section.key === 'contract_parties' ? (
+              <ContractPartiesReport report={report} />
+            ) : (
+              <ReportText text={section.text} />
+            )}
+          </ReportSection>
+        ),
+      })
+    }
+
+    notes
+      .map((note, index) => ({
+        note,
+        index,
+        images: imagesByNoteId.get(note.id) ?? [],
+      }))
+      .filter((item) => item.images.length > 0)
+      .forEach(({ note, index, images }, photoIndex) => {
+        blocks.push({
+          id: `photo-${note.id}`,
+          startsNewPage: photoIndex === 0,
+          node: (
+            <PhotoAppendixNoteArticle
+              images={images}
+              index={index}
+              note={note}
+              report={report}
+              showTitle={photoIndex === 0}
+            />
+          ),
+        })
+      })
+
+    return blocks
+  }, [displayNumberByNoteId, imagesByNoteId, notes, report, reportSections, scopeSection])
 
   useEffect(() => {
     const previousTitle = document.title
@@ -1220,60 +1741,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
         </div>
       </div>
 
-      <article className="eb-report-print-document mx-auto bg-white px-12 py-10 shadow-sm print:shadow-none">
-        <ReportHeader report={report} />
-
-        {scopeSection ? (
-          <ReportSection title={scopeSection.title}>
-            <ReportText text={scopeSection.text} />
-          </ReportSection>
-        ) : null}
-
-        {reportSections.map((section) => (
-          section.key === 'inspectors' ? (
-            <InspectorReport key={section.key} report={report} section={section} />
-          ) : section.key === 'participants' ? (
-            <ParticipantsReport key={section.key} report={report} />
-          ) : section.key === 'summons' ? (
-            <SummonsReport key={section.key} report={report} section={section} />
-          ) : section.key === 'previous_inspections_tests' ? (
-            <PreviousInspectionsReport key={section.key} report={report} />
-          ) : isTestingDocumentationSection(section) ? (
-            <TestingDocumentationReport key={section.key} report={report} section={section} />
-          ) : section.key === 'drainage_checklist' ? (
-            <DrainageChecklistReport key={section.key} report={report} />
-          ) : section.key === 'defects_appendices' ? (
-            <div key={section.key}>
-              <DefectsConditionsReport report={report} displayNumberByNoteId={displayNumberByNoteId} />
-              <section className="eb-report-section mt-4">
-                <NoteTable notes={notes} />
-              </section>
-              <DeductionAgreementSummary report={report} />
-            </div>
-          ) : section.key === 'contract_documents' ? (
-            <ReportSection key={section.key} title={section.title} headingMarker>
-              <ReportText text={section.text} />
-            </ReportSection>
-          ) : section.key === 'approval_decision' ? (
-            <ApprovalDecisionReport key={section.key} report={report} />
-          ) : section.key === 'distribution_list' ? (
-            <DistributionListReport key={section.key} report={report} />
-          ) : (
-            <ReportSection
-              key={section.key}
-              title={section.title}
-            >
-              {section.key === 'contract_parties' ? (
-                <ContractPartiesReport report={report} />
-              ) : (
-                <ReportText text={section.text} />
-              )}
-            </ReportSection>
-          )
-        ))}
-
-        <PhotoAppendix report={report} notes={notes} imagesByNoteId={imagesByNoteId} />
-      </article>
+      <EbPrintPagedDocument blocks={reportBlocks} report={report} />
     </main>
   )
 }
