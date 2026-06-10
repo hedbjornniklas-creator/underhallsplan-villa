@@ -403,12 +403,31 @@ function InspectorReport({
   report: EbInspectionReport
   section: EbInspectionReport['reportDraft']['sections'][number]
 }) {
+  const rows = printableReportLines(section.text)
+    .map(parseLabelLine)
+    .filter((row): row is NonNullable<ReturnType<typeof parseLabelLine>> => Boolean(row))
+  const inspectorName = rows.find((row) => row.label === 'Besiktningsman')?.value ?? '-'
+  const detailRows = rows.filter((row) => row.label !== 'Besiktningsman' && row.label !== 'Utsedd av')
+
   return (
     <ReportSection title={section.title} headingMarker>
-      <div className="grid grid-cols-[62mm_34mm_1fr] gap-x-4 text-[10.5pt] leading-[1.35] text-black">
-        <div>Besiktningsman:</div>
-        <div>{reportFieldValue(section.text, 'Besiktningsman') ?? '-'}</div>
-        <div>{appointedByPhrase(report, section.text)}</div>
+      <div className="space-y-2 text-[10.5pt] leading-[1.35] text-black">
+        <div className="grid grid-cols-[34mm_1fr_1fr] gap-x-4">
+          <div>Besiktningsman:</div>
+          <div>{inspectorName}</div>
+          <div>{appointedByPhrase(report, section.text)}</div>
+        </div>
+
+        {detailRows.length > 0 ? (
+          <dl className="grid grid-cols-[34mm_1fr] gap-x-4 gap-y-0.5">
+            {detailRows.map((row, index) => (
+              <div key={`${row.label}-${index}`} className="contents">
+                <dt>{row.label}:</dt>
+                <dd>{row.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
       </div>
     </ReportSection>
   )
