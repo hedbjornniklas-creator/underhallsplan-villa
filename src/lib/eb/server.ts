@@ -2212,7 +2212,7 @@ async function listEbNoteImagesLegacy(input: { inspectionId: string }) {
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
     .from('inspection_images')
-    .select('id,inspection_id,eb_note_id,file_path,thumbnail_file_path,label,sort_order,created_at')
+    .select('id,inspection_id,eb_note_id,file_path,label,sort_order,created_at')
     .eq('inspection_id', input.inspectionId)
     .like('file_path', `${input.inspectionId}/eb-notes/%`)
     .order('sort_order', { ascending: true })

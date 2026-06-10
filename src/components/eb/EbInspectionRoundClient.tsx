@@ -105,6 +105,20 @@ type NoteAutosavePayload = {
   form: NoteFormState
 }
 
+type ReviewAutosavePayload =
+  | { kind: 'inspection'; form: InspectionDetailsFormState }
+  | { kind: 'participants'; subject: string; body: string; participants: EditableParticipant[] }
+  | { kind: 'documents'; documents: EbInspectionDocument[] }
+  | { kind: 'checkpoints'; checkpoints: EbInspectionCheckpoint[] }
+  | { kind: 'reportDraft'; sections: EbReportDraftSection[] }
+
+type ReviewAutosaveResult =
+  | { kind: 'inspection'; payload: UpdateInspectionResponse }
+  | { kind: 'participants'; payload: InvitationResponse }
+  | { kind: 'documents'; payload: InspectionDocumentsResponse }
+  | { kind: 'checkpoints'; payload: InspectionCheckpointsResponse }
+  | { kind: 'reportDraft'; payload: ReportDraftResponse }
+
 type DeleteResponse = {
   ok?: boolean
   error?: string
@@ -241,12 +255,16 @@ function ReviewSection({
   description,
   children,
   action,
+  hidden = false,
 }: {
   title: string
   description?: string
   children: ReactNode
   action?: ReactNode
+  hidden?: boolean
 }) {
+  if (hidden) return null
+
   return (
     <section className="rounded-lg border border-emerald-100 bg-white/90 p-4 shadow-sm backdrop-blur-sm md:p-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -254,7 +272,7 @@ function ReviewSection({
           <h2 className="text-base font-semibold text-gray-950">{title}</h2>
           {description ? <p className="mt-1 text-sm text-gray-600">{description}</p> : null}
         </div>
-        {action ? <div className="shrink-0">{action}</div> : null}
+        {action ? <div className="hidden">{action}</div> : null}
       </div>
       <div className="mt-4">{children}</div>
     </section>
@@ -455,6 +473,38 @@ function formFromNote(note: EbNote): NoteFormState {
 
 function noteFormFingerprint(form: NoteFormState) {
   return JSON.stringify(form)
+}
+
+function inspectionFormFingerprint(form: InspectionDetailsFormState) {
+  return JSON.stringify(form)
+}
+
+function documentsFingerprint(documents: EbInspectionDocument[]) {
+  return JSON.stringify(documents)
+}
+
+function checkpointsFingerprint(checkpoints: EbInspectionCheckpoint[]) {
+  return JSON.stringify(
+    checkpoints.map((checkpoint) => ({
+      id: checkpoint.id,
+      checkpointKey: checkpoint.checkpointKey,
+      status: checkpoint.status,
+      comment: checkpoint.comment,
+      noteId: checkpoint.noteId,
+    }))
+  )
+}
+
+function reportSectionsFingerprint(sections: EbReportDraftSection[]) {
+  return JSON.stringify(sections)
+}
+
+function participantsFingerprint(subject: string, body: string, participants: EditableParticipant[]) {
+  return JSON.stringify({
+    subject,
+    body,
+    participants: participantPayload(participants),
+  })
 }
 
 function getNoteLabel(round: EbInspectionRound, note: EbNote | null, nextNumber: number) {
@@ -1036,6 +1086,8 @@ export default function EbInspectionRoundClient({
   const galleryInputRef = useRef<HTMLInputElement | null>(null)
   const noteRowImageInputRef = useRef<HTMLInputElement | null>(null)
   const noteRowImageTargetRef = useRef<string | null>(null)
+  const checkpointImageInputRef = useRef<HTMLInputElement | null>(null)
+  const checkpointImageTargetRef = useRef<string | null>(null)
   const notesRef = useRef(initialRound.notes)
   const lastSavedNotesRef = useRef(initialRound.notes)
   const orderSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1055,6 +1107,7 @@ export default function EbInspectionRoundClient({
   const [saving, setSaving] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
   const [uploadingImageNoteId, setUploadingImageNoteId] = useState<string | null>(null)
+  const [uploadingCheckpointImageId, setUploadingCheckpointImageId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
   const [orderSaving, setOrderSaving] = useState(false)
@@ -1083,7 +1136,20 @@ export default function EbInspectionRoundClient({
   const [checkpointsSaving, setCheckpointsSaving] = useState(false)
   const [reportDraftSaving, setReportDraftSaving] = useState(false)
   const [reviewMessage, setReviewMessage] = useState<string | null>(null)
+  const inspectionAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const participantsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const documentsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const checkpointsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reportSectionsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastAutosavedInspectionRef = useRef(inspectionFormFingerprint(inspectionForm))
+  const lastAutosavedParticipantsRef = useRef(
+    participantsFingerprint(invitationSubject, invitationBody, participants)
+  )
+  const lastAutosavedDocumentsRef = useRef(documentsFingerprint(documents))
+  const lastAutosavedCheckpointsRef = useRef(checkpointsFingerprint(checkpoints))
+  const lastAutosavedReportSectionsRef = useRef(reportSectionsFingerprint(reportSections))
   const isLocked = Boolean(round.inspection.reportLockedAt)
+  const isDrainageProject = round.project.projectTemplateKey === 'drainage_foundation'
   const lockedMessage = 'Utlåtandet är låst och kan inte ändras.'
 
   const activeDiscipline = round.disciplines.find((discipline) => discipline.id === activeDisciplineId) ?? null
@@ -1178,9 +1244,13 @@ export default function EbInspectionRoundClient({
           throw new Error(payload.error ?? 'Kunde inte hämta kallelse och deltagare.')
         }
         if (cancelled) return
-        setInvitationSubject(payload.subject ?? '')
-        setInvitationBody(payload.body ?? '')
-        setParticipants((payload.participants ?? []).map(toLocalParticipant))
+        const nextSubject = payload.subject ?? ''
+        const nextBody = payload.body ?? ''
+        const nextParticipants = (payload.participants ?? []).map(toLocalParticipant)
+        lastAutosavedParticipantsRef.current = participantsFingerprint(nextSubject, nextBody, nextParticipants)
+        setInvitationSubject(nextSubject)
+        setInvitationBody(nextBody)
+        setParticipants(nextParticipants)
         setInvitationLoaded(true)
       } catch (loadError) {
         if (!cancelled) {
@@ -1212,6 +1282,11 @@ export default function EbInspectionRoundClient({
       if (noteAutosaveTimerRef.current) {
         clearTimeout(noteAutosaveTimerRef.current)
       }
+      if (inspectionAutosaveTimerRef.current) clearTimeout(inspectionAutosaveTimerRef.current)
+      if (participantsAutosaveTimerRef.current) clearTimeout(participantsAutosaveTimerRef.current)
+      if (documentsAutosaveTimerRef.current) clearTimeout(documentsAutosaveTimerRef.current)
+      if (checkpointsAutosaveTimerRef.current) clearTimeout(checkpointsAutosaveTimerRef.current)
+      if (reportSectionsAutosaveTimerRef.current) clearTimeout(reportSectionsAutosaveTimerRef.current)
     }
   }, [])
 
@@ -1535,6 +1610,326 @@ export default function EbInspectionRoundClient({
     }
   }
 
+  const saveReviewAutosavePatch = useCallback(
+    async (payload: ReviewAutosavePayload): Promise<ReviewAutosaveResult> => {
+      if (payload.kind === 'inspection') {
+        setInspectionSaving(true)
+        try {
+          const response = await fetch(inspectionBasePath, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...payload.form,
+              requiresContinuedFinalInspection: booleanFromSelect(
+                payload.form.requiresContinuedFinalInspection
+              ),
+              warrantyPeriodYears: payload.form.warrantyPeriodYears
+                ? Number(payload.form.warrantyPeriodYears)
+                : null,
+              afterInspectionRequested: booleanFromSelect(payload.form.afterInspectionRequested),
+            }),
+          })
+          const body = (await response.json().catch(() => ({}))) as UpdateInspectionResponse
+          if (!response.ok || !body.project) {
+            throw new Error(body.error ?? 'Kunde inte autospara besiktningsuppgifter.')
+          }
+          return { kind: 'inspection', payload: body }
+        } finally {
+          setInspectionSaving(false)
+        }
+      }
+
+      if (payload.kind === 'participants') {
+        setParticipantsSaving(true)
+        try {
+          const response = await fetch(invitationPath, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              subject: payload.subject,
+              body: payload.body,
+              participants: participantPayload(payload.participants),
+            }),
+          })
+          const body = (await response.json().catch(() => ({}))) as InvitationResponse
+          if (!response.ok) {
+            throw new Error(body.error ?? 'Kunde inte autospara kallelse och deltagare.')
+          }
+          return { kind: 'participants', payload: body }
+        } finally {
+          setParticipantsSaving(false)
+        }
+      }
+
+      if (payload.kind === 'documents') {
+        setDocumentsSaving(true)
+        try {
+          const response = await fetch(documentsPath, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ documents: payload.documents }),
+          })
+          const body = (await response.json().catch(() => ({}))) as InspectionDocumentsResponse
+          if (!response.ok || !body.documents) {
+            throw new Error(body.error ?? 'Kunde inte autospara granskade handlingar.')
+          }
+          return { kind: 'documents', payload: body }
+        } finally {
+          setDocumentsSaving(false)
+        }
+      }
+
+      if (payload.kind === 'checkpoints') {
+        setCheckpointsSaving(true)
+        try {
+          const response = await fetch(
+            `/api/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/checkpoints`,
+            {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                checkpoints: payload.checkpoints.map((checkpoint) => ({
+                  id: checkpoint.id,
+                  checkpointKey: checkpoint.checkpointKey,
+                  status: checkpoint.status,
+                  comment: checkpoint.comment,
+                  noteId: checkpoint.noteId,
+                })),
+              }),
+            }
+          )
+          const body = (await response.json().catch(() => ({}))) as InspectionCheckpointsResponse
+          if (!response.ok || !body.checkpoints) {
+            throw new Error(body.error ?? 'Kunde inte autospara kontrollpunkter.')
+          }
+          return { kind: 'checkpoints', payload: body }
+        } finally {
+          setCheckpointsSaving(false)
+        }
+      }
+
+      setReportDraftSaving(true)
+      try {
+        const response = await fetch(reportDraftPath, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sections: payload.sections }),
+        })
+        const body = (await response.json().catch(() => ({}))) as ReportDraftResponse
+        if (!response.ok) {
+          throw new Error(body.error ?? 'Kunde inte autospara utlåtandetexterna.')
+        }
+        return { kind: 'reportDraft', payload: body }
+      } finally {
+        setReportDraftSaving(false)
+      }
+    },
+    [
+      documentsPath,
+      inspectionBasePath,
+      invitationPath,
+      reportDraftPath,
+      round.inspection.inspectionId,
+      round.project.id,
+    ]
+  )
+
+  const reviewAutosave = useAutosaveQueue<ReviewAutosavePayload, ReviewAutosaveResult>({
+    save: saveReviewAutosavePatch,
+    mergePayload: (_previous, next) => next,
+    onSaved: (result) => {
+      if (result.kind === 'inspection') {
+        const project = result.payload.project
+        if (!project) return
+        const updatedInspection = project.inspections.find(
+          (inspection) => inspection.inspectionId === round.inspection.inspectionId
+        )
+        setRound((current) => ({
+          ...current,
+          project,
+          inspection: updatedInspection ?? current.inspection,
+        }))
+        if (updatedInspection) {
+          const nextForm = buildInspectionDetailsForm(updatedInspection)
+          lastAutosavedInspectionRef.current = inspectionFormFingerprint(nextForm)
+          setInspectionForm(nextForm)
+        }
+        return
+      }
+
+      if (result.kind === 'participants') {
+        const nextSubject = result.payload.subject ?? invitationSubject
+        const nextBody = result.payload.body ?? invitationBody
+        const nextParticipants = (result.payload.participants ?? []).map(toLocalParticipant)
+        lastAutosavedParticipantsRef.current = participantsFingerprint(nextSubject, nextBody, nextParticipants)
+        setInvitationSubject(nextSubject)
+        setInvitationBody(nextBody)
+        setParticipants(nextParticipants)
+        return
+      }
+
+      if (result.kind === 'documents' && result.payload.documents) {
+        lastAutosavedDocumentsRef.current = documentsFingerprint(result.payload.documents)
+        setDocuments(result.payload.documents)
+        return
+      }
+
+      if (result.kind === 'checkpoints' && result.payload.checkpoints) {
+        lastAutosavedCheckpointsRef.current = checkpointsFingerprint(result.payload.checkpoints)
+        setCheckpoints(result.payload.checkpoints)
+        setRound((current) => ({ ...current, checkpoints: result.payload.checkpoints ?? current.checkpoints }))
+        return
+      }
+
+      if (result.kind === 'reportDraft' && result.payload.reportDraft?.sections) {
+        lastAutosavedReportSectionsRef.current = reportSectionsFingerprint(result.payload.reportDraft.sections)
+        setReportSections(result.payload.reportDraft.sections)
+      }
+    },
+    onError: (autosaveError) => {
+      setReviewMessage(autosaveError instanceof Error ? autosaveError.message : 'Kunde inte autospara.')
+    },
+  })
+  const {
+    enqueue: enqueueReviewAutosave,
+    resetError: resetReviewAutosaveError,
+    status: reviewAutosaveStatus,
+  } = reviewAutosave
+
+  useEffect(() => {
+    if (inspectionAutosaveTimerRef.current) {
+      clearTimeout(inspectionAutosaveTimerRef.current)
+      inspectionAutosaveTimerRef.current = null
+    }
+    if (isLocked) return
+
+    const fingerprint = inspectionFormFingerprint(inspectionForm)
+    if (fingerprint === lastAutosavedInspectionRef.current) return
+
+    inspectionAutosaveTimerRef.current = setTimeout(() => {
+      lastAutosavedInspectionRef.current = fingerprint
+      resetReviewAutosaveError()
+      void enqueueReviewAutosave({ kind: 'inspection', form: inspectionForm })
+    }, 700)
+
+    return () => {
+      if (inspectionAutosaveTimerRef.current) {
+        clearTimeout(inspectionAutosaveTimerRef.current)
+        inspectionAutosaveTimerRef.current = null
+      }
+    }
+  }, [enqueueReviewAutosave, inspectionForm, isLocked, resetReviewAutosaveError])
+
+  useEffect(() => {
+    if (participantsAutosaveTimerRef.current) {
+      clearTimeout(participantsAutosaveTimerRef.current)
+      participantsAutosaveTimerRef.current = null
+    }
+    if (isLocked || invitationLoading || !invitationLoaded) return
+
+    const fingerprint = participantsFingerprint(invitationSubject, invitationBody, participants)
+    if (fingerprint === lastAutosavedParticipantsRef.current) return
+
+    participantsAutosaveTimerRef.current = setTimeout(() => {
+      lastAutosavedParticipantsRef.current = fingerprint
+      resetReviewAutosaveError()
+      void enqueueReviewAutosave({
+        kind: 'participants',
+        subject: invitationSubject,
+        body: invitationBody,
+        participants,
+      })
+    }, 700)
+
+    return () => {
+      if (participantsAutosaveTimerRef.current) {
+        clearTimeout(participantsAutosaveTimerRef.current)
+        participantsAutosaveTimerRef.current = null
+      }
+    }
+  }, [
+    enqueueReviewAutosave,
+    invitationBody,
+    invitationLoaded,
+    invitationLoading,
+    invitationSubject,
+    isLocked,
+    participants,
+    resetReviewAutosaveError,
+  ])
+
+  useEffect(() => {
+    if (documentsAutosaveTimerRef.current) {
+      clearTimeout(documentsAutosaveTimerRef.current)
+      documentsAutosaveTimerRef.current = null
+    }
+    if (isLocked || isDrainageProject) return
+
+    const fingerprint = documentsFingerprint(documents)
+    if (fingerprint === lastAutosavedDocumentsRef.current) return
+
+    documentsAutosaveTimerRef.current = setTimeout(() => {
+      lastAutosavedDocumentsRef.current = fingerprint
+      resetReviewAutosaveError()
+      void enqueueReviewAutosave({ kind: 'documents', documents })
+    }, 700)
+
+    return () => {
+      if (documentsAutosaveTimerRef.current) {
+        clearTimeout(documentsAutosaveTimerRef.current)
+        documentsAutosaveTimerRef.current = null
+      }
+    }
+  }, [documents, enqueueReviewAutosave, isDrainageProject, isLocked, resetReviewAutosaveError])
+
+  useEffect(() => {
+    if (checkpointsAutosaveTimerRef.current) {
+      clearTimeout(checkpointsAutosaveTimerRef.current)
+      checkpointsAutosaveTimerRef.current = null
+    }
+    if (isLocked || checkpoints.length === 0) return
+
+    const fingerprint = checkpointsFingerprint(checkpoints)
+    if (fingerprint === lastAutosavedCheckpointsRef.current) return
+
+    checkpointsAutosaveTimerRef.current = setTimeout(() => {
+      lastAutosavedCheckpointsRef.current = fingerprint
+      resetReviewAutosaveError()
+      void enqueueReviewAutosave({ kind: 'checkpoints', checkpoints })
+    }, 700)
+
+    return () => {
+      if (checkpointsAutosaveTimerRef.current) {
+        clearTimeout(checkpointsAutosaveTimerRef.current)
+        checkpointsAutosaveTimerRef.current = null
+      }
+    }
+  }, [checkpoints, enqueueReviewAutosave, isLocked, resetReviewAutosaveError])
+
+  useEffect(() => {
+    if (reportSectionsAutosaveTimerRef.current) {
+      clearTimeout(reportSectionsAutosaveTimerRef.current)
+      reportSectionsAutosaveTimerRef.current = null
+    }
+    if (isLocked) return
+
+    const fingerprint = reportSectionsFingerprint(reportSections)
+    if (fingerprint === lastAutosavedReportSectionsRef.current) return
+
+    reportSectionsAutosaveTimerRef.current = setTimeout(() => {
+      lastAutosavedReportSectionsRef.current = fingerprint
+      resetReviewAutosaveError()
+      void enqueueReviewAutosave({ kind: 'reportDraft', sections: reportSections })
+    }, 700)
+
+    return () => {
+      if (reportSectionsAutosaveTimerRef.current) {
+        clearTimeout(reportSectionsAutosaveTimerRef.current)
+        reportSectionsAutosaveTimerRef.current = null
+      }
+    }
+  }, [enqueueReviewAutosave, isLocked, reportSections, resetReviewAutosaveError])
+
   const resetForm = () => {
     setEditingNote(null)
     lastAutosavedNoteFormRef.current = null
@@ -1811,6 +2206,85 @@ export default function EbInspectionRoundClient({
     noteRowImageInputRef.current?.click()
   }
 
+  const ensureCheckpointNote = async (checkpoint: EbInspectionCheckpoint) => {
+    if (checkpoint.noteId) {
+      const existingNote = round.notes.find((note) => note.id === checkpoint.noteId)
+      if (existingNote) return existingNote
+    }
+
+    const disciplineId = activeDisciplineId ?? round.disciplines[0]?.id ?? null
+    if (!disciplineId) throw new Error('VÃ¤lj fack innan foto sparas.')
+
+    const response = await fetch(notesBasePath, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        disciplineId,
+        markerKey: round.markers.find((marker) => marker.key === 'E')?.key ?? round.markers[0]?.key ?? null,
+        statusKey:
+          round.statuses.find((status) => status.isDefault)?.key ?? round.statuses[0]?.key ?? 'open',
+        location: checkpoint.groupLabel ?? 'Kontrollunderlag',
+        room: '',
+        placeDetail: '',
+        noteText: checkpoint.comment?.trim() || checkpoint.title,
+        responsibleParty: '',
+        tradeGroup: 'DrÃ¤nering',
+      }),
+    })
+    const payload = (await response.json().catch(() => ({}))) as NoteResponse
+    if (!response.ok || !payload.note) {
+      throw new Error(payload.error ?? 'Kunde inte skapa notering fÃ¶r kontrollpunkten.')
+    }
+
+    upsertNoteInState(payload.note)
+    const nextCheckpoints = checkpoints.map((item) =>
+      item.id === checkpoint.id ? { ...item, noteId: payload.note!.id } : item
+    )
+    lastAutosavedCheckpointsRef.current = checkpointsFingerprint(nextCheckpoints)
+    setCheckpoints(nextCheckpoints)
+    void enqueueReviewAutosave({ kind: 'checkpoints', checkpoints: nextCheckpoints })
+    return payload.note
+  }
+
+  const uploadCheckpointImage = async (file: File, checkpoint: EbInspectionCheckpoint) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
+    if (uploadingImage || uploadingCheckpointImageId) return
+
+    try {
+      setUploadingCheckpointImageId(checkpoint.id)
+      setError(null)
+      const note = await ensureCheckpointNote(checkpoint)
+      await uploadImage(file, note)
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp foto.')
+    } finally {
+      setUploadingCheckpointImageId(null)
+    }
+  }
+
+  const handleCheckpointImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    const checkpointId = checkpointImageTargetRef.current
+    checkpointImageTargetRef.current = null
+    if (!file || !checkpointId) return
+    const checkpoint = checkpoints.find((item) => item.id === checkpointId)
+    if (!checkpoint) return
+    await uploadCheckpointImage(file, checkpoint)
+  }
+
+  const chooseCheckpointImage = (checkpoint: EbInspectionCheckpoint) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
+    checkpointImageTargetRef.current = checkpoint.id
+    checkpointImageInputRef.current?.click()
+  }
+
   const detachImage = async (image: EbNoteImage) => {
     if (isLocked) {
       setError(lockedMessage)
@@ -1939,6 +2413,13 @@ export default function EbInspectionRoundClient({
           onChange={(event) => void handleNoteRowImageSelected(event)}
           className="hidden"
         />
+        <input
+          ref={checkpointImageInputRef}
+          type="file"
+          accept="image/*"
+          onChange={(event) => void handleCheckpointImageSelected(event)}
+          className="hidden"
+        />
         <div
           className="pointer-events-none absolute inset-0"
           style={{
@@ -2001,6 +2482,17 @@ export default function EbInspectionRoundClient({
           {reviewMessage ? (
             <p className="mt-4 rounded-md border border-emerald-100 bg-white/90 px-3 py-2 text-sm font-medium text-gray-700 shadow-sm">
               {reviewMessage}
+            </p>
+          ) : null}
+
+          {reviewAutosaveStatus === 'saving' ? (
+            <p className="mt-4 inline-flex items-center gap-2 rounded-md border border-emerald-100 bg-white/90 px-3 py-2 text-sm font-semibold text-emerald-800 shadow-sm">
+              <Loader2 size={15} className="animate-spin" />
+              Autosparar
+            </p>
+          ) : reviewAutosaveStatus === 'error' ? (
+            <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 shadow-sm">
+              Autospar misslyckades
             </p>
           ) : null}
 
@@ -2178,6 +2670,7 @@ export default function EbInspectionRoundClient({
             </ReviewSection>
 
             <ReviewSection
+              hidden={isDrainageProject}
               title="Provning och dokumentation"
               description="Handlingar som redovisats inför besiktningen."
               action={
@@ -2195,7 +2688,7 @@ export default function EbInspectionRoundClient({
               <InspectionDocumentsEditor documents={documents} onChange={setDocuments} />
             </ReviewSection>
 
-            {round.project.projectTemplateKey === 'drainage_foundation' || checkpoints.length > 0 ? (
+            {isDrainageProject || checkpoints.length > 0 ? (
               <ReviewSection
                 title="Kontrollunderlag dränering"
                 description="Status och kommentarer för mallens kontrollpunkter."
@@ -2224,8 +2717,12 @@ export default function EbInspectionRoundClient({
                           <span className="text-xs font-medium text-gray-500">{group.checkpoints.length} st</span>
                         </div>
                         <div className="divide-y divide-emerald-100">
-                          {group.checkpoints.map((checkpoint) => (
-                            <div key={checkpoint.id} className="grid gap-3 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_12rem_minmax(14rem,0.75fr)]">
+                          {group.checkpoints.map((checkpoint) => {
+                            const checkpointImages = checkpoint.noteId
+                              ? imagesByNoteId.get(checkpoint.noteId) ?? []
+                              : []
+                            return (
+                            <div key={checkpoint.id} className="grid gap-3 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_12rem_minmax(14rem,0.75fr)_9rem]">
                               <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <p className="text-sm font-semibold text-gray-950">{checkpoint.title}</p>
@@ -2271,8 +2768,40 @@ export default function EbInspectionRoundClient({
                                 placeholder="Kommentar"
                                 className={`${inputClassName()} resize-y leading-6`}
                               />
+                              <div className="flex flex-col gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => chooseCheckpointImage(checkpoint)}
+                                  disabled={isLocked || uploadingImage || uploadingCheckpointImageId === checkpoint.id}
+                                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {uploadingCheckpointImageId === checkpoint.id ? (
+                                    <Loader2 size={16} className="animate-spin" />
+                                  ) : (
+                                    <Camera size={16} />
+                                  )}
+                                  Foto
+                                </button>
+                                {checkpointImages.length > 0 ? (
+                                  <div className="grid grid-cols-3 gap-1">
+                                    {checkpointImages.slice(0, 3).map((image) => (
+                                      <img
+                                        key={image.id}
+                                        src={image.thumbnailUrl ?? image.publicUrl}
+                                        alt={image.label ?? 'Foto'}
+                                        loading="lazy"
+                                        decoding="async"
+                                        className="aspect-square w-full rounded-md border border-emerald-100 object-cover"
+                                      />
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-gray-500">Inga foton</span>
+                                )}
+                              </div>
                             </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       </section>
                     ))}

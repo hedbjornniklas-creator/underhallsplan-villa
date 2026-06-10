@@ -21,6 +21,11 @@ function normalizeUuid(value: unknown) {
   return UUID_PATTERN.test(normalized) ? normalized : null
 }
 
+function isMissingColumnError(error: { code?: string | null; message?: string | null; details?: string | null }) {
+  const text = `${error.code ?? ''} ${error.message ?? ''} ${error.details ?? ''}`.toLowerCase()
+  return error.code === '42703' || text.includes('thumbnail_file_path')
+}
+
 function mapImage(row: {
   id: string
   inspection_id: string
@@ -191,6 +196,31 @@ export async function POST(
       })
       .select('id,inspection_id,eb_note_id,file_path,thumbnail_file_path,label,sort_order,created_at')
       .single()
+
+    if (insertError && isMissingColumnError(insertError)) {
+      if (uploadedThumbnailPath) {
+        await admin.storage.from(EB_NOTE_IMAGE_BUCKET).remove([uploadedThumbnailPath])
+        uploadedThumbnailPath = null
+      }
+
+      const { data: fallbackInsertedImage, error: fallbackInsertError } = await admin
+        .from('inspection_images')
+        .insert({
+          inspection_id: inspectionId,
+          eb_note_id: noteId,
+          file_path: filePath,
+          label: null,
+          sort_order: sortOrder,
+        })
+        .select('id,inspection_id,eb_note_id,file_path,label,sort_order,created_at')
+        .single()
+
+      if (fallbackInsertError) {
+        throw new Error(fallbackInsertError.message ?? 'Kunde inte spara bildrad.')
+      }
+
+      return NextResponse.json({ image: mapImage(fallbackInsertedImage) })
+    }
 
     if (insertError) {
       throw new Error(insertError.message ?? 'Kunde inte spara bildrad.')
