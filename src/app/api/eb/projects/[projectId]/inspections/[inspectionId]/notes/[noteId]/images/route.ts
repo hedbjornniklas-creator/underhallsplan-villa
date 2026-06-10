@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
-import { assertEbInspectionEditable, EB_NOTE_IMAGE_BUCKET } from '@/lib/eb/server'
+import { assertEbInspectionEditable, EB_NOTE_IMAGE_BUCKET, EB_PROJECT_ATTACHMENTS_BUCKET } from '@/lib/eb/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
@@ -10,6 +10,16 @@ export const dynamic = 'force-dynamic'
 
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+type ProjectAttachmentImageRow = {
+  id: string
+  storage_bucket: string | null
+  file_path: string
+  thumbnail_file_path?: string | null
+  title: string | null
+  file_name: string | null
+  content_type: string | null
+}
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
@@ -68,6 +78,51 @@ function resolveFileExtension(file: File) {
   if (mime === 'image/heic') return 'heic'
   if (mime === 'image/heif') return 'heif'
   return 'jpg'
+}
+
+function resolveStoredImageExtension(filePath: string | null | undefined, contentType: string | null | undefined) {
+  const fromPath = String(filePath ?? '').split('.').pop()?.trim().toLowerCase() ?? ''
+  const normalizedPathExt = fromPath.replace(/[^a-z0-9]/g, '')
+  if (normalizedPathExt.length > 0) return normalizedPathExt
+
+  const mime = String(contentType ?? '').toLowerCase()
+  if (mime === 'image/jpeg') return 'jpg'
+  if (mime === 'image/png') return 'png'
+  if (mime === 'image/webp') return 'webp'
+  if (mime === 'image/heic') return 'heic'
+  if (mime === 'image/heif') return 'heif'
+  return 'jpg'
+}
+
+function resolveStoredImageContentType(contentType: string | null | undefined, blob: Blob) {
+  const normalized = String(contentType ?? '').trim().toLowerCase()
+  if (normalized.startsWith('image/')) return normalized
+  const blobType = String(blob.type ?? '').trim().toLowerCase()
+  if (blobType.startsWith('image/')) return blobType
+  return 'image/jpeg'
+}
+
+async function loadNextImageSortOrder(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  inspectionId: string,
+  noteId: string
+) {
+  const { data: currentImages, error: currentImagesError } = await admin
+    .from('inspection_images')
+    .select('sort_order')
+    .eq('inspection_id', inspectionId)
+    .eq('eb_note_id', noteId)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+
+  if (currentImagesError) {
+    throw new Error(currentImagesError.message ?? 'Kunde inte lÃ¤sa befintliga bilder.')
+  }
+
+  const maxSort = Array.isArray(currentImages)
+    ? Number((currentImages[0] as { sort_order?: unknown } | undefined)?.sort_order ?? 0)
+    : 0
+  return Number.isFinite(maxSort) ? maxSort + 10 : 10
 }
 
 async function requireEbContext() {
@@ -313,11 +368,24 @@ export async function PATCH(
 ) {
   try {
     const { projectId, inspectionId, noteId } = await context.params
-    const body = (await request.json().catch(() => ({}))) as { imageId?: unknown; action?: unknown }
-    const imageId = normalizeUuid(body.imageId)
-    const action = body.action === 'attach' ? 'attach' : body.action === 'detach' ? 'detach' : null
-    if (!imageId) return jsonError('Ogiltigt imageId.', 400)
+    const body = (await request.json().catch(() => ({}))) as {
+      imageId?: unknown
+      attachmentId?: unknown
+      action?: unknown
+    }
+    const action =
+      body.action === 'attach'
+        ? 'attach'
+        : body.action === 'detach'
+          ? 'detach'
+          : body.action === 'copyAttachment'
+            ? 'copyAttachment'
+            : null
     if (!action) return jsonError('Ogiltig bildåtgärd.', 400)
+    const imageId = action === 'copyAttachment' ? null : normalizeUuid(body.imageId)
+    const attachmentId = action === 'copyAttachment' ? normalizeUuid(body.attachmentId) : null
+    if (action !== 'copyAttachment' && !imageId) return jsonError('Ogiltigt imageId.', 400)
+    if (action === 'copyAttachment' && !attachmentId) return jsonError('Ogiltigt attachmentId.', 400)
 
     const org = await requireEbContext()
     const admin = createSupabaseAdminClient()
@@ -338,6 +406,150 @@ export async function PATCH(
     if (!noteRow?.id) {
       throw new Error('EB_NOTE_NOT_FOUND')
     }
+
+    if (action === 'copyAttachment') {
+      let uploadedPath: string | null = null
+      let uploadedThumbnailPath: string | null = null
+
+      try {
+        let attachmentRow: ProjectAttachmentImageRow | null = null
+
+        const attachmentResult = await admin
+          .from('eb_project_attachments')
+          .select('id,storage_bucket,file_path,thumbnail_file_path,title,file_name,content_type')
+          .eq('id', attachmentId)
+          .eq('org_id', org.orgId)
+          .eq('eb_project_id', projectId)
+          .eq('attachment_type', 'image')
+          .maybeSingle()
+
+        if (attachmentResult.error && isMissingColumnError(attachmentResult.error)) {
+          const fallbackAttachmentResult = await admin
+            .from('eb_project_attachments')
+            .select('id,storage_bucket,file_path,title,file_name,content_type')
+            .eq('id', attachmentId)
+            .eq('org_id', org.orgId)
+            .eq('eb_project_id', projectId)
+            .eq('attachment_type', 'image')
+            .maybeSingle()
+
+          if (fallbackAttachmentResult.error) {
+            throw new Error(fallbackAttachmentResult.error.message ?? 'Kunde inte läsa entreprenadbilden.')
+          }
+          attachmentRow = fallbackAttachmentResult.data as ProjectAttachmentImageRow | null
+        } else {
+          if (attachmentResult.error) {
+            throw new Error(attachmentResult.error.message ?? 'Kunde inte läsa entreprenadbilden.')
+          }
+          attachmentRow = attachmentResult.data as ProjectAttachmentImageRow | null
+        }
+
+        if (!attachmentRow?.id) return jsonError('Entreprenadbilden hittades inte.', 404)
+
+        const sourceStorage = admin.storage.from(attachmentRow.storage_bucket || EB_PROJECT_ATTACHMENTS_BUCKET)
+        const { data: originalBlob, error: downloadError } = await sourceStorage.download(attachmentRow.file_path)
+        if (downloadError || !originalBlob) {
+          throw new Error(downloadError?.message ?? 'Kunde inte läsa bildfilen.')
+        }
+        if (originalBlob.size <= 0) return jsonError('Tom bildfil kan inte kopieras.', 400)
+
+        const sortOrder = await loadNextImageSortOrder(admin, inspectionId, noteId)
+        const capturedAt = new Date().toISOString()
+        const extension = resolveStoredImageExtension(attachmentRow.file_path, attachmentRow.content_type)
+        const fileName = `${Date.now()}-${randomUUID().slice(0, 8)}.${extension}`
+        const filePath = `${inspectionId}/eb-notes/${noteId}/${capturedAt.slice(0, 10)}/${fileName}`
+        const contentType = resolveStoredImageContentType(attachmentRow.content_type, originalBlob)
+
+        const { error: uploadError } = await admin.storage.from(EB_NOTE_IMAGE_BUCKET).upload(filePath, originalBlob, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType,
+        })
+
+        if (uploadError) {
+          throw new Error(uploadError.message ?? 'Kunde inte kopiera bildfilen.')
+        }
+        uploadedPath = filePath
+
+        const thumbnailPath = attachmentRow.thumbnail_file_path
+          ? `${inspectionId}/eb-notes/${noteId}/${capturedAt.slice(0, 10)}/thumb-${fileName.replace(/\.[^.]+$/, '.jpg')}`
+          : null
+
+        if (attachmentRow.thumbnail_file_path && thumbnailPath) {
+          const { data: thumbnailBlob, error: thumbnailDownloadError } = await sourceStorage.download(
+            attachmentRow.thumbnail_file_path
+          )
+          if (!thumbnailDownloadError && thumbnailBlob) {
+            const { error: thumbnailUploadError } = await admin.storage
+              .from(EB_NOTE_IMAGE_BUCKET)
+              .upload(thumbnailPath, thumbnailBlob, {
+                cacheControl: '3600',
+                upsert: false,
+                contentType: thumbnailBlob.type || 'image/jpeg',
+              })
+
+            if (thumbnailUploadError) {
+              throw new Error(thumbnailUploadError.message ?? 'Kunde inte kopiera miniatyrbilden.')
+            }
+            uploadedThumbnailPath = thumbnailPath
+          }
+        }
+
+        const { data: insertedImage, error: insertError } = await admin
+          .from('inspection_images')
+          .insert({
+            inspection_id: inspectionId,
+            eb_note_id: noteId,
+            file_path: filePath,
+            thumbnail_file_path: uploadedThumbnailPath,
+            label: attachmentRow.title ?? attachmentRow.file_name ?? null,
+            sort_order: sortOrder,
+          })
+          .select('id,inspection_id,eb_note_id,file_path,thumbnail_file_path,label,sort_order,created_at')
+          .single()
+
+        if (insertError && isMissingColumnError(insertError)) {
+          if (uploadedThumbnailPath) {
+            await admin.storage.from(EB_NOTE_IMAGE_BUCKET).remove([uploadedThumbnailPath])
+            uploadedThumbnailPath = null
+          }
+
+          const { data: fallbackInsertedImage, error: fallbackInsertError } = await admin
+            .from('inspection_images')
+            .insert({
+              inspection_id: inspectionId,
+              eb_note_id: noteId,
+              file_path: filePath,
+              label: attachmentRow.title ?? attachmentRow.file_name ?? null,
+              sort_order: sortOrder,
+            })
+            .select('id,inspection_id,eb_note_id,file_path,label,sort_order,created_at')
+            .single()
+
+          if (fallbackInsertError) {
+            throw new Error(fallbackInsertError.message ?? 'Kunde inte spara bildrad.')
+          }
+
+          return NextResponse.json({ image: mapImage(fallbackInsertedImage) })
+        }
+
+        if (insertError || !insertedImage) {
+          throw new Error(insertError?.message ?? 'Kunde inte spara bildrad.')
+        }
+
+        return NextResponse.json({ image: mapImage(insertedImage) })
+      } catch (copyError) {
+        const pathsToRemove = [uploadedPath, uploadedThumbnailPath].filter((path): path is string =>
+          Boolean(path)
+        )
+        if (pathsToRemove.length > 0) {
+          await admin.storage.from(EB_NOTE_IMAGE_BUCKET).remove(pathsToRemove)
+        }
+        throw copyError
+      }
+    }
+
+    if (!imageId) return jsonError('Ogiltigt imageId.', 400)
 
     const { data: imageRow, error: imageError } = await admin
       .from('inspection_images')

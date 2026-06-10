@@ -34,6 +34,7 @@ import type {
   EbNote,
   EbNoteImage,
   EbPreviousInspectionItem,
+  EbProjectAttachment,
   EbProjectListItem,
   EbReportDraftSection,
   EbReportSectionStatus,
@@ -530,6 +531,10 @@ function sortImages(images: EbNoteImage[]) {
     }
     return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
   })
+}
+
+function projectAttachmentTitle(attachment: EbProjectAttachment) {
+  return attachment.title || attachment.fileName || 'Entreprenadbild'
 }
 
 function imageFileNameAsJpeg(name: string) {
@@ -1112,6 +1117,7 @@ export default function EbInspectionRoundClient({
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
   const [orderSaving, setOrderSaving] = useState(false)
   const [movingImageId, setMovingImageId] = useState<string | null>(null)
+  const [copyingProjectAttachmentId, setCopyingProjectAttachmentId] = useState<string | null>(null)
   const [showLinkedImages, setShowLinkedImages] = useState(false)
   const [imageViewCount, setImageViewCount] = useState(4)
   const [checkpointImageBankTargetId, setCheckpointImageBankTargetId] = useState<string | null>(null)
@@ -1173,6 +1179,13 @@ export default function EbInspectionRoundClient({
     return map
   }, [round.images])
   const allImages = useMemo(() => sortImages(round.images), [round.images])
+  const projectImageAttachments = useMemo(
+    () =>
+      (round.projectAttachments ?? []).filter(
+        (attachment) => attachment.attachmentType === 'image' && Boolean(attachment.signedUrl)
+      ),
+    [round.projectAttachments]
+  )
   const checkpointGroups = useMemo(() => groupedCheckpoints(checkpoints), [checkpoints])
   const imageBankImages = useMemo(
     () => allImages.filter((image) => showLinkedImages || !image.noteId),
@@ -2327,6 +2340,51 @@ export default function EbInspectionRoundClient({
     }
   }
 
+  const copyProjectAttachmentToNote = async (attachment: EbProjectAttachment, targetNote?: EbNote) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
+    if (copyingProjectAttachmentId || movingImageId || uploadingImage) return
+
+    try {
+      setCopyingProjectAttachmentId(attachment.id)
+      setError(null)
+      const note = targetNote ?? editingNote ?? (await saveCurrentNote())
+      if (!note) return
+      const response = await fetch(`${notesBasePath}/${note.id}/images`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attachmentId: attachment.id, action: 'copyAttachment' }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as ImageResponse
+      if (!response.ok || !payload.image) {
+        throw new Error(payload.error ?? 'Kunde inte lägga till entreprenadbilden.')
+      }
+      upsertImageInState(payload.image)
+    } catch (copyError) {
+      setError(copyError instanceof Error ? copyError.message : 'Kunde inte lägga till entreprenadbilden.')
+    } finally {
+      setSaving(false)
+      setCopyingProjectAttachmentId(null)
+    }
+  }
+
+  const copyProjectAttachmentToCheckpoint = async (attachment: EbProjectAttachment) => {
+    if (!checkpointImageBankTarget || copyingProjectAttachmentId) return
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
+
+    try {
+      const note = await ensureCheckpointNote(checkpointImageBankTarget)
+      await copyProjectAttachmentToNote(attachment, note)
+    } catch (copyError) {
+      setError(copyError instanceof Error ? copyError.message : 'Kunde inte lägga till entreprenadbilden.')
+    }
+  }
+
   const detachImage = async (image: EbNoteImage) => {
     if (isLocked) {
       setError(lockedMessage)
@@ -3323,7 +3381,7 @@ export default function EbInspectionRoundClient({
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Bildbank</p>
                   <h2 className="truncate text-base font-semibold text-gray-950">{checkpointImageBankTarget.title}</h2>
                   <p className="mt-1 text-xs text-gray-600">
-                    Välj en okopplad bild eller ladda upp en ny bild till kontrollpunkten.
+                    Välj en entreprenadbild, okopplad bild eller ladda upp en ny bild till kontrollpunkten.
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -3372,14 +3430,55 @@ export default function EbInspectionRoundClient({
                   </div>
                 ) : null}
 
+                <div className="mb-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-gray-950">Entreprenadbilder</h3>
+                    <span className="text-xs font-medium text-gray-500">{projectImageAttachments.length} st</span>
+                  </div>
+                  {projectImageAttachments.length === 0 ? (
+                    <p className="mt-2 rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-6 text-center text-sm text-gray-600">
+                      Det finns inga bilder uppladdade på entreprenaden.
+                    </p>
+                  ) : (
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+                      {projectImageAttachments.map((attachment) => {
+                        const title = projectAttachmentTitle(attachment)
+                        const imageUrl = attachment.signedThumbnailUrl ?? attachment.signedUrl
+                        if (!imageUrl) return null
+
+                        return (
+                          <button
+                            key={attachment.id}
+                            type="button"
+                            onClick={() => void copyProjectAttachmentToCheckpoint(attachment)}
+                            disabled={isLocked || copyingProjectAttachmentId === attachment.id}
+                            className="relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-400 disabled:cursor-wait disabled:opacity-60"
+                          >
+                            <img
+                              src={imageUrl}
+                              alt={title}
+                              loading="lazy"
+                              decoding="async"
+                              className="aspect-square w-full object-cover"
+                            />
+                            <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-emerald-800">
+                              {copyingProjectAttachmentId === attachment.id ? 'Lägger till...' : 'Lägg till'}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-gray-950">Okopplade bilder</h3>
+                  <h3 className="text-sm font-semibold text-gray-950">Okopplade besiktningsbilder</h3>
                   <span className="text-xs font-medium text-gray-500">{checkpointImageBankImages.length} st</span>
                 </div>
 
                 {checkpointImageBankImages.length === 0 ? (
                   <p className="mt-2 rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-8 text-center text-sm text-gray-600">
-                    Det finns inga okopplade bilder i bildbanken. Ladda upp en ny bild till punkten.
+                    Det finns inga okopplade besiktningsbilder. Ladda upp en ny bild till punkten eller välj en entreprenadbild ovan.
                   </p>
                 ) : (
                   <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
@@ -3760,7 +3859,9 @@ export default function EbInspectionRoundClient({
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Bildbank</p>
-                          <p className="text-sm font-semibold text-gray-950">{imageBankImages.length} bilder</p>
+                          <p className="text-sm font-semibold text-gray-950">
+                            {imageBankImages.length + projectImageAttachments.length} bilder
+                          </p>
                         </div>
                         <button
                           type="button"
@@ -3795,9 +3896,58 @@ export default function EbInspectionRoundClient({
                     </div>
 
                     <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                      <div className="mb-4">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                            Entreprenadbilder
+                          </h3>
+                          <span className="text-xs font-medium text-gray-500">{projectImageAttachments.length} st</span>
+                        </div>
+                        {projectImageAttachments.length === 0 ? (
+                          <p className="rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-6 text-center text-sm text-gray-600">
+                            Inga bilder uppladdade på entreprenaden.
+                          </p>
+                        ) : (
+                          <div className={imageViewCount === 1 ? 'grid grid-cols-1 gap-2' : imageViewCount === 4 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-2'}>
+                            {projectImageAttachments.map((attachment) => {
+                              const title = projectAttachmentTitle(attachment)
+                              const imageUrl = attachment.signedThumbnailUrl ?? attachment.signedUrl
+                              if (!imageUrl) return null
+
+                              return (
+                                <button
+                                  key={attachment.id}
+                                  type="button"
+                                  onClick={() => void copyProjectAttachmentToNote(attachment)}
+                                  disabled={isLocked || copyingProjectAttachmentId === attachment.id}
+                                  className="relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-300 disabled:cursor-wait disabled:opacity-60"
+                                >
+                                  <img
+                                    src={imageUrl}
+                                    alt={title}
+                                    loading="lazy"
+                                    decoding="async"
+                                    className="aspect-square w-full object-cover"
+                                  />
+                                  <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-emerald-800">
+                                    {copyingProjectAttachmentId === attachment.id ? 'Lägger till...' : 'Lägg till'}
+                                  </span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                          Besiktningsbilder
+                        </h3>
+                        <span className="text-xs font-medium text-gray-500">{imageBankImages.length} st</span>
+                      </div>
                       {imageBankImages.length === 0 ? (
                         <p className="rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-8 text-center text-sm text-gray-600">
-                          Inga okopplade bilder i bildbanken.
+                          Inga okopplade besiktningsbilder.
                         </p>
                       ) : (
                         <div className={imageViewCount === 1 ? 'grid grid-cols-1 gap-2' : imageViewCount === 4 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-2'}>

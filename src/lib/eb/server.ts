@@ -270,6 +270,7 @@ export type EbInspectionRound = {
   statuses: EbNoteStatus[]
   notes: EbNote[]
   images: EbNoteImage[]
+  projectAttachments: EbProjectAttachment[]
   suggestions: EbNoteSuggestion[]
   checkpoints: EbInspectionCheckpoint[]
 }
@@ -2406,7 +2407,7 @@ export async function getEbInspectionRound(input: {
       inspection,
     }),
   ])
-  const [notes, images] = await Promise.all([
+  const [notes, images, projectAttachments] = await Promise.all([
     listEbNotes({
       ...input,
       disciplines,
@@ -2414,6 +2415,10 @@ export async function getEbInspectionRound(input: {
       statuses,
     }),
     listEbNoteImages({ inspectionId: input.inspectionId }),
+    listEbProjectAttachments({
+      orgId: input.orgId,
+      projectId: input.projectId,
+    }),
   ])
 
   return {
@@ -2424,6 +2429,7 @@ export async function getEbInspectionRound(input: {
     statuses,
     notes,
     images,
+    projectAttachments,
     suggestions,
     checkpoints,
   }
@@ -2507,13 +2513,9 @@ export async function getEbInspectionReport(input: {
   inspectionId: string
 }): Promise<EbInspectionReport> {
   const round = await getEbInspectionRound(input)
-  const [participants, storedDraft, attachments, inspectionDocuments, inspectorProfile] = await Promise.all([
+  const [participants, storedDraft, inspectionDocuments, inspectorProfile] = await Promise.all([
     listParticipantsForInspection(input),
     fetchEbReportDraft(input),
-    listEbProjectAttachments({
-      orgId: input.orgId,
-      projectId: input.projectId,
-    }),
     listEbInspectionDocuments(input),
     getProfileContact(input.requestedByUserId),
   ])
@@ -2543,7 +2545,7 @@ export async function getEbInspectionReport(input: {
     reportDraft: buildEbReportDraft({
       round,
       participants: resolvedParticipants,
-      attachments,
+      attachments: round.projectAttachments,
       inspectionDocuments,
       inspectorText,
       storedDraft,
