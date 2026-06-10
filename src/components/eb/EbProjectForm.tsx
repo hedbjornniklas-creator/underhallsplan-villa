@@ -26,11 +26,13 @@ export type EbProjectFormState = {
   notePrefix: string
   clientName: string
   clientOrgNo: string
+  clientEmail: string
   clientAddress: string
   clientPostalCode: string
   clientCity: string
   contractorName: string
   contractorOrgNo: string
+  contractorEmail: string
   contractorAddress: string
   contractorPostalCode: string
   contractorCity: string
@@ -58,11 +60,13 @@ export const EMPTY_EB_PROJECT_FORM: EbProjectFormState = {
   notePrefix: 'BES',
   clientName: '',
   clientOrgNo: '',
+  clientEmail: '',
   clientAddress: '',
   clientPostalCode: '',
   clientCity: '',
   contractorName: '',
   contractorOrgNo: '',
+  contractorEmail: '',
   contractorAddress: '',
   contractorPostalCode: '',
   contractorCity: '',
@@ -74,6 +78,7 @@ const STANDARD_AGREEMENT_OPTIONS = [
   { value: 'AB 04', label: 'AB 04' },
   { value: 'ABT 06', label: 'ABT 06' },
   { value: 'ABS 18', label: 'ABS 18' },
+  { value: 'Konsumententreprenad', label: 'Konsumententreprenad' },
   { value: 'HF17', label: 'HF 17' },
 ]
 
@@ -137,11 +142,13 @@ export function buildEbProjectForm(project: EbProjectListItem): EbProjectFormSta
     notePrefix: project.notePrefix ?? 'BES',
     clientName: project.clientName ?? '',
     clientOrgNo: project.clientOrgNo ?? '',
+    clientEmail: project.clientEmail ?? '',
     clientAddress: project.clientAddress ?? '',
     clientPostalCode: project.clientPostalCode ?? '',
     clientCity: project.clientCity ?? '',
     contractorName: project.contractorName ?? '',
     contractorOrgNo: project.contractorOrgNo ?? '',
+    contractorEmail: project.contractorEmail ?? '',
     contractorAddress: project.contractorAddress ?? '',
     contractorPostalCode: project.contractorPostalCode ?? '',
     contractorCity: project.contractorCity ?? '',
@@ -481,6 +488,14 @@ export default function EbProjectForm({
                 className={ebProjectInputClassName()}
               />
             </EbProjectFieldLabel>
+            <EbProjectFieldLabel label="Beställare e-post">
+              <input
+                type="email"
+                value={form.clientEmail}
+                onChange={(event) => onChange('clientEmail', event.target.value)}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
             <EbProjectFieldLabel label="Beställare adress">
               <input
                 value={form.clientAddress}
@@ -596,6 +611,14 @@ export default function EbProjectForm({
               <input
                 value={form.contractorOrgNo}
                 onChange={(event) => onChange('contractorOrgNo', event.target.value)}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
+            <EbProjectFieldLabel label={`${vocabulary.contractorShortLabel} e-post`}>
+              <input
+                type="email"
+                value={form.contractorEmail}
+                onChange={(event) => onChange('contractorEmail', event.target.value)}
                 className={ebProjectInputClassName()}
               />
             </EbProjectFieldLabel>

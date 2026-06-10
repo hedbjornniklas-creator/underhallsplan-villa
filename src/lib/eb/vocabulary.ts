@@ -30,6 +30,18 @@ export function resolveEbAgreementVocabulary(standardAgreement: string | null | 
     }
   }
 
+  if (normalized.includes('konsumententreprenad')) {
+    return {
+      agreementLine: 'Konsumententreprenad',
+      clientLabel: 'Beställare /(Konsument)',
+      clientShortLabel: 'Beställare',
+      contractorLabel: 'Hantverkare /(Näringsidkare)',
+      contractorShortLabel: 'Hantverkare',
+      contractorPluralLabel: 'Hantverkare',
+      contractorOrgLabel: 'Hantverkare org.nr',
+    }
+  }
+
   if (normalized.includes('abs18') || normalized.includes('bas18')) {
     return {
       agreementLine: 'Enligt ABS 18',

@@ -133,7 +133,13 @@ function isDrainageReport(report: EbInspectionReport) {
 }
 
 function reportDocumentTitle(report: EbInspectionReport) {
-  return isDrainageReport(report) ? DRAINAGE_REPORT_DOCUMENT_TITLE : REPORT_DOCUMENT_TITLE
+  if (isDrainageReport(report)) {
+    return report.inspection.variant === 'FB'
+      ? 'UTLÅTANDE ÖVER FÖRBESIKTNING - DRÄNERINGSBESIKTNING'
+      : DRAINAGE_REPORT_DOCUMENT_TITLE
+  }
+
+  return report.inspection.variant === 'FB' ? 'UTLÅTANDE ÖVER FÖRBESIKTNING' : REPORT_DOCUMENT_TITLE
 }
 
 function parseLabelLine(line: string) {
@@ -850,7 +856,7 @@ function DistributionListReport({ report }: { report: EbInspectionReport }) {
             <img
               src={report.branding.inspectorAvatarUrl}
               alt="Besiktningsmannen"
-              className="eb-report-inspector-avatar h-[34mm] w-[34mm] object-cover"
+              className="eb-report-inspector-avatar h-[24mm] w-[24mm] object-cover"
             />
           ) : null}
 
@@ -865,6 +871,13 @@ function DistributionListReport({ report }: { report: EbInspectionReport }) {
                   </div>
                 ))}
               </dl>
+            ) : null}
+            {report.branding.inspectorSignatureUrl ? (
+              <img
+                src={report.branding.inspectorSignatureUrl}
+                alt="Besiktningsmannens signatur"
+                className="mt-3 h-[12mm] max-w-[58mm] object-contain object-left"
+              />
             ) : null}
             <img
               src={SBR_LOGO_SRC}
@@ -1005,6 +1018,10 @@ function ReportHeader({ report }: { report: EbInspectionReport }) {
           <dt className="font-bold">Entreprenad</dt>
           <dd className="whitespace-pre-wrap">{entreprenadDescription}</dd>
         </div>
+        <div className="grid grid-cols-[38mm_1fr] gap-x-4">
+          <dt className="font-bold">Besiktningstyp</dt>
+          <dd>{report.inspection.variantLabel}</dd>
+        </div>
       </dl>
 
       <div className="mt-7 text-left">
@@ -1101,20 +1118,25 @@ function PhotoAppendix({
       <div className="space-y-5">
         {notesWithImages.map(({ note, index, images }) => (
           <article key={note.id} className="break-inside-avoid">
-            <p className="mb-2 text-[10pt] font-bold text-black">
-              {noteReference(report, index)} {note.markerKey ? `(${note.markerKey})` : ''}
-            </p>
+            <div className="mb-2 text-[10pt] leading-snug text-black">
+              <p className="font-bold">
+                {noteReference(report, index)} {note.markerKey ? `(${note.markerKey})` : ''}
+              </p>
+              {detailLine([note.room, note.location, note.placeDetail]) !== '-' ? (
+                <p>Del/Rum: {detailLine([note.room, note.location, note.placeDetail])}</p>
+              ) : null}
+              {note.noteText?.trim() ? (
+                <p className="whitespace-pre-wrap">Notering: {note.noteText}</p>
+              ) : null}
+            </div>
             <div className="grid grid-cols-2 gap-4">
               {images.map((image) => (
                 <figure key={image.id} className="break-inside-avoid">
                   <img
                     src={reportImageSrc(image)}
-                    alt={image.label ?? 'Noteringsbild'}
+                    alt={`Bild till ${noteReference(report, index)}`}
                     className="h-[62mm] w-full border border-gray-300 object-contain"
                   />
-                  {image.label ? (
-                    <figcaption className="mt-1 text-[8.5pt] text-gray-700">{image.label}</figcaption>
-                  ) : null}
                 </figure>
               ))}
             </div>
@@ -1130,10 +1152,12 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
   const notes = sortNotes(report.notes)
   const displayNumberByNoteId = new Map(notes.map((note, index) => [note.id, index + 1]))
   const drainageReport = isDrainageReport(report)
+  const preliminaryInspection = report.inspection.variant === 'FB'
   const printableSections = report.reportDraft.sections.filter(
     (section) =>
       section.isRelevant &&
       !HIDDEN_REPORT_SECTION_KEYS.has(section.key) &&
+      !(preliminaryInspection && (section.key === 'reclamation_notice' || section.key === 'remedy_deadline')) &&
       !(drainageReport && section.key === 'defects_appendices') &&
       !(drainageReport && (section.key === 'testing_documentation' || section.key === 'contract_documents')) &&
       !(section.key === 'previous_inspections_tests' && report.inspection.previousInspections.every((row) => !row.status && !row.date?.trim())) &&

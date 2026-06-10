@@ -130,11 +130,13 @@ export type EbProjectListItem = {
   notePrefix: string
   clientName: string | null
   clientOrgNo: string | null
+  clientEmail: string | null
   clientAddress: string | null
   clientPostalCode: string | null
   clientCity: string | null
   contractorName: string | null
   contractorOrgNo: string | null
+  contractorEmail: string | null
   contractorAddress: string | null
   contractorPostalCode: string | null
   contractorCity: string | null
@@ -309,6 +311,7 @@ export type EbInspectionReport = EbInspectionRound & {
   branding: {
     inspectorLogoUrl: string | null
     inspectorAvatarUrl: string | null
+    inspectorSignatureUrl: string | null
     besiktAppLogoUrl: string
   }
 }
@@ -416,11 +419,13 @@ type EbProjectRow = {
   note_prefix: string | null
   client_name: string | null
   client_org_no: string | null
+  client_email?: string | null
   client_address: string | null
   client_postal_code: string | null
   client_city: string | null
   contractor_name: string | null
   contractor_org_no: string | null
+  contractor_email?: string | null
   contractor_address: string | null
   contractor_postal_code: string | null
   contractor_city: string | null
@@ -684,6 +689,7 @@ type ProfileContactRow = {
   avatar_path: string | null
   logo_path: string | null
   logo_url: string | null
+  signature_path: string | null
 }
 
 export type CreateEbProjectInput = {
@@ -708,11 +714,13 @@ export type CreateEbProjectInput = {
   contractDate?: string | null
   clientName?: string | null
   clientOrgNo?: string | null
+  clientEmail?: string | null
   clientAddress?: string | null
   clientPostalCode?: string | null
   clientCity?: string | null
   contractorName?: string | null
   contractorOrgNo?: string | null
+  contractorEmail?: string | null
   contractorAddress?: string | null
   contractorPostalCode?: string | null
   contractorCity?: string | null
@@ -900,6 +908,10 @@ function resolveProfileLogoUrl(profile: ProfileContactRow | null | undefined) {
 
 function resolveProfileAvatarUrl(profile: ProfileContactRow | null | undefined) {
   return resolvePublicMediaUrl(profile?.avatar_path)
+}
+
+function resolveProfileSignatureUrl(profile: ProfileContactRow | null | undefined) {
+  return resolvePublicMediaUrl(profile?.signature_path)
 }
 
 function normalizeDate(value: string | null | undefined) {
@@ -1329,11 +1341,13 @@ function mapProject(
     notePrefix: project.note_prefix ?? 'BES',
     clientName: project.client_name ?? null,
     clientOrgNo: project.client_org_no ?? null,
+    clientEmail: project.client_email ?? null,
     clientAddress: project.client_address ?? null,
     clientPostalCode: project.client_postal_code ?? null,
     clientCity: project.client_city ?? null,
     contractorName: project.contractor_name ?? null,
     contractorOrgNo: project.contractor_org_no ?? null,
+    contractorEmail: project.contractor_email ?? null,
     contractorAddress: project.contractor_address ?? null,
     contractorPostalCode: project.contractor_postal_code ?? null,
     contractorCity: project.contractor_city ?? null,
@@ -1347,11 +1361,12 @@ function mapProject(
 
 async function fetchProjectsByOrg(orgId: string, projectId?: string) {
   const admin = createSupabaseAdminClient()
-  const baseSelect =
-    'id,org_id,owner_profile_id,property_id,title,contract_name,object_description,property_designation,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,client_address,client_postal_code,client_city,contractor_name,contractor_org_no,contractor_address,contractor_postal_code,contractor_city,status,created_at,updated_at'
   const withTemplateSelect =
+    'id,org_id,owner_profile_id,property_id,project_template_key,drainage_system,drainage_inspection_stage,drainage_guidance_version,title,contract_name,object_description,property_designation,brf_apartment_number,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,client_email,client_address,client_postal_code,client_city,contractor_name,contractor_org_no,contractor_email,contractor_address,contractor_postal_code,contractor_city,status,created_at,updated_at'
+  const legacyWithTemplateSelect =
     'id,org_id,owner_profile_id,property_id,project_template_key,drainage_system,drainage_inspection_stage,drainage_guidance_version,title,contract_name,object_description,property_designation,brf_apartment_number,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,client_address,client_postal_code,client_city,contractor_name,contractor_org_no,contractor_address,contractor_postal_code,contractor_city,status,created_at,updated_at'
   const withAgreementItemsSelect = `${withTemplateSelect},agreement_items`
+  const legacyWithAgreementItemsSelect = `${legacyWithTemplateSelect},agreement_items`
   let query = admin
     .from('eb_projects')
     .select(withAgreementItemsSelect)
@@ -1368,7 +1383,7 @@ async function fetchProjectsByOrg(orgId: string, projectId?: string) {
     if (isMissingColumnError(error)) {
       let fallbackQuery = admin
         .from('eb_projects')
-        .select(baseSelect)
+        .select(legacyWithAgreementItemsSelect)
         .eq('org_id', orgId)
         .order('updated_at', { ascending: false })
 
@@ -2527,6 +2542,7 @@ export async function getEbInspectionReport(input: {
   })
   const inspectorLogoUrl = resolveProfileLogoUrl(inspectorProfile)
   const inspectorAvatarUrl = resolveProfileAvatarUrl(inspectorProfile)
+  const inspectorSignatureUrl = resolveProfileSignatureUrl(inspectorProfile)
   let ownerLogoUrl: string | null = null
   if (!inspectorLogoUrl && round.project.ownerProfileId !== input.requestedByUserId) {
     const ownerProfile = await getProfileContact(round.project.ownerProfileId)
@@ -2540,6 +2556,7 @@ export async function getEbInspectionReport(input: {
     branding: {
       inspectorLogoUrl: inspectorLogoUrl ?? ownerLogoUrl,
       inspectorAvatarUrl,
+      inspectorSignatureUrl,
       besiktAppLogoUrl: BESIKTAPP_REPORT_LOGO_SRC,
     },
     reportDraft: buildEbReportDraft({
@@ -2694,11 +2711,13 @@ export async function createEbProject(
   const normalizedAddress = normalizeText(input.address)
   const normalizedClientName = normalizeText(input.clientName)
   const normalizedClientOrgNo = normalizeText(input.clientOrgNo)
+  const normalizedClientEmail = normalizeText(input.clientEmail)
   const normalizedClientAddress = normalizeText(input.clientAddress)
   const normalizedClientPostalCode = normalizeText(input.clientPostalCode)
   const normalizedClientCity = normalizeText(input.clientCity)
   const normalizedContractorName = normalizeText(input.contractorName)
   const normalizedContractorOrgNo = normalizeText(input.contractorOrgNo)
+  const normalizedContractorEmail = normalizeText(input.contractorEmail)
   const normalizedContractorAddress = normalizeText(input.contractorAddress)
   const normalizedContractorPostalCode = normalizeText(input.contractorPostalCode)
   const normalizedContractorCity = normalizeText(input.contractorCity)
@@ -2767,11 +2786,13 @@ export async function createEbProject(
         note_prefix: projectTemplateKey === 'drainage_foundation' ? 'DRÄN' : 'BES',
         client_name: normalizedClientName,
         client_org_no: normalizedClientOrgNo,
+        client_email: normalizedClientEmail,
         client_address: normalizedClientAddress,
         client_postal_code: normalizedClientPostalCode,
         client_city: normalizedClientCity,
         contractor_name: normalizedContractorName,
         contractor_org_no: normalizedContractorOrgNo,
+        contractor_email: normalizedContractorEmail,
         contractor_address: normalizedContractorAddress,
         contractor_postal_code: normalizedContractorPostalCode,
         contractor_city: normalizedContractorCity,
@@ -2810,11 +2831,13 @@ export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbPr
   const normalizedAddress = normalizeText(input.address)
   const normalizedClientName = normalizeText(input.clientName)
   const normalizedClientOrgNo = normalizeText(input.clientOrgNo)
+  const normalizedClientEmail = normalizeText(input.clientEmail)
   const normalizedClientAddress = normalizeText(input.clientAddress)
   const normalizedClientPostalCode = normalizeText(input.clientPostalCode)
   const normalizedClientCity = normalizeText(input.clientCity)
   const normalizedContractorName = normalizeText(input.contractorName)
   const normalizedContractorOrgNo = normalizeText(input.contractorOrgNo)
+  const normalizedContractorEmail = normalizeText(input.contractorEmail)
   const normalizedContractorAddress = normalizeText(input.contractorAddress)
   const normalizedContractorPostalCode = normalizeText(input.contractorPostalCode)
   const normalizedContractorCity = normalizeText(input.contractorCity)
@@ -2854,11 +2877,13 @@ export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbPr
       note_prefix: normalizedNotePrefix,
       client_name: normalizedClientName,
       client_org_no: normalizedClientOrgNo,
+      client_email: normalizedClientEmail,
       client_address: normalizedClientAddress,
       client_postal_code: normalizedClientPostalCode,
       client_city: normalizedClientCity,
       contractor_name: normalizedContractorName,
       contractor_org_no: normalizedContractorOrgNo,
+      contractor_email: normalizedContractorEmail,
       contractor_address: normalizedContractorAddress,
       contractor_postal_code: normalizedContractorPostalCode,
       contractor_city: normalizedContractorCity,
@@ -3623,13 +3648,13 @@ function mapParticipant(row: EbParticipantRow): EbInvitationParticipant {
 function buildDefaultParticipants(project: EbProjectListItem): EbInvitationParticipant[] {
   const rows: EbInvitationParticipant[] = []
 
-  if (project.clientName) {
+  if (project.clientName || project.clientEmail) {
     rows.push({
       id: null,
       roleLabel: 'Beställare',
       companyName: project.clientName,
-      personName: null,
-      email: null,
+      personName: project.clientName,
+      email: project.clientEmail,
       phone: null,
       receivesInvitation: true,
       attended: false,
@@ -3640,13 +3665,13 @@ function buildDefaultParticipants(project: EbProjectListItem): EbInvitationParti
     })
   }
 
-  if (project.contractorName) {
+  if (project.contractorName || project.contractorEmail) {
     rows.push({
       id: null,
       roleLabel: 'Entreprenör',
       companyName: project.contractorName,
-      personName: null,
-      email: null,
+      personName: project.contractorName,
+      email: project.contractorEmail,
       phone: null,
       receivesInvitation: true,
       attended: false,
@@ -4734,6 +4759,7 @@ function buildInvitationBody(input: {
 async function getProfileContact(profileId: string) {
   const admin = createSupabaseAdminClient()
   const selectAttempts = [
+    'id,full_name,email,avatar_path,logo_path,logo_url,signature_path,certification_number',
     'id,full_name,email,avatar_path,logo_path,logo_url,certification_number',
     'id,full_name,email,avatar_path,logo_path,logo_url',
     'id,full_name,email,avatar_path,logo_path',
@@ -4764,6 +4790,7 @@ async function getProfileContact(profileId: string) {
       avatar_path: row.avatar_path ?? null,
       logo_path: row.logo_path ?? null,
       logo_url: row.logo_url ?? null,
+      signature_path: row.signature_path ?? null,
     }
   }
 
