@@ -878,38 +878,41 @@ function DistributionListReport({ report }: { report: EbInspectionReport }) {
   const inspectorSignature = report.branding.signature
 
   return (
-    <ReportSection title="Sändlista">
-      <div className="space-y-4 text-[10.5pt] leading-[1.35] text-black">
-        <p>
-          Undertecknat utlåtande har {distributionDate} sänts per e-post till parterna och övriga enligt nedan.
-        </p>
+    <>
+      <ReportSection title="Sändlista">
+        <div className="space-y-4 text-[10.5pt] leading-[1.35] text-black">
+          <p>
+            Undertecknat utlåtande har {distributionDate} sänts per e-post till parterna och övriga enligt nedan.
+          </p>
 
-        {recipients.length > 0 ? (
-          <table className="w-full border-collapse text-[9.5pt] leading-tight text-black">
-            <thead>
-              <tr className="bg-[#4f86bf] text-left text-white print:bg-[#4f86bf]">
-                <th className="w-[58mm] px-1.5 py-1 font-bold">Företag</th>
-                <th className="w-[58mm] px-1.5 py-1 font-bold">Namn</th>
-                <th className="px-1.5 py-1 font-bold">E-post</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recipients.map((recipient, index) => (
-                <tr key={recipient.id ?? `${recipient.email}-${index}`}>
-                  <td className="px-1.5 py-0.5">{recipient.companyName?.trim() || '-'}</td>
-                  <td className="px-1.5 py-0.5">{recipient.personName?.trim() || '-'}</td>
-                  <td className="px-1.5 py-0.5">{recipient.email?.trim() || '-'}</td>
+          {recipients.length > 0 ? (
+            <table className="w-full border-collapse text-[9.5pt] leading-tight text-black">
+              <thead>
+                <tr className="bg-[#4f86bf] text-left text-white print:bg-[#4f86bf]">
+                  <th className="w-[58mm] px-1.5 py-1 font-bold">Företag</th>
+                  <th className="w-[58mm] px-1.5 py-1 font-bold">Namn</th>
+                  <th className="px-1.5 py-1 font-bold">E-post</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p>Mottagare av utlåtandet har inte angetts.</p>
-        )}
+              </thead>
+              <tbody>
+                {recipients.map((recipient, index) => (
+                  <tr key={recipient.id ?? `${recipient.email}-${index}`}>
+                    <td className="px-1.5 py-0.5">{recipient.companyName?.trim() || '-'}</td>
+                    <td className="px-1.5 py-0.5">{recipient.personName?.trim() || '-'}</td>
+                    <td className="px-1.5 py-0.5">{recipient.email?.trim() || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p>Mottagare av utlåtandet har inte angetts.</p>
+          )}
 
-        {inspectorSignature ? <InspectorSignatureCard signature={inspectorSignature} /> : null}
-      </div>
-    </ReportSection>
+        </div>
+      </ReportSection>
+
+      {inspectorSignature ? <InspectorSignatureCard signature={inspectorSignature} /> : null}
+    </>
   )
 }
 
@@ -1183,17 +1186,14 @@ function PhotoAppendixNoteArticle({
   note,
   images,
   checkpointNumber,
-  fallbackReference,
   showTitle = false,
 }: {
   note: EbNote
   images: EbNoteImage[]
   checkpointNumber?: number
-  fallbackReference?: string
   showTitle?: boolean
 }) {
   const location = noteLocationLine(note)
-  const imageReference = checkpointNumber ? `Kontrollpunkt ${checkpointNumber}` : fallbackReference
 
   return (
     <section className="eb-report-section break-inside-avoid">
@@ -1206,14 +1206,9 @@ function PhotoAppendixNoteArticle({
             <p className="whitespace-pre-wrap">Notering: {note.noteText}</p>
           ) : null}
         </div>
-        <div className="grid grid-cols-2 justify-items-center gap-x-6 gap-y-5">
+        <div className="flex flex-wrap justify-center gap-x-6 gap-y-5">
           {images.map((image) => (
-            <figure key={image.id} className="flex w-full break-inside-avoid flex-col items-center">
-              {imageReference ? (
-                <figcaption className="mb-1 text-center text-[9pt] font-semibold leading-tight text-black">
-                  {imageReference}
-                </figcaption>
-              ) : null}
+            <figure key={image.id} className="flex w-[78mm] break-inside-avoid items-center justify-center">
               <img
                 src={reportImageSrc(image)}
                 alt={checkpointNumber ? `Bild till kontrollpunkt ${checkpointNumber}` : 'Bild till notering'}
@@ -1597,8 +1592,14 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
   )
   const imagesByNoteId = useMemo(() => {
     const grouped = new Map<string, EbNoteImage[]>()
+    const seenByNoteId = new Map<string, Set<string>>()
     for (const image of report.images) {
       if (!image.noteId) continue
+      const imageKey = image.filePath || image.publicUrl || image.id
+      const seen = seenByNoteId.get(image.noteId) ?? new Set<string>()
+      if (seen.has(imageKey)) continue
+      seen.add(imageKey)
+      seenByNoteId.set(image.noteId, seen)
       grouped.set(image.noteId, [...(grouped.get(image.noteId) ?? []), image])
     }
     for (const [noteId, images] of grouped) {
@@ -1767,9 +1768,6 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
             node: (
               <PhotoAppendixNoteArticle
                 checkpointNumber={checkpointNumberByNote.get(note.id)}
-                fallbackReference={
-                  displayNumberByNoteId.has(note.id) ? `Notering ${displayNumberByNoteId.get(note.id)}` : undefined
-                }
                 images={imageChunk}
                 note={note}
                 showTitle={photoBlockIndex === 0}

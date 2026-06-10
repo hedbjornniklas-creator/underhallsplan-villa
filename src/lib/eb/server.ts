@@ -708,6 +708,7 @@ type ProfileContactRow = {
   logo_path: string | null
   logo_url: string | null
   signature_path: string | null
+  signature_url: string | null
 }
 
 export type CreateEbProjectInput = {
@@ -929,7 +930,7 @@ function resolveProfileAvatarUrl(profile: ProfileContactRow | null | undefined) 
 }
 
 function resolveProfileSignatureUrl(profile: ProfileContactRow | null | undefined) {
-  return resolvePublicMediaUrl(profile?.signature_path)
+  return resolvePublicMediaUrl(profile?.signature_path ?? profile?.signature_url)
 }
 
 function buildProfileFooter(profile: ProfileContactRow | null | undefined) {
@@ -4953,6 +4954,8 @@ function buildInvitationBody(input: {
 async function getProfileContact(profileId: string) {
   const admin = createSupabaseAdminClient()
   const selectAttempts = [
+    'id,full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path,logo_path,logo_url,signature_path,signature_url,certification_number',
+    'id,full_name,email,avatar_path,logo_path,logo_url,signature_path,signature_url,certification_number',
     'id,full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path,logo_path,logo_url,signature_path,certification_number',
     'id,full_name,email,avatar_path,logo_path,logo_url,signature_path,certification_number',
     'id,full_name,email,avatar_path,logo_path,logo_url,certification_number',
@@ -4992,6 +4995,7 @@ async function getProfileContact(profileId: string) {
       logo_path: row.logo_path ?? null,
       logo_url: row.logo_url ?? null,
       signature_path: row.signature_path ?? null,
+      signature_url: row.signature_url ?? null,
     }
   }
 
