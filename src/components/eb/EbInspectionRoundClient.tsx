@@ -4,7 +4,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import {
   ArrowLeft,
   Camera,
@@ -23,6 +23,7 @@ import {
   X,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
+import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import type {
   EbInspectionDocument,
   EbInspectionCheckpoint,
@@ -96,6 +97,12 @@ type EditableParticipant = EbInvitationParticipant & {
 type NoteResponse = {
   note?: EbNote
   error?: string
+}
+
+type NoteAutosavePayload = {
+  noteId: string
+  disciplineId: string | null
+  form: NoteFormState
 }
 
 type DeleteResponse = {
@@ -444,6 +451,10 @@ function formFromNote(note: EbNote): NoteFormState {
     investigationDueDate: note.investigationDueDate ?? '',
     deductionAmount: note.deductionAmount ?? '',
   }
+}
+
+function noteFormFingerprint(form: NoteFormState) {
+  return JSON.stringify(form)
 }
 
 function getNoteLabel(round: EbInspectionRound, note: EbNote | null, nextNumber: number) {
@@ -1023,10 +1034,14 @@ export default function EbInspectionRoundClient({
   const pathname = usePathname()
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const galleryInputRef = useRef<HTMLInputElement | null>(null)
+  const noteRowImageInputRef = useRef<HTMLInputElement | null>(null)
+  const noteRowImageTargetRef = useRef<string | null>(null)
   const notesRef = useRef(initialRound.notes)
   const lastSavedNotesRef = useRef(initialRound.notes)
   const orderSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const orderSaveVersionRef = useRef(0)
+  const noteAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastAutosavedNoteFormRef = useRef<string | null>(null)
   const [round, setRound] = useState(initialRound)
   const initialDiscipline = initialRound.disciplines.find(
     (discipline) => discipline.id === initialDisciplineId
@@ -1039,6 +1054,7 @@ export default function EbInspectionRoundClient({
   const [editingNote, setEditingNote] = useState<EbNote | null>(null)
   const [saving, setSaving] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [uploadingImageNoteId, setUploadingImageNoteId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
   const [orderSaving, setOrderSaving] = useState(false)
@@ -1192,6 +1208,9 @@ export default function EbInspectionRoundClient({
     return () => {
       if (orderSaveTimerRef.current) {
         clearTimeout(orderSaveTimerRef.current)
+      }
+      if (noteAutosaveTimerRef.current) {
+        clearTimeout(noteAutosaveTimerRef.current)
       }
     }
   }, [])
@@ -1518,6 +1537,7 @@ export default function EbInspectionRoundClient({
 
   const resetForm = () => {
     setEditingNote(null)
+    lastAutosavedNoteFormRef.current = null
     setForm(createInitialForm(round))
     setError(null)
   }
@@ -1572,6 +1592,74 @@ export default function EbInspectionRoundClient({
     }))
   }
 
+  const saveNotePatch = useCallback(
+    async (payload: NoteAutosavePayload): Promise<NoteResponse> => {
+      const response = await fetch(`${notesBasePath}/${payload.noteId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...payload.form,
+          disciplineId: payload.disciplineId,
+        }),
+      })
+      const body = (await response.json().catch(() => ({}))) as NoteResponse
+      if (!response.ok || !body.note) {
+        throw new Error(body.error ?? 'Kunde inte autospara noteringen.')
+      }
+      return body
+    },
+    [notesBasePath]
+  )
+
+  const noteAutosave = useAutosaveQueue<NoteAutosavePayload, NoteResponse>({
+    save: saveNotePatch,
+    mergePayload: (_previous, next) => next,
+    onSaved: (payload) => {
+      const savedNote = payload.note
+      if (!savedNote) return
+      upsertNoteInState(savedNote)
+      setEditingNote((current) => (current?.id === savedNote.id ? savedNote : current))
+    },
+    onError: (autosaveError) => {
+      setError(autosaveError instanceof Error ? autosaveError.message : 'Kunde inte autospara noteringen.')
+    },
+  })
+  const {
+    enqueue: enqueueNoteAutosave,
+    resetError: resetNoteAutosaveError,
+    status: noteAutosaveStatus,
+    lastSavedAt: noteAutosaveLastSavedAt,
+  } = noteAutosave
+
+  useEffect(() => {
+    if (noteAutosaveTimerRef.current) {
+      clearTimeout(noteAutosaveTimerRef.current)
+      noteAutosaveTimerRef.current = null
+    }
+
+    if (!editingNote || isLocked) return
+
+    const fingerprint = noteFormFingerprint(form)
+    if (fingerprint === lastAutosavedNoteFormRef.current) return
+
+    noteAutosaveTimerRef.current = setTimeout(() => {
+      lastAutosavedNoteFormRef.current = fingerprint
+      resetNoteAutosaveError()
+      void enqueueNoteAutosave({
+        noteId: editingNote.id,
+        disciplineId: editingNote.disciplineId ?? activeDisciplineId,
+        form,
+      })
+    }, 700)
+
+    return () => {
+      if (noteAutosaveTimerRef.current) {
+        clearTimeout(noteAutosaveTimerRef.current)
+        noteAutosaveTimerRef.current = null
+      }
+    }
+  }, [activeDisciplineId, editingNote, enqueueNoteAutosave, form, isLocked, resetNoteAutosaveError])
+
   const saveCurrentNote = async () => {
     if (isLocked) {
       throw new Error(lockedMessage)
@@ -1596,7 +1684,9 @@ export default function EbInspectionRoundClient({
 
     upsertNoteInState(payload.note)
     setEditingNote(payload.note)
-    setForm(formFromNote(payload.note))
+    const savedForm = formFromNote(payload.note)
+    lastAutosavedNoteFormRef.current = noteFormFingerprint(savedForm)
+    setForm(savedForm)
     return payload.note
   }
 
@@ -1616,13 +1706,15 @@ export default function EbInspectionRoundClient({
   }
 
   const handleEdit = (note: EbNote) => {
+    const nextForm = formFromNote(note)
     setEditingNote(note)
     setEditorOpen(true)
     setActiveDisciplineId(note.disciplineId)
     if (note.disciplineId) {
       router.replace(`${pathname}?disciplineId=${note.disciplineId}`, { scroll: false })
     }
-    setForm(formFromNote(note))
+    lastAutosavedNoteFormRef.current = noteFormFingerprint(nextForm)
+    setForm(nextForm)
     setError(null)
   }
 
@@ -1632,6 +1724,7 @@ export default function EbInspectionRoundClient({
       return
     }
     setEditingNote(null)
+    lastAutosavedNoteFormRef.current = null
     setActiveDisciplineId((current) => current ?? round.disciplines[0]?.id ?? null)
     setForm(createInitialForm(round))
     setError(null)
@@ -1652,7 +1745,7 @@ export default function EbInspectionRoundClient({
     scheduleNoteOrderSave(movedNotes)
   }
 
-  const uploadImage = async (file: File) => {
+  const uploadImage = async (file: File, targetNote?: EbNote) => {
     if (isLocked) {
       setError(lockedMessage)
       return
@@ -1662,8 +1755,9 @@ export default function EbInspectionRoundClient({
     try {
       setUploadingImage(true)
       setError(null)
-      const note = editingNote ?? (await saveCurrentNote())
+      const note = targetNote ?? editingNote ?? (await saveCurrentNote())
       if (!note) return
+      setUploadingImageNoteId(note.id)
       setSaving(false)
 
       const thumbnailFile = await prepareImageForUpload(file)
@@ -1686,6 +1780,7 @@ export default function EbInspectionRoundClient({
     } finally {
       setSaving(false)
       setUploadingImage(false)
+      setUploadingImageNoteId(null)
     }
   }
 
@@ -1694,6 +1789,26 @@ export default function EbInspectionRoundClient({
     event.currentTarget.value = ''
     if (!file) return
     await uploadImage(file)
+  }
+
+  const handleNoteRowImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    const noteId = noteRowImageTargetRef.current
+    noteRowImageTargetRef.current = null
+    if (!file || !noteId) return
+    const note = notesRef.current.find((item) => item.id === noteId)
+    if (!note) return
+    await uploadImage(file, note)
+  }
+
+  const chooseNoteRowImage = (note: EbNote) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
+    noteRowImageTargetRef.current = note.id
+    noteRowImageInputRef.current?.click()
   }
 
   const detachImage = async (image: EbNoteImage) => {
@@ -1789,6 +1904,14 @@ export default function EbInspectionRoundClient({
   }
 
   const vocabulary = resolveEbAgreementVocabulary(round.project.standardAgreement)
+  const noteAutosaveStatusText =
+    editingNote && noteAutosaveStatus === 'saving'
+      ? 'Autosparar...'
+      : editingNote && noteAutosaveStatus === 'error'
+        ? 'Autospar misslyckades'
+        : editingNote && noteAutosaveLastSavedAt
+          ? 'Autosparat'
+          : null
   const addressLine = [round.project.address, round.project.postalCode, round.project.city]
     .filter(Boolean)
     .join(', ')
@@ -1809,6 +1932,13 @@ export default function EbInspectionRoundClient({
   return (
     <Protected>
       <main className="relative min-h-full overflow-hidden">
+        <input
+          ref={noteRowImageInputRef}
+          type="file"
+          accept="image/*"
+          onChange={(event) => void handleNoteRowImageSelected(event)}
+          className="hidden"
+        />
         <div
           className="pointer-events-none absolute inset-0"
           style={{
@@ -2459,7 +2589,7 @@ export default function EbInspectionRoundClient({
 
           <div className="mt-3 min-h-[62vh]">
             <section className="min-w-0 border-y border-emerald-100 bg-white/82 backdrop-blur-sm">
-              <div className="grid grid-cols-[4rem_4rem_7rem_8rem_8rem_1fr_5rem_5rem_3rem] items-center gap-3 border-b border-emerald-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+              <div className="grid grid-cols-[4rem_4rem_7rem_8rem_8rem_1fr_11rem_5rem_3rem] items-center gap-3 border-b border-emerald-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
                 <span>Bet.</span>
                 <span>Nr</span>
                 <span>Status</span>
@@ -2513,7 +2643,7 @@ export default function EbInspectionRoundClient({
                         onKeyDown={(event) => {
                           if (event.key === 'Enter' || event.key === ' ') handleEdit(note)
                         }}
-                        className="grid cursor-pointer grid-cols-[4rem_4rem_7rem_8rem_8rem_1fr_5rem_5rem_3rem] items-center gap-3 px-3 py-2 text-sm transition hover:bg-emerald-50/70"
+                        className="grid cursor-pointer grid-cols-[4rem_4rem_7rem_8rem_8rem_1fr_11rem_5rem_3rem] items-center gap-3 px-3 py-2 text-sm transition hover:bg-emerald-50/70"
                       >
                         <span className="truncate text-sm font-semibold text-amber-900">
                           {note.markerKey || note.responsibleParty || '-'}
@@ -2523,7 +2653,38 @@ export default function EbInspectionRoundClient({
                         <span className="truncate text-gray-700">{note.room || '-'}</span>
                         <span className="truncate text-gray-700">{note.location || '-'}</span>
                         <span className="truncate text-gray-950">{note.noteText}</span>
-                        <span className="text-xs font-medium text-gray-600">{imagesByNoteId.get(note.id)?.length ?? 0} st</span>
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          {(imagesByNoteId.get(note.id) ?? []).slice(0, 3).map((image) => (
+                            <img
+                              key={image.id}
+                              src={image.thumbnailUrl ?? image.publicUrl}
+                              alt={image.label ?? 'Bild'}
+                              loading="lazy"
+                              decoding="async"
+                              className="h-8 w-8 shrink-0 rounded-md border border-emerald-100 object-cover"
+                            />
+                          ))}
+                          <span className="shrink-0 text-xs font-medium text-gray-600">
+                            {imagesByNoteId.get(note.id)?.length ?? 0} st
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              chooseNoteRowImage(note)
+                            }}
+                            disabled={isLocked || uploadingImage}
+                            className="ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            aria-label="LÃ¤gg till bild"
+                            title="LÃ¤gg till bild"
+                          >
+                            {uploadingImage && uploadingImageNoteId === note.id ? (
+                              <Loader2 size={15} className="animate-spin" />
+                            ) : (
+                              <ImageIcon size={15} />
+                            )}
+                          </button>
+                        </div>
                         <div className="flex justify-start gap-1">
                           <button
                             type="button"
@@ -2593,6 +2754,12 @@ export default function EbInspectionRoundClient({
                   </h2>
                 </div>
                 <div className="flex items-center gap-2">
+                  {noteAutosaveStatusText ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                      {noteAutosaveStatus === 'saving' ? <Loader2 size={13} className="animate-spin" /> : null}
+                      {noteAutosaveStatusText}
+                    </span>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => {
@@ -2910,8 +3077,8 @@ export default function EbInspectionRoundClient({
                   disabled={isLocked || saving || round.disciplines.length === 0}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 >
-                  {saving ? <Loader2 size={16} className="animate-spin" /> : editingNote ? <Save size={16} /> : <Plus size={16} />}
-                  {saving ? 'Sparar...' : editingNote ? 'Spara ändring' : 'Skapa notering'}
+                  {saving ? <Loader2 size={16} className="animate-spin" /> : editingNote ? <X size={16} /> : <Plus size={16} />}
+                  {saving ? 'Sparar...' : editingNote ? 'Klar' : 'Skapa notering'}
                 </button>
               </form>
               <aside className="min-h-0 border-l border-emerald-100 bg-emerald-50/20 p-4">
