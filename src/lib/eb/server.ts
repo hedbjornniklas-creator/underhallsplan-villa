@@ -204,6 +204,7 @@ export type EbNoteImage = {
   id: string
   noteId: string | null
   inspectionId: string
+  sourceAttachmentId: string | null
   filePath: string
   thumbnailFilePath: string | null
   label: string | null
@@ -601,6 +602,7 @@ type EbNoteImageRow = {
   id: string
   inspection_id: string
   eb_note_id: string | null
+  source_attachment_id?: string | null
   file_path: string
   thumbnail_file_path?: string | null
   label: string | null
@@ -2148,6 +2150,7 @@ function mapNoteImage(row: EbNoteImageRow, publicUrl: string, thumbnailUrl: stri
     id: row.id,
     noteId: row.eb_note_id ?? null,
     inspectionId: row.inspection_id,
+    sourceAttachmentId: row.source_attachment_id ?? null,
     filePath: row.file_path,
     thumbnailFilePath: row.thumbnail_file_path ?? null,
     label: row.label ?? null,
@@ -2341,7 +2344,7 @@ async function listEbNoteImagesLegacy(input: { inspectionId: string }) {
   )
 }
 
-async function listEbNoteImages(input: { inspectionId: string }) {
+async function listEbNoteImagesWithoutSourceAttachment(input: { inspectionId: string }) {
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
     .from('inspection_images')
@@ -2353,6 +2356,30 @@ async function listEbNoteImages(input: { inspectionId: string }) {
 
   if (error) {
     if (isMissingColumnError(error)) return listEbNoteImagesLegacy(input)
+    throw new Error(error.message ?? 'Kunde inte hämta EB-bilder.')
+  }
+
+  return ((data ?? []) as EbNoteImageRow[]).map((row) => {
+    const publicUrl = admin.storage.from(EB_NOTE_IMAGE_BUCKET).getPublicUrl(row.file_path).data.publicUrl
+    const thumbnailUrl = row.thumbnail_file_path
+      ? admin.storage.from(EB_NOTE_IMAGE_BUCKET).getPublicUrl(row.thumbnail_file_path).data.publicUrl
+      : null
+    return mapNoteImage(row, publicUrl, thumbnailUrl)
+  })
+}
+
+async function listEbNoteImages(input: { inspectionId: string }) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('inspection_images')
+    .select('id,inspection_id,eb_note_id,source_attachment_id,file_path,thumbnail_file_path,label,sort_order,created_at')
+    .eq('inspection_id', input.inspectionId)
+    .like('file_path', `${input.inspectionId}/eb-notes/%`)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    if (isMissingColumnError(error)) return listEbNoteImagesWithoutSourceAttachment(input)
     throw new Error(error.message ?? 'Kunde inte hämta EB-bilder.')
   }
 
@@ -2626,16 +2653,17 @@ export async function getEbInspectionReport(input: {
   inspectionId: string
 }): Promise<EbInspectionReport> {
   const round = await getEbInspectionRound(input)
+  const inspectorProfileId = round.project.ownerProfileId || input.requestedByUserId
   const [participants, storedDraft, inspectionDocuments, inspectorProfile] = await Promise.all([
     listParticipantsForInspection(input),
     fetchEbReportDraft(input),
     listEbInspectionDocuments(input),
-    getProfileContact(input.requestedByUserId),
+    getProfileContact(inspectorProfileId),
   ])
   const resolvedParticipants = enrichParticipantsForReport(round.project, participants)
   const inspectorText = await buildInspectorReportText({
     orgId: input.orgId,
-    profileId: input.requestedByUserId,
+    profileId: inspectorProfileId,
     inspector: inspectorProfile,
   })
   const inspectorLogoUrl = resolveProfileLogoUrl(inspectorProfile)
@@ -2643,12 +2671,12 @@ export async function getEbInspectionReport(input: {
   const inspectorSignatureUrl = resolveProfileSignatureUrl(inspectorProfile)
   const inspectorSignature = await buildInspectorSignatureCard({
     orgId: input.orgId,
-    profileId: input.requestedByUserId,
+    profileId: inspectorProfileId,
     inspector: inspectorProfile,
     reportDate: round.inspection.reportDistributionDate ?? round.inspection.date,
   })
   let ownerLogoUrl: string | null = null
-  if (!inspectorLogoUrl && round.project.ownerProfileId !== input.requestedByUserId) {
+  if (!inspectorLogoUrl && round.project.ownerProfileId !== inspectorProfileId) {
     const ownerProfile = await getProfileContact(round.project.ownerProfileId)
     ownerLogoUrl = resolveProfileLogoUrl(ownerProfile)
   }

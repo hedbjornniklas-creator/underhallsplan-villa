@@ -38,13 +38,19 @@ function normalizeUuid(value: unknown) {
 
 function isMissingColumnError(error: { code?: string | null; message?: string | null; details?: string | null }) {
   const text = `${error.code ?? ''} ${error.message ?? ''} ${error.details ?? ''}`.toLowerCase()
-  return error.code === '42703' || text.includes('thumbnail_file_path')
+  return error.code === '42703' || text.includes('thumbnail_file_path') || text.includes('source_attachment_id')
+}
+
+function isUniqueViolation(error: { code?: string | null; message?: string | null; details?: string | null }) {
+  const text = `${error.code ?? ''} ${error.message ?? ''} ${error.details ?? ''}`.toLowerCase()
+  return error.code === '23505' || text.includes('duplicate key')
 }
 
 function mapImage(row: {
   id: string
   inspection_id: string
   eb_note_id: string | null
+  source_attachment_id?: string | null
   file_path: string
   thumbnail_file_path?: string | null
   label: string | null
@@ -61,6 +67,7 @@ function mapImage(row: {
     id: row.id,
     noteId: row.eb_note_id ?? null,
     inspectionId: row.inspection_id,
+    sourceAttachmentId: row.source_attachment_id ?? null,
     filePath: row.file_path,
     thumbnailFilePath: row.thumbnail_file_path ?? null,
     label: row.label,
@@ -477,6 +484,23 @@ export async function PATCH(
 
         if (!attachmentRow?.id) return jsonError('Entreprenadbilden hittades inte.', 404)
 
+        const imageSelect =
+          'id,inspection_id,eb_note_id,source_attachment_id,file_path,thumbnail_file_path,label,sort_order,created_at'
+        const existingImageResult = await admin
+          .from('inspection_images')
+          .select(imageSelect)
+          .eq('inspection_id', inspectionId)
+          .eq('eb_note_id', noteId)
+          .eq('source_attachment_id', attachmentRow.id)
+          .maybeSingle()
+
+        if (existingImageResult.error && !isMissingColumnError(existingImageResult.error)) {
+          throw new Error(existingImageResult.error.message ?? 'Kunde inte kontrollera befintlig bildkoppling.')
+        }
+        if (existingImageResult.data?.id) {
+          return NextResponse.json({ image: mapImage(existingImageResult.data) })
+        }
+
         const sourceStorage = admin.storage.from(attachmentRow.storage_bucket || EB_PROJECT_ATTACHMENTS_BUCKET)
         const { data: originalBlob, error: downloadError } = await sourceStorage.download(attachmentRow.file_path)
         if (downloadError || !originalBlob) {
@@ -542,12 +566,13 @@ export async function PATCH(
           .insert({
             inspection_id: inspectionId,
             eb_note_id: noteId,
+            source_attachment_id: attachmentRow.id,
             file_path: filePath,
             thumbnail_file_path: uploadedThumbnailPath,
             label: attachmentRow.title ?? attachmentRow.file_name ?? null,
             sort_order: sortOrder,
           })
-          .select('id,inspection_id,eb_note_id,file_path,thumbnail_file_path,label,sort_order,created_at')
+          .select(imageSelect)
           .single()
 
         if (insertError && isMissingColumnError(insertError)) {
@@ -573,6 +598,27 @@ export async function PATCH(
           }
 
           return NextResponse.json({ image: mapImage(fallbackInsertedImage) })
+        }
+
+        if (insertError && isUniqueViolation(insertError)) {
+          const duplicateImageResult = await admin
+            .from('inspection_images')
+            .select(imageSelect)
+            .eq('inspection_id', inspectionId)
+            .eq('eb_note_id', noteId)
+            .eq('source_attachment_id', attachmentRow.id)
+            .maybeSingle()
+
+          if (!duplicateImageResult.error && duplicateImageResult.data?.id) {
+            if (uploadedPath || uploadedThumbnailPath) {
+              await admin.storage
+                .from(EB_NOTE_IMAGE_BUCKET)
+                .remove([uploadedPath, uploadedThumbnailPath].filter((path): path is string => Boolean(path)))
+            }
+            uploadedPath = null
+            uploadedThumbnailPath = null
+            return NextResponse.json({ image: mapImage(duplicateImageResult.data) })
+          }
         }
 
         if (insertError || !insertedImage) {

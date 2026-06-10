@@ -536,6 +536,33 @@ function sortImages(images: EbNoteImage[]) {
   })
 }
 
+function ImageBankThumbnail({
+  src,
+  alt,
+}: {
+  src: string | null | undefined
+  alt: string
+}) {
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        decoding="async"
+        className="aspect-square w-full object-cover"
+      />
+    )
+  }
+
+  return (
+    <div className="flex aspect-square w-full flex-col items-center justify-center gap-1 bg-emerald-50 px-2 text-center text-[11px] font-medium text-gray-500">
+      <ImageIcon size={18} aria-hidden="true" />
+      <span>Miniatyr saknas</span>
+    </div>
+  )
+}
+
 function projectAttachmentTitle(attachment: EbProjectAttachment) {
   return attachment.title || attachment.fileName || 'Entreprenadbild'
 }
@@ -1175,6 +1202,7 @@ export default function EbInspectionRoundClient({
   const documentsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const checkpointsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reportSectionsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingProjectAttachmentCopiesRef = useRef(new Set<string>())
   const lastAutosavedInspectionRef = useRef(inspectionFormFingerprint(inspectionForm))
   const lastAutosavedParticipantsRef = useRef(
     participantsFingerprint(invitationSubject, invitationBody, participants)
@@ -1196,8 +1224,20 @@ export default function EbInspectionRoundClient({
   )
   const imagesByNoteId = useMemo(() => {
     const map = new Map<string, EbNoteImage[]>()
+    const seenByNoteId = new Map<string, Set<string>>()
     for (const image of round.images) {
       if (!image.noteId) continue
+      const imageKey = image.sourceAttachmentId
+        ? `source:${image.sourceAttachmentId}`
+        : image.filePath
+          ? `path:${image.filePath}`
+          : image.label
+            ? `label:${image.label}`
+            : `id:${image.id}`
+      const seen = seenByNoteId.get(image.noteId) ?? new Set<string>()
+      if (seen.has(imageKey)) continue
+      seen.add(imageKey)
+      seenByNoteId.set(image.noteId, seen)
       map.set(image.noteId, [...(map.get(image.noteId) ?? []), image])
     }
     for (const [noteId, images] of map) {
@@ -2373,6 +2413,8 @@ export default function EbInspectionRoundClient({
       return
     }
     if (copyingProjectAttachmentId || movingImageId || uploadingImage) return
+    if (pendingProjectAttachmentCopiesRef.current.has(attachment.id)) return
+    pendingProjectAttachmentCopiesRef.current.add(attachment.id)
 
     try {
       setCopyingProjectAttachmentId(attachment.id)
@@ -2394,6 +2436,7 @@ export default function EbInspectionRoundClient({
     } finally {
       setSaving(false)
       setCopyingProjectAttachmentId(null)
+      pendingProjectAttachmentCopiesRef.current.delete(attachment.id)
     }
   }
 
@@ -3451,26 +3494,25 @@ export default function EbInspectionRoundClient({
                     <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
                       {projectImageAttachments.map((attachment) => {
                         const title = projectAttachmentTitle(attachment)
-                        const imageUrl = attachment.signedThumbnailUrl ?? attachment.signedUrl
-                        if (!imageUrl) return null
+                        const imageUrl = attachment.signedThumbnailUrl
+                        const isCopying = copyingProjectAttachmentId === attachment.id
 
                         return (
                           <button
                             key={attachment.id}
                             type="button"
                             onClick={() => void copyProjectAttachmentToCheckpoint(attachment)}
-                            disabled={isLocked || copyingProjectAttachmentId === attachment.id}
+                            disabled={isLocked || Boolean(copyingProjectAttachmentId)}
                             className="relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-400 disabled:cursor-wait disabled:opacity-60"
                           >
-                            <img
-                              src={imageUrl}
-                              alt={title}
-                              loading="lazy"
-                              decoding="async"
-                              className="aspect-square w-full object-cover"
-                            />
+                            <ImageBankThumbnail src={imageUrl} alt={title} />
+                            {isCopying ? (
+                              <div className="absolute inset-0 flex items-center justify-center bg-white/75">
+                                <Loader2 className="h-5 w-5 animate-spin text-emerald-700" aria-hidden="true" />
+                              </div>
+                            ) : null}
                             <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-emerald-800">
-                              {copyingProjectAttachmentId === attachment.id ? 'Lägger till...' : 'Lägg till'}
+                              {isCopying ? 'Lägger till...' : 'Lägg till'}
                             </span>
                           </button>
                         )
@@ -3498,13 +3540,7 @@ export default function EbInspectionRoundClient({
                         disabled={isLocked || movingImageId === image.id}
                         className="relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-400 disabled:cursor-wait disabled:opacity-60"
                       >
-                        <img
-                          src={image.thumbnailUrl ?? image.publicUrl}
-                          alt={image.label ?? 'Bild'}
-                          loading="lazy"
-                          decoding="async"
-                          className="aspect-square w-full object-cover"
-                        />
+                        <ImageBankThumbnail src={image.thumbnailUrl} alt={image.label ?? 'Bild'} />
                         <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-emerald-800">
                           {movingImageId === image.id ? 'Kopplar...' : 'Koppla'}
                         </span>
@@ -3919,26 +3955,25 @@ export default function EbInspectionRoundClient({
                           <div className={imageViewCount === 1 ? 'grid grid-cols-1 gap-2' : imageViewCount === 4 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-2'}>
                             {projectImageAttachments.map((attachment) => {
                               const title = projectAttachmentTitle(attachment)
-                              const imageUrl = attachment.signedThumbnailUrl ?? attachment.signedUrl
-                              if (!imageUrl) return null
+                              const imageUrl = attachment.signedThumbnailUrl
+                              const isCopying = copyingProjectAttachmentId === attachment.id
 
                               return (
                                 <button
                                   key={attachment.id}
                                   type="button"
                                   onClick={() => void copyProjectAttachmentToNote(attachment)}
-                                  disabled={isLocked || copyingProjectAttachmentId === attachment.id}
+                                  disabled={isLocked || Boolean(copyingProjectAttachmentId)}
                                   className="relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-300 disabled:cursor-wait disabled:opacity-60"
                                 >
-                                  <img
-                                    src={imageUrl}
-                                    alt={title}
-                                    loading="lazy"
-                                    decoding="async"
-                                    className="aspect-square w-full object-cover"
-                                  />
+                                  <ImageBankThumbnail src={imageUrl} alt={title} />
+                                  {isCopying ? (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-white/75">
+                                      <Loader2 className="h-5 w-5 animate-spin text-emerald-700" aria-hidden="true" />
+                                    </div>
+                                  ) : null}
                                   <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-emerald-800">
-                                    {copyingProjectAttachmentId === attachment.id ? 'Lägger till...' : 'Lägg till'}
+                                    {isCopying ? 'Lägger till...' : 'Lägg till'}
                                   </span>
                                 </button>
                               )
@@ -3982,13 +4017,7 @@ export default function EbInspectionRoundClient({
                                     : 'relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-300 disabled:cursor-wait disabled:opacity-60'
                                 }
                               >
-                                <img
-                                  src={image.thumbnailUrl ?? image.publicUrl}
-                                  alt={image.label ?? 'Bild'}
-                                  loading="lazy"
-                                  decoding="async"
-                                  className="aspect-square w-full object-cover"
-                                />
+                                <ImageBankThumbnail src={image.thumbnailUrl} alt={image.label ?? 'Bild'} />
                                 <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-gray-700">
                                   {note ? `${round.project.notePrefix} ${displayNumberByNoteId.get(note.id) ?? note.noteNumber ?? ''}` : 'Okopplad'}
                                 </span>

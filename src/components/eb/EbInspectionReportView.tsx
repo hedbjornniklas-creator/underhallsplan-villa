@@ -1614,7 +1614,13 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
     const seenByNoteId = new Map<string, Set<string>>()
     for (const image of report.images) {
       if (!image.noteId) continue
-      const imageKey = image.filePath || image.publicUrl || image.id
+      const imageKey = image.sourceAttachmentId
+        ? `source:${image.sourceAttachmentId}`
+        : image.filePath
+          ? `path:${image.filePath}`
+          : image.label
+            ? `label:${image.label}`
+            : `id:${image.id}`
       const seen = seenByNoteId.get(image.noteId) ?? new Set<string>()
       if (seen.has(imageKey)) continue
       seen.add(imageKey)
