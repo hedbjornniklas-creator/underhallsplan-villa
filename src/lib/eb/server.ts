@@ -3,6 +3,7 @@ import 'server-only'
 import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import type { StandardTextId } from '@/content/standardtexts/registry'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
+import { formatCertificationDisplayLines } from '@/lib/certifications/display'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
@@ -2563,7 +2564,7 @@ export async function getEbInspectionReport(input: {
     listEbInspectionDocuments(input),
     getProfileContact(input.requestedByUserId),
   ])
-  const resolvedParticipants = participants.length > 0 ? participants : buildDefaultParticipants(round.project)
+  const resolvedParticipants = enrichParticipantsForReport(round.project, participants)
   const inspectorText = await buildInspectorReportText({
     orgId: input.orgId,
     profileId: input.requestedByUserId,
@@ -3732,6 +3733,95 @@ function buildDefaultParticipants(project: EbProjectListItem): EbInvitationParti
   ]
 }
 
+function participantPartyKey(participant: EbInvitationParticipant): EbPartyKey | null {
+  if (participant.representsPartyKey) return participant.representsPartyKey
+  const role = participant.roleLabel?.toLocaleLowerCase('sv-SE') ?? ''
+  if (role.includes('beställ') || role.includes('bestÃ¤ll') || role.includes('konsument')) return 'client'
+  if (
+    role.includes('hantverk') ||
+    role.includes('entrepren') ||
+    role.includes('näringsidk') ||
+    role.includes('nÃ¤ringsidk')
+  ) {
+    return 'contractor'
+  }
+  return null
+}
+
+function textEquals(left: string | null | undefined, right: string | null | undefined) {
+  const normalizedLeft = normalizeText(left)?.toLocaleLowerCase('sv-SE')
+  const normalizedRight = normalizeText(right)?.toLocaleLowerCase('sv-SE')
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight)
+}
+
+function participantProjectPartyKey(
+  project: EbProjectListItem,
+  participant: EbInvitationParticipant
+): EbPartyKey | null {
+  if (
+    textEquals(participant.companyName, project.clientName) ||
+    textEquals(participant.personName, project.clientName) ||
+    textEquals(participant.email, project.clientEmail)
+  ) {
+    return 'client'
+  }
+  if (
+    textEquals(participant.companyName, project.contractorName) ||
+    textEquals(participant.personName, project.contractorName) ||
+    textEquals(participant.email, project.contractorEmail)
+  ) {
+    return 'contractor'
+  }
+  return null
+}
+
+function fillParticipantFromDefault(
+  participant: EbInvitationParticipant,
+  fallback: EbInvitationParticipant | undefined
+) {
+  if (!fallback) return participant
+
+  return {
+    ...participant,
+    roleLabel: participant.roleLabel ?? fallback.roleLabel,
+    companyName: participant.companyName ?? fallback.companyName,
+    personName: participant.personName ?? fallback.personName ?? fallback.companyName,
+    email: participant.email ?? fallback.email,
+    phone: participant.phone ?? fallback.phone,
+    representsPartyKey: participant.representsPartyKey ?? fallback.representsPartyKey,
+    canRepresentParty: participant.canRepresentParty || fallback.canRepresentParty,
+  }
+}
+
+function enrichParticipantsForReport(
+  project: EbProjectListItem,
+  participants: EbInvitationParticipant[]
+): EbInvitationParticipant[] {
+  const defaults = buildDefaultParticipants(project)
+  if (participants.length === 0) return defaults
+
+  const defaultByParty = new Map(
+    defaults
+      .map((participant) => [participant.representsPartyKey, participant] as const)
+      .filter(([party]) => party === 'client' || party === 'contractor')
+  )
+  const usedParties = new Set<EbPartyKey>()
+  const enriched = participants.map((participant) => {
+    const party = participantPartyKey(participant) ?? participantProjectPartyKey(project, participant)
+    if (party) usedParties.add(party)
+    return fillParticipantFromDefault(participant, party ? defaultByParty.get(party) : undefined)
+  })
+
+  for (const fallback of defaults) {
+    const party = fallback.representsPartyKey
+    if ((party === 'client' || party === 'contractor') && !usedParties.has(party)) {
+      enriched.push(fallback)
+    }
+  }
+
+  return enriched.sort((left, right) => left.sortOrder - right.sortOrder)
+}
+
 function reportLine(label: string, value: string | null | undefined) {
   return `${label}: ${normalizeText(value) ?? 'Ej angivet'}`
 }
@@ -4638,7 +4728,7 @@ export async function saveEbReportDraft(input: SaveEbReportDraftInput): Promise<
   await assertEbInspectionEditable(input)
   const round = await getEbInspectionRound(input)
   const participants = await listParticipantsForInspection(input)
-  const resolvedParticipants = participants.length > 0 ? participants : buildDefaultParticipants(round.project)
+  const resolvedParticipants = enrichParticipantsForReport(round.project, participants)
   const [attachments, inspectionDocuments] = await Promise.all([
     listEbProjectAttachments({
       orgId: input.orgId,
@@ -4850,6 +4940,17 @@ async function buildInspectorReportText(input: {
   })
   const certificationName = isObCertificationText(summary.status_name) ? null : summary.status_name
   const membershipName = isObCertificationText(summary.membership_name) ? null : summary.membership_name
+  const credentialRows = formatCertificationDisplayLines(summary.all_selected_items).map((line) =>
+    reportLine('Licens/medlemskap', line)
+  )
+  const fallbackCredentialRows = [
+    certificationName ? reportLine('Certifiering', certificationName) : null,
+    certificationName && summary.certification_number
+      ? reportLine('Certifikatnummer', summary.certification_number)
+      : null,
+    membershipName ? reportLine('Medlemskap', membershipName) : null,
+    membershipName && summary.membership_number ? reportLine('Medlemsnummer', summary.membership_number) : null,
+  ]
 
   return [
     inspector?.full_name ? reportLine('Besiktningsman', inspector.full_name) : null,
@@ -4867,12 +4968,7 @@ async function buildInspectorReportText(input: {
       : null,
     inspector?.phone ? reportLine('Telefon', inspector.phone) : null,
     inspector?.email ? reportLine('E-post', inspector.email) : null,
-    certificationName ? reportLine('Certifiering', certificationName) : null,
-    certificationName && summary.certification_number
-      ? reportLine('Certifikatnummer', summary.certification_number)
-      : null,
-    membershipName ? reportLine('Medlemskap', membershipName) : null,
-    membershipName && summary.membership_number ? reportLine('Medlemsnummer', summary.membership_number) : null,
+    ...(credentialRows.length > 0 ? credentialRows : fallbackCredentialRows),
   ]
     .map(normalizeText)
     .filter(Boolean)
@@ -4906,7 +5002,7 @@ export async function getEbInvitationContext(input: {
 
   const inspector = await getProfileContact(input.requestedByUserId)
   const participants = await listParticipantsForInspection(input)
-  const resolvedParticipants = participants.length > 0 ? participants : buildDefaultParticipants(project)
+  const resolvedParticipants = enrichParticipantsForReport(project, participants)
 
   return {
     project,

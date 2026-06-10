@@ -77,6 +77,31 @@ function groupedCheckpoints(checkpoints: EbInspectionCheckpoint[]) {
   return groups
 }
 
+function printableDrainageCheckpoints(report: EbInspectionReport) {
+  return report.checkpoints.filter((checkpoint) => checkpoint.groupKey !== 'documents')
+}
+
+function numberedCheckpointGroups(checkpoints: EbInspectionCheckpoint[]) {
+  let nextNumber = 1
+  return groupedCheckpoints(checkpoints).map((group) => ({
+    ...group,
+    checkpoints: group.checkpoints.map((checkpoint) => ({
+      checkpoint,
+      number: nextNumber++,
+    })),
+  }))
+}
+
+function checkpointNumberByNoteId(report: EbInspectionReport) {
+  const byNoteId = new Map<string, number>()
+  for (const group of numberedCheckpointGroups(printableDrainageCheckpoints(report))) {
+    for (const item of group.checkpoints) {
+      if (item.checkpoint.noteId) byNoteId.set(item.checkpoint.noteId, item.number)
+    }
+  }
+  return byNoteId
+}
+
 function checkpointStatusLabel(status: EbInspectionCheckpoint['status']) {
   if (status === 'ok') return 'OK'
   if (status === 'deviation') return 'Avvikelse'
@@ -611,8 +636,8 @@ function TestingDocumentationReport({
 }
 
 function DrainageChecklistReport({ report }: { report: EbInspectionReport }) {
-  const printableCheckpoints = report.checkpoints.filter((checkpoint) => checkpoint.groupKey !== 'documents')
-  const groups = groupedCheckpoints(printableCheckpoints)
+  const printableCheckpoints = printableDrainageCheckpoints(report)
+  const groups = numberedCheckpointGroups(printableCheckpoints)
   const hasPhotoRequiredCheckpoints = printableCheckpoints.some((checkpoint) => checkpoint.photoRequired)
 
   return (
@@ -636,13 +661,15 @@ function DrainageChecklistReport({ report }: { report: EbInspectionReport }) {
             <section key={group.key} className="break-inside-avoid">
               <h3 className="mb-1 text-[10pt] font-bold text-black">{group.label}</h3>
               <div className="grid border-t border-l border-black/50">
-                <div className="grid grid-cols-[46mm_24mm_1fr] bg-neutral-100 font-bold">
+                <div className="grid grid-cols-[10mm_42mm_24mm_1fr] bg-neutral-100 font-bold">
+                  <div className="border-r border-b border-black/50 px-1.5 py-1">Nr</div>
                   <div className="border-r border-b border-black/50 px-1.5 py-1">Kontrollpunkt</div>
                   <div className="border-r border-b border-black/50 px-1.5 py-1">Status</div>
                   <div className="border-r border-b border-black/50 px-1.5 py-1">Kommentar</div>
                 </div>
-                {group.checkpoints.map((checkpoint) => (
-                  <div key={checkpoint.id} className="grid grid-cols-[46mm_24mm_1fr]">
+                {group.checkpoints.map(({ checkpoint, number }) => (
+                  <div key={checkpoint.id} className="grid grid-cols-[10mm_42mm_24mm_1fr]">
+                    <div className="border-r border-b border-black/50 px-1.5 py-1">{number}</div>
                     <div className="border-r border-b border-black/50 px-1.5 py-1">
                       <p>{checkpoint.title}</p>
                       {checkpoint.photoRequired ? (
@@ -883,8 +910,8 @@ function DistributionListReport({ report }: { report: EbInspectionReport }) {
             <p className="font-semibold">{inspector.name}</p>
             {inspector.details.length > 0 ? (
               <dl className="grid gap-y-0.5">
-                {inspector.details.map((row) => (
-                  <div key={row.label} className="grid grid-cols-[34mm_1fr] gap-x-2">
+                {inspector.details.map((row, index) => (
+                  <div key={`${row.label}-${index}`} className="grid grid-cols-[34mm_1fr] gap-x-2">
                     <dt>{row.label}:</dt>
                     <dd>{row.value}</dd>
                   </div>
@@ -1060,10 +1087,6 @@ function ReportHeader({
   )
 }
 
-function noteReference(report: EbInspectionReport, index: number) {
-  return `${report.project.notePrefix} ${index + 1}`
-}
-
 function noteNumber(index: number) {
   return String(index + 1)
 }
@@ -1129,16 +1152,14 @@ function NoteTable({
 }
 
 function PhotoAppendixNoteArticle({
-  report,
   note,
-  index,
   images,
+  checkpointNumber,
   showTitle = false,
 }: {
-  report: EbInspectionReport
   note: EbNote
-  index: number
   images: EbNoteImage[]
+  checkpointNumber?: number
   showTitle?: boolean
 }) {
   const location = noteLocationLine(note)
@@ -1148,9 +1169,7 @@ function PhotoAppendixNoteArticle({
       {showTitle ? <h2 className={REPORT_APPENDIX_HEADING_CLASS_NAME}>FOTOBILAGA</h2> : null}
       <article>
         <div className="mb-2 text-[10pt] leading-snug text-black">
-          <p className="font-bold">
-            {noteReference(report, index)} {note.markerKey ? `(${note.markerKey})` : ''}
-          </p>
+          {checkpointNumber ? <p className="font-bold">Kontrollpunkt {checkpointNumber}</p> : null}
           {location !== '-' ? <p>Del/Rum: {location}</p> : null}
           {note.noteText?.trim() ? (
             <p className="whitespace-pre-wrap">Notering: {note.noteText}</p>
@@ -1161,7 +1180,7 @@ function PhotoAppendixNoteArticle({
             <figure key={image.id} className="break-inside-avoid">
               <img
                 src={reportImageSrc(image)}
-                alt={`Bild till ${noteReference(report, index)}`}
+                alt={checkpointNumber ? `Bild till kontrollpunkt ${checkpointNumber}` : 'Bild till notering'}
                 className="h-[62mm] w-full border border-gray-300 object-contain"
               />
             </figure>
@@ -1547,6 +1566,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
     }
     return grouped
   }, [report.images])
+  const checkpointNumberByNote = useMemo(() => checkpointNumberByNoteId(report), [report])
   const reportBlocks = useMemo<EbPrintableBlock[]>(() => {
     const blocks: EbPrintableBlock[] = [
       {
@@ -1671,22 +1691,20 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
     }
 
     notes
-      .map((note, index) => ({
+      .map((note) => ({
         note,
-        index,
         images: imagesByNoteId.get(note.id) ?? [],
       }))
       .filter((item) => item.images.length > 0)
-      .forEach(({ note, index, images }, photoIndex) => {
+      .forEach(({ note, images }, photoIndex) => {
         blocks.push({
           id: `photo-${note.id}`,
           startsNewPage: photoIndex === 0,
           node: (
             <PhotoAppendixNoteArticle
+              checkpointNumber={checkpointNumberByNote.get(note.id)}
               images={images}
-              index={index}
               note={note}
-              report={report}
               showTitle={photoIndex === 0}
             />
           ),
@@ -1694,7 +1712,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
       })
 
     return blocks
-  }, [displayNumberByNoteId, imagesByNoteId, notes, report, reportSections, scopeSection])
+  }, [checkpointNumberByNote, displayNumberByNoteId, imagesByNoteId, notes, report, reportSections, scopeSection])
 
   useEffect(() => {
     const previousTitle = document.title
