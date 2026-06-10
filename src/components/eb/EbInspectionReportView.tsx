@@ -89,7 +89,12 @@ function reportValue(value: string | null | undefined) {
 
 function reportPrintTitle(report: EbInspectionReport) {
   const inspectionDate = report.inspection.date?.trim()
-  return inspectionDate ? `Utlåtande ${inspectionDate}` : 'Utlåtande'
+  const dateMatch = inspectionDate?.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const sequenceNo = Number(report.inspection.sequenceNo)
+  if (dateMatch && Number.isFinite(sequenceNo) && sequenceNo > 0) {
+    return `Utlåtande EB ${dateMatch[1]}-${dateMatch[2]}${dateMatch[3]}-${String(sequenceNo).padStart(2, '0')}`
+  }
+  return inspectionDate ? `Utlåtande EB ${inspectionDate}` : 'Utlåtande EB'
 }
 
 function addressCityLine(postalCode: string | null | undefined, city: string | null | undefined) {
@@ -581,8 +586,9 @@ function TestingDocumentationReport({
 }
 
 function DrainageChecklistReport({ report }: { report: EbInspectionReport }) {
-  const groups = groupedCheckpoints(report.checkpoints)
-  const hasPhotoRequiredCheckpoints = report.checkpoints.some((checkpoint) => checkpoint.photoRequired)
+  const printableCheckpoints = report.checkpoints.filter((checkpoint) => checkpoint.groupKey !== 'documents')
+  const groups = groupedCheckpoints(printableCheckpoints)
+  const hasPhotoRequiredCheckpoints = printableCheckpoints.some((checkpoint) => checkpoint.photoRequired)
 
   return (
     <ReportSection title="Kontrollunderlag dränering">
@@ -1016,6 +1022,15 @@ function noteNumber(index: number) {
   return String(index + 1)
 }
 
+function reportImageSrc(image: EbNoteImage) {
+  const params = new URLSearchParams({
+    url: image.publicUrl,
+    max: '1400',
+    q: '68',
+  })
+  return `/api/image-proxy?${params.toString()}`
+}
+
 function NoteTable({
   notes,
 }: {
@@ -1093,7 +1108,7 @@ function PhotoAppendix({
               {images.map((image) => (
                 <figure key={image.id} className="break-inside-avoid">
                   <img
-                    src={image.publicUrl}
+                    src={reportImageSrc(image)}
                     alt={image.label ?? 'Noteringsbild'}
                     className="h-[62mm] w-full border border-gray-300 object-contain"
                   />
@@ -1119,6 +1134,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
     (section) =>
       section.isRelevant &&
       !HIDDEN_REPORT_SECTION_KEYS.has(section.key) &&
+      !(drainageReport && section.key === 'defects_appendices') &&
       !(drainageReport && (section.key === 'testing_documentation' || section.key === 'contract_documents')) &&
       !(section.key === 'previous_inspections_tests' && report.inspection.previousInspections.every((row) => !row.status && !row.date?.trim())) &&
       section.status !== 'missing' &&

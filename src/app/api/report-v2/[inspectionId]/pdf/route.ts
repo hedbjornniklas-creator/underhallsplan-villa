@@ -51,6 +51,10 @@ type InspectionForPdf = {
   property_id: string | null
 }
 
+type EbInspectionDetailForPdf = {
+  sequence_no: number | null
+}
+
 async function createSignedPdfUrl(
   admin: AdminClient,
   bucket: string,
@@ -173,10 +177,24 @@ export async function GET(
       })
     }
 
+    const ebDetail =
+      String(inspectionRow.inspection_family ?? '').trim().toUpperCase() === 'EB'
+        ? await admin
+            .from('eb_inspection_details')
+            .select('sequence_no')
+            .eq('inspection_id', inspectionId)
+            .maybeSingle()
+        : null
+    if (ebDetail?.error) {
+      return new NextResponse(ebDetail.error.message ?? 'Could not read EB inspection details.', { status: 500 })
+    }
+    const ebSequenceNo = ((ebDetail?.data ?? null) as EbInspectionDetailForPdf | null)?.sequence_no ?? null
+
     const fileName = buildReportPdfFileName({
       assignmentNumber: inspectionRow.assignment_number,
       inspectionDate: inspectionRow.date,
       inspectionFamily: inspectionRow.inspection_family,
+      inspectionSequenceNo: ebSequenceNo,
     })
 
     const { data: linkRows, error: linkError } = await admin

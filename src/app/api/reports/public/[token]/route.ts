@@ -510,22 +510,35 @@ export async function GET(
     )
     const inspectionId = String((data as Record<string, unknown>).inspection_id ?? '').trim()
     let inspectionFamily: string | null = null
+    let inspectionDate: string | null = null
+    let inspectionSequenceNo: number | null = null
     if (inspectionId) {
       const { data: inspection } = await admin
         .from('inspections')
-        .select('assignment_number,inspection_family')
+        .select('assignment_number,inspection_family,date')
         .eq('id', inspectionId)
         .maybeSingle()
       const inspectionRow = inspection as
-        | { assignment_number?: string | null; inspection_family?: string | null }
+        | { assignment_number?: string | null; inspection_family?: string | null; date?: string | null }
         | null
       assignmentNumber =
         assignmentNumber || String(inspectionRow?.assignment_number ?? '').trim() || null
       inspectionFamily = String(inspectionRow?.inspection_family ?? '').trim() || null
+      inspectionDate = String(inspectionRow?.date ?? '').trim() || null
+      if (String(inspectionFamily ?? '').toUpperCase() === 'EB') {
+        const { data: ebDetail } = await admin
+          .from('eb_inspection_details')
+          .select('sequence_no')
+          .eq('inspection_id', inspectionId)
+          .maybeSingle()
+        inspectionSequenceNo = Number((ebDetail as { sequence_no?: number | null } | null)?.sequence_no ?? null)
+      }
     }
     const fileName = buildReportPdfFileName({
       assignmentNumber,
+      inspectionDate,
       inspectionFamily,
+      inspectionSequenceNo,
     })
     const pdfBase64 = String(data.pdf_base64 ?? '').trim()
     const pdfStorageBucket = String((data as Record<string, unknown>).pdf_storage_bucket ?? '').trim()
