@@ -490,7 +490,6 @@ export async function PATCH(
           .from('inspection_images')
           .select(imageSelect)
           .eq('inspection_id', inspectionId)
-          .eq('eb_note_id', noteId)
           .eq('source_attachment_id', attachmentRow.id)
           .maybeSingle()
 
@@ -498,6 +497,22 @@ export async function PATCH(
           throw new Error(existingImageResult.error.message ?? 'Kunde inte kontrollera befintlig bildkoppling.')
         }
         if (existingImageResult.data?.id) {
+          if (!existingImageResult.data.eb_note_id) {
+            const { data: attachedImage, error: attachExistingError } = await admin
+              .from('inspection_images')
+              .update({ eb_note_id: noteId })
+              .eq('id', existingImageResult.data.id)
+              .eq('inspection_id', inspectionId)
+              .select(imageSelect)
+              .single()
+
+            if (attachExistingError || !attachedImage) {
+              throw new Error(attachExistingError?.message ?? 'Kunde inte koppla befintlig bild.')
+            }
+
+            return NextResponse.json({ image: mapImage(attachedImage) })
+          }
+
           return NextResponse.json({ image: mapImage(existingImageResult.data) })
         }
 
@@ -605,7 +620,6 @@ export async function PATCH(
             .from('inspection_images')
             .select(imageSelect)
             .eq('inspection_id', inspectionId)
-            .eq('eb_note_id', noteId)
             .eq('source_attachment_id', attachmentRow.id)
             .maybeSingle()
 
@@ -617,6 +631,19 @@ export async function PATCH(
             }
             uploadedPath = null
             uploadedThumbnailPath = null
+            if (!duplicateImageResult.data.eb_note_id) {
+              const { data: attachedDuplicateImage, error: attachDuplicateError } = await admin
+                .from('inspection_images')
+                .update({ eb_note_id: noteId })
+                .eq('id', duplicateImageResult.data.id)
+                .eq('inspection_id', inspectionId)
+                .select(imageSelect)
+                .single()
+
+              if (!attachDuplicateError && attachedDuplicateImage?.id) {
+                return NextResponse.json({ image: mapImage(attachedDuplicateImage) })
+              }
+            }
             return NextResponse.json({ image: mapImage(duplicateImageResult.data) })
           }
         }

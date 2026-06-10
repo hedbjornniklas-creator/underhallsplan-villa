@@ -368,67 +368,32 @@ function ContractPartiesReport({ report }: { report: EbInspectionReport }) {
   )
 }
 
-function reportFieldValue(text: string, label: string) {
-  const normalizedLabel = label.toLocaleLowerCase('sv-SE')
-  for (const line of printableReportLines(text)) {
-    const row = parseLabelLine(line)
-    if (row?.label.toLocaleLowerCase('sv-SE') === normalizedLabel) {
-      return row.value
-    }
-  }
-  return null
-}
-
-function appointedByPhrase(report: EbInspectionReport, sectionText: string) {
-  if (report.inspection.inspectorAppointedBy === 'client') {
-    return 'utsedd av beställaren'
-  }
-  if (report.inspection.inspectorAppointedBy === 'parties_jointly') {
-    return 'utsedd av parterna gemensamt'
-  }
-  if (report.inspection.inspectorAppointedBy === 'contractor') {
-    const vocabulary = resolveEbAgreementVocabulary(report.project.standardAgreement)
-    const contractor = vocabulary.contractorShortLabel.toLocaleLowerCase('sv-SE')
-    return contractor.startsWith('hantverk') ? 'utsedd av hantverkaren' : 'utsedd av entreprenören'
-  }
-
-  const storedValue = reportFieldValue(sectionText, 'Utsedd av')
-  return storedValue ? `utsedd av ${storedValue.toLocaleLowerCase('sv-SE')}` : '-'
-}
-
 function InspectorReport({
-  report,
   section,
 }: {
-  report: EbInspectionReport
   section: EbInspectionReport['reportDraft']['sections'][number]
 }) {
   const rows = printableReportLines(section.text)
     .map(parseLabelLine)
     .filter((row): row is NonNullable<ReturnType<typeof parseLabelLine>> => Boolean(row))
-  const inspectorName = rows.find((row) => row.label === 'Besiktningsman')?.value ?? '-'
-  const detailRows = rows.filter((row) => row.label !== 'Besiktningsman' && row.label !== 'Utsedd av')
+  const valueFor = (label: string) =>
+    rows.find((row) => row.label.toLocaleLowerCase('sv-SE') === label.toLocaleLowerCase('sv-SE'))?.value
+  const contactRows = [
+    { label: 'Namn', value: valueFor('Besiktningsman') ?? '-' },
+    { label: 'E-post', value: valueFor('E-post') ?? '-' },
+    { label: 'Telefonnummer', value: valueFor('Telefonnummer') ?? valueFor('Telefon') ?? '-' },
+  ]
 
   return (
     <ReportSection title={section.title} headingMarker>
-      <div className="space-y-2 text-[10.5pt] leading-[1.35] text-black">
-        <div className="grid grid-cols-[34mm_1fr_1fr] gap-x-4">
-          <div>Besiktningsman:</div>
-          <div>{inspectorName}</div>
-          <div>{appointedByPhrase(report, section.text)}</div>
-        </div>
-
-        {detailRows.length > 0 ? (
-          <dl className="grid grid-cols-[34mm_1fr] gap-x-4 gap-y-0.5">
-            {detailRows.map((row, index) => (
-              <div key={`${row.label}-${index}`} className="contents">
-                <dt>{row.label}:</dt>
-                <dd>{row.value}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : null}
-      </div>
+      <dl className="grid grid-cols-[34mm_1fr] gap-x-4 gap-y-0.5 text-[10.5pt] leading-[1.35] text-black">
+        {contactRows.map((row) => (
+          <div key={row.label} className="contents">
+            <dt>{row.label}:</dt>
+            <dd>{row.value}</dd>
+          </div>
+        ))}
+      </dl>
     </ReportSection>
   )
 }
@@ -1150,6 +1115,13 @@ function reportImageSrc(image: EbNoteImage) {
   return `/api/image-proxy?${params.toString()}`
 }
 
+function photoImageDedupKey(image: EbNoteImage) {
+  if (image.sourceAttachmentId) return `source:${image.sourceAttachmentId}`
+  if (image.label?.trim()) return `label:${image.label.trim().toLocaleLowerCase('sv-SE')}`
+  if (image.filePath) return `path:${image.filePath}`
+  return `id:${image.id}`
+}
+
 function noteLocationLine(note: EbNote) {
   return detailLine([note.room, note.location, note.placeDetail])
 }
@@ -1225,13 +1197,13 @@ function PhotoAppendixNoteArticle({
             <p className="whitespace-pre-wrap">Notering: {note.noteText}</p>
           ) : null}
         </div>
-        <div className="flex flex-wrap justify-center gap-x-6 gap-y-5">
+        <div className="flex flex-wrap justify-start gap-x-6 gap-y-5">
           {images.map((image) => (
-            <figure key={image.id} className="flex w-[78mm] break-inside-avoid items-center justify-center">
+            <figure key={image.id} className="flex h-[62mm] w-[78mm] break-inside-avoid items-center justify-start">
               <img
                 src={reportImageSrc(image)}
                 alt={checkpointNumber ? `Bild till kontrollpunkt ${checkpointNumber}` : 'Bild till notering'}
-                className="mx-auto h-[62mm] max-w-full object-contain"
+                className="max-h-full max-w-full object-contain"
               />
             </figure>
           ))}
@@ -1656,7 +1628,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
       if (section.key === 'inspectors') {
         blocks.push({
           id: `section-${section.key}`,
-          node: <InspectorReport report={report} section={section} />,
+          node: <InspectorReport section={section} />,
         })
         continue
       }
@@ -1779,10 +1751,16 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
     }
 
     let photoBlockIndex = 0
+    const usedPhotoImageKeys = new Set<string>()
     notes
       .map((note) => ({
         note,
-        images: imagesByNoteId.get(note.id) ?? [],
+        images: (imagesByNoteId.get(note.id) ?? []).filter((image) => {
+          const key = photoImageDedupKey(image)
+          if (usedPhotoImageKeys.has(key)) return false
+          usedPhotoImageKeys.add(key)
+          return true
+        }),
       }))
       .filter((item) => item.images.length > 0)
       .forEach(({ note, images }) => {

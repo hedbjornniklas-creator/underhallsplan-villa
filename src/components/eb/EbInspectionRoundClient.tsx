@@ -536,6 +536,25 @@ function sortImages(images: EbNoteImage[]) {
   })
 }
 
+function proxiedImageSrc(url: string | null | undefined, max = 420, quality = 68) {
+  const trimmedUrl = url?.trim()
+  if (!trimmedUrl) return null
+  const params = new URLSearchParams({
+    url: trimmedUrl,
+    max: String(max),
+    q: String(quality),
+  })
+  return `/api/image-proxy?${params.toString()}`
+}
+
+function imagePreviewSrc(image: EbNoteImage) {
+  return image.thumbnailUrl ?? proxiedImageSrc(image.publicUrl) ?? image.publicUrl
+}
+
+function projectAttachmentPreviewSrc(attachment: EbProjectAttachment) {
+  return attachment.signedThumbnailUrl ?? proxiedImageSrc(attachment.signedUrl) ?? attachment.signedUrl
+}
+
 function ImageBankThumbnail({
   src,
   alt,
@@ -1253,6 +1272,15 @@ export default function EbInspectionRoundClient({
       ),
     [round.projectAttachments]
   )
+  const linkedProjectAttachmentIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const image of round.images) {
+      if (image.noteId && image.sourceAttachmentId) {
+        ids.add(image.sourceAttachmentId)
+      }
+    }
+    return ids
+  }, [round.images])
   const checkpointGroups = useMemo(() => groupedCheckpoints(checkpoints), [checkpoints])
   const imageBankImages = useMemo(
     () => allImages.filter((image) => showLinkedImages || !image.noteId),
@@ -2065,14 +2093,32 @@ export default function EbInspectionRoundClient({
   const upsertImageInState = (image: EbNoteImage) => {
     setRound((current) => ({
       ...current,
-      images: sortImages([...current.images.filter((item) => item.id !== image.id), image]),
+      images: sortImages([
+        ...current.images.filter((item) => item.id !== image.id),
+        {
+          ...image,
+          sourceAttachmentId:
+            image.sourceAttachmentId ??
+            current.images.find((item) => item.id === image.id)?.sourceAttachmentId ??
+            null,
+        },
+      ]),
     }))
   }
 
   const updateImageInState = (image: EbNoteImage) => {
     setRound((current) => ({
       ...current,
-      images: sortImages(current.images.map((item) => (item.id === image.id ? image : item))),
+      images: sortImages(
+        current.images.map((item) =>
+          item.id === image.id
+            ? {
+                ...image,
+                sourceAttachmentId: image.sourceAttachmentId ?? item.sourceAttachmentId,
+              }
+            : item
+        )
+      ),
     }))
   }
 
@@ -2431,6 +2477,9 @@ export default function EbInspectionRoundClient({
         throw new Error(payload.error ?? 'Kunde inte lägga till entreprenadbilden.')
       }
       upsertImageInState(payload.image)
+      if (payload.image.noteId && payload.image.noteId !== note.id) {
+        setError('Bilden är redan kopplad till en annan kontrollpunkt.')
+      }
     } catch (copyError) {
       setError(copyError instanceof Error ? copyError.message : 'Kunde inte lägga till entreprenadbilden.')
     } finally {
@@ -2477,6 +2526,39 @@ export default function EbInspectionRoundClient({
       updateImageInState(payload.image)
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte koppla loss bilden.')
+    } finally {
+      setDeletingImageId(null)
+    }
+  }
+
+  const deleteImage = async (image: EbNoteImage) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
+    const noteId = image.noteId ?? editingNote?.id ?? null
+    if (!noteId || deletingImageId) return
+    const confirmed = window.confirm('Radera bilden? Bildfilen tas också bort.')
+    if (!confirmed) return
+
+    try {
+      setDeletingImageId(image.id)
+      setError(null)
+      const response = await fetch(`${notesBasePath}/${noteId}/images`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageId: image.id }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as DeleteResponse
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? 'Kunde inte radera bilden.')
+      }
+      setRound((current) => ({
+        ...current,
+        images: current.images.filter((item) => item.id !== image.id),
+      }))
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera bilden.')
     } finally {
       setDeletingImageId(null)
     }
@@ -2955,14 +3037,25 @@ export default function EbInspectionRoundClient({
                                 {checkpointImages.length > 0 ? (
                                   <div className="grid grid-cols-3 gap-1">
                                     {checkpointImages.slice(0, 3).map((image) => (
-                                      <img
-                                        key={image.id}
-                                        src={image.thumbnailUrl ?? image.publicUrl}
-                                        alt={image.label ?? 'Foto'}
-                                        loading="lazy"
-                                        decoding="async"
-                                        className="aspect-square w-full rounded-md border border-emerald-100 object-cover"
-                                      />
+                                      <div key={image.id} className="relative overflow-hidden rounded-md border border-emerald-100">
+                                        <img
+                                          src={imagePreviewSrc(image)}
+                                          alt={image.label ?? 'Foto'}
+                                          loading="lazy"
+                                          decoding="async"
+                                          className="aspect-square w-full object-cover"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => void deleteImage(image)}
+                                          disabled={isLocked || deletingImageId === image.id}
+                                          className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                                          aria-label="Radera bild"
+                                          title="Radera bild"
+                                        >
+                                          {deletingImageId === image.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                        </button>
+                                      </div>
                                     ))}
                                   </div>
                                 ) : (
@@ -3356,7 +3449,7 @@ export default function EbInspectionRoundClient({
                           {(imagesByNoteId.get(note.id) ?? []).slice(0, 3).map((image) => (
                             <img
                               key={image.id}
-                              src={image.thumbnailUrl ?? image.publicUrl}
+                              src={imagePreviewSrc(image)}
                               alt={image.label ?? 'Bild'}
                               loading="lazy"
                               decoding="async"
@@ -3494,15 +3587,16 @@ export default function EbInspectionRoundClient({
                     <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
                       {projectImageAttachments.map((attachment) => {
                         const title = projectAttachmentTitle(attachment)
-                        const imageUrl = attachment.signedThumbnailUrl
+                        const imageUrl = projectAttachmentPreviewSrc(attachment)
                         const isCopying = copyingProjectAttachmentId === attachment.id
+                        const isLinked = linkedProjectAttachmentIds.has(attachment.id)
 
                         return (
                           <button
                             key={attachment.id}
                             type="button"
                             onClick={() => void copyProjectAttachmentToCheckpoint(attachment)}
-                            disabled={isLocked || Boolean(copyingProjectAttachmentId)}
+                            disabled={isLocked || Boolean(copyingProjectAttachmentId) || isLinked}
                             className="relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-400 disabled:cursor-wait disabled:opacity-60"
                           >
                             <ImageBankThumbnail src={imageUrl} alt={title} />
@@ -3512,7 +3606,7 @@ export default function EbInspectionRoundClient({
                               </div>
                             ) : null}
                             <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-emerald-800">
-                              {isCopying ? 'Lägger till...' : 'Lägg till'}
+                              {isLinked ? 'Redan kopplad' : isCopying ? 'Lägger till...' : 'Lägg till'}
                             </span>
                           </button>
                         )
@@ -3540,7 +3634,7 @@ export default function EbInspectionRoundClient({
                         disabled={isLocked || movingImageId === image.id}
                         className="relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-400 disabled:cursor-wait disabled:opacity-60"
                       >
-                        <ImageBankThumbnail src={image.thumbnailUrl} alt={image.label ?? 'Bild'} />
+                        <ImageBankThumbnail src={imagePreviewSrc(image)} alt={image.label ?? 'Bild'} />
                         <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-emerald-800">
                           {movingImageId === image.id ? 'Kopplar...' : 'Koppla'}
                         </span>
@@ -3749,22 +3843,34 @@ export default function EbInspectionRoundClient({
                       {(imagesByNoteId.get(editingNote.id) ?? []).slice(0, imageViewCount).map((image) => (
                         <div key={image.id} className="relative overflow-hidden rounded-md border border-emerald-100 bg-white">
                           <img
-                            src={image.thumbnailUrl ?? image.publicUrl}
+                            src={imagePreviewSrc(image)}
                             alt={image.label ?? 'Bild'}
                             loading="lazy"
                             decoding="async"
                             className="aspect-square w-full object-cover"
                           />
-                          <button
-                            type="button"
-                            onClick={() => void detachImage(image)}
-                            disabled={isLocked || deletingImageId === image.id}
-                            className="absolute right-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-                            aria-label="Koppla loss bild"
-                            title="Koppla loss"
-                          >
-                            {deletingImageId === image.id ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
-                          </button>
+                          <div className="absolute right-1 top-1 flex flex-col gap-1">
+                            <button
+                              type="button"
+                              onClick={() => void detachImage(image)}
+                              disabled={isLocked || deletingImageId === image.id}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-emerald-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                              aria-label="Koppla loss bild"
+                              title="Koppla loss"
+                            >
+                              {deletingImageId === image.id ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void deleteImage(image)}
+                              disabled={isLocked || deletingImageId === image.id}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                              aria-label="Radera bild"
+                              title="Radera bild"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -3955,15 +4061,16 @@ export default function EbInspectionRoundClient({
                           <div className={imageViewCount === 1 ? 'grid grid-cols-1 gap-2' : imageViewCount === 4 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-2'}>
                             {projectImageAttachments.map((attachment) => {
                               const title = projectAttachmentTitle(attachment)
-                              const imageUrl = attachment.signedThumbnailUrl
+                              const imageUrl = projectAttachmentPreviewSrc(attachment)
                               const isCopying = copyingProjectAttachmentId === attachment.id
+                              const isLinked = linkedProjectAttachmentIds.has(attachment.id)
 
                               return (
                                 <button
                                   key={attachment.id}
                                   type="button"
                                   onClick={() => void copyProjectAttachmentToNote(attachment)}
-                                  disabled={isLocked || Boolean(copyingProjectAttachmentId)}
+                                  disabled={isLocked || Boolean(copyingProjectAttachmentId) || isLinked}
                                   className="relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-300 disabled:cursor-wait disabled:opacity-60"
                                 >
                                   <ImageBankThumbnail src={imageUrl} alt={title} />
@@ -3973,7 +4080,7 @@ export default function EbInspectionRoundClient({
                                     </div>
                                   ) : null}
                                   <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-emerald-800">
-                                    {isCopying ? 'Lägger till...' : 'Lägg till'}
+                                    {isLinked ? 'Redan kopplad' : isCopying ? 'Lägger till...' : 'Lägg till'}
                                   </span>
                                 </button>
                               )
@@ -4017,7 +4124,7 @@ export default function EbInspectionRoundClient({
                                     : 'relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-300 disabled:cursor-wait disabled:opacity-60'
                                 }
                               >
-                                <ImageBankThumbnail src={image.thumbnailUrl} alt={image.label ?? 'Bild'} />
+                                <ImageBankThumbnail src={imagePreviewSrc(image)} alt={image.label ?? 'Bild'} />
                                 <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-gray-700">
                                   {note ? `${round.project.notePrefix} ${displayNumberByNoteId.get(note.id) ?? note.noteNumber ?? ''}` : 'Okopplad'}
                                 </span>
