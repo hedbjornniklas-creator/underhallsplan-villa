@@ -26,6 +26,9 @@ type AttachmentEditState = {
 const IMAGE_UPLOAD_MAX_EDGE = 1600
 const IMAGE_UPLOAD_JPEG_QUALITY = 0.72
 const IMAGE_UPLOAD_REENCODE_THRESHOLD_BYTES = 900 * 1024
+const IMAGE_THUMBNAIL_MAX_EDGE = 420
+const IMAGE_THUMBNAIL_JPEG_QUALITY = 0.68
+const IMAGE_THUMBNAIL_REENCODE_THRESHOLD_BYTES = 120 * 1024
 
 function buildAttachmentEditState(attachment: EbProjectAttachment): AttachmentEditState {
   return {
@@ -79,13 +82,23 @@ function loadImageFromFile(file: File) {
   })
 }
 
-function canvasToJpegBlob(canvas: HTMLCanvasElement) {
+function canvasToJpegBlob(canvas: HTMLCanvasElement, quality = IMAGE_UPLOAD_JPEG_QUALITY) {
   return new Promise<Blob | null>((resolve) => {
-    canvas.toBlob(resolve, 'image/jpeg', IMAGE_UPLOAD_JPEG_QUALITY)
+    canvas.toBlob(resolve, 'image/jpeg', quality)
   })
 }
 
-async function prepareImageForUpload(file: File) {
+async function prepareImageForUpload(
+  file: File,
+  options: {
+    maxEdge?: number
+    quality?: number
+    reencodeThresholdBytes?: number
+  } = {}
+) {
+  const maxEdge = options.maxEdge ?? IMAGE_UPLOAD_MAX_EDGE
+  const quality = options.quality ?? IMAGE_UPLOAD_JPEG_QUALITY
+  const reencodeThresholdBytes = options.reencodeThresholdBytes ?? IMAGE_UPLOAD_REENCODE_THRESHOLD_BYTES
   const contentType = file.type.toLowerCase()
   if (
     typeof document === 'undefined' ||
@@ -107,10 +120,10 @@ async function prepareImageForUpload(file: File) {
     const sourceHeight = image.naturalHeight
     if (sourceWidth <= 0 || sourceHeight <= 0) return file
 
-    const scale = Math.min(1, IMAGE_UPLOAD_MAX_EDGE / Math.max(sourceWidth, sourceHeight))
+    const scale = Math.min(1, maxEdge / Math.max(sourceWidth, sourceHeight))
     const shouldResize = scale < 1
     const shouldReencode =
-      file.size > IMAGE_UPLOAD_REENCODE_THRESHOLD_BYTES || contentType !== 'image/jpeg'
+      file.size > reencodeThresholdBytes || contentType !== 'image/jpeg'
     if (!shouldResize && !shouldReencode) return file
 
     const targetWidth = Math.max(1, Math.round(sourceWidth * scale))
@@ -122,7 +135,7 @@ async function prepareImageForUpload(file: File) {
     if (!context) return file
 
     context.drawImage(image, 0, 0, targetWidth, targetHeight)
-    const blob = await canvasToJpegBlob(canvas)
+    const blob = await canvasToJpegBlob(canvas, quality)
     if (!blob || blob.size >= file.size * 0.98) return file
 
     return new File([blob], imageFileNameAsJpeg(file.name), {
@@ -133,6 +146,20 @@ async function prepareImageForUpload(file: File) {
     return file
   } finally {
     if (objectUrl) URL.revokeObjectURL(objectUrl)
+  }
+}
+
+async function prepareImageFilesForUpload(file: File) {
+  const uploadFile = await prepareImageForUpload(file)
+  const thumbnailFile = await prepareImageForUpload(uploadFile, {
+    maxEdge: IMAGE_THUMBNAIL_MAX_EDGE,
+    quality: IMAGE_THUMBNAIL_JPEG_QUALITY,
+    reencodeThresholdBytes: IMAGE_THUMBNAIL_REENCODE_THRESHOLD_BYTES,
+  })
+
+  return {
+    uploadFile,
+    thumbnailFile: thumbnailFile !== uploadFile ? thumbnailFile : null,
   }
 }
 
@@ -295,12 +322,13 @@ export default function EbProjectAttachmentsPanel({
       setError(null)
 
       for (const file of uploadFiles) {
-        const thumbnailFile = attachmentType === 'image' ? await prepareImageForUpload(file) : file
+        const preparedImageFiles =
+          attachmentType === 'image' ? await prepareImageFilesForUpload(file) : null
         const formData = new FormData()
         formData.set('attachmentType', attachmentType)
-        formData.set('file', file)
-        if (attachmentType === 'image' && thumbnailFile !== file) {
-          formData.set('thumbnail', thumbnailFile)
+        formData.set('file', preparedImageFiles?.uploadFile ?? file)
+        if (preparedImageFiles?.thumbnailFile) {
+          formData.set('thumbnail', preparedImageFiles.thumbnailFile)
         }
 
         const response = await fetch(`/api/eb/projects/${projectId}/attachments`, {

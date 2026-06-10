@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
+import sharp from 'sharp'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { assertEbInspectionEditable, EB_NOTE_IMAGE_BUCKET, EB_PROJECT_ATTACHMENTS_BUCKET } from '@/lib/eb/server'
@@ -9,6 +10,10 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+const COPIED_IMAGE_MAX_EDGE = 1600
+const COPIED_IMAGE_JPEG_QUALITY = 72
+const COPIED_IMAGE_THUMBNAIL_MAX_EDGE = 420
+const COPIED_IMAGE_THUMBNAIL_JPEG_QUALITY = 68
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 type ProjectAttachmentImageRow = {
@@ -100,6 +105,32 @@ function resolveStoredImageContentType(contentType: string | null | undefined, b
   const blobType = String(blob.type ?? '').trim().toLowerCase()
   if (blobType.startsWith('image/')) return blobType
   return 'image/jpeg'
+}
+
+async function prepareCopiedImageBuffer(
+  sourceBuffer: Buffer,
+  options: { maxEdge: number; quality: number }
+) {
+  try {
+    const body = await sharp(sourceBuffer, { failOn: 'none' })
+      .rotate()
+      .resize({
+        width: options.maxEdge,
+        height: options.maxEdge,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: options.quality, mozjpeg: true })
+      .toBuffer()
+
+    return {
+      body,
+      contentType: 'image/jpeg',
+      extension: 'jpg',
+    }
+  } catch {
+    return null
+  }
 }
 
 async function loadNextImageSortOrder(
@@ -452,15 +483,27 @@ export async function PATCH(
           throw new Error(downloadError?.message ?? 'Kunde inte läsa bildfilen.')
         }
         if (originalBlob.size <= 0) return jsonError('Tom bildfil kan inte kopieras.', 400)
+        const originalBuffer = Buffer.from(await originalBlob.arrayBuffer())
+        const optimizedImage = await prepareCopiedImageBuffer(originalBuffer, {
+          maxEdge: COPIED_IMAGE_MAX_EDGE,
+          quality: COPIED_IMAGE_JPEG_QUALITY,
+        })
+        const shouldUseOptimizedImage =
+          Boolean(optimizedImage) && optimizedImage!.body.byteLength < originalBlob.size * 0.98
 
         const sortOrder = await loadNextImageSortOrder(admin, inspectionId, noteId)
         const capturedAt = new Date().toISOString()
-        const extension = resolveStoredImageExtension(attachmentRow.file_path, attachmentRow.content_type)
+        const extension = shouldUseOptimizedImage
+          ? optimizedImage!.extension
+          : resolveStoredImageExtension(attachmentRow.file_path, attachmentRow.content_type)
         const fileName = `${Date.now()}-${randomUUID().slice(0, 8)}.${extension}`
         const filePath = `${inspectionId}/eb-notes/${noteId}/${capturedAt.slice(0, 10)}/${fileName}`
-        const contentType = resolveStoredImageContentType(attachmentRow.content_type, originalBlob)
+        const contentType = shouldUseOptimizedImage
+          ? optimizedImage!.contentType
+          : resolveStoredImageContentType(attachmentRow.content_type, originalBlob)
+        const fileBody = shouldUseOptimizedImage ? optimizedImage!.body : originalBlob
 
-        const { error: uploadError } = await admin.storage.from(EB_NOTE_IMAGE_BUCKET).upload(filePath, originalBlob, {
+        const { error: uploadError } = await admin.storage.from(EB_NOTE_IMAGE_BUCKET).upload(filePath, fileBody, {
           cacheControl: '3600',
           upsert: false,
           contentType,
@@ -471,28 +514,27 @@ export async function PATCH(
         }
         uploadedPath = filePath
 
-        const thumbnailPath = attachmentRow.thumbnail_file_path
+        const thumbnailImage = await prepareCopiedImageBuffer(originalBuffer, {
+          maxEdge: COPIED_IMAGE_THUMBNAIL_MAX_EDGE,
+          quality: COPIED_IMAGE_THUMBNAIL_JPEG_QUALITY,
+        })
+        const thumbnailPath = thumbnailImage
           ? `${inspectionId}/eb-notes/${noteId}/${capturedAt.slice(0, 10)}/thumb-${fileName.replace(/\.[^.]+$/, '.jpg')}`
           : null
 
-        if (attachmentRow.thumbnail_file_path && thumbnailPath) {
-          const { data: thumbnailBlob, error: thumbnailDownloadError } = await sourceStorage.download(
-            attachmentRow.thumbnail_file_path
-          )
-          if (!thumbnailDownloadError && thumbnailBlob) {
-            const { error: thumbnailUploadError } = await admin.storage
-              .from(EB_NOTE_IMAGE_BUCKET)
-              .upload(thumbnailPath, thumbnailBlob, {
-                cacheControl: '3600',
-                upsert: false,
-                contentType: thumbnailBlob.type || 'image/jpeg',
-              })
+        if (thumbnailImage && thumbnailPath) {
+          const { error: thumbnailUploadError } = await admin.storage
+            .from(EB_NOTE_IMAGE_BUCKET)
+            .upload(thumbnailPath, thumbnailImage.body, {
+              cacheControl: '3600',
+              upsert: false,
+              contentType: thumbnailImage.contentType,
+            })
 
-            if (thumbnailUploadError) {
-              throw new Error(thumbnailUploadError.message ?? 'Kunde inte kopiera miniatyrbilden.')
-            }
-            uploadedThumbnailPath = thumbnailPath
+          if (thumbnailUploadError) {
+            throw new Error(thumbnailUploadError.message ?? 'Kunde inte kopiera miniatyrbilden.')
           }
+          uploadedThumbnailPath = thumbnailPath
         }
 
         const { data: insertedImage, error: insertError } = await admin

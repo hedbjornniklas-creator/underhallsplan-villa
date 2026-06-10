@@ -64,6 +64,9 @@ type ImageResponse = {
 const IMAGE_UPLOAD_MAX_EDGE = 1600
 const IMAGE_UPLOAD_JPEG_QUALITY = 0.72
 const IMAGE_UPLOAD_REENCODE_THRESHOLD_BYTES = 900 * 1024
+const IMAGE_THUMBNAIL_MAX_EDGE = 420
+const IMAGE_THUMBNAIL_JPEG_QUALITY = 0.68
+const IMAGE_THUMBNAIL_REENCODE_THRESHOLD_BYTES = 120 * 1024
 
 function inputClassName() {
   return 'w-full rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-950 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100'
@@ -173,13 +176,23 @@ function loadImageFromFile(file: File) {
   })
 }
 
-function canvasToJpegBlob(canvas: HTMLCanvasElement) {
+function canvasToJpegBlob(canvas: HTMLCanvasElement, quality = IMAGE_UPLOAD_JPEG_QUALITY) {
   return new Promise<Blob | null>((resolve) => {
-    canvas.toBlob(resolve, 'image/jpeg', IMAGE_UPLOAD_JPEG_QUALITY)
+    canvas.toBlob(resolve, 'image/jpeg', quality)
   })
 }
 
-async function prepareImageForUpload(file: File) {
+async function prepareImageForUpload(
+  file: File,
+  options: {
+    maxEdge?: number
+    quality?: number
+    reencodeThresholdBytes?: number
+  } = {}
+) {
+  const maxEdge = options.maxEdge ?? IMAGE_UPLOAD_MAX_EDGE
+  const quality = options.quality ?? IMAGE_UPLOAD_JPEG_QUALITY
+  const reencodeThresholdBytes = options.reencodeThresholdBytes ?? IMAGE_UPLOAD_REENCODE_THRESHOLD_BYTES
   const contentType = file.type.toLowerCase()
   if (
     typeof document === 'undefined' ||
@@ -201,10 +214,10 @@ async function prepareImageForUpload(file: File) {
     const sourceHeight = image.naturalHeight
     if (sourceWidth <= 0 || sourceHeight <= 0) return file
 
-    const scale = Math.min(1, IMAGE_UPLOAD_MAX_EDGE / Math.max(sourceWidth, sourceHeight))
+    const scale = Math.min(1, maxEdge / Math.max(sourceWidth, sourceHeight))
     const shouldResize = scale < 1
     const shouldReencode =
-      file.size > IMAGE_UPLOAD_REENCODE_THRESHOLD_BYTES || contentType !== 'image/jpeg'
+      file.size > reencodeThresholdBytes || contentType !== 'image/jpeg'
     if (!shouldResize && !shouldReencode) return file
 
     const targetWidth = Math.max(1, Math.round(sourceWidth * scale))
@@ -216,7 +229,7 @@ async function prepareImageForUpload(file: File) {
     if (!context) return file
 
     context.drawImage(image, 0, 0, targetWidth, targetHeight)
-    const blob = await canvasToJpegBlob(canvas)
+    const blob = await canvasToJpegBlob(canvas, quality)
     if (!blob || blob.size >= file.size * 0.98) return file
 
     return new File([blob], imageFileNameAsJpeg(file.name), {
@@ -227,6 +240,20 @@ async function prepareImageForUpload(file: File) {
     return file
   } finally {
     if (objectUrl) URL.revokeObjectURL(objectUrl)
+  }
+}
+
+async function prepareImageFilesForUpload(file: File) {
+  const uploadFile = await prepareImageForUpload(file)
+  const thumbnailFile = await prepareImageForUpload(uploadFile, {
+    maxEdge: IMAGE_THUMBNAIL_MAX_EDGE,
+    quality: IMAGE_THUMBNAIL_JPEG_QUALITY,
+    reencodeThresholdBytes: IMAGE_THUMBNAIL_REENCODE_THRESHOLD_BYTES,
+  })
+
+  return {
+    uploadFile,
+    thumbnailFile: thumbnailFile !== uploadFile ? thumbnailFile : null,
   }
 }
 
@@ -585,11 +612,11 @@ export default function EbInspectionMobileRoundClient({
       const note = editingNote ?? (await saveCurrentNote())
       setSaving(false)
       setImageUploadStatus('Optimerar bild...')
-      const thumbnailFile = await prepareImageForUpload(file)
+      const { uploadFile, thumbnailFile } = await prepareImageFilesForUpload(file)
       setImageUploadStatus('Laddar upp bild...')
       const formData = new FormData()
-      formData.append('file', file)
-      if (thumbnailFile !== file) {
+      formData.append('file', uploadFile)
+      if (thumbnailFile) {
         formData.append('thumbnail', thumbnailFile)
       }
       const response = await fetch(`${notesBasePath}/${note.id}/images`, {

@@ -171,6 +171,9 @@ type ReportDraftResponse = {
 const IMAGE_UPLOAD_MAX_EDGE = 1600
 const IMAGE_UPLOAD_JPEG_QUALITY = 0.72
 const IMAGE_UPLOAD_REENCODE_THRESHOLD_BYTES = 900 * 1024
+const IMAGE_THUMBNAIL_MAX_EDGE = 420
+const IMAGE_THUMBNAIL_JPEG_QUALITY = 0.68
+const IMAGE_THUMBNAIL_REENCODE_THRESHOLD_BYTES = 120 * 1024
 
 const DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION =
   'Fönster, dörrar, väggar etc numreras från vänster till höger. Vägg 1 = vägg till vänster om entrévägg. Vägg 2 = nästa vägg till höger om vägg 1 osv.'
@@ -555,13 +558,23 @@ function loadImageFromFile(file: File) {
   })
 }
 
-function canvasToJpegBlob(canvas: HTMLCanvasElement) {
+function canvasToJpegBlob(canvas: HTMLCanvasElement, quality = IMAGE_UPLOAD_JPEG_QUALITY) {
   return new Promise<Blob | null>((resolve) => {
-    canvas.toBlob(resolve, 'image/jpeg', IMAGE_UPLOAD_JPEG_QUALITY)
+    canvas.toBlob(resolve, 'image/jpeg', quality)
   })
 }
 
-async function prepareImageForUpload(file: File) {
+async function prepareImageForUpload(
+  file: File,
+  options: {
+    maxEdge?: number
+    quality?: number
+    reencodeThresholdBytes?: number
+  } = {}
+) {
+  const maxEdge = options.maxEdge ?? IMAGE_UPLOAD_MAX_EDGE
+  const quality = options.quality ?? IMAGE_UPLOAD_JPEG_QUALITY
+  const reencodeThresholdBytes = options.reencodeThresholdBytes ?? IMAGE_UPLOAD_REENCODE_THRESHOLD_BYTES
   const contentType = file.type.toLowerCase()
   if (
     typeof document === 'undefined' ||
@@ -583,10 +596,10 @@ async function prepareImageForUpload(file: File) {
     const sourceHeight = image.naturalHeight
     if (sourceWidth <= 0 || sourceHeight <= 0) return file
 
-    const scale = Math.min(1, IMAGE_UPLOAD_MAX_EDGE / Math.max(sourceWidth, sourceHeight))
+    const scale = Math.min(1, maxEdge / Math.max(sourceWidth, sourceHeight))
     const shouldResize = scale < 1
     const shouldReencode =
-      file.size > IMAGE_UPLOAD_REENCODE_THRESHOLD_BYTES || contentType !== 'image/jpeg'
+      file.size > reencodeThresholdBytes || contentType !== 'image/jpeg'
     if (!shouldResize && !shouldReencode) return file
 
     const targetWidth = Math.max(1, Math.round(sourceWidth * scale))
@@ -598,7 +611,7 @@ async function prepareImageForUpload(file: File) {
     if (!context) return file
 
     context.drawImage(image, 0, 0, targetWidth, targetHeight)
-    const blob = await canvasToJpegBlob(canvas)
+    const blob = await canvasToJpegBlob(canvas, quality)
     if (!blob || blob.size >= file.size * 0.98) return file
 
     return new File([blob], imageFileNameAsJpeg(file.name), {
@@ -609,6 +622,20 @@ async function prepareImageForUpload(file: File) {
     return file
   } finally {
     if (objectUrl) URL.revokeObjectURL(objectUrl)
+  }
+}
+
+async function prepareImageFilesForUpload(file: File) {
+  const uploadFile = await prepareImageForUpload(file)
+  const thumbnailFile = await prepareImageForUpload(uploadFile, {
+    maxEdge: IMAGE_THUMBNAIL_MAX_EDGE,
+    quality: IMAGE_THUMBNAIL_JPEG_QUALITY,
+    reencodeThresholdBytes: IMAGE_THUMBNAIL_REENCODE_THRESHOLD_BYTES,
+  })
+
+  return {
+    uploadFile,
+    thumbnailFile: thumbnailFile !== uploadFile ? thumbnailFile : null,
   }
 }
 
@@ -2177,10 +2204,10 @@ export default function EbInspectionRoundClient({
       setUploadingImageNoteId(note.id)
       setSaving(false)
 
-      const thumbnailFile = await prepareImageForUpload(file)
+      const { uploadFile, thumbnailFile } = await prepareImageFilesForUpload(file)
       const formData = new FormData()
-      formData.append('file', file)
-      if (thumbnailFile !== file) {
+      formData.append('file', uploadFile)
+      if (thumbnailFile) {
         formData.append('thumbnail', thumbnailFile)
       }
       const response = await fetch(`${notesBasePath}/${note.id}/images`, {
@@ -3411,25 +3438,6 @@ export default function EbInspectionRoundClient({
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                {checkpointImageBankTarget.noteId &&
-                (imagesByNoteId.get(checkpointImageBankTarget.noteId)?.length ?? 0) > 0 ? (
-                  <div className="mb-5">
-                    <h3 className="mb-2 text-sm font-semibold text-gray-950">Kopplade bilder</h3>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      {(imagesByNoteId.get(checkpointImageBankTarget.noteId) ?? []).map((image) => (
-                        <img
-                          key={image.id}
-                          src={image.thumbnailUrl ?? image.publicUrl}
-                          alt={image.label ?? 'Foto'}
-                          loading="lazy"
-                          decoding="async"
-                          className="aspect-square w-full rounded-md border border-emerald-100 object-cover"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
                 <div className="mb-5">
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="text-sm font-semibold text-gray-950">Entreprenadbilder</h3>
