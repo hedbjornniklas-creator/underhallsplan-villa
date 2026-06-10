@@ -3766,6 +3766,17 @@ function hasText(value: string | null | undefined) {
   return Boolean(normalizeText(value))
 }
 
+function ebScopeReportText(round: EbInspectionRound) {
+  if (shouldUseEbTemplateCheckpoints(round.project)) {
+    return [
+      'Besiktningen omfattar avtalade dräneringsarbeten och fuktskydd vid grund/källarvägg i den omfattning som varit åtkomlig vid besiktningen.',
+      'Delar som är dolda eller inte åtkomliga bedöms med stöd av synliga delar, fotodokumentation, egenkontroller och övrigt redovisat underlag.',
+    ].join('\n\n')
+  }
+
+  return ebStandardText('EB_REPORT_SCOPE')
+}
+
 function ebDrainageChecklistReportText(round: EbInspectionRound) {
   if (round.checkpoints.length === 0) {
     return 'Ingen dräneringskontrollista är registrerad för besiktningen.'
@@ -4105,7 +4116,9 @@ function buildEbReportDraft(input: {
   const existingByKey = new Map(storedDraft.sections.map((section) => [section.key, section]))
   const noteCount = round.notes.length
   const checkpointCount = round.checkpoints.length
-  const drainageChecklistRelevant = shouldUseEbTemplateCheckpoints(round.project) || checkpointCount > 0
+  const isDrainageProject = shouldUseEbTemplateCheckpoints(round.project)
+  const drainageChecklistRelevant = isDrainageProject || checkpointCount > 0
+  const hasPreviousInspectionRows = round.inspection.previousInspections.some((row) => row.status || row.date)
   const notAccessibleNotes = round.notes.filter((note) => note.statusKey === 'not_accessible')
   const participantRows = participants.map(reportParticipantRow)
   const presentParticipantRows =
@@ -4156,7 +4169,7 @@ function buildEbReportDraft(input: {
       source: 'standard_text',
       status: 'complete',
       isRelevant: true,
-      text: ebStandardText('EB_REPORT_SCOPE'),
+      text: ebScopeReportText(round),
       updatedAt: null,
     },
     {
@@ -4232,8 +4245,8 @@ function buildEbReportDraft(input: {
       title: 'Tidigare besiktningar och provningar',
       sbrPoint: '9',
       source: 'manual',
-      status: 'complete',
-      isRelevant: true,
+      status: hasPreviousInspectionRows ? 'complete' : 'not_applicable',
+      isRelevant: hasPreviousInspectionRows,
       text: ebPreviousInspectionsReportText(round),
       updatedAt: null,
     },
@@ -4242,8 +4255,12 @@ function buildEbReportDraft(input: {
       title: 'Provning, dokumentation',
       sbrPoint: '9',
       source: 'manual',
-      status: hasReviewedDocuments || hasDocumentRemarks ? 'complete' : 'draft',
-      isRelevant: true,
+      status: isDrainageProject
+        ? 'not_applicable'
+        : hasReviewedDocuments || hasDocumentRemarks
+          ? 'complete'
+          : 'draft',
+      isRelevant: !isDrainageProject,
       text: testingDocumentationText,
       updatedAt: null,
     },
@@ -4255,7 +4272,7 @@ function buildEbReportDraft(input: {
       status: round.project.contractDate || includedAgreementItems.length > 0
         ? 'complete'
         : 'draft',
-      isRelevant: true,
+      isRelevant: !isDrainageProject,
       text: contractDocuments,
       updatedAt: null,
     },
@@ -4372,8 +4389,8 @@ function buildEbReportDraft(input: {
       title: 'Besked om godkännande',
       sbrPoint: '18',
       source: 'manual',
-      status: round.inspection.approvalStatus ? 'complete' : 'draft',
-      isRelevant: true,
+      status: round.inspection.approvalStatus ? 'complete' : 'missing',
+      isRelevant: Boolean(round.inspection.approvalStatus),
       text: ebApprovalDecisionReportText(round),
       updatedAt: null,
     },

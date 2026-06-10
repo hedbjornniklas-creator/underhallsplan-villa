@@ -1114,6 +1114,7 @@ export default function EbInspectionRoundClient({
   const [movingImageId, setMovingImageId] = useState<string | null>(null)
   const [showLinkedImages, setShowLinkedImages] = useState(false)
   const [imageViewCount, setImageViewCount] = useState(4)
+  const [checkpointImageBankTargetId, setCheckpointImageBankTargetId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [inspectionForm, setInspectionForm] = useState<InspectionDetailsFormState>(() =>
     buildInspectionDetailsForm(initialRound.inspection)
@@ -1176,6 +1177,14 @@ export default function EbInspectionRoundClient({
   const imageBankImages = useMemo(
     () => allImages.filter((image) => showLinkedImages || !image.noteId),
     [allImages, showLinkedImages]
+  )
+  const checkpointImageBankTarget = useMemo(
+    () => checkpoints.find((checkpoint) => checkpoint.id === checkpointImageBankTargetId) ?? null,
+    [checkpointImageBankTargetId, checkpoints]
+  )
+  const checkpointImageBankImages = useMemo(
+    () => allImages.filter((image) => !image.noteId),
+    [allImages]
   )
   const orderedNotes = useMemo(() => sortNotes(round.notes), [round.notes])
   const editingNoteIndex = editingNote ? orderedNotes.findIndex((note) => note.id === editingNote.id) : -1
@@ -2281,8 +2290,41 @@ export default function EbInspectionRoundClient({
       setError(lockedMessage)
       return
     }
-    checkpointImageTargetRef.current = checkpoint.id
+    setCheckpointImageBankTargetId(checkpoint.id)
+  }
+
+  const uploadNewCheckpointBankImage = () => {
+    if (!checkpointImageBankTarget) return
+    checkpointImageTargetRef.current = checkpointImageBankTarget.id
     checkpointImageInputRef.current?.click()
+  }
+
+  const attachBankImageToCheckpoint = async (image: EbNoteImage) => {
+    if (!checkpointImageBankTarget || movingImageId) return
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
+
+    try {
+      setMovingImageId(image.id)
+      setError(null)
+      const note = await ensureCheckpointNote(checkpointImageBankTarget)
+      const response = await fetch(`${notesBasePath}/${note.id}/images`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageId: image.id, action: 'attach' }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as ImageResponse
+      if (!response.ok || !payload.image) {
+        throw new Error(payload.error ?? 'Kunde inte koppla bilden.')
+      }
+      updateImageInState(payload.image)
+    } catch (attachError) {
+      setError(attachError instanceof Error ? attachError.message : 'Kunde inte koppla bilden.')
+    } finally {
+      setMovingImageId(null)
+    }
   }
 
   const detachImage = async (image: EbNoteImage) => {
@@ -2780,7 +2822,7 @@ export default function EbInspectionRoundClient({
                                   ) : (
                                     <Camera size={16} />
                                   )}
-                                  Foto
+                                  Bildbank
                                 </button>
                                 {checkpointImages.length > 0 ? (
                                   <div className="grid grid-cols-3 gap-1">
@@ -3266,6 +3308,107 @@ export default function EbInspectionRoundClient({
         </ReviewSection>
       </div>
     </div>
+
+        {checkpointImageBankTarget ? (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/35 p-4"
+            onClick={() => setCheckpointImageBankTargetId(null)}
+          >
+            <section
+              className="flex max-h-[86vh] w-full max-w-4xl flex-col overflow-hidden rounded-md bg-white shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-emerald-100 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Bildbank</p>
+                  <h2 className="truncate text-base font-semibold text-gray-950">{checkpointImageBankTarget.title}</h2>
+                  <p className="mt-1 text-xs text-gray-600">
+                    Välj en okopplad bild eller ladda upp en ny bild till kontrollpunkten.
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={uploadNewCheckpointBankImage}
+                    disabled={isLocked || uploadingImage || uploadingCheckpointImageId === checkpointImageBankTarget.id}
+                    className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                  >
+                    {uploadingCheckpointImageId === checkpointImageBankTarget.id ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Camera size={16} />
+                    )}
+                    Ladda upp
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCheckpointImageBankTargetId(null)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50"
+                    aria-label="Stäng"
+                    title="Stäng"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                {checkpointImageBankTarget.noteId &&
+                (imagesByNoteId.get(checkpointImageBankTarget.noteId)?.length ?? 0) > 0 ? (
+                  <div className="mb-5">
+                    <h3 className="mb-2 text-sm font-semibold text-gray-950">Kopplade bilder</h3>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {(imagesByNoteId.get(checkpointImageBankTarget.noteId) ?? []).map((image) => (
+                        <img
+                          key={image.id}
+                          src={image.thumbnailUrl ?? image.publicUrl}
+                          alt={image.label ?? 'Foto'}
+                          loading="lazy"
+                          decoding="async"
+                          className="aspect-square w-full rounded-md border border-emerald-100 object-cover"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-gray-950">Okopplade bilder</h3>
+                  <span className="text-xs font-medium text-gray-500">{checkpointImageBankImages.length} st</span>
+                </div>
+
+                {checkpointImageBankImages.length === 0 ? (
+                  <p className="mt-2 rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-8 text-center text-sm text-gray-600">
+                    Det finns inga okopplade bilder i bildbanken. Ladda upp en ny bild till punkten.
+                  </p>
+                ) : (
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+                    {checkpointImageBankImages.map((image) => (
+                      <button
+                        key={image.id}
+                        type="button"
+                        onClick={() => void attachBankImageToCheckpoint(image)}
+                        disabled={isLocked || movingImageId === image.id}
+                        className="relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-400 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        <img
+                          src={image.thumbnailUrl ?? image.publicUrl}
+                          alt={image.label ?? 'Bild'}
+                          loading="lazy"
+                          decoding="async"
+                          className="aspect-square w-full object-cover"
+                        />
+                        <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-emerald-800">
+                          {movingImageId === image.id ? 'Kopplar...' : 'Koppla'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        ) : null}
 
         {editorOpen ? (
           <div className="fixed inset-0 z-[100] flex justify-end bg-slate-950/25" onClick={closeEditor}>

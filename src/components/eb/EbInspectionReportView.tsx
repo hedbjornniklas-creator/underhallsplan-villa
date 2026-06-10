@@ -97,6 +97,7 @@ function addressCityLine(postalCode: string | null | undefined, city: string | n
 }
 
 const REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER SLUTBESIKTNING'
+const DRAINAGE_REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER DRÄNERINGSBESIKTNING'
 const SBR_LOGO_SRC = '/report-assets/sbr-logo.png'
 const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[16pt] font-bold uppercase leading-tight text-black'
 const REPORT_SECTION_HEADING_CLASS_NAME = 'mb-2 text-[12pt] font-bold leading-tight text-black'
@@ -120,6 +121,14 @@ const DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION =
 
 function normalizeReportText(value: string) {
   return value.replace(/\r\n/g, '\n').replace(/\\n/g, '\n').trim()
+}
+
+function isDrainageReport(report: EbInspectionReport) {
+  return report.project.projectTemplateKey === 'drainage_foundation'
+}
+
+function reportDocumentTitle(report: EbInspectionReport) {
+  return isDrainageReport(report) ? DRAINAGE_REPORT_DOCUMENT_TITLE : REPORT_DOCUMENT_TITLE
 }
 
 function parseLabelLine(line: string) {
@@ -434,7 +443,7 @@ function summonsDate(report: EbInspectionReport, sectionText: string) {
   if (date) return date.slice(0, 10)
 
   const match = sectionText.match(/\b\d{4}-\d{2}-\d{2}\b/)
-  return match?.[0] ?? 'Klicka här - ange datum'
+  return match?.[0] ?? null
 }
 
 function SummonsReport({
@@ -444,10 +453,15 @@ function SummonsReport({
   report: EbInspectionReport
   section: EbInspectionReport['reportDraft']['sections'][number]
 }) {
+  const date = summonsDate(report, section.text)
+  const method = summonsMethod(report, section.text)
+
   return (
     <ReportSection title="Sättet för kallelse till besiktningen" headingMarker>
       <p className="text-[10.5pt] leading-[1.35] text-black">
-        Besiktningsmannen har {summonsDate(report, section.text)} kallat parterna per {summonsMethod(report, section.text)}.
+        {date
+          ? `Besiktningsmannen har ${date} kallat parterna per ${method}.`
+          : `Besiktningsmannen har kallat parterna per ${method}.`}
       </p>
     </ReportSection>
   )
@@ -461,10 +475,13 @@ function previousInspectionStatusLabel(value: EbPreviousInspectionItem['status']
 }
 
 function PreviousInspectionsReport({ report }: { report: EbInspectionReport }) {
+  const rows = report.inspection.previousInspections.filter((row) => row.status || row.date?.trim())
+  if (rows.length === 0) return null
+
   return (
     <ReportSection title="Tidigare besiktningar">
       <dl className="grid gap-y-1 text-[10.5pt] leading-[1.35] text-black">
-        {report.inspection.previousInspections.map((row) => (
+        {rows.map((row) => (
           <div key={row.key} className="grid grid-cols-[62mm_20mm_1fr] gap-x-4">
             <dt>{row.label}</dt>
             <dd>{previousInspectionStatusLabel(row.status)}</dd>
@@ -565,6 +582,7 @@ function TestingDocumentationReport({
 
 function DrainageChecklistReport({ report }: { report: EbInspectionReport }) {
   const groups = groupedCheckpoints(report.checkpoints)
+  const hasPhotoRequiredCheckpoints = report.checkpoints.some((checkpoint) => checkpoint.photoRequired)
 
   return (
     <ReportSection title="Kontrollunderlag dränering">
@@ -576,6 +594,12 @@ function DrainageChecklistReport({ report }: { report: EbInspectionReport }) {
         <div className="space-y-3 text-[9.5pt] leading-[1.25] text-black">
           {report.project.drainageGuidanceVersion ? (
             <p>Anvisning/version: {report.project.drainageGuidanceVersion}</p>
+          ) : null}
+          {hasPhotoRequiredCheckpoints ? (
+            <p className="text-[9pt]">
+              Kontrollpunkter märkta med foto ska verifieras med fotounderlag eller egenkontroll när momentet inte
+              är direkt åtkomligt vid besiktningen.
+            </p>
           ) : null}
           {groups.map((group) => (
             <section key={group.key} className="break-inside-avoid">
@@ -591,7 +615,7 @@ function DrainageChecklistReport({ report }: { report: EbInspectionReport }) {
                     <div className="border-r border-b border-black/50 px-1.5 py-1">
                       <p>{checkpoint.title}</p>
                       {checkpoint.photoRequired ? (
-                        <p className="mt-0.5 text-[8pt] italic">Fotounderlag krävs/efterfrågas.</p>
+                        <p className="mt-0.5 text-[8pt] italic">Foto</p>
                       ) : null}
                     </div>
                     <div className="border-r border-b border-black/50 px-1.5 py-1">
@@ -715,42 +739,47 @@ function DeductionAgreementSummary({ report }: { report: EbInspectionReport }) {
 }
 
 function approvalDecisionDate(report: EbInspectionReport) {
-  return report.inspection.date?.trim() || 'Klicka här - ange datum för godkännande = Dag för slutbesiktning.'
+  return report.inspection.date?.trim() ?? null
 }
 
 function approvalReasonLines(value: string | null) {
-  const lines = normalizeReportText(value ?? '')
+  return normalizeReportText(value ?? '')
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-  return lines.length > 0 ? lines : ['Ange skälet - eller skälen']
 }
 
 function ApprovalDecisionReport({ report }: { report: EbInspectionReport }) {
+  if (!report.inspection.approvalStatus) return null
+
   const isApproved = report.inspection.approvalStatus === 'approved'
   const isPartlyApproved = report.inspection.approvalStatus === 'partly_approved'
+  const decisionDate = approvalDecisionDate(report)
+  const reasonLines = approvalReasonLines(report.inspection.approvalNote)
 
   return (
     <ReportSection title="Besked om godkännande">
       <div className="space-y-2 text-[10.5pt] leading-[1.35] text-black">
         {isApproved ? (
           <>
-            <p>Arbetena godkänns {approvalDecisionDate(report)}</p>
+            <p>Arbetena godkänns{decisionDate ? ` ${decisionDate}` : ''}.</p>
             <p>Beslutet meddelades av besiktningsmannen till parterna vid besiktningen.</p>
           </>
         ) : (
           <>
-            <p className="font-medium italic">
-              Alternativt till ovan vid ej godkännande. Ange skälen för icke godkännande:
-            </p>
             <p>
-              Arbetena godkänns {isPartlyApproved ? 'delvis' : 'inte'} på grund av att noterade fel sammantaget inte anses vara av mindre betydelse. Följande skäl utgör hinder för godkännande:
+              Arbetena godkänns {isPartlyApproved ? 'delvis' : 'inte'} på grund av att noterade fel sammantaget inte anses vara av mindre betydelse.
             </p>
-            <ul className="list-disc space-y-1 pl-8">
-              {approvalReasonLines(report.inspection.approvalNote).map((line, index) => (
-                <li key={`${line}-${index}`}>{line}</li>
-              ))}
-            </ul>
+            {reasonLines.length > 0 ? (
+              <>
+                <p>Följande skäl utgör hinder för godkännande:</p>
+                <ul className="list-disc space-y-1 pl-8">
+                  {reasonLines.map((line, index) => (
+                    <li key={`${line}-${index}`}>{line}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
           </>
         )}
       </div>
@@ -793,7 +822,7 @@ function DistributionListReport({ report }: { report: EbInspectionReport }) {
               <tr className="bg-[#4f86bf] text-left text-white print:bg-[#4f86bf]">
                 <th className="w-[58mm] px-1.5 py-1 font-bold">Företag</th>
                 <th className="w-[58mm] px-1.5 py-1 font-bold">Namn</th>
-                <th className="px-1.5 py-1 font-bold">Adress</th>
+                <th className="px-1.5 py-1 font-bold">E-post</th>
               </tr>
             </thead>
             <tbody>
@@ -973,7 +1002,7 @@ function ReportHeader({ report }: { report: EbInspectionReport }) {
       </dl>
 
       <div className="mt-7 text-left">
-        <h1 className={REPORT_TITLE_HEADING_CLASS_NAME}>{REPORT_DOCUMENT_TITLE}</h1>
+        <h1 className={REPORT_TITLE_HEADING_CLASS_NAME}>{reportDocumentTitle(report)}</h1>
       </div>
     </header>
   )
@@ -1085,10 +1114,13 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
   const printTitle = reportPrintTitle(report)
   const notes = sortNotes(report.notes)
   const displayNumberByNoteId = new Map(notes.map((note, index) => [note.id, index + 1]))
+  const drainageReport = isDrainageReport(report)
   const printableSections = report.reportDraft.sections.filter(
     (section) =>
       section.isRelevant &&
       !HIDDEN_REPORT_SECTION_KEYS.has(section.key) &&
+      !(drainageReport && (section.key === 'testing_documentation' || section.key === 'contract_documents')) &&
+      !(section.key === 'previous_inspections_tests' && report.inspection.previousInspections.every((row) => !row.status && !row.date?.trim())) &&
       section.status !== 'missing' &&
       hasPrintableReportText(section.text)
   )
