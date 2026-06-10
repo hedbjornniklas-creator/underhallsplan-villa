@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import {
-  createEbProjectWithInitialSlb,
+  createEbProject,
   listEbProjects,
   type EbDrainageInspectionStage,
   type EbDrainageSystem,
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
       return jsonError('Ange projektnamn.', 400)
     }
 
-    const project = await createEbProjectWithInitialSlb({
+    const project = await createEbProject({
       orgId: context.orgId,
       requestedByUserId: context.userId,
       title,
@@ -93,11 +93,6 @@ export async function POST(request: Request) {
       contractorPostalCode: toText(body.contractorPostalCode) || null,
       contractorCity: toText(body.contractorCity) || null,
       agreementItems: Array.isArray(body.agreementItems) ? body.agreementItems : [],
-      inspectionDate: toText(body.inspectionDate) || null,
-      inspectionTime: toText(body.inspectionTime) || null,
-      meetingPlace: toText(body.meetingPlace) || null,
-      startMeetingTime: toText(body.startMeetingTime) || null,
-      finalMeetingTime: toText(body.finalMeetingTime) || null,
     })
 
     return NextResponse.json({ project }, { status: 201 })

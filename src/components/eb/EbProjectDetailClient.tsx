@@ -149,12 +149,26 @@ const INSPECTION_DETAILS_TABS: Array<{
 ]
 
 const VARIANT_OPTIONS: Array<{ value: EbInspectionVariant; label: string }> = [
+  { value: 'SLB', label: 'Slutbesiktning' },
   { value: 'EB', label: 'Efterbesiktning' },
   { value: 'FB', label: 'Förbesiktning' },
   { value: 'GB', label: 'Garantibesiktning' },
   { value: 'KSB', label: 'Kompletterande slutbesiktning' },
   { value: 'SAB', label: 'Särskild besiktning' },
 ]
+
+function buildInitialInspectionForm(project: EbProjectListItem): InspectionFormState {
+  const latestInspection = project.inspections.at(-1)
+  return {
+    variant: project.inspections.length === 0 ? 'SLB' : 'EB',
+    parentInspectionId: latestInspection?.inspectionId ?? '',
+    inspectionDate: '',
+    inspectionTime: '',
+    meetingPlace: '',
+    startMeetingTime: '',
+    finalMeetingTime: '',
+  }
+}
 
 const INVITATION_METHOD_OPTIONS = [
   'E-post',
@@ -751,18 +765,15 @@ function CreateInspectionDialog({
   onClose: () => void
   onCreated: (project: EbProjectListItem) => void
 }) {
-  const latestInspection = project.inspections.at(-1)
-  const [form, setForm] = useState<InspectionFormState>({
-    variant: 'EB',
-    parentInspectionId: latestInspection?.inspectionId ?? '',
-    inspectionDate: '',
-    inspectionTime: '',
-    meetingPlace: '',
-    startMeetingTime: '',
-    finalMeetingTime: '',
-  })
+  const [form, setForm] = useState<InspectionFormState>(() => buildInitialInspectionForm(project))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setForm(buildInitialInspectionForm(project))
+    setError(null)
+  }, [open, project])
 
   if (!open) return null
 

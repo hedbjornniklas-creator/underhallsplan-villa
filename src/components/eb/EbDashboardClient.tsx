@@ -16,9 +16,7 @@ import {
 import Protected from '@/components/Protected'
 import EbProjectForm, {
   EMPTY_EB_PROJECT_FORM,
-  EbProjectFieldLabel,
   ebProjectFormToPayload,
-  ebProjectInputClassName,
   type EbProjectFormState,
 } from '@/components/eb/EbProjectForm'
 import type { EbProjectListItem } from '@/lib/eb/server'
@@ -28,13 +26,7 @@ type EbDashboardClientProps = {
   initialError: string | null
 }
 
-type CreateProjectFormState = EbProjectFormState & {
-  inspectionDate: string
-  inspectionTime: string
-  meetingPlace: string
-  startMeetingTime: string
-  finalMeetingTime: string
-}
+type CreateProjectFormState = EbProjectFormState
 
 type CreateProjectResponse = {
   project?: EbProjectListItem
@@ -43,11 +35,6 @@ type CreateProjectResponse = {
 
 const INITIAL_FORM: CreateProjectFormState = {
   ...EMPTY_EB_PROJECT_FORM,
-  inspectionDate: '',
-  inspectionTime: '',
-  meetingPlace: '',
-  startMeetingTime: '',
-  finalMeetingTime: '',
 }
 
 function formatDate(value: string | null) {
@@ -85,10 +72,6 @@ function CreateProjectDialog({
   const [error, setError] = useState<string | null>(null)
 
   if (!open) return null
-
-  const updateField = <K extends keyof CreateProjectFormState>(field: K, value: CreateProjectFormState[K]) => {
-    setForm((current) => ({ ...current, [field]: value }))
-  }
 
   const updateProjectField = <K extends keyof EbProjectFormState>(field: K, value: EbProjectFormState[K]) => {
     setForm((current) => ({ ...current, [field]: value }))
@@ -130,7 +113,7 @@ function CreateProjectDialog({
       <div className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-lg border border-emerald-100 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">SLB</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">EB</p>
             <h2 className="text-lg font-semibold text-gray-950">Ny entreprenad</h2>
           </div>
           <button
@@ -147,53 +130,6 @@ function CreateProjectDialog({
         <form onSubmit={(event) => void handleSubmit(event)} className="max-h-[calc(92vh-70px)] overflow-auto p-4">
           <div className="space-y-5">
             <EbProjectForm form={form} onChange={updateProjectField} />
-
-            <section>
-              <h3 className="text-sm font-semibold text-gray-950">Första slutbesiktning</h3>
-              <div className="mt-3 grid gap-4 md:grid-cols-2">
-                <EbProjectFieldLabel label="Besiktningsdatum">
-                  <input
-                    type="date"
-                    value={form.inspectionDate}
-                    onChange={(event) => updateField('inspectionDate', event.target.value)}
-                    className={ebProjectInputClassName()}
-                  />
-                </EbProjectFieldLabel>
-                <EbProjectFieldLabel label="Besiktningstid">
-                  <input
-                    type="time"
-                    value={form.inspectionTime}
-                    onChange={(event) => updateField('inspectionTime', event.target.value)}
-                    className={ebProjectInputClassName()}
-                  />
-                </EbProjectFieldLabel>
-                <EbProjectFieldLabel label="Samlingsplats">
-                  <input
-                    value={form.meetingPlace}
-                    onChange={(event) => updateField('meetingPlace', event.target.value)}
-                    className={ebProjectInputClassName()}
-                  />
-                </EbProjectFieldLabel>
-                <div className="grid grid-cols-2 gap-3">
-                  <EbProjectFieldLabel label="Försammanträde">
-                    <input
-                      type="time"
-                      value={form.startMeetingTime}
-                      onChange={(event) => updateField('startMeetingTime', event.target.value)}
-                      className={ebProjectInputClassName()}
-                    />
-                  </EbProjectFieldLabel>
-                  <EbProjectFieldLabel label="Slutsammanträde">
-                    <input
-                      type="time"
-                      value={form.finalMeetingTime}
-                      onChange={(event) => updateField('finalMeetingTime', event.target.value)}
-                      className={ebProjectInputClassName()}
-                    />
-                  </EbProjectFieldLabel>
-                </div>
-              </div>
-            </section>
           </div>
 
           {error ? (

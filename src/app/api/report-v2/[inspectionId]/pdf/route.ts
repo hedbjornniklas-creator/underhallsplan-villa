@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireOrgContext } from '@/lib/assignments/server'
+import { buildReportPdfFileName } from '@/lib/report/reportFileName'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
@@ -46,18 +47,8 @@ type InspectionForPdf = {
   status: string | null
   assignment_number: string | null
   date: string | null
+  inspection_family: string | null
   property_id: string | null
-}
-
-const sanitizeFilenamePart = (value: string | null | undefined) => {
-  const raw = String(value ?? '').trim()
-  if (!raw) return ''
-  return raw.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim()
-}
-
-const buildReportFileName = (inspectionDate: string | null | undefined) => {
-  const safeDate = sanitizeFilenamePart(inspectionDate)
-  return safeDate ? `Utlåtande ${safeDate}.pdf` : 'Utlåtande.pdf'
 }
 
 async function createSignedPdfUrl(
@@ -157,7 +148,7 @@ export async function GET(
 
     const { data: inspection, error: inspectionError } = await admin
       .from('inspections')
-      .select('id,status,assignment_number,date,property_id')
+      .select('id,status,assignment_number,date,inspection_family,property_id')
       .eq('id', inspectionId)
       .maybeSingle()
 
@@ -182,7 +173,11 @@ export async function GET(
       })
     }
 
-    const fileName = buildReportFileName(inspectionRow.date)
+    const fileName = buildReportPdfFileName({
+      assignmentNumber: inspectionRow.assignment_number,
+      inspectionDate: inspectionRow.date,
+      inspectionFamily: inspectionRow.inspection_family,
+    })
 
     const { data: linkRows, error: linkError } = await admin
       .from('inspection_report_links')

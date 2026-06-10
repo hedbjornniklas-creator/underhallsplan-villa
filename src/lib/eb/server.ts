@@ -711,21 +711,11 @@ export type CreateEbProjectInput = {
   contractorPostalCode?: string | null
   contractorCity?: string | null
   agreementItems?: EbProjectAgreementItem[] | null
-  inspectionDate?: string | null
-  inspectionTime?: string | null
-  meetingPlace?: string | null
-  startMeetingTime?: string | null
-  finalMeetingTime?: string | null
 }
 
 export type UpdateEbProjectInput = Omit<
   CreateEbProjectInput,
-  | 'requestedByUserId'
-  | 'inspectionDate'
-  | 'inspectionTime'
-  | 'meetingPlace'
-  | 'startMeetingTime'
-  | 'finalMeetingTime'
+  'requestedByUserId'
 > & {
   projectId: string
   notePrefix?: string | null
@@ -2640,77 +2630,18 @@ async function seedDisciplinesForInspection(input: {
 
 async function cleanupCreatedRows(input: {
   projectId?: string | null
-  inspectionId?: string | null
   propertyId?: string | null
 }) {
   const admin = createSupabaseAdminClient()
   if (input.projectId) {
     await admin.from('eb_projects').delete().eq('id', input.projectId)
   }
-  if (input.inspectionId) {
-    await admin.from('inspections').delete().eq('id', input.inspectionId)
-  }
   if (input.propertyId) {
     await admin.from('properties').delete().eq('id', input.propertyId)
   }
 }
 
-async function seedInitialProjectParticipants(input: {
-  orgId: string
-  projectId: string
-  inspectionId: string
-  clientName: string | null
-  clientOrgNo: string | null
-  contractorName: string | null
-  contractorOrgNo: string | null
-}) {
-  const rows = [
-    input.clientName || input.clientOrgNo
-      ? {
-          org_id: input.orgId,
-          eb_project_id: input.projectId,
-          inspection_id: input.inspectionId,
-          party_key: 'client',
-          role_label: 'Beställare',
-          company_name: input.clientName,
-          org_no: input.clientOrgNo,
-          receives_invitation: true,
-          attended: false,
-          receives_report: true,
-          represents_party_key: 'client',
-          can_represent_party: true,
-          sort_order: 100,
-        }
-      : null,
-    input.contractorName || input.contractorOrgNo
-      ? {
-          org_id: input.orgId,
-          eb_project_id: input.projectId,
-          inspection_id: input.inspectionId,
-          party_key: 'contractor',
-          role_label: 'Entreprenör',
-          company_name: input.contractorName,
-          org_no: input.contractorOrgNo,
-          receives_invitation: true,
-          attended: false,
-          receives_report: true,
-          represents_party_key: 'contractor',
-          can_represent_party: true,
-          sort_order: 200,
-        }
-      : null,
-  ].filter((row): row is NonNullable<typeof row> => Boolean(row))
-
-  if (rows.length === 0) return
-
-  const admin = createSupabaseAdminClient()
-  const { error } = await admin.from('eb_participants').insert(rows)
-  if (error) {
-    throw new Error(error.message ?? 'Kunde inte skapa parter för EB-projektet.')
-  }
-}
-
-export async function createEbProjectWithInitialSlb(
+export async function createEbProject(
   input: CreateEbProjectInput
 ): Promise<EbProjectListItem> {
   const admin = createSupabaseAdminClient()
@@ -2738,7 +2669,6 @@ export async function createEbProjectWithInitialSlb(
     : null
   const agreementItems = normalizeAgreementItems(input.agreementItems)
   let propertyId: string | null = null
-  let inspectionId: string | null = null
   let projectId: string | null = null
 
   try {
@@ -2764,28 +2694,6 @@ export async function createEbProjectWithInitialSlb(
     }
 
     propertyId = String(property.id)
-
-    const { data: inspection, error: inspectionError } = await admin
-      .from('inspections')
-      .insert({
-        property_id: propertyId,
-        type: 'EB',
-        inspection_family: 'EB',
-        inspection_variant: 'SLB',
-        status: 'draft',
-        date: normalizeDate(input.inspectionDate),
-        inspection_time: normalizeTime(input.inspectionTime),
-        client_name: normalizedClientName,
-        scope: getEbInspectionVariantLabel('SLB'),
-      })
-      .select('id')
-      .single()
-
-    if (inspectionError || !inspection) {
-      throw new Error(inspectionError?.message ?? 'Kunde inte skapa slutbesiktning.')
-    }
-
-    inspectionId = String(inspection.id)
 
     const { data: project, error: projectError } = await admin
       .from('eb_projects')
@@ -2834,40 +2742,6 @@ export async function createEbProjectWithInitialSlb(
 
     projectId = String(project.id)
 
-    const { error: detailError } = await admin.from('eb_inspection_details').insert({
-      inspection_id: inspectionId,
-      org_id: input.orgId,
-      eb_project_id: projectId,
-      inspection_variant: 'SLB',
-      sequence_no: 1,
-      meeting_place: normalizeText(input.meetingPlace),
-      start_meeting_time: normalizeTime(input.startMeetingTime),
-      final_meeting_time: normalizeTime(input.finalMeetingTime),
-      report_title: `Utlåtande ${getEbInspectionVariantLabel('SLB')}`,
-    })
-
-    if (detailError) {
-      throw new Error(detailError.message ?? 'Kunde inte koppla slutbesiktningen till EB-projektet.')
-    }
-
-    await seedDisciplinesForInspection({
-      orgId: input.orgId,
-      projectId,
-      inspectionId,
-      variant: 'SLB',
-      sequenceNo: 1,
-    })
-
-    await seedInitialProjectParticipants({
-      orgId: input.orgId,
-      projectId,
-      inspectionId,
-      clientName: normalizedClientName,
-      clientOrgNo: normalizedClientOrgNo,
-      contractorName: normalizedContractorName,
-      contractorOrgNo: normalizedContractorOrgNo,
-    })
-
     const created = await getEbProjectById({ orgId: input.orgId, projectId })
     if (!created) {
       throw new Error('EB-projektet skapades men kunde inte läsas tillbaka.')
@@ -2875,7 +2749,7 @@ export async function createEbProjectWithInitialSlb(
 
     return created
   } catch (error) {
-    await cleanupCreatedRows({ projectId, inspectionId, propertyId })
+    await cleanupCreatedRows({ projectId, propertyId })
     throw error
   }
 }

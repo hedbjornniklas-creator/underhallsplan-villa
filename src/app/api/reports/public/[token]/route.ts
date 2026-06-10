@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { hashAssignmentToken } from '@/lib/assignments/tokens'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { buildInspectionReportShareEmail } from '@/lib/inspections/reportEmailTemplates'
+import { buildReportPdfFileName } from '@/lib/report/reportFileName'
 import {
   getTuSnapshotEmailMeta,
   isTuReportSnapshotPayloadV1,
@@ -76,11 +77,6 @@ const sanitizeFilenamePart = (value: string | null | undefined) => {
   const raw = String(value ?? '').trim()
   if (!raw) return ''
   return raw.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim()
-}
-
-const buildReportFileName = (assignmentNumber: string | null | undefined) => {
-  const safeAssignment = sanitizeFilenamePart(assignmentNumber)
-  return safeAssignment ? `Utlåtande (${safeAssignment}).pdf` : 'Utlåtande.pdf'
 }
 
 const buildDocumentFileName = (document: TuReportDeliveryDocument) => {
@@ -513,15 +509,24 @@ export async function GET(
       (data as Record<string, unknown>).snapshot_payload
     )
     const inspectionId = String((data as Record<string, unknown>).inspection_id ?? '').trim()
-    if (!assignmentNumber && inspectionId) {
+    let inspectionFamily: string | null = null
+    if (inspectionId) {
       const { data: inspection } = await admin
         .from('inspections')
-        .select('assignment_number')
+        .select('assignment_number,inspection_family')
         .eq('id', inspectionId)
         .maybeSingle()
-      assignmentNumber = String((inspection as { assignment_number?: string | null } | null)?.assignment_number ?? '').trim() || null
+      const inspectionRow = inspection as
+        | { assignment_number?: string | null; inspection_family?: string | null }
+        | null
+      assignmentNumber =
+        assignmentNumber || String(inspectionRow?.assignment_number ?? '').trim() || null
+      inspectionFamily = String(inspectionRow?.inspection_family ?? '').trim() || null
     }
-    const fileName = buildReportFileName(assignmentNumber)
+    const fileName = buildReportPdfFileName({
+      assignmentNumber,
+      inspectionFamily,
+    })
     const pdfBase64 = String(data.pdf_base64 ?? '').trim()
     const pdfStorageBucket = String((data as Record<string, unknown>).pdf_storage_bucket ?? '').trim()
     const pdfStoragePath = String((data as Record<string, unknown>).pdf_storage_path ?? '').trim()

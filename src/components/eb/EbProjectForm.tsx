@@ -78,8 +78,8 @@ const STANDARD_AGREEMENT_OPTIONS = [
 ]
 
 const PROJECT_TEMPLATE_OPTIONS = [
-  { value: '', label: 'Ingen särskild mall' },
-  { value: 'drainage_foundation', label: 'Dränering och fuktskydd grund/källarvägg' },
+  { value: '', label: 'Vanlig entreprenadbesiktning' },
+  { value: 'drainage_foundation', label: 'Dräneringsbesiktning' },
 ]
 
 const DRAINAGE_SYSTEM_OPTIONS = [
@@ -97,7 +97,7 @@ const DRAINAGE_STAGE_OPTIONS = [
   { value: 'final', label: 'Slutkontroll' },
 ]
 
-type EbProjectFormTab = 'object' | 'template' | 'agreement' | 'contractors'
+type EbProjectFormTab = 'object' | 'agreement' | 'contractors'
 
 function createAgreementItem(kind: EbProjectAgreementItemKind, sortOrder: number): EbProjectAgreementItem {
   const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -185,7 +185,6 @@ export default function EbProjectForm({
   const vocabulary = resolveEbAgreementVocabulary(form.standardAgreement)
   const tabs: Array<{ key: EbProjectFormTab; label: string }> = [
     { key: 'object', label: 'Objekt & beställare' },
-    { key: 'template', label: 'Mall' },
     { key: 'agreement', label: 'Avtal' },
     { key: 'contractors', label: vocabulary.contractorPluralLabel },
   ]
@@ -304,6 +303,63 @@ export default function EbProjectForm({
 
   return (
     <div className="space-y-5">
+      <section className="rounded-lg border border-emerald-100 bg-emerald-50/25 p-3">
+        <div className="grid gap-4 md:grid-cols-2">
+          <EbProjectFieldLabel label="Projekttyp">
+            <select
+              value={form.projectTemplateKey}
+              onChange={(event) => updateTemplateKey(event.target.value)}
+              className={ebProjectInputClassName()}
+            >
+              {PROJECT_TEMPLATE_OPTIONS.map((option) => (
+                <option key={option.value || 'none'} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </EbProjectFieldLabel>
+
+          {form.projectTemplateKey === 'drainage_foundation' ? (
+            <>
+              <EbProjectFieldLabel label="System">
+                <select
+                  value={form.drainageSystem || 'generic'}
+                  onChange={(event) => onChange('drainageSystem', event.target.value)}
+                  className={ebProjectInputClassName()}
+                >
+                  {DRAINAGE_SYSTEM_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </EbProjectFieldLabel>
+              <EbProjectFieldLabel label="Besiktningsläge">
+                <select
+                  value={form.drainageInspectionStage}
+                  onChange={(event) => onChange('drainageInspectionStage', event.target.value)}
+                  className={ebProjectInputClassName()}
+                >
+                  {DRAINAGE_STAGE_OPTIONS.map((option) => (
+                    <option key={option.value || 'none'} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </EbProjectFieldLabel>
+              <EbProjectFieldLabel label="Anvisning/version">
+                <input
+                  value={form.drainageGuidanceVersion}
+                  onChange={(event) => onChange('drainageGuidanceVersion', event.target.value)}
+                  placeholder="Exempel: Isodrän arbetsinstruktion källare 2026"
+                  className={ebProjectInputClassName()}
+                />
+              </EbProjectFieldLabel>
+            </>
+          ) : null}
+        </div>
+      </section>
+
       <div className="border-b border-emerald-100">
         <div className="flex flex-wrap gap-1">
           {tabs.map((tab) => {
@@ -448,66 +504,6 @@ export default function EbProjectForm({
                 />
               </EbProjectFieldLabel>
             </div>
-          </div>
-        </section>
-      ) : null}
-
-      {activeTab === 'template' ? (
-        <section>
-          <h3 className="text-sm font-semibold text-gray-950">Mall</h3>
-          <div className="mt-3 grid gap-4 md:grid-cols-2">
-            <EbProjectFieldLabel label="Projektmall">
-              <select
-                value={form.projectTemplateKey}
-                onChange={(event) => updateTemplateKey(event.target.value)}
-                className={ebProjectInputClassName()}
-              >
-                {PROJECT_TEMPLATE_OPTIONS.map((option) => (
-                  <option key={option.value || 'none'} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </EbProjectFieldLabel>
-
-            {form.projectTemplateKey === 'drainage_foundation' ? (
-              <>
-                <EbProjectFieldLabel label="System">
-                  <select
-                    value={form.drainageSystem || 'generic'}
-                    onChange={(event) => onChange('drainageSystem', event.target.value)}
-                    className={ebProjectInputClassName()}
-                  >
-                    {DRAINAGE_SYSTEM_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </EbProjectFieldLabel>
-                <EbProjectFieldLabel label="Besiktningsläge">
-                  <select
-                    value={form.drainageInspectionStage}
-                    onChange={(event) => onChange('drainageInspectionStage', event.target.value)}
-                    className={ebProjectInputClassName()}
-                  >
-                    {DRAINAGE_STAGE_OPTIONS.map((option) => (
-                      <option key={option.value || 'none'} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </EbProjectFieldLabel>
-                <EbProjectFieldLabel label="Anvisning/version">
-                  <input
-                    value={form.drainageGuidanceVersion}
-                    onChange={(event) => onChange('drainageGuidanceVersion', event.target.value)}
-                    placeholder="Exempel: Isodrän arbetsinstruktion källare 2026"
-                    className={ebProjectInputClassName()}
-                  />
-                </EbProjectFieldLabel>
-              </>
-            ) : null}
           </div>
         </section>
       ) : null}
