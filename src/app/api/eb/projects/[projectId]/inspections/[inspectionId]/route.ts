@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import {
+  deleteEbInspection,
   updateEbInspection,
   type EbApprovalStatus,
   type EbAfterInspectionRequestedBy,
@@ -122,5 +123,25 @@ export async function PATCH(
     return NextResponse.json({ project })
   } catch (error) {
     return mapError(error, 'Kunde inte uppdatera besiktningen.')
+  }
+}
+
+export async function DELETE(
+  _request: Request,
+  context: { params: Promise<{ projectId: string; inspectionId: string }> }
+) {
+  try {
+    const { projectId, inspectionId } = await context.params
+    const org = await requireEbContext()
+
+    const project = await deleteEbInspection({
+      orgId: org.orgId,
+      projectId,
+      inspectionId,
+    })
+
+    return NextResponse.json({ project, inspectionId })
+  } catch (error) {
+    return mapError(error, 'Kunde inte radera besiktningen.')
   }
 }

@@ -2961,6 +2961,84 @@ export async function createEbInspectionForProject(
   }
 }
 
+export async function deleteEbInspection(input: {
+  orgId: string
+  projectId: string
+  inspectionId: string
+}): Promise<EbProjectListItem> {
+  await assertEbInspectionEditable(input)
+
+  const admin = createSupabaseAdminClient()
+
+  const { data: imageRows, error: imageError } = await admin
+    .from('inspection_images')
+    .select('file_path')
+    .eq('inspection_id', input.inspectionId)
+    .like('file_path', `${input.inspectionId}/eb-notes/%`)
+
+  if (imageError) {
+    throw new Error(imageError.message ?? 'Kunde inte hämta EB-bilder.')
+  }
+
+  const imagePaths = ((imageRows ?? []) as Array<{ file_path?: string | null }>)
+    .map((row) => row.file_path?.trim())
+    .filter((path): path is string => Boolean(path))
+
+  if (imagePaths.length > 0) {
+    const { error: storageError } = await admin.storage.from(EB_NOTE_IMAGE_BUCKET).remove(imagePaths)
+    if (storageError) {
+      throw new Error(storageError.message ?? 'Kunde inte radera EB-bilder.')
+    }
+  }
+
+  const { data: reportLinkRows, error: reportLinkError } = await admin
+    .from('inspection_report_links')
+    .select('pdf_storage_bucket,pdf_storage_path')
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+
+  if (reportLinkError) {
+    throw new Error(reportLinkError.message ?? 'Kunde inte hämta sparade PDF:er.')
+  }
+
+  const reportPathsByBucket = new Map<string, string[]>()
+  for (const row of (reportLinkRows ?? []) as Array<{
+    pdf_storage_bucket?: string | null
+    pdf_storage_path?: string | null
+  }>) {
+    const bucket = row.pdf_storage_bucket?.trim()
+    const path = row.pdf_storage_path?.trim()
+    if (!bucket || !path) continue
+    reportPathsByBucket.set(bucket, [...(reportPathsByBucket.get(bucket) ?? []), path])
+  }
+
+  for (const [bucket, paths] of reportPathsByBucket) {
+    const { error: storageError } = await admin.storage.from(bucket).remove(paths)
+    if (storageError) {
+      throw new Error(storageError.message ?? 'Kunde inte radera sparade PDF:er.')
+    }
+  }
+
+  const { error: deleteError, count } = await admin
+    .from('inspections')
+    .delete({ count: 'exact' })
+    .eq('id', input.inspectionId)
+
+  if (deleteError) {
+    throw new Error(deleteError.message ?? 'Kunde inte radera besiktningen.')
+  }
+  if (count === 0) {
+    throw new Error('EB_INSPECTION_NOT_FOUND')
+  }
+
+  const updated = await getEbProjectById({ orgId: input.orgId, projectId: input.projectId })
+  if (!updated) {
+    throw new Error('EB_PROJECT_NOT_FOUND')
+  }
+
+  return updated
+}
+
 export async function updateEbInspection(input: UpdateEbInspectionInput): Promise<EbProjectListItem> {
   const project = await getEbProjectById({
     orgId: input.orgId,
