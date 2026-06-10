@@ -875,8 +875,7 @@ function signatureRows(report: EbInspectionReport) {
 function DistributionListReport({ report }: { report: EbInspectionReport }) {
   const recipients = reportRecipients(report)
   const distributionDate = report.inspection.reportDistributionDate?.trim() || 'Klicka här - ange datum'
-  const inspector = signatureRows(report)
-  const inspectorDetailLines = inspector.details.map((row) => `${row.label}: ${row.value}`)
+  const inspectorSignature = report.branding.signature
 
   return (
     <ReportSection title="Sändlista">
@@ -908,68 +907,56 @@ function DistributionListReport({ report }: { report: EbInspectionReport }) {
           <p>Mottagare av utlåtandet har inte angetts.</p>
         )}
 
-        <InspectorSignatureCard
-          avatarUrl={report.branding.inspectorAvatarUrl}
-          detailLines={inspectorDetailLines}
-          inspectorName={inspector.name}
-          locationAndDate={distributionDate}
-          signatureUrl={report.branding.inspectorSignatureUrl}
-        />
+        {inspectorSignature ? <InspectorSignatureCard signature={inspectorSignature} /> : null}
       </div>
     </ReportSection>
   )
 }
 
 function InspectorSignatureCard({
-  avatarUrl,
-  detailLines,
-  inspectorName,
-  locationAndDate,
-  signatureUrl,
+  signature,
 }: {
-  avatarUrl: string | null
-  detailLines: string[]
-  inspectorName: string
-  locationAndDate: string
-  signatureUrl: string | null
+  signature: NonNullable<EbInspectionReport['branding']['signature']>
 }) {
+  const hasCredentials = signature.credentialLines.length > 0
+
   return (
     <section
-      className="border-t border-violet-200 pt-5"
+      className="tu-report-block tu-report-signature-block border-t border-violet-200 pt-5"
       style={{ marginTop: mm(4), marginBottom: mm(6) }}
     >
       <div className="w-[72mm]">
-        {avatarUrl ? (
+        {signature.avatarUrl ? (
           <div className="mb-2 h-[26mm] w-[26mm] overflow-hidden bg-white">
             <img
-              src={avatarUrl}
-              alt={inspectorName}
-              className="eb-report-inspector-avatar h-full w-full object-cover"
+              src={signature.avatarUrl}
+              alt={signature.inspectorName}
+              className="h-full w-full object-cover"
             />
           </div>
         ) : null}
 
         <div className="text-[13px] font-semibold leading-5 text-gray-950">
-          {locationAndDate}
+          {signature.locationAndDate}
         </div>
 
-        {signatureUrl ? (
+        {signature.signatureUrl ? (
           <div className="mt-3 flex h-[16mm] w-[42mm] items-center overflow-hidden bg-white">
             <img
-              src={signatureUrl}
-              alt={`Underskrift ${inspectorName}`}
+              src={signature.signatureUrl}
+              alt={`Underskrift ${signature.inspectorName}`}
               className="max-h-full max-w-full object-contain"
             />
           </div>
         ) : null}
 
         <div className="mt-2 text-[13px] font-semibold leading-5 text-gray-950">
-          {inspectorName}
+          {signature.inspectorName}
         </div>
-        {detailLines.length > 0 ? (
+        {hasCredentials ? (
           <div className="mt-0.5 space-y-0.5 text-[12px] leading-5 text-gray-950">
-            {detailLines.map((line, index) => (
-              <div key={`${line}-${index}`}>{line}</div>
+            {signature.credentialLines.map((line) => (
+              <div key={line}>{line}</div>
             ))}
           </div>
         ) : null}

@@ -318,6 +318,13 @@ export type EbInspectionReport = EbInspectionRound & {
       companyLines: string[]
       contactLines: string[]
     }
+    signature: {
+      locationAndDate: string
+      inspectorName: string
+      avatarUrl: string | null
+      signatureUrl: string | null
+      credentialLines: string[]
+    } | null
   }
 }
 
@@ -942,6 +949,66 @@ function buildProfileFooter(profile: ProfileContactRow | null | undefined) {
   ].filter((line): line is string => Boolean(line))
 
   return { companyLines, contactLines }
+}
+
+function formatLongSwedishDate(value: string | null | undefined) {
+  const normalized = normalizeDate(value) ?? normalizeText(value)
+  if (!normalized) return ''
+  const parsed = new Date(`${normalized.slice(0, 10)}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) return normalized
+  return parsed.toLocaleDateString('sv-SE', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+function formatTuStyleCredentialLines(
+  items: Awaited<ReturnType<typeof resolveInspectorCertificationSummary>>['summary']['all_selected_items']
+) {
+  return items
+    .map((item) => {
+      const name = normalizeText(item.name)
+      if (!name) return null
+      const number = normalizeText(item.number_value)
+      return number ? `${name} ${number}` : name
+    })
+    .filter((line): line is string => Boolean(line))
+}
+
+async function buildInspectorSignatureCard(input: {
+  orgId: string
+  profileId: string
+  inspector: ProfileContactRow | null
+  reportDate: string | null | undefined
+}) {
+  if (!input.inspector) return null
+
+  const admin = createSupabaseAdminClient()
+  const { summary } = await resolveInspectorCertificationSummary(admin, {
+    orgId: input.orgId,
+    profileId: input.profileId,
+    legacy: {
+      certification_number: input.inspector.certification_number ?? null,
+    },
+  })
+  const credentialLines = formatTuStyleCredentialLines(summary.all_selected_items)
+  const inspectorName = normalizeText(input.inspector.full_name)
+  const avatarUrl = resolveProfileAvatarUrl(input.inspector)
+  const signatureUrl = resolveProfileSignatureUrl(input.inspector)
+  const hasSignatureData = Boolean(inspectorName || avatarUrl || signatureUrl || credentialLines.length > 0)
+  if (!hasSignatureData) return null
+
+  const longDate = formatLongSwedishDate(input.reportDate) || formatLongSwedishDate(new Date().toISOString())
+  const location = normalizeText(input.inspector.company_city)
+
+  return {
+    locationAndDate: location ? `${location}, den ${longDate}` : `Den ${longDate}`,
+    inspectorName: inspectorName || 'Besiktningsman',
+    avatarUrl,
+    signatureUrl,
+    credentialLines,
+  }
 }
 
 function normalizeDate(value: string | null | undefined) {
@@ -2573,6 +2640,12 @@ export async function getEbInspectionReport(input: {
   const inspectorLogoUrl = resolveProfileLogoUrl(inspectorProfile)
   const inspectorAvatarUrl = resolveProfileAvatarUrl(inspectorProfile)
   const inspectorSignatureUrl = resolveProfileSignatureUrl(inspectorProfile)
+  const inspectorSignature = await buildInspectorSignatureCard({
+    orgId: input.orgId,
+    profileId: input.requestedByUserId,
+    inspector: inspectorProfile,
+    reportDate: round.inspection.reportDistributionDate ?? round.inspection.date,
+  })
   let ownerLogoUrl: string | null = null
   if (!inspectorLogoUrl && round.project.ownerProfileId !== input.requestedByUserId) {
     const ownerProfile = await getProfileContact(round.project.ownerProfileId)
@@ -2589,6 +2662,7 @@ export async function getEbInspectionReport(input: {
       inspectorSignatureUrl,
       besiktAppLogoUrl: BESIKTAPP_REPORT_LOGO_SRC,
       footer: buildProfileFooter(inspectorProfile),
+      signature: inspectorSignature,
     },
     reportDraft: buildEbReportDraft({
       round,
