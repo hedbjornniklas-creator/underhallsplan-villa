@@ -135,7 +135,6 @@ function addressCityLine(postalCode: string | null | undefined, city: string | n
 
 const REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER SLUTBESIKTNING'
 const DRAINAGE_REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER DRÄNERINGSBESIKTNING'
-const SBR_LOGO_SRC = '/report-assets/sbr-logo.png'
 const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[16pt] font-bold uppercase leading-tight text-black'
 const REPORT_SECTION_HEADING_CLASS_NAME = 'mb-2 text-[12pt] font-bold leading-tight text-black'
 const REPORT_APPENDIX_HEADING_CLASS_NAME = 'mb-3 text-[13pt] font-bold uppercase leading-tight text-black'
@@ -877,6 +876,7 @@ function DistributionListReport({ report }: { report: EbInspectionReport }) {
   const recipients = reportRecipients(report)
   const distributionDate = report.inspection.reportDistributionDate?.trim() || 'Klicka här - ange datum'
   const inspector = signatureRows(report)
+  const inspectorDetailLines = inspector.details.map((row) => `${row.label}: ${row.value}`)
 
   return (
     <ReportSection title="Sändlista">
@@ -908,43 +908,73 @@ function DistributionListReport({ report }: { report: EbInspectionReport }) {
           <p>Mottagare av utlåtandet har inte angetts.</p>
         )}
 
-        <div className="pt-3">
-          {report.branding.inspectorAvatarUrl ? (
-            <img
-              src={report.branding.inspectorAvatarUrl}
-              alt="Besiktningsmannen"
-              className="eb-report-inspector-avatar h-[24mm] w-[24mm] object-cover"
-            />
-          ) : null}
-
-          <div className="mt-4 space-y-1">
-            <p className="font-semibold">{inspector.name}</p>
-            {inspector.details.length > 0 ? (
-              <dl className="grid gap-y-0.5">
-                {inspector.details.map((row, index) => (
-                  <div key={`${row.label}-${index}`} className="grid grid-cols-[34mm_1fr] gap-x-2">
-                    <dt>{row.label}:</dt>
-                    <dd>{row.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            ) : null}
-            {report.branding.inspectorSignatureUrl ? (
-              <img
-                src={report.branding.inspectorSignatureUrl}
-                alt="Besiktningsmannens signatur"
-                className="mt-3 h-[12mm] max-w-[58mm] object-contain object-left"
-              />
-            ) : null}
-            <img
-              src={SBR_LOGO_SRC}
-              alt="SBR Byggingenjörerna"
-              className="eb-report-sbr-logo mt-2 h-[14mm] w-auto object-contain"
-            />
-          </div>
-        </div>
+        <InspectorSignatureCard
+          avatarUrl={report.branding.inspectorAvatarUrl}
+          detailLines={inspectorDetailLines}
+          inspectorName={inspector.name}
+          locationAndDate={distributionDate}
+          signatureUrl={report.branding.inspectorSignatureUrl}
+        />
       </div>
     </ReportSection>
+  )
+}
+
+function InspectorSignatureCard({
+  avatarUrl,
+  detailLines,
+  inspectorName,
+  locationAndDate,
+  signatureUrl,
+}: {
+  avatarUrl: string | null
+  detailLines: string[]
+  inspectorName: string
+  locationAndDate: string
+  signatureUrl: string | null
+}) {
+  return (
+    <section
+      className="border-t border-violet-200 pt-5"
+      style={{ marginTop: mm(4), marginBottom: mm(6) }}
+    >
+      <div className="w-[72mm]">
+        {avatarUrl ? (
+          <div className="mb-2 h-[26mm] w-[26mm] overflow-hidden bg-white">
+            <img
+              src={avatarUrl}
+              alt={inspectorName}
+              className="eb-report-inspector-avatar h-full w-full object-cover"
+            />
+          </div>
+        ) : null}
+
+        <div className="text-[13px] font-semibold leading-5 text-gray-950">
+          {locationAndDate}
+        </div>
+
+        {signatureUrl ? (
+          <div className="mt-3 flex h-[16mm] w-[42mm] items-center overflow-hidden bg-white">
+            <img
+              src={signatureUrl}
+              alt={`Underskrift ${inspectorName}`}
+              className="max-h-full max-w-full object-contain"
+            />
+          </div>
+        ) : null}
+
+        <div className="mt-2 text-[13px] font-semibold leading-5 text-gray-950">
+          {inspectorName}
+        </div>
+        {detailLines.length > 0 ? (
+          <div className="mt-0.5 space-y-0.5 text-[12px] leading-5 text-gray-950">
+            {detailLines.map((line, index) => (
+              <div key={`${line}-${index}`}>{line}</div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </section>
   )
 }
 
