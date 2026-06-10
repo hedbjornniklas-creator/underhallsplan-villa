@@ -1183,14 +1183,17 @@ function PhotoAppendixNoteArticle({
   note,
   images,
   checkpointNumber,
+  fallbackReference,
   showTitle = false,
 }: {
   note: EbNote
   images: EbNoteImage[]
   checkpointNumber?: number
+  fallbackReference?: string
   showTitle?: boolean
 }) {
   const location = noteLocationLine(note)
+  const imageReference = checkpointNumber ? `Kontrollpunkt ${checkpointNumber}` : fallbackReference
 
   return (
     <section className="eb-report-section break-inside-avoid">
@@ -1203,13 +1206,18 @@ function PhotoAppendixNoteArticle({
             <p className="whitespace-pre-wrap">Notering: {note.noteText}</p>
           ) : null}
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 justify-items-center gap-x-6 gap-y-5">
           {images.map((image) => (
-            <figure key={image.id} className="break-inside-avoid">
+            <figure key={image.id} className="flex w-full break-inside-avoid flex-col items-center">
+              {imageReference ? (
+                <figcaption className="mb-1 text-center text-[9pt] font-semibold leading-tight text-black">
+                  {imageReference}
+                </figcaption>
+              ) : null}
               <img
                 src={reportImageSrc(image)}
                 alt={checkpointNumber ? `Bild till kontrollpunkt ${checkpointNumber}` : 'Bild till notering'}
-                className="h-[62mm] w-full border border-gray-300 object-contain"
+                className="mx-auto h-[62mm] max-w-full object-contain"
               />
             </figure>
           ))}
@@ -1759,6 +1767,9 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
             node: (
               <PhotoAppendixNoteArticle
                 checkpointNumber={checkpointNumberByNote.get(note.id)}
+                fallbackReference={
+                  displayNumberByNoteId.has(note.id) ? `Notering ${displayNumberByNoteId.get(note.id)}` : undefined
+                }
                 images={imageChunk}
                 note={note}
                 showTitle={photoBlockIndex === 0}
