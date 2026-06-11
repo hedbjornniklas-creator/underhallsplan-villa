@@ -936,7 +936,7 @@ function DistributionListReport({ report }: { report: EbInspectionReport }) {
           {recipients.length > 0 ? (
             <table className="w-full border-collapse text-[9.5pt] leading-tight text-black">
               <thead>
-                <tr className="bg-[#4f86bf] text-left text-white print:bg-[#4f86bf]">
+                <tr className="bg-[#2f7d55] text-left text-white print:bg-[#2f7d55]">
                   <th className="w-[58mm] px-1.5 py-1 font-bold">Företag</th>
                   <th className="w-[58mm] px-1.5 py-1 font-bold">Namn</th>
                   <th className="px-1.5 py-1 font-bold">E-post</th>
