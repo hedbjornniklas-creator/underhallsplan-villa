@@ -234,6 +234,17 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     margin-bottom: 4mm;
   }
 
+  .eb-print-paged-document .eb-report-footer {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    align-items: end !important;
+    gap: 4mm !important;
+    border-top: 1px solid #d1d5db !important;
+    color: #374151 !important;
+    font-size: 8px !important;
+    line-height: 1.25 !important;
+  }
+
   .eb-report-page thead {
     display: table-header-group;
   }
@@ -268,6 +279,14 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     max-height: 58mm !important;
     object-fit: contain !important;
     object-position: left center !important;
+  }
+
+  .eb-print-paged-document img.eb-report-footer-logo {
+    width: auto !important;
+    height: auto !important;
+    max-width: 22mm !important;
+    max-height: 4mm !important;
+    object-fit: contain !important;
   }
 
   .eb-print-paged-document img.eb-report-header-logo {

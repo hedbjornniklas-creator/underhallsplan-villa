@@ -135,7 +135,7 @@ function addressCityLine(postalCode: string | null | undefined, city: string | n
 
 const REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER SLUTBESIKTNING'
 const DRAINAGE_REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER DRÄNERINGSBESIKTNING'
-const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[16pt] font-bold uppercase leading-tight text-black'
+const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[16pt] font-bold uppercase leading-tight text-[#2f7d55]'
 const REPORT_SECTION_HEADING_CLASS_NAME = 'mb-2 text-[12pt] font-bold leading-tight text-black'
 const REPORT_APPENDIX_HEADING_CLASS_NAME = 'mb-3 text-[13pt] font-bold uppercase leading-tight text-black'
 const EB_PAGE_WIDTH_MM = 210
@@ -695,7 +695,7 @@ function DrainageChecklistGroupReport({
     <section className="eb-report-section break-inside-avoid text-[9.5pt] leading-[1.25] text-black">
       <h3 className="mb-1 text-[10pt] font-bold text-black">{groupLabel}</h3>
       <div className="grid border-t border-l border-black/50">
-        <div className="grid grid-cols-[10mm_42mm_24mm_1fr] bg-neutral-100 font-bold">
+        <div className="grid grid-cols-[10mm_42mm_24mm_1fr] bg-[#eaf4ef] font-bold">
           <div className="border-r border-b border-black/50 px-1.5 py-1">Nr</div>
           <div className="border-r border-b border-black/50 px-1.5 py-1">Kontrollpunkt</div>
           <div className="border-r border-b border-black/50 px-1.5 py-1">Status</div>
@@ -1386,7 +1386,7 @@ function EbPageFooter({ report }: { report: EbInspectionReport }) {
 
   return (
     <footer
-      className="absolute grid grid-cols-3 items-end gap-4 border-t border-gray-300 pt-1.5 text-[8px] leading-[1.25] text-gray-700"
+      className="eb-report-footer absolute grid grid-cols-3 items-end gap-4 border-t border-gray-300 pt-1.5 text-[8px] leading-[1.25] text-gray-700"
       style={{
         left: mm(EB_PAGE_X_PADDING_MM),
         right: mm(EB_PAGE_X_PADDING_MM),
@@ -1410,7 +1410,7 @@ function EbPageFooter({ report }: { report: EbInspectionReport }) {
           <img
             src={report.branding.besiktAppLogoUrl}
             alt="BesiktApp"
-            className="h-auto max-h-[4mm] max-w-[22mm] object-contain"
+            className="eb-report-footer-logo h-auto max-h-[4mm] max-w-[22mm] object-contain"
           />
         </div>
       </div>
@@ -1811,7 +1811,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
           )
           blocks.push({
             id: `photo-${note.id}-${imageChunkIndex}`,
-            startsNewPage: true,
+            startsNewPage: photoBlockIndex === 0,
             node: (
               <PhotoAppendixBlock
                 images={imageChunk}
