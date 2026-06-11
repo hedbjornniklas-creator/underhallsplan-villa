@@ -403,6 +403,37 @@ function InspectorReport({
   )
 }
 
+function InspectionTimeReport({
+  report,
+  section,
+}: {
+  report: EbInspectionReport
+  section: EbInspectionReport['reportDraft']['sections'][number]
+}) {
+  const rows = printableReportLines(section.text)
+    .map(parseLabelLine)
+    .filter((row): row is NonNullable<ReturnType<typeof parseLabelLine>> => Boolean(row))
+  const valueFor = (label: string) =>
+    rows.find((row) => row.label.toLocaleLowerCase('sv-SE') === label.toLocaleLowerCase('sv-SE'))?.value
+  const timeRows = [
+    { label: 'Datum', value: report.inspection.date ?? valueFor('Datum') ?? '-' },
+    { label: 'Tid', value: report.inspection.inspectionTime ?? valueFor('Tid') ?? '-' },
+  ]
+
+  return (
+    <ReportSection title={section.title} headingMarker>
+      <dl className="grid grid-cols-[62mm_1fr] gap-x-4 gap-y-0.5 text-[10.5pt] leading-[1.35] text-black">
+        {timeRows.map((row) => (
+          <div key={row.label} className="contents">
+            <dt>{row.label}:</dt>
+            <dd>{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </ReportSection>
+  )
+}
+
 function participantName(participant: EbInspectionReport['participants'][number]) {
   return participant.personName?.trim() || participant.companyName?.trim() || '-'
 }
@@ -1677,6 +1708,13 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
     }
 
     for (const section of reportSections) {
+      if (section.key === 'inspection_time') {
+        blocks.push({
+          id: `section-${section.key}`,
+          node: <InspectionTimeReport report={report} section={section} />,
+        })
+        continue
+      }
       if (section.key === 'inspectors') {
         blocks.push({
           id: `section-${section.key}`,

@@ -4986,6 +4986,8 @@ async function getProfileContact(profileId: string) {
     'id,full_name,email,avatar_path,logo_path,logo_url,signature_path,signature_url,certification_number',
     'id,full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path,logo_path,logo_url,signature_path,certification_number',
     'id,full_name,email,avatar_path,logo_path,logo_url,signature_path,certification_number',
+    'id,full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path,logo_path,logo_url,signature_path',
+    'id,full_name,email,avatar_path,logo_path,logo_url,signature_path',
     'id,full_name,email,avatar_path,logo_path,logo_url,certification_number',
     'id,full_name,email,avatar_path,logo_path,logo_url',
     'id,full_name,email,avatar_path,logo_path',
