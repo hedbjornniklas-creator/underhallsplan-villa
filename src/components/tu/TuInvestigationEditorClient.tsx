@@ -740,6 +740,7 @@ export default function TuInvestigationEditorClient({
   const [images, setImages] = useState<TuInvestigationImage[]>([])
   const [imagesLoading, setImagesLoading] = useState(true)
   const [imageBusy, setImageBusy] = useState(false)
+  const [imageActionIds, setImageActionIds] = useState<Set<string>>(() => new Set())
   const [imageError, setImageError] = useState<string | null>(null)
   const [imageUploadProgress, setImageUploadProgress] = useState<string | null>(null)
   const [imageViewCount, setImageViewCount] = useState<TuImageViewCount>(9)
@@ -1359,13 +1360,23 @@ export default function TuInvestigationEditorClient({
   const renderImagePreview = () => {
     if (!previewImage) return null
     const canNavigate = previewImages.length > 1 && previewImageIndex >= 0
+    const previewImageActionBusy = imageBusy || imageActionIds.has(previewImage.id)
+    const sectionLabel =
+      previewImage.sectionKey === 'cover'
+        ? 'Omslagsbild'
+        : previewImage.sectionKey === 'appendix'
+          ? 'Bildbilaga'
+          : 'Bildbank'
 
     return (
       <div className="fixed inset-0 z-[90] bg-black/85 p-4" role="dialog" aria-modal="true">
         <div className="flex h-full flex-col">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="text-xs font-semibold text-white/75">
-              {canNavigate ? `${previewImageIndex + 1} / ${previewImages.length}` : ''}
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-white/60">{sectionLabel}</div>
+              <div className="text-xs font-semibold text-white/75">
+                {canNavigate ? `${previewImageIndex + 1} / ${previewImages.length}` : ''}
+              </div>
             </div>
             <button
               type="button"
@@ -1400,6 +1411,31 @@ export default function TuInvestigationEditorClient({
                 </button>
               </>
             ) : null}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-white shadow-lg backdrop-blur">
+            <div className="min-w-0 text-xs text-white/75">
+              {previewImage.caption?.trim() ? previewImage.caption : 'Ingen bildtext angiven.'}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void moveImageToSection(previewImage.id, 'appendix')}
+                disabled={locked || previewImageActionBusy || previewImage.sectionKey === 'appendix'}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-white/25 bg-white px-3 text-xs font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/45"
+              >
+                <MoveDown size={14} aria-hidden />
+                {previewImage.sectionKey === 'appendix' ? 'Finns i bilaga' : 'Lägg till i bilaga'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void moveImageToSection(previewImage.id, 'cover')}
+                disabled={locked || previewImageActionBusy || previewImage.sectionKey === 'cover'}
+                className="inline-flex h-9 items-center gap-2 rounded-md bg-violet-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/45"
+              >
+                <ImageIcon size={14} aria-hidden />
+                {previewImage.sectionKey === 'cover' ? 'Vald omslagsbild' : 'Använd som omslagsbild'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1470,24 +1506,40 @@ export default function TuInvestigationEditorClient({
   }
 
   const moveImageToSection = async (imageId: string, sectionKey: TuImageSectionKey) => {
-    if (sectionKey === 'cover') {
-      for (const image of coverImages) {
-        if (image.id !== imageId) {
-          await patchImage(image.id, {
-            sectionKey: 'bank',
-            sortOrder: firstSortOrderForSection('bank', image.id),
-          })
+    if (locked || imageBusy || imageActionIds.has(imageId)) return
+
+    setImageActionIds((current) => {
+      const next = new Set(current)
+      next.add(imageId)
+      return next
+    })
+
+    try {
+      if (sectionKey === 'cover') {
+        for (const image of coverImages) {
+          if (image.id !== imageId) {
+            await patchImage(image.id, {
+              sectionKey: 'bank',
+              sortOrder: firstSortOrderForSection('bank', image.id),
+            })
+          }
         }
       }
-    }
 
-    await patchImage(imageId, {
-      sectionKey,
-      sortOrder:
-        sectionKey === 'appendix'
-          ? lastSortOrderForSection(sectionKey, imageId)
-          : firstSortOrderForSection(sectionKey, imageId),
-    })
+      await patchImage(imageId, {
+        sectionKey,
+        sortOrder:
+          sectionKey === 'appendix'
+            ? lastSortOrderForSection(sectionKey, imageId)
+            : firstSortOrderForSection(sectionKey, imageId),
+      })
+    } finally {
+      setImageActionIds((current) => {
+        const next = new Set(current)
+        next.delete(imageId)
+        return next
+      })
+    }
   }
 
   const handleDropToSection = async (event: React.DragEvent, sectionKey: TuImageSectionKey) => {
@@ -2079,26 +2131,32 @@ export default function TuInvestigationEditorClient({
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={image.publicUrl} alt={image.caption ?? 'TU-bild'} className={getTuImageClass(imageViewCount)} />
                       </button>
-                      <div className="absolute bottom-1 right-1 flex gap-0.5 rounded bg-white/90 p-0.5 shadow-sm ring-1 ring-black/5">
+                      <div className="absolute bottom-2 right-2 flex gap-1 rounded-md bg-white/95 p-1 shadow-sm ring-1 ring-black/5">
                         <button
                           type="button"
-                          onClick={() => void moveImageToSection(image.id, 'cover')}
-                          disabled={locked || imageBusy}
-                          className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] bg-violet-700 text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void moveImageToSection(image.id, 'cover')
+                          }}
+                          disabled={locked || imageBusy || imageActionIds.has(image.id)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-violet-700 text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                           aria-label="Använd som omslag"
                           title="Använd som omslag"
                         >
-                          <ImageIcon size={10} aria-hidden />
+                          <ImageIcon size={15} aria-hidden />
                         </button>
                         <button
                           type="button"
-                          onClick={() => void moveImageToSection(image.id, 'appendix')}
-                          disabled={locked || imageBusy}
-                          className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void moveImageToSection(image.id, 'appendix')
+                          }}
+                          disabled={locked || imageBusy || imageActionIds.has(image.id)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
                           aria-label="Lägg i bilaga"
                           title="Lägg i bilaga"
                         >
-                          <MoveDown size={10} aria-hidden />
+                          <MoveDown size={15} aria-hidden />
                         </button>
                       </div>
                     </div>
