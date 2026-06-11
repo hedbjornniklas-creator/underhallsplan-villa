@@ -135,6 +135,7 @@ function addressCityLine(postalCode: string | null | undefined, city: string | n
 
 const REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER SLUTBESIKTNING'
 const DRAINAGE_REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER DRÄNERINGSBESIKTNING'
+const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[16pt] font-bold uppercase leading-tight text-black'
 const REPORT_SECTION_HEADING_CLASS_NAME = 'mb-2 text-[12pt] font-bold leading-tight text-black'
 const REPORT_APPENDIX_HEADING_CLASS_NAME = 'mb-3 text-[13pt] font-bold uppercase leading-tight text-black'
 const EB_PAGE_WIDTH_MM = 210
@@ -1097,6 +1098,14 @@ function isTestingDocumentationSection(section: EbInspectionReport['reportDraft'
   )
 }
 
+function ReportTitle({ report }: { report: EbInspectionReport }) {
+  return (
+    <header className="mb-6 text-left">
+      <h1 className={REPORT_TITLE_HEADING_CLASS_NAME}>{reportDocumentTitle(report)}</h1>
+    </header>
+  )
+}
+
 function noteNumber(index: number) {
   return String(index + 1)
 }
@@ -1615,7 +1624,12 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
   const checkpointNumberByNote = useMemo(() => checkpointNumberByNoteId(report), [report])
   const inspectorSignature = useMemo(() => inspectorSignatureForReport(report), [report])
   const reportBlocks = useMemo<EbPrintableBlock[]>(() => {
-    const blocks: EbPrintableBlock[] = []
+    const blocks: EbPrintableBlock[] = [
+      {
+        id: 'report-title',
+        node: <ReportTitle report={report} />,
+      },
+    ]
 
     if (scopeSection) {
       blocks.push({
