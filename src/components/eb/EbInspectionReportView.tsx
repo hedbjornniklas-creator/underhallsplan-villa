@@ -1206,9 +1206,12 @@ function PhotoAppendixBlock({
           <p className="whitespace-pre-wrap">Notering: {note.noteText}</p>
         ) : null}
       </div>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-6">
+      <div className="eb-report-photo-grid grid grid-cols-2 gap-x-6 gap-y-5">
         {images.map((image) => (
-          <figure key={image.id} className="grid h-[72mm] break-inside-avoid grid-rows-[minmax(0,1fr)]">
+          <figure
+            key={image.id}
+            className="eb-report-photo-figure grid h-[58mm] break-inside-avoid grid-rows-[minmax(0,1fr)]"
+          >
             <img
               src={reportImageSrc(image)}
               alt={`Bild till ${referenceLabel.toLocaleLowerCase('sv-SE')}`}
@@ -1216,7 +1219,7 @@ function PhotoAppendixBlock({
               onError={(event) => {
                 event.currentTarget.dataset.ebImageFailed = 'true'
               }}
-              className="h-full w-full object-contain"
+              className="eb-report-photo-image h-full w-full object-contain"
               style={{ objectPosition: 'left center' }}
             />
           </figure>
@@ -1800,7 +1803,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
       })
       .filter((item) => item.images.length > 0)
       .forEach(({ note, images, checkpointNumber }) => {
-        chunkArray(images, 4).forEach((imageChunk, imageChunkIndex) => {
+        chunkArray(images, 2).forEach((imageChunk, imageChunkIndex) => {
           const referenceLabel = photoReferenceLabel(
             note,
             checkpointNumber,
@@ -1808,7 +1811,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
           )
           blocks.push({
             id: `photo-${note.id}-${imageChunkIndex}`,
-            startsNewPage: photoBlockIndex === 0,
+            startsNewPage: true,
             node: (
               <PhotoAppendixBlock
                 images={imageChunk}

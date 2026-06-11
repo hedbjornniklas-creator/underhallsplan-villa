@@ -245,6 +245,31 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     page-break-inside: avoid;
   }
 
+  .eb-print-paged-document .eb-report-photo-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    column-gap: 6mm !important;
+    row-gap: 5mm !important;
+  }
+
+  .eb-print-paged-document .eb-report-photo-figure {
+    display: grid !important;
+    height: 58mm !important;
+    max-height: 58mm !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    grid-template-rows: minmax(0, 1fr) !important;
+  }
+
+  .eb-print-paged-document img.eb-report-photo-image {
+    width: 100% !important;
+    height: 58mm !important;
+    max-width: 100% !important;
+    max-height: 58mm !important;
+    object-fit: contain !important;
+    object-position: left center !important;
+  }
+
   .eb-print-paged-document img.eb-report-header-logo {
     width: auto !important;
     max-height: 16mm !important;
