@@ -135,7 +135,6 @@ function addressCityLine(postalCode: string | null | undefined, city: string | n
 
 const REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER SLUTBESIKTNING'
 const DRAINAGE_REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER DRÄNERINGSBESIKTNING'
-const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[16pt] font-bold uppercase leading-tight text-black'
 const REPORT_SECTION_HEADING_CLASS_NAME = 'mb-2 text-[12pt] font-bold leading-tight text-black'
 const REPORT_APPENDIX_HEADING_CLASS_NAME = 'mb-3 text-[13pt] font-bold uppercase leading-tight text-black'
 const EB_PAGE_WIDTH_MM = 210
@@ -1098,79 +1097,6 @@ function isTestingDocumentationSection(section: EbInspectionReport['reportDraft'
   )
 }
 
-function ReportHeader({
-  report,
-  showLogos = true,
-}: {
-  report: EbInspectionReport
-  showLogos?: boolean
-}) {
-  const propertyDesignation = report.project.propertyDesignation?.trim()
-  const brfApartmentNumber = report.project.brfApartmentNumber?.trim()
-  const streetAndCity = detailLine([report.project.address, report.project.city])
-  const entreprenadDescription = report.project.objectDescription?.trim() || '-'
-
-  return (
-    <header className="mb-8">
-      {showLogos ? (
-        <>
-          <div className="grid min-h-[18mm] grid-cols-[60mm_1fr_60mm] items-start gap-4">
-            <div className="flex min-h-[16mm] items-start justify-start">
-              {report.branding.inspectorLogoUrl ? (
-                <img
-                  src={report.branding.inspectorLogoUrl}
-                  alt="Besiktningsmannens logotyp"
-                  className="eb-report-header-logo h-[16mm] max-h-[16mm] w-auto max-w-[52mm] object-contain"
-                />
-              ) : null}
-            </div>
-            <div aria-hidden="true" />
-            <div className="flex min-h-[16mm] items-start justify-end">
-              <img
-                src={report.branding.besiktAppLogoUrl}
-                alt="BesiktApp"
-                className="eb-report-header-logo h-[16mm] max-h-[16mm] w-auto max-w-[52mm] object-contain"
-              />
-            </div>
-          </div>
-          <div className="mt-3 h-[1.5px] w-full bg-[#2f7d55]" />
-        </>
-      ) : null}
-
-      <dl className={`${showLogos ? 'mt-3' : ''} grid gap-y-1 text-[10.5pt] leading-snug text-black`}>
-        {propertyDesignation ? (
-          <div className="grid grid-cols-[38mm_1fr] gap-x-4">
-            <dt className="font-bold">Fastighetsbeteckning</dt>
-            <dd>{propertyDesignation}</dd>
-          </div>
-        ) : null}
-        {brfApartmentNumber ? (
-          <div className="grid grid-cols-[38mm_1fr] gap-x-4">
-            <dt className="font-bold">BRF och lgh nr</dt>
-            <dd>{brfApartmentNumber}</dd>
-          </div>
-        ) : null}
-        <div className="grid grid-cols-[38mm_1fr] gap-x-4">
-          <dt className="font-bold">Gatuadress, ort</dt>
-          <dd>{streetAndCity}</dd>
-        </div>
-        <div className="grid grid-cols-[38mm_1fr] gap-x-4">
-          <dt className="font-bold">Entreprenad</dt>
-          <dd className="whitespace-pre-wrap">{entreprenadDescription}</dd>
-        </div>
-        <div className="grid grid-cols-[38mm_1fr] gap-x-4">
-          <dt className="font-bold">Besiktningstyp</dt>
-          <dd>{report.inspection.variantLabel}</dd>
-        </div>
-      </dl>
-
-      <div className="mt-7 text-left">
-        <h1 className={REPORT_TITLE_HEADING_CLASS_NAME}>{reportDocumentTitle(report)}</h1>
-      </div>
-    </header>
-  )
-}
-
 function noteNumber(index: number) {
   return String(index + 1)
 }
@@ -1689,12 +1615,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
   const checkpointNumberByNote = useMemo(() => checkpointNumberByNoteId(report), [report])
   const inspectorSignature = useMemo(() => inspectorSignatureForReport(report), [report])
   const reportBlocks = useMemo<EbPrintableBlock[]>(() => {
-    const blocks: EbPrintableBlock[] = [
-      {
-        id: 'report-intro',
-        node: <ReportHeader report={report} showLogos={false} />,
-      },
-    ]
+    const blocks: EbPrintableBlock[] = []
 
     if (scopeSection) {
       blocks.push({
@@ -1850,21 +1771,25 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
     let photoBlockIndex = 0
     const usedPhotoImageKeys = new Set<string>()
     notes
-      .map((note) => ({
-        note,
-        images: (imagesByNoteId.get(note.id) ?? []).filter((image) => {
-          const key = photoImageDedupKey(image)
-          if (usedPhotoImageKeys.has(key)) return false
-          usedPhotoImageKeys.add(key)
-          return true
-        }),
-      }))
+      .map((note) => {
+        const checkpointNumber = checkpointNumberByNote.get(note.id)
+        const images = drainageReport && !checkpointNumber
+          ? []
+          : (imagesByNoteId.get(note.id) ?? []).filter((image) => {
+              const key = photoImageDedupKey(image)
+              if (usedPhotoImageKeys.has(key)) return false
+              usedPhotoImageKeys.add(key)
+              return true
+            })
+
+        return { note, images, checkpointNumber }
+      })
       .filter((item) => item.images.length > 0)
-      .forEach(({ note, images }) => {
+      .forEach(({ note, images, checkpointNumber }) => {
         chunkArray(images, 4).forEach((imageChunk, imageChunkIndex) => {
           const referenceLabel = photoReferenceLabel(
             note,
-            checkpointNumberByNote.get(note.id),
+            checkpointNumber,
             displayNumberByNoteId.get(note.id)
           )
           blocks.push({
@@ -1887,6 +1812,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
   }, [
     checkpointNumberByNote,
     displayNumberByNoteId,
+    drainageReport,
     imagesByNoteId,
     inspectorSignature,
     notes,
