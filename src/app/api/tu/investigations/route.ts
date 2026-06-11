@@ -28,6 +28,9 @@ function mapAccessError(error: unknown) {
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
+  if (message === 'TU_REPORT_TEMPLATE_REQUIRED') return jsonError('Välj en mall innan utredningen skapas.', 400)
+  if (message === 'TU_REPORT_TEMPLATE_NOT_FOUND') return jsonError('Den valda TU-mallen är inte aktiv eller saknas.', 404)
+  if (message === 'TU_REPORT_TEMPLATE_EMPTY') return jsonError('Den valda TU-mallen saknar sektioner.', 409)
   return null
 }
 
@@ -105,6 +108,7 @@ export async function POST(request: Request) {
     const result = await createScratchTuInvestigation({
       orgId: context.orgId,
       createdBy: context.userId,
+      reportTemplateKey: text(body, 'reportTemplateKey') || null,
       responsibleProfileId: text(body, 'responsibleProfileId') || context.userId,
       title: text(body, 'title') || null,
       scopeDescription: text(body, 'scopeDescription') || null,

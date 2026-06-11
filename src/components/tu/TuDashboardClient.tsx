@@ -18,7 +18,12 @@ import {
   X,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
-import type { TuAssignmentListItem, TuInspectionSummary, TuInspectorProfileCard } from '@/lib/tu/server'
+import type {
+  TuAssignmentListItem,
+  TuInspectionSummary,
+  TuInspectorProfileCard,
+  TuReportTemplateOption,
+} from '@/lib/tu/server'
 
 type TuFormState = {
   objectType: 'villa' | 'apartment'
@@ -45,6 +50,7 @@ type TuFormState = {
 }
 
 type ScratchFormState = {
+  reportTemplateKey: string
   objectType: 'villa' | 'apartment'
   title: string
   scopeDescription: string
@@ -89,8 +95,9 @@ const EMPTY_TU_FORM: TuFormState = {
 }
 
 const EMPTY_SCRATCH_FORM: ScratchFormState = {
+  reportTemplateKey: '',
   objectType: 'villa',
-  title: 'Teknisk utredning',
+  title: '',
   scopeDescription: '',
   propertyAddress: '',
   propertyPostalCode: '',
@@ -157,17 +164,20 @@ function canStartAssignmentInvestigation(item: TuAssignmentListItem) {
 export default function TuDashboardClient({
   initialAssignments,
   initialInvestigations,
+  initialReportTemplates,
   inspectorProfile,
   initialError,
 }: {
   initialAssignments: TuAssignmentListItem[]
   initialInvestigations: TuInspectionSummary[]
+  initialReportTemplates: TuReportTemplateOption[]
   inspectorProfile: TuInspectorProfileCard | null
   initialError: string | null
 }) {
   const router = useRouter()
   const [assignments, setAssignments] = useState(initialAssignments)
   const [investigations] = useState(initialInvestigations)
+  const [reportTemplates] = useState(initialReportTemplates)
   const [form, setForm] = useState<TuFormState>(EMPTY_TU_FORM)
   const [scratchForm, setScratchForm] = useState<ScratchFormState>(EMPTY_SCRATCH_FORM)
   const [dialog, setDialog] = useState<'quick' | 'scratch' | null>(null)
@@ -200,6 +210,23 @@ export default function TuDashboardClient({
 
   const updateScratchForm = <K extends keyof ScratchFormState>(key: K, value: ScratchFormState[K]) => {
     setScratchForm((current) => ({ ...current, [key]: value }))
+  }
+
+  const updateScratchTemplate = (reportTemplateKey: string) => {
+    setScratchForm((current) => {
+      const previousTemplate = reportTemplates.find((template) => template.key === current.reportTemplateKey)
+      const nextTemplate = reportTemplates.find((template) => template.key === reportTemplateKey)
+      const shouldUseTemplateTitle =
+        !current.title.trim() ||
+        current.title === previousTemplate?.documentTitle ||
+        current.title === 'Teknisk utredning'
+
+      return {
+        ...current,
+        reportTemplateKey,
+        title: shouldUseTemplateTitle && nextTemplate ? nextTemplate.documentTitle : current.title,
+      }
+    })
   }
 
   const submitAssignment = async (sendNow: boolean) => {
@@ -246,6 +273,12 @@ export default function TuDashboardClient({
   }
 
   const createScratchInvestigation = async () => {
+    if (!scratchForm.reportTemplateKey.trim()) {
+      setError('Välj en mall innan utredningen skapas.')
+      setNotice(null)
+      return
+    }
+
     const missingVillaObject = scratchForm.objectType === 'villa' && !scratchForm.cadastralId.trim()
     const missingApartmentObject =
       scratchForm.objectType === 'apartment' &&
@@ -282,14 +315,23 @@ export default function TuDashboardClient({
     }
   }
 
-  const startInvestigationFromAssignment = async () => {
+  const startInvestigationFromAssignment = async (reportTemplateKey: string) => {
     if (!selectedAssignment || !canStartAssignmentInvestigation(selectedAssignment)) return
+    if (!reportTemplateKey.trim()) {
+      setError('Välj en mall innan utredningen startas.')
+      setNotice(null)
+      return
+    }
 
     setBusy(`assignment-${selectedAssignment.id}`)
     setError(null)
     setNotice(null)
     try {
-      const response = await fetch(`/api/tu/assignments/${selectedAssignment.id}/convert`, { method: 'POST' })
+      const response = await fetch(`/api/tu/assignments/${selectedAssignment.id}/convert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reportTemplateKey }),
+      })
       const payload = (await response.json().catch(() => null)) as
         | { error?: string; inspectionId?: string }
         | null
@@ -381,9 +423,11 @@ export default function TuDashboardClient({
         {dialog === 'scratch' ? (
           <ScratchInvestigationDialog
             form={scratchForm}
+            reportTemplates={reportTemplates}
             busy={busy}
             onClose={() => setDialog(null)}
             onChange={updateScratchForm}
+            onTemplateChange={updateScratchTemplate}
             onSubmit={createScratchInvestigation}
           />
         ) : null}
@@ -391,6 +435,7 @@ export default function TuDashboardClient({
         {selectedAssignment ? (
           <StartFromAssignmentDialog
             assignment={selectedAssignment}
+            reportTemplates={reportTemplates}
             busy={busy === `assignment-${selectedAssignment.id}`}
             onClose={() => setSelectedAssignment(null)}
             onSubmit={startInvestigationFromAssignment}
@@ -754,15 +799,20 @@ function ListEmptyState({ children }: { children: React.ReactNode }) {
 
 function StartFromAssignmentDialog({
   assignment,
+  reportTemplates,
   busy,
   onClose,
   onSubmit,
 }: {
   assignment: TuAssignmentListItem
+  reportTemplates: TuReportTemplateOption[]
   busy: boolean
   onClose: () => void
-  onSubmit: () => void
+  onSubmit: (reportTemplateKey: string) => void
 }) {
+  const [reportTemplateKey, setReportTemplateKey] = useState('')
+  const canSubmit = Boolean(reportTemplateKey.trim()) && reportTemplates.length > 0
+
   return (
     <div className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-950/55 p-0 sm:items-center sm:p-4">
       <section
@@ -804,6 +854,14 @@ function StartFromAssignmentDialog({
           </p>
         </div>
 
+        <TemplateSelect
+          label="Mall för utlåtandet *"
+          value={reportTemplateKey}
+          templates={reportTemplates}
+          disabled={busy}
+          onChange={setReportTemplateKey}
+        />
+
         <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button
             type="button"
@@ -815,8 +873,8 @@ function StartFromAssignmentDialog({
           </button>
           <button
             type="button"
-            onClick={onSubmit}
-            disabled={busy}
+            onClick={() => onSubmit(reportTemplateKey)}
+            disabled={busy || !canSubmit}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-wait disabled:bg-violet-300"
           >
             <Play size={15} aria-hidden />
@@ -1022,25 +1080,39 @@ function QuickAssignmentDialog({
 
 function ScratchInvestigationDialog({
   form,
+  reportTemplates,
   busy,
   onClose,
   onChange,
+  onTemplateChange,
   onSubmit,
 }: {
   form: ScratchFormState
+  reportTemplates: TuReportTemplateOption[]
   busy: string | null
   onClose: () => void
   onChange: <K extends keyof ScratchFormState>(key: K, value: ScratchFormState[K]) => void
+  onTemplateChange: (reportTemplateKey: string) => void
   onSubmit: () => void
 }) {
+  const canSubmit = Boolean(form.reportTemplateKey.trim()) && reportTemplates.length > 0
+
   return (
     <DialogShell
       title="Starta utredning"
       subtitle="Skapa en teknisk utredning utan uppdragsbekräftelse."
       onClose={onClose}
     >
+      <TemplateSelect
+        label="Mall för utlåtandet *"
+        value={form.reportTemplateKey}
+        templates={reportTemplates}
+        disabled={busy === 'scratch'}
+        onChange={onTemplateChange}
+      />
+
       <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <Field label="Rubrik" value={form.title} onChange={(value) => onChange('title', value)} />
+        <Field label="Dokumentrubrik" value={form.title} onChange={(value) => onChange('title', value)} />
         <Field label="Kundnamn" value={form.customerName} onChange={(value) => onChange('customerName', value)} />
         <Field
           label="Kundmejl"
@@ -1116,7 +1188,7 @@ function ScratchInvestigationDialog({
         <button
           type="button"
           onClick={onSubmit}
-          disabled={busy === 'scratch'}
+          disabled={busy === 'scratch' || !canSubmit}
           className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-wait disabled:bg-violet-300 sm:w-auto"
         >
           <CalendarDays size={16} aria-hidden />
@@ -1124,6 +1196,62 @@ function ScratchInvestigationDialog({
         </button>
       </div>
     </DialogShell>
+  )
+}
+
+function TemplateSelect({
+  label,
+  value,
+  templates,
+  disabled,
+  onChange,
+}: {
+  label: string
+  value: string
+  templates: TuReportTemplateOption[]
+  disabled?: boolean
+  onChange: (value: string) => void
+}) {
+  const selectedTemplate = templates.find((template) => template.key === value) ?? null
+
+  return (
+    <div className="mt-4 rounded-lg border border-violet-100 bg-violet-50/50 p-3">
+      <label className="space-y-1">
+        <span className="block text-xs font-medium text-slate-600">{label}</span>
+        <select
+          value={value}
+          disabled={disabled || templates.length === 0}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-slate-100 disabled:text-slate-500"
+        >
+          <option value="">Välj mall...</option>
+          {templates.map((template) => (
+            <option key={template.key} value={template.key}>
+              {template.title}
+            </option>
+          ))}
+        </select>
+      </label>
+      {selectedTemplate ? (
+        <div className="mt-2 text-xs leading-5 text-slate-600">
+          <p>
+            <span className="font-semibold text-slate-800">Dokument:</span> {selectedTemplate.documentTitle}
+          </p>
+          <p>
+            <span className="font-semibold text-slate-800">Projekttyp:</span> {selectedTemplate.projectType}
+          </p>
+          {selectedTemplate.description ? <p>{selectedTemplate.description}</p> : null}
+        </div>
+      ) : templates.length === 0 ? (
+        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+          Det finns inga aktiva TU-mallar. Lägg in standardmallar i admin innan nya utredningar skapas.
+        </div>
+      ) : (
+        <p className="mt-2 text-xs leading-5 text-slate-500">
+          Mallen väljs bara vid skapande och kopieras sedan till utlåtandet.
+        </p>
+      )}
+    </div>
   )
 }
 

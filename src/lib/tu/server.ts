@@ -19,8 +19,13 @@ import type { InspectorCertificationListItem } from '@/lib/certifications/profil
 import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
+import type {
+  TuReportTemplateOption,
+  TuReportTemplateSectionOption,
+} from '@/lib/tu/reportTemplates'
 
 export type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
+export type { TuReportTemplateOption, TuReportTemplateSectionOption } from '@/lib/tu/reportTemplates'
 
 export type TuReportSystemSectionKey =
   | 'assignment_parties'
@@ -52,6 +57,11 @@ export type TuReportSection = {
   title: string
   text: string
   subsections?: TuReportSubsection[]
+  templateSectionKey?: string
+  aiInstruction?: string | null
+  isRequired?: boolean
+  includeInToc?: boolean
+  allowDelete?: boolean
 }
 
 export type TuReportDraft = {
@@ -169,6 +179,10 @@ type TuDetailRow = {
   accessibility: string | null
   report_draft: unknown
   report_draft_updated_at: string | null
+  report_template_key?: string | null
+  report_template_title?: string | null
+  report_template_version?: number | null
+  report_template_applied_at?: string | null
   report_locked_at: string | null
   created_by: string | null
   created_at: string | null
@@ -238,6 +252,33 @@ type TuReportSectionTypeRow = {
   sort_order: number | null
   is_active: boolean | null
   is_system: boolean | null
+}
+
+type TuReportTemplateRow = {
+  id: string
+  key: string
+  title: string
+  description: string | null
+  document_title: string
+  project_type: string
+  version: number | null
+  sort_order: number | null
+  is_active: boolean | null
+  is_system: boolean | null
+}
+
+type TuReportTemplateSectionRow = {
+  id: string
+  template_id: string
+  template_section_key: string
+  section_type_key: string
+  title_override: string | null
+  default_content: string | null
+  ai_instruction: string | null
+  sort_order: number | null
+  is_required: boolean | null
+  include_in_toc: boolean | null
+  allow_delete: boolean | null
 }
 
 type SupabaseError = {
@@ -369,6 +410,10 @@ function normalizeTuReportSubsections(value: unknown, sectionId: string): TuRepo
     .filter((item): item is TuReportSubsection => Boolean(item))
 }
 
+function readOptionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined
+}
+
 export function normalizeTuReportDraft(value: unknown): TuReportDraft {
   if (!value || typeof value !== 'object' || !('sections' in value)) return createTuReportDraft()
 
@@ -409,6 +454,12 @@ export function normalizeTuReportDraft(value: unknown): TuReportDraft {
 
     const rawTitle = cleanText((section as { title?: unknown }).title as string | null | undefined)
     const rawText = (section as { text?: unknown }).text
+    const templateSectionKey = cleanText(
+      (section as { templateSectionKey?: unknown }).templateSectionKey as string | null | undefined
+    )
+    const aiInstruction = cleanText(
+      (section as { aiInstruction?: unknown }).aiInstruction as string | null | undefined
+    )
     normalizedSections.push({
       id,
       key: sectionKey,
@@ -420,6 +471,17 @@ export function normalizeTuReportDraft(value: unknown): TuReportDraft {
             ? legacyAccessibilityText || DEFAULT_TU_SECTION_TEXT[sectionKey] || ''
             : DEFAULT_TU_SECTION_TEXT[sectionKey] || '',
       subsections: normalizeTuReportSubsections((section as { subsections?: unknown }).subsections, id),
+      ...(templateSectionKey ? { templateSectionKey } : {}),
+      ...(aiInstruction ? { aiInstruction } : {}),
+      ...(readOptionalBoolean((section as { isRequired?: unknown }).isRequired) !== undefined
+        ? { isRequired: readOptionalBoolean((section as { isRequired?: unknown }).isRequired) }
+        : {}),
+      ...(readOptionalBoolean((section as { includeInToc?: unknown }).includeInToc) !== undefined
+        ? { includeInToc: readOptionalBoolean((section as { includeInToc?: unknown }).includeInToc) }
+        : {}),
+      ...(readOptionalBoolean((section as { allowDelete?: unknown }).allowDelete) !== undefined
+        ? { allowDelete: readOptionalBoolean((section as { allowDelete?: unknown }).allowDelete) }
+        : {}),
     })
   }
 
@@ -477,6 +539,191 @@ export async function listTuReportSectionTypeOptions(): Promise<TuReportSectionT
     .filter((item): item is TuReportSectionTypeOption => Boolean(item))
 
   return rows
+}
+
+function mapTuReportTemplate(row: TuReportTemplateRow): TuReportTemplateOption | null {
+  if (!isTuReportSectionKey(row.key)) return null
+  const title = cleanText(row.title)
+  const documentTitle = cleanText(row.document_title)
+  const projectType = cleanText(row.project_type)
+  if (!title || !documentTitle || !projectType) return null
+  return {
+    id: row.id,
+    key: row.key.trim(),
+    title,
+    description: row.description,
+    documentTitle,
+    projectType,
+    version: row.version ?? 1,
+    sortOrder: row.sort_order ?? 100,
+    isActive: Boolean(row.is_active),
+    isSystem: Boolean(row.is_system),
+  }
+}
+
+function mapTuReportTemplateSection(
+  row: TuReportTemplateSectionRow,
+  titleBySectionTypeKey: Map<string, string>
+): TuReportTemplateSectionOption | null {
+  if (!isTuReportSectionKey(row.template_section_key)) return null
+  if (!isTuReportSectionKey(row.section_type_key)) return null
+  return {
+    id: row.id,
+    templateSectionKey: row.template_section_key.trim(),
+    sectionTypeKey: row.section_type_key.trim(),
+    sectionTypeTitle: titleBySectionTypeKey.get(row.section_type_key.trim()) ?? null,
+    titleOverride: cleanText(row.title_override),
+    defaultContent: typeof row.default_content === 'string' ? row.default_content : null,
+    aiInstruction: cleanText(row.ai_instruction),
+    sortOrder: row.sort_order ?? 100,
+    isRequired: Boolean(row.is_required),
+    includeInToc: row.include_in_toc !== false,
+    allowDelete: row.allow_delete !== false,
+  }
+}
+
+export async function listTuReportTemplateOptions(): Promise<TuReportTemplateOption[]> {
+  const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
+  const { data, error } = await admin
+    .from('settings_tu_report_templates')
+    .select('id,key,title,description,document_title,project_type,version,sort_order,is_active,is_system')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+    .order('title', { ascending: true })
+
+  if (error) {
+    console.warn('[tu] could not load report templates from settings_tu_report_templates', error.message)
+    return []
+  }
+
+  return ((data ?? []) as TuReportTemplateRow[])
+    .map(mapTuReportTemplate)
+    .filter((item): item is TuReportTemplateOption => Boolean(item))
+}
+
+async function getActiveTuReportTemplateByKey(key: string): Promise<TuReportTemplateOption> {
+  const templateKey = cleanText(key)
+  if (!templateKey) throw new Error('TU_REPORT_TEMPLATE_REQUIRED')
+
+  const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
+  const { data: templateData, error: templateError } = await admin
+    .from('settings_tu_report_templates')
+    .select('id,key,title,description,document_title,project_type,version,sort_order,is_active,is_system')
+    .eq('key', templateKey)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (templateError) {
+    throw new Error(templateError.message ?? 'TU_REPORT_TEMPLATE_LOAD_FAILED')
+  }
+
+  const template = templateData ? mapTuReportTemplate(templateData as TuReportTemplateRow) : null
+  if (!template) throw new Error('TU_REPORT_TEMPLATE_NOT_FOUND')
+  if (!template.id) throw new Error('TU_REPORT_TEMPLATE_NOT_FOUND')
+
+  const { data: sectionData, error: sectionError } = await admin
+    .from('settings_tu_report_template_sections')
+    .select(
+      'id,template_id,template_section_key,section_type_key,title_override,default_content,ai_instruction,sort_order,is_required,include_in_toc,allow_delete'
+    )
+    .eq('template_id', template.id)
+    .order('sort_order', { ascending: true })
+
+  if (sectionError) {
+    throw new Error(sectionError.message ?? 'TU_REPORT_TEMPLATE_SECTIONS_LOAD_FAILED')
+  }
+
+  const rawSections = (sectionData ?? []) as TuReportTemplateSectionRow[]
+  if (rawSections.length === 0) throw new Error('TU_REPORT_TEMPLATE_EMPTY')
+
+  const sectionTypeKeys = [...new Set(rawSections.map((row) => row.section_type_key.trim()).filter(Boolean))]
+  const { data: sectionTypeData, error: sectionTypeError } =
+    sectionTypeKeys.length > 0
+      ? await admin
+          .from('settings_tu_report_section_types')
+          .select('key,title')
+          .in('key', sectionTypeKeys)
+      : { data: [], error: null }
+
+  if (sectionTypeError) {
+    throw new Error(sectionTypeError.message ?? 'TU_REPORT_TEMPLATE_SECTION_TYPES_LOAD_FAILED')
+  }
+
+  const titleBySectionTypeKey = new Map(
+    ((sectionTypeData ?? []) as Array<{ key: string; title: string | null }>).map((row) => [
+      row.key,
+      cleanText(row.title) ?? row.key,
+    ])
+  )
+  const sections = rawSections
+    .map((row) => mapTuReportTemplateSection(row, titleBySectionTypeKey))
+    .filter((item): item is TuReportTemplateSectionOption => Boolean(item))
+
+  if (sections.length === 0) throw new Error('TU_REPORT_TEMPLATE_EMPTY')
+
+  return {
+    ...template,
+    sections,
+  }
+}
+
+function createTuReportDraftFromTemplate(
+  template: TuReportTemplateOption,
+  seed?: Partial<Record<string, string>>
+): TuReportDraft {
+  const contentSections = (template.sections ?? [])
+    .filter((section) => isTuReportSectionKey(section.sectionTypeKey))
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.templateSectionKey.localeCompare(right.templateSectionKey, 'sv'))
+    .map((section) => {
+      const sectionKey = section.sectionTypeKey.trim()
+      const title =
+        cleanText(section.titleOverride) ??
+        cleanText(section.sectionTypeTitle) ??
+        TU_REPORT_SECTION_BY_KEY.get(sectionKey)?.title ??
+        sectionKey
+      const defaultContent =
+        typeof section.defaultContent === 'string'
+          ? section.defaultContent
+          : seed?.[sectionKey] ?? DEFAULT_TU_SECTION_TEXT[sectionKey] ?? ''
+      return {
+        id: section.templateSectionKey,
+        key: sectionKey,
+        title,
+        text: defaultContent,
+        subsections: [],
+        templateSectionKey: section.templateSectionKey,
+        aiInstruction: section.aiInstruction ?? null,
+        isRequired: section.isRequired,
+        includeInToc: section.includeInToc,
+        allowDelete: section.allowDelete,
+      } satisfies TuReportSection
+    })
+
+  return {
+    sections: [
+      {
+        id: 'assignment_parties',
+        key: 'assignment_parties',
+        title: TU_REPORT_SECTION_BY_KEY.get('assignment_parties')?.title ?? 'Uppdragsgivare och besiktningsman',
+        text: seed?.assignment_parties ?? DEFAULT_TU_SECTION_TEXT.assignment_parties ?? '',
+        subsections: [],
+        isRequired: true,
+        includeInToc: true,
+        allowDelete: false,
+      },
+      ...contentSections,
+      {
+        id: 'signature',
+        key: 'signature',
+        title: TU_REPORT_SECTION_BY_KEY.get('signature')?.title ?? 'Signering',
+        text: seed?.signature ?? DEFAULT_TU_SECTION_TEXT.signature ?? '',
+        subsections: [],
+        isRequired: true,
+        includeInToc: false,
+        allowDelete: false,
+      },
+    ],
+  }
 }
 
 function extractTuInspectorBlock(text: string) {
@@ -896,6 +1143,7 @@ async function createTuDetail(input: {
   propertyId: string
   title?: string | null
   projectType?: string | null
+  reportTemplate?: TuReportTemplateOption | null
   objectType?: TuObjectType | null
   scopeDescription?: string | null
   brfName?: string | null
@@ -915,6 +1163,10 @@ async function createTuDetail(input: {
       property_id: input.propertyId,
       title: cleanText(input.title) ?? 'Teknisk utredning',
       project_type: cleanText(input.projectType) ?? 'Fördjupad teknisk utredning',
+      report_template_key: input.reportTemplate?.key ?? null,
+      report_template_title: input.reportTemplate?.title ?? null,
+      report_template_version: input.reportTemplate?.version ?? null,
+      report_template_applied_at: input.reportTemplate ? new Date().toISOString() : null,
       property_object_type: objectType,
       scope_description: cleanText(input.scopeDescription),
       brf_name: objectType === 'apartment' ? cleanText(input.brfName) : null,
@@ -936,6 +1188,7 @@ async function createTuDetail(input: {
 export async function createScratchTuInvestigation(input: {
   orgId: string
   createdBy: string
+  reportTemplateKey?: string | null
   responsibleProfileId?: string | null
   title?: string | null
   scopeDescription?: string | null
@@ -958,8 +1211,9 @@ export async function createScratchTuInvestigation(input: {
   date?: string | null
   time?: string | null
 }) {
+  const reportTemplate = await getActiveTuReportTemplateByKey(input.reportTemplateKey ?? '')
   const ownerProfileId = cleanText(input.responsibleProfileId) ?? input.createdBy
-  const title = cleanText(input.title) ?? 'Teknisk utredning'
+  const title = cleanText(input.title) ?? reportTemplate.documentTitle
   const objectType = inferTuObjectType({
     objectType: input.objectType,
     brfName: input.brfName,
@@ -999,11 +1253,16 @@ export async function createScratchTuInvestigation(input: {
       orgId: input.orgId,
       propertyId: property.id,
       title,
+      projectType: reportTemplate.projectType,
+      reportTemplate,
       objectType,
       scopeDescription: input.scopeDescription,
       brfName: input.brfName,
       apartmentNumber: input.apartmentNumber,
       apartmentHolderName: input.apartmentHolderName,
+      reportDraft: createTuReportDraftFromTemplate(reportTemplate, {
+        assignment_scope: input.scopeDescription ?? '',
+      }),
       createdBy: input.createdBy,
     })
 
@@ -1021,6 +1280,7 @@ export async function createScratchTuInvestigation(input: {
 export async function convertTuAssignmentToInvestigation(input: {
   orgId: string
   assignmentId: string
+  reportTemplateKey?: string | null
   requestedByUserId: string
 }) {
   const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
@@ -1035,6 +1295,8 @@ export async function convertTuAssignmentToInvestigation(input: {
   if (assignment.status !== 'ordered') {
     throw new Error('TU_ASSIGNMENT_NOT_ACCEPTED')
   }
+
+  const reportTemplate = await getActiveTuReportTemplateByKey(input.reportTemplateKey ?? '')
 
   const objectType = inferTuObjectType({
     assignment,
@@ -1075,12 +1337,17 @@ export async function convertTuAssignmentToInvestigation(input: {
       orgId: input.orgId,
       assignmentId: assignment.id,
       propertyId: property.id,
-      title: 'Teknisk utredning',
+      title: reportTemplate.documentTitle,
+      projectType: reportTemplate.projectType,
+      reportTemplate,
       objectType,
       scopeDescription: assignment.scope_description,
       brfName: assignment.brf_name,
       apartmentNumber: assignment.apartment_number,
       apartmentHolderName: assignment.apartment_holder_name,
+      reportDraft: createTuReportDraftFromTemplate(reportTemplate, {
+        assignment_scope: assignment.scope_description ?? '',
+      }),
       createdBy: input.requestedByUserId,
     })
 

@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import EbSettingsPanel from '@/components/eb/EbSettingsPanel'
 import TuReportSectionTypesAdminPanel from '@/components/tu/TuReportSectionTypesAdminPanel'
+import TuReportTemplatesAdminPanel from '@/components/tu/TuReportTemplatesAdminPanel'
 import ForutsattningarSettingsPage from '@/app/(app)/settings/forutsattningar/page'
 import ObUtsidaSettingsPage from '@/app/(app)/settings/ob-utsida/page'
 import {
@@ -226,13 +227,15 @@ export default function AdminClient() {
         ? 'eb'
       : search.get('tab') === 'tu-sections'
         ? 'tu-sections'
+      : search.get('tab') === 'tu-templates'
+        ? 'tu-templates'
         : 'docs') as AdminTab
   const [tab, setTab] = useState<AdminTab>(initialTab)
 
   // Synka tab <-> URL
   useEffect(() => {
     const t = search.get('tab')
-    if (t === 'docs' || t === 'comps' || t === 'control-points' || t === 'exterior-items' || t === 'room-types' || t === 'certifications' || t === 'forutsattningar' || t === 'addon-services' || t === 'eb' || t === 'tu-sections') setTab(t)
+    if (t === 'docs' || t === 'comps' || t === 'control-points' || t === 'exterior-items' || t === 'room-types' || t === 'certifications' || t === 'forutsattningar' || t === 'addon-services' || t === 'eb' || t === 'tu-sections' || t === 'tu-templates') setTab(t)
   }, [search])
   const setTabAndPush = (t: AdminTab) => {
     setTab(t)
@@ -1593,6 +1596,7 @@ export default function AdminClient() {
         {tab === 'forutsattningar' && <ForutsattningarSettingsPage />}
         {tab === 'exterior-items' && <ObUtsidaSettingsPage />}
         {tab === 'eb' && <EbSettingsPanel />}
+        {tab === 'tu-templates' && <TuReportTemplatesAdminPanel />}
         {tab === 'tu-sections' && <TuReportSectionTypesAdminPanel />}
 
         {tab === 'docs' && (

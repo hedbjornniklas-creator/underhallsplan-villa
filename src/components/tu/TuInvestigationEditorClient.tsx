@@ -993,7 +993,7 @@ export default function TuInvestigationEditorClient({
   const removeReportSection = async (sectionId: string) => {
     if (locked) return
     const section = draftRef.current.sections.find((item) => getSectionInstanceId(item) === sectionId)
-    if (!section || PROTECTED_SECTION_KEYS.has(section.key)) return
+    if (!section || PROTECTED_SECTION_KEYS.has(section.key) || section.isRequired || section.allowDelete === false) return
     const nextDraft = {
       sections: draftRef.current.sections.filter((item) => getSectionInstanceId(item) !== sectionId),
     }
@@ -2450,6 +2450,8 @@ export default function TuInvestigationEditorClient({
             const sectionNumberLabel = String(index + 1)
             const isAssignmentParties = section.key === 'assignment_parties'
             const isProtected = PROTECTED_SECTION_KEYS.has(section.key)
+            const canChangeSectionType = !isProtected && !section.isRequired
+            const canDeleteSection = !isProtected && !section.isRequired && section.allowDelete !== false
             const collapsed = collapsedSections.has(sectionId)
             const canMoveUp = index > 1 && !isProtected
             const canMoveDown = index < visibleSections.length - 1 && !isProtected
@@ -2462,7 +2464,7 @@ export default function TuInvestigationEditorClient({
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                     <span className="text-base font-semibold text-gray-950">{sectionNumberLabel}.</span>
-                    {isProtected ? (
+                    {!canChangeSectionType ? (
                       <h2 className="text-base font-semibold text-gray-950">{section.title}</h2>
                     ) : (
                       <select
@@ -2513,7 +2515,7 @@ export default function TuInvestigationEditorClient({
                     >
                       <MoveDown size={15} aria-hidden />
                     </button>
-                    {!isProtected ? (
+                    {canDeleteSection ? (
                       <button
                         type="button"
                         onClick={() => void removeReportSection(sectionId)}

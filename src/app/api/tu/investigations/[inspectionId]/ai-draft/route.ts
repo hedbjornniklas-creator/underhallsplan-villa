@@ -151,6 +151,7 @@ export async function POST(
         sectionKey: section.key,
         title: section.title,
         currentText: section.text,
+        aiInstruction: section.aiInstruction ?? null,
       })),
     }
 

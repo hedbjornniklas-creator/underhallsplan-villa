@@ -17,19 +17,25 @@ function mapError(error: unknown) {
   if (message === 'TU_ASSIGNMENT_NOT_ACCEPTED') {
     return jsonError('Uppdraget måste vara godkänt innan utredningen kan startas.', 409)
   }
+  if (message === 'TU_REPORT_TEMPLATE_REQUIRED') return jsonError('Välj en mall innan utredningen startas.', 400)
+  if (message === 'TU_REPORT_TEMPLATE_NOT_FOUND') return jsonError('Den valda TU-mallen är inte aktiv eller saknas.', 404)
+  if (message === 'TU_REPORT_TEMPLATE_EMPTY') return jsonError('Den valda TU-mallen saknar sektioner.', 409)
   return null
 }
 
 export async function POST(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await context.params
     const orgContext = await requireTuContext()
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const reportTemplateKey = typeof body.reportTemplateKey === 'string' ? body.reportTemplateKey.trim() : ''
     const result = await convertTuAssignmentToInvestigation({
       orgId: orgContext.orgId,
       assignmentId: id,
+      reportTemplateKey,
       requestedByUserId: orgContext.userId,
     })
 
