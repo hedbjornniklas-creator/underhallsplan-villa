@@ -317,12 +317,17 @@ function PartyLabel({
 
 function ContractPartiesReport({ report }: { report: EbInspectionReport }) {
   const vocabulary = resolveEbAgreementVocabulary(report.project.standardAgreement)
+  const agreedWorks = report.project.objectDescription?.trim()
 
   return (
     <div className="text-[10.5pt] leading-[1.35] text-black">
       <div className="grid grid-cols-[62mm_1fr] gap-x-4">
         <div>Avtalsform:</div>
         <div>{vocabulary.agreementLine}</div>
+      </div>
+      <div className="mt-2 grid grid-cols-[62mm_1fr] gap-x-4">
+        <div>Avtalade arbeten:</div>
+        <div className="whitespace-pre-wrap">{agreedWorks || '-'}</div>
       </div>
 
       <div className="mt-2 underline">Parter:</div>
@@ -386,7 +391,7 @@ function InspectorReport({
 
   return (
     <ReportSection title={section.title} headingMarker>
-      <dl className="grid grid-cols-[34mm_1fr] gap-x-4 gap-y-0.5 text-[10.5pt] leading-[1.35] text-black">
+      <dl className="grid grid-cols-[62mm_1fr] gap-x-4 gap-y-0.5 text-[10.5pt] leading-[1.35] text-black">
         {contactRows.map((row) => (
           <div key={row.label} className="contents">
             <dt>{row.label}:</dt>
@@ -843,6 +848,8 @@ function reportRecipients(report: EbInspectionReport) {
   return report.participants.filter((participant) => participant.receivesReport)
 }
 
+type EbInspectorSignature = NonNullable<EbInspectionReport['branding']['signature']>
+
 function signatureRows(report: EbInspectionReport) {
   const signatureSection = report.reportDraft.sections.find(
     (section) => section.key === 'signature_certificate'
@@ -856,14 +863,40 @@ function signatureRows(report: EbInspectionReport) {
   return { name, details }
 }
 
+function inspectorSignatureForReport(report: EbInspectionReport): EbInspectorSignature | null {
+  const signature = report.branding.signature
+  if (signature) {
+    return {
+      ...signature,
+      signatureUrl: signature.signatureUrl ?? report.branding.inspectorSignatureUrl ?? null,
+      avatarUrl: signature.avatarUrl ?? report.branding.inspectorAvatarUrl ?? null,
+    }
+  }
+
+  const fallbackRows = signatureRows(report)
+  const signatureUrl = report.branding.inspectorSignatureUrl ?? null
+  const avatarUrl = report.branding.inspectorAvatarUrl ?? null
+  const credentialLines = fallbackRows.details
+    .filter((row) => row.label !== 'Telefon' && row.label !== 'E-post')
+    .map((row) => `${row.label}: ${row.value}`)
+
+  if (!signatureUrl && !avatarUrl && fallbackRows.name === '-' && credentialLines.length === 0) return null
+
+  return {
+    locationAndDate: '',
+    inspectorName: fallbackRows.name !== '-' ? fallbackRows.name : 'Besiktningsman',
+    avatarUrl,
+    signatureUrl,
+    credentialLines,
+  }
+}
+
 function DistributionListReport({ report }: { report: EbInspectionReport }) {
   const recipients = reportRecipients(report)
   const distributionDate = report.inspection.reportDistributionDate?.trim() || 'Klicka här - ange datum'
-  const inspectorSignature = report.branding.signature
 
   return (
-    <>
-      <ReportSection title="Sändlista">
+    <ReportSection title="Sändlista">
         <div className="space-y-4 text-[10.5pt] leading-[1.35] text-black">
           <p>
             Undertecknat utlåtande har {distributionDate} sänts per e-post till parterna och övriga enligt nedan.
@@ -893,17 +926,14 @@ function DistributionListReport({ report }: { report: EbInspectionReport }) {
           )}
 
         </div>
-      </ReportSection>
-
-      {inspectorSignature ? <InspectorSignatureCard signature={inspectorSignature} /> : null}
-    </>
+    </ReportSection>
   )
 }
 
 function InspectorSignatureCard({
   signature,
 }: {
-  signature: NonNullable<EbInspectionReport['branding']['signature']>
+  signature: EbInspectorSignature
 }) {
   const hasCredentials = signature.credentialLines.length > 0
 
@@ -918,6 +948,10 @@ function InspectorSignatureCard({
             <img
               src={signature.avatarUrl}
               alt={signature.inspectorName}
+              data-eb-print-measure-image="true"
+              onError={(event) => {
+                event.currentTarget.dataset.ebImageFailed = 'true'
+              }}
               className="h-full w-full object-cover"
             />
           </div>
@@ -932,6 +966,10 @@ function InspectorSignatureCard({
             <img
               src={signature.signatureUrl}
               alt={`Underskrift ${signature.inspectorName}`}
+              data-eb-print-measure-image="true"
+              onError={(event) => {
+                event.currentTarget.dataset.ebImageFailed = 'true'
+              }}
               className="max-h-full max-w-full object-contain"
             />
           </div>
@@ -1173,42 +1211,51 @@ function NoteTable({
   )
 }
 
-function PhotoAppendixNoteArticle({
+function photoReferenceLabel(note: EbNote, checkpointNumber: number | undefined, displayNumber: number | undefined) {
+  if (checkpointNumber) return `Kontrollpunkt ${checkpointNumber}`
+  if (displayNumber) return `Notering ${displayNumber}`
+  return note.noteNumber ? `Notering ${note.noteNumber}` : 'Notering'
+}
+
+function PhotoAppendixBlock({
   note,
   images,
-  checkpointNumber,
+  referenceLabel,
   showTitle = false,
 }: {
   note: EbNote
   images: EbNoteImage[]
-  checkpointNumber?: number
+  referenceLabel: string
   showTitle?: boolean
 }) {
   const location = noteLocationLine(note)
 
   return (
-    <section className="eb-report-section break-inside-avoid">
+    <section className="eb-report-section">
       {showTitle ? <h2 className={REPORT_APPENDIX_HEADING_CLASS_NAME}>FOTOBILAGA</h2> : null}
-      <article>
-        <div className="mb-2 text-[10pt] leading-snug text-black">
-          {checkpointNumber ? <p className="font-bold">Kontrollpunkt {checkpointNumber}</p> : null}
-          {location !== '-' ? <p>Del/Rum: {location}</p> : null}
-          {note.noteText?.trim() ? (
-            <p className="whitespace-pre-wrap">Notering: {note.noteText}</p>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap justify-start gap-x-6 gap-y-5">
-          {images.map((image) => (
-            <figure key={image.id} className="flex h-[62mm] w-[78mm] break-inside-avoid items-center justify-start">
-              <img
-                src={reportImageSrc(image)}
-                alt={checkpointNumber ? `Bild till kontrollpunkt ${checkpointNumber}` : 'Bild till notering'}
-                className="max-h-full max-w-full object-contain"
-              />
-            </figure>
-          ))}
-        </div>
-      </article>
+      <div className="mb-3 text-[10pt] leading-snug text-black">
+        <p className="font-bold">{referenceLabel}</p>
+        {location !== '-' ? <p>Del/Rum: {location}</p> : null}
+        {note.noteText?.trim() ? (
+          <p className="whitespace-pre-wrap">Notering: {note.noteText}</p>
+        ) : null}
+      </div>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-6">
+        {images.map((image) => (
+          <figure key={image.id} className="grid h-[72mm] break-inside-avoid grid-rows-[minmax(0,1fr)]">
+            <img
+              src={reportImageSrc(image)}
+              alt={`Bild till ${referenceLabel.toLocaleLowerCase('sv-SE')}`}
+              data-eb-print-measure-image="true"
+              onError={(event) => {
+                event.currentTarget.dataset.ebImageFailed = 'true'
+              }}
+              className="h-full w-full object-contain"
+              style={{ objectPosition: 'left center' }}
+            />
+          </figure>
+        ))}
+      </div>
     </section>
   )
 }
@@ -1472,8 +1519,12 @@ function EbPrintPagedDocument({
 
   useLayoutEffect(() => {
     const measureRoot = document.querySelector<HTMLElement>('.eb-print-measure')
-    const images = Array.from(measureRoot?.querySelectorAll<HTMLImageElement>('img') ?? [])
-    const imagesReady = images.every((image) => image.complete)
+    const images = Array.from(
+      measureRoot?.querySelectorAll<HTMLImageElement>('[data-eb-print-measure-image="true"]') ?? []
+    )
+    const imagesReady = images.every(
+      (image) => image.complete && (image.naturalWidth > 0 || image.dataset.ebImageFailed === 'true')
+    )
 
     if (!imagesReady) {
       const timeout = window.setTimeout(() => setMeasureVersion((version) => version + 1), 80)
@@ -1605,6 +1656,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
     return grouped
   }, [report.images])
   const checkpointNumberByNote = useMemo(() => checkpointNumberByNoteId(report), [report])
+  const inspectorSignature = useMemo(() => inspectorSignatureForReport(report), [report])
   const reportBlocks = useMemo<EbPrintableBlock[]>(() => {
     const blocks: EbPrintableBlock[] = [
       {
@@ -1750,6 +1802,13 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
       })
     }
 
+    if (inspectorSignature) {
+      blocks.push({
+        id: 'inspector-signature',
+        node: <InspectorSignatureCard signature={inspectorSignature} />,
+      })
+    }
+
     let photoBlockIndex = 0
     const usedPhotoImageKeys = new Set<string>()
     notes
@@ -1765,14 +1824,19 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
       .filter((item) => item.images.length > 0)
       .forEach(({ note, images }) => {
         chunkArray(images, 4).forEach((imageChunk, imageChunkIndex) => {
+          const referenceLabel = photoReferenceLabel(
+            note,
+            checkpointNumberByNote.get(note.id),
+            displayNumberByNoteId.get(note.id)
+          )
           blocks.push({
             id: `photo-${note.id}-${imageChunkIndex}`,
             startsNewPage: photoBlockIndex === 0,
             node: (
-              <PhotoAppendixNoteArticle
-                checkpointNumber={checkpointNumberByNote.get(note.id)}
+              <PhotoAppendixBlock
                 images={imageChunk}
                 note={note}
+                referenceLabel={imageChunkIndex === 0 ? referenceLabel : `${referenceLabel} (forts.)`}
                 showTitle={photoBlockIndex === 0}
               />
             ),
@@ -1782,7 +1846,16 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
       })
 
     return blocks
-  }, [checkpointNumberByNote, displayNumberByNoteId, imagesByNoteId, notes, report, reportSections, scopeSection])
+  }, [
+    checkpointNumberByNote,
+    displayNumberByNoteId,
+    imagesByNoteId,
+    inspectorSignature,
+    notes,
+    report,
+    reportSections,
+    scopeSection,
+  ])
 
   useEffect(() => {
     const previousTitle = document.title
