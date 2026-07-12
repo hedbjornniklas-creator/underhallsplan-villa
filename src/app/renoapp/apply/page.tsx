@@ -21,7 +21,7 @@ export default function RenoAppResidentApplyEntryPage() {
 
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase()
-    if (!query) return items
+    if (!query) return []
 
     return items.filter((item) => {
       const haystack = [item.name, item.slug, item.address ?? ''].join(' ').toLowerCase()
@@ -203,6 +203,8 @@ export default function RenoAppResidentApplyEntryPage() {
 
               {loading ? (
                 <p className="mt-6 text-sm text-stone-600">Laddar BRF-lista...</p>
+              ) : search.trim().length === 0 ? (
+                <p className="mt-6 text-sm text-stone-600">Skriv in namn eller adress för att söka efter din BRF.</p>
               ) : filteredItems.length === 0 ? (
                 <p className="mt-6 text-sm text-stone-600">Ingen BRF matchade din sökning.</p>
               ) : (
