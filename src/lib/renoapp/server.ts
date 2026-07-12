@@ -2,7 +2,6 @@
 import { cookies } from 'next/headers'
 import { getCurrentUserPlatformAccessContext, type PlatformAccessAssignment } from '@/lib/access/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -1243,6 +1242,13 @@ export type RenoAppEditableBrf = {
   isPublicApplyEnabled: boolean
   isPublicApplyListed: boolean
   onboardingCompletedAt: string | null
+}
+
+export type RenoAppAdminBrfListItem = RenoAppEditableBrf & {
+  createdAt: string | null
+  caseCount: number
+  memberCount: number
+  pendingInviteCount: number
 }
 
 type UpdateRenoAppBrfInput = {
@@ -4912,6 +4918,12 @@ function mapEditableBrfRow(row: BrfAssociationRow): RenoAppEditableBrf {
   }
 }
 
+function incrementCount(map: Map<string, number>, key: unknown) {
+  const normalizedKey = String(key ?? '')
+  if (!normalizedKey) return
+  map.set(normalizedKey, (map.get(normalizedKey) ?? 0) + 1)
+}
+
 function makeToken() {
   return crypto.randomBytes(24).toString('base64url')
 }
@@ -5464,6 +5476,68 @@ export async function listEditableRenoAppBrfs(): Promise<RenoAppEditableBrf[]> {
   }
 
   return ((data ?? []) as BrfAssociationRow[]).map(mapEditableBrfRow)
+}
+
+export async function listRenoAppAdminBrfs(): Promise<RenoAppAdminBrfListItem[]> {
+  await requireRenoAppAdminProfile()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+
+  const { data, error } = await admin
+    .from('brf_associations')
+    .select(
+      'id,name,slug,org_number,address,address_line_2,postal_code,city,email,phone,property_designation,invoice_address,invoice_email,invoice_reference,primary_contact_name,primary_contact_email,primary_contact_phone,unit_count,technical_contact,is_public_apply_enabled,is_public_apply_listed,apply_intro_text,onboarding_completed_at,created_at'
+    )
+    .order('name', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte lÃ¤sa BRF:er.')
+  }
+
+  const rows = (data ?? []) as Array<BrfAssociationRow & { created_at?: string | null }>
+  const brfIds = rows.map((row) => row.id).filter(Boolean)
+
+  const [membersResult, invitesResult, casesResult] = await Promise.all([
+    brfIds.length > 0
+      ? admin.from('brf_members').select('brf_id').in('brf_id', brfIds).eq('is_active', true)
+      : Promise.resolve({ data: [], error: null }),
+    brfIds.length > 0
+      ? admin
+          .from('brf_member_invites')
+          .select('brf_id')
+          .in('brf_id', brfIds)
+          .is('accepted_at', null)
+          .is('revoked_at', null)
+      : Promise.resolve({ data: [], error: null }),
+    brfIds.length > 0
+      ? admin.from('renovation_cases').select('brf_id').in('brf_id', brfIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (membersResult.error) throw new Error(membersResult.error.message ?? 'Kunde inte lÃ¤sa BRF-medlemmar.')
+  if (invitesResult.error) throw new Error(invitesResult.error.message ?? 'Kunde inte lÃ¤sa BRF-inviter.')
+  if (casesResult.error) throw new Error(casesResult.error.message ?? 'Kunde inte lÃ¤sa BRF-Ã¤renden.')
+
+  const memberCountByBrfId = new Map<string, number>()
+  const pendingInviteCountByBrfId = new Map<string, number>()
+  const caseCountByBrfId = new Map<string, number>()
+
+  for (const row of (membersResult.data ?? []) as Array<Record<string, unknown>>) {
+    incrementCount(memberCountByBrfId, row.brf_id)
+  }
+  for (const row of (invitesResult.data ?? []) as Array<Record<string, unknown>>) {
+    incrementCount(pendingInviteCountByBrfId, row.brf_id)
+  }
+  for (const row of (casesResult.data ?? []) as Array<Record<string, unknown>>) {
+    incrementCount(caseCountByBrfId, row.brf_id)
+  }
+
+  return rows.map((row) => ({
+    ...mapEditableBrfRow(row),
+    createdAt: row.created_at ?? null,
+    caseCount: caseCountByBrfId.get(row.id) ?? 0,
+    memberCount: memberCountByBrfId.get(row.id) ?? 0,
+    pendingInviteCount: pendingInviteCountByBrfId.get(row.id) ?? 0,
+  }))
 }
 
 export async function updateEditableRenoAppBrf(input: UpdateRenoAppBrfInput): Promise<RenoAppEditableBrf> {

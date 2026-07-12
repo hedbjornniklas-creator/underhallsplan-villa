@@ -87,6 +87,12 @@ export const RENOAPP_ADMIN_TABS = [
     match: (pathname: string) => pathname === '/admin/renoapp/brf/create',
   },
   {
+    href: '/admin/renoapp/brf',
+    label: 'BRF:er',
+    description: 'Administrera och felsök alla BRF:er som finns i RenoApp.',
+    match: (pathname: string) => pathname === '/admin/renoapp/brf',
+  },
+  {
     href: '/admin/renoapp/brf-requests',
     label: 'BRF-ansökningar',
     description: 'Granska inkomna BRF-intresseanmälningar.',
