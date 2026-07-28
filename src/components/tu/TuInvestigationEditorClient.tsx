@@ -767,6 +767,7 @@ export default function TuInvestigationEditorClient({
   const appendixFileInputRef = useRef<HTMLInputElement>(null)
   const documentFileInputRef = useRef<HTMLInputElement>(null)
   const imageErrorRef = useRef<HTMLDivElement>(null)
+  const pendingFocusSectionIdRef = useRef<string | null>(null)
 
   const saveTuPatch = useCallback(
     async (body: Record<string, unknown>): Promise<TuSavePatchResponse> => {
@@ -818,6 +819,21 @@ export default function TuInvestigationEditorClient({
     if (!imageError) return
     imageErrorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [imageError])
+
+  useEffect(() => {
+    const sectionId = pendingFocusSectionIdRef.current
+    if (!sectionId) return
+    pendingFocusSectionIdRef.current = null
+
+    window.requestAnimationFrame(() => {
+      const sectionElement = document.getElementById(`tu-section-${sectionId}`)
+      if (!sectionElement) return
+
+      sectionElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      const textarea = sectionElement.querySelector<HTMLTextAreaElement>('[data-tu-section-textarea="true"]')
+      textarea?.focus({ preventScroll: true })
+    })
+  }, [draft.sections])
 
   useEffect(() => {
     const allowedKeys = new Set(draftRef.current.sections.map((section) => getSectionInstanceId(section)))
@@ -967,7 +983,7 @@ export default function TuInvestigationEditorClient({
     })
   }
 
-  const addReportSection = async () => {
+  const addReportSection = async (insertAfterSectionId?: string) => {
     if (locked) return
     if (!sectionTypeOptions.some((option) => option.key === newSectionKey)) {
       setError('Det saknas aktiva TU-rubriker i admin. Lägg in rubriker innan du lägger till fler delar.')
@@ -976,14 +992,25 @@ export default function TuInvestigationEditorClient({
     const sections = [...draftRef.current.sections]
     const signatureIndex = sections.findIndex((section) => section.key === 'signature')
     const nextSection = createReportSection(newSectionKey, sectionTypeOptions)
-    if (signatureIndex >= 0) {
-      sections.splice(signatureIndex, 0, nextSection)
+    const nextSectionId = getSectionInstanceId(nextSection)
+    const afterIndex = insertAfterSectionId
+      ? sections.findIndex((section) => getSectionInstanceId(section) === insertAfterSectionId)
+      : -1
+    let insertIndex = afterIndex >= 0 ? afterIndex + 1 : -1
+
+    if (signatureIndex >= 0 && (insertIndex < 0 || insertIndex > signatureIndex)) {
+      insertIndex = signatureIndex
+    }
+
+    if (insertIndex >= 0) {
+      sections.splice(insertIndex, 0, nextSection)
     } else {
       sections.push(nextSection)
     }
     const nextDraft = {
       sections,
     }
+    pendingFocusSectionIdRef.current = nextSectionId
     try {
       await saveDraft(nextDraft, 'Kunde inte lägga till del.')
     } catch {
@@ -2518,7 +2545,11 @@ export default function TuInvestigationEditorClient({
               : [{ key: section.key, title: section.title }, ...sectionTypeOptions]
 
             return (
-              <article key={sectionId} className="rounded-lg border border-violet-100 bg-white p-4 shadow-sm">
+              <div key={sectionId} className="space-y-2">
+                <article
+                  id={`tu-section-${sectionId}`}
+                  className="rounded-lg border border-violet-100 bg-white p-4 shadow-sm"
+                >
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                     <span className="text-base font-semibold text-gray-950">{sectionNumberLabel}.</span>
@@ -2635,6 +2666,7 @@ export default function TuInvestigationEditorClient({
                     <DebouncedTextarea
                       value={section.text}
                       draftKey={`tu:${investigation.inspectionId}:${sectionId}`}
+                      data-tu-section-textarea="true"
                       disabled={locked}
                       rows={7}
                       className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
@@ -2735,7 +2767,35 @@ export default function TuInvestigationEditorClient({
                     </div>
                   </div>
                 )}
-              </article>
+                </article>
+
+                {!locked && sectionTypeOptions.length > 0 ? (
+                  <div className="flex flex-col gap-2 border-l border-dashed border-violet-200 pl-3 sm:ml-4 sm:flex-row sm:items-center">
+                    <label className="flex flex-col gap-1 sm:flex-row sm:items-center">
+                      <span className="text-xs font-medium text-gray-600">Ny del här</span>
+                      <select
+                        value={newSectionKey}
+                        onChange={(event) => setNewSectionKey(event.target.value as TuReportSectionKey)}
+                        className="h-9 min-w-[220px] rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
+                      >
+                        {sectionTypeOptions.map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {option.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => void addReportSection(sectionId)}
+                      className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50"
+                    >
+                      <Plus size={14} aria-hidden />
+                      Lägg till del här
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             )
           })}
         </section>
