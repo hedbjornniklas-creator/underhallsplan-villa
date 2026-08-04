@@ -101,6 +101,7 @@ export type AssignmentDetails = AssignmentListItem & {
   terms_document_hash: string | null
   invoice_name: string | null
   invoice_address: string | null
+  invoice_email: string | null
   orderer_role: string | null
   personal_identity_number: string | null
   notes_internal: string | null
@@ -280,6 +281,7 @@ const ASSIGNMENT_DETAIL_SELECT = `
   terms_document_hash,
   invoice_name,
   invoice_address,
+  invoice_email,
   orderer_role,
   personal_identity_number,
   notes_internal,
@@ -733,6 +735,7 @@ export async function createAssignment(input: {
   brfName?: string | null
   apartmentNumber?: string | null
   apartmentHolderName?: string | null
+  invoiceEmail?: string | null
   ordererRole?: string | null
   preferredDate?: string | null
   preferredTime?: string | null
@@ -765,6 +768,7 @@ export async function createAssignment(input: {
       brf_name: input.brfName ?? null,
       apartment_number: input.apartmentNumber ?? null,
       apartment_holder_name: input.apartmentHolderName ?? null,
+      invoice_email: input.invoiceEmail ?? null,
       orderer_role: input.ordererRole ?? null,
       preferred_date: input.preferredDate ?? null,
       preferred_time: input.preferredTime ?? null,
@@ -826,6 +830,7 @@ export async function updateAssignmentById(input: {
     apartment_holder_name: string | null
     invoice_name: string | null
     invoice_address: string | null
+    invoice_email: string | null
     orderer_role: string | null
     personal_identity_number: string | null
     notes_internal: string | null

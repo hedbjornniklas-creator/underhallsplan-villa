@@ -981,6 +981,7 @@ export async function createTuAssignmentDraft(input: {
   brfName?: string | null
   apartmentNumber?: string | null
   apartmentHolderName?: string | null
+  invoiceEmail?: string | null
   objectType?: TuObjectType | null
   scopeDescription?: string | null
   preferredDate?: string | null
@@ -1015,6 +1016,7 @@ export async function createTuAssignmentDraft(input: {
     brfName: objectType === 'apartment' ? input.brfName : null,
     apartmentNumber: objectType === 'apartment' ? input.apartmentNumber : null,
     apartmentHolderName: objectType === 'apartment' ? input.apartmentHolderName : null,
+    invoiceEmail: input.invoiceEmail,
     scopeDescription: input.scopeDescription,
     ordererRole: objectType === 'apartment' ? 'Teknisk utredning - Lägenhet' : 'Teknisk utredning - Villa',
     preferredDate: input.preferredDate,

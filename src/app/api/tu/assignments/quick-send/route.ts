@@ -39,6 +39,7 @@ export async function POST(request: Request) {
     const context = await requireTuContext()
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const customerEmail = text(body, 'customerEmail').toLowerCase()
+    const invoiceEmail = text(body, 'invoiceEmail').toLowerCase()
     const scopeDescription = text(body, 'scopeDescription')
     const objectType = text(body, 'objectType') === 'apartment' ? 'apartment' : 'villa'
     const cadastralId = text(body, 'cadastralId')
@@ -48,6 +49,9 @@ export async function POST(request: Request) {
 
     if (!customerEmail || !EMAIL_REGEX.test(customerEmail)) {
       return jsonError('Ange en giltig kundmejl.', 400)
+    }
+    if (invoiceEmail && !EMAIL_REGEX.test(invoiceEmail)) {
+      return jsonError('Ange en giltig fakturae-post.', 400)
     }
     if (!scopeDescription) {
       return jsonError('Beskriv vad den tekniska utredningen ska omfatta.', 400)
@@ -81,6 +85,7 @@ export async function POST(request: Request) {
       brfName: objectType === 'apartment' ? brfName || null : null,
       apartmentNumber: objectType === 'apartment' ? apartmentNumber || null : null,
       apartmentHolderName: objectType === 'apartment' ? text(body, 'apartmentHolderName') || null : null,
+      invoiceEmail: invoiceEmail || null,
       objectType,
       scopeDescription,
       preferredDate: text(body, 'preferredDate') || null,

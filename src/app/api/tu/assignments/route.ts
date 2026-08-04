@@ -46,11 +46,15 @@ export async function POST(request: Request) {
     const context = await requireTuContext()
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const customerEmail = text(body, 'customerEmail').toLowerCase()
+    const invoiceEmail = text(body, 'invoiceEmail').toLowerCase()
     const objectType = text(body, 'objectType') === 'apartment' ? 'apartment' : 'villa'
     const price = parsePrice(text(body, 'priceAmount'))
 
     if (!customerEmail || !EMAIL_REGEX.test(customerEmail)) {
       return jsonError('Ange en giltig kundmejl.', 400)
+    }
+    if (invoiceEmail && !EMAIL_REGEX.test(invoiceEmail)) {
+      return jsonError('Ange en giltig fakturae-post.', 400)
     }
 
     if (Number.isNaN(price)) {
@@ -76,6 +80,7 @@ export async function POST(request: Request) {
       brfName: objectType === 'apartment' ? text(body, 'brfName') || null : null,
       apartmentNumber: objectType === 'apartment' ? text(body, 'apartmentNumber') || null : null,
       apartmentHolderName: objectType === 'apartment' ? text(body, 'apartmentHolderName') || null : null,
+      invoiceEmail: invoiceEmail || null,
       objectType,
       scopeDescription: text(body, 'scopeDescription') || null,
       preferredDate: text(body, 'preferredDate') || null,

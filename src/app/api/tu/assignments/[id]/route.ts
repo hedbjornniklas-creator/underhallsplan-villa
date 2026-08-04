@@ -5,6 +5,8 @@ import { updateAssignmentById, type AssignmentStatus } from '@/lib/assignments/s
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
 }
@@ -160,6 +162,14 @@ export async function PATCH(
     for (const [inputKey, dbKey] of textFields) {
       const value = nullableText(body, inputKey)
       if (value !== undefined) patch[dbKey] = value
+    }
+
+    const invoiceEmail = nullableText(body, 'invoiceEmail')
+    if (invoiceEmail !== undefined) {
+      if (invoiceEmail && !EMAIL_REGEX.test(invoiceEmail)) {
+        return jsonError('Ange en giltig fakturae-post.', 400)
+      }
+      patch.invoice_email = invoiceEmail?.toLowerCase() ?? null
     }
 
     const priceAmount = parsePrice(body.priceAmount)
