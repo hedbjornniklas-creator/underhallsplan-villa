@@ -179,6 +179,7 @@ type TuDetailRow = {
   accessibility: string | null
   report_draft: unknown
   report_draft_updated_at: string | null
+  invoice_email?: string | null
   report_template_key?: string | null
   report_template_title?: string | null
   report_template_version?: number | null
@@ -1151,6 +1152,7 @@ async function createTuDetail(input: {
   brfName?: string | null
   apartmentNumber?: string | null
   apartmentHolderName?: string | null
+  invoiceEmail?: string | null
   createdBy: string
   reportDraft?: TuReportDraft
 }) {
@@ -1174,6 +1176,7 @@ async function createTuDetail(input: {
       brf_name: objectType === 'apartment' ? cleanText(input.brfName) : null,
       apartment_number: objectType === 'apartment' ? cleanText(input.apartmentNumber) : null,
       apartment_holder_name: objectType === 'apartment' ? cleanText(input.apartmentHolderName) : null,
+      invoice_email: cleanText(input.invoiceEmail)?.toLowerCase() ?? null,
       background: cleanText(input.scopeDescription),
       report_draft: input.reportDraft ?? createTuReportDraft({ assignment_scope: input.scopeDescription ?? '' }),
       report_draft_updated_at: new Date().toISOString(),
@@ -1210,6 +1213,7 @@ export async function createScratchTuInvestigation(input: {
   customerAddress?: string | null
   customerPostalCode?: string | null
   customerCity?: string | null
+  invoiceEmail?: string | null
   date?: string | null
   time?: string | null
 }) {
@@ -1262,6 +1266,7 @@ export async function createScratchTuInvestigation(input: {
       brfName: input.brfName,
       apartmentNumber: input.apartmentNumber,
       apartmentHolderName: input.apartmentHolderName,
+      invoiceEmail: input.invoiceEmail,
       reportDraft: createTuReportDraftFromTemplate(reportTemplate, {
         assignment_scope: input.scopeDescription ?? '',
       }),
@@ -1444,7 +1449,7 @@ export async function listTuInvestigations(orgId: string): Promise<TuInspectionS
   const { data: detailData, error: detailError } = await admin
     .from('technical_investigation_details')
     .select(
-      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,report_locked_at,created_by,created_at,updated_at'
+      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_locked_at,created_by,created_at,updated_at'
     )
     .eq('org_id', orgId)
     .order('updated_at', { ascending: false })
@@ -1499,7 +1504,7 @@ export async function getTuInvestigationById(input: {
   const { data: detailData, error: detailError } = await admin
     .from('technical_investigation_details')
     .select(
-      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,report_locked_at,created_by,created_at,updated_at'
+      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_locked_at,created_by,created_at,updated_at'
     )
     .eq('org_id', input.orgId)
     .eq('inspection_id', input.inspectionId)

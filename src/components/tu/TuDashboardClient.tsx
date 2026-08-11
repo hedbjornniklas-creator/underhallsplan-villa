@@ -65,9 +65,14 @@ type ScratchFormState = {
   brfName: string
   apartmentNumber: string
   apartmentHolderName: string
+  customerAddressMatchesObject: boolean
   customerName: string
   customerEmail: string
   customerPhone: string
+  customerAddress: string
+  customerPostalCode: string
+  customerCity: string
+  invoiceEmail: string
   date: string
   time: string
 }
@@ -112,9 +117,14 @@ const EMPTY_SCRATCH_FORM: ScratchFormState = {
   brfName: '',
   apartmentNumber: '',
   apartmentHolderName: '',
+  customerAddressMatchesObject: false,
   customerName: '',
   customerEmail: '',
   customerPhone: '',
+  customerAddress: '',
+  customerPostalCode: '',
+  customerCity: '',
+  invoiceEmail: '',
   date: '',
   time: '',
 }
@@ -194,6 +204,11 @@ export default function TuDashboardClient({
     customerPostalCode: '',
     customerCity: '',
   })
+  const savedScratchCustomerAddressRef = useRef({
+    customerAddress: '',
+    customerPostalCode: '',
+    customerCity: '',
+  })
 
   const latestAssignments = useMemo(
     () => [...assignments].sort((a, b) => assignmentSortValue(b) - assignmentSortValue(a)).slice(0, 4),
@@ -249,7 +264,38 @@ export default function TuDashboardClient({
   }
 
   const updateScratchForm = <K extends keyof ScratchFormState>(key: K, value: ScratchFormState[K]) => {
-    setScratchForm((current) => ({ ...current, [key]: value }))
+    setScratchForm((current) => {
+      if (key === 'customerAddressMatchesObject') {
+        if (value) {
+          savedScratchCustomerAddressRef.current = {
+            customerAddress: current.customerAddress,
+            customerPostalCode: current.customerPostalCode,
+            customerCity: current.customerCity,
+          }
+          return {
+            ...current,
+            customerAddressMatchesObject: true,
+            customerAddress: current.propertyAddress,
+            customerPostalCode: current.propertyPostalCode,
+            customerCity: current.propertyCity,
+          }
+        }
+
+        return {
+          ...current,
+          customerAddressMatchesObject: false,
+          ...savedScratchCustomerAddressRef.current,
+        }
+      }
+
+      const next = { ...current, [key]: value }
+      if (!current.customerAddressMatchesObject) return next
+
+      if (key === 'propertyAddress') next.customerAddress = value as string
+      if (key === 'propertyPostalCode') next.customerPostalCode = value as string
+      if (key === 'propertyCity') next.customerCity = value as string
+      return next
+    })
   }
 
   const updateScratchTemplate = (reportTemplateKey: string) => {
@@ -456,6 +502,7 @@ export default function TuDashboardClient({
             busy={busy}
             onClose={() => setDialog(null)}
             onChange={updateForm}
+            onModeChange={() => setDialog('scratch')}
             onSubmit={submitAssignment}
           />
         ) : null}
@@ -468,6 +515,7 @@ export default function TuDashboardClient({
             onClose={() => setDialog(null)}
             onChange={updateScratchForm}
             onTemplateChange={updateScratchTemplate}
+            onModeChange={() => setDialog('quick')}
             onSubmit={createScratchInvestigation}
           />
         ) : null}
@@ -970,12 +1018,14 @@ function QuickAssignmentDialog({
   busy,
   onClose,
   onChange,
+  onModeChange,
   onSubmit,
 }: {
   form: TuFormState
   busy: string | null
   onClose: () => void
   onChange: <K extends keyof TuFormState>(key: K, value: TuFormState[K]) => void
+  onModeChange: () => void
   onSubmit: (sendNow: boolean) => void
 }) {
   return (
@@ -984,6 +1034,7 @@ function QuickAssignmentDialog({
       subtitle="Fyll det som behövs för att kunden ska kunna godkänna uppdraget."
       onClose={onClose}
     >
+      <CreationModePicker mode="confirmation" onChange={onModeChange} />
       <section className="mt-4 border-b border-slate-200 pb-4">
         <div className="mb-3">
           <h3 className="text-sm font-semibold text-slate-950">Objekt</h3>
@@ -1099,6 +1150,7 @@ function ScratchInvestigationDialog({
   onClose,
   onChange,
   onTemplateChange,
+  onModeChange,
   onSubmit,
 }: {
   form: ScratchFormState
@@ -1107,9 +1159,10 @@ function ScratchInvestigationDialog({
   onClose: () => void
   onChange: <K extends keyof ScratchFormState>(key: K, value: ScratchFormState[K]) => void
   onTemplateChange: (reportTemplateKey: string) => void
+  onModeChange: () => void
   onSubmit: () => void
 }) {
-  const canSubmit = Boolean(form.reportTemplateKey.trim()) && reportTemplates.length > 0
+  const canSubmit = Boolean(form.reportTemplateKey.trim() && form.customerEmail.trim()) && reportTemplates.length > 0
 
   return (
     <DialogShell
@@ -1117,6 +1170,7 @@ function ScratchInvestigationDialog({
       subtitle="Skapa en teknisk utredning utan uppdragsbekräftelse."
       onClose={onClose}
     >
+      <CreationModePicker mode="direct" onChange={onModeChange} />
       <TemplateSelect
         label="Mall för utlåtandet *"
         value={form.reportTemplateKey}
@@ -1125,76 +1179,82 @@ function ScratchInvestigationDialog({
         onChange={onTemplateChange}
       />
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
+      <div className="mt-4">
         <Field label="Dokumentrubrik" value={form.title} onChange={(value) => onChange('title', value)} />
-        <Field label="Kundnamn" value={form.customerName} onChange={(value) => onChange('customerName', value)} />
-        <Field
-          label="Kundmejl"
-          value={form.customerEmail}
-          onChange={(value) => onChange('customerEmail', value)}
-          type="email"
-        />
-        <Field label="Telefon" value={form.customerPhone} onChange={(value) => onChange('customerPhone', value)} />
       </div>
-      <Textarea
-        label="Utredningens omfattning"
-        value={form.scopeDescription}
-        onChange={(value) => onChange('scopeDescription', value)}
-        rows={4}
-      />
-      <ObjectTypeControl
-        value={form.objectType}
-        onChange={(value) => onChange('objectType', value)}
-      />
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field
-          label="Objektadress"
-          value={form.propertyAddress}
-          onChange={(value) => onChange('propertyAddress', value)}
-        />
-        <Field
-          label="Postnummer"
-          value={form.propertyPostalCode}
-          onChange={(value) => onChange('propertyPostalCode', value)}
-        />
-        <Field label="Ort" value={form.propertyCity} onChange={(value) => onChange('propertyCity', value)} />
-        <Field
-          label="Kommun"
-          value={form.propertyMunicipality}
-          onChange={(value) => onChange('propertyMunicipality', value)}
-        />
-        {form.objectType === 'apartment' ? (
-          <>
-            <Field
-              label="Bostadsrättsförening *"
-              value={form.brfName}
-              onChange={(value) => onChange('brfName', value)}
-            />
-            <Field
-              label="Lägenhetsnummer *"
-              value={form.apartmentNumber}
-              onChange={(value) => onChange('apartmentNumber', value)}
-            />
-            <Field
-              label="Bostadsrättsinnehavare"
-              value={form.apartmentHolderName}
-              onChange={(value) => onChange('apartmentHolderName', value)}
-            />
-          </>
+
+      <section className="mt-4 border-b border-slate-200 pb-4">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-slate-950">Objekt</h3>
+          <p className="mt-1 text-xs text-slate-600">Ange först uppgifterna om den fastighet eller lägenhet som ska utredas.</p>
+        </div>
+        <ObjectTypeControl value={form.objectType} onChange={(value) => onChange('objectType', value)} />
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <Field label="Objektadress" value={form.propertyAddress} onChange={(value) => onChange('propertyAddress', value)} />
+          <Field label="Postnummer" value={form.propertyPostalCode} onChange={(value) => onChange('propertyPostalCode', value)} />
+          <Field label="Ort" value={form.propertyCity} onChange={(value) => onChange('propertyCity', value)} />
+          <Field label="Kommun" value={form.propertyMunicipality} onChange={(value) => onChange('propertyMunicipality', value)} />
+          {form.objectType === 'apartment' ? (
+            <>
+              <Field label="Bostadsrättsförening *" value={form.brfName} onChange={(value) => onChange('brfName', value)} />
+              <Field label="Lägenhetsnummer *" value={form.apartmentNumber} onChange={(value) => onChange('apartmentNumber', value)} />
+              <Field label="Bostadsrättsinnehavare" value={form.apartmentHolderName} onChange={(value) => onChange('apartmentHolderName', value)} />
+            </>
+          ) : (
+            <>
+              <Field label="Fastighetsbeteckning *" value={form.cadastralId} onChange={(value) => onChange('cadastralId', value)} />
+              <Field label="Fastighetsägare" value={form.propertyOwnerName} onChange={(value) => onChange('propertyOwnerName', value)} />
+            </>
+          )}
+        </div>
+      </section>
+
+      <section className="border-b border-slate-200 py-4">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-slate-950">Beställare</h3>
+          <p className="mt-1 text-xs text-slate-600">Kontaktmejlet används när utlåtandet ska levereras.</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Namn" value={form.customerName} onChange={(value) => onChange('customerName', value)} />
+          <Field label="Kontaktmejl *" value={form.customerEmail} onChange={(value) => onChange('customerEmail', value)} type="email" />
+          <Field label="Telefon" value={form.customerPhone} onChange={(value) => onChange('customerPhone', value)} />
+        </div>
+        <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-2.5 text-sm text-slate-800">
+          <input
+            type="checkbox"
+            checked={form.customerAddressMatchesObject}
+            onChange={(event) => onChange('customerAddressMatchesObject', event.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+          />
+          <span>
+            <span className="block font-medium">Beställarens adress är samma som objektets</span>
+            <span className="mt-0.5 block text-xs text-slate-600">Adress, postnummer och ort hämtas från objektuppgifterna.</span>
+          </span>
+        </label>
+        {form.customerAddressMatchesObject ? (
+          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            {[form.propertyAddress, [form.propertyPostalCode, form.propertyCity].filter(Boolean).join(' ')].filter(Boolean).join(', ') || 'Objektadress saknas.'}
+          </div>
         ) : (
-          <>
-            <Field
-              label="Fastighetsbeteckning *"
-              value={form.cadastralId}
-              onChange={(value) => onChange('cadastralId', value)}
-            />
-            <Field
-              label="Fastighetsägare"
-              value={form.propertyOwnerName}
-              onChange={(value) => onChange('propertyOwnerName', value)}
-            />
-          </>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <Field label="Beställaradress" value={form.customerAddress} onChange={(value) => onChange('customerAddress', value)} />
+            <Field label="Postnummer" value={form.customerPostalCode} onChange={(value) => onChange('customerPostalCode', value)} />
+            <Field label="Ort" value={form.customerCity} onChange={(value) => onChange('customerCity', value)} />
+          </div>
         )}
+      </section>
+
+      <section className="border-b border-slate-200 py-4">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-slate-950">Fakturering</h3>
+          <p className="mt-1 text-xs text-slate-600">Valfritt. Ange bara en annan e-postadress om fakturan ska gå till en annan mottagare.</p>
+        </div>
+        <Field label="Fakturae-post" value={form.invoiceEmail} onChange={(value) => onChange('invoiceEmail', value)} type="email" />
+      </section>
+
+      <Textarea label="Utredningens omfattning" value={form.scopeDescription} onChange={(value) => onChange('scopeDescription', value)} rows={4} />
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
         <Field label="Datum" value={form.date} onChange={(value) => onChange('date', value)} type="date" />
         <Field label="Tid" value={form.time} onChange={(value) => onChange('time', value)} type="time" />
       </div>
@@ -1265,6 +1325,39 @@ function TemplateSelect({
           Mallen väljs bara vid skapande och kopieras sedan till utlåtandet.
         </p>
       )}
+    </div>
+  )
+}
+
+function CreationModePicker({
+  mode,
+  onChange,
+}: {
+  mode: 'confirmation' | 'direct'
+  onChange: () => void
+}) {
+  const confirmationActive = mode === 'confirmation'
+
+  return (
+    <div className="mt-4 grid grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
+      <button
+        type="button"
+        onClick={confirmationActive ? undefined : onChange}
+        className={`h-10 rounded-md px-3 text-sm font-semibold transition ${
+          confirmationActive ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-700 hover:bg-white'
+        }`}
+      >
+        Uppdragsbekräftelse
+      </button>
+      <button
+        type="button"
+        onClick={confirmationActive ? onChange : undefined}
+        className={`h-10 rounded-md px-3 text-sm font-semibold transition ${
+          confirmationActive ? 'text-slate-700 hover:bg-white' : 'bg-violet-600 text-white shadow-sm'
+        }`}
+      >
+        Starta direkt
+      </button>
     </div>
   )
 }

@@ -5,6 +5,8 @@ import { createScratchTuInvestigation, listTuInvestigations, requireTuContext } 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 type ReportLinkPdfLite = {
   inspection_id: string
   pdf_base64: string | null
@@ -104,6 +106,15 @@ export async function POST(request: Request) {
     const context = await requireTuContext()
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const objectType = text(body, 'objectType') === 'apartment' ? 'apartment' : 'villa'
+    const customerEmail = text(body, 'customerEmail').toLowerCase()
+    const invoiceEmail = text(body, 'invoiceEmail').toLowerCase()
+
+    if (!customerEmail || !EMAIL_REGEX.test(customerEmail)) {
+      return jsonError('Ange en giltig kontaktmejl.', 400)
+    }
+    if (invoiceEmail && !EMAIL_REGEX.test(invoiceEmail)) {
+      return jsonError('Ange en giltig fakturae-post.', 400)
+    }
 
     const result = await createScratchTuInvestigation({
       orgId: context.orgId,
@@ -123,11 +134,12 @@ export async function POST(request: Request) {
       apartmentHolderName: objectType === 'apartment' ? text(body, 'apartmentHolderName') || null : null,
       objectType,
       customerName: text(body, 'customerName') || null,
-      customerEmail: text(body, 'customerEmail') || null,
+      customerEmail,
       customerPhone: text(body, 'customerPhone') || null,
       customerAddress: text(body, 'customerAddress') || null,
       customerPostalCode: text(body, 'customerPostalCode') || null,
       customerCity: text(body, 'customerCity') || null,
+      invoiceEmail: invoiceEmail || null,
       date: text(body, 'date') || null,
       time: text(body, 'time') || null,
     })
