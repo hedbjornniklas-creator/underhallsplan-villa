@@ -125,6 +125,10 @@ export type TuInspectorProfileCard = {
 
 export type TuInvestigationDetails = TuInspectionSummary & {
   orgId: string
+  reportTemplateKey: string | null
+  reportTemplateTitle: string | null
+  reportTemplateVersion: number | null
+  reportTemplateAppliedAt: string | null
   inspection: {
     id: string
     status: string | null
@@ -1449,7 +1453,7 @@ export async function listTuInvestigations(orgId: string): Promise<TuInspectionS
   const { data: detailData, error: detailError } = await admin
     .from('technical_investigation_details')
     .select(
-      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_locked_at,created_by,created_at,updated_at'
+      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_template_key,report_template_title,report_template_version,report_template_applied_at,report_locked_at,created_by,created_at,updated_at'
     )
     .eq('org_id', orgId)
     .order('updated_at', { ascending: false })
@@ -1504,7 +1508,7 @@ export async function getTuInvestigationById(input: {
   const { data: detailData, error: detailError } = await admin
     .from('technical_investigation_details')
     .select(
-      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_locked_at,created_by,created_at,updated_at'
+      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_template_key,report_template_title,report_template_version,report_template_applied_at,report_locked_at,created_by,created_at,updated_at'
     )
     .eq('org_id', input.orgId)
     .eq('inspection_id', input.inspectionId)
@@ -1567,6 +1571,10 @@ export async function getTuInvestigationById(input: {
   return {
     ...resolvedSummary,
     orgId: detail.org_id,
+    reportTemplateKey: cleanText(detail.report_template_key),
+    reportTemplateTitle: cleanText(detail.report_template_title),
+    reportTemplateVersion: detail.report_template_version ?? null,
+    reportTemplateAppliedAt: detail.report_template_applied_at ?? null,
     inspection: {
       id: detail.inspection_id,
       status: inspection?.status ?? null,

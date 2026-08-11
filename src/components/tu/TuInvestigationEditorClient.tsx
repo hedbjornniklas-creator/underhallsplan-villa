@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ChevronDown, ChevronUp, FileText, Image as ImageIcon, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, ClipboardList, FileText, Image as ImageIcon, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
+import TuEvidenceWorkspace from '@/components/tu/TuEvidenceWorkspace'
 import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import { supabase } from '@/lib/supabaseClient'
+import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
 import type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
 import type {
   TuInvestigationDetails,
@@ -759,6 +761,11 @@ export default function TuInvestigationEditorClient({
   const [aiSuggestions, setAiSuggestions] = useState<TuAiSuggestion[]>([])
   const [aiBusy, setAiBusy] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  const evidenceWorkspaceEnabled =
+    initialInvestigation.reportTemplateKey === TU_MOISTURE_DAMAGE_TEMPLATE_KEY
+  const [workspaceView, setWorkspaceView] = useState<'evidence' | 'report'>(
+    evidenceWorkspaceEnabled ? 'evidence' : 'report'
+  )
   const draftRef = useRef(initialInvestigation.reportDraft)
   const objectDetailsRef = useRef(objectDetails)
   const assignmentPartiesRef = useRef(assignmentParties)
@@ -833,7 +840,7 @@ export default function TuInvestigationEditorClient({
       const textarea = sectionElement.querySelector<HTMLTextAreaElement>('[data-tu-section-textarea="true"]')
       textarea?.focus({ preventScroll: true })
     })
-  }, [draft.sections])
+  }, [draft.sections, workspaceView])
 
   useEffect(() => {
     const allowedKeys = new Set(draftRef.current.sections.map((section) => getSectionInstanceId(section)))
@@ -1208,6 +1215,25 @@ export default function TuInvestigationEditorClient({
     }
   }
 
+  const applyEvidenceSuggestion = async (
+    sectionId: string,
+    text: string,
+    mode: 'replace' | 'append'
+  ) => {
+    const section = draftRef.current.sections.find((item) => getSectionInstanceId(item) === sectionId)
+    if (!section) throw new Error('Rapportsektionen hittades inte.')
+    const nextText =
+      mode === 'append' && section.text.trim()
+        ? `${section.text.trimEnd()}\n\n${text.trim()}`
+        : text.trim()
+    await saveSectionById(sectionId, nextText)
+  }
+
+  const openReportWorkspace = (sectionId?: string) => {
+    if (sectionId) pendingFocusSectionIdRef.current = sectionId
+    setWorkspaceView('report')
+  }
+
   const locked = Boolean(investigation.reportLockedAt)
   const visibleSections = draft.sections.filter((section) => !HIDDEN_SECTION_KEYS.has(section.key))
   const coverImages = images.filter((image) => image.sectionKey === 'cover')
@@ -1239,27 +1265,28 @@ export default function TuInvestigationEditorClient({
         : `Sparad: ${autosaveSavedAt}`
 
   const uploadImages = async (files: File[], sectionKey: TuImageSectionKey) => {
-    if (locked || files.length === 0) return
+    if (locked || files.length === 0) return []
     const imageFiles = files.filter(isImageFile)
     if (imageFiles.length === 0) {
       setImageError('Endast bildfiler kan laddas upp.')
-      return
+      return []
     }
     if (imageFiles.length > MAX_IMAGE_FILES_PER_UPLOAD) {
       setImageError(`Ladda upp max ${MAX_IMAGE_FILES_PER_UPLOAD} bilder åt gången.`)
-      return
+      return []
     }
     const tooLargeFile = imageFiles.find((file) => file.size > MAX_IMAGE_UPLOAD_BYTES)
     if (tooLargeFile) {
       setImageError(
         `${tooLargeFile.name} är för stor (${formatFileSizeForError(tooLargeFile.size)}). Max per originalbild är 15 MB.`
       )
-      return
+      return []
     }
 
     setImageBusy(true)
     setImageError(null)
     setImageUploadProgress(`Startar uppladdning av ${imageFiles.length} bild${imageFiles.length === 1 ? '' : 'er'}...`)
+    const uploadedImages: TuInvestigationImage[] = []
     try {
       if (sectionKey === 'cover') {
         for (const image of coverImages) {
@@ -1270,7 +1297,6 @@ export default function TuInvestigationEditorClient({
         }
       }
 
-      const uploadedImages: TuInvestigationImage[] = []
       for (const [index, originalFile] of imageFiles.entries()) {
         const position = `${index + 1}/${imageFiles.length}`
         setImageUploadProgress(`Skapar uppladdningslänk ${position}: ${originalFile.name}`)
@@ -1328,8 +1354,10 @@ export default function TuInvestigationEditorClient({
         setImages((current) => upsertImages(current, nextImages))
       }
       setImageUploadProgress(`Uppladdning klar: ${uploadedImages.length} bild${uploadedImages.length === 1 ? '' : 'er'}.`)
+      return uploadedImages.map((image) => image.id)
     } catch (uploadError) {
       setImageError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp bilder.')
+      return uploadedImages.map((image) => image.id)
     } finally {
       setImageBusy(false)
       window.setTimeout(() => {
@@ -1753,6 +1781,56 @@ export default function TuInvestigationEditorClient({
             Utlåtandet är låst och kan inte ändras.
           </div>
         ) : null}
+
+        {evidenceWorkspaceEnabled ? (
+          <nav
+            className="grid grid-cols-2 rounded-md border border-gray-200 bg-white p-1 shadow-sm"
+            aria-label="Arbetsläge"
+          >
+            <button
+              type="button"
+              onClick={() => setWorkspaceView('evidence')}
+              aria-pressed={workspaceView === 'evidence'}
+              className={`inline-flex min-h-10 items-center justify-center gap-2 rounded px-3 text-sm font-semibold transition ${
+                workspaceView === 'evidence'
+                  ? 'bg-emerald-700 text-white shadow-sm'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <ClipboardList size={16} aria-hidden />
+              Besiktningsunderlag
+            </button>
+            <button
+              type="button"
+              onClick={() => setWorkspaceView('report')}
+              aria-pressed={workspaceView === 'report'}
+              className={`inline-flex min-h-10 items-center justify-center gap-2 rounded px-3 text-sm font-semibold transition ${
+                workspaceView === 'report'
+                  ? 'bg-violet-700 text-white shadow-sm'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <FileText size={16} aria-hidden />
+              Utlåtande
+            </button>
+          </nav>
+        ) : null}
+
+        {evidenceWorkspaceEnabled && workspaceView === 'evidence' ? (
+          <TuEvidenceWorkspace
+            inspectionId={investigation.inspectionId}
+            locked={locked}
+            sections={draft.sections}
+            images={images}
+            imageBusy={imageBusy}
+            onUploadImages={(files) => uploadImages(files, 'bank')}
+            onSetImageSection={moveImageToSection}
+            onPreviewImage={setPreviewImageId}
+            onApplySuggestion={applyEvidenceSuggestion}
+            onOpenReport={openReportWorkspace}
+          />
+        ) : (
+          <>
 
         <section className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2799,6 +2877,8 @@ export default function TuInvestigationEditorClient({
             )
           })}
         </section>
+          </>
+        )}
         {renderImagePreview()}
       </div>
     </main>

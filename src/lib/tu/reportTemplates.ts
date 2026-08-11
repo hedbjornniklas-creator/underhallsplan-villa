@@ -256,4 +256,83 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
       },
     ],
   },
+  {
+    key: 'moisture_damage_investigation',
+    title: 'Fuktskadeutredning',
+    description: 'Fuktskadeutredning med strukturerat besiktningsunderlag och granskade AI-förslag.',
+    documentTitle: 'Fuktskadeutredning',
+    projectType: 'Fuktskadeutredning',
+    version: 1,
+    sortOrder: 150,
+    isActive: true,
+    isSystem: true,
+    sections: [
+      {
+        templateSectionKey: 'scope_questions_boundaries',
+        sectionTypeKey: 'assignment_scope',
+        titleOverride: 'Uppdrag, frågeställningar och avgränsningar',
+        aiInstruction:
+          'Redovisa uppdraget, de tekniska frågeställningarna och tydliga avgränsningar. Skilj beställaruppgifter från verifierade fakta.',
+        sortOrder: 100,
+        isRequired: true,
+        includeInToc: true,
+        allowDelete: false,
+      },
+      {
+        templateSectionKey: 'basis_object_method',
+        sectionTypeKey: 'basis_conditions',
+        titleOverride: 'Underlag, objekt och undersökningsmetod',
+        aiInstruction:
+          'Beskriv tillgängligt underlag, berörda byggnadsdelar, åtkomlighet, mätmetoder och andra undersökningsförutsättningar.',
+        sortOrder: 200,
+        isRequired: true,
+        includeInToc: true,
+        allowDelete: false,
+      },
+      {
+        templateSectionKey: 'observations_measurements',
+        sectionTypeKey: 'observed_execution',
+        titleOverride: 'Iakttagelser och mätresultat',
+        aiInstruction:
+          'Redovisa endast kontrollerade observationer och mätresultat. Ange plats, metod, enhet och osäkerhet när det är relevant.',
+        sortOrder: 300,
+        isRequired: true,
+        includeInToc: true,
+        allowDelete: false,
+      },
+      {
+        templateSectionKey: 'technical_assessment',
+        sectionTypeKey: 'technical_assessment',
+        titleOverride: 'Teknisk bedömning',
+        aiInstruction:
+          'Analysera sannolika skadeorsaker och samband. Markera tydligt vad som är verifierat, sannolikt respektive inte möjligt att fastställa.',
+        sortOrder: 400,
+        isRequired: true,
+        includeInToc: true,
+        allowDelete: false,
+      },
+      {
+        templateSectionKey: 'recommended_follow_up',
+        sectionTypeKey: 'recommended_actions',
+        titleOverride: 'Rekommenderad fortsatt hantering',
+        aiInstruction:
+          'Beskriv proportionerliga fortsatta kontroller och tekniska åtgärder utan att dra juridiska slutsatser eller utse ansvarig part.',
+        sortOrder: 500,
+        isRequired: true,
+        includeInToc: true,
+        allowDelete: false,
+      },
+      {
+        templateSectionKey: 'summary_conclusion',
+        sectionTypeKey: 'closing_comments',
+        titleOverride: 'Sammanfattande slutsats',
+        aiInstruction:
+          'Sammanfatta de viktigaste slutsatserna, kvarstående osäkerheter och uppdragets begränsningar utan att tillföra nya fakta.',
+        sortOrder: 600,
+        isRequired: true,
+        includeInToc: true,
+        allowDelete: false,
+      },
+    ],
+  },
 ]
