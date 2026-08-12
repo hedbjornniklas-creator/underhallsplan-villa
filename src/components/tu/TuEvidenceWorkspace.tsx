@@ -73,6 +73,7 @@ type MeasurementForm = {
 
 type Props = {
   inspectionId: string
+  refreshToken?: number
   locked: boolean
   sections: EvidenceSection[]
   images: TuEvidenceImage[]
@@ -185,6 +186,7 @@ async function readJson<T>(response: Response): Promise<T> {
 
 export default function TuEvidenceWorkspace({
   inspectionId,
+  refreshToken = 0,
   locked,
   sections,
   images,
@@ -241,11 +243,31 @@ export default function TuEvidenceWorkspace({
     }
   }, [form.id, inspectionId])
 
+  const refreshObservationList = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/observations`)
+      const payload = await readJson<TuEvidenceResponse>(response)
+      if (!response.ok) throw new Error(payload.error ?? 'Kunde inte uppdatera besiktningsunderlaget.')
+      setObservations(payload.observations ?? [])
+    } catch (refreshError) {
+      setError(
+        refreshError instanceof Error
+          ? refreshError.message
+          : 'Kunde inte uppdatera besiktningsunderlaget.'
+      )
+    }
+  }, [inspectionId])
+
   useEffect(() => {
     void loadObservations(null)
     // The workspace owns its refresh lifecycle; form selection must not retrigger initial loading.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inspectionId])
+
+  useEffect(() => {
+    if (refreshToken <= 0) return
+    void refreshObservationList()
+  }, [refreshObservationList, refreshToken])
 
   useEffect(() => {
     if (!recording) return

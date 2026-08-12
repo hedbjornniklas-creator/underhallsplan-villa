@@ -43,7 +43,10 @@ type StorageBucket = {
     body: Blob,
     options?: { cacheControl?: string; upsert?: boolean; contentType?: string | undefined }
   ) => Promise<{ error: SupabaseError }>
-  createSignedUploadUrl: (path: string) => Promise<{ data: SignedUploadData | null; error: SupabaseError }>
+  createSignedUploadUrl: (
+    path: string,
+    options?: { upsert?: boolean }
+  ) => Promise<{ data: SignedUploadData | null; error: SupabaseError }>
   remove: (paths: string[]) => Promise<{ error: SupabaseError }>
   getPublicUrl: (path: string) => { data: { publicUrl: string } }
 }
@@ -235,6 +238,24 @@ async function readImageRow(
   return data as TuInvestigationImageRow | null
 }
 
+async function readImageRowByPath(
+  admin: TuImageSupabaseClient,
+  orgId: string,
+  inspectionId: string,
+  filePath: string
+) {
+  const { data, error } = await admin
+    .from('technical_investigation_images')
+    .select(IMAGE_COLUMNS)
+    .eq('org_id', orgId)
+    .eq('inspection_id', inspectionId)
+    .eq('file_path', filePath)
+    .maybeSingle()
+
+  if (error) throw new Error(error.message ?? 'Kunde inte läsa bildens uppladdningsstatus.')
+  return data as TuInvestigationImageRow | null
+}
+
 async function getNextSortOrder(admin: TuImageSupabaseClient, orgId: string, inspectionId: string) {
   const { data: currentImages, error } = await admin
     .from('technical_investigation_images')
@@ -338,8 +359,15 @@ export async function POST(
         const validationError = validateImageUploadMetadata(fileName, contentType, body.fileSize ?? body.file_size)
         if (validationError) return jsonError(validationError, 400)
 
-        const filePath = buildStoredImagePath(inspectionId, sectionKey, fileName, contentType)
-        const { data, error } = await admin.storage.from(IMAGE_BUCKET).createSignedUploadUrl(filePath)
+        const requestedPath = validateCompletedUploadPath(
+          inspectionId,
+          sectionKey,
+          body.filePath ?? body.file_path
+        )
+        const filePath = requestedPath ?? buildStoredImagePath(inspectionId, sectionKey, fileName, contentType)
+        const { data, error } = await admin.storage
+          .from(IMAGE_BUCKET)
+          .createSignedUploadUrl(filePath, { upsert: true })
         if (error) throw new Error(error.message ?? 'Kunde inte skapa uppladdningslänk.')
         if (!data?.token) throw new Error('Supabase returnerade ingen uppladdningstoken.')
 
@@ -357,6 +385,17 @@ export async function POST(
       if (action === 'completeSignedUpload') {
         const filePath = validateCompletedUploadPath(inspectionId, sectionKey, body.filePath ?? body.file_path)
         if (!filePath) return jsonError('Ogiltig bildsökväg.', 400)
+
+        const existing = await readImageRowByPath(
+          admin,
+          orgContext.orgId,
+          inspectionId,
+          filePath
+        )
+        if (existing) {
+          const image = mapImage(existing, admin)
+          return NextResponse.json({ ok: true, image, images: [image] })
+        }
 
         const sortOrder = await getNextSortOrder(admin, orgContext.orgId, inspectionId)
         const image = await insertImageRow(admin, {

@@ -10,6 +10,7 @@ const OPENAI_TRANSCRIPTIONS_URL = 'https://api.openai.com/v1/audio/transcription
 const TRANSCRIPTION_MODEL = process.env.OPENAI_TU_TRANSCRIPTION_MODEL?.trim() || 'gpt-4o-transcribe'
 const AUDIO_BUCKET = 'tu-investigation-audio'
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 const CONTENT_TYPE_EXTENSION: Record<string, string> = {
   'audio/webm': 'webm',
@@ -64,12 +65,14 @@ export async function POST(
 
     const contentType = normalizedContentType(audio.type)
     const extension = CONTENT_TYPE_EXTENSION[contentType]
-    storedPath = `${inspectionId}/voice/${Date.now()}-${randomUUID().slice(0, 8)}.${extension}`
+    const requestedAudioId = String(formData.get('clientAudioId') ?? '').trim().toLowerCase()
+    const clientAudioId = UUID_PATTERN.test(requestedAudioId) ? requestedAudioId : null
+    storedPath = `${inspectionId}/voice/${clientAudioId ?? `${Date.now()}-${randomUUID().slice(0, 8)}`}.${extension}`
     const admin = createSupabaseAdminClient()
     storageClient = admin
     const bytes = await audio.arrayBuffer()
     const { error: uploadError } = await admin.storage.from(AUDIO_BUCKET).upload(storedPath, bytes, {
-      upsert: false,
+      upsert: Boolean(clientAudioId),
       contentType,
       cacheControl: '3600',
     })

@@ -316,13 +316,36 @@ export async function createTuObservation(input: {
   orgId: string
   inspectionId: string
   userId: string
+  observationId?: string | null
   values: TuObservationWriteInput
   imageIds?: string[]
 }) {
   const admin = createSupabaseAdminClient()
+  if (input.observationId) {
+    const { data: existing, error: existingError } = await admin
+      .from('tu_observations')
+      .select('id,org_id,inspection_id')
+      .eq('id', input.observationId)
+      .maybeSingle()
+    if (existingError) {
+      throw new Error(existingError.message ?? 'Kunde inte verifiera fältanteckningen.')
+    }
+    if (existing) {
+      const existingRow = existing as { id: string; org_id: string; inspection_id: string }
+      if (existingRow.org_id !== input.orgId || existingRow.inspection_id !== input.inspectionId) {
+        throw new Error('TU_OBSERVATION_ID_CONFLICT')
+      }
+      return updateTuObservation({
+        ...input,
+        observationId: input.observationId,
+      })
+    }
+  }
+
   const { data, error } = await admin
     .from('tu_observations')
     .insert({
+      ...(input.observationId ? { id: input.observationId } : {}),
       org_id: input.orgId,
       inspection_id: input.inspectionId,
       created_by: input.userId,

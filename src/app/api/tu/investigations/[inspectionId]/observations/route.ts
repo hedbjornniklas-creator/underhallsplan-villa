@@ -51,6 +51,7 @@ function mapError(error: unknown) {
   if (message === 'TU_INVESTIGATION_NOT_FOUND') return jsonError('TU-utredningen hittades inte.', 404)
   if (message === 'TU_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'TU_OBSERVATION_NOT_FOUND') return jsonError('Observationen hittades inte.', 404)
+  if (message === 'TU_OBSERVATION_ID_CONFLICT') return jsonError('Fältanteckningens id används redan.', 409)
   if (message === 'TU_OBSERVATION_IMAGE_INVALID') return jsonError('En vald bild tillhör inte utredningen.', 400)
   if (message === 'TU_AUDIO_REFERENCE_INVALID') return jsonError('Röstanteckningens lagringsreferens är ogiltig.', 400)
   if (normalized.includes('tu_observations') || normalized.includes('42p01')) {
@@ -142,6 +143,7 @@ export async function POST(
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const values = observationValues(body, inspectionId)
     const linkedImageIds = imageIds(body.imageIds)
+    const clientObservationId = uuid(body.clientObservationId)
 
     if (!values.noteText?.trim() && !values.transcriptText && linkedImageIds.length === 0) {
       return jsonError('Lägg in en anteckning, en röstinmatning eller minst en bild.', 400)
@@ -151,6 +153,7 @@ export async function POST(
       orgId: orgContext.orgId,
       inspectionId,
       userId: orgContext.userId,
+      observationId: clientObservationId,
       values,
       imageIds: linkedImageIds,
     })

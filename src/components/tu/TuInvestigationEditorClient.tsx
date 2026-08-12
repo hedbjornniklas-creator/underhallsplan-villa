@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ChevronDown, ChevronUp, ClipboardList, FileText, Image as ImageIcon, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, ClipboardList, FileText, Image as ImageIcon, Mic, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import TuEvidenceWorkspace from '@/components/tu/TuEvidenceWorkspace'
+import TuFieldLogWorkspace from '@/components/tu/TuFieldLogWorkspace'
 import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
+import { useTuFieldQueue, type TuFieldServerImage } from '@/hooks/useTuFieldQueue'
 import { supabase } from '@/lib/supabaseClient'
 import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
 import type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
@@ -763,9 +765,19 @@ export default function TuInvestigationEditorClient({
   const [aiError, setAiError] = useState<string | null>(null)
   const evidenceWorkspaceEnabled =
     initialInvestigation.reportTemplateKey === TU_MOISTURE_DAMAGE_TEMPLATE_KEY
-  const [workspaceView, setWorkspaceView] = useState<'evidence' | 'report'>(
-    evidenceWorkspaceEnabled ? 'evidence' : 'report'
+  const locked = Boolean(investigation.reportLockedAt)
+  const [workspaceView, setWorkspaceView] = useState<'field' | 'evidence' | 'report'>(
+    evidenceWorkspaceEnabled ? 'field' : 'report'
   )
+  const handleFieldImageUploaded = useCallback((image: TuFieldServerImage) => {
+    setImages((current) => upsertImages(current, [image]))
+  }, [])
+  const fieldQueue = useTuFieldQueue({
+    inspectionId: initialInvestigation.inspectionId,
+    enabled: evidenceWorkspaceEnabled,
+    locked,
+    onImageUploaded: handleFieldImageUploaded,
+  })
   const draftRef = useRef(initialInvestigation.reportDraft)
   const objectDetailsRef = useRef(objectDetails)
   const assignmentPartiesRef = useRef(assignmentParties)
@@ -1234,7 +1246,6 @@ export default function TuInvestigationEditorClient({
     setWorkspaceView('report')
   }
 
-  const locked = Boolean(investigation.reportLockedAt)
   const visibleSections = draft.sections.filter((section) => !HIDDEN_SECTION_KEYS.has(section.key))
   const coverImages = images.filter((image) => image.sectionKey === 'cover')
   const coverImage = coverImages[0] ?? null
@@ -1784,27 +1795,41 @@ export default function TuInvestigationEditorClient({
 
         {evidenceWorkspaceEnabled ? (
           <nav
-            className="grid grid-cols-2 rounded-md border border-gray-200 bg-white p-1 shadow-sm"
+            className="grid grid-cols-3 rounded-md border border-gray-200 bg-white p-1 shadow-sm"
             aria-label="Arbetsläge"
           >
             <button
               type="button"
+              onClick={() => setWorkspaceView('field')}
+              aria-pressed={workspaceView === 'field'}
+              className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded px-2 text-xs font-semibold transition sm:gap-2 sm:px-3 sm:text-sm ${
+                workspaceView === 'field'
+                  ? 'bg-violet-700 text-white shadow-sm'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <Mic size={16} aria-hidden />
+              Fältlogg
+            </button>
+            <button
+              type="button"
               onClick={() => setWorkspaceView('evidence')}
               aria-pressed={workspaceView === 'evidence'}
-              className={`inline-flex min-h-10 items-center justify-center gap-2 rounded px-3 text-sm font-semibold transition ${
+              className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded px-2 text-xs font-semibold transition sm:gap-2 sm:px-3 sm:text-sm ${
                 workspaceView === 'evidence'
                   ? 'bg-violet-700 text-white shadow-sm'
                   : 'text-gray-700 hover:bg-gray-50'
               }`}
             >
               <ClipboardList size={16} aria-hidden />
-              Besiktningsunderlag
+              <span className="sm:hidden">Bearbeta</span>
+              <span className="hidden sm:inline">Bearbeta underlag</span>
             </button>
             <button
               type="button"
               onClick={() => setWorkspaceView('report')}
               aria-pressed={workspaceView === 'report'}
-              className={`inline-flex min-h-10 items-center justify-center gap-2 rounded px-3 text-sm font-semibold transition ${
+              className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded px-2 text-xs font-semibold transition sm:gap-2 sm:px-3 sm:text-sm ${
                 workspaceView === 'report'
                   ? 'bg-violet-700 text-white shadow-sm'
                   : 'text-gray-700 hover:bg-gray-50'
@@ -1816,9 +1841,19 @@ export default function TuInvestigationEditorClient({
           </nav>
         ) : null}
 
-        {evidenceWorkspaceEnabled && workspaceView === 'evidence' ? (
+        {evidenceWorkspaceEnabled && workspaceView === 'field' ? (
+          <TuFieldLogWorkspace
+            inspectionId={investigation.inspectionId}
+            locked={locked}
+            images={images}
+            queue={fieldQueue}
+            onPreviewImage={setPreviewImageId}
+            onOpenEvidence={() => setWorkspaceView('evidence')}
+          />
+        ) : evidenceWorkspaceEnabled && workspaceView === 'evidence' ? (
           <TuEvidenceWorkspace
             inspectionId={investigation.inspectionId}
+            refreshToken={fieldQueue.completedRevision}
             locked={locked}
             sections={draft.sections}
             images={images}
