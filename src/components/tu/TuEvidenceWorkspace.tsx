@@ -582,7 +582,7 @@ export default function TuEvidenceWorkspace({
       <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-4">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-emerald-700">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-700">
               <ClipboardList size={20} aria-hidden />
             </div>
             <div className="min-w-0">
@@ -619,7 +619,7 @@ export default function TuEvidenceWorkspace({
               type="button"
               onClick={startNewObservation}
               disabled={locked}
-              className="inline-flex h-10 items-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
               <Plus size={16} aria-hidden />
               Ny observation
@@ -657,7 +657,7 @@ export default function TuEvidenceWorkspace({
                       type="button"
                       onClick={() => selectObservation(observation)}
                       className={`group flex w-full items-start gap-3 px-4 py-3 text-left transition ${
-                        active ? 'bg-white shadow-[inset_3px_0_0_#047857]' : 'hover:bg-white'
+                        active ? 'bg-white shadow-[inset_3px_0_0_#6d28d9]' : 'hover:bg-white'
                       }`}
                     >
                       <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-white text-xs font-semibold text-gray-700">
@@ -698,7 +698,7 @@ export default function TuEvidenceWorkspace({
           <div className="min-w-0 px-4 py-4 md:px-5">
             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 pb-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-violet-700">
                   {form.id ? 'Observation' : 'Ny observation'}
                 </p>
                 <h3 className="mt-1 text-lg font-semibold text-gray-950">
@@ -727,7 +727,7 @@ export default function TuEvidenceWorkspace({
                   onChange={(event) => updateForm('location', event.target.value)}
                   disabled={locked}
                   placeholder="Exempel: Sovrum mot norr"
-                  className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 disabled:bg-gray-100"
+                  className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
                 />
               </label>
               <label className="space-y-1">
@@ -737,7 +737,7 @@ export default function TuEvidenceWorkspace({
                   onChange={(event) => updateForm('buildingComponent', event.target.value)}
                   disabled={locked}
                   placeholder="Exempel: Källaryttervägg"
-                  className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 disabled:bg-gray-100"
+                  className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
                 />
               </label>
             </div>
@@ -751,7 +751,7 @@ export default function TuEvidenceWorkspace({
                   disabled={locked}
                   rows={5}
                   placeholder="Skriv vad som faktiskt kunde observeras."
-                  className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm leading-6 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 disabled:bg-gray-100"
+                  className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm leading-6 outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
                 />
               </label>
               <div className="space-y-2">
@@ -763,7 +763,7 @@ export default function TuEvidenceWorkspace({
                   className={`flex h-[122px] w-full flex-col items-center justify-center gap-2 rounded-md border text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 ${
                     recording
                       ? 'border-rose-300 bg-rose-50 text-rose-800'
-                      : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                      : 'border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100'
                   }`}
                 >
                   {transcribing ? (
@@ -812,7 +812,7 @@ export default function TuEvidenceWorkspace({
                   onChange={(event) => updateForm('riskNote', event.target.value)}
                   disabled={locked}
                   rows={3}
-                  className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm leading-6 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 disabled:bg-gray-100"
+                  className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm leading-6 outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
                 />
               </label>
               <label className="space-y-1">
@@ -822,7 +822,7 @@ export default function TuEvidenceWorkspace({
                   onChange={(event) => updateForm('suggestedFollowUp', event.target.value)}
                   disabled={locked}
                   rows={3}
-                  className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm leading-6 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 disabled:bg-gray-100"
+                  className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm leading-6 outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
                 />
               </label>
             </div>
@@ -878,7 +878,7 @@ export default function TuEvidenceWorkspace({
                       <div
                         key={image.id}
                         className={`relative overflow-hidden rounded-md border bg-white ${
-                          selected ? 'border-emerald-600 ring-2 ring-emerald-100' : 'border-gray-200'
+                          selected ? 'border-violet-600 ring-2 ring-violet-100' : 'border-gray-200'
                         }`}
                       >
                         <button
@@ -901,7 +901,7 @@ export default function TuEvidenceWorkspace({
                           aria-pressed={selected}
                           aria-label={selected ? 'Ta bort bildkoppling' : 'Koppla bild till observation'}
                           title={selected ? 'Ta bort bildkoppling' : 'Koppla bild till observation'}
-                          className="absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-md border border-white/80 bg-white/95 text-emerald-700 shadow-sm disabled:text-gray-300"
+                          className="absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-md border border-white/80 bg-white/95 text-violet-700 shadow-sm disabled:text-gray-300"
                         >
                           {selected ? <Check size={15} strokeWidth={3} aria-hidden /> : <Plus size={15} aria-hidden />}
                         </button>
@@ -987,21 +987,21 @@ export default function TuEvidenceWorkspace({
                       onChange={(event) => setMeasurementForm((current) => ({ ...current, measurementType: event.target.value }))}
                       disabled={locked}
                       placeholder="Typ, t.ex. fuktindikering"
-                      className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+                      className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
                     />
                     <input
                       value={measurementForm.valueText}
                       onChange={(event) => setMeasurementForm((current) => ({ ...current, valueText: event.target.value }))}
                       disabled={locked}
                       placeholder="Värde"
-                      className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+                      className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
                     />
                     <input
                       value={measurementForm.unit}
                       onChange={(event) => setMeasurementForm((current) => ({ ...current, unit: event.target.value }))}
                       disabled={locked}
                       placeholder="Enhet"
-                      className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+                      className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
                     />
                   </div>
                   <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -1010,14 +1010,14 @@ export default function TuEvidenceWorkspace({
                       onChange={(event) => setMeasurementForm((current) => ({ ...current, method: event.target.value }))}
                       disabled={locked}
                       placeholder="Metod"
-                      className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+                      className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
                     />
                     <input
                       value={measurementForm.instrument}
                       onChange={(event) => setMeasurementForm((current) => ({ ...current, instrument: event.target.value }))}
                       disabled={locked}
                       placeholder="Instrument"
-                      className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+                      className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
                     />
                   </div>
                   <div className="mt-2 flex justify-end">
@@ -1025,7 +1025,7 @@ export default function TuEvidenceWorkspace({
                       type="button"
                       onClick={() => void saveMeasurement()}
                       disabled={locked || measurementBusy}
-                      className="inline-flex h-9 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:text-gray-400"
+                      className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 disabled:text-gray-400"
                     >
                       {measurementBusy ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Plus size={14} aria-hidden />}
                       Lägg till mätvärde
@@ -1042,7 +1042,7 @@ export default function TuEvidenceWorkspace({
                   value={form.targetSectionId}
                   onChange={(event) => updateForm('targetSectionId', event.target.value)}
                   disabled={locked}
-                  className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 disabled:bg-gray-100"
+                  className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
                 >
                   <option value="">Ingen särskild sektion</option>
                   {editableSections.map((section) => (
@@ -1057,7 +1057,7 @@ export default function TuEvidenceWorkspace({
                     checked={form.includeInReport}
                     onChange={(event) => updateForm('includeInReport', event.target.checked)}
                     disabled={locked}
-                    className="h-4 w-4 accent-emerald-700"
+                    className="h-4 w-4 accent-violet-700"
                   />
                   Använd i rapport
                 </label>
@@ -1067,7 +1067,7 @@ export default function TuEvidenceWorkspace({
                     checked={form.reviewStatus === 'reviewed'}
                     onChange={(event) => updateForm('reviewStatus', event.target.checked ? 'reviewed' : 'draft')}
                     disabled={locked}
-                    className="h-4 w-4 accent-emerald-700"
+                    className="h-4 w-4 accent-violet-700"
                   />
                   Faktagranskad
                 </label>
@@ -1082,7 +1082,7 @@ export default function TuEvidenceWorkspace({
                 type="button"
                 onClick={() => void saveObservation()}
                 disabled={locked || saving || transcribing || recording}
-                className="inline-flex h-10 min-w-32 items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                className="inline-flex h-10 min-w-32 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
               >
                 {saving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Check size={16} aria-hidden />}
                 Spara

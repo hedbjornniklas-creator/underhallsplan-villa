@@ -1793,7 +1793,7 @@ export default function TuInvestigationEditorClient({
               aria-pressed={workspaceView === 'evidence'}
               className={`inline-flex min-h-10 items-center justify-center gap-2 rounded px-3 text-sm font-semibold transition ${
                 workspaceView === 'evidence'
-                  ? 'bg-emerald-700 text-white shadow-sm'
+                  ? 'bg-violet-700 text-white shadow-sm'
                   : 'text-gray-700 hover:bg-gray-50'
               }`}
             >
@@ -2519,7 +2519,7 @@ export default function TuInvestigationEditorClient({
                     </div>
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <label className="inline-flex min-h-9 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800">
+                    <label className="inline-flex min-h-9 items-center gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 text-xs font-semibold text-violet-800">
                       <input
                         type="checkbox"
                         checked={document.includeInDelivery}
@@ -2527,7 +2527,7 @@ export default function TuInvestigationEditorClient({
                         onChange={(event) =>
                           void patchDocument(document.id, { includeInDelivery: event.target.checked })
                         }
-                        className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-500 disabled:cursor-not-allowed"
+                        className="h-4 w-4 rounded border-violet-300 text-violet-700 focus:ring-violet-500 disabled:cursor-not-allowed"
                       />
                       Inkludera i leverans
                     </label>

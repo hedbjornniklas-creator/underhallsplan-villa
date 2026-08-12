@@ -175,6 +175,8 @@ function canStartAssignmentInvestigation(item: TuAssignmentListItem) {
   return item.status === 'ordered' && !item.inspection_id && !item.archived_at
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 export default function TuDashboardClient({
   initialAssignments,
   initialInvestigations,
@@ -229,6 +231,7 @@ export default function TuDashboardClient({
   const latestInvestigations = useMemo(() => investigations.slice(0, 4), [investigations])
 
   const updateForm = <K extends keyof TuFormState>(key: K, value: TuFormState[K]) => {
+    setError(null)
     setForm((current) => {
       if (key === 'customerAddressMatchesObject') {
         if (value) {
@@ -264,6 +267,7 @@ export default function TuDashboardClient({
   }
 
   const updateScratchForm = <K extends keyof ScratchFormState>(key: K, value: ScratchFormState[K]) => {
+    setError(null)
     setScratchForm((current) => {
       if (key === 'customerAddressMatchesObject') {
         if (value) {
@@ -299,6 +303,7 @@ export default function TuDashboardClient({
   }
 
   const updateScratchTemplate = (reportTemplateKey: string) => {
+    setError(null)
     setScratchForm((current) => {
       const previousTemplate = reportTemplates.find((template) => template.key === current.reportTemplateKey)
       const nextTemplate = reportTemplates.find((template) => template.key === reportTemplateKey)
@@ -315,17 +320,99 @@ export default function TuDashboardClient({
     })
   }
 
+  const openCreationDialog = (nextDialog: 'quick' | 'scratch') => {
+    setError(null)
+    setNotice(null)
+    setDialog(nextDialog)
+  }
+
+  const switchToDirectCreation = () => {
+    setScratchForm((current) => ({
+      ...current,
+      objectType: form.objectType,
+      scopeDescription: form.scopeDescription,
+      propertyAddress: form.propertyAddress,
+      propertyPostalCode: form.propertyPostalCode,
+      propertyCity: form.propertyCity,
+      propertyMunicipality: form.propertyMunicipality,
+      propertyOwnerName: form.propertyOwnerName,
+      cadastralId: form.cadastralId,
+      brfName: form.brfName,
+      apartmentNumber: form.apartmentNumber,
+      apartmentHolderName: form.apartmentHolderName,
+      customerAddressMatchesObject: form.customerAddressMatchesObject,
+      customerName: form.customerName,
+      customerEmail: form.customerEmail,
+      customerPhone: form.customerPhone,
+      customerAddress: form.customerAddress,
+      customerPostalCode: form.customerPostalCode,
+      customerCity: form.customerCity,
+      invoiceEmail: form.invoiceEmail,
+      date: form.preferredDate,
+      time: form.preferredTime,
+    }))
+    openCreationDialog('scratch')
+  }
+
+  const switchToConfirmation = () => {
+    setForm((current) => ({
+      ...current,
+      objectType: scratchForm.objectType,
+      scopeDescription: scratchForm.scopeDescription,
+      propertyAddress: scratchForm.propertyAddress,
+      propertyPostalCode: scratchForm.propertyPostalCode,
+      propertyCity: scratchForm.propertyCity,
+      propertyMunicipality: scratchForm.propertyMunicipality,
+      propertyOwnerName: scratchForm.propertyOwnerName,
+      cadastralId: scratchForm.cadastralId,
+      brfName: scratchForm.brfName,
+      apartmentNumber: scratchForm.apartmentNumber,
+      apartmentHolderName: scratchForm.apartmentHolderName,
+      customerAddressMatchesObject: scratchForm.customerAddressMatchesObject,
+      customerName: scratchForm.customerName,
+      customerEmail: scratchForm.customerEmail,
+      customerPhone: scratchForm.customerPhone,
+      customerAddress: scratchForm.customerAddress,
+      customerPostalCode: scratchForm.customerPostalCode,
+      customerCity: scratchForm.customerCity,
+      invoiceEmail: scratchForm.invoiceEmail,
+      preferredDate: scratchForm.date,
+      preferredTime: scratchForm.time,
+    }))
+    openCreationDialog('quick')
+  }
+
   const submitAssignment = async (sendNow: boolean) => {
     const missingVillaObject = form.objectType === 'villa' && !form.cadastralId.trim()
     const missingApartmentObject =
       form.objectType === 'apartment' && (!form.brfName.trim() || !form.apartmentNumber.trim())
 
+    if (!form.customerEmail.trim() || !EMAIL_REGEX.test(form.customerEmail.trim())) {
+      setError('Ange en giltig beställarmejl.')
+      setNotice(null)
+      return
+    }
+    if (form.invoiceEmail.trim() && !EMAIL_REGEX.test(form.invoiceEmail.trim())) {
+      setError('Ange en giltig fakturae-post.')
+      setNotice(null)
+      return
+    }
     if (sendNow && (missingVillaObject || missingApartmentObject)) {
       setError(
         form.objectType === 'apartment'
           ? 'Ange BRF och lägenhetsnummer innan utskick.'
           : 'Ange fastighetsbeteckning innan utskick.'
       )
+      setNotice(null)
+      return
+    }
+    if (sendNow && !form.scopeDescription.trim()) {
+      setError('Beskriv vad den tekniska utredningen ska omfatta.')
+      setNotice(null)
+      return
+    }
+    if (sendNow && !form.priceAmount.trim()) {
+      setError('Ange pris innan uppdragsbekräftelsen skickas.')
       setNotice(null)
       return
     }
@@ -361,6 +448,17 @@ export default function TuDashboardClient({
   const createScratchInvestigation = async () => {
     if (!scratchForm.reportTemplateKey.trim()) {
       setError('Välj en mall innan utredningen skapas.')
+      setNotice(null)
+      return
+    }
+
+    if (!scratchForm.customerEmail.trim() || !EMAIL_REGEX.test(scratchForm.customerEmail.trim())) {
+      setError('Ange en giltig kontaktmejl.')
+      setNotice(null)
+      return
+    }
+    if (scratchForm.invoiceEmail.trim() && !EMAIL_REGEX.test(scratchForm.invoiceEmail.trim())) {
+      setError('Ange en giltig fakturae-post.')
       setNotice(null)
       return
     }
@@ -467,7 +565,7 @@ export default function TuDashboardClient({
             </div>
           </header>
 
-          {error ? (
+          {error && !dialog && !selectedAssignment ? (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
               {error}
             </div>
@@ -482,14 +580,20 @@ export default function TuDashboardClient({
             <AssignmentConfirmationsCard
               assignments={latestAssignments}
               busy={busy}
-              onOpenDialog={() => setDialog('quick')}
-              onStartAssignment={setSelectedAssignment}
+              onOpenDialog={() => openCreationDialog('quick')}
+              onStartAssignment={(assignment) => {
+                setError(null)
+                setSelectedAssignment(assignment)
+              }}
             />
             <StartInvestigationCard
               acceptedAssignments={startableAssignments}
               busy={busy}
-              onOpenDialog={() => setDialog('scratch')}
-              onStartAssignment={setSelectedAssignment}
+              onOpenDialog={() => openCreationDialog('scratch')}
+              onStartAssignment={(assignment) => {
+                setError(null)
+                setSelectedAssignment(assignment)
+              }}
             />
             <InvestigationsCard investigations={latestInvestigations} />
             <ProfileCard profile={inspectorProfile} />
@@ -500,9 +604,13 @@ export default function TuDashboardClient({
           <QuickAssignmentDialog
             form={form}
             busy={busy}
-            onClose={() => setDialog(null)}
+            error={error}
+            onClose={() => {
+              setError(null)
+              setDialog(null)
+            }}
             onChange={updateForm}
-            onModeChange={() => setDialog('scratch')}
+            onModeChange={switchToDirectCreation}
             onSubmit={submitAssignment}
           />
         ) : null}
@@ -512,10 +620,14 @@ export default function TuDashboardClient({
             form={scratchForm}
             reportTemplates={reportTemplates}
             busy={busy}
-            onClose={() => setDialog(null)}
+            error={error}
+            onClose={() => {
+              setError(null)
+              setDialog(null)
+            }}
             onChange={updateScratchForm}
             onTemplateChange={updateScratchTemplate}
-            onModeChange={() => setDialog('quick')}
+            onModeChange={switchToConfirmation}
             onSubmit={createScratchInvestigation}
           />
         ) : null}
@@ -525,7 +637,11 @@ export default function TuDashboardClient({
             assignment={selectedAssignment}
             reportTemplates={reportTemplates}
             busy={busy === `assignment-${selectedAssignment.id}`}
-            onClose={() => setSelectedAssignment(null)}
+            error={error}
+            onClose={() => {
+              setError(null)
+              setSelectedAssignment(null)
+            }}
             onSubmit={startInvestigationFromAssignment}
           />
         ) : null}
@@ -889,12 +1005,14 @@ function StartFromAssignmentDialog({
   assignment,
   reportTemplates,
   busy,
+  error,
   onClose,
   onSubmit,
 }: {
   assignment: TuAssignmentListItem
   reportTemplates: TuReportTemplateOption[]
   busy: boolean
+  error: string | null
   onClose: () => void
   onSubmit: (reportTemplateKey: string) => void
 }) {
@@ -943,13 +1061,15 @@ function StartFromAssignmentDialog({
         </div>
 
         <TemplateSelect
-          label="Mall för utlåtandet *"
+          label="Mall för utlåtandet"
+          required
           value={reportTemplateKey}
           templates={reportTemplates}
           disabled={busy}
           onChange={setReportTemplateKey}
         />
 
+        <DialogError message={error} />
         <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button
             type="button"
@@ -1013,9 +1133,19 @@ function DialogShell({
   )
 }
 
+function DialogError({ message }: { message: string | null }) {
+  if (!message) return null
+  return (
+    <div role="alert" className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+      {message}
+    </div>
+  )
+}
+
 function QuickAssignmentDialog({
   form,
   busy,
+  error,
   onClose,
   onChange,
   onModeChange,
@@ -1023,6 +1153,7 @@ function QuickAssignmentDialog({
 }: {
   form: TuFormState
   busy: string | null
+  error: string | null
   onClose: () => void
   onChange: <K extends keyof TuFormState>(key: K, value: TuFormState[K]) => void
   onModeChange: () => void
@@ -1030,11 +1161,15 @@ function QuickAssignmentDialog({
 }) {
   return (
     <DialogShell
-      title="Skicka uppdragsbekräftelse"
-      subtitle="Fyll det som behövs för att kunden ska kunna godkänna uppdraget."
+      title="Ny teknisk utredning"
+      subtitle="Välj vad som ska hända när uppgifterna är ifyllda."
       onClose={onClose}
     >
       <CreationModePicker mode="confirmation" onChange={onModeChange} />
+      <p className="mt-2 text-xs text-slate-500">
+        <span className="font-semibold text-rose-600">*</span> Obligatoriskt för att skicka. Ett ofullständigt
+        uppdrag kan fortfarande sparas som utkast.
+      </p>
       <section className="mt-4 border-b border-slate-200 pb-4">
         <div className="mb-3">
           <h3 className="text-sm font-semibold text-slate-950">Objekt</h3>
@@ -1048,13 +1183,13 @@ function QuickAssignmentDialog({
           <Field label="Kommun" value={form.propertyMunicipality} onChange={(value) => onChange('propertyMunicipality', value)} />
           {form.objectType === 'apartment' ? (
             <>
-              <Field label="Bostadsrättsförening *" value={form.brfName} onChange={(value) => onChange('brfName', value)} />
-              <Field label="Lägenhetsnummer *" value={form.apartmentNumber} onChange={(value) => onChange('apartmentNumber', value)} />
+              <Field label="Bostadsrättsförening" required value={form.brfName} onChange={(value) => onChange('brfName', value)} />
+              <Field label="Lägenhetsnummer" required value={form.apartmentNumber} onChange={(value) => onChange('apartmentNumber', value)} />
               <Field label="Bostadsrättsinnehavare" value={form.apartmentHolderName} onChange={(value) => onChange('apartmentHolderName', value)} />
             </>
           ) : (
             <>
-              <Field label="Fastighetsbeteckning *" value={form.cadastralId} onChange={(value) => onChange('cadastralId', value)} />
+              <Field label="Fastighetsbeteckning" required value={form.cadastralId} onChange={(value) => onChange('cadastralId', value)} />
               <Field label="Fastighetsägare" value={form.propertyOwnerName} onChange={(value) => onChange('propertyOwnerName', value)} />
             </>
           )}
@@ -1068,7 +1203,7 @@ function QuickAssignmentDialog({
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Namn" value={form.customerName} onChange={(value) => onChange('customerName', value)} />
-          <Field label="Beställarmejl *" value={form.customerEmail} onChange={(value) => onChange('customerEmail', value)} type="email" />
+          <Field label="Beställarmejl" required value={form.customerEmail} onChange={(value) => onChange('customerEmail', value)} type="email" />
           <Field label="Telefon" value={form.customerPhone} onChange={(value) => onChange('customerPhone', value)} />
         </div>
         <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-2.5 text-sm text-slate-800">
@@ -1098,29 +1233,46 @@ function QuickAssignmentDialog({
 
       <section className="border-b border-slate-200 py-4">
         <div className="mb-3">
+          <h3 className="text-sm font-semibold text-slate-950">Uppdrag</h3>
+          <p className="mt-1 text-xs text-slate-600">Beskriv uppdraget och ange det pris som kunden ska godkänna.</p>
+        </div>
+        <Textarea label="Utredningens omfattning" required value={form.scopeDescription} onChange={(value) => onChange('scopeDescription', value)} rows={4} />
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <Field label="Pris SEK" required value={form.priceAmount} onChange={(value) => onChange('priceAmount', value)} type="number" />
+        </div>
+      </section>
+
+      <section className="border-b border-slate-200 py-4">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-slate-950">Besiktning</h3>
+          <p className="mt-1 text-xs text-slate-600">Önskat datum och tid kan lämnas tomma om besiktningen bokas senare.</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Datum" value={form.preferredDate} onChange={(value) => onChange('preferredDate', value)} type="date" />
+          <Field label="Tid" value={form.preferredTime} onChange={(value) => onChange('preferredTime', value)} type="time" />
+        </div>
+      </section>
+
+      <section className="border-b border-slate-200 py-4">
+        <div className="mb-3">
           <h3 className="text-sm font-semibold text-slate-950">Fakturering</h3>
-          <p className="mt-1 text-xs text-slate-600">Valfritt. Använd bara fältet när fakturan ska gå till en annan e-postadress.</p>
+          <p className="mt-1 text-xs text-slate-600">Ange endast en fakturae-post om fakturan ska gå till en annan adress.</p>
         </div>
         <Field label="Fakturae-post" value={form.invoiceEmail} onChange={(value) => onChange('invoiceEmail', value)} type="email" />
       </section>
 
-      <Textarea label="Utredningens omfattning *" value={form.scopeDescription} onChange={(value) => onChange('scopeDescription', value)} rows={4} />
+      <section className="py-4">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-slate-950">Intern notering</h3>
+          <p className="mt-1 text-xs text-slate-600">Syns inte för kunden.</p>
+        </div>
+        <Textarea label="Notering" value={form.notesInternal} onChange={(value) => onChange('notesInternal', value)} rows={3} />
+      </section>
 
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <Field label="Datum" value={form.preferredDate} onChange={(value) => onChange('preferredDate', value)} type="date" />
-        <Field label="Tid" value={form.preferredTime} onChange={(value) => onChange('preferredTime', value)} type="time" />
-        <Field label="Pris SEK *" value={form.priceAmount} onChange={(value) => onChange('priceAmount', value)} type="number" />
-      </div>
-
-      <Textarea
-        label="Intern notering"
-        value={form.notesInternal}
-        onChange={(value) => onChange('notesInternal', value)}
-        rows={3}
-      />
-
-      <div className="sticky bottom-0 mt-4 flex flex-col gap-2 border-t border-slate-200 bg-white pt-3 sm:flex-row sm:justify-end">
-        <button
+      <div className="sticky bottom-0 mt-4 border-t border-slate-200 bg-white pt-3">
+        <DialogError message={error} />
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button
           type="button"
           onClick={() => onSubmit(false)}
           disabled={busy === 'draft'}
@@ -1128,16 +1280,17 @@ function QuickAssignmentDialog({
         >
           <Plus size={16} aria-hidden />
           Spara utkast
-        </button>
-        <button
+          </button>
+          <button
           type="button"
           onClick={() => onSubmit(true)}
           disabled={busy === 'quick-send'}
           className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-wait disabled:bg-violet-300"
         >
           <Mail size={16} aria-hidden />
-          {busy === 'quick-send' ? 'Skickar...' : 'Skicka'}
-        </button>
+            {busy === 'quick-send' ? 'Skickar...' : 'Skicka uppdragsbekräftelse'}
+          </button>
+        </div>
       </div>
     </DialogShell>
   )
@@ -1147,6 +1300,7 @@ function ScratchInvestigationDialog({
   form,
   reportTemplates,
   busy,
+  error,
   onClose,
   onChange,
   onTemplateChange,
@@ -1156,6 +1310,7 @@ function ScratchInvestigationDialog({
   form: ScratchFormState
   reportTemplates: TuReportTemplateOption[]
   busy: string | null
+  error: string | null
   onClose: () => void
   onChange: <K extends keyof ScratchFormState>(key: K, value: ScratchFormState[K]) => void
   onTemplateChange: (reportTemplateKey: string) => void
@@ -1166,13 +1321,17 @@ function ScratchInvestigationDialog({
 
   return (
     <DialogShell
-      title="Starta utredning"
-      subtitle="Skapa en teknisk utredning utan uppdragsbekräftelse."
+      title="Ny teknisk utredning"
+      subtitle="Välj vad som ska hända när uppgifterna är ifyllda."
       onClose={onClose}
     >
       <CreationModePicker mode="direct" onChange={onModeChange} />
+      <p className="mt-2 text-xs text-slate-500">
+        <span className="font-semibold text-rose-600">*</span> Obligatoriskt för att skapa utredningen.
+      </p>
       <TemplateSelect
-        label="Mall för utlåtandet *"
+        label="Mall för utlåtandet"
+        required
         value={form.reportTemplateKey}
         templates={reportTemplates}
         disabled={busy === 'scratch'}
@@ -1196,13 +1355,13 @@ function ScratchInvestigationDialog({
           <Field label="Kommun" value={form.propertyMunicipality} onChange={(value) => onChange('propertyMunicipality', value)} />
           {form.objectType === 'apartment' ? (
             <>
-              <Field label="Bostadsrättsförening *" value={form.brfName} onChange={(value) => onChange('brfName', value)} />
-              <Field label="Lägenhetsnummer *" value={form.apartmentNumber} onChange={(value) => onChange('apartmentNumber', value)} />
+              <Field label="Bostadsrättsförening" required value={form.brfName} onChange={(value) => onChange('brfName', value)} />
+              <Field label="Lägenhetsnummer" required value={form.apartmentNumber} onChange={(value) => onChange('apartmentNumber', value)} />
               <Field label="Bostadsrättsinnehavare" value={form.apartmentHolderName} onChange={(value) => onChange('apartmentHolderName', value)} />
             </>
           ) : (
             <>
-              <Field label="Fastighetsbeteckning *" value={form.cadastralId} onChange={(value) => onChange('cadastralId', value)} />
+              <Field label="Fastighetsbeteckning" required value={form.cadastralId} onChange={(value) => onChange('cadastralId', value)} />
               <Field label="Fastighetsägare" value={form.propertyOwnerName} onChange={(value) => onChange('propertyOwnerName', value)} />
             </>
           )}
@@ -1216,7 +1375,7 @@ function ScratchInvestigationDialog({
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Namn" value={form.customerName} onChange={(value) => onChange('customerName', value)} />
-          <Field label="Kontaktmejl *" value={form.customerEmail} onChange={(value) => onChange('customerEmail', value)} type="email" />
+          <Field label="Kontaktmejl" required value={form.customerEmail} onChange={(value) => onChange('customerEmail', value)} type="email" />
           <Field label="Telefon" value={form.customerPhone} onChange={(value) => onChange('customerPhone', value)} />
         </div>
         <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-2.5 text-sm text-slate-800">
@@ -1246,20 +1405,35 @@ function ScratchInvestigationDialog({
 
       <section className="border-b border-slate-200 py-4">
         <div className="mb-3">
+          <h3 className="text-sm font-semibold text-slate-950">Uppdrag</h3>
+          <p className="mt-1 text-xs text-slate-600">Beskriv vad utredningen ska omfatta. Uppgiften kan kompletteras senare.</p>
+        </div>
+        <Textarea label="Utredningens omfattning" value={form.scopeDescription} onChange={(value) => onChange('scopeDescription', value)} rows={4} />
+      </section>
+
+      <section className="border-b border-slate-200 py-4">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-slate-950">Besiktning</h3>
+          <p className="mt-1 text-xs text-slate-600">Datum och tid kan lämnas tomma och fyllas i när besiktningen är bokad.</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Datum" value={form.date} onChange={(value) => onChange('date', value)} type="date" />
+          <Field label="Tid" value={form.time} onChange={(value) => onChange('time', value)} type="time" />
+        </div>
+      </section>
+
+      <section className="py-4">
+        <div className="mb-3">
           <h3 className="text-sm font-semibold text-slate-950">Fakturering</h3>
-          <p className="mt-1 text-xs text-slate-600">Valfritt. Ange bara en annan e-postadress om fakturan ska gå till en annan mottagare.</p>
+          <p className="mt-1 text-xs text-slate-600">Ange endast en fakturae-post om fakturan ska gå till en annan adress.</p>
         </div>
         <Field label="Fakturae-post" value={form.invoiceEmail} onChange={(value) => onChange('invoiceEmail', value)} type="email" />
       </section>
 
-      <Textarea label="Utredningens omfattning" value={form.scopeDescription} onChange={(value) => onChange('scopeDescription', value)} rows={4} />
-
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <Field label="Datum" value={form.date} onChange={(value) => onChange('date', value)} type="date" />
-        <Field label="Tid" value={form.time} onChange={(value) => onChange('time', value)} type="time" />
-      </div>
-      <div className="sticky bottom-0 mt-4 flex justify-end border-t border-slate-200 bg-white pt-3">
-        <button
+      <div className="sticky bottom-0 mt-4 border-t border-slate-200 bg-white pt-3">
+        <DialogError message={error} />
+        <div className="flex justify-end">
+          <button
           type="button"
           onClick={onSubmit}
           disabled={busy === 'scratch' || !canSubmit}
@@ -1267,7 +1441,8 @@ function ScratchInvestigationDialog({
         >
           <CalendarDays size={16} aria-hidden />
           {busy === 'scratch' ? 'Skapar...' : 'Skapa utredning'}
-        </button>
+          </button>
+        </div>
       </div>
     </DialogShell>
   )
@@ -1278,12 +1453,14 @@ function TemplateSelect({
   value,
   templates,
   disabled,
+  required = false,
   onChange,
 }: {
   label: string
   value: string
   templates: TuReportTemplateOption[]
   disabled?: boolean
+  required?: boolean
   onChange: (value: string) => void
 }) {
   const selectedTemplate = templates.find((template) => template.key === value) ?? null
@@ -1291,9 +1468,14 @@ function TemplateSelect({
   return (
     <div className="mt-4 rounded-lg border border-violet-100 bg-violet-50/50 p-3">
       <label className="space-y-1">
-        <span className="block text-xs font-medium text-slate-600">{label}</span>
+        <span className="block text-xs font-medium text-slate-600">
+          {label}
+          {required ? <span className="ml-0.5 text-rose-600" aria-hidden>*</span> : null}
+        </span>
         <select
           value={value}
+          required={required}
+          aria-required={required}
           disabled={disabled || templates.length === 0}
           onChange={(event) => onChange(event.target.value)}
           className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-slate-100 disabled:text-slate-500"
@@ -1339,26 +1521,47 @@ function CreationModePicker({
   const confirmationActive = mode === 'confirmation'
 
   return (
-    <div className="mt-4 grid grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
-      <button
-        type="button"
-        onClick={confirmationActive ? undefined : onChange}
-        className={`h-10 rounded-md px-3 text-sm font-semibold transition ${
-          confirmationActive ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-700 hover:bg-white'
-        }`}
-      >
-        Uppdragsbekräftelse
-      </button>
-      <button
-        type="button"
-        onClick={confirmationActive ? onChange : undefined}
-        className={`h-10 rounded-md px-3 text-sm font-semibold transition ${
-          confirmationActive ? 'text-slate-700 hover:bg-white' : 'bg-violet-600 text-white shadow-sm'
-        }`}
-      >
-        Starta direkt
-      </button>
-    </div>
+    <fieldset className="mt-4">
+      <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+        Vad vill du göra?
+      </legend>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <button
+          type="button"
+          aria-pressed={confirmationActive}
+          onClick={confirmationActive ? undefined : onChange}
+          className={`min-h-[76px] rounded-lg border px-3 py-3 text-left transition ${
+            confirmationActive
+              ? 'border-violet-500 bg-violet-50 ring-2 ring-violet-100'
+              : 'border-slate-200 bg-white hover:border-violet-300 hover:bg-violet-50/40'
+          }`}
+        >
+          <span className={`block text-sm font-semibold ${confirmationActive ? 'text-violet-900' : 'text-slate-900'}`}>
+            Skicka uppdragsbekräftelse
+          </span>
+          <span className="mt-1 block text-xs leading-5 text-slate-600">
+            Kunden får uppdraget för godkännande innan utredningen startas.
+          </span>
+        </button>
+        <button
+          type="button"
+          aria-pressed={!confirmationActive}
+          onClick={confirmationActive ? onChange : undefined}
+          className={`min-h-[76px] rounded-lg border px-3 py-3 text-left transition ${
+            confirmationActive
+              ? 'border-slate-200 bg-white hover:border-violet-300 hover:bg-violet-50/40'
+              : 'border-violet-500 bg-violet-50 ring-2 ring-violet-100'
+          }`}
+        >
+          <span className={`block text-sm font-semibold ${confirmationActive ? 'text-slate-900' : 'text-violet-900'}`}>
+            Starta utredning direkt
+          </span>
+          <span className="mt-1 block text-xs leading-5 text-slate-600">
+            Utredningen skapas direkt utan att en bekräftelse skickas först.
+          </span>
+        </button>
+      </div>
+    </fieldset>
   )
 }
 
@@ -1404,18 +1607,25 @@ function Field({
   value,
   onChange,
   type = 'text',
+  required = false,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   type?: 'text' | 'email' | 'date' | 'time' | 'number'
+  required?: boolean
 }) {
   return (
     <label className="space-y-1">
-      <span className="block text-xs font-medium text-slate-600">{label}</span>
+      <span className="block text-xs font-medium text-slate-600">
+        {label}
+        {required ? <span className="ml-0.5 text-rose-600" aria-hidden>*</span> : null}
+      </span>
       <input
         type={type}
         value={value}
+        required={required}
+        aria-required={required}
         onChange={(event) => onChange(event.target.value)}
         className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
       />
@@ -1428,18 +1638,25 @@ function Textarea({
   value,
   onChange,
   rows,
+  required = false,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   rows: number
+  required?: boolean
 }) {
   return (
     <label className="mt-3 block space-y-1">
-      <span className="block text-xs font-medium text-slate-600">{label}</span>
+      <span className="block text-xs font-medium text-slate-600">
+        {label}
+        {required ? <span className="ml-0.5 text-rose-600" aria-hidden>*</span> : null}
+      </span>
       <textarea
         value={value}
         rows={rows}
+        required={required}
+        aria-required={required}
         onChange={(event) => onChange(event.target.value)}
         className="w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm leading-6 text-slate-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
       />
