@@ -1202,16 +1202,24 @@ function NoteTable({
   }
 
   return (
-    <table className="w-full border-collapse text-[9.5pt] leading-tight text-black">
+    <table className="w-full table-fixed border-collapse text-[9.5pt] leading-tight text-black">
+      <colgroup>
+        <col style={{ width: mm(12) }} />
+        <col style={{ width: mm(10) }} />
+        <col style={{ width: mm(12) }} />
+        <col style={{ width: mm(38) }} />
+        <col />
+        <col style={{ width: mm(22) }} />
+      </colgroup>
       {showHeader ? (
         <thead>
           <tr className="bg-[#2f7d55] text-left text-white print:bg-[#2f7d55]">
-            <th className="w-[12mm] border border-[#8bb6a0] px-1.5 py-1 font-bold">Bes.</th>
-            <th className="w-[10mm] border border-[#8bb6a0] px-1.5 py-1 font-bold">Bet.</th>
-            <th className="w-[12mm] border border-[#8bb6a0] px-1.5 py-1 font-bold">Nr</th>
-            <th className="w-[38mm] border border-[#8bb6a0] px-1.5 py-1 font-bold">Del / Rum</th>
+            <th className="border border-[#8bb6a0] px-1.5 py-1 font-bold">Bes.</th>
+            <th className="border border-[#8bb6a0] px-1.5 py-1 font-bold">Bet.</th>
+            <th className="border border-[#8bb6a0] px-1.5 py-1 font-bold">Nr</th>
+            <th className="border border-[#8bb6a0] px-1.5 py-1 font-bold">Del / Rum</th>
             <th className="border border-[#8bb6a0] px-1.5 py-1 font-bold">Fel</th>
-            <th className="w-[22mm] border border-[#8bb6a0] px-1.5 py-1 font-bold">Avhjälpt /sign</th>
+            <th className="border border-[#8bb6a0] px-1.5 py-1 font-bold">Avhjälpt /sign</th>
           </tr>
         </thead>
       ) : null}
@@ -1302,6 +1310,7 @@ type EbPrintableBlock = {
   id: string
   node: ReactNode
   startsNewPage?: boolean
+  spacingAfterMm?: number
 }
 
 type EbPagePlan = {
@@ -1539,7 +1548,10 @@ function EbReportPageChrome({
 
 function EbPrintableBlockView({ block }: { block: EbPrintableBlock }) {
   return (
-    <div className="eb-report-block" style={{ marginBottom: mm(4) }}>
+    <div
+      className="eb-report-block"
+      style={{ marginBottom: mm(block.spacingAfterMm ?? 4) }}
+    >
       {block.node}
     </div>
   )
@@ -1805,16 +1817,18 @@ export default function EbInspectionReportView({
           id: 'defects-conditions',
           node: <DefectsConditionsReport report={report} displayNumberByNoteId={displayNumberByNoteId} />,
         })
-        chunkArray(notes, 8).forEach((chunk, chunkIndex) => {
+        const noteChunks = chunkArray(notes, 4)
+        noteChunks.forEach((chunk, chunkIndex) => {
           blocks.push({
             id: `note-table-${chunkIndex}`,
+            spacingAfterMm: chunkIndex === noteChunks.length - 1 ? 4 : 0,
             node: (
               <section className={chunkIndex === 0 ? 'eb-report-section mt-4' : 'eb-report-section'}>
                 <NoteTable
                   notes={chunk}
                   inspectionReference={`${report.inspection.variant}${report.inspection.sequenceNo}`}
                   showHeader={chunkIndex === 0}
-                  startIndex={chunkIndex * 8}
+                  startIndex={chunkIndex * 4}
                 />
               </section>
             ),
