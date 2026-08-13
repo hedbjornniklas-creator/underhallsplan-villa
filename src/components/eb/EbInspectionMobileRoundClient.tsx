@@ -1302,7 +1302,7 @@ export default function EbInspectionMobileRoundClient({
                           {imageDragOver ? 'Släpp bilder här' : 'Dra och släpp bilder här'}
                         </p>
                         <p className="mt-1 text-xs">
-                          Bilden kopplas till noteringen. Om noteringen är ny sparas den först.
+                          Upp till 15 bilder åt gången. Max 15 MB per bild. Om noteringen är ny sparas den först.
                         </p>
                       </div>
 
@@ -1341,7 +1341,9 @@ export default function EbInspectionMobileRoundClient({
                             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
                               Bildbank
                             </p>
-                            <p className="text-xs text-gray-600">Bilder uppladdade på entreprenaden.</p>
+                            <p className="text-xs text-gray-600">
+                              Bilder uppladdade på entreprenaden. Lägg till en bild åt gången till noteringen.
+                            </p>
                           </div>
                           <span className="text-xs font-medium text-gray-500">{projectImageAttachments.length} st</span>
                         </div>
