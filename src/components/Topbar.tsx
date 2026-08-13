@@ -207,9 +207,14 @@ export default function Topbar() {
 
         <div className="min-w-0 px-3 text-center">
           {hasUser ? (
-            <>
+            <Link
+              href="/settings"
+              aria-label="Öppna profilinställningar"
+              title="Profilinställningar"
+              className="group block min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+            >
               <div
-                className={`truncate font-medium text-gray-900 transition-all duration-200 md:text-sm ${
+                className={`truncate font-medium text-gray-900 transition-all duration-200 group-hover:text-emerald-700 md:text-sm ${
                   isMobileCompact ? 'text-xs' : 'text-sm'
                 }`}
               >
@@ -224,7 +229,7 @@ export default function Topbar() {
                   {email}
                 </div>
               ) : null}
-            </>
+            </Link>
           ) : (
             <div className="truncate text-sm text-gray-500">Inte inloggad</div>
           )}

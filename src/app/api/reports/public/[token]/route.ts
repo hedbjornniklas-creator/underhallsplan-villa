@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { hashAssignmentToken } from '@/lib/assignments/tokens'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { buildInspectionReportShareEmail } from '@/lib/inspections/reportEmailTemplates'
+import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
 import { buildReportPdfFileName } from '@/lib/report/reportFileName'
 import {
   getTuSnapshotEmailMeta,
@@ -379,13 +380,19 @@ export async function POST(
     const tuSnapshot = isTuReportSnapshotPayloadV1(link.snapshot_payload)
       ? link.snapshot_payload
       : null
+    const ebReport = getEbInspectionReportFromSnapshot(link.snapshot_payload)
     const mock = getSnapshotMock(link.snapshot_payload)
     const properties = getNestedRecord(mock, 'properties')
     const inspections = getNestedRecord(mock, 'inspections')
     const tuMeta = tuSnapshot ? getTuSnapshotEmailMeta(tuSnapshot) : null
-    const propertyAddress = tuMeta?.propertyAddress ?? normalizedSnapshotText(properties.address)
+    const propertyAddress =
+      tuMeta?.propertyAddress ??
+      ebReport?.project.address ??
+      normalizedSnapshotText(properties.address)
     const inspectionDate =
       tuMeta?.reportDate ??
+      ebReport?.inspection.reportDistributionDate ??
+      ebReport?.inspection.date ??
       normalizedSnapshotText(inspections.date) ??
       normalizedSnapshotText(inspections.date_time)
     const detailsUrl = `${resolvePublicBaseUrl(request)}/rapport/${encodeURIComponent(normalizedToken)}`
@@ -505,13 +512,14 @@ export async function GET(
       return NextResponse.redirect(signedUrl, 302)
     }
 
-    let assignmentNumber = extractAssignmentNumberFromSnapshot(
-      (data as Record<string, unknown>).snapshot_payload
-    )
+    const snapshotPayload = (data as Record<string, unknown>).snapshot_payload
+    const ebSnapshotReport = getEbInspectionReportFromSnapshot(snapshotPayload)
+    let assignmentNumber =
+      ebSnapshotReport?.inspection.assignmentNumber ?? extractAssignmentNumberFromSnapshot(snapshotPayload)
     const inspectionId = String((data as Record<string, unknown>).inspection_id ?? '').trim()
-    let inspectionFamily: string | null = null
-    let inspectionDate: string | null = null
-    let inspectionSequenceNo: number | null = null
+    let inspectionFamily: string | null = ebSnapshotReport ? 'EB' : null
+    let inspectionDate: string | null = ebSnapshotReport?.inspection.date ?? null
+    let inspectionSequenceNo: number | null = ebSnapshotReport?.inspection.sequenceNo ?? null
     if (inspectionId) {
       const { data: inspection } = await admin
         .from('inspections')
@@ -523,15 +531,18 @@ export async function GET(
         | null
       assignmentNumber =
         assignmentNumber || String(inspectionRow?.assignment_number ?? '').trim() || null
-      inspectionFamily = String(inspectionRow?.inspection_family ?? '').trim() || null
-      inspectionDate = String(inspectionRow?.date ?? '').trim() || null
+      inspectionFamily =
+        inspectionFamily || String(inspectionRow?.inspection_family ?? '').trim() || null
+      inspectionDate = inspectionDate || String(inspectionRow?.date ?? '').trim() || null
       if (String(inspectionFamily ?? '').toUpperCase() === 'EB') {
         const { data: ebDetail } = await admin
           .from('eb_inspection_details')
           .select('sequence_no')
           .eq('inspection_id', inspectionId)
           .maybeSingle()
-        inspectionSequenceNo = Number((ebDetail as { sequence_no?: number | null } | null)?.sequence_no ?? null)
+        inspectionSequenceNo =
+          inspectionSequenceNo ??
+          Number((ebDetail as { sequence_no?: number | null } | null)?.sequence_no ?? null)
       }
     }
     const fileName = buildReportPdfFileName({

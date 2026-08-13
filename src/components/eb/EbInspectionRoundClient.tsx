@@ -1448,12 +1448,14 @@ function ReportDraftSectionsEditor({
   disabled,
   onSectionChange,
   onSectionTextSave,
+  onResetSection,
 }: {
   sections: EbReportDraftSection[]
   inspectionId: string
   disabled: boolean
   onSectionChange: (section: EbReportDraftSection) => void
   onSectionTextSave: (sectionKey: string, text: string) => Promise<void>
+  onResetSection: (sectionKey: string) => Promise<void>
 }) {
   const updateSection = (key: string, patch: Partial<EbReportDraftSection>) => {
     const section = sections.find((item) => item.key === key)
@@ -1479,14 +1481,29 @@ function ReportDraftSectionsEditor({
                 {section.sbrPoint ? `SBR punkt ${section.sbrPoint}` : 'Utlåtande'}
               </p>
               <h3 className="mt-1 text-sm font-semibold text-gray-950">{section.title}</h3>
-              <p className="mt-1 text-xs text-gray-500">{REPORT_SECTION_SOURCE_LABELS[section.source]}</p>
+              <p className="mt-1 text-xs text-gray-500">
+                {REPORT_SECTION_SOURCE_LABELS[section.source]}
+                {section.contentMode === 'structured' ? ' · Automatisk' : ' · Redigerbar'}
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {section.contentMode === 'editable' ? (
+                <button
+                  type="button"
+                  onClick={() => void onResetSection(section.key)}
+                  disabled={disabled}
+                  title="Återställ standardtext"
+                  aria-label={`Återställ standardtext för ${section.title}`}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-50 hover:text-gray-950 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RefreshCw size={15} />
+                </button>
+              ) : null}
               <label className="inline-flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-semibold">
                 <input
                   type="checkbox"
                   checked={section.isRelevant}
-                  disabled={disabled}
+                  disabled={disabled || section.contentMode === 'structured'}
                   onChange={(event) =>
                     updateSection(section.key, {
                       isRelevant: event.target.checked,
@@ -1499,7 +1516,7 @@ function ReportDraftSectionsEditor({
               </label>
               <select
                 value={section.status}
-                disabled={disabled}
+                disabled={disabled || section.contentMode === 'structured'}
                 onChange={(event) =>
                   updateSection(section.key, { status: event.target.value as EbReportSectionStatus })
                 }
@@ -1515,11 +1532,16 @@ function ReportDraftSectionsEditor({
           </div>
           <DebouncedTextarea
             value={section.text}
-            draftKey={`eb:${inspectionId}:report-section:${section.key}`}
+            draftKey={
+              section.contentMode === 'editable'
+                ? `eb:${inspectionId}:report-section:${section.key}`
+                : undefined
+            }
             disabled={disabled}
+            readOnly={section.contentMode === 'structured'}
             onSave={(text) => onSectionTextSave(section.key, text)}
             rows={8}
-            className={`${inputClassName()} mt-3 resize-y leading-6`}
+            className={`${inputClassName()} mt-3 resize-y leading-6 read-only:cursor-default read-only:bg-gray-50 read-only:text-gray-700`}
           />
         </article>
       ))}
@@ -1660,6 +1682,8 @@ export default function EbInspectionRoundClient({
   const [documentsSaving, setDocumentsSaving] = useState(false)
   const [checkpointsSaving, setCheckpointsSaving] = useState(false)
   const [reportDraftSaving, setReportDraftSaving] = useState(false)
+  const [refreshingReportSource, setRefreshingReportSource] = useState<'project' | 'inspector' | null>(null)
+  const [resettingReportSectionKey, setResettingReportSectionKey] = useState<string | null>(null)
   const [reviewMessage, setReviewMessage] = useState<string | null>(null)
   const inspectionAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const participantsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -2160,6 +2184,83 @@ export default function EbInspectionRoundClient({
     }
   }
 
+  const refreshReportSource = async (source: 'project' | 'inspector') => {
+    if (isLocked) {
+      showError(lockedMessage)
+      return
+    }
+    if (refreshingReportSource || reportDraftSaving) return
+
+    setRefreshingReportSource(source)
+    setReviewMessage(null)
+    try {
+      const response = await fetch(reportDraftPath, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: source === 'project' ? 'refresh_project' : 'refresh_inspector' }),
+      })
+      const body = (await response.json().catch(() => ({}))) as ReportDraftResponse
+      if (!response.ok || !body.report) {
+        throw new Error(
+          body.error ??
+            (source === 'project'
+              ? 'Kunde inte hämta grunduppgifter från entreprenaden.'
+              : 'Kunde inte hämta besiktningsmannens profiluppgifter.')
+        )
+      }
+      setRound(body.report)
+      reportSectionsRef.current = body.report.reportDraft.sections
+      setReportSections(body.report.reportDraft.sections)
+      setReviewMessage(
+        source === 'project'
+          ? 'Grunduppgifterna från entreprenaden är uppdaterade.'
+          : 'Besiktningsmannens profiluppgifter är uppdaterade.'
+      )
+    } catch (error) {
+      showError(
+        error,
+        source === 'project'
+          ? 'Kunde inte hämta grunduppgifter från entreprenaden.'
+          : 'Kunde inte hämta besiktningsmannens profiluppgifter.'
+      )
+    } finally {
+      setRefreshingReportSource(null)
+    }
+  }
+
+  const resetReportSection = async (sectionKey: string) => {
+    if (isLocked) {
+      showError(lockedMessage)
+      return
+    }
+    if (resettingReportSectionKey || reportDraftSaving) return
+    const section = reportSectionsRef.current.find((item) => item.key === sectionKey)
+    if (!section || section.contentMode !== 'editable') return
+    if (!window.confirm(`Återställ standardtexten för "${section.title}"?`)) return
+
+    setResettingReportSectionKey(sectionKey)
+    setReviewMessage(null)
+    try {
+      const response = await fetch(reportDraftPath, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset_section', sectionKey }),
+      })
+      const body = (await response.json().catch(() => ({}))) as ReportDraftResponse
+      const sections = body.reportDraft?.sections
+      if (!response.ok || !sections) {
+        throw new Error(body.error ?? 'Kunde inte återställa standardtexten.')
+      }
+      reportSectionsRef.current = sections
+      setReportSections(sections)
+      setReviewMessage(`Standardtexten för ${section.title} är återställd.`)
+    } catch (error) {
+      showError(error, 'Kunde inte återställa standardtexten.')
+    } finally {
+      setResettingReportSectionKey(null)
+    }
+  }
+
   const saveReviewAutosavePatch = useCallback(
     async (payload: ReviewAutosavePayload): Promise<ReviewAutosaveResult> => {
       if (payload.kind === 'inspection') {
@@ -2554,7 +2655,7 @@ export default function EbInspectionRoundClient({
       const currentSection = reportSectionsRef.current.find(
         (section) => section.key === nextSection.key
       )
-      if (!currentSection) return
+      if (!currentSection || currentSection.contentMode !== 'editable') return
       const mergedSection = {
         ...currentSection,
         status: nextSection.status,
@@ -2580,6 +2681,9 @@ export default function EbInspectionRoundClient({
       if (isLocked) throw new Error(lockedMessage)
       const section = reportSectionsRef.current.find((item) => item.key === sectionKey)
       if (!section) throw new Error('Utlåtandesektionen hittades inte.')
+      if (section.contentMode !== 'editable') {
+        throw new Error('Den automatiska utlåtandesektionen redigeras via besiktningsuppgifterna.')
+      }
 
       const nextSection = { ...section, text }
       replaceReportSection(nextSection)
@@ -4130,12 +4234,47 @@ export default function EbInspectionRoundClient({
                 </button>
               }
             >
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-emerald-100 bg-emerald-50/50 px-3 py-2">
+                <span className="text-xs font-semibold text-emerald-900">
+                  Arbetsversion skapad{' '}
+                  {round.reportDraft.initializedAt
+                    ? new Date(round.reportDraft.initializedAt).toLocaleString('sv-SE')
+                    : 'vid första öppningen'}
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void refreshReportSource('project')}
+                    disabled={isLocked || Boolean(refreshingReportSource) || reportDraftSaving}
+                    className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <RefreshCw
+                      size={15}
+                      className={refreshingReportSource === 'project' ? 'animate-spin' : undefined}
+                    />
+                    Hämta från entreprenaden
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void refreshReportSource('inspector')}
+                    disabled={isLocked || Boolean(refreshingReportSource) || reportDraftSaving}
+                    className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <RefreshCw
+                      size={15}
+                      className={refreshingReportSource === 'inspector' ? 'animate-spin' : undefined}
+                    />
+                    Hämta besiktningsman
+                  </button>
+                </div>
+              </div>
               <ReportDraftSectionsEditor
                 sections={reportSections}
                 inspectionId={round.inspection.inspectionId}
-                disabled={isLocked}
+                disabled={isLocked || Boolean(resettingReportSectionKey)}
                 onSectionChange={handleReportSectionChange}
                 onSectionTextSave={handleReportSectionTextSave}
+                onResetSection={resetReportSection}
               />
             </ReviewSection>
 

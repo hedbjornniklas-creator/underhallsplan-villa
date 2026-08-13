@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { buildReportPdfFileName } from '@/lib/report/reportFileName'
+import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
@@ -38,6 +39,7 @@ type LinkPdfRow = {
   pdf_status: string | null
   pdf_error: string | null
   created_at: string
+  snapshot_payload: unknown
 }
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
@@ -190,16 +192,9 @@ export async function GET(
     }
     const ebSequenceNo = ((ebDetail?.data ?? null) as EbInspectionDetailForPdf | null)?.sequence_no ?? null
 
-    const fileName = buildReportPdfFileName({
-      assignmentNumber: inspectionRow.assignment_number,
-      inspectionDate: inspectionRow.date,
-      inspectionFamily: inspectionRow.inspection_family,
-      inspectionSequenceNo: ebSequenceNo,
-    })
-
     const { data: linkRows, error: linkError } = await admin
       .from('inspection_report_links')
-      .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,pdf_error,created_at')
+      .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,pdf_error,created_at,snapshot_payload')
       .eq('inspection_id', inspectionId)
       .is('revoked_at', null)
       .order('created_at', { ascending: false })
@@ -214,6 +209,14 @@ export async function GET(
     }
 
     const rows = (Array.isArray(linkRows) ? linkRows : []) as LinkPdfRow[]
+    const ebSnapshotReport = getEbInspectionReportFromSnapshot(rows[0]?.snapshot_payload)
+    const fileName = buildReportPdfFileName({
+      assignmentNumber:
+        ebSnapshotReport?.inspection.assignmentNumber ?? inspectionRow.assignment_number,
+      inspectionDate: ebSnapshotReport?.inspection.date ?? inspectionRow.date,
+      inspectionFamily: ebSnapshotReport ? 'EB' : inspectionRow.inspection_family,
+      inspectionSequenceNo: ebSnapshotReport?.inspection.sequenceNo ?? ebSequenceNo,
+    })
     const storageReadyRow = rows.find((row) => {
       const bucket = String(row.pdf_storage_bucket ?? '').trim()
       const path = String(row.pdf_storage_path ?? '').trim()

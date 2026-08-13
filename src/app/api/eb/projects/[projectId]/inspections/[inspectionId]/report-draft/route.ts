@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
-import { getEbInspectionReport, saveEbReportDraft, type EbReportDraftSection } from '@/lib/eb/server'
+import {
+  getEbInspectionReport,
+  refreshEbReportInspectorSource,
+  refreshEbReportProjectSource,
+  resetEbReportDraftSection,
+  saveEbReportDraft,
+  type EbReportDraftSection,
+} from '@/lib/eb/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -31,6 +38,10 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'EB_INSPECTION_NOT_FOUND') return jsonError('Besiktningen hittades inte.', 404)
   if (message === 'EB_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'EB_REPORT_DRAFT_EMPTY') return jsonError('Inga giltiga utlåtandesektioner skickades.', 400)
+  if (message === 'EB_REPORT_SECTION_NOT_EDITABLE') {
+    return jsonError('Den automatiska sektionen kan inte återställas manuellt.', 400)
+  }
+  if (message === 'EB_REPORT_SECTION_NOT_FOUND') return jsonError('Utlåtandesektionen hittades inte.', 404)
   return jsonError(fallback, 500)
 }
 
@@ -74,5 +85,46 @@ export async function PATCH(
     return NextResponse.json({ reportDraft })
   } catch (error) {
     return mapError(error, 'Kunde inte spara utlåtandeutkast.')
+  }
+}
+
+export async function POST(
+  request: Request,
+  context: { params: Promise<{ projectId: string; inspectionId: string }> }
+) {
+  try {
+    const { projectId, inspectionId } = await context.params
+    const org = await requireEbContext()
+    const body = (await request.json().catch(() => ({}))) as {
+      action?: unknown
+      sectionKey?: unknown
+    }
+    const commonInput = {
+      orgId: org.orgId,
+      requestedByUserId: org.userId,
+      projectId,
+      inspectionId,
+    }
+
+    if (body.action === 'refresh_project') {
+      const report = await refreshEbReportProjectSource(commonInput)
+      return NextResponse.json({ report })
+    }
+
+    if (body.action === 'refresh_inspector') {
+      const report = await refreshEbReportInspectorSource(commonInput)
+      return NextResponse.json({ report })
+    }
+
+    if (body.action === 'reset_section') {
+      const sectionKey = typeof body.sectionKey === 'string' ? body.sectionKey.trim() : ''
+      if (!sectionKey) return jsonError('Ange vilken sektion som ska återställas.', 400)
+      const reportDraft = await resetEbReportDraftSection({ ...commonInput, sectionKey })
+      return NextResponse.json({ reportDraft })
+    }
+
+    return jsonError('Okänd åtgärd för utlåtandeutkastet.', 400)
+  } catch (error) {
+    return mapError(error, 'Kunde inte uppdatera utlåtandeutkastets grunduppgifter.')
   }
 }

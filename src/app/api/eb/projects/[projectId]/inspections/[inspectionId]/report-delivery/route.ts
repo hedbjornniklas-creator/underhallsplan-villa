@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
-import { getEbInspectionReport, getEbProjectById, type EbInspectionReport } from '@/lib/eb/server'
+import { createEbReportSnapshotPayloadV1 } from '@/lib/eb/reportSnapshot'
+import { getEbInspectionReport, getEbProjectById } from '@/lib/eb/server'
 import {
   getPdfRenderDiagnostics,
   renderPreviewPdf,
@@ -247,24 +248,6 @@ function getPdfDownloadUrl(inspectionId: string, activeLink: EbReportLinkRow | n
   return `/api/report-v2/${encodeURIComponent(inspectionId)}/pdf`
 }
 
-function createEbSnapshotPayload(report: EbInspectionReport) {
-  return JSON.parse(JSON.stringify({
-    schemaVersion: 'eb_v1',
-    createdAt: new Date().toISOString(),
-    project: report.project,
-    inspection: report.inspection,
-    participants: report.participants,
-    inspectionDocuments: report.inspectionDocuments,
-    reportDraft: report.reportDraft,
-    disciplines: report.disciplines,
-    markers: report.markers,
-    statuses: report.statuses,
-    notes: report.notes,
-    images: report.images,
-    branding: report.branding,
-  }))
-}
-
 async function lockEbInspection(admin: AdminClient, input: {
   orgId: string
   projectId: string
@@ -336,7 +319,7 @@ export async function POST(
 
     const token = generateAssignmentToken()
     const tokenHash = hashAssignmentToken(token)
-    const snapshotPayload = createEbSnapshotPayload(report)
+    const snapshotPayload = createEbReportSnapshotPayloadV1(report)
 
     const { data: linkData, error: linkError } = await admin
       .from('inspection_report_links')
@@ -360,16 +343,25 @@ export async function POST(
 
     if (linkError || !linkData) throw new Error(linkError?.message ?? 'Kunde inte skapa rapportlänk.')
     const linkId = linkData.id as string
+    let reportLockedAt: string
+    try {
+      reportLockedAt = await lockEbInspection(admin, {
+        orgId: org.orgId,
+        projectId,
+        inspectionId,
+        userId: org.userId,
+      })
+    } catch (lockError) {
+      await admin
+        .from('inspection_report_links')
+        .update({ revoked_at: new Date().toISOString() })
+        .eq('id', linkId)
+      throw lockError
+    }
     await revokeOlderReportLinks(admin, inspectionId, linkId)
 
-    const reportLockedAt = await lockEbInspection(admin, {
-      orgId: org.orgId,
-      projectId,
-      inspectionId,
-      userId: org.userId,
-    })
-
     const publicBaseUrl = resolvePublicBaseUrl(request)
+    const publicLink = `${publicBaseUrl}/rapport/${encodeURIComponent(token)}`
     after(async () => {
       await runEbReportPdfJobInBackground({
         linkId,
@@ -377,8 +369,8 @@ export async function POST(
         projectId,
         inspectionId,
         tokenHash,
-        previewReportUrl: `${publicBaseUrl}/eb/projects/${encodeURIComponent(projectId)}/inspections/${encodeURIComponent(inspectionId)}/report?pdf=1`,
-        cookieHeader: request.headers.get('cookie'),
+        previewReportUrl: `${publicLink}?pdf=1`,
+        cookieHeader: null,
       })
     })
 
@@ -395,6 +387,7 @@ export async function POST(
       pdfStatus: activeLink?.pdf_status ?? null,
       pdfError: activeLink?.pdf_error ?? null,
       downloadUrl: getPdfDownloadUrl(inspectionId, activeLink),
+      publicLink,
       linkId,
       project,
     })

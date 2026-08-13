@@ -25,6 +25,8 @@ import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 
 type EbInspectionReportViewProps = {
   report: EbInspectionReport
+  showInternalActions?: boolean
+  publicActions?: ReactNode
 }
 
 function sortNotes(notes: EbNote[]) {
@@ -1574,7 +1576,11 @@ function EbPrintPagedDocument({
   )
 }
 
-export default function EbInspectionReportView({ report }: EbInspectionReportViewProps) {
+export default function EbInspectionReportView({
+  report,
+  showInternalActions = true,
+  publicActions,
+}: EbInspectionReportViewProps) {
   const { showError } = useEbToast()
   const printTitle = reportPrintTitle(report)
   const notes = useMemo(() => sortNotes(report.notes), [report.notes])
@@ -1862,37 +1868,43 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
 
   return (
     <main className="eb-report-print-root min-h-screen bg-neutral-200 text-black print:min-h-0 print:bg-white">
-      <div className="mx-auto max-w-5xl px-4 py-5 print:hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Link
-            href={`/eb/projects/${report.project.id}`}
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
-          >
-            <ArrowLeft size={16} />
-            Till entreprenaden
-          </Link>
-          <div className="flex items-center gap-2">
-            <Link
-              href={`/eb/projects/${report.project.id}/inspections/${report.inspection.inspectionId}/perform`}
-              className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
-            >
-              <ClipboardCheck size={16} />
-              Granska
-            </Link>
-            <button
-              type="button"
-              onClick={() => {
-                document.title = printTitle
-                window.print()
-              }}
-              className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800"
-            >
-              <Printer size={16} />
-              Skriv ut
-            </button>
+      {showInternalActions || publicActions ? (
+        <div className="mx-auto max-w-5xl px-4 py-5 print:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {showInternalActions ? (
+              <Link
+                href={`/eb/projects/${report.project.id}`}
+                className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
+              >
+                <ArrowLeft size={16} />
+                Till entreprenaden
+              </Link>
+            ) : <span />}
+            {showInternalActions ? (
+              <div className="flex items-center gap-2">
+                <Link
+                  href={`/eb/projects/${report.project.id}/inspections/${report.inspection.inspectionId}/perform`}
+                  className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
+                >
+                  <ClipboardCheck size={16} />
+                  Granska
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    document.title = printTitle
+                    window.print()
+                  }}
+                  className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                >
+                  <Printer size={16} />
+                  Skriv ut
+                </button>
+              </div>
+            ) : publicActions}
           </div>
         </div>
-      </div>
+      ) : null}
 
       <EbPrintPagedDocument blocks={reportBlocks} report={report} />
     </main>

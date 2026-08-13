@@ -290,6 +290,25 @@ export type EbReportSectionSource =
   | 'standard_text'
   | 'manual'
 
+export type EbReportSectionContentMode = 'editable' | 'structured'
+
+export const EB_REPORT_DRAFT_SCHEMA_VERSION = 1 as const
+export const EB_REPORT_TEMPLATE_KEY = 'eb_default'
+export const EB_REPORT_TEMPLATE_TITLE = 'EB-utlåtande'
+export const EB_REPORT_TEMPLATE_VERSION = 1
+
+const EB_EDITABLE_REPORT_SECTION_KEYS = new Set([
+  'scope',
+  'conflict_of_interest',
+  'documentation_only',
+  'remedy_cost',
+  'other_notes',
+])
+
+function ebReportSectionContentMode(key: string): EbReportSectionContentMode {
+  return EB_EDITABLE_REPORT_SECTION_KEYS.has(key) ? 'editable' : 'structured'
+}
+
 export type EbReportDraftSection = {
   key: string
   title: string
@@ -299,9 +318,43 @@ export type EbReportDraftSection = {
   isRelevant: boolean
   text: string
   updatedAt: string | null
+  contentMode: EbReportSectionContentMode
+}
+
+export type EbReportProjectSnapshot = Omit<EbProjectListItem, 'inspections'>
+
+export type EbReportBrandingSnapshot = {
+  inspectorLogoUrl: string | null
+  inspectorAvatarUrl: string | null
+  inspectorSignatureUrl: string | null
+  besiktAppLogoUrl: string
+  footer: {
+    companyLines: string[]
+    contactLines: string[]
+  }
+  signature: {
+    locationAndDate: string
+    inspectorName: string
+    avatarUrl: string | null
+    signatureUrl: string | null
+    credentialLines: string[]
+  } | null
+}
+
+export type EbReportSourceSnapshot = {
+  capturedAt: string
+  project: EbReportProjectSnapshot
+  inspectorText: string
+  branding: EbReportBrandingSnapshot
 }
 
 export type EbReportDraft = {
+  schemaVersion: 1
+  templateKey: string
+  templateTitle: string
+  templateVersion: number
+  initializedAt: string | null
+  sourceSnapshot: EbReportSourceSnapshot | null
   sections: EbReportDraftSection[]
   updatedAt: string | null
 }
@@ -310,23 +363,7 @@ export type EbInspectionReport = EbInspectionRound & {
   participants: EbInvitationParticipant[]
   inspectionDocuments: EbInspectionDocument[]
   reportDraft: EbReportDraft
-  branding: {
-    inspectorLogoUrl: string | null
-    inspectorAvatarUrl: string | null
-    inspectorSignatureUrl: string | null
-    besiktAppLogoUrl: string
-    footer: {
-      companyLines: string[]
-      contactLines: string[]
-    }
-    signature: {
-      locationAndDate: string
-      inspectorName: string
-      avatarUrl: string | null
-      signatureUrl: string | null
-      credentialLines: string[]
-    } | null
-  }
+  branding: EbReportBrandingSnapshot
 }
 
 export type EbInvitationParticipant = {
@@ -486,6 +523,10 @@ type EbInspectionDetailRow = {
   report_locked_by?: string | null
   report_draft?: unknown
   report_draft_updated_at?: string | null
+  report_draft_initialized_at?: string | null
+  report_template_key?: string | null
+  report_template_title?: string | null
+  report_template_version?: number | null
   created_at: string | null
 }
 
@@ -2635,21 +2676,14 @@ export async function saveEbInspectionCheckpoints(
   })
 }
 
-export async function getEbInspectionReport(input: {
+async function loadEbInspectorReportSource(input: {
   orgId: string
   requestedByUserId: string
-  projectId: string
-  inspectionId: string
-}): Promise<EbInspectionReport> {
-  const round = await getEbInspectionRound(input)
-  const inspectorProfileId = round.project.ownerProfileId || input.requestedByUserId
-  const [participants, storedDraft, inspectionDocuments, inspectorProfile] = await Promise.all([
-    listParticipantsForInspection(input),
-    fetchEbReportDraft(input),
-    listEbInspectionDocuments(input),
-    getProfileContact(inspectorProfileId),
-  ])
-  const resolvedParticipants = enrichParticipantsForReport(round.project, participants)
+  project: EbProjectListItem
+  inspection: EbInspectionSummary
+}) {
+  const inspectorProfileId = input.project.ownerProfileId || input.requestedByUserId
+  const inspectorProfile = await getProfileContact(inspectorProfileId)
   const inspectorText = await buildInspectorReportText({
     orgId: input.orgId,
     profileId: inspectorProfileId,
@@ -2662,34 +2696,147 @@ export async function getEbInspectionReport(input: {
     orgId: input.orgId,
     profileId: inspectorProfileId,
     inspector: inspectorProfile,
-    reportDate: round.inspection.reportDistributionDate ?? round.inspection.date,
+    reportDate: input.inspection.reportDistributionDate ?? input.inspection.date,
   })
-  let ownerLogoUrl: string | null = null
-  if (!inspectorLogoUrl && round.project.ownerProfileId !== inspectorProfileId) {
-    const ownerProfile = await getProfileContact(round.project.ownerProfileId)
-    ownerLogoUrl = resolveProfileLogoUrl(ownerProfile)
+
+  return {
+    inspectorText,
+    branding: {
+      inspectorLogoUrl,
+      inspectorAvatarUrl,
+      inspectorSignatureUrl,
+      besiktAppLogoUrl: BESIKTAPP_REPORT_LOGO_SRC,
+      footer: buildProfileFooter(inspectorProfile),
+      signature: inspectorSignature,
+    } satisfies EbReportBrandingSnapshot,
+  }
+}
+
+export async function getEbInspectionReport(input: {
+  orgId: string
+  requestedByUserId: string
+  projectId: string
+  inspectionId: string
+}): Promise<EbInspectionReport> {
+  const liveRound = await getEbInspectionRound(input)
+  const [participants, storedDraft, inspectionDocuments] = await Promise.all([
+    listParticipantsForInspection(input),
+    fetchEbReportDraft(input),
+    listEbInspectionDocuments(input),
+  ])
+  const inspectorSource = storedDraft.sourceSnapshot
+    ? null
+    : await loadEbInspectorReportSource({
+      orgId: input.orgId,
+      requestedByUserId: input.requestedByUserId,
+      project: liveRound.project,
+      inspection: liveRound.inspection,
+    })
+  const initializedAt = storedDraft.initializedAt ?? new Date().toISOString()
+  const sourceSnapshot =
+    storedDraft.sourceSnapshot ??
+    createEbReportSourceSnapshot({
+      project: liveRound.project,
+      inspectorText: inspectorSource?.inspectorText ?? '',
+      branding:
+        inspectorSource?.branding ?? {
+          inspectorLogoUrl: null,
+          inspectorAvatarUrl: null,
+          inspectorSignatureUrl: null,
+          besiktAppLogoUrl: BESIKTAPP_REPORT_LOGO_SRC,
+          footer: { companyLines: [], contactLines: [] },
+          signature: null,
+        },
+      capturedAt: initializedAt,
+    })
+  const project = applyEbReportProjectSnapshot(liveRound.project, sourceSnapshot.project)
+  const round: EbInspectionRound = { ...liveRound, project }
+  const resolvedParticipants = enrichParticipantsForReport(project, participants)
+  const initializedDraft: EbReportDraft = {
+    ...storedDraft,
+    schemaVersion: EB_REPORT_DRAFT_SCHEMA_VERSION,
+    templateKey: storedDraft.templateKey || EB_REPORT_TEMPLATE_KEY,
+    templateTitle: storedDraft.templateTitle || EB_REPORT_TEMPLATE_TITLE,
+    templateVersion: storedDraft.templateVersion || EB_REPORT_TEMPLATE_VERSION,
+    initializedAt,
+    sourceSnapshot,
+  }
+  const reportDraft = buildEbReportDraft({
+    round,
+    participants: resolvedParticipants,
+    attachments: round.projectAttachments,
+    inspectionDocuments,
+    inspectorText: sourceSnapshot.inspectorText,
+    storedDraft: initializedDraft,
+  })
+
+  const storedSectionKeys = new Set(storedDraft.sections.map((section) => section.key))
+  const needsInitializationWrite =
+    !storedDraft.initializedAt ||
+    !storedDraft.sourceSnapshot ||
+    storedSectionKeys.size === 0
+
+  let resolvedReportDraft = reportDraft
+  if (needsInitializationWrite && !liveRound.inspection.reportLockedAt) {
+    resolvedReportDraft = await writeEbReportDraft(input, {
+      ...reportDraft,
+      updatedAt: reportDraft.updatedAt ?? initializedAt,
+    })
   }
 
   return {
     ...round,
     participants: resolvedParticipants,
     inspectionDocuments,
-    branding: {
-      inspectorLogoUrl: inspectorLogoUrl ?? ownerLogoUrl,
-      inspectorAvatarUrl,
-      inspectorSignatureUrl,
-      besiktAppLogoUrl: BESIKTAPP_REPORT_LOGO_SRC,
-      footer: buildProfileFooter(inspectorProfile),
-      signature: inspectorSignature,
+    branding: applyEbReportDateToBranding(
+      sourceSnapshot.branding,
+      round.inspection.reportDistributionDate ?? round.inspection.date
+    ),
+    reportDraft: resolvedReportDraft,
+  }
+}
+
+function createEbReportSourceSnapshot(input: {
+  project: EbProjectListItem
+  inspectorText: string
+  branding: EbReportBrandingSnapshot
+  capturedAt?: string
+}): EbReportSourceSnapshot {
+  const project = { ...input.project } as Partial<EbProjectListItem>
+  delete project.inspections
+  return {
+    capturedAt: input.capturedAt ?? new Date().toISOString(),
+    project: project as EbReportProjectSnapshot,
+    inspectorText: input.inspectorText,
+    branding: input.branding,
+  }
+}
+
+function applyEbReportProjectSnapshot(
+  liveProject: EbProjectListItem,
+  snapshot: EbReportProjectSnapshot
+): EbProjectListItem {
+  return {
+    ...liveProject,
+    ...snapshot,
+    inspections: liveProject.inspections,
+  }
+}
+
+function applyEbReportDateToBranding(
+  branding: EbReportBrandingSnapshot,
+  reportDate: string | null | undefined
+): EbReportBrandingSnapshot {
+  if (!branding.signature) return branding
+  const longDate = formatLongSwedishDate(reportDate) || formatLongSwedishDate(new Date().toISOString())
+  const locationMatch = branding.signature.locationAndDate.match(/^(.*?),\s*den\s+/i)
+  const location = normalizeText(locationMatch?.[1])
+  return {
+    ...branding,
+    signature: {
+      ...branding.signature,
+      locationAndDate: location ? `${location}, den ${longDate}` : `Den ${longDate}`,
     },
-    reportDraft: buildEbReportDraft({
-      round,
-      participants: resolvedParticipants,
-      attachments: round.projectAttachments,
-      inspectionDocuments,
-      inspectorText,
-      storedDraft,
-    }),
   }
 }
 
@@ -2699,13 +2846,30 @@ async function fetchEbReportDraft(input: {
   inspectionId: string
 }) {
   const admin = createSupabaseAdminClient()
-  const { data, error } = await admin
+  const withMetadataSelect =
+    'report_draft,report_draft_updated_at,report_draft_initialized_at,report_template_key,report_template_title,report_template_version'
+  const baseSelect = 'report_draft,report_draft_updated_at'
+  const initialResult = await admin
     .from('eb_inspection_details')
-    .select('report_draft,report_draft_updated_at')
+    .select(withMetadataSelect)
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
     .eq('inspection_id', input.inspectionId)
     .maybeSingle()
+  let data: unknown = initialResult.data
+  let error = initialResult.error
+
+  if (error && isMissingColumnError(error)) {
+    const fallback = await admin
+      .from('eb_inspection_details')
+      .select(baseSelect)
+      .eq('org_id', input.orgId)
+      .eq('eb_project_id', input.projectId)
+      .eq('inspection_id', input.inspectionId)
+      .maybeSingle()
+    data = fallback.data
+    error = fallback.error
+  }
 
   if (error) {
     if (isMissingColumnError(error)) {
@@ -2714,13 +2878,98 @@ async function fetchEbReportDraft(input: {
     throw new Error(error.message ?? 'Kunde inte hämta utlåtandeutkast.')
   }
 
-  const row = (data ?? null) as Pick<EbInspectionDetailRow, 'report_draft' | 'report_draft_updated_at'> | null
-  return normalizeEbReportDraft(row?.report_draft, row?.report_draft_updated_at ?? null)
+  const row = (data ?? null) as Pick<
+    EbInspectionDetailRow,
+    | 'report_draft'
+    | 'report_draft_updated_at'
+    | 'report_draft_initialized_at'
+    | 'report_template_key'
+    | 'report_template_title'
+    | 'report_template_version'
+  > | null
+  const draft = normalizeEbReportDraft(row?.report_draft, row?.report_draft_updated_at ?? null)
+  const rawDraft =
+    row?.report_draft && typeof row.report_draft === 'object'
+      ? (row.report_draft as {
+          templateKey?: string | null
+          templateTitle?: string | null
+          templateVersion?: number | null
+        })
+      : null
+  return {
+    ...draft,
+    initializedAt: draft.initializedAt ?? row?.report_draft_initialized_at ?? null,
+    templateKey:
+      normalizeText(rawDraft?.templateKey) ??
+      normalizeText(row?.report_template_key) ??
+      EB_REPORT_TEMPLATE_KEY,
+    templateTitle:
+      normalizeText(rawDraft?.templateTitle) ??
+      normalizeText(row?.report_template_title) ??
+      EB_REPORT_TEMPLATE_TITLE,
+    templateVersion:
+      Number(rawDraft?.templateVersion) ||
+      Number(row?.report_template_version) ||
+      EB_REPORT_TEMPLATE_VERSION,
+  }
+}
+
+async function writeEbReportDraft(
+  input: { orgId: string; projectId: string; inspectionId: string },
+  draft: EbReportDraft
+) {
+  const admin = createSupabaseAdminClient()
+  const updatedAt = draft.updatedAt ?? new Date().toISOString()
+  const reportDraft = { ...draft, updatedAt }
+  const metadataPayload = {
+    report_draft: reportDraft,
+    report_draft_updated_at: updatedAt,
+    report_draft_initialized_at: draft.initializedAt,
+    report_template_key: draft.templateKey,
+    report_template_title: draft.templateTitle,
+    report_template_version: draft.templateVersion,
+  }
+  const basePayload = {
+    report_draft: reportDraft,
+    report_draft_updated_at: updatedAt,
+  }
+
+  let { error } = await admin
+    .from('eb_inspection_details')
+    .update(metadataPayload)
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('inspection_id', input.inspectionId)
+
+  if (error && isMissingColumnError(error)) {
+    const fallback = await admin
+      .from('eb_inspection_details')
+      .update(basePayload)
+      .eq('org_id', input.orgId)
+      .eq('eb_project_id', input.projectId)
+      .eq('inspection_id', input.inspectionId)
+    error = fallback.error
+  }
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte spara utlåtandeutkast.')
+  }
+
+  return reportDraft
 }
 
 function normalizeEbReportDraft(value: unknown, updatedAt: string | null): EbReportDraft {
   if (!value || typeof value !== 'object') {
-    return { sections: [], updatedAt }
+    return {
+      schemaVersion: EB_REPORT_DRAFT_SCHEMA_VERSION,
+      templateKey: EB_REPORT_TEMPLATE_KEY,
+      templateTitle: EB_REPORT_TEMPLATE_TITLE,
+      templateVersion: EB_REPORT_TEMPLATE_VERSION,
+      initializedAt: null,
+      sourceSnapshot: null,
+      sections: [],
+      updatedAt,
+    }
   }
 
   const rawSections = Array.isArray((value as { sections?: unknown }).sections)
@@ -2728,6 +2977,18 @@ function normalizeEbReportDraft(value: unknown, updatedAt: string | null): EbRep
     : []
 
   return {
+    schemaVersion: EB_REPORT_DRAFT_SCHEMA_VERSION,
+    templateKey:
+      normalizeText((value as { templateKey?: string | null }).templateKey) ?? EB_REPORT_TEMPLATE_KEY,
+    templateTitle:
+      normalizeText((value as { templateTitle?: string | null }).templateTitle) ??
+      EB_REPORT_TEMPLATE_TITLE,
+    templateVersion:
+      Number((value as { templateVersion?: number | null }).templateVersion) || EB_REPORT_TEMPLATE_VERSION,
+    initializedAt: normalizeText((value as { initializedAt?: string | null }).initializedAt),
+    sourceSnapshot: normalizeEbReportSourceSnapshot(
+      (value as { sourceSnapshot?: unknown }).sourceSnapshot
+    ),
     updatedAt: typeof (value as { updatedAt?: unknown }).updatedAt === 'string'
       ? (value as { updatedAt: string }).updatedAt
       : updatedAt,
@@ -2752,6 +3013,22 @@ function normalizeEbReportDraftSection(value: unknown): EbReportDraftSection | n
     isRelevant: raw.isRelevant !== false,
     text,
     updatedAt: normalizeText(raw.updatedAt),
+    contentMode: ebReportSectionContentMode(key),
+  }
+}
+
+function normalizeEbReportSourceSnapshot(value: unknown): EbReportSourceSnapshot | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Partial<EbReportSourceSnapshot>
+  if (!raw.project || typeof raw.project !== 'object') return null
+  if (!normalizeText((raw.project as { id?: string | null }).id)) return null
+  if (!raw.branding || typeof raw.branding !== 'object') return null
+
+  return {
+    capturedAt: normalizeText(raw.capturedAt) ?? new Date().toISOString(),
+    project: raw.project as EbReportProjectSnapshot,
+    inspectorText: typeof raw.inspectorText === 'string' ? raw.inspectorText : '',
+    branding: raw.branding as EbReportBrandingSnapshot,
   }
 }
 
@@ -4346,26 +4623,6 @@ function ebDeductionReportRow(round: EbInspectionRound, note: EbNote) {
   ])
 }
 
-function isReportInstructionText(text: string | null | undefined) {
-  const normalized = normalizeText(String(text ?? '').replace(/\r\n/g, '\n').replace(/\\n/g, '\n'))
-  if (!normalized) return false
-  return (
-    normalized.startsWith('Ange ') ||
-    normalized.includes(' Komplettera ') ||
-    normalized.includes('Komplettera om ')
-  )
-}
-
-function shouldKeepStoredReportSection(
-  existing: EbReportDraftSection | undefined,
-  fallback: EbReportDraftSection
-): existing is EbReportDraftSection {
-  if (!existing) return false
-  if (isReportInstructionText(existing.text)) return false
-  if (existing.status === 'missing' && fallback.status !== 'missing') return false
-  return true
-}
-
 function isObCertificationText(value: string | null | undefined) {
   const normalized = normalizeText(value)?.toLocaleLowerCase('sv-SE') ?? ''
   return normalized.includes('överlåtelse') || normalized.includes('overlatelse')
@@ -4420,7 +4677,7 @@ function buildEbReportDraft(input: {
     (note) => note.markerKey === 'N' || Boolean(note.deductionAmount)
   )
 
-  const defaults: EbReportDraftSection[] = [
+  const defaults: Array<Omit<EbReportDraftSection, 'contentMode'>> = [
     {
       key: 'inspection_type',
       title: 'Typ av besiktning',
@@ -4795,54 +5052,56 @@ function buildEbReportDraft(input: {
     },
   ]
 
+  const defaultsWithModes: EbReportDraftSection[] = defaults.map((section) => ({
+    ...section,
+    contentMode: ebReportSectionContentMode(section.key),
+  }))
+
+  const defaultsByKey = new Map(defaultsWithModes.map((section) => [section.key, section]))
+  const templateAlreadyCopied = Boolean(
+    storedDraft.initializedAt && storedDraft.sourceSnapshot && storedDraft.sections.length > 0
+  )
+  const copiedTemplateSections = storedDraft.sections.map((existing) => {
+    const current = defaultsByKey.get(existing.key)
+    if (!current || existing.contentMode === 'editable') return existing
+    return {
+      ...current,
+      title: existing.title,
+      sbrPoint: existing.sbrPoint,
+      source: existing.source,
+      contentMode: existing.contentMode,
+      updatedAt: existing.updatedAt,
+    }
+  })
+  const initializedSections = defaultsWithModes.map((section) => {
+    const existing = existingByKey.get(section.key)
+    if (section.contentMode === 'structured' || !existing) {
+      return section
+    }
+    return {
+      ...section,
+      status: existing.status,
+      isRelevant: existing.isRelevant,
+      text: existing.text,
+      updatedAt: existing.updatedAt ?? storedDraft.updatedAt ?? now,
+    }
+  })
+  const defaultKeys = new Set(defaultsWithModes.map((section) => section.key))
+  const additionalStoredSections = storedDraft.sections.filter(
+    (section) => !defaultKeys.has(section.key)
+  )
+
   return {
+    schemaVersion: EB_REPORT_DRAFT_SCHEMA_VERSION,
+    templateKey: storedDraft.templateKey,
+    templateTitle: storedDraft.templateTitle,
+    templateVersion: storedDraft.templateVersion,
+    initializedAt: storedDraft.initializedAt,
+    sourceSnapshot: storedDraft.sourceSnapshot,
     updatedAt: storedDraft.updatedAt,
-    sections: defaults.map((section) => {
-      const existing = existingByKey.get(section.key)
-      if (section.key === 'scope' || section.key === 'contract_parties' || section.key === 'contract_documents') {
-        return section
-      }
-      if (section.key === 'testing_documentation') {
-        return section
-      }
-      if (section.key === 'drainage_checklist') {
-        return section
-      }
-      if (section.key === 'conflict_of_interest' && !conflictOfInterestRelevant) {
-        return section
-      }
-      if (section.key === 'continued_final_inspection') {
-        return section
-      }
-      if (section.key === 'warranty_end') {
-        return section
-      }
-      if (section.key === 'reclamation_notice') {
-        return section
-      }
-      if (section.key === 'distribution_list' || section.key === 'signature_certificate') {
-        return section
-      }
-      if (
-        section.key === 'special_investigation' ||
-        section.key === 'remedy_deadline' ||
-        section.key === 'remedy_cost' ||
-        section.key === 'after_inspection' ||
-        section.key === 'inspection_cost_distribution'
-      ) {
-        return section
-      }
-      if (!shouldKeepStoredReportSection(existing, section)) {
-        return section
-      }
-      return {
-        ...section,
-        status: existing.status,
-        isRelevant: existing.isRelevant,
-        text: existing.text,
-        updatedAt: existing.updatedAt ?? storedDraft.updatedAt ?? now,
-      }
-    }),
+    sections: templateAlreadyCopied
+      ? copiedTemplateSections
+      : [...initializedSections, ...additionalStoredSections],
   }
 }
 
@@ -4858,65 +5117,168 @@ export async function saveEbReportDraft(input: SaveEbReportDraftInput): Promise<
     throw new Error('EB_REPORT_DRAFT_EMPTY')
   }
 
-  const storedDraft = await fetchEbReportDraft(input)
-  const storedKeys = new Set(storedDraft.sections.map((section) => section.key))
-  const needsRebuild =
-    storedDraft.sections.length === 0 ||
-    requestedSections.some((section) => !storedKeys.has(section.key))
-
-  let baseDraft = storedDraft
-  if (needsRebuild) {
-    const round = await getEbInspectionRound(input)
-    const [participants, inspectionDocuments, inspectorText] = await Promise.all([
-      listParticipantsForInspection(input),
-      listEbInspectionDocuments(input),
-      buildInspectorReportText({
-        orgId: input.orgId,
-        profileId: input.requestedByUserId,
-      }),
-    ])
-    baseDraft = buildEbReportDraft({
-      round,
-      participants: enrichParticipantsForReport(round.project, participants),
-      attachments: round.projectAttachments,
-      inspectionDocuments,
-      inspectorText,
-      storedDraft,
-    })
-  }
-
-  const allowedKeys = new Set(baseDraft.sections.map((section) => section.key))
-  const sanitizedSections = requestedSections.filter((section) => allowedKeys.has(section.key))
+  const report = await getEbInspectionReport(input)
+  const baseDraft = report.reportDraft
+  const sectionsByKey = new Map(baseDraft.sections.map((section) => [section.key, section]))
+  const sanitizedSections = requestedSections.filter((section) => {
+    const existing = sectionsByKey.get(section.key)
+    return existing?.contentMode === 'editable'
+  })
   if (sanitizedSections.length === 0) {
     throw new Error('EB_REPORT_DRAFT_EMPTY')
   }
 
-  const byKey = new Map(baseDraft.sections.map((section) => [section.key, section]))
-  for (const section of sanitizedSections) {
-    byKey.set(section.key, section)
+  for (const requested of sanitizedSections) {
+    const existing = sectionsByKey.get(requested.key)
+    if (!existing) continue
+    sectionsByKey.set(requested.key, {
+      ...existing,
+      status: requested.status,
+      isRelevant: requested.isRelevant,
+      text: requested.text,
+      updatedAt: now,
+    })
   }
 
   const savedDraft: EbReportDraft = {
+    ...baseDraft,
     updatedAt: now,
-    sections: baseDraft.sections.map((section) => byKey.get(section.key) ?? section),
+    sections: baseDraft.sections.map((section) => sectionsByKey.get(section.key) ?? section),
   }
 
-  const admin = createSupabaseAdminClient()
-  const { error } = await admin
-    .from('eb_inspection_details')
-    .update({
-      report_draft: savedDraft,
-      report_draft_updated_at: now,
-    })
-    .eq('org_id', input.orgId)
-    .eq('eb_project_id', input.projectId)
-    .eq('inspection_id', input.inspectionId)
+  return writeEbReportDraft(input, savedDraft)
+}
 
-  if (error) {
-    throw new Error(error.message ?? 'Kunde inte spara utlåtandeutkast.')
+export async function refreshEbReportProjectSource(
+  input: Omit<SaveEbReportDraftInput, 'sections'>
+): Promise<EbInspectionReport> {
+  await assertEbInspectionEditable(input)
+  const [currentReport, liveRound] = await Promise.all([
+    getEbInspectionReport(input),
+    getEbInspectionRound(input),
+  ])
+  const currentSnapshot = currentReport.reportDraft.sourceSnapshot
+  if (!currentSnapshot) throw new Error('EB_REPORT_DRAFT_NOT_INITIALIZED')
+
+  const now = new Date().toISOString()
+  const sourceSnapshot: EbReportSourceSnapshot = {
+    ...currentSnapshot,
+    capturedAt: now,
+    project: createEbReportSourceSnapshot({
+      project: liveRound.project,
+      inspectorText: currentSnapshot.inspectorText,
+      branding: currentSnapshot.branding,
+      capturedAt: now,
+    }).project,
+  }
+  const project = applyEbReportProjectSnapshot(liveRound.project, sourceSnapshot.project)
+  const round: EbInspectionRound = { ...liveRound, project }
+  const [participants, inspectionDocuments] = await Promise.all([
+    listParticipantsForInspection(input),
+    listEbInspectionDocuments(input),
+  ])
+  const refreshedDraft = buildEbReportDraft({
+    round,
+    participants: enrichParticipantsForReport(project, participants),
+    attachments: round.projectAttachments,
+    inspectionDocuments,
+    inspectorText: sourceSnapshot.inspectorText,
+    storedDraft: {
+      ...currentReport.reportDraft,
+      sourceSnapshot,
+      updatedAt: now,
+    },
+  })
+
+  await writeEbReportDraft(input, refreshedDraft)
+  return getEbInspectionReport(input)
+}
+
+export async function refreshEbReportInspectorSource(
+  input: Omit<SaveEbReportDraftInput, 'sections'>
+): Promise<EbInspectionReport> {
+  await assertEbInspectionEditable(input)
+  const [currentReport, liveRound] = await Promise.all([
+    getEbInspectionReport(input),
+    getEbInspectionRound(input),
+  ])
+  const currentSnapshot = currentReport.reportDraft.sourceSnapshot
+  if (!currentSnapshot) throw new Error('EB_REPORT_DRAFT_NOT_INITIALIZED')
+
+  const inspectorSource = await loadEbInspectorReportSource({
+    orgId: input.orgId,
+    requestedByUserId: input.requestedByUserId,
+    project: liveRound.project,
+    inspection: liveRound.inspection,
+  })
+  const now = new Date().toISOString()
+  const sourceSnapshot: EbReportSourceSnapshot = {
+    ...currentSnapshot,
+    capturedAt: now,
+    inspectorText: inspectorSource.inspectorText,
+    branding: inspectorSource.branding,
+  }
+  const project = applyEbReportProjectSnapshot(liveRound.project, sourceSnapshot.project)
+  const round: EbInspectionRound = { ...liveRound, project }
+  const [participants, inspectionDocuments] = await Promise.all([
+    listParticipantsForInspection(input),
+    listEbInspectionDocuments(input),
+  ])
+  const refreshedDraft = buildEbReportDraft({
+    round,
+    participants: enrichParticipantsForReport(project, participants),
+    attachments: round.projectAttachments,
+    inspectionDocuments,
+    inspectorText: sourceSnapshot.inspectorText,
+    storedDraft: {
+      ...currentReport.reportDraft,
+      sourceSnapshot,
+      updatedAt: now,
+    },
+  })
+
+  await writeEbReportDraft(input, refreshedDraft)
+  return getEbInspectionReport(input)
+}
+
+export async function resetEbReportDraftSection(input: Omit<SaveEbReportDraftInput, 'sections'> & {
+  sectionKey: string
+}): Promise<EbReportDraft> {
+  await assertEbInspectionEditable(input)
+  const report = await getEbInspectionReport(input)
+  const currentSection = report.reportDraft.sections.find((section) => section.key === input.sectionKey)
+  if (!currentSection || currentSection.contentMode !== 'editable') {
+    throw new Error('EB_REPORT_SECTION_NOT_EDITABLE')
   }
 
-  return savedDraft
+  const now = new Date().toISOString()
+  const draftWithoutSection: EbReportDraft = {
+    ...report.reportDraft,
+    sections: report.reportDraft.sections.filter((section) => section.key !== input.sectionKey),
+  }
+  const defaults = buildEbReportDraft({
+    round: report,
+    participants: report.participants,
+    attachments: report.projectAttachments,
+    inspectionDocuments: report.inspectionDocuments,
+    inspectorText: report.reportDraft.sourceSnapshot?.inspectorText ?? '',
+    storedDraft: {
+      ...draftWithoutSection,
+      initializedAt: null,
+      sourceSnapshot: null,
+    },
+  })
+  const defaultSection = defaults.sections.find((section) => section.key === input.sectionKey)
+  if (!defaultSection) throw new Error('EB_REPORT_SECTION_NOT_FOUND')
+
+  const savedDraft: EbReportDraft = {
+    ...report.reportDraft,
+    updatedAt: now,
+    sections: report.reportDraft.sections.map((section) =>
+      section.key === input.sectionKey ? { ...defaultSection, updatedAt: now } : section
+    ),
+  }
+  return writeEbReportDraft(input, savedDraft)
 }
 
 async function listParticipantsForInspection(input: {
