@@ -5,6 +5,10 @@ import type { StandardTextId } from '@/content/standardtexts/registry'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { formatCertificationDisplayLines } from '@/lib/certifications/display'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import {
+  isEbPreliminaryInspection,
+  isEbReportSectionApplicable,
+} from '@/lib/eb/reportSectionRules'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
@@ -1004,9 +1008,17 @@ function formatLongSwedishDate(value: string | null | undefined) {
   })
 }
 
-function formatTuStyleCredentialLines(
-  items: Awaited<ReturnType<typeof resolveInspectorCertificationSummary>>['summary']['all_selected_items']
-) {
+type InspectorCertificationItems = Awaited<
+  ReturnType<typeof resolveInspectorCertificationSummary>
+>['summary']['all_selected_items']
+
+function ebRelevantCertificationItems(items: InspectorCertificationItems) {
+  return items.filter(
+    (item) => !isObCertificationText(item.key) && !isObCertificationText(item.name)
+  )
+}
+
+function formatTuStyleCredentialLines(items: InspectorCertificationItems) {
   return items
     .map((item) => {
       const name = normalizeText(item.name)
@@ -1033,7 +1045,9 @@ async function buildInspectorSignatureCard(input: {
       certification_number: input.inspector.certification_number ?? null,
     },
   })
-  const credentialLines = formatTuStyleCredentialLines(summary.all_selected_items)
+  const credentialLines = formatTuStyleCredentialLines(
+    ebRelevantCertificationItems(summary.all_selected_items)
+  )
   const inspectorName = normalizeText(input.inspector.full_name)
   const avatarUrl = resolveProfileAvatarUrl(input.inspector)
   const signatureUrl = resolveProfileSignatureUrl(input.inspector)
@@ -4471,15 +4485,21 @@ function ebContinuedFinalInspectionReportText(round: EbInspectionRound) {
 
 function ebRemedyDeadlineAgreementReportText(round: EbInspectionRound) {
   const remedyDeadline = normalizeText(round.inspection.defaultRemedyDeadline)
+  const remedyAgreement = remedyDeadline
+    ? `Parterna har överenskommit att fel skall vara avhjälpta senast till ${remedyDeadline}.`
+    : 'Parterna har inte angett någon överenskommelse om när fel skall vara avhjälpta.'
+
+  if (isEbPreliminaryInspection(round.inspection.variant)) {
+    return remedyAgreement
+  }
+
   const afterInspectionDate = normalizeText(round.inspection.afterInspectionDueDate)
   const afterInspectionRequestedBy = afterInspectionRequestedByReportLabel(
     round.inspection.afterInspectionRequestedBy
   )
 
   return reportList([
-    remedyDeadline
-      ? `Parterna har överenskommit att fel skall vara avhjälpta senast till ${remedyDeadline}.`
-      : 'Parterna har inte angett någon överenskommelse om när fel skall vara avhjälpta.',
+    remedyAgreement,
     round.inspection.afterInspectionRequested === true
       ? `Efterbesiktning som påkallats av ${afterInspectionRequestedBy} görs ${
           afterInspectionDate ?? 'datum ej angivet'
@@ -4642,8 +4662,12 @@ function buildEbReportDraft(input: {
   const existingByKey = new Map(storedDraft.sections.map((section) => [section.key, section]))
   const noteCount = round.notes.length
   const checkpointCount = round.checkpoints.length
-  const isDrainageProject = shouldUseEbTemplateCheckpoints(round.project)
-  const drainageChecklistRelevant = isDrainageProject || checkpointCount > 0
+  const sectionApplicable = (sectionKey: string) =>
+    isEbReportSectionApplicable({
+      sectionKey,
+      inspectionVariant: round.inspection.variant,
+      projectTemplateKey: round.project.projectTemplateKey,
+    })
   const hasPreviousInspectionRows = round.inspection.previousInspections.some((row) => row.status || row.date)
   const notAccessibleNotes = round.notes.filter((note) => note.statusKey === 'not_accessible')
   const participantRows = participants.map(reportParticipantRow)
@@ -4781,12 +4805,12 @@ function buildEbReportDraft(input: {
       title: 'Provning, dokumentation',
       sbrPoint: '9',
       source: 'manual',
-      status: isDrainageProject
+      status: !sectionApplicable('testing_documentation')
         ? 'not_applicable'
         : hasReviewedDocuments || hasDocumentRemarks
           ? 'complete'
           : 'draft',
-      isRelevant: !isDrainageProject,
+      isRelevant: sectionApplicable('testing_documentation'),
       text: testingDocumentationText,
       updatedAt: null,
     },
@@ -4798,7 +4822,7 @@ function buildEbReportDraft(input: {
       status: round.project.contractDate || includedAgreementItems.length > 0
         ? 'complete'
         : 'draft',
-      isRelevant: !isDrainageProject,
+      isRelevant: sectionApplicable('contract_documents'),
       text: contractDocuments,
       updatedAt: null,
     },
@@ -4840,8 +4864,12 @@ function buildEbReportDraft(input: {
       title: 'Kontrollunderlag dränering',
       sbrPoint: null,
       source: 'checkpoints',
-      status: checkpointCount > 0 ? 'complete' : 'draft',
-      isRelevant: drainageChecklistRelevant,
+      status: sectionApplicable('drainage_checklist')
+        ? checkpointCount > 0
+          ? 'complete'
+          : 'draft'
+        : 'not_applicable',
+      isRelevant: sectionApplicable('drainage_checklist'),
       text: ebDrainageChecklistReportText(round),
       updatedAt: null,
     },
@@ -4850,8 +4878,12 @@ function buildEbReportDraft(input: {
       title: 'Fel och förhållanden',
       sbrPoint: '13-17, 23',
       source: 'notes',
-      status: noteCount > 0 ? 'complete' : 'missing',
-      isRelevant: true,
+      status: sectionApplicable('defects_appendices')
+        ? noteCount > 0
+          ? 'complete'
+          : 'missing'
+        : 'not_applicable',
+      isRelevant: sectionApplicable('defects_appendices'),
       text:
         noteCount > 0
           ? 'Under denna rubrik är angivna förhållanden som besiktningsmannen anser utgöra fel.'
@@ -4863,8 +4895,12 @@ function buildEbReportDraft(input: {
       title: 'Beteckningar för noteringar',
       sbrPoint: '13-17, 23',
       source: 'notes',
-      status: round.markers.length > 0 ? 'complete' : 'missing',
-      isRelevant: true,
+      status: sectionApplicable('marker_legend')
+        ? round.markers.length > 0
+          ? 'complete'
+          : 'missing'
+        : 'not_applicable',
+      isRelevant: sectionApplicable('marker_legend'),
       text:
         round.markers.length > 0
           ? reportList([
@@ -4892,8 +4928,11 @@ function buildEbReportDraft(input: {
       title: 'Nedsättning',
       sbrPoint: '13-17, 23',
       source: 'notes',
-      status: deductionNotes.length > 0 ? 'complete' : 'draft',
-      isRelevant: true,
+      status:
+        sectionApplicable('deduction') && deductionNotes.length > 0
+          ? 'complete'
+          : 'not_applicable',
+      isRelevant: sectionApplicable('deduction') && deductionNotes.length > 0,
       text:
         deductionNotes.length > 0
           ? deductionNotes.map((note) => ebDeductionReportRow(round, note)).join('\n\n')
@@ -4905,8 +4944,12 @@ function buildEbReportDraft(input: {
       title: 'Noteringar',
       sbrPoint: null,
       source: 'notes',
-      status: noteCount > 0 ? 'complete' : 'missing',
-      isRelevant: true,
+      status: sectionApplicable('notes')
+        ? noteCount > 0
+          ? 'complete'
+          : 'missing'
+        : 'not_applicable',
+      isRelevant: sectionApplicable('notes'),
       text: noteCount > 0 ? `${noteCount} noteringar finns registrerade i besiktningen.` : ebStandardText('EB_REPORT_NOTES_EMPTY'),
       updatedAt: null,
     },
@@ -4915,8 +4958,13 @@ function buildEbReportDraft(input: {
       title: 'Besked om godkännande',
       sbrPoint: '18',
       source: 'manual',
-      status: round.inspection.approvalStatus ? 'complete' : 'missing',
-      isRelevant: Boolean(round.inspection.approvalStatus),
+      status: sectionApplicable('approval_decision')
+        ? round.inspection.approvalStatus
+          ? 'complete'
+          : 'missing'
+        : 'not_applicable',
+      isRelevant:
+        sectionApplicable('approval_decision') && Boolean(round.inspection.approvalStatus),
       text: ebApprovalDecisionReportText(round),
       updatedAt: null,
     },
@@ -4925,8 +4973,14 @@ function buildEbReportDraft(input: {
       title: 'Föreskrift om en ny slutbesiktning',
       sbrPoint: '19',
       source: 'standard_text',
-      status: round.inspection.requiresContinuedFinalInspection === true ? 'complete' : 'not_applicable',
-      isRelevant: round.inspection.requiresContinuedFinalInspection === true,
+      status:
+        sectionApplicable('continued_final_inspection') &&
+        round.inspection.requiresContinuedFinalInspection === true
+          ? 'complete'
+          : 'not_applicable',
+      isRelevant:
+        sectionApplicable('continued_final_inspection') &&
+        round.inspection.requiresContinuedFinalInspection === true,
       text: ebContinuedFinalInspectionReportText(round),
       updatedAt: null,
     },
@@ -4935,8 +4989,14 @@ function buildEbReportDraft(input: {
       title: 'Garantitidens slut',
       sbrPoint: '20',
       source: 'manual',
-      status: 'not_applicable',
-      isRelevant: false,
+      status: sectionApplicable('warranty_end')
+        ? round.inspection.warrantyPeriodYears || round.inspection.warrantyEndDate
+          ? 'complete'
+          : 'missing'
+        : 'not_applicable',
+      isRelevant:
+        sectionApplicable('warranty_end') &&
+        Boolean(round.inspection.warrantyPeriodYears || round.inspection.warrantyEndDate),
       text:
         round.inspection.warrantyPeriodYears || round.inspection.warrantyEndDate
           ? reportList([
@@ -4953,8 +5013,8 @@ function buildEbReportDraft(input: {
       title: 'Reklamationsfrister',
       sbrPoint: null,
       source: 'standard_text',
-      status: 'complete',
-      isRelevant: true,
+      status: sectionApplicable('reclamation_notice') ? 'complete' : 'not_applicable',
+      isRelevant: sectionApplicable('reclamation_notice'),
       text: ebReclamationNoticeReportText(round),
       updatedAt: null,
     },
@@ -4977,8 +5037,14 @@ function buildEbReportDraft(input: {
       title: 'Kostnad för avhjälpande',
       sbrPoint: '24',
       source: 'standard_text',
-      status: 'not_applicable',
-      isRelevant: false,
+      status:
+        sectionApplicable('after_inspection') &&
+        typeof round.inspection.afterInspectionRequested === 'boolean'
+          ? 'complete'
+          : 'not_applicable',
+      isRelevant:
+        sectionApplicable('after_inspection') &&
+        typeof round.inspection.afterInspectionRequested === 'boolean',
       text: ebStandardText('EB_REPORT_REMEDY_COST'),
       updatedAt: null,
     },
@@ -5439,9 +5505,9 @@ async function buildInspectorReportText(input: {
   })
   const certificationName = isObCertificationText(summary.status_name) ? null : summary.status_name
   const membershipName = isObCertificationText(summary.membership_name) ? null : summary.membership_name
-  const credentialRows = formatCertificationDisplayLines(summary.all_selected_items).map((line) =>
-    reportLine('Licens/medlemskap', line)
-  )
+  const credentialRows = formatCertificationDisplayLines(
+    ebRelevantCertificationItems(summary.all_selected_items)
+  ).map((line) => reportLine('Licens/medlemskap', line))
   const fallbackCredentialRows = [
     certificationName ? reportLine('Certifiering', certificationName) : null,
     certificationName && summary.certification_number

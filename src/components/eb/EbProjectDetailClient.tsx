@@ -28,6 +28,10 @@ import EbProjectForm, {
   ebProjectFormToPayload,
   type EbProjectFormState,
 } from '@/components/eb/EbProjectForm'
+import {
+  isEbFinalDecisionInspection,
+  isEbPreliminaryInspection,
+} from '@/lib/eb/reportSectionRules'
 import type {
   EbProjectAttachment,
   EbInspectionDocument,
@@ -1039,6 +1043,9 @@ function InspectionDetailsDialog({
 
   if (!open || !inspection || !form) return null
 
+  const preliminaryInspection = isEbPreliminaryInspection(inspection.variant)
+  const supportsFinalDecision = isEbFinalDecisionInspection(inspection.variant)
+
   const updateField = <K extends keyof InspectionDetailsFormState>(
     field: K,
     value: InspectionDetailsFormState[K]
@@ -1361,97 +1368,109 @@ function InspectionDetailsDialog({
                       <option value="contractor">Entreprenör</option>
                     </select>
                   )}
-                  {fieldLabel(
-                    'Beslut',
-                    <select
-                      value={form.approvalStatus}
-                      onChange={(event) => updateField('approvalStatus', event.target.value)}
-                      className={inputClassName()}
-                    >
-                      <option value="">Ej satt</option>
-                      <option value="approved">Godkänd</option>
-                      <option value="not_approved">Ej godkänd</option>
-                      <option value="partly_approved">Delvis godkänd</option>
-                    </select>
-                  )}
-                  <div className="sm:col-span-2">
-                    {fieldLabel(
-                      'Beslutets motivering',
-                      <textarea
-                        value={form.approvalNote}
-                        onChange={(event) => updateField('approvalNote', event.target.value)}
-                        rows={3}
-                        className={inputClassName()}
-                      />
-                    )}
-                  </div>
-                  {fieldLabel(
-                    'Fortsatt slutbesiktning',
-                    <select
-                      value={form.requiresContinuedFinalInspection}
-                      onChange={(event) => updateField('requiresContinuedFinalInspection', event.target.value)}
-                      className={inputClassName()}
-                    >
-                      <option value="">Ej satt</option>
-                      <option value="true">Ja</option>
-                      <option value="false">Nej</option>
-                    </select>
-                  )}
-                  {form.requiresContinuedFinalInspection === 'true' ? (
+                  {supportsFinalDecision ? (
                     <>
                       {fieldLabel(
-                        'Ny slutbesiktning datum',
+                        'Beslut',
+                        <select
+                          value={form.approvalStatus}
+                          onChange={(event) => updateField('approvalStatus', event.target.value)}
+                          className={inputClassName()}
+                        >
+                          <option value="">Ej satt</option>
+                          <option value="approved">Godkänd</option>
+                          <option value="not_approved">Ej godkänd</option>
+                          <option value="partly_approved">Delvis godkänd</option>
+                        </select>
+                      )}
+                      <div className="sm:col-span-2">
+                        {fieldLabel(
+                          'Beslutets motivering',
+                          <textarea
+                            value={form.approvalNote}
+                            onChange={(event) => updateField('approvalNote', event.target.value)}
+                            rows={3}
+                            className={inputClassName()}
+                          />
+                        )}
+                      </div>
+                      {fieldLabel(
+                        'Fortsatt slutbesiktning',
+                        <select
+                          value={form.requiresContinuedFinalInspection}
+                          onChange={(event) =>
+                            updateField('requiresContinuedFinalInspection', event.target.value)
+                          }
+                          className={inputClassName()}
+                        >
+                          <option value="">Ej satt</option>
+                          <option value="true">Ja</option>
+                          <option value="false">Nej</option>
+                        </select>
+                      )}
+                      {form.requiresContinuedFinalInspection === 'true' ? (
+                        <>
+                          {fieldLabel(
+                            'Ny slutbesiktning datum',
+                            <input
+                              type="date"
+                              value={form.continuedFinalInspectionDate}
+                              onChange={(event) =>
+                                updateField('continuedFinalInspectionDate', event.target.value)
+                              }
+                              className={inputClassName()}
+                            />
+                          )}
+                          {fieldLabel(
+                            'Ny slutbesiktning tid',
+                            <input
+                              type="time"
+                              value={form.continuedFinalInspectionTime}
+                              onChange={(event) =>
+                                updateField('continuedFinalInspectionTime', event.target.value)
+                              }
+                              className={inputClassName()}
+                            />
+                          )}
+                        </>
+                      ) : null}
+                      {fieldLabel(
+                        'Garantitid',
+                        <select
+                          value={form.warrantyPeriodYears}
+                          onChange={(event) =>
+                            updateField('warrantyPeriodYears', event.target.value)
+                          }
+                          className={inputClassName()}
+                        >
+                          <option value="">Ej satt</option>
+                          {Array.from({ length: 10 }, (_, index) => index + 1).map((year) => (
+                            <option key={year} value={year}>
+                              {year} år
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {fieldLabel(
+                        'Garantitidens slut',
                         <input
                           type="date"
-                          value={form.continuedFinalInspectionDate}
-                          onChange={(event) => updateField('continuedFinalInspectionDate', event.target.value)}
+                          value={form.warrantyEndDate}
+                          onChange={(event) => updateField('warrantyEndDate', event.target.value)}
                           className={inputClassName()}
                         />
                       )}
                       {fieldLabel(
-                        'Ny slutbesiktning tid',
+                        'Särskild varugaranti för',
                         <input
-                          type="time"
-                          value={form.continuedFinalInspectionTime}
-                          onChange={(event) => updateField('continuedFinalInspectionTime', event.target.value)}
+                          value={form.warrantyScope}
+                          onChange={(event) => updateField('warrantyScope', event.target.value)}
+                          placeholder="Exempel: vara, produkt eller material"
                           className={inputClassName()}
                         />
                       )}
                     </>
                   ) : null}
-                  {fieldLabel(
-                    'Garantitid',
-                    <select
-                      value={form.warrantyPeriodYears}
-                      onChange={(event) => updateField('warrantyPeriodYears', event.target.value)}
-                      className={inputClassName()}
-                    >
-                      <option value="">Ej satt</option>
-                      {Array.from({ length: 10 }, (_, index) => index + 1).map((year) => (
-                        <option key={year} value={year}>
-                          {year} år
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  {fieldLabel(
-                    'Garantitidens slut',
-                    <input
-                      type="date"
-                      value={form.warrantyEndDate}
-                      onChange={(event) => updateField('warrantyEndDate', event.target.value)}
-                      className={inputClassName()}
-                    />
-                  )}
-                  {fieldLabel(
-                    'Särskild varugaranti för',
-                    <input
-                      value={form.warrantyScope}
-                      onChange={(event) => updateField('warrantyScope', event.target.value)}
-                      placeholder="Exempel: vara, produkt eller material"
-                      className={inputClassName()}
-                    />
-                  )}
                   {fieldLabel(
                     'Fel avhjälpta senast',
                     <input
@@ -1461,39 +1480,49 @@ function InspectionDetailsDialog({
                       className={inputClassName()}
                     />
                   )}
-                  {fieldLabel(
-                    'Efterbesiktning påkallad',
-                    <select
-                      value={form.afterInspectionRequested}
-                      onChange={(event) => updateField('afterInspectionRequested', event.target.value)}
-                      className={inputClassName()}
-                    >
-                      <option value="">Ej satt</option>
-                      <option value="true">Ja</option>
-                      <option value="false">Nej</option>
-                    </select>
-                  )}
-                  {fieldLabel(
-                    'Efterbesiktning påkallad av',
-                    <select
-                      value={form.afterInspectionRequestedBy}
-                      onChange={(event) => updateField('afterInspectionRequestedBy', event.target.value)}
-                      className={inputClassName()}
-                    >
-                      <option value="">Ej satt</option>
-                      <option value="client">Beställare</option>
-                      <option value="contractor">Hantverkare</option>
-                    </select>
-                  )}
-                  {fieldLabel(
-                    'Efterbesiktning senast',
-                    <input
-                      type="date"
-                      value={form.afterInspectionDueDate}
-                      onChange={(event) => updateField('afterInspectionDueDate', event.target.value)}
-                      className={inputClassName()}
-                    />
-                  )}
+                  {!preliminaryInspection ? (
+                    <>
+                      {fieldLabel(
+                        'Efterbesiktning påkallad',
+                        <select
+                          value={form.afterInspectionRequested}
+                          onChange={(event) =>
+                            updateField('afterInspectionRequested', event.target.value)
+                          }
+                          className={inputClassName()}
+                        >
+                          <option value="">Ej satt</option>
+                          <option value="true">Ja</option>
+                          <option value="false">Nej</option>
+                        </select>
+                      )}
+                      {fieldLabel(
+                        'Efterbesiktning påkallad av',
+                        <select
+                          value={form.afterInspectionRequestedBy}
+                          onChange={(event) =>
+                            updateField('afterInspectionRequestedBy', event.target.value)
+                          }
+                          className={inputClassName()}
+                        >
+                          <option value="">Ej satt</option>
+                          <option value="client">Beställare</option>
+                          <option value="contractor">Hantverkare</option>
+                        </select>
+                      )}
+                      {fieldLabel(
+                        'Efterbesiktning senast',
+                        <input
+                          type="date"
+                          value={form.afterInspectionDueDate}
+                          onChange={(event) =>
+                            updateField('afterInspectionDueDate', event.target.value)
+                          }
+                          className={inputClassName()}
+                        />
+                      )}
+                    </>
+                  ) : null}
                   {fieldLabel(
                     'Distributionsdatum',
                     <input
@@ -1515,15 +1544,17 @@ function InspectionDetailsDialog({
                       />
                     )}
                   </div>
-                  <label className="inline-flex items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm font-medium text-emerald-900">
-                    <input
-                      type="checkbox"
-                      checked={form.afterInspectionNoticeInReport}
-                      onChange={(event) => updateField('afterInspectionNoticeInReport', event.target.checked)}
-                      className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
-                    />
-                    Utlåtandet gäller som kallelse till efterbesiktning
-                  </label>
+                  {!preliminaryInspection ? (
+                    <label className="inline-flex items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm font-medium text-emerald-900">
+                      <input
+                        type="checkbox"
+                        checked={form.afterInspectionNoticeInReport}
+                        onChange={(event) => updateField('afterInspectionNoticeInReport', event.target.checked)}
+                        className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                      />
+                      Utlåtandet gäller som kallelse till efterbesiktning
+                    </label>
+                  ) : null}
                 </div>
               </section>
             ) : null}

@@ -13,6 +13,11 @@ import {
   type ReactNode,
 } from 'react'
 import { useEbToast } from '@/components/eb/EbToastProvider'
+import {
+  isEbDrainageTemplate,
+  isEbReportSectionApplicable,
+  isEbReportSectionIntegrated,
+} from '@/lib/eb/reportSectionRules'
 import type {
   EbInspectionDocument,
   EbInspectionCheckpoint,
@@ -136,7 +141,14 @@ function addressCityLine(postalCode: string | null | undefined, city: string | n
   return [postalCode?.trim(), city?.trim()].filter(Boolean).join(' ') || '-'
 }
 
-const REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER SLUTBESIKTNING'
+const REPORT_DOCUMENT_TITLES: Record<EbInspectionReport['inspection']['variant'], string> = {
+  SLB: 'UTLÅTANDE ÖVER SLUTBESIKTNING',
+  FB: 'UTLÅTANDE ÖVER FÖRBESIKTNING',
+  EB: 'UTLÅTANDE ÖVER EFTERBESIKTNING',
+  GB: 'UTLÅTANDE ÖVER GARANTIBESIKTNING',
+  KSB: 'UTLÅTANDE ÖVER KOMPLETTERANDE SLUTBESIKTNING',
+  SAB: 'UTLÅTANDE ÖVER SÄRSKILD BESIKTNING',
+}
 const DRAINAGE_REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER DRÄNERINGSBESIKTNING'
 const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[16pt] font-bold uppercase leading-tight text-[#2f7d55]'
 const REPORT_SECTION_HEADING_CLASS_NAME = 'mb-2 text-[12pt] font-bold leading-tight text-black'
@@ -150,20 +162,6 @@ const EB_PAGE_CONTENT_BOTTOM_MM = 25
 const EB_PAGE_CONTENT_WIDTH_MM = EB_PAGE_WIDTH_MM - EB_PAGE_X_PADDING_MM * 2
 const EB_PAGE_CONTENT_HEIGHT_MM = EB_PAGE_HEIGHT_MM - EB_PAGE_CONTENT_TOP_MM - EB_PAGE_CONTENT_BOTTOM_MM
 const EB_PAGE_PACKING_SAFETY_MM = 12
-const HIDDEN_REPORT_SECTION_KEYS = new Set([
-  'inspection_type',
-  'not_accessible',
-  'documentation_only',
-  'appendices',
-  'marker_legend',
-  'deduction',
-  'notes',
-  'warranty_end',
-  'special_investigation',
-  'remedy_cost',
-  'after_inspection',
-  'signature_certificate',
-])
 const DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION =
   'Fönster, dörrar, väggar etc numreras från vänster till höger. Vägg 1 = vägg till vänster om entrévägg. Vägg 2 = nästa vägg till höger om vägg 1 osv.'
 
@@ -175,7 +173,7 @@ function normalizeReportText(value: string) {
 }
 
 function isDrainageReport(report: EbInspectionReport) {
-  return report.project.projectTemplateKey === 'drainage_foundation'
+  return isEbDrainageTemplate(report.project.projectTemplateKey)
 }
 
 function reportDocumentTitle(report: EbInspectionReport) {
@@ -185,7 +183,7 @@ function reportDocumentTitle(report: EbInspectionReport) {
       : DRAINAGE_REPORT_DOCUMENT_TITLE
   }
 
-  return report.inspection.variant === 'FB' ? 'UTLÅTANDE ÖVER FÖRBESIKTNING' : REPORT_DOCUMENT_TITLE
+  return REPORT_DOCUMENT_TITLES[report.inspection.variant]
 }
 
 function parseLabelLine(line: string) {
@@ -739,10 +737,15 @@ function usedReportMarkers(report: EbInspectionReport) {
 }
 
 function markerExplanation(marker: EbInspectionReport['markers'][number]) {
-  if (marker.key === 'N') {
-    return 'Om nedsättning av avtalat pris är tillämplig anges uppskattad nedsättning för angivet fel som kvarstår.'
+  const explanations: Record<string, string> = {
+    E: 'Anger att besiktningsmannen bedömer entreprenören ansvarig för felet.',
+    B: 'Anger att besiktningsmannen inte bedömer entreprenören ansvarig för förhållandet. Avhjälpande kräver särskild överenskommelse eller beställning.',
+    S: 'Anger att förhållandet ska klarläggas genom särskild utredning innan slutlig bedömning görs.',
+    U: 'Anger att noteringen har utgått och inte längre redovisas som ett kvarstående fel.',
+    N: 'Anger att en uppskattad nedsättning av avtalat pris kan vara aktuell för felet.',
+    A: 'Anger en anmärkning eller upplysning som inte har bedömts som ett entreprenadfel.',
   }
-  return marker.label
+  return explanations[marker.key] ?? marker.label
 }
 
 function deductionNotes(report: EbInspectionReport) {
@@ -1042,12 +1045,19 @@ function DefectsConditionsReport({
   const markers = usedReportMarkers(report)
 
   return (
-    <ReportSection title="Fel och förhållanden">
+    <ReportSection title="Fel, bristfälligheter, anmärkningar och förhållanden">
       <div className="space-y-2 text-[10.5pt] leading-[1.35] text-black">
-        <p>Under denna rubrik är angivna förhållanden som besiktningsmannen anser utgöra fel.</p>
+        <p>
+          Under denna rubrik redovisas de fel, bristfälligheter, anmärkningar och förhållanden som
+          antecknats vid besiktningen.
+        </p>
         <p className="underline">Förklaringar för respektive kolumn:</p>
 
         <dl className="grid gap-y-1">
+          <div className="grid grid-cols-[22mm_1fr] gap-x-4">
+            <dt>Bes.</dt>
+            <dd>Besiktningstyp och löpnummer för den besiktning där noteringen gjordes.</dd>
+          </div>
           <div className="grid grid-cols-[22mm_1fr] gap-x-4">
             <dt>Bet.</dt>
             <dd>Beteckning med markering:</dd>
@@ -1113,6 +1123,45 @@ function ReportTitle({ report }: { report: EbInspectionReport }) {
   )
 }
 
+function ObjectInformationReport({ report }: { report: EbInspectionReport }) {
+  const propertyAndMunicipality = [
+    report.project.propertyDesignation?.trim(),
+    report.project.municipality?.trim(),
+  ]
+    .filter(Boolean)
+    .join(', ')
+  const rows = [
+    propertyAndMunicipality
+      ? { label: 'Fastighetsbeteckning och kommun', value: propertyAndMunicipality }
+      : null,
+    report.project.brfApartmentNumber?.trim()
+      ? { label: 'BRF och lägenhetsnummer', value: report.project.brfApartmentNumber.trim() }
+      : null,
+    {
+      label: 'Kontraktsnamn',
+      value: report.project.contractName?.trim() || report.project.title.trim(),
+    },
+    report.project.objectDescription?.trim()
+      ? { label: 'Entreprenad eller kontraktsdel', value: report.project.objectDescription.trim() }
+      : null,
+  ].filter((row): row is { label: string; value: string } => Boolean(row?.value))
+
+  if (rows.length === 0) return null
+
+  return (
+    <section className="eb-report-section mb-5 break-inside-avoid text-[10.5pt] leading-[1.35] text-black">
+      <dl className="grid gap-y-1.5">
+        {rows.map((row) => (
+          <div key={row.label} className="grid grid-cols-[48mm_1fr] gap-x-4">
+            <dt className="font-semibold">{row.label}:</dt>
+            <dd className="whitespace-pre-wrap">{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
+}
+
 function noteNumber(index: number) {
   return String(index + 1)
 }
@@ -1139,9 +1188,13 @@ function noteLocationLine(note: EbNote) {
 
 function NoteTable({
   notes,
+  inspectionReference,
+  showHeader = true,
   startIndex = 0,
 }: {
   notes: EbNote[]
+  inspectionReference: string
+  showHeader?: boolean
   startIndex?: number
 }) {
   if (notes.length === 0) {
@@ -1150,33 +1203,39 @@ function NoteTable({
 
   return (
     <table className="w-full border-collapse text-[9.5pt] leading-tight text-black">
-      <thead>
-        <tr className="bg-[#4f86bf] text-left text-white print:bg-[#4f86bf]">
-          <th className="w-[12mm] border border-[#8db1d7] px-1.5 py-1 font-bold">Bet.</th>
-          <th className="w-[16mm] border border-[#8db1d7] px-1.5 py-1 font-bold">Nr</th>
-          <th className="w-[42mm] border border-[#8db1d7] px-1.5 py-1 font-bold">Del / Rum</th>
-          <th className="border border-[#8db1d7] px-1.5 py-1 font-bold">Fel</th>
-          <th className="w-[24mm] border border-[#8db1d7] px-1.5 py-1 font-bold">Avhjälpt /sign</th>
-        </tr>
-      </thead>
+      {showHeader ? (
+        <thead>
+          <tr className="bg-[#2f7d55] text-left text-white print:bg-[#2f7d55]">
+            <th className="w-[12mm] border border-[#8bb6a0] px-1.5 py-1 font-bold">Bes.</th>
+            <th className="w-[10mm] border border-[#8bb6a0] px-1.5 py-1 font-bold">Bet.</th>
+            <th className="w-[12mm] border border-[#8bb6a0] px-1.5 py-1 font-bold">Nr</th>
+            <th className="w-[38mm] border border-[#8bb6a0] px-1.5 py-1 font-bold">Del / Rum</th>
+            <th className="border border-[#8bb6a0] px-1.5 py-1 font-bold">Fel</th>
+            <th className="w-[22mm] border border-[#8bb6a0] px-1.5 py-1 font-bold">Avhjälpt /sign</th>
+          </tr>
+        </thead>
+      ) : null}
       <tbody>
         {notes.map((note, index) => (
           <tr key={note.id} className="break-inside-avoid">
-            <td className="align-top border border-[#8db1d7] px-1.5 py-1.5">
+            <td className="align-top border border-[#8bb6a0] px-1.5 py-1.5">
+              {inspectionReference}
+            </td>
+            <td className="align-top border border-[#8bb6a0] px-1.5 py-1.5">
               {note.markerKey || ''}
             </td>
-            <td className="align-top border border-[#8db1d7] px-1.5 py-1.5">
+            <td className="align-top border border-[#8bb6a0] px-1.5 py-1.5">
               {noteNumber(startIndex + index)}
             </td>
-            <td className="align-top border border-[#8db1d7] px-1.5 py-1.5">
+            <td className="align-top border border-[#8bb6a0] px-1.5 py-1.5">
               {detailLine([note.room, note.location, note.placeDetail]) !== '-'
                 ? detailLine([note.room, note.location, note.placeDetail])
                 : ''}
             </td>
-            <td className="whitespace-pre-wrap align-top border border-[#8db1d7] px-1.5 py-1.5">
+            <td className="whitespace-pre-wrap align-top border border-[#8bb6a0] px-1.5 py-1.5">
               {note.noteText}
             </td>
-            <td className="align-top border border-[#8db1d7] px-1.5 py-1.5" />
+            <td className="align-top border border-[#8bb6a0] px-1.5 py-1.5" />
           </tr>
         ))}
       </tbody>
@@ -1589,24 +1648,30 @@ export default function EbInspectionReportView({
     [notes]
   )
   const drainageReport = isDrainageReport(report)
-  const preliminaryInspection = report.inspection.variant === 'FB'
   const printableSections = useMemo(
     () =>
       report.reportDraft.sections.filter(
         (section) =>
           section.isRelevant &&
-          !HIDDEN_REPORT_SECTION_KEYS.has(section.key) &&
-          !(preliminaryInspection && (section.key === 'reclamation_notice' || section.key === 'remedy_deadline')) &&
-          !(drainageReport && section.key === 'defects_appendices') &&
-          !(drainageReport && (section.key === 'testing_documentation' || section.key === 'contract_documents')) &&
+          section.status !== 'not_applicable' &&
+          !isEbReportSectionIntegrated(section.key) &&
+          isEbReportSectionApplicable({
+            sectionKey: section.key,
+            inspectionVariant: report.inspection.variant,
+            projectTemplateKey: report.project.projectTemplateKey,
+          }) &&
           !(
             section.key === 'previous_inspections_tests' &&
             report.inspection.previousInspections.every((row) => !row.status && !row.date?.trim())
           ) &&
-          section.status !== 'missing' &&
           hasPrintableReportText(section.text)
       ),
-    [drainageReport, preliminaryInspection, report.inspection.previousInspections, report.reportDraft.sections]
+    [
+      report.inspection.previousInspections,
+      report.inspection.variant,
+      report.project.projectTemplateKey,
+      report.reportDraft.sections,
+    ]
   )
   const scopeSection = useMemo(
     () => printableSections.find((section) => section.key === 'scope') ?? null,
@@ -1643,6 +1708,10 @@ export default function EbInspectionReportView({
   const inspectorSignature = useMemo(() => inspectorSignatureForReport(report), [report])
   const reportBlocks = useMemo<EbPrintableBlock[]>(() => {
     const blocks: EbPrintableBlock[] = [
+      {
+        id: 'object-information',
+        node: <ObjectInformationReport report={report} />,
+      },
       {
         id: 'report-title',
         node: <ReportTitle report={report} />,
@@ -1741,8 +1810,13 @@ export default function EbInspectionReportView({
           blocks.push({
             id: `note-table-${chunkIndex}`,
             node: (
-              <section className="eb-report-section mt-4">
-                <NoteTable notes={chunk} startIndex={chunkIndex * 8} />
+              <section className={chunkIndex === 0 ? 'eb-report-section mt-4' : 'eb-report-section'}>
+                <NoteTable
+                  notes={chunk}
+                  inspectionReference={`${report.inspection.variant}${report.inspection.sequenceNo}`}
+                  showHeader={chunkIndex === 0}
+                  startIndex={chunkIndex * 8}
+                />
               </section>
             ),
           })

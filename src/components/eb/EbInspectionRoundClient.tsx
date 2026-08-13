@@ -41,6 +41,12 @@ import { useEbToast } from '@/components/eb/EbToastProvider'
 import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import { useEbNoteImageUploadQueue } from '@/hooks/useEbNoteImageUploadQueue'
 import type { EbNoteImageUploadItem } from '@/lib/eb/noteImageUploadQueue'
+import {
+  isEbDrainageTemplate,
+  isEbFinalDecisionInspection,
+  isEbPreliminaryInspection,
+  isEbReportSectionApplicable,
+} from '@/lib/eb/reportSectionRules'
 import type {
   EbInspectionDocument,
   EbInspectionCheckpoint,
@@ -1699,7 +1705,20 @@ export default function EbInspectionRoundClient({
   const lastAutosavedDocumentsRef = useRef(documentsFingerprint(documents))
   const lastAutosavedCheckpointsRef = useRef(checkpointsFingerprint(checkpoints))
   const isLocked = Boolean(round.inspection.reportLockedAt)
-  const isDrainageProject = round.project.projectTemplateKey === 'drainage_foundation'
+  const isDrainageProject = isEbDrainageTemplate(round.project.projectTemplateKey)
+  const preliminaryInspection = isEbPreliminaryInspection(round.inspection.variant)
+  const supportsFinalDecision = isEbFinalDecisionInspection(round.inspection.variant)
+  const visibleReportSections = useMemo(
+    () =>
+      reportSections.filter((section) =>
+        isEbReportSectionApplicable({
+          sectionKey: section.key,
+          inspectionVariant: round.inspection.variant,
+          projectTemplateKey: round.project.projectTemplateKey,
+        })
+      ),
+    [reportSections, round.inspection.variant, round.project.projectTemplateKey]
+  )
   const lockedMessage = 'Utlåtandet är låst och kan inte ändras.'
 
   const handleQueuedImageUploaded = useCallback((image: EbNoteImage) => {
@@ -3820,7 +3839,7 @@ export default function EbInspectionRoundClient({
               <InspectionDocumentsEditor documents={documents} onChange={setDocuments} />
             </ReviewSection>
 
-            {isDrainageProject || checkpoints.length > 0 ? (
+            {isDrainageProject ? (
               <ReviewSection
                 title="Kontrollunderlag dränering"
                 description="Status och kommentarer för mallens kontrollpunkter."
@@ -3979,7 +3998,11 @@ export default function EbInspectionRoundClient({
 
             <ReviewSection
               title="Utlåtandeuppgifter"
-              description="Beslut, datum, garanti, reklamation och kostnadsfördelning."
+              description={
+                preliminaryInspection
+                  ? 'Datum, avhjälpande och kostnadsfördelning för förbesiktningen.'
+                  : 'Beslut, datum, garanti, reklamation och kostnadsfördelning.'
+              }
               action={
                 <button
                   type="button"
@@ -4006,98 +4029,125 @@ export default function EbInspectionRoundClient({
                     <option value="contractor">Entreprenör</option>
                   </select>
                 )}
-                {fieldLabel(
-                  'Beslut',
-                  <select
-                    value={inspectionForm.approvalStatus}
-                    onChange={(event) => updateInspectionField('approvalStatus', event.target.value)}
-                    className={inputClassName()}
-                  >
-                    <option value="">Ej satt</option>
-                    <option value="approved">Godkänd</option>
-                    <option value="not_approved">Ej godkänd</option>
-                    <option value="partly_approved">Delvis godkänd</option>
-                  </select>
-                )}
-                <div className="md:col-span-2 xl:col-span-4">
-                  {fieldLabel(
-                    'Beslutets motivering',
-                    <DebouncedTextarea
-                      value={inspectionForm.approvalNote}
-                      draftKey={`eb:${round.inspection.inspectionId}:inspection:approval-note`}
-                      disabled={isLocked}
-                      onSave={(value) => handleInspectionTextSave('approvalNote', value)}
-                      rows={3}
-                      className={`${inputClassName()} resize-y leading-6`}
-                    />
-                  )}
-                </div>
-                {fieldLabel(
-                  'Fortsatt slutbesiktning',
-                  <select
-                    value={inspectionForm.requiresContinuedFinalInspection}
-                    onChange={(event) => updateInspectionField('requiresContinuedFinalInspection', event.target.value)}
-                    className={inputClassName()}
-                  >
-                    <option value="">Ej satt</option>
-                    <option value="true">Ja</option>
-                    <option value="false">Nej</option>
-                  </select>
-                )}
-                {inspectionForm.requiresContinuedFinalInspection === 'true' ? (
+                {supportsFinalDecision ? (
                   <>
                     {fieldLabel(
-                      'Ny slutbesiktning datum',
+                      'Beslut',
+                      <select
+                        value={inspectionForm.approvalStatus}
+                        onChange={(event) =>
+                          updateInspectionField('approvalStatus', event.target.value)
+                        }
+                        className={inputClassName()}
+                      >
+                        <option value="">Ej satt</option>
+                        <option value="approved">Godkänd</option>
+                        <option value="not_approved">Ej godkänd</option>
+                        <option value="partly_approved">Delvis godkänd</option>
+                      </select>
+                    )}
+                    <div className="md:col-span-2 xl:col-span-4">
+                      {fieldLabel(
+                        'Beslutets motivering',
+                        <DebouncedTextarea
+                          value={inspectionForm.approvalNote}
+                          draftKey={`eb:${round.inspection.inspectionId}:inspection:approval-note`}
+                          disabled={isLocked}
+                          onSave={(value) => handleInspectionTextSave('approvalNote', value)}
+                          rows={3}
+                          className={`${inputClassName()} resize-y leading-6`}
+                        />
+                      )}
+                    </div>
+                    {fieldLabel(
+                      'Fortsatt slutbesiktning',
+                      <select
+                        value={inspectionForm.requiresContinuedFinalInspection}
+                        onChange={(event) =>
+                          updateInspectionField(
+                            'requiresContinuedFinalInspection',
+                            event.target.value
+                          )
+                        }
+                        className={inputClassName()}
+                      >
+                        <option value="">Ej satt</option>
+                        <option value="true">Ja</option>
+                        <option value="false">Nej</option>
+                      </select>
+                    )}
+                    {inspectionForm.requiresContinuedFinalInspection === 'true' ? (
+                      <>
+                        {fieldLabel(
+                          'Ny slutbesiktning datum',
+                          <input
+                            type="date"
+                            value={inspectionForm.continuedFinalInspectionDate}
+                            onChange={(event) =>
+                              updateInspectionField(
+                                'continuedFinalInspectionDate',
+                                event.target.value
+                              )
+                            }
+                            className={inputClassName()}
+                          />
+                        )}
+                        {fieldLabel(
+                          'Ny slutbesiktning tid',
+                          <input
+                            type="time"
+                            value={inspectionForm.continuedFinalInspectionTime}
+                            onChange={(event) =>
+                              updateInspectionField(
+                                'continuedFinalInspectionTime',
+                                event.target.value
+                              )
+                            }
+                            className={inputClassName()}
+                          />
+                        )}
+                      </>
+                    ) : null}
+                    {fieldLabel(
+                      'Garantitid',
+                      <select
+                        value={inspectionForm.warrantyPeriodYears}
+                        onChange={(event) =>
+                          updateInspectionField('warrantyPeriodYears', event.target.value)
+                        }
+                        className={inputClassName()}
+                      >
+                        <option value="">Ej satt</option>
+                        {Array.from({ length: 10 }, (_, index) => index + 1).map((year) => (
+                          <option key={year} value={year}>
+                            {year} år
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {fieldLabel(
+                      'Garantitidens slut',
                       <input
                         type="date"
-                        value={inspectionForm.continuedFinalInspectionDate}
-                        onChange={(event) => updateInspectionField('continuedFinalInspectionDate', event.target.value)}
+                        value={inspectionForm.warrantyEndDate}
+                        onChange={(event) =>
+                          updateInspectionField('warrantyEndDate', event.target.value)
+                        }
                         className={inputClassName()}
                       />
                     )}
                     {fieldLabel(
-                      'Ny slutbesiktning tid',
+                      'Särskild varugaranti för',
                       <input
-                        type="time"
-                        value={inspectionForm.continuedFinalInspectionTime}
-                        onChange={(event) => updateInspectionField('continuedFinalInspectionTime', event.target.value)}
+                        value={inspectionForm.warrantyScope}
+                        onChange={(event) =>
+                          updateInspectionField('warrantyScope', event.target.value)
+                        }
                         className={inputClassName()}
                       />
                     )}
                   </>
                 ) : null}
-                {fieldLabel(
-                  'Garantitid',
-                  <select
-                    value={inspectionForm.warrantyPeriodYears}
-                    onChange={(event) => updateInspectionField('warrantyPeriodYears', event.target.value)}
-                    className={inputClassName()}
-                  >
-                    <option value="">Ej satt</option>
-                    {Array.from({ length: 10 }, (_, index) => index + 1).map((year) => (
-                      <option key={year} value={year}>
-                        {year} år
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {fieldLabel(
-                  'Garantitidens slut',
-                  <input
-                    type="date"
-                    value={inspectionForm.warrantyEndDate}
-                    onChange={(event) => updateInspectionField('warrantyEndDate', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                {fieldLabel(
-                  'Särskild varugaranti för',
-                  <input
-                    value={inspectionForm.warrantyScope}
-                    onChange={(event) => updateInspectionField('warrantyScope', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
                 {fieldLabel(
                   'Fel avhjälpta senast',
                   <input
@@ -4107,39 +4157,49 @@ export default function EbInspectionRoundClient({
                     className={inputClassName()}
                   />
                 )}
-                {fieldLabel(
-                  'Efterbesiktning påkallad',
-                  <select
-                    value={inspectionForm.afterInspectionRequested}
-                    onChange={(event) => updateInspectionField('afterInspectionRequested', event.target.value)}
-                    className={inputClassName()}
-                  >
-                    <option value="">Ej satt</option>
-                    <option value="true">Ja</option>
-                    <option value="false">Nej</option>
-                  </select>
-                )}
-                {fieldLabel(
-                  'Efterbesiktning påkallad av',
-                  <select
-                    value={inspectionForm.afterInspectionRequestedBy}
-                    onChange={(event) => updateInspectionField('afterInspectionRequestedBy', event.target.value)}
-                    className={inputClassName()}
-                  >
-                    <option value="">Ej satt</option>
-                    <option value="client">Beställare</option>
-                    <option value="contractor">Hantverkare</option>
-                  </select>
-                )}
-                {fieldLabel(
-                  'Efterbesiktning senast',
-                  <input
-                    type="date"
-                    value={inspectionForm.afterInspectionDueDate}
-                    onChange={(event) => updateInspectionField('afterInspectionDueDate', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
+                {!preliminaryInspection ? (
+                  <>
+                    {fieldLabel(
+                      'Efterbesiktning påkallad',
+                      <select
+                        value={inspectionForm.afterInspectionRequested}
+                        onChange={(event) =>
+                          updateInspectionField('afterInspectionRequested', event.target.value)
+                        }
+                        className={inputClassName()}
+                      >
+                        <option value="">Ej satt</option>
+                        <option value="true">Ja</option>
+                        <option value="false">Nej</option>
+                      </select>
+                    )}
+                    {fieldLabel(
+                      'Efterbesiktning påkallad av',
+                      <select
+                        value={inspectionForm.afterInspectionRequestedBy}
+                        onChange={(event) =>
+                          updateInspectionField('afterInspectionRequestedBy', event.target.value)
+                        }
+                        className={inputClassName()}
+                      >
+                        <option value="">Ej satt</option>
+                        <option value="client">Beställare</option>
+                        <option value="contractor">Hantverkare</option>
+                      </select>
+                    )}
+                    {fieldLabel(
+                      'Efterbesiktning senast',
+                      <input
+                        type="date"
+                        value={inspectionForm.afterInspectionDueDate}
+                        onChange={(event) =>
+                          updateInspectionField('afterInspectionDueDate', event.target.value)
+                        }
+                        className={inputClassName()}
+                      />
+                    )}
+                  </>
+                ) : null}
                 {fieldLabel(
                   'Distributionsdatum',
                   <input
@@ -4164,15 +4224,17 @@ export default function EbInspectionRoundClient({
                     />
                   )}
                 </div>
-                <label className="flex min-h-[2.75rem] items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm font-medium text-emerald-900">
-                  <input
-                    type="checkbox"
-                    checked={inspectionForm.afterInspectionNoticeInReport}
-                    onChange={(event) => updateInspectionField('afterInspectionNoticeInReport', event.target.checked)}
-                    className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
-                  />
-                  Utlåtandet gäller som kallelse till efterbesiktning
-                </label>
+                {!preliminaryInspection ? (
+                  <label className="flex min-h-[2.75rem] items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm font-medium text-emerald-900">
+                    <input
+                      type="checkbox"
+                      checked={inspectionForm.afterInspectionNoticeInReport}
+                      onChange={(event) => updateInspectionField('afterInspectionNoticeInReport', event.target.checked)}
+                      className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                    />
+                    Utlåtandet gäller som kallelse till efterbesiktning
+                  </label>
+                ) : null}
               </div>
             </ReviewSection>
 
@@ -4269,7 +4331,7 @@ export default function EbInspectionRoundClient({
                 </div>
               </div>
               <ReportDraftSectionsEditor
-                sections={reportSections}
+                sections={visibleReportSections}
                 inspectionId={round.inspection.inspectionId}
                 disabled={isLocked || Boolean(resettingReportSectionKey)}
                 onSectionChange={handleReportSectionChange}

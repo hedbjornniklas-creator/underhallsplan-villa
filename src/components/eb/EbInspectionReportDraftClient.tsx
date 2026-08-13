@@ -5,6 +5,11 @@ import { ArrowLeft, Check, FileText, Save } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useMemo, useState, useTransition } from 'react'
 import { useEbToast } from '@/components/eb/EbToastProvider'
+import {
+  isEbFinalDecisionInspection,
+  isEbPreliminaryInspection,
+  isEbReportSectionApplicable,
+} from '@/lib/eb/reportSectionRules'
 import type {
   EbInspectionReport,
   EbPreviousInspectionItem,
@@ -268,14 +273,31 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
   const [draftDirty, setDraftDirty] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [isStructuredPending, startStructuredTransition] = useTransition()
-
-  const activeSection = useMemo(
-    () => sections.find((section) => section.key === activeKey) ?? sections[0] ?? null,
-    [activeKey, sections]
+  const preliminaryInspection = isEbPreliminaryInspection(initialReport.inspection.variant)
+  const supportsFinalDecision = isEbFinalDecisionInspection(initialReport.inspection.variant)
+  const visibleSections = useMemo(
+    () =>
+      sections.filter((section) =>
+        isEbReportSectionApplicable({
+          sectionKey: section.key,
+          inspectionVariant: initialReport.inspection.variant,
+          projectTemplateKey: initialReport.project.projectTemplateKey,
+        })
+      ),
+    [
+      initialReport.inspection.variant,
+      initialReport.project.projectTemplateKey,
+      sections,
+    ]
   )
 
-  const completeCount = sections.filter((section) => section.status === 'complete').length
-  const missingCount = sections.filter((section) => section.status === 'missing').length
+  const activeSection = useMemo(
+    () => visibleSections.find((section) => section.key === activeKey) ?? visibleSections[0] ?? null,
+    [activeKey, visibleSections]
+  )
+
+  const completeCount = visibleSections.filter((section) => section.status === 'complete').length
+  const missingCount = visibleSections.filter((section) => section.status === 'missing').length
 
   function updateActiveSection(patch: Partial<EbReportDraftSection>) {
     if (!activeSection) return
@@ -432,7 +454,9 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-800">
                 Utlåtandeuppgifter
               </p>
-              <h2 className="mt-1 text-lg font-bold text-gray-950">Beslut och formella datum</h2>
+              <h2 className="mt-1 text-lg font-bold text-gray-950">
+                {preliminaryInspection ? 'Formella uppgifter' : 'Beslut och formella datum'}
+              </h2>
               <p className="mt-1 max-w-3xl text-sm text-gray-600">
                 Dessa fält styr flera avsnitt i utlåtandet och sparas på besiktningen.
               </p>
@@ -462,19 +486,21 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                 <option value="contractor">Entreprenör</option>
               </select>
             )}
-            {fieldLabel(
-              'Beslut',
-              <select
-                value={structuredForm.approvalStatus}
-                onChange={(event) => updateStructuredField('approvalStatus', event.target.value)}
-                className={fieldClassName()}
-              >
-                <option value="">Ej satt</option>
-                <option value="approved">Godkänd</option>
-                <option value="not_approved">Ej godkänd</option>
-                <option value="partly_approved">Delvis godkänd</option>
-              </select>
-            )}
+            {supportsFinalDecision ? (
+              fieldLabel(
+                'Beslut',
+                <select
+                  value={structuredForm.approvalStatus}
+                  onChange={(event) => updateStructuredField('approvalStatus', event.target.value)}
+                  className={fieldClassName()}
+                >
+                  <option value="">Ej satt</option>
+                  <option value="approved">Godkänd</option>
+                  <option value="not_approved">Ej godkänd</option>
+                  <option value="partly_approved">Delvis godkänd</option>
+                </select>
+              )
+            ) : null}
             {fieldLabel(
               'Kallelsemetod',
               <InvitationMethodField
@@ -495,90 +521,102 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
               rows={structuredForm.previousInspections}
               onChange={(rows) => updateStructuredField('previousInspections', rows)}
             />
-            <div className="md:col-span-2 xl:col-span-4">
-              {fieldLabel(
-                'Beslutets motivering',
-                <textarea
-                  value={structuredForm.approvalNote}
-                  onChange={(event) => updateStructuredField('approvalNote', event.target.value)}
-                  rows={3}
-                  className={`${fieldClassName()} leading-6`}
-                />
-              )}
-            </div>
-            {fieldLabel(
-              'Fortsatt slutbesiktning',
-              <select
-                value={structuredForm.requiresContinuedFinalInspection}
-                onChange={(event) =>
-                  updateStructuredField('requiresContinuedFinalInspection', event.target.value)
-                }
-                className={fieldClassName()}
-              >
-                <option value="">Ej satt</option>
-                <option value="true">Ja</option>
-                <option value="false">Nej</option>
-              </select>
-            )}
-            {structuredForm.requiresContinuedFinalInspection === 'true' ? (
+            {supportsFinalDecision ? (
               <>
+                <div className="md:col-span-2 xl:col-span-4">
+                  {fieldLabel(
+                    'Beslutets motivering',
+                    <textarea
+                      value={structuredForm.approvalNote}
+                      onChange={(event) =>
+                        updateStructuredField('approvalNote', event.target.value)
+                      }
+                      rows={3}
+                      className={`${fieldClassName()} leading-6`}
+                    />
+                  )}
+                </div>
                 {fieldLabel(
-                  'Ny slutbesiktning datum',
+                  'Fortsatt slutbesiktning',
+                  <select
+                    value={structuredForm.requiresContinuedFinalInspection}
+                    onChange={(event) =>
+                      updateStructuredField('requiresContinuedFinalInspection', event.target.value)
+                    }
+                    className={fieldClassName()}
+                  >
+                    <option value="">Ej satt</option>
+                    <option value="true">Ja</option>
+                    <option value="false">Nej</option>
+                  </select>
+                )}
+                {structuredForm.requiresContinuedFinalInspection === 'true' ? (
+                  <>
+                    {fieldLabel(
+                      'Ny slutbesiktning datum',
+                      <input
+                        type="date"
+                        value={structuredForm.continuedFinalInspectionDate}
+                        onChange={(event) =>
+                          updateStructuredField('continuedFinalInspectionDate', event.target.value)
+                        }
+                        className={fieldClassName()}
+                      />
+                    )}
+                    {fieldLabel(
+                      'Ny slutbesiktning tid',
+                      <input
+                        type="time"
+                        value={structuredForm.continuedFinalInspectionTime}
+                        onChange={(event) =>
+                          updateStructuredField('continuedFinalInspectionTime', event.target.value)
+                        }
+                        className={fieldClassName()}
+                      />
+                    )}
+                  </>
+                ) : null}
+                {fieldLabel(
+                  'Garantitid',
+                  <select
+                    value={structuredForm.warrantyPeriodYears}
+                    onChange={(event) =>
+                      updateStructuredField('warrantyPeriodYears', event.target.value)
+                    }
+                    className={fieldClassName()}
+                  >
+                    <option value="">Ej satt</option>
+                    {Array.from({ length: 10 }, (_, index) => index + 1).map((year) => (
+                      <option key={year} value={year}>
+                        {year} år
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {fieldLabel(
+                  'Garantitidens slut',
                   <input
                     type="date"
-                    value={structuredForm.continuedFinalInspectionDate}
+                    value={structuredForm.warrantyEndDate}
                     onChange={(event) =>
-                      updateStructuredField('continuedFinalInspectionDate', event.target.value)
+                      updateStructuredField('warrantyEndDate', event.target.value)
                     }
                     className={fieldClassName()}
                   />
                 )}
                 {fieldLabel(
-                  'Ny slutbesiktning tid',
+                  'Särskild varugaranti för',
                   <input
-                    type="time"
-                    value={structuredForm.continuedFinalInspectionTime}
+                    value={structuredForm.warrantyScope}
                     onChange={(event) =>
-                      updateStructuredField('continuedFinalInspectionTime', event.target.value)
+                      updateStructuredField('warrantyScope', event.target.value)
                     }
+                    placeholder="Exempel: vara, produkt eller material"
                     className={fieldClassName()}
                   />
                 )}
               </>
             ) : null}
-            {fieldLabel(
-              'Garantitid',
-              <select
-                value={structuredForm.warrantyPeriodYears}
-                onChange={(event) => updateStructuredField('warrantyPeriodYears', event.target.value)}
-                className={fieldClassName()}
-              >
-                <option value="">Ej satt</option>
-                {Array.from({ length: 10 }, (_, index) => index + 1).map((year) => (
-                  <option key={year} value={year}>
-                    {year} år
-                  </option>
-                ))}
-              </select>
-            )}
-            {fieldLabel(
-              'Garantitidens slut',
-              <input
-                type="date"
-                value={structuredForm.warrantyEndDate}
-                onChange={(event) => updateStructuredField('warrantyEndDate', event.target.value)}
-                className={fieldClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Särskild varugaranti för',
-              <input
-                value={structuredForm.warrantyScope}
-                onChange={(event) => updateStructuredField('warrantyScope', event.target.value)}
-                placeholder="Exempel: vara, produkt eller material"
-                className={fieldClassName()}
-              />
-            )}
             {fieldLabel(
               'Fel avhjälpta senast',
               <input
@@ -588,41 +626,49 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                 className={fieldClassName()}
               />
             )}
-            {fieldLabel(
-              'Efterbesiktning påkallad',
-              <select
-                value={structuredForm.afterInspectionRequested}
-                onChange={(event) => updateStructuredField('afterInspectionRequested', event.target.value)}
-                className={fieldClassName()}
-              >
-                <option value="">Ej satt</option>
-                <option value="true">Ja</option>
-                <option value="false">Nej</option>
-              </select>
-            )}
-            {fieldLabel(
-              'Efterbesiktning påkallad av',
-              <select
-                value={structuredForm.afterInspectionRequestedBy}
-                onChange={(event) =>
-                  updateStructuredField('afterInspectionRequestedBy', event.target.value)
-                }
-                className={fieldClassName()}
-              >
-                <option value="">Ej satt</option>
-                <option value="client">Beställare</option>
-                <option value="contractor">Hantverkare</option>
-              </select>
-            )}
-            {fieldLabel(
-              'Efterbesiktning senast',
-              <input
-                type="date"
-                value={structuredForm.afterInspectionDueDate}
-                onChange={(event) => updateStructuredField('afterInspectionDueDate', event.target.value)}
-                className={fieldClassName()}
-              />
-            )}
+            {!preliminaryInspection ? (
+              <>
+                {fieldLabel(
+                  'Efterbesiktning påkallad',
+                  <select
+                    value={structuredForm.afterInspectionRequested}
+                    onChange={(event) =>
+                      updateStructuredField('afterInspectionRequested', event.target.value)
+                    }
+                    className={fieldClassName()}
+                  >
+                    <option value="">Ej satt</option>
+                    <option value="true">Ja</option>
+                    <option value="false">Nej</option>
+                  </select>
+                )}
+                {fieldLabel(
+                  'Efterbesiktning påkallad av',
+                  <select
+                    value={structuredForm.afterInspectionRequestedBy}
+                    onChange={(event) =>
+                      updateStructuredField('afterInspectionRequestedBy', event.target.value)
+                    }
+                    className={fieldClassName()}
+                  >
+                    <option value="">Ej satt</option>
+                    <option value="client">Beställare</option>
+                    <option value="contractor">Hantverkare</option>
+                  </select>
+                )}
+                {fieldLabel(
+                  'Efterbesiktning senast',
+                  <input
+                    type="date"
+                    value={structuredForm.afterInspectionDueDate}
+                    onChange={(event) =>
+                      updateStructuredField('afterInspectionDueDate', event.target.value)
+                    }
+                    className={fieldClassName()}
+                  />
+                )}
+              </>
+            ) : null}
             {fieldLabel(
               'Distributionsdatum',
               <input
@@ -646,24 +692,26 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                 />
               )}
             </div>
-            <label className="flex min-h-[4.1rem] items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm font-medium text-emerald-900">
-              <input
-                type="checkbox"
-                checked={structuredForm.afterInspectionNoticeInReport}
-                onChange={(event) =>
-                  updateStructuredField('afterInspectionNoticeInReport', event.target.checked)
-                }
-                className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
-              />
-              Utlåtandet gäller som kallelse till efterbesiktning
-            </label>
+            {!preliminaryInspection ? (
+              <label className="flex min-h-[4.1rem] items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm font-medium text-emerald-900">
+                <input
+                  type="checkbox"
+                  checked={structuredForm.afterInspectionNoticeInReport}
+                  onChange={(event) =>
+                    updateStructuredField('afterInspectionNoticeInReport', event.target.checked)
+                  }
+                  className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                />
+                Utlåtandet gäller som kallelse till efterbesiktning
+              </label>
+            ) : null}
           </div>
         </section>
 
         <div className="grid gap-5 lg:grid-cols-[22rem_minmax(0,1fr)]">
           <aside className="rounded-lg border border-gray-200 bg-white p-2 shadow-sm">
             <div className="max-h-[calc(100vh-15rem)] overflow-auto">
-              {sections.map((section) => (
+              {visibleSections.map((section) => (
                 <button
                   key={section.key}
                   type="button"
