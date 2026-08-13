@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
+import { EbToastProvider, useEbToast } from '@/components/eb/EbToastProvider'
 import { supabase } from '@/lib/supabaseClient'
 
 type SettingRow = {
@@ -111,7 +112,8 @@ function SettingsCard({
   )
 }
 
-export default function EbSettingsPanel() {
+function EbSettingsPanelContent() {
+  const { showError } = useEbToast()
   const [settings, setSettings] = useState<SettingsState>(EMPTY_STATE)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -142,12 +144,12 @@ export default function EbSettingsPanel() {
 
     const firstError = [types.error, disciplines.error, statuses.error, markers.error].find(Boolean)
     if (firstError) {
+      const message = isMissingTableError(firstError)
+        ? 'EB-inställningarna saknar databasmigreringen.'
+        : 'Kunde inte hämta EB-inställningarna.'
       setSettings(EMPTY_STATE)
-      setError(
-        isMissingTableError(firstError)
-          ? 'EB-inställningarna saknar databasmigreringen.'
-          : 'Kunde inte hämta EB-inställningarna.'
-      )
+      setError(message)
+      showError(message)
       setLoading(false)
       return
     }
@@ -159,7 +161,7 @@ export default function EbSettingsPanel() {
       markers: (markers.data ?? []) as SettingRow[],
     })
     setLoading(false)
-  }, [])
+  }, [showError])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -199,5 +201,13 @@ export default function EbSettingsPanel() {
         <SettingsCard title="Beteckningar" rows={settings.markers} columns={['key', 'label', 'color_token']} />
       </div>
     </div>
+  )
+}
+
+export default function EbSettingsPanel() {
+  return (
+    <EbToastProvider>
+      <EbSettingsPanelContent />
+    </EbToastProvider>
   )
 }

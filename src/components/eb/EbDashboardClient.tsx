@@ -19,6 +19,7 @@ import EbProjectForm, {
   ebProjectFormToPayload,
   type EbProjectFormState,
 } from '@/components/eb/EbProjectForm'
+import { useEbToast } from '@/components/eb/EbToastProvider'
 import type { EbProjectListItem } from '@/lib/eb/server'
 
 type EbDashboardClientProps = {
@@ -67,9 +68,9 @@ function CreateProjectDialog({
   onCreated: (project: EbProjectListItem) => void
 }) {
   const router = useRouter()
+  const { showError } = useEbToast()
   const [form, setForm] = useState<CreateProjectFormState>(INITIAL_FORM)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   if (!open) return null
 
@@ -83,7 +84,6 @@ function CreateProjectDialog({
 
     try {
       setSubmitting(true)
-      setError(null)
 
       const response = await fetch('/api/eb/projects', {
         method: 'POST',
@@ -102,7 +102,7 @@ function CreateProjectDialog({
       router.push(`/eb/projects/${payload.project.id}`)
       router.refresh()
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Kunde inte skapa entreprenad.')
+      showError(submitError, 'Kunde inte skapa entreprenad.')
     } finally {
       setSubmitting(false)
     }
@@ -131,12 +131,6 @@ function CreateProjectDialog({
           <div className="space-y-5">
             <EbProjectForm form={form} onChange={updateProjectField} />
           </div>
-
-          {error ? (
-            <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {error}
-            </p>
-          ) : null}
 
           <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button

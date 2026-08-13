@@ -2,6 +2,7 @@
 
 import { useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { ExternalLink, FileText, Image as ImageIcon, Loader2, Save, Trash2, Upload } from 'lucide-react'
+import { useEbToast } from '@/components/eb/EbToastProvider'
 import type { EbAttachmentType, EbProjectAttachment } from '@/lib/eb/server'
 
 type EbProjectAttachmentsPanelProps = {
@@ -277,6 +278,7 @@ export default function EbProjectAttachmentsPanel({
   projectId,
   initialAttachments,
 }: EbProjectAttachmentsPanelProps) {
+  const { showError } = useEbToast()
   const [attachments, setAttachments] = useState(initialAttachments)
   const [attachmentEdits, setAttachmentEdits] = useState<Record<string, AttachmentEditState>>(
     () => buildAttachmentEditMap(initialAttachments)
@@ -285,7 +287,6 @@ export default function EbProjectAttachmentsPanel({
   const [draggingType, setDraggingType] = useState<EbAttachmentType | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
 
   const documents = attachments.filter((attachment) => attachment.attachmentType === 'document')
   const images = attachments.filter((attachment) => attachment.attachmentType === 'image')
@@ -319,7 +320,6 @@ export default function EbProjectAttachmentsPanel({
 
     try {
       setUploadingType(attachmentType)
-      setError(null)
 
       for (const file of uploadFiles) {
         const preparedImageFiles =
@@ -344,7 +344,7 @@ export default function EbProjectAttachmentsPanel({
         replaceAttachments(payload.attachments)
       }
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp bilaga.')
+      showError(uploadError, 'Kunde inte ladda upp bilaga.')
     } finally {
       setUploadingType(null)
     }
@@ -360,7 +360,6 @@ export default function EbProjectAttachmentsPanel({
 
     try {
       setSavingId(attachment.id)
-      setError(null)
       const response = await fetch(`/api/eb/projects/${projectId}/attachments/${attachment.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -374,7 +373,7 @@ export default function EbProjectAttachmentsPanel({
 
       replaceAttachments(payload.attachments)
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara bilageuppgifter.')
+      showError(saveError, 'Kunde inte spara bilageuppgifter.')
     } finally {
       setSavingId(null)
     }
@@ -387,7 +386,6 @@ export default function EbProjectAttachmentsPanel({
 
     try {
       setDeletingId(attachment.id)
-      setError(null)
       const response = await fetch(`/api/eb/projects/${projectId}/attachments/${attachment.id}`, {
         method: 'DELETE',
       })
@@ -399,7 +397,7 @@ export default function EbProjectAttachmentsPanel({
 
       replaceAttachments(payload.attachments)
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte ta bort bilaga.')
+      showError(deleteError, 'Kunde inte ta bort bilaga.')
     } finally {
       setDeletingId(null)
     }
@@ -427,10 +425,6 @@ export default function EbProjectAttachmentsPanel({
           />
         </div>
       </div>
-
-      {error ? (
-        <div className="border-b border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
-      ) : null}
 
       <div className="grid gap-6 px-4 py-4 lg:grid-cols-2">
         <div>

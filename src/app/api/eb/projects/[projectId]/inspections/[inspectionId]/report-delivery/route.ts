@@ -311,7 +311,7 @@ export async function GET(
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('EB kräver egen modulbehörighet.', 403)
-    return jsonError(message || 'Kunde inte läsa EB-utlåtandets status.', 500)
+    return jsonError('Kunde inte läsa EB-utlåtandets status.', 500)
   }
 }
 
@@ -406,6 +406,6 @@ export async function POST(
     if (message === 'EB_PROJECT_NOT_FOUND' || message === 'EB_INSPECTION_NOT_FOUND') {
       return jsonError('Besiktningen hittades inte.', 404)
     }
-    return jsonError(message || 'Kunde inte låsa EB-utlåtandet.', 500)
+    return jsonError('Kunde inte låsa EB-utlåtandet.', 500)
   }
 }

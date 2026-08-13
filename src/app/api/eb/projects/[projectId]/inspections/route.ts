@@ -41,7 +41,7 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'EB_PROJECT_PROPERTY_MISSING') {
     return jsonError('Entreprenaden saknar fastighetskoppling.', 409)
   }
-  return jsonError(message || fallback, 500)
+  return jsonError(fallback, 500)
 }
 
 export async function POST(

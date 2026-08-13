@@ -76,7 +76,7 @@ function mapError(error: unknown, fallback: string) {
   if (message.startsWith('INVITATION_SEND_FAILED:')) {
     return jsonError(message.replace('INVITATION_SEND_FAILED:', ''), 502)
   }
-  return jsonError(message || fallback, 500)
+  return jsonError(fallback, 500)
 }
 
 export async function GET(

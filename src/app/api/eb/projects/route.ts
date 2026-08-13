@@ -37,7 +37,7 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'MODULE_ACCESS_REQUIRED') {
     return jsonError('EB kräver egen modulbehörighet.', 403)
   }
-  return jsonError(message || fallback, 500)
+  return jsonError(fallback, 500)
 }
 
 export async function GET() {

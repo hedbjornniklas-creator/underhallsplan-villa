@@ -72,6 +72,6 @@ export async function POST(
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('EB kräver egen modulbehörighet.', 403)
-    return jsonError(message || 'Kunde inte låsa upp EB-utlåtandet.', 500)
+    return jsonError('Kunde inte låsa upp EB-utlåtandet.', 500)
   }
 }

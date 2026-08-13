@@ -31,7 +31,7 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'EB_INSPECTION_NOT_FOUND') return jsonError('Besiktningen hittades inte.', 404)
   if (message === 'EB_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'EB_REPORT_DRAFT_EMPTY') return jsonError('Inga giltiga utlåtandesektioner skickades.', 400)
-  return jsonError(message || fallback, 500)
+  return jsonError(fallback, 500)
 }
 
 export async function GET(

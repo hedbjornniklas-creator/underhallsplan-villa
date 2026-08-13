@@ -33,7 +33,7 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('EB kräver egen modulbehörighet.', 403)
   if (message === 'EB_PROJECT_NOT_FOUND') return jsonError('Entreprenaden hittades inte.', 404)
-  return jsonError(message || fallback, 500)
+  return jsonError(fallback, 500)
 }
 
 export async function PATCH(

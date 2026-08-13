@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { requireModuleAccess } from '@/lib/access/server'
+import { EbToastProvider } from '@/components/eb/EbToastProvider'
 
 export default async function EbLayout({ children }: { children: ReactNode }) {
   try {
@@ -23,5 +24,5 @@ export default async function EbLayout({ children }: { children: ReactNode }) {
     )
   }
 
-  return <>{children}</>
+  return <EbToastProvider>{children}</EbToastProvider>
 }

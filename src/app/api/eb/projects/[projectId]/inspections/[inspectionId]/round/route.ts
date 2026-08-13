@@ -29,7 +29,7 @@ function mapError(error: unknown, fallback: string) {
   }
   if (message === 'EB_PROJECT_NOT_FOUND') return jsonError('Entreprenaden hittades inte.', 404)
   if (message === 'EB_INSPECTION_NOT_FOUND') return jsonError('Besiktningen hittades inte.', 404)
-  return jsonError(message || fallback, 500)
+  return jsonError(fallback, 500)
 }
 
 export async function GET(

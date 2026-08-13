@@ -12,6 +12,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react'
+import { useEbToast } from '@/components/eb/EbToastProvider'
 import type {
   EbInspectionDocument,
   EbInspectionCheckpoint,
@@ -963,8 +964,10 @@ function DistributionListReport({ report }: { report: EbInspectionReport }) {
 
 function InspectorSignatureCard({
   signature,
+  onImageError,
 }: {
   signature: EbInspectorSignature
+  onImageError: (message: string) => void
 }) {
   const hasCredentials = signature.credentialLines.length > 0
 
@@ -982,6 +985,7 @@ function InspectorSignatureCard({
               data-eb-print-measure-image="true"
               onError={(event) => {
                 event.currentTarget.dataset.ebImageFailed = 'true'
+                onImageError('Besiktningsmannens profilbild kunde inte läsas in.')
               }}
               className="h-full w-full object-cover"
             />
@@ -1000,6 +1004,7 @@ function InspectorSignatureCard({
               data-eb-print-measure-image="true"
               onError={(event) => {
                 event.currentTarget.dataset.ebImageFailed = 'true'
+                onImageError('Besiktningsmannens signatur kunde inte läsas in.')
               }}
               className="max-h-full max-w-full object-contain"
             />
@@ -1188,11 +1193,13 @@ function PhotoAppendixBlock({
   images,
   referenceLabel,
   showTitle = false,
+  onImageError,
 }: {
   note: EbNote
   images: EbNoteImage[]
   referenceLabel: string
   showTitle?: boolean
+  onImageError: (message: string) => void
 }) {
   const location = noteLocationLine(note)
 
@@ -1218,6 +1225,7 @@ function PhotoAppendixBlock({
               data-eb-print-measure-image="true"
               onError={(event) => {
                 event.currentTarget.dataset.ebImageFailed = 'true'
+                onImageError(`${referenceLabel}: bilden kunde inte läsas in.`)
               }}
               className="eb-report-photo-image h-full w-full object-contain"
               style={{ objectPosition: 'left center' }}
@@ -1567,6 +1575,7 @@ function EbPrintPagedDocument({
 }
 
 export default function EbInspectionReportView({ report }: EbInspectionReportViewProps) {
+  const { showError } = useEbToast()
   const printTitle = reportPrintTitle(report)
   const notes = useMemo(() => sortNotes(report.notes), [report.notes])
   const displayNumberByNoteId = useMemo(
@@ -1781,7 +1790,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
     if (inspectorSignature) {
       blocks.push({
         id: 'inspector-signature',
-        node: <InspectorSignatureCard signature={inspectorSignature} />,
+        node: <InspectorSignatureCard signature={inspectorSignature} onImageError={showError} />,
       })
     }
 
@@ -1818,6 +1827,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
                 note={note}
                 referenceLabel={imageChunkIndex === 0 ? referenceLabel : `${referenceLabel} (forts.)`}
                 showTitle={photoBlockIndex === 0}
+                onImageError={showError}
               />
             ),
           })
@@ -1836,6 +1846,7 @@ export default function EbInspectionReportView({ report }: EbInspectionReportVie
     report,
     reportSections,
     scopeSection,
+    showError,
   ])
 
   useEffect(() => {

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { ArrowLeft, Check, FileText, Save } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useMemo, useState, useTransition } from 'react'
+import { useEbToast } from '@/components/eb/EbToastProvider'
 import type {
   EbInspectionReport,
   EbPreviousInspectionItem,
@@ -257,6 +258,7 @@ function PreviousInspectionsEditor({
 }
 
 export default function EbInspectionReportDraftClient({ initialReport }: Props) {
+  const { showError } = useEbToast()
   const [sections, setSections] = useState(initialReport.reportDraft.sections)
   const [structuredForm, setStructuredForm] = useState<StructuredReportFormState>(() =>
     buildStructuredReportForm(initialReport.inspection)
@@ -293,74 +295,82 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
   function saveDraft() {
     setMessage(null)
     startTransition(async () => {
-      const response = await fetch(
-        `/api/eb/projects/${initialReport.project.id}/inspections/${initialReport.inspection.inspectionId}/report-draft`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sections }),
+      try {
+        const response = await fetch(
+          `/api/eb/projects/${initialReport.project.id}/inspections/${initialReport.inspection.inspectionId}/report-draft`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sections }),
+          }
+        )
+        const payload = (await response.json().catch(() => ({}))) as {
+          reportDraft?: { sections?: EbReportDraftSection[] }
+          error?: string
         }
-      )
-      const payload = (await response.json().catch(() => ({}))) as {
-        reportDraft?: { sections?: EbReportDraftSection[] }
-        error?: string
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Kunde inte spara utlåtandeutkastet.')
+        }
+        if (payload.reportDraft?.sections) {
+          setSections(payload.reportDraft.sections)
+        }
+        setDraftDirty(false)
+        setMessage('Utlåtandeutkastet är sparat.')
+      } catch (saveError) {
+        showError(saveError, 'Kunde inte spara utlåtandeutkastet.')
       }
-      if (!response.ok) {
-        setMessage(payload.error ?? 'Kunde inte spara utlåtandeutkastet.')
-        return
-      }
-      if (payload.reportDraft?.sections) {
-        setSections(payload.reportDraft.sections)
-      }
-      setDraftDirty(false)
-      setMessage('Utlåtandeutkastet är sparat.')
     })
   }
 
   function saveStructuredFields() {
     if (draftDirty) {
-      setMessage('Spara utlåtandetexten innan du sparar utlåtandeuppgifter.')
+      setMessage(null)
+      showError('Spara utlåtandetexten innan du sparar utlåtandeuppgifter.')
       return
     }
 
     setMessage(null)
     startStructuredTransition(async () => {
-      const updateResponse = await fetch(
-        `/api/eb/projects/${initialReport.project.id}/inspections/${initialReport.inspection.inspectionId}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...structuredForm,
-            requiresContinuedFinalInspection: booleanFromSelect(
-              structuredForm.requiresContinuedFinalInspection
-            ),
-            warrantyPeriodYears: structuredForm.warrantyPeriodYears
-              ? Number(structuredForm.warrantyPeriodYears)
-              : null,
-            afterInspectionRequested: booleanFromSelect(structuredForm.afterInspectionRequested),
-          }),
+      try {
+        const updateResponse = await fetch(
+          `/api/eb/projects/${initialReport.project.id}/inspections/${initialReport.inspection.inspectionId}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...structuredForm,
+              requiresContinuedFinalInspection: booleanFromSelect(
+                structuredForm.requiresContinuedFinalInspection
+              ),
+              warrantyPeriodYears: structuredForm.warrantyPeriodYears
+                ? Number(structuredForm.warrantyPeriodYears)
+                : null,
+              afterInspectionRequested: booleanFromSelect(structuredForm.afterInspectionRequested),
+            }),
+          }
+        )
+        const updatePayload = (await updateResponse.json().catch(() => ({}))) as InspectionUpdateResponse
+        if (!updateResponse.ok) {
+          throw new Error(updatePayload.error ?? 'Kunde inte spara utlåtandeuppgifter.')
         }
-      )
-      const updatePayload = (await updateResponse.json().catch(() => ({}))) as InspectionUpdateResponse
-      if (!updateResponse.ok) {
-        setMessage(updatePayload.error ?? 'Kunde inte spara utlåtandeuppgifter.')
-        return
-      }
 
-      const reportResponse = await fetch(
-        `/api/eb/projects/${initialReport.project.id}/inspections/${initialReport.inspection.inspectionId}/report-draft`
-      )
-      const reportPayload = (await reportResponse.json().catch(() => ({}))) as ReportDraftResponse
-      if (!reportResponse.ok || !reportPayload.report) {
-        setMessage(reportPayload.error ?? 'Uppgifterna sparades, men utlåtandeutkastet kunde inte laddas om.')
-        return
-      }
+        const reportResponse = await fetch(
+          `/api/eb/projects/${initialReport.project.id}/inspections/${initialReport.inspection.inspectionId}/report-draft`
+        )
+        const reportPayload = (await reportResponse.json().catch(() => ({}))) as ReportDraftResponse
+        if (!reportResponse.ok || !reportPayload.report) {
+          throw new Error(
+            reportPayload.error ?? 'Uppgifterna sparades, men utlåtandeutkastet kunde inte laddas om.'
+          )
+        }
 
-      setSections(reportPayload.report.reportDraft.sections)
-      setStructuredForm(buildStructuredReportForm(reportPayload.report.inspection))
-      setDraftDirty(false)
-      setMessage('Utlåtandeuppgifterna är sparade och utkastet är uppdaterat.')
+        setSections(reportPayload.report.reportDraft.sections)
+        setStructuredForm(buildStructuredReportForm(reportPayload.report.inspection))
+        setDraftDirty(false)
+        setMessage('Utlåtandeuppgifterna är sparade och utkastet är uppdaterat.')
+      } catch (saveError) {
+        showError(saveError, 'Kunde inte spara utlåtandeuppgifter.')
+      }
     })
   }
 

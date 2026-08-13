@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import Protected from '@/components/Protected'
 import EbProjectAttachmentsPanel from '@/components/eb/EbProjectAttachmentsPanel'
+import { useEbToast } from '@/components/eb/EbToastProvider'
 import EbProjectForm, {
   buildEbProjectForm,
   ebProjectFormToPayload,
@@ -771,14 +772,13 @@ function CreateInspectionDialog({
   onClose: () => void
   onCreated: (project: EbProjectListItem) => void
 }) {
+  const { showError } = useEbToast()
   const [form, setForm] = useState<InspectionFormState>(() => buildInitialInspectionForm(project))
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
     setForm(buildInitialInspectionForm(project))
-    setError(null)
   }, [open, project])
 
   if (!open) return null
@@ -796,8 +796,6 @@ function CreateInspectionDialog({
 
     try {
       setSubmitting(true)
-      setError(null)
-
       const response = await fetch(`/api/eb/projects/${project.id}/inspections`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -812,7 +810,7 @@ function CreateInspectionDialog({
       onCreated(payload.project)
       onClose()
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Kunde inte skapa besiktning.')
+      showError(submitError, 'Kunde inte skapa besiktning.')
     } finally {
       setSubmitting(false)
     }
@@ -914,12 +912,6 @@ function CreateInspectionDialog({
             )}
           </div>
 
-          {error ? (
-            <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {error}
-            </p>
-          ) : null}
-
           <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button
               type="button"
@@ -957,6 +949,7 @@ function InspectionDetailsDialog({
   onClose: () => void
   onUpdated: (project: EbProjectListItem) => void
 }) {
+  const { showError } = useEbToast()
   const [form, setForm] = useState<InspectionDetailsFormState | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [participantsLoading, setParticipantsLoading] = useState(false)
@@ -968,7 +961,6 @@ function InspectionDetailsDialog({
   const [invitationBody, setInvitationBody] = useState('')
   const [participants, setParticipants] = useState<EditableParticipant[]>([])
   const [activeTab, setActiveTab] = useState<InspectionDetailsTabKey>('time')
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open || !inspection) return
@@ -982,8 +974,6 @@ function InspectionDetailsDialog({
     setInvitationSubject('')
     setInvitationBody('')
     setActiveTab('time')
-    setError(null)
-
     const loadParticipants = async () => {
       try {
         setParticipantsLoading(true)
@@ -1004,7 +994,7 @@ function InspectionDetailsDialog({
         setParticipantsLoaded(true)
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta närvarande.')
+          showError(loadError, 'Kunde inte hämta närvarande.')
         }
       } finally {
         if (!cancelled) {
@@ -1030,7 +1020,7 @@ function InspectionDetailsDialog({
         setDocumentsLoaded(true)
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta granskade handlingar.')
+          showError(loadError, 'Kunde inte hämta granskade handlingar.')
         }
       } finally {
         if (!cancelled) {
@@ -1045,7 +1035,7 @@ function InspectionDetailsDialog({
     return () => {
       cancelled = true
     }
-  }, [inspection, open, project.id])
+  }, [inspection, open, project.id, showError])
 
   if (!open || !inspection || !form) return null
 
@@ -1085,7 +1075,6 @@ function InspectionDetailsDialog({
 
     try {
       setSubmitting(true)
-      setError(null)
       const response = await fetch(
         `/api/eb/projects/${project.id}/inspections/${inspection.inspectionId}`,
         {
@@ -1144,7 +1133,7 @@ function InspectionDetailsDialog({
       onUpdated(payload.project)
       onClose()
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Kunde inte spara besiktningsuppgifter.')
+      showError(submitError, 'Kunde inte spara besiktningsuppgifter.')
     } finally {
       setSubmitting(false)
     }
@@ -1564,12 +1553,6 @@ function InspectionDetailsDialog({
             ) : null}
           </div>
 
-          {error ? (
-            <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {error}
-            </p>
-          ) : null}
-
           <div className="mt-5 flex flex-col-reverse gap-2 border-t border-emerald-100 pt-4 sm:flex-row sm:justify-end">
             <button
               type="button"
@@ -1605,14 +1588,13 @@ function EditProjectDialog({
   onClose: () => void
   onUpdated: (project: EbProjectListItem) => void
 }) {
+  const { showError } = useEbToast()
   const [form, setForm] = useState<EbProjectFormState>(() => buildEbProjectForm(project))
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
     setForm(buildEbProjectForm(project))
-    setError(null)
   }, [open, project])
 
   if (!open) return null
@@ -1627,7 +1609,6 @@ function EditProjectDialog({
 
     try {
       setSubmitting(true)
-      setError(null)
 
       const response = await fetch(`/api/eb/projects/${project.id}`, {
         method: 'PATCH',
@@ -1643,7 +1624,7 @@ function EditProjectDialog({
       onUpdated(payload.project)
       onClose()
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Kunde inte uppdatera entreprenaden.')
+      showError(submitError, 'Kunde inte uppdatera entreprenaden.')
     } finally {
       setSubmitting(false)
     }
@@ -1670,8 +1651,6 @@ function EditProjectDialog({
 
         <form onSubmit={(event) => void handleSubmit(event)} className="overflow-auto p-4">
           <EbProjectForm form={form} onChange={updateField} showNotePrefix />
-
-          {error ? <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{error}</p> : null}
 
           <div className="mt-5 flex justify-end gap-2 border-t border-emerald-100 pt-4">
             <button
@@ -1709,9 +1688,9 @@ function InvitationDialog({
   onClose: () => void
   onSent: (project: EbProjectListItem) => void
 }) {
+  const { showError } = useEbToast()
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [participants, setParticipants] = useState<EditableParticipant[]>([])
@@ -1724,7 +1703,6 @@ function InvitationDialog({
     const loadInvitation = async () => {
       try {
         setLoading(true)
-        setError(null)
         const response = await fetch(
           `/api/eb/projects/${project.id}/inspections/${inspection.inspectionId}/invitation`
         )
@@ -1741,7 +1719,7 @@ function InvitationDialog({
         setParticipants((payload.participants ?? []).map(toLocalParticipant))
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta kallelse.')
+          showError(loadError, 'Kunde inte hämta kallelse.')
         }
       } finally {
         if (!cancelled) {
@@ -1755,7 +1733,7 @@ function InvitationDialog({
     return () => {
       cancelled = true
     }
-  }, [inspection, open, project.id])
+  }, [inspection, open, project.id, showError])
 
   if (!open || !inspection) return null
 
@@ -1787,7 +1765,6 @@ function InvitationDialog({
 
     try {
       setSending(true)
-      setError(null)
       const response = await fetch(
         `/api/eb/projects/${project.id}/inspections/${inspection.inspectionId}/invitation`,
         {
@@ -1810,7 +1787,7 @@ function InvitationDialog({
       setBody(payload.body ?? body)
       setParticipants((payload.participants ?? []).map(toLocalParticipant))
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara kallelse och deltagare.')
+      showError(saveError, 'Kunde inte spara kallelse och deltagare.')
     } finally {
       setSending(false)
     }
@@ -1821,7 +1798,6 @@ function InvitationDialog({
 
     try {
       setSending(true)
-      setError(null)
 
       const response = await fetch(
         `/api/eb/projects/${project.id}/inspections/${inspection.inspectionId}/invitation`,
@@ -1844,7 +1820,7 @@ function InvitationDialog({
       onSent(payload.project)
       onClose()
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : 'Kunde inte skicka kallelse.')
+      showError(sendError, 'Kunde inte skicka kallelse.')
     } finally {
       setSending(false)
     }
@@ -1910,12 +1886,6 @@ function InvitationDialog({
             </div>
           )}
 
-          {error ? (
-            <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {error}
-            </p>
-          ) : null}
-
           <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button
               type="button"
@@ -1952,6 +1922,7 @@ function InvitationDialog({
 
 export default function EbProjectDetailClient({ project, attachments }: EbProjectDetailClientProps) {
   const router = useRouter()
+  const { showError } = useEbToast()
   const [currentProject, setCurrentProject] = useState(project)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -1959,7 +1930,6 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
   const [invitationInspection, setInvitationInspection] = useState<EbInspectionSummary | null>(null)
   const [reportActionInspectionId, setReportActionInspectionId] = useState<string | null>(null)
   const [deletingInspectionId, setDeletingInspectionId] = useState<string | null>(null)
-  const [reportActionError, setReportActionError] = useState<string | null>(null)
   const addressLine = [currentProject.address, currentProject.postalCode, currentProject.city]
     .filter(Boolean)
     .join(', ')
@@ -1993,7 +1963,6 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
 
     try {
       setReportActionInspectionId(inspection.inspectionId)
-      setReportActionError(null)
 
       const response = await fetch(
         `/api/eb/projects/${currentProject.id}/inspections/${inspection.inspectionId}/report-delivery`,
@@ -2011,7 +1980,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
       setCurrentProject(payload.project)
       router.refresh()
     } catch (error) {
-      setReportActionError(error instanceof Error ? error.message : 'Kunde inte låsa utlåtandet.')
+      showError(error, 'Kunde inte låsa utlåtandet.')
     } finally {
       setReportActionInspectionId(null)
     }
@@ -2024,7 +1993,6 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
 
     try {
       setReportActionInspectionId(inspection.inspectionId)
-      setReportActionError(null)
 
       const response = await fetch(
         `/api/eb/projects/${currentProject.id}/inspections/${inspection.inspectionId}/unlock`,
@@ -2042,7 +2010,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
       setCurrentProject(payload.project)
       router.refresh()
     } catch (error) {
-      setReportActionError(error instanceof Error ? error.message : 'Kunde inte låsa upp utlåtandet.')
+      showError(error, 'Kunde inte låsa upp utlåtandet.')
     } finally {
       setReportActionInspectionId(null)
     }
@@ -2051,7 +2019,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
   const handleDeleteInspection = async (inspection: EbInspectionSummary) => {
     if (reportActionInspectionId || deletingInspectionId) return
     if (inspection.reportLockedAt) {
-      setReportActionError('Låsta besiktningar kan inte raderas. Lås upp besiktningen först.')
+      showError('Låsta besiktningar kan inte raderas. Lås upp besiktningen först.')
       return
     }
 
@@ -2062,7 +2030,6 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
 
     try {
       setDeletingInspectionId(inspection.inspectionId)
-      setReportActionError(null)
 
       const response = await fetch(
         `/api/eb/projects/${currentProject.id}/inspections/${inspection.inspectionId}`,
@@ -2082,7 +2049,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
       )
       router.refresh()
     } catch (error) {
-      setReportActionError(error instanceof Error ? error.message : 'Kunde inte radera besiktningen.')
+      showError(error, 'Kunde inte radera besiktningen.')
     } finally {
       setDeletingInspectionId(null)
     }
@@ -2166,12 +2133,6 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                 <span className="text-xs font-medium text-gray-500">{currentProject.inspections.length} st</span>
               </div>
 
-              {reportActionError ? (
-                <div className="border-b border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                  {reportActionError}
-                </div>
-              ) : null}
-
               {currentProject.inspections.length === 0 ? (
                 <div className="px-4 py-10 text-center text-sm text-gray-600">Ingen besiktning skapad.</div>
               ) : (
@@ -2214,7 +2175,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                                 </span>
                                 <span
                                   className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getPdfStatusClassName(inspection)}`}
-                                  title={inspection.reportPdfError ?? undefined}
+                                  title={inspection.reportPdfStatus === 'failed' ? 'Den sparade PDF-filen kunde inte skapas.' : undefined}
                                 >
                                   {getPdfStatusLabel(inspection)}
                                 </span>
@@ -2230,6 +2191,11 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                                   Kallelse: {inspection.invitationSentAt ? formatDate(inspection.invitationSentAt) : 'Ej skickad'}
                                 </span>
                               </div>
+                              {inspection.reportPdfStatus === 'failed' ? (
+                                <p className="mt-2 text-xs font-medium text-rose-700">
+                                  Den sparade PDF-filen kunde inte skapas.
+                                </p>
+                              ) : null}
                             </div>
                           </div>
 

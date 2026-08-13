@@ -52,7 +52,7 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'EB_NOTE_NOT_FOUND') return jsonError('Noteringen hittades inte.', 404)
   if (message === 'EB_DISCIPLINE_REQUIRED') return jsonError('Välj fack innan noteringen sparas.', 400)
   if (message === 'EB_NOTE_TEXT_REQUIRED') return jsonError('Skriv en noteringstext.', 400)
-  return jsonError(message || fallback, 500)
+  return jsonError(fallback, 500)
 }
 
 export async function PATCH(

@@ -120,7 +120,7 @@ function mapError(error: unknown, fallback: string) {
     return jsonError('EB kräver egen modulbehörighet.', 403)
   }
   if (message === 'EB_PROJECT_NOT_FOUND') return jsonError('Entreprenaden hittades inte.', 404)
-  return jsonError(message || fallback, 500)
+  return jsonError(fallback, 500)
 }
 
 async function findDuplicateProjectAttachment(input: {

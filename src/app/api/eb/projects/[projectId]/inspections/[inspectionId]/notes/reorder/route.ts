@@ -32,7 +32,7 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'EB_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'EB_NOTE_ORDER_EMPTY') return jsonError('Ingen noteringsordning skickades.', 400)
   if (message === 'EB_NOTE_ORDER_INVALID') return jsonError('Noteringsordningen stämmer inte med besiktningen.', 400)
-  return jsonError(message || fallback, 500)
+  return jsonError(fallback, 500)
 }
 
 export async function PATCH(

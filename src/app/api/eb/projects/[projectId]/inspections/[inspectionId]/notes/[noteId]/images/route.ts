@@ -154,7 +154,7 @@ async function loadNextImageSortOrder(
     .limit(1)
 
   if (currentImagesError) {
-    throw new Error(currentImagesError.message ?? 'Kunde inte lÃ¤sa befintliga bilder.')
+    throw new Error(currentImagesError.message ?? 'Kunde inte läsa befintliga bilder.')
   }
 
   const maxSort = Array.isArray(currentImages)
@@ -182,7 +182,7 @@ function mapError(error: unknown, fallback: string) {
   }
   if (message === 'EB_NOTE_NOT_FOUND') return jsonError('Noteringen hittades inte.', 404)
   if (message === 'EB_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
-  return jsonError(message || fallback, 500)
+  return jsonError(fallback, 500)
 }
 
 export async function POST(
@@ -287,7 +287,7 @@ export async function POST(
         label: null,
         sort_order: sortOrder,
       })
-      .select('id,inspection_id,eb_note_id,file_path,thumbnail_file_path,label,sort_order,created_at')
+      .select('id,inspection_id,eb_note_id,source_attachment_id,file_path,thumbnail_file_path,label,sort_order,created_at')
       .single()
 
     if (insertError && isMissingColumnError(insertError)) {
@@ -668,7 +668,7 @@ export async function PATCH(
 
     const { data: imageRow, error: imageError } = await admin
       .from('inspection_images')
-      .select('id,inspection_id,eb_note_id,file_path,thumbnail_file_path,label,sort_order,created_at')
+      .select('id,inspection_id,eb_note_id,source_attachment_id,file_path,thumbnail_file_path,label,sort_order,created_at')
       .eq('id', imageId)
       .eq('inspection_id', inspectionId)
       .like('file_path', `${inspectionId}/eb-notes/%`)
@@ -685,7 +685,7 @@ export async function PATCH(
       .update({ eb_note_id: nextNoteId })
       .eq('id', imageId)
       .eq('inspection_id', inspectionId)
-      .select('id,inspection_id,eb_note_id,file_path,thumbnail_file_path,label,sort_order,created_at')
+      .select('id,inspection_id,eb_note_id,source_attachment_id,file_path,thumbnail_file_path,label,sort_order,created_at')
       .single()
 
     if (updateError || !updatedImage) {

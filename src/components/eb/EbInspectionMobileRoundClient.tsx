@@ -17,6 +17,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
+import { useEbToast } from '@/components/eb/EbToastProvider'
 import type { EbInspectionRound, EbNote, EbNoteImage, EbProjectAttachment } from '@/lib/eb/server'
 
 type EbInspectionMobileRoundClientProps = {
@@ -371,6 +372,7 @@ export default function EbInspectionMobileRoundClient({
   initialRound,
   initialDisciplineId,
 }: EbInspectionMobileRoundClientProps) {
+  const { showError } = useEbToast()
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const galleryInputRef = useRef<HTMLInputElement | null>(null)
   const desktopGalleryInputRef = useRef<HTMLInputElement | null>(null)
@@ -394,7 +396,6 @@ export default function EbInspectionMobileRoundClient({
   const [imageUploadStatus, setImageUploadStatus] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const isLocked = Boolean(round.inspection.reportLockedAt)
   const lockedMessage = 'Utlåtandet är låst och kan inte ändras.'
 
@@ -501,7 +502,6 @@ export default function EbInspectionMobileRoundClient({
       setNoteSheetOpen(false)
       setEditingNote(null)
       setForm(createInitialForm(round))
-      setError(null)
     }
 
     window.addEventListener('popstate', handlePopState)
@@ -536,16 +536,15 @@ export default function EbInspectionMobileRoundClient({
 
   const openNewNote = () => {
     if (isLocked) {
-      setError(lockedMessage)
+      showError(lockedMessage)
       return
     }
     if (!activeDisciplineId) {
-      setError('Fack saknas för rundan.')
+      showError('Fack saknas för rundan.')
       return
     }
     setEditingNote(null)
     setForm(createInitialForm(round))
-    setError(null)
     openNoteSheet()
   }
 
@@ -553,7 +552,6 @@ export default function EbInspectionMobileRoundClient({
     setEditingNote(note)
     setActiveDisciplineId(note.disciplineId)
     setForm(formFromNote(note))
-    setError(null)
     openNoteSheet()
   }
 
@@ -566,7 +564,6 @@ export default function EbInspectionMobileRoundClient({
     setNoteSheetOpen(false)
     setEditingNote(null)
     setForm(createInitialForm(round))
-    setError(null)
   }
 
   const upsertNoteInState = (note: EbNote) => {
@@ -641,7 +638,7 @@ export default function EbInspectionMobileRoundClient({
 
   const uploadImage = async (file: File) => {
     if (isLocked) {
-      setError(lockedMessage)
+      showError(lockedMessage)
       return
     }
     if (uploadingImage) return
@@ -649,7 +646,6 @@ export default function EbInspectionMobileRoundClient({
     try {
       setUploadingImage(true)
       setImageUploadStatus(editingNote ? 'Optimerar bild...' : 'Sparar notering...')
-      setError(null)
       const note = editingNote ?? (await saveCurrentNote())
       setSaving(false)
       setImageUploadStatus('Optimerar bild...')
@@ -670,7 +666,7 @@ export default function EbInspectionMobileRoundClient({
       }
       upsertImageInState(payload.image)
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp bild.')
+      showError(uploadError, 'Kunde inte ladda upp bild.')
     } finally {
       setSaving(false)
       setUploadingImage(false)
@@ -688,7 +684,7 @@ export default function EbInspectionMobileRoundClient({
   const uploadSelectedImages = async (files: File[]) => {
     const imageFiles = files.filter(isImageFile)
     if (imageFiles.length === 0) {
-      setError('Välj en eller flera bildfiler.')
+      showError('Välj en eller flera bildfiler.')
       return
     }
     for (const file of imageFiles) {
@@ -731,7 +727,7 @@ export default function EbInspectionMobileRoundClient({
 
   const copyProjectAttachmentToNote = async (attachment: EbProjectAttachment) => {
     if (isLocked) {
-      setError(lockedMessage)
+      showError(lockedMessage)
       return
     }
     if (copyingProjectAttachmentId || uploadingImage) return
@@ -740,7 +736,6 @@ export default function EbInspectionMobileRoundClient({
 
     try {
       setCopyingProjectAttachmentId(attachment.id)
-      setError(null)
       const note = editingNote ?? (await saveCurrentNote())
       const response = await fetch(`${notesBasePath}/${note.id}/images`, {
         method: 'PATCH',
@@ -753,10 +748,10 @@ export default function EbInspectionMobileRoundClient({
       }
       upsertImageInState(payload.image)
       if (payload.image.noteId && payload.image.noteId !== note.id) {
-        setError('Bilden är redan kopplad till en annan notering.')
+        showError('Bilden är redan kopplad till en annan notering.')
       }
     } catch (copyError) {
-      setError(copyError instanceof Error ? copyError.message : 'Kunde inte lägga till entreprenadbilden.')
+      showError(copyError, 'Kunde inte lägga till entreprenadbilden.')
     } finally {
       setSaving(false)
       setCopyingProjectAttachmentId(null)
@@ -766,7 +761,7 @@ export default function EbInspectionMobileRoundClient({
 
   const deleteImage = async (image: EbNoteImage) => {
     if (isLocked) {
-      setError(lockedMessage)
+      showError(lockedMessage)
       return
     }
     if (!editingNote || deletingImageId) return
@@ -775,7 +770,6 @@ export default function EbInspectionMobileRoundClient({
 
     try {
       setDeletingImageId(image.id)
-      setError(null)
       const response = await fetch(`${notesBasePath}/${editingNote.id}/images`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -790,7 +784,7 @@ export default function EbInspectionMobileRoundClient({
         images: current.images.filter((item) => item.id !== image.id),
       }))
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera bilden.')
+      showError(deleteError, 'Kunde inte radera bilden.')
     } finally {
       setDeletingImageId(null)
     }
@@ -801,7 +795,6 @@ export default function EbInspectionMobileRoundClient({
 
     try {
       setRefreshing(true)
-      setError(null)
       const response = await fetch(roundPath)
       const payload = (await response.json().catch(() => ({}))) as RoundResponse
       if (!response.ok || !payload.round) {
@@ -809,7 +802,7 @@ export default function EbInspectionMobileRoundClient({
       }
       setRound(payload.round)
     } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : 'Kunde inte uppdatera rundan.')
+      showError(refreshError, 'Kunde inte uppdatera rundan.')
     } finally {
       setRefreshing(false)
     }
@@ -818,17 +811,16 @@ export default function EbInspectionMobileRoundClient({
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (isLocked) {
-      setError(lockedMessage)
+      showError(lockedMessage)
       return
     }
     if (saving || !activeDisciplineId) return
 
     try {
-      setError(null)
       await saveCurrentNote()
       closeNoteSheet()
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Kunde inte spara noteringen.')
+      showError(submitError, 'Kunde inte spara noteringen.')
     } finally {
       setSaving(false)
     }
@@ -836,19 +828,18 @@ export default function EbInspectionMobileRoundClient({
 
   const handleSaveAndNew = async () => {
     if (isLocked) {
-      setError(lockedMessage)
+      showError(lockedMessage)
       return
     }
     if (saving || !activeDisciplineId) return
 
     try {
-      setError(null)
       await saveCurrentNote()
       setEditingNote(null)
       setForm(createInitialForm(round))
       setNoteSheetOpen(true)
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Kunde inte spara noteringen.')
+      showError(submitError, 'Kunde inte spara noteringen.')
     } finally {
       setSaving(false)
     }
@@ -856,7 +847,7 @@ export default function EbInspectionMobileRoundClient({
 
   const handleDelete = async (note: EbNote) => {
     if (isLocked) {
-      setError(lockedMessage)
+      showError(lockedMessage)
       return
     }
     if (deletingId) return
@@ -865,7 +856,6 @@ export default function EbInspectionMobileRoundClient({
 
     try {
       setDeletingId(note.id)
-      setError(null)
       const response = await fetch(`${notesBasePath}/${note.id}`, { method: 'DELETE' })
       const payload = (await response.json().catch(() => ({}))) as DeleteResponse
       if (!response.ok || !payload.ok) {
@@ -882,7 +872,7 @@ export default function EbInspectionMobileRoundClient({
         closeNoteSheet()
       }
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera noteringen.')
+      showError(deleteError, 'Kunde inte radera noteringen.')
     } finally {
       setDeletingId(null)
     }
@@ -1016,12 +1006,6 @@ export default function EbInspectionMobileRoundClient({
               <Settings size={16} />
             </Link>
           </section>
-
-          {error ? (
-            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {error}
-            </div>
-          ) : null}
 
           <section className="mt-3 space-y-3">
             {filteredNotes.length === 0 ? (
@@ -1518,11 +1502,6 @@ export default function EbInspectionMobileRoundClient({
                   </section>
                   ) : null}
 
-                  {error ? (
-                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                      {error}
-                    </div>
-                  ) : null}
                 </div>
 
                 <div className="border-t border-emerald-100 bg-white p-2">
