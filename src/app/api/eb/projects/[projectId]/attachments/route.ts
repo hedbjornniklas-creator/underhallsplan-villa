@@ -32,6 +32,10 @@ function toText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function normalizeDuplicateFileName(value: string | null | undefined) {
+  return String(value ?? '').trim().toLocaleLowerCase('sv-SE')
+}
+
 function toAttachmentType(value: unknown, file: File): EbAttachmentType {
   const normalized = toText(value)
   if (normalized === 'image' || normalized === 'document') return normalized
@@ -119,6 +123,35 @@ function mapError(error: unknown, fallback: string) {
   return jsonError(message || fallback, 500)
 }
 
+async function findDuplicateProjectAttachment(input: {
+  admin: ReturnType<typeof createSupabaseAdminClient>
+  orgId: string
+  projectId: string
+  attachmentType: EbAttachmentType
+  fileName: string
+}) {
+  const normalizedFileName = normalizeDuplicateFileName(input.fileName)
+  if (!normalizedFileName) return null
+
+  const { data, error } = await input.admin
+    .from('eb_project_attachments')
+    .select('id,file_name')
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('attachment_type', input.attachmentType)
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte kontrollera om filen redan finns.')
+  }
+
+  return (
+    (data ?? []).find(
+      (attachment: { id: string; file_name: string | null }) =>
+        normalizeDuplicateFileName(attachment.file_name) === normalizedFileName
+    ) ?? null
+  )
+}
+
 export async function GET(
   _request: Request,
   context: { params: Promise<{ projectId: string }> }
@@ -162,6 +195,18 @@ export async function POST(
     if (validationError) return jsonError(validationError, 400)
 
     const admin = createSupabaseAdminClient()
+    const duplicateAttachment = await findDuplicateProjectAttachment({
+      admin,
+      orgId: org.orgId,
+      projectId,
+      attachmentType,
+      fileName: fileEntry.name,
+    })
+    if (duplicateAttachment) {
+      const attachmentLabel = attachmentType === 'image' ? 'bild' : 'handling'
+      return jsonError(`En ${attachmentLabel} med samma filnamn finns redan i entreprenaden.`, 409)
+    }
+
     const fileName = safeStoredFileName(fileEntry, extension)
     const filePath = `${projectId}/${attachmentType}/${fileName}`
     const thumbnailPath = attachmentType === 'image' && thumbnailEntry instanceof File

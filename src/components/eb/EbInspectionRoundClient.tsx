@@ -1212,6 +1212,7 @@ export default function EbInspectionRoundClient({
   const [orderSaving, setOrderSaving] = useState(false)
   const [movingImageId, setMovingImageId] = useState<string | null>(null)
   const [copyingProjectAttachmentId, setCopyingProjectAttachmentId] = useState<string | null>(null)
+  const [deletingProjectAttachmentId, setDeletingProjectAttachmentId] = useState<string | null>(null)
   const [uploadingProjectImages, setUploadingProjectImages] = useState(false)
   const [imageBankDragOver, setImageBankDragOver] = useState(false)
   const [showLinkedImages, setShowLinkedImages] = useState(false)
@@ -2604,6 +2605,39 @@ export default function EbInspectionRoundClient({
     }
   }
 
+  const deleteProjectAttachmentFromBank = async (attachment: EbProjectAttachment) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
+    if (deletingProjectAttachmentId || copyingProjectAttachmentId || uploadingProjectImages) return
+
+    const confirmed = window.confirm(
+      'Radera bilden från bildbanken? Redan kopplade bilder i noteringar påverkas inte.'
+    )
+    if (!confirmed) return
+
+    try {
+      setDeletingProjectAttachmentId(attachment.id)
+      setError(null)
+      const response = await fetch(`/api/eb/projects/${round.project.id}/attachments/${attachment.id}`, {
+        method: 'DELETE',
+      })
+      const payload = (await response.json().catch(() => ({}))) as ProjectAttachmentsResponse
+      if (!response.ok || !payload.attachments) {
+        throw new Error(payload.error ?? 'Kunde inte radera bilden från bildbanken.')
+      }
+      setRound((current) => ({
+        ...current,
+        projectAttachments: payload.attachments ?? current.projectAttachments,
+      }))
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera bilden från bildbanken.')
+    } finally {
+      setDeletingProjectAttachmentId(null)
+    }
+  }
+
   const detachImage = async (image: EbNoteImage) => {
     if (isLocked) {
       setError(lockedMessage)
@@ -3732,6 +3766,24 @@ export default function EbInspectionRoundClient({
                             disabled={isLocked || Boolean(copyingProjectAttachmentId) || isLinked}
                             className="relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-400 disabled:cursor-wait disabled:opacity-60"
                           >
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                void deleteProjectAttachmentFromBank(attachment)
+                              }}
+                              disabled={isLocked || Boolean(deletingProjectAttachmentId)}
+                              className="absolute right-1 top-1 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                              aria-label="Radera från bildbank"
+                              title="Radera från bildbank"
+                            >
+                              {deletingProjectAttachmentId === attachment.id ? (
+                                <Loader2 size={13} className="animate-spin" />
+                              ) : (
+                                <Trash2 size={13} />
+                              )}
+                            </button>
                             <ImageBankThumbnail src={imageUrl} alt={title} />
                             {isCopying ? (
                               <div className="absolute inset-0 flex items-center justify-center bg-white/75">
@@ -4235,6 +4287,24 @@ export default function EbInspectionRoundClient({
                                   disabled={isLocked || Boolean(copyingProjectAttachmentId) || isLinked}
                                   className="relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-300 disabled:cursor-wait disabled:opacity-60"
                                 >
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.preventDefault()
+                                      event.stopPropagation()
+                                      void deleteProjectAttachmentFromBank(attachment)
+                                    }}
+                                    disabled={isLocked || Boolean(deletingProjectAttachmentId)}
+                                    className="absolute right-1 top-1 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                                    aria-label="Radera från bildbank"
+                                    title="Radera från bildbank"
+                                  >
+                                    {deletingProjectAttachmentId === attachment.id ? (
+                                      <Loader2 size={13} className="animate-spin" />
+                                    ) : (
+                                      <Trash2 size={13} />
+                                    )}
+                                  </button>
                                   <ImageBankThumbnail src={imageUrl} alt={title} />
                                   {isCopying ? (
                                     <div className="absolute inset-0 flex items-center justify-center bg-white/75">
