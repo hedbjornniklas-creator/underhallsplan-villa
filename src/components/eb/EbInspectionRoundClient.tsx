@@ -4558,19 +4558,21 @@ export default function EbInspectionRoundClient({
                     onClick={() => void handleSaveAndNew()}
                     disabled={isLocked || saving || round.disciplines.length === 0}
                     className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                    aria-label="Spara och öppna ny notering"
-                    title="Spara och öppna ny notering"
+                    aria-label="Spara och skapa ny notering"
+                    title="Spara och skapa ny notering"
                   >
                     {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-                    {saving ? 'Sparar...' : 'Spara och öppna ny'}
+                    {saving ? 'Sparar...' : 'Spara och skapa ny'}
                   </button>
                   <button
                     type="submit"
                     disabled={isLocked || saving || round.disciplines.length === 0}
                     className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                    aria-label="Spara och stäng noteringen"
+                    title="Spara och stäng noteringen"
                   >
-                    {saving ? <Loader2 size={16} className="animate-spin" /> : editingNote ? <X size={16} /> : <Plus size={16} />}
-                    {saving ? 'Sparar...' : editingNote ? 'Klar' : 'Skapa notering'}
+                    {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                    {saving ? 'Sparar...' : 'Spara och stäng'}
                   </button>
                 </div>
               </form>
