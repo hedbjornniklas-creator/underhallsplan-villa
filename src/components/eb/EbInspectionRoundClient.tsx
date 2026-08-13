@@ -614,6 +614,43 @@ function projectAttachmentPreviewSrc(attachment: EbProjectAttachment) {
   return attachment.signedThumbnailUrl ?? proxiedImageSrc(attachment.signedUrl) ?? attachment.signedUrl
 }
 
+function dragFileName(value: string | null | undefined, fallback: string) {
+  const pathName = value?.split(/[\\/]/).pop()?.split('?')[0]?.trim()
+  const decodedName = (() => {
+    try {
+      return decodeURIComponent(pathName || '')
+    } catch {
+      return pathName || ''
+    }
+  })()
+  return (decodedName || fallback).replace(/[\\/:*?"<>|]/g, '-').slice(0, 180)
+}
+
+function setImageDragData(
+  dataTransfer: DataTransfer,
+  options: {
+    internalType: string
+    internalId: string
+    imageUrl: string | null | undefined
+    fileName: string
+    contentType?: string | null
+    effectAllowed: 'copy' | 'copyMove'
+  }
+) {
+  dataTransfer.setData(options.internalType, options.internalId)
+
+  const sourceUrl = options.imageUrl?.trim()
+  if (sourceUrl) {
+    const absoluteUrl = new URL(sourceUrl, window.location.href).toString()
+    const contentType = options.contentType?.trim() || 'image/jpeg'
+    dataTransfer.setData('text/uri-list', absoluteUrl)
+    dataTransfer.setData('text/plain', absoluteUrl)
+    dataTransfer.setData('DownloadURL', `${contentType}:${options.fileName}:${absoluteUrl}`)
+  }
+
+  dataTransfer.effectAllowed = options.effectAllowed
+}
+
 function ImageBankThumbnail({
   src,
   alt,
@@ -626,7 +663,6 @@ function ImageBankThumbnail({
       <img
         src={src}
         alt={alt}
-        draggable={false}
         loading="lazy"
         decoding="async"
         className="aspect-square w-full object-cover"
@@ -675,8 +711,14 @@ function ProjectAttachmentImageCard({
         type="button"
         draggable={canDrag}
         onDragStart={(event) => {
-          event.dataTransfer.setData(EB_PROJECT_ATTACHMENT_DRAG_TYPE, attachment.id)
-          event.dataTransfer.effectAllowed = 'copy'
+          setImageDragData(event.dataTransfer, {
+            internalType: EB_PROJECT_ATTACHMENT_DRAG_TYPE,
+            internalId: attachment.id,
+            imageUrl: attachment.signedUrl,
+            fileName: dragFileName(attachment.fileName ?? attachment.filePath, 'entreprenadbild.jpg'),
+            contentType: attachment.contentType,
+            effectAllowed: 'copy',
+          })
         }}
         onDragEnd={onDragEnd}
         onClick={onPreview}
@@ -748,8 +790,13 @@ function InspectionImageBankCard({
         type="button"
         draggable={!isLocked && !isMoving}
         onDragStart={(event) => {
-          event.dataTransfer.setData(EB_INSPECTION_IMAGE_DRAG_TYPE, image.id)
-          event.dataTransfer.effectAllowed = 'move'
+          setImageDragData(event.dataTransfer, {
+            internalType: EB_INSPECTION_IMAGE_DRAG_TYPE,
+            internalId: image.id,
+            imageUrl: image.publicUrl,
+            fileName: dragFileName(image.filePath, 'besiktningsbild.jpg'),
+            effectAllowed: 'copyMove',
+          })
         }}
         onDragEnd={onDragEnd}
         onClick={onPreview}
