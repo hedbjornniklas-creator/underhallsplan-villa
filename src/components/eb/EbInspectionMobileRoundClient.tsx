@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from 'next/link'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from 'react'
 import {
   ArrowLeft,
   Camera,
@@ -145,6 +145,10 @@ function sortImages(images: EbNoteImage[]) {
     }
     return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
   })
+}
+
+function isImageFile(file: File) {
+  return file.type.startsWith('image/') || /\.(avif|gif|heic|heif|jpe?g|png|webp)$/i.test(file.name)
 }
 
 function filterSuggestions(value: string, candidates: string[]) {
@@ -350,6 +354,7 @@ export default function EbInspectionMobileRoundClient({
 }: EbInspectionMobileRoundClientProps) {
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const galleryInputRef = useRef<HTMLInputElement | null>(null)
+  const desktopGalleryInputRef = useRef<HTMLInputElement | null>(null)
   const noteHistoryOpenRef = useRef(false)
   const initialDiscipline = initialRound.disciplines.find(
     (discipline) => discipline.id === initialDisciplineId
@@ -364,6 +369,7 @@ export default function EbInspectionMobileRoundClient({
   const [saving, setSaving] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [imageDragOver, setImageDragOver] = useState(false)
   const [imageUploadStatus, setImageUploadStatus] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
@@ -642,6 +648,50 @@ export default function EbInspectionMobileRoundClient({
     event.currentTarget.value = ''
     if (!file) return
     await uploadImage(file)
+  }
+
+  const uploadSelectedImages = async (files: File[]) => {
+    const imageFiles = files.filter(isImageFile)
+    if (imageFiles.length === 0) {
+      setError('Välj en eller flera bildfiler.')
+      return
+    }
+    for (const file of imageFiles) {
+      await uploadImage(file)
+    }
+  }
+
+  const handleDesktopImagesSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.currentTarget.files ?? [])
+    event.currentTarget.value = ''
+    await uploadSelectedImages(files)
+  }
+
+  const canDropImages = (event: DragEvent<HTMLElement>) =>
+    !isLocked &&
+    !uploadingImage &&
+    Array.from(event.dataTransfer.types).includes('Files') &&
+    Array.from(event.dataTransfer.items).some((item) => item.kind === 'file')
+
+  const handleImageDragOver = (event: DragEvent<HTMLElement>) => {
+    if (!canDropImages(event)) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = 'copy'
+    setImageDragOver(true)
+  }
+
+  const handleImageDragLeave = (event: DragEvent<HTMLElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+    setImageDragOver(false)
+  }
+
+  const handleImageDrop = async (event: DragEvent<HTMLElement>) => {
+    if (!canDropImages(event)) return
+    event.preventDefault()
+    event.stopPropagation()
+    setImageDragOver(false)
+    await uploadSelectedImages(Array.from(event.dataTransfer.files))
   }
 
   const deleteImage = async (image: EbNoteImage) => {
@@ -1117,7 +1167,16 @@ export default function EbInspectionMobileRoundClient({
                     </div>
                   ) : null}
 
-                  <section className="rounded-md border border-emerald-100 bg-emerald-50/25 p-2.5">
+                  <section
+                    onDragOver={handleImageDragOver}
+                    onDragLeave={handleImageDragLeave}
+                    onDrop={(event) => void handleImageDrop(event)}
+                    className={`rounded-md border p-2.5 transition ${
+                      imageDragOver
+                        ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100'
+                        : 'border-emerald-100 bg-emerald-50/25'
+                    }`}
+                  >
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
@@ -1127,7 +1186,7 @@ export default function EbInspectionMobileRoundClient({
                             {editingNote ? (imagesByNoteId.get(editingNote.id)?.length ?? 0) : 0} st
                           </p>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 md:hidden">
                           <button
                             type="button"
                             onClick={() => cameraInputRef.current?.click()}
@@ -1149,6 +1208,32 @@ export default function EbInspectionMobileRoundClient({
                             <ImageIcon size={18} />
                           </button>
                         </div>
+                        <div className="hidden items-center gap-2 md:flex">
+                          <button
+                            type="button"
+                            onClick={() => desktopGalleryInputRef.current?.click()}
+                            disabled={isLocked || uploadingImage}
+                            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {uploadingImage ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
+                            Välj bilder
+                          </button>
+                        </div>
+                      </div>
+
+                      <div
+                        className={`mt-3 hidden rounded-md border border-dashed px-4 py-6 text-center transition md:block ${
+                          imageDragOver
+                            ? 'border-emerald-500 bg-white text-emerald-900'
+                            : 'border-emerald-200 bg-white/75 text-gray-600'
+                        }`}
+                      >
+                        <p className="text-sm font-semibold">
+                          {imageDragOver ? 'Släpp bilder här' : 'Dra och släpp bilder här'}
+                        </p>
+                        <p className="mt-1 text-xs">
+                          Bilden kopplas till noteringen. Om noteringen är ny sparas den först.
+                        </p>
                       </div>
 
                       <input
@@ -1164,6 +1249,14 @@ export default function EbInspectionMobileRoundClient({
                         type="file"
                         accept="image/*"
                         onChange={(event) => void handleImageSelected(event)}
+                        className="hidden"
+                      />
+                      <input
+                        ref={desktopGalleryInputRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(event) => void handleDesktopImagesSelected(event)}
                         className="hidden"
                       />
                       {uploadingImage ? (
