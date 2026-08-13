@@ -7,12 +7,19 @@ import type { EbPartyKey } from '@/lib/eb/server'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
 }
 
 function toText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function toUuid(value: unknown) {
+  const normalized = toText(value).toLowerCase()
+  return UUID_PATTERN.test(normalized) ? normalized : null
 }
 
 function toPartyKey(value: unknown): EbPartyKey | null {
@@ -49,6 +56,7 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'EB_PROJECT_NOT_FOUND') return jsonError('Entreprenaden hittades inte.', 404)
   if (message === 'EB_INSPECTION_NOT_FOUND') return jsonError('Besiktningen hittades inte.', 404)
   if (message === 'EB_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
+  if (message === 'EB_NOTE_ID_CONFLICT') return jsonError('Noteringens id används redan.', 409)
   if (message === 'EB_DISCIPLINE_REQUIRED') return jsonError('Välj fack innan noteringen sparas.', 400)
   if (message === 'EB_NOTE_TEXT_REQUIRED') return jsonError('Skriv en noteringstext.', 400)
   return jsonError(fallback, 500)
@@ -67,6 +75,7 @@ export async function POST(
       requestedByUserId: org.userId,
       projectId,
       inspectionId,
+      noteId: toUuid(body.clientNoteId),
       disciplineId: toText(body.disciplineId) || null,
       markerKey: toText(body.markerKey) || null,
       statusKey: toText(body.statusKey) || null,

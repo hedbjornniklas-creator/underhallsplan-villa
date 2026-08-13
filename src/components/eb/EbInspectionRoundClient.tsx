@@ -29,14 +29,18 @@ import {
   Loader2,
   Pencil,
   Plus,
+  RefreshCw,
   Save,
   Smartphone,
   Trash2,
   X,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
+import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import { useEbToast } from '@/components/eb/EbToastProvider'
 import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
+import { useEbNoteImageUploadQueue } from '@/hooks/useEbNoteImageUploadQueue'
+import type { EbNoteImageUploadItem } from '@/lib/eb/noteImageUploadQueue'
 import type {
   EbInspectionDocument,
   EbInspectionCheckpoint,
@@ -119,12 +123,26 @@ type NoteAutosavePayload = {
   form: NoteFormState
 }
 
+type InspectionAutosavePayload = { form: InspectionDetailsFormState }
+type InspectionDebouncedTextField =
+  | 'approvalNote'
+  | 'inspectionCostDistribution'
+  | 'defectNumberingExplanation'
+type ParticipantsAutosavePayload = {
+  subject: string
+  body: string
+  participants: EditableParticipant[]
+}
+type DocumentsAutosavePayload = { documents: EbInspectionDocument[] }
+type CheckpointsAutosavePayload = { checkpoints: EbInspectionCheckpoint[] }
+type ReportDraftAutosavePayload = { sections: EbReportDraftSection[] }
+
 type ReviewAutosavePayload =
-  | { kind: 'inspection'; form: InspectionDetailsFormState }
-  | { kind: 'participants'; subject: string; body: string; participants: EditableParticipant[] }
-  | { kind: 'documents'; documents: EbInspectionDocument[] }
-  | { kind: 'checkpoints'; checkpoints: EbInspectionCheckpoint[] }
-  | { kind: 'reportDraft'; sections: EbReportDraftSection[] }
+  | ({ kind: 'inspection' } & InspectionAutosavePayload)
+  | ({ kind: 'participants' } & ParticipantsAutosavePayload)
+  | ({ kind: 'documents' } & DocumentsAutosavePayload)
+  | ({ kind: 'checkpoints' } & CheckpointsAutosavePayload)
+  | ({ kind: 'reportDraft' } & ReportDraftAutosavePayload)
 
 type ReviewAutosaveResult =
   | { kind: 'inspection'; payload: UpdateInspectionResponse }
@@ -531,8 +549,17 @@ function checkpointsFingerprint(checkpoints: EbInspectionCheckpoint[]) {
   )
 }
 
-function reportSectionsFingerprint(sections: EbReportDraftSection[]) {
-  return JSON.stringify(sections)
+function mergeReportDraftAutosavePayload(
+  previous: ReportDraftAutosavePayload,
+  next: ReportDraftAutosavePayload
+) {
+  const sectionsByKey = new Map(
+    previous.sections.map((section) => [section.key, section])
+  )
+  for (const section of next.sections) {
+    sectionsByKey.set(section.key, section)
+  }
+  return { sections: Array.from(sectionsByKey.values()) }
 }
 
 function participantsFingerprint(subject: string, body: string, participants: EditableParticipant[]) {
@@ -1370,13 +1397,21 @@ function InspectionDocumentsEditor({
 
 function ReportDraftSectionsEditor({
   sections,
-  onChange,
+  inspectionId,
+  disabled,
+  onSectionChange,
+  onSectionTextSave,
 }: {
   sections: EbReportDraftSection[]
-  onChange: (sections: EbReportDraftSection[]) => void
+  inspectionId: string
+  disabled: boolean
+  onSectionChange: (section: EbReportDraftSection) => void
+  onSectionTextSave: (sectionKey: string, text: string) => Promise<void>
 }) {
   const updateSection = (key: string, patch: Partial<EbReportDraftSection>) => {
-    onChange(sections.map((section) => (section.key === key ? { ...section, ...patch } : section)))
+    const section = sections.find((item) => item.key === key)
+    if (!section) return
+    onSectionChange({ ...section, ...patch })
   }
 
   if (sections.length === 0) {
@@ -1404,6 +1439,7 @@ function ReportDraftSectionsEditor({
                 <input
                   type="checkbox"
                   checked={section.isRelevant}
+                  disabled={disabled}
                   onChange={(event) =>
                     updateSection(section.key, {
                       isRelevant: event.target.checked,
@@ -1416,6 +1452,7 @@ function ReportDraftSectionsEditor({
               </label>
               <select
                 value={section.status}
+                disabled={disabled}
                 onChange={(event) =>
                   updateSection(section.key, { status: event.target.value as EbReportSectionStatus })
                 }
@@ -1429,14 +1466,83 @@ function ReportDraftSectionsEditor({
               </select>
             </div>
           </div>
-          <textarea
+          <DebouncedTextarea
             value={section.text}
-            onChange={(event) => updateSection(section.key, { text: event.target.value })}
+            draftKey={`eb:${inspectionId}:report-section:${section.key}`}
+            disabled={disabled}
+            onSave={(text) => onSectionTextSave(section.key, text)}
             rows={8}
             className={`${inputClassName()} mt-3 resize-y leading-6`}
           />
         </article>
       ))}
+    </div>
+  )
+}
+
+function QueuedImagePreview({
+  item,
+  previewUrl,
+  onRetry,
+  onDiscard,
+}: {
+  item: EbNoteImageUploadItem
+  previewUrl: string | null
+  onRetry: () => void
+  onDiscard: () => void
+}) {
+  const statusLabel =
+    item.status === 'uploading'
+      ? 'Laddar upp'
+      : item.status === 'failed'
+        ? 'Misslyckades'
+        : 'Väntar'
+
+  return (
+    <div className="relative overflow-hidden rounded-md border border-emerald-100 bg-emerald-50">
+      {previewUrl ? (
+        <img
+          src={previewUrl}
+          alt={item.sourceLabel ?? 'Bild som väntar på uppladdning'}
+          className="aspect-square w-full object-cover opacity-80"
+        />
+      ) : (
+        <div className="flex aspect-square w-full items-center justify-center text-emerald-700">
+          <ImageIcon size={24} />
+        </div>
+      )}
+      <span
+        className={`absolute inset-x-1 bottom-1 inline-flex min-h-7 items-center justify-center gap-1 rounded px-1.5 text-[11px] font-semibold text-white shadow-sm ${
+          item.status === 'failed' ? 'bg-rose-700' : 'bg-slate-950/75'
+        }`}
+      >
+        {item.status === 'uploading' ? <Loader2 size={12} className="animate-spin" /> : null}
+        {statusLabel}
+      </span>
+      {item.status !== 'uploading' ? (
+        <div className="absolute right-1 top-1 flex gap-1">
+          {item.status === 'failed' ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-emerald-800 shadow-sm"
+              aria-label="Försök ladda upp bilden igen"
+              title="Försök igen"
+            >
+              <RefreshCw size={14} />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onDiscard}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-rose-700 shadow-sm"
+            aria-label="Ta bort bilden från uppladdningskön"
+            title="Ta bort"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -1472,14 +1578,11 @@ export default function EbInspectionRoundClient({
   const [form, setForm] = useState<NoteFormState>(() => createInitialForm(initialRound))
   const [editingNote, setEditingNote] = useState<EbNote | null>(null)
   const [saving, setSaving] = useState(false)
-  const [uploadingImage, setUploadingImage] = useState(false)
-  const [uploadingImageNoteId, setUploadingImageNoteId] = useState<string | null>(null)
   const [uploadingCheckpointImageId, setUploadingCheckpointImageId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
   const [orderSaving, setOrderSaving] = useState(false)
   const [movingImageId, setMovingImageId] = useState<string | null>(null)
-  const [copyingProjectAttachmentId, setCopyingProjectAttachmentId] = useState<string | null>(null)
   const [deletingProjectAttachmentId, setDeletingProjectAttachmentId] = useState<string | null>(null)
   const [uploadingProjectImages, setUploadingProjectImages] = useState(false)
   const [imageBankDragOver, setImageBankDragOver] = useState(false)
@@ -1491,6 +1594,7 @@ export default function EbInspectionRoundClient({
   const [inspectionForm, setInspectionForm] = useState<InspectionDetailsFormState>(() =>
     buildInspectionDetailsForm(initialRound.inspection)
   )
+  const inspectionFormRef = useRef(inspectionForm)
   const [documents, setDocuments] = useState<EbInspectionDocument[]>(initialRound.inspectionDocuments)
   const [checkpoints, setCheckpoints] = useState<EbInspectionCheckpoint[]>(initialRound.checkpoints)
   const [participants, setParticipants] = useState<EditableParticipant[]>(() =>
@@ -1503,6 +1607,7 @@ export default function EbInspectionRoundClient({
   const [reportSections, setReportSections] = useState<EbReportDraftSection[]>(
     initialRound.reportDraft.sections
   )
+  const reportSectionsRef = useRef(reportSections)
   const [inspectionSaving, setInspectionSaving] = useState(false)
   const [participantsSaving, setParticipantsSaving] = useState(false)
   const [documentsSaving, setDocumentsSaving] = useState(false)
@@ -1513,18 +1618,44 @@ export default function EbInspectionRoundClient({
   const participantsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const documentsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const checkpointsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const reportSectionsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingProjectAttachmentCopiesRef = useRef(new Set<string>())
+  const noteSavePromiseRef = useRef<Promise<EbNote | null> | null>(null)
+  const checkpointNotePromisesRef = useRef(new Map<string, Promise<EbNote>>())
   const lastAutosavedInspectionRef = useRef(inspectionFormFingerprint(inspectionForm))
   const lastAutosavedParticipantsRef = useRef(
     participantsFingerprint(invitationSubject, invitationBody, participants)
   )
   const lastAutosavedDocumentsRef = useRef(documentsFingerprint(documents))
   const lastAutosavedCheckpointsRef = useRef(checkpointsFingerprint(checkpoints))
-  const lastAutosavedReportSectionsRef = useRef(reportSectionsFingerprint(reportSections))
   const isLocked = Boolean(round.inspection.reportLockedAt)
   const isDrainageProject = round.project.projectTemplateKey === 'drainage_foundation'
   const lockedMessage = 'Utlåtandet är låst och kan inte ändras.'
+
+  const handleQueuedImageUploaded = useCallback((image: EbNoteImage) => {
+    setRound((current) => ({
+      ...current,
+      images: sortImages([
+        ...current.images.filter((item) => item.id !== image.id),
+        {
+          ...image,
+          sourceAttachmentId:
+            image.sourceAttachmentId ??
+            current.images.find((item) => item.id === image.id)?.sourceAttachmentId ??
+            null,
+        },
+      ]),
+    }))
+  }, [])
+
+  const imageUploadQueue = useEbNoteImageUploadQueue({
+    projectId: round.project.id,
+    inspectionId: round.inspection.inspectionId,
+    enabled: Boolean(round.inspection.inspectionId),
+    locked: isLocked,
+    prepareFiles: prepareImageFilesForUpload,
+    onUploaded: handleQueuedImageUploaded,
+    onFailed: (message) => showError(message),
+  })
 
   const activeDiscipline = round.disciplines.find((discipline) => discipline.id === activeDisciplineId) ?? null
   const filteredNotes = useMemo(
@@ -1557,6 +1688,13 @@ export default function EbInspectionRoundClient({
     }
     return map
   }, [round.images])
+  const queuedImagesByNoteId = useMemo(() => {
+    const map = new Map<string, EbNoteImageUploadItem[]>()
+    for (const item of imageUploadQueue.items) {
+      map.set(item.noteId, [...(map.get(item.noteId) ?? []), item])
+    }
+    return map
+  }, [imageUploadQueue.items])
   const allImages = useMemo(() => sortImages(round.images), [round.images])
   const projectImageAttachments = useMemo(
     () =>
@@ -1574,9 +1712,23 @@ export default function EbInspectionRoundClient({
     }
     return ids
   }, [round.images])
+  const queuedProjectAttachmentIds = useMemo(
+    () =>
+      new Set(
+        imageUploadQueue.items
+          .map((item) => item.sourceAttachmentId)
+          .filter((id): id is string => Boolean(id))
+      ),
+    [imageUploadQueue.items]
+  )
   const availableProjectImageAttachments = useMemo(
-    () => projectImageAttachments.filter((attachment) => !copiedProjectAttachmentIds.has(attachment.id)),
-    [copiedProjectAttachmentIds, projectImageAttachments]
+    () =>
+      projectImageAttachments.filter(
+        (attachment) =>
+          !copiedProjectAttachmentIds.has(attachment.id) &&
+          !queuedProjectAttachmentIds.has(attachment.id)
+      ),
+    [copiedProjectAttachmentIds, projectImageAttachments, queuedProjectAttachmentIds]
   )
   const checkpointGroups = useMemo(() => groupedCheckpoints(checkpoints), [checkpoints])
   const imageBankImages = useMemo(
@@ -1709,6 +1861,14 @@ export default function EbInspectionRoundClient({
   }, [round.notes])
 
   useEffect(() => {
+    reportSectionsRef.current = reportSections
+  }, [reportSections])
+
+  useEffect(() => {
+    inspectionFormRef.current = inspectionForm
+  }, [inspectionForm])
+
+  useEffect(() => {
     return () => {
       if (orderSaveTimerRef.current) {
         clearTimeout(orderSaveTimerRef.current)
@@ -1720,7 +1880,6 @@ export default function EbInspectionRoundClient({
       if (participantsAutosaveTimerRef.current) clearTimeout(participantsAutosaveTimerRef.current)
       if (documentsAutosaveTimerRef.current) clearTimeout(documentsAutosaveTimerRef.current)
       if (checkpointsAutosaveTimerRef.current) clearTimeout(checkpointsAutosaveTimerRef.current)
-      if (reportSectionsAutosaveTimerRef.current) clearTimeout(reportSectionsAutosaveTimerRef.current)
     }
   }, [])
 
@@ -1816,7 +1975,11 @@ export default function EbInspectionRoundClient({
     field: K,
     value: InspectionDetailsFormState[K]
   ) => {
-    setInspectionForm((current) => ({ ...current, [field]: value }))
+    setInspectionForm((current) => {
+      const next = { ...current, [field]: value }
+      inspectionFormRef.current = next
+      return next
+    })
   }
 
   const updateParticipant = <K extends keyof EditableParticipant>(
@@ -1850,44 +2013,15 @@ export default function EbInspectionRoundClient({
     if (inspectionSaving) return
 
     try {
-      setInspectionSaving(true)
       setReviewMessage(null)
-      const response = await fetch(inspectionBasePath, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...inspectionForm,
-          requiresContinuedFinalInspection: booleanFromSelect(
-            inspectionForm.requiresContinuedFinalInspection
-          ),
-          warrantyPeriodYears: inspectionForm.warrantyPeriodYears
-            ? Number(inspectionForm.warrantyPeriodYears)
-            : null,
-          afterInspectionRequested: booleanFromSelect(inspectionForm.afterInspectionRequested),
-        }),
+      resetInspectionAutosaveError()
+      await enqueueInspectionAutosave({
+        kind: 'inspection',
+        form: inspectionFormRef.current,
       })
-      const payload = (await response.json().catch(() => ({}))) as UpdateInspectionResponse
-
-      if (!response.ok || !payload.project) {
-        throw new Error(payload.error ?? 'Kunde inte spara besiktningsuppgifter.')
-      }
-
-      const updatedInspection = payload.project.inspections.find(
-        (inspection) => inspection.inspectionId === round.inspection.inspectionId
-      )
-      setRound((current) => ({
-        ...current,
-        project: payload.project!,
-        inspection: updatedInspection ?? current.inspection,
-      }))
-      if (updatedInspection) {
-        setInspectionForm(buildInspectionDetailsForm(updatedInspection))
-      }
       setReviewMessage('Besiktningsuppgifterna är sparade.')
-    } catch (saveError) {
-      showError(saveError, 'Kunde inte spara besiktningsuppgifter.')
-    } finally {
-      setInspectionSaving(false)
+    } catch {
+      // Kön visar felet och lämnar den lokala texten orörd.
     }
   }
 
@@ -1899,31 +2033,17 @@ export default function EbInspectionRoundClient({
     if (participantsSaving || invitationLoading || !invitationLoaded) return
 
     try {
-      setParticipantsSaving(true)
       setReviewMessage(null)
-      const response = await fetch(invitationPath, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subject: invitationSubject,
-          body: invitationBody,
-          participants: participantPayload(participants),
-        }),
+      resetParticipantsAutosaveError()
+      await enqueueParticipantsAutosave({
+        kind: 'participants',
+        subject: invitationSubject,
+        body: invitationBody,
+        participants,
       })
-      const payload = (await response.json().catch(() => ({}))) as InvitationResponse
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? 'Kunde inte spara kallelse och deltagare.')
-      }
-
-      setInvitationSubject(payload.subject ?? invitationSubject)
-      setInvitationBody(payload.body ?? invitationBody)
-      setParticipants((payload.participants ?? []).map(toLocalParticipant))
       setReviewMessage('Kallelse och deltagare är sparade.')
-    } catch (saveError) {
-      showError(saveError, 'Kunde inte spara kallelse och deltagare.')
-    } finally {
-      setParticipantsSaving(false)
+    } catch {
+      // Kön visar felet och lämnar den lokala texten orörd.
     }
   }
 
@@ -1935,25 +2055,12 @@ export default function EbInspectionRoundClient({
     if (documentsSaving) return
 
     try {
-      setDocumentsSaving(true)
       setReviewMessage(null)
-      const response = await fetch(documentsPath, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documents }),
-      })
-      const payload = (await response.json().catch(() => ({}))) as InspectionDocumentsResponse
-
-      if (!response.ok || !payload.documents) {
-        throw new Error(payload.error ?? 'Kunde inte spara granskade handlingar.')
-      }
-
-      setDocuments(payload.documents)
+      resetDocumentsAutosaveError()
+      await enqueueDocumentsAutosave({ kind: 'documents', documents })
       setReviewMessage('Handlingarna är sparade.')
-    } catch (saveError) {
-      showError(saveError, 'Kunde inte spara granskade handlingar.')
-    } finally {
-      setDocumentsSaving(false)
+    } catch {
+      // Kön visar felet och lämnar den lokala texten orörd.
     }
   }
 
@@ -1977,37 +2084,12 @@ export default function EbInspectionRoundClient({
     if (checkpointsSaving) return
 
     try {
-      setCheckpointsSaving(true)
       setReviewMessage(null)
-      const response = await fetch(
-        `/api/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/checkpoints`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            checkpoints: checkpoints.map((checkpoint) => ({
-              id: checkpoint.id,
-              checkpointKey: checkpoint.checkpointKey,
-              status: checkpoint.status,
-              comment: checkpoint.comment,
-              noteId: checkpoint.noteId,
-            })),
-          }),
-        }
-      )
-      const payload = (await response.json().catch(() => ({}))) as InspectionCheckpointsResponse
-
-      if (!response.ok || !payload.checkpoints) {
-        throw new Error(payload.error ?? 'Kunde inte spara kontrollpunkter.')
-      }
-
-      setCheckpoints(payload.checkpoints)
-      setRound((current) => ({ ...current, checkpoints: payload.checkpoints ?? current.checkpoints }))
+      resetCheckpointsAutosaveError()
+      await enqueueCheckpointsAutosave({ kind: 'checkpoints', checkpoints })
       setReviewMessage('Kontrollpunkterna är sparade.')
-    } catch (saveError) {
-      showError(saveError, 'Kunde inte spara kontrollpunkter.')
-    } finally {
-      setCheckpointsSaving(false)
+    } catch {
+      // Kön visar felet och lämnar den lokala texten orörd.
     }
   }
 
@@ -2019,27 +2101,15 @@ export default function EbInspectionRoundClient({
     if (reportDraftSaving) return
 
     try {
-      setReportDraftSaving(true)
       setReviewMessage(null)
-      const response = await fetch(reportDraftPath, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sections: reportSections }),
+      resetReportDraftAutosaveError()
+      await enqueueReportDraftAutosave({
+        kind: 'reportDraft',
+        sections: reportSectionsRef.current,
       })
-      const payload = (await response.json().catch(() => ({}))) as ReportDraftResponse
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? 'Kunde inte spara utlåtandetexterna.')
-      }
-
-      if (payload.reportDraft?.sections) {
-        setReportSections(payload.reportDraft.sections)
-      }
       setReviewMessage('Utlåtandetexterna är sparade.')
-    } catch (saveError) {
-      showError(saveError, 'Kunde inte spara utlåtandetexterna.')
-    } finally {
-      setReportDraftSaving(false)
+    } catch {
+      // Kön visar felet och lämnar den lokala texten orörd.
     }
   }
 
@@ -2167,69 +2237,119 @@ export default function EbInspectionRoundClient({
     ]
   )
 
-  const reviewAutosave = useAutosaveQueue<ReviewAutosavePayload, ReviewAutosaveResult>({
+  const handleReviewAutosaveSaved = (
+    result: ReviewAutosaveResult,
+    payload: ReviewAutosavePayload
+  ) => {
+    if (result.kind === 'inspection' && payload.kind === 'inspection') {
+      lastAutosavedInspectionRef.current = inspectionFormFingerprint(payload.form)
+      const project = result.payload.project
+      if (!project) return
+      const updatedInspection = project.inspections.find(
+        (inspection) => inspection.inspectionId === round.inspection.inspectionId
+      )
+      setRound((current) => ({
+        ...current,
+        project,
+        inspection: updatedInspection ?? current.inspection,
+      }))
+      return
+    }
+
+    if (result.kind === 'participants' && payload.kind === 'participants') {
+      lastAutosavedParticipantsRef.current = participantsFingerprint(
+        payload.subject,
+        payload.body,
+        payload.participants
+      )
+      return
+    }
+
+    if (result.kind === 'documents' && payload.kind === 'documents') {
+      lastAutosavedDocumentsRef.current = documentsFingerprint(payload.documents)
+      return
+    }
+
+    if (result.kind === 'checkpoints' && payload.kind === 'checkpoints') {
+      lastAutosavedCheckpointsRef.current = checkpointsFingerprint(payload.checkpoints)
+    }
+  }
+
+  const handleReviewAutosaveError = (autosaveError: unknown) => {
+    setReviewMessage(null)
+    showError(autosaveError, 'Kunde inte autospara.')
+  }
+
+  const inspectionAutosave = useAutosaveQueue<ReviewAutosavePayload, ReviewAutosaveResult>({
     save: saveReviewAutosavePatch,
     mergePayload: (_previous, next) => next,
-    onSaved: (result) => {
-      if (result.kind === 'inspection') {
-        const project = result.payload.project
-        if (!project) return
-        const updatedInspection = project.inspections.find(
-          (inspection) => inspection.inspectionId === round.inspection.inspectionId
-        )
-        setRound((current) => ({
-          ...current,
-          project,
-          inspection: updatedInspection ?? current.inspection,
-        }))
-        if (updatedInspection) {
-          const nextForm = buildInspectionDetailsForm(updatedInspection)
-          lastAutosavedInspectionRef.current = inspectionFormFingerprint(nextForm)
-          setInspectionForm(nextForm)
-        }
-        return
-      }
-
-      if (result.kind === 'participants') {
-        const nextSubject = result.payload.subject ?? invitationSubject
-        const nextBody = result.payload.body ?? invitationBody
-        const nextParticipants = (result.payload.participants ?? []).map(toLocalParticipant)
-        lastAutosavedParticipantsRef.current = participantsFingerprint(nextSubject, nextBody, nextParticipants)
-        setInvitationSubject(nextSubject)
-        setInvitationBody(nextBody)
-        setParticipants(nextParticipants)
-        return
-      }
-
-      if (result.kind === 'documents' && result.payload.documents) {
-        lastAutosavedDocumentsRef.current = documentsFingerprint(result.payload.documents)
-        setDocuments(result.payload.documents)
-        return
-      }
-
-      if (result.kind === 'checkpoints' && result.payload.checkpoints) {
-        lastAutosavedCheckpointsRef.current = checkpointsFingerprint(result.payload.checkpoints)
-        setCheckpoints(result.payload.checkpoints)
-        setRound((current) => ({ ...current, checkpoints: result.payload.checkpoints ?? current.checkpoints }))
-        return
-      }
-
-      if (result.kind === 'reportDraft' && result.payload.reportDraft?.sections) {
-        lastAutosavedReportSectionsRef.current = reportSectionsFingerprint(result.payload.reportDraft.sections)
-        setReportSections(result.payload.reportDraft.sections)
-      }
-    },
-    onError: (autosaveError) => {
-      setReviewMessage(null)
-      showError(autosaveError, 'Kunde inte autospara.')
-    },
+    onSaved: handleReviewAutosaveSaved,
+    onError: handleReviewAutosaveError,
   })
-  const {
-    enqueue: enqueueReviewAutosave,
-    error: reviewAutosaveError,
-    resetError: resetReviewAutosaveError,
-    status: reviewAutosaveStatus,
-  } = reviewAutosave
+  const participantsAutosave = useAutosaveQueue<ReviewAutosavePayload, ReviewAutosaveResult>({
+    save: saveReviewAutosavePatch,
+    mergePayload: (_previous, next) => next,
+    onSaved: handleReviewAutosaveSaved,
+    onError: handleReviewAutosaveError,
+  })
+  const documentsAutosave = useAutosaveQueue<ReviewAutosavePayload, ReviewAutosaveResult>({
+    save: saveReviewAutosavePatch,
+    mergePayload: (_previous, next) => next,
+    onSaved: handleReviewAutosaveSaved,
+    onError: handleReviewAutosaveError,
+  })
+  const checkpointsAutosave = useAutosaveQueue<ReviewAutosavePayload, ReviewAutosaveResult>({
+    save: saveReviewAutosavePatch,
+    mergePayload: (_previous, next) => next,
+    onSaved: handleReviewAutosaveSaved,
+    onError: handleReviewAutosaveError,
+  })
+  const reportDraftAutosave = useAutosaveQueue<ReviewAutosavePayload, ReviewAutosaveResult>({
+    save: saveReviewAutosavePatch,
+    mergePayload: (previous, next) => {
+      if (previous.kind !== 'reportDraft' || next.kind !== 'reportDraft') return next
+      return {
+        kind: 'reportDraft',
+        ...mergeReportDraftAutosavePayload(previous, next),
+      }
+    },
+    onSaved: handleReviewAutosaveSaved,
+    onError: handleReviewAutosaveError,
+  })
+  const enqueueInspectionAutosave = inspectionAutosave.enqueue
+  const enqueueParticipantsAutosave = participantsAutosave.enqueue
+  const enqueueDocumentsAutosave = documentsAutosave.enqueue
+  const enqueueCheckpointsAutosave = checkpointsAutosave.enqueue
+  const enqueueReportDraftAutosave = reportDraftAutosave.enqueue
+  const resetInspectionAutosaveError = inspectionAutosave.resetError
+  const resetParticipantsAutosaveError = participantsAutosave.resetError
+  const resetDocumentsAutosaveError = documentsAutosave.resetError
+  const resetCheckpointsAutosaveError = checkpointsAutosave.resetError
+  const resetReportDraftAutosaveError = reportDraftAutosave.resetError
+
+  const reviewAutosaveStatus = [
+    inspectionAutosave.status,
+    participantsAutosave.status,
+    documentsAutosave.status,
+    checkpointsAutosave.status,
+    reportDraftAutosave.status,
+  ].includes('saving')
+    ? 'saving'
+    : [
+          inspectionAutosave.status,
+          participantsAutosave.status,
+          documentsAutosave.status,
+          checkpointsAutosave.status,
+          reportDraftAutosave.status,
+        ].includes('error')
+      ? 'error'
+      : 'idle'
+  const reviewAutosaveError =
+    inspectionAutosave.error ??
+    participantsAutosave.error ??
+    documentsAutosave.error ??
+    checkpointsAutosave.error ??
+    reportDraftAutosave.error
 
   useEffect(() => {
     if (inspectionAutosaveTimerRef.current) {
@@ -2242,9 +2362,11 @@ export default function EbInspectionRoundClient({
     if (fingerprint === lastAutosavedInspectionRef.current) return
 
     inspectionAutosaveTimerRef.current = setTimeout(() => {
-      lastAutosavedInspectionRef.current = fingerprint
-      resetReviewAutosaveError()
-      void enqueueReviewAutosave({ kind: 'inspection', form: inspectionForm })
+      if (fingerprint === lastAutosavedInspectionRef.current) return
+      resetInspectionAutosaveError()
+      void enqueueInspectionAutosave({ kind: 'inspection', form: inspectionForm }).catch(
+        () => undefined
+      )
     }, 700)
 
     return () => {
@@ -2253,7 +2375,12 @@ export default function EbInspectionRoundClient({
         inspectionAutosaveTimerRef.current = null
       }
     }
-  }, [enqueueReviewAutosave, inspectionForm, isLocked, resetReviewAutosaveError])
+  }, [
+    enqueueInspectionAutosave,
+    inspectionForm,
+    isLocked,
+    resetInspectionAutosaveError,
+  ])
 
   useEffect(() => {
     if (participantsAutosaveTimerRef.current) {
@@ -2266,14 +2393,14 @@ export default function EbInspectionRoundClient({
     if (fingerprint === lastAutosavedParticipantsRef.current) return
 
     participantsAutosaveTimerRef.current = setTimeout(() => {
-      lastAutosavedParticipantsRef.current = fingerprint
-      resetReviewAutosaveError()
-      void enqueueReviewAutosave({
-        kind: 'participants',
-        subject: invitationSubject,
-        body: invitationBody,
-        participants,
-      })
+      if (fingerprint === lastAutosavedParticipantsRef.current) return
+      resetParticipantsAutosaveError()
+      void enqueueParticipantsAutosave({
+          kind: 'participants',
+          subject: invitationSubject,
+          body: invitationBody,
+          participants,
+        }).catch(() => undefined)
     }, 700)
 
     return () => {
@@ -2283,14 +2410,14 @@ export default function EbInspectionRoundClient({
       }
     }
   }, [
-    enqueueReviewAutosave,
+    enqueueParticipantsAutosave,
     invitationBody,
     invitationLoaded,
     invitationLoading,
     invitationSubject,
     isLocked,
     participants,
-    resetReviewAutosaveError,
+    resetParticipantsAutosaveError,
   ])
 
   useEffect(() => {
@@ -2304,9 +2431,9 @@ export default function EbInspectionRoundClient({
     if (fingerprint === lastAutosavedDocumentsRef.current) return
 
     documentsAutosaveTimerRef.current = setTimeout(() => {
-      lastAutosavedDocumentsRef.current = fingerprint
-      resetReviewAutosaveError()
-      void enqueueReviewAutosave({ kind: 'documents', documents })
+      if (fingerprint === lastAutosavedDocumentsRef.current) return
+      resetDocumentsAutosaveError()
+      void enqueueDocumentsAutosave({ kind: 'documents', documents }).catch(() => undefined)
     }, 700)
 
     return () => {
@@ -2315,7 +2442,13 @@ export default function EbInspectionRoundClient({
         documentsAutosaveTimerRef.current = null
       }
     }
-  }, [documents, enqueueReviewAutosave, isDrainageProject, isLocked, resetReviewAutosaveError])
+  }, [
+    documents,
+    enqueueDocumentsAutosave,
+    isDrainageProject,
+    isLocked,
+    resetDocumentsAutosaveError,
+  ])
 
   useEffect(() => {
     if (checkpointsAutosaveTimerRef.current) {
@@ -2328,9 +2461,11 @@ export default function EbInspectionRoundClient({
     if (fingerprint === lastAutosavedCheckpointsRef.current) return
 
     checkpointsAutosaveTimerRef.current = setTimeout(() => {
-      lastAutosavedCheckpointsRef.current = fingerprint
-      resetReviewAutosaveError()
-      void enqueueReviewAutosave({ kind: 'checkpoints', checkpoints })
+      if (fingerprint === lastAutosavedCheckpointsRef.current) return
+      resetCheckpointsAutosaveError()
+      void enqueueCheckpointsAutosave({ kind: 'checkpoints', checkpoints }).catch(
+        () => undefined
+      )
     }, 700)
 
     return () => {
@@ -2339,31 +2474,82 @@ export default function EbInspectionRoundClient({
         checkpointsAutosaveTimerRef.current = null
       }
     }
-  }, [checkpoints, enqueueReviewAutosave, isLocked, resetReviewAutosaveError])
+  }, [
+    checkpoints,
+    enqueueCheckpointsAutosave,
+    isLocked,
+    resetCheckpointsAutosaveError,
+  ])
 
-  useEffect(() => {
-    if (reportSectionsAutosaveTimerRef.current) {
-      clearTimeout(reportSectionsAutosaveTimerRef.current)
-      reportSectionsAutosaveTimerRef.current = null
-    }
-    if (isLocked) return
+  const handleInspectionTextSave = useCallback(
+    async (field: InspectionDebouncedTextField, value: string) => {
+      if (isLocked) throw new Error(lockedMessage)
+      const nextForm = { ...inspectionFormRef.current, [field]: value }
+      inspectionFormRef.current = nextForm
+      setInspectionForm(nextForm)
+      resetInspectionAutosaveError()
+      await enqueueInspectionAutosave({ kind: 'inspection', form: nextForm })
+    },
+    [enqueueInspectionAutosave, isLocked, lockedMessage, resetInspectionAutosaveError]
+  )
 
-    const fingerprint = reportSectionsFingerprint(reportSections)
-    if (fingerprint === lastAutosavedReportSectionsRef.current) return
+  const replaceReportSection = useCallback((nextSection: EbReportDraftSection) => {
+    const nextSections = reportSectionsRef.current.map((section) =>
+      section.key === nextSection.key ? nextSection : section
+    )
+    reportSectionsRef.current = nextSections
+    setReportSections(nextSections)
+  }, [])
 
-    reportSectionsAutosaveTimerRef.current = setTimeout(() => {
-      lastAutosavedReportSectionsRef.current = fingerprint
-      resetReviewAutosaveError()
-      void enqueueReviewAutosave({ kind: 'reportDraft', sections: reportSections })
-    }, 700)
-
-    return () => {
-      if (reportSectionsAutosaveTimerRef.current) {
-        clearTimeout(reportSectionsAutosaveTimerRef.current)
-        reportSectionsAutosaveTimerRef.current = null
+  const handleReportSectionChange = useCallback(
+    (nextSection: EbReportDraftSection) => {
+      if (isLocked) return
+      const currentSection = reportSectionsRef.current.find(
+        (section) => section.key === nextSection.key
+      )
+      if (!currentSection) return
+      const mergedSection = {
+        ...currentSection,
+        status: nextSection.status,
+        isRelevant: nextSection.isRelevant,
       }
-    }
-  }, [enqueueReviewAutosave, isLocked, reportSections, resetReviewAutosaveError])
+      replaceReportSection(mergedSection)
+      resetReportDraftAutosaveError()
+      void enqueueReportDraftAutosave({
+        kind: 'reportDraft',
+        sections: [mergedSection],
+      }).catch(() => undefined)
+    },
+    [
+      enqueueReportDraftAutosave,
+      isLocked,
+      replaceReportSection,
+      resetReportDraftAutosaveError,
+    ]
+  )
+
+  const handleReportSectionTextSave = useCallback(
+    async (sectionKey: string, text: string) => {
+      if (isLocked) throw new Error(lockedMessage)
+      const section = reportSectionsRef.current.find((item) => item.key === sectionKey)
+      if (!section) throw new Error('Utlåtandesektionen hittades inte.')
+
+      const nextSection = { ...section, text }
+      replaceReportSection(nextSection)
+      resetReportDraftAutosaveError()
+      await enqueueReportDraftAutosave({
+        kind: 'reportDraft',
+        sections: [nextSection],
+      })
+    },
+    [
+      enqueueReportDraftAutosave,
+      isLocked,
+      lockedMessage,
+      replaceReportSection,
+      resetReportDraftAutosaveError,
+    ]
+  )
 
   const resetForm = () => {
     setEditingNote(null)
@@ -2405,22 +2591,6 @@ export default function EbInspectionRoundClient({
             ],
       }
     })
-  }
-
-  const upsertImageInState = (image: EbNoteImage) => {
-    setRound((current) => ({
-      ...current,
-      images: sortImages([
-        ...current.images.filter((item) => item.id !== image.id),
-        {
-          ...image,
-          sourceAttachmentId:
-            image.sourceAttachmentId ??
-            current.images.find((item) => item.id === image.id)?.sourceAttachmentId ??
-            null,
-        },
-      ]),
-    }))
   }
 
   const updateImageInState = (image: EbNoteImage) => {
@@ -2512,30 +2682,46 @@ export default function EbInspectionRoundClient({
     if (isLocked) {
       throw new Error(lockedMessage)
     }
+    if (noteSavePromiseRef.current) return noteSavePromiseRef.current
+
     const disciplineId =
       editingNote?.disciplineId ?? activeDisciplineId ?? round.disciplines[0]?.id ?? null
-    if (saving || !disciplineId) return null
+    if (!disciplineId) return null
 
     setSaving(true)
-    const response = await fetch(editingNote ? `${notesBasePath}/${editingNote.id}` : notesBasePath, {
-      method: editingNote ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...form,
-        disciplineId,
-      }),
-    })
-    const payload = (await response.json().catch(() => ({}))) as NoteResponse
-    if (!response.ok || !payload.note) {
-      throw new Error(payload.error ?? 'Kunde inte spara noteringen.')
-    }
+    const noteToSave = editingNote
+    const formToSave = form
+    const requestPromise = (async () => {
+      const response = await fetch(noteToSave ? `${notesBasePath}/${noteToSave.id}` : notesBasePath, {
+        method: noteToSave ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...formToSave,
+          disciplineId,
+        }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as NoteResponse
+      if (!response.ok || !payload.note) {
+        throw new Error(payload.error ?? 'Kunde inte spara noteringen.')
+      }
 
-    upsertNoteInState(payload.note)
-    setEditingNote(payload.note)
-    const savedForm = formFromNote(payload.note)
-    lastAutosavedNoteFormRef.current = noteFormFingerprint(savedForm)
-    setForm(savedForm)
-    return payload.note
+      upsertNoteInState(payload.note)
+      setEditingNote(payload.note)
+      const savedForm = formFromNote(payload.note)
+      lastAutosavedNoteFormRef.current = noteFormFingerprint(savedForm)
+      setForm(savedForm)
+      return payload.note
+    })()
+    noteSavePromiseRef.current = requestPromise
+
+    try {
+      return await requestPromise
+    } finally {
+      if (noteSavePromiseRef.current === requestPromise) {
+        noteSavePromiseRef.current = null
+        setSaving(false)
+      }
+    }
   }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -2572,6 +2758,7 @@ export default function EbInspectionRoundClient({
   }
 
   const handleEdit = (note: EbNote) => {
+    if (saving) return
     const nextForm = formFromNote(note)
     setEditingNote(note)
     setEditorOpen(true)
@@ -2608,49 +2795,28 @@ export default function EbInspectionRoundClient({
     scheduleNoteOrderSave(movedNotes)
   }
 
-  const uploadImage = async (file: File, targetNote?: EbNote) => {
+  const queueImagesForNote = async (files: File[], targetNote?: EbNote) => {
     if (isLocked) {
       showError(lockedMessage)
       return
     }
-    if (uploadingImage) return
+    if (saving) return
+    const imageFiles = files.filter(isImageFile)
+    if (imageFiles.length === 0) return
 
     try {
-      setUploadingImage(true)
       const note = targetNote ?? editingNote ?? (await saveCurrentNote())
       if (!note) return
-      setUploadingImageNoteId(note.id)
-      setSaving(false)
-
-      const { uploadFile, thumbnailFile } = await prepareImageFilesForUpload(file)
-      const formData = new FormData()
-      formData.append('file', uploadFile)
-      if (thumbnailFile) {
-        formData.append('thumbnail', thumbnailFile)
-      }
-      const response = await fetch(`${notesBasePath}/${note.id}/images`, {
-        method: 'POST',
-        body: formData,
-      })
-      const payload = (await response.json().catch(() => ({}))) as ImageResponse
-      if (!response.ok || !payload.image) {
-        throw new Error(payload.error ?? 'Kunde inte ladda upp bild.')
-      }
-      upsertImageInState(payload.image)
+      await imageUploadQueue.enqueueFiles(note.id, imageFiles)
     } catch (uploadError) {
-      showError(uploadError, 'Kunde inte ladda upp bild.')
-    } finally {
-      setSaving(false)
-      setUploadingImage(false)
-      setUploadingImageNoteId(null)
+      showError(uploadError, 'Kunde inte lägga bilden i uppladdningskön.')
     }
   }
 
   const handleImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0]
+    const files = Array.from(event.currentTarget.files ?? [])
     event.currentTarget.value = ''
-    if (!file) return
-    await uploadImage(file)
+    await queueImagesForNote(files)
   }
 
   const uploadFilesToProjectImageBank = async (files: File[]) => {
@@ -2730,14 +2896,14 @@ export default function EbInspectionRoundClient({
   }
 
   const handleNoteRowImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0]
+    const files = Array.from(event.currentTarget.files ?? [])
     event.currentTarget.value = ''
     const noteId = noteRowImageTargetRef.current
     noteRowImageTargetRef.current = null
-    if (!file || !noteId) return
+    if (files.length === 0 || !noteId) return
     const note = notesRef.current.find((item) => item.id === noteId)
     if (!note) return
-    await uploadImage(file, note)
+    await queueImagesForNote(files, note)
   }
 
   const chooseNoteRowImage = (note: EbNote) => {
@@ -2755,67 +2921,89 @@ export default function EbInspectionRoundClient({
       if (existingNote) return existingNote
     }
 
-    const disciplineId = activeDisciplineId ?? round.disciplines[0]?.id ?? null
-    if (!disciplineId) throw new Error('Välj fack innan foto sparas.')
+    const pendingNote = checkpointNotePromisesRef.current.get(checkpoint.id)
+    if (pendingNote) return pendingNote
 
-    const response = await fetch(notesBasePath, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        disciplineId,
-        markerKey: round.markers.find((marker) => marker.key === 'E')?.key ?? round.markers[0]?.key ?? null,
-        statusKey:
-          round.statuses.find((status) => status.isDefault)?.key ?? round.statuses[0]?.key ?? 'open',
-        location: checkpoint.groupLabel ?? 'Kontrollunderlag',
-        room: '',
-        placeDetail: '',
-        noteText: checkpoint.comment?.trim() || checkpoint.title,
-        responsibleParty: '',
-        tradeGroup: 'Dränering',
-      }),
-    })
-    const payload = (await response.json().catch(() => ({}))) as NoteResponse
-    if (!response.ok || !payload.note) {
-      throw new Error(payload.error ?? 'Kunde inte skapa notering för kontrollpunkten.')
+    const createNotePromise = (async () => {
+      const disciplineId = activeDisciplineId ?? round.disciplines[0]?.id ?? null
+      if (!disciplineId) throw new Error('Välj fack innan foto sparas.')
+
+      const response = await fetch(notesBasePath, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          disciplineId,
+          markerKey:
+            round.markers.find((marker) => marker.key === 'E')?.key ??
+            round.markers[0]?.key ??
+            null,
+          statusKey:
+            round.statuses.find((status) => status.isDefault)?.key ??
+            round.statuses[0]?.key ??
+            'open',
+          location: checkpoint.groupLabel ?? 'Kontrollunderlag',
+          room: '',
+          placeDetail: '',
+          noteText: checkpoint.comment?.trim() || checkpoint.title,
+          responsibleParty: '',
+          tradeGroup: 'Dränering',
+        }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as NoteResponse
+      if (!response.ok || !payload.note) {
+        throw new Error(payload.error ?? 'Kunde inte skapa notering för kontrollpunkten.')
+      }
+
+      upsertNoteInState(payload.note)
+      const nextCheckpoints = checkpoints.map((item) =>
+        item.id === checkpoint.id ? { ...item, noteId: payload.note!.id } : item
+      )
+      setCheckpoints(nextCheckpoints)
+      resetCheckpointsAutosaveError()
+      void enqueueCheckpointsAutosave({
+        kind: 'checkpoints',
+        checkpoints: nextCheckpoints,
+      }).catch(() => undefined)
+      return payload.note
+    })()
+    checkpointNotePromisesRef.current.set(checkpoint.id, createNotePromise)
+
+    try {
+      return await createNotePromise
+    } finally {
+      if (checkpointNotePromisesRef.current.get(checkpoint.id) === createNotePromise) {
+        checkpointNotePromisesRef.current.delete(checkpoint.id)
+      }
     }
-
-    upsertNoteInState(payload.note)
-    const nextCheckpoints = checkpoints.map((item) =>
-      item.id === checkpoint.id ? { ...item, noteId: payload.note!.id } : item
-    )
-    lastAutosavedCheckpointsRef.current = checkpointsFingerprint(nextCheckpoints)
-    setCheckpoints(nextCheckpoints)
-    void enqueueReviewAutosave({ kind: 'checkpoints', checkpoints: nextCheckpoints })
-    return payload.note
   }
 
-  const uploadCheckpointImage = async (file: File, checkpoint: EbInspectionCheckpoint) => {
+  const queueCheckpointImages = async (files: File[], checkpoint: EbInspectionCheckpoint) => {
     if (isLocked) {
       showError(lockedMessage)
       return
     }
-    if (uploadingImage || uploadingCheckpointImageId) return
+    if (files.length === 0) return
 
     try {
       setUploadingCheckpointImageId(checkpoint.id)
       const note = await ensureCheckpointNote(checkpoint)
-      await uploadImage(file, note)
+      await imageUploadQueue.enqueueFiles(note.id, files.filter(isImageFile))
     } catch (uploadError) {
-      showError(uploadError, 'Kunde inte ladda upp foto.')
+      showError(uploadError, 'Kunde inte lägga fotot i uppladdningskön.')
     } finally {
       setUploadingCheckpointImageId(null)
     }
   }
 
   const handleCheckpointImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0]
+    const files = Array.from(event.currentTarget.files ?? [])
     event.currentTarget.value = ''
     const checkpointId = checkpointImageTargetRef.current
     checkpointImageTargetRef.current = null
-    if (!file || !checkpointId) return
+    if (files.length === 0 || !checkpointId) return
     const checkpoint = checkpoints.find((item) => item.id === checkpointId)
     if (!checkpoint) return
-    await uploadCheckpointImage(file, checkpoint)
+    await queueCheckpointImages(files, checkpoint)
   }
 
   const chooseCheckpointImage = (checkpoint: EbInspectionCheckpoint) => {
@@ -2867,32 +3055,16 @@ export default function EbInspectionRoundClient({
       showError(lockedMessage)
       return
     }
-    if (copyingProjectAttachmentId || movingImageId || uploadingImage) return
     if (pendingProjectAttachmentCopiesRef.current.has(attachment.id)) return
     pendingProjectAttachmentCopiesRef.current.add(attachment.id)
 
     try {
-      setCopyingProjectAttachmentId(attachment.id)
       const note = targetNote ?? editingNote ?? (await saveCurrentNote())
       if (!note) return
-      const response = await fetch(`${notesBasePath}/${note.id}/images`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attachmentId: attachment.id, action: 'copyAttachment' }),
-      })
-      const payload = (await response.json().catch(() => ({}))) as ImageResponse
-      if (!response.ok || !payload.image) {
-        throw new Error(payload.error ?? 'Kunde inte lägga till entreprenadbilden.')
-      }
-      upsertImageInState(payload.image)
-      if (payload.image.noteId && payload.image.noteId !== note.id) {
-        showError('Bilden är redan kopplad till en annan kontrollpunkt.')
-      }
+      await imageUploadQueue.enqueueProjectAttachment(note.id, attachment)
     } catch (copyError) {
-      showError(copyError, 'Kunde inte lägga till entreprenadbilden.')
+      showError(copyError, 'Kunde inte lägga entreprenadbilden i uppladdningskön.')
     } finally {
-      setSaving(false)
-      setCopyingProjectAttachmentId(null)
       pendingProjectAttachmentCopiesRef.current.delete(attachment.id)
     }
   }
@@ -2901,7 +3073,7 @@ export default function EbInspectionRoundClient({
     attachment: EbProjectAttachment,
     targetCheckpoint: EbInspectionCheckpoint | null = checkpointImageBankTarget
   ) => {
-    if (!targetCheckpoint || copyingProjectAttachmentId) return
+    if (!targetCheckpoint) return
     if (isLocked) {
       showError(lockedMessage)
       return
@@ -2920,7 +3092,11 @@ export default function EbInspectionRoundClient({
       showError(lockedMessage)
       return
     }
-    if (deletingProjectAttachmentId || copyingProjectAttachmentId || uploadingProjectImages) return
+    if (
+      deletingProjectAttachmentId ||
+      queuedProjectAttachmentIds.has(attachment.id) ||
+      uploadingProjectImages
+    ) return
 
     const confirmed = window.confirm(
       'Radera bilden från bildbanken? Redan kopplade bilder i noteringar påverkas inte.'
@@ -3167,6 +3343,7 @@ export default function EbInspectionRoundClient({
           ref={noteRowImageInputRef}
           type="file"
           accept="image/*"
+          multiple
           onChange={(event) => void handleNoteRowImageSelected(event)}
           className="hidden"
         />
@@ -3174,6 +3351,7 @@ export default function EbInspectionRoundClient({
           ref={checkpointImageInputRef}
           type="file"
           accept="image/*"
+          multiple
           onChange={(event) => void handleCheckpointImageSelected(event)}
           className="hidden"
         />
@@ -3259,6 +3437,44 @@ export default function EbInspectionRoundClient({
             <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 shadow-sm">
               {reviewAutosaveError ?? 'Autospar misslyckades'}
             </p>
+          ) : null}
+
+          {imageUploadQueue.counts.total > 0 || imageUploadQueue.queueError ? (
+            <div
+              className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm font-semibold shadow-sm ${
+                imageUploadQueue.counts.failed > 0 || imageUploadQueue.queueError
+                  ? 'border-rose-200 bg-rose-50 text-rose-800'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-900'
+              }`}
+            >
+              <span className="inline-flex items-center gap-2">
+                {imageUploadQueue.counts.uploading > 0 ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : (
+                  <ImageIcon size={15} />
+                )}
+                {imageUploadQueue.queueError ??
+                  `${imageUploadQueue.counts.total} ${
+                    imageUploadQueue.counts.total === 1 ? 'bild sparad' : 'bilder sparade'
+                  } lokalt: ${imageUploadQueue.counts.uploading} laddas upp, ${
+                    imageUploadQueue.counts.waiting
+                  } väntar${
+                    imageUploadQueue.counts.failed > 0
+                      ? `, ${imageUploadQueue.counts.failed} misslyckades`
+                      : ''
+                  }.`}
+              </span>
+              {imageUploadQueue.counts.failed > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => void imageUploadQueue.retryAll()}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-100"
+                >
+                  <RefreshCw size={13} />
+                  Försök igen
+                </button>
+              ) : null}
+            </div>
           ) : null}
 
           <div className="mt-4 space-y-4">
@@ -3486,6 +3702,9 @@ export default function EbInspectionRoundClient({
                             const checkpointImages = checkpoint.noteId
                               ? imagesByNoteId.get(checkpoint.noteId) ?? []
                               : []
+                            const checkpointQueuedImages = checkpoint.noteId
+                              ? queuedImagesByNoteId.get(checkpoint.noteId) ?? []
+                              : []
                             const checkpointDropKey = `checkpoint:${checkpoint.id}`
                             return (
                             <div key={checkpoint.id} className="grid gap-3 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_12rem_minmax(14rem,0.75fr)_9rem]">
@@ -3547,7 +3766,7 @@ export default function EbInspectionRoundClient({
                                 <button
                                   type="button"
                                   onClick={() => chooseCheckpointImage(checkpoint)}
-                                  disabled={isLocked || uploadingImage || uploadingCheckpointImageId === checkpoint.id}
+                                  disabled={isLocked}
                                   className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   {uploadingCheckpointImageId === checkpoint.id ? (
@@ -3557,9 +3776,20 @@ export default function EbInspectionRoundClient({
                                   )}
                                   Bildbank
                                 </button>
-                                {checkpointImages.length > 0 ? (
-                                  <div className="grid grid-cols-3 gap-1">
-                                    {checkpointImages.slice(0, 3).map((image) => (
+                                {checkpointImages.length + checkpointQueuedImages.length > 0 ? (
+                                  <div className="grid max-h-32 grid-cols-3 gap-1 overflow-y-auto pr-1">
+                                    {checkpointQueuedImages.map((item) => (
+                                      <QueuedImagePreview
+                                        key={item.id}
+                                        item={item}
+                                        previewUrl={
+                                          imageUploadQueue.previewUrls[item.id] ?? item.sourcePreviewUrl
+                                        }
+                                        onRetry={() => void imageUploadQueue.retryItem(item.id)}
+                                        onDiscard={() => void imageUploadQueue.discardItem(item.id)}
+                                      />
+                                    ))}
+                                    {checkpointImages.map((image) => (
                                       <div key={image.id} className="relative overflow-hidden rounded-md border border-emerald-100">
                                         <img
                                           src={imagePreviewSrc(image)}
@@ -3641,9 +3871,11 @@ export default function EbInspectionRoundClient({
                 <div className="md:col-span-2 xl:col-span-4">
                   {fieldLabel(
                     'Beslutets motivering',
-                    <textarea
+                    <DebouncedTextarea
                       value={inspectionForm.approvalNote}
-                      onChange={(event) => updateInspectionField('approvalNote', event.target.value)}
+                      draftKey={`eb:${round.inspection.inspectionId}:inspection:approval-note`}
+                      disabled={isLocked}
+                      onSave={(value) => handleInspectionTextSave('approvalNote', value)}
                       rows={3}
                       className={`${inputClassName()} resize-y leading-6`}
                     />
@@ -3769,9 +4001,13 @@ export default function EbInspectionRoundClient({
                 <div className="md:col-span-2 xl:col-span-4">
                   {fieldLabel(
                     'Besiktningskostnadens fördelning',
-                    <textarea
+                    <DebouncedTextarea
                       value={inspectionForm.inspectionCostDistribution}
-                      onChange={(event) => updateInspectionField('inspectionCostDistribution', event.target.value)}
+                      draftKey={`eb:${round.inspection.inspectionId}:inspection:cost-distribution`}
+                      disabled={isLocked}
+                      onSave={(value) =>
+                        handleInspectionTextSave('inspectionCostDistribution', value)
+                      }
                       rows={3}
                       className={`${inputClassName()} resize-y leading-6`}
                     />
@@ -3807,9 +4043,13 @@ export default function EbInspectionRoundClient({
               <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
                 {fieldLabel(
                   'Övriga förklaringar',
-                  <textarea
+                  <DebouncedTextarea
                     value={inspectionForm.defectNumberingExplanation}
-                    onChange={(event) => updateInspectionField('defectNumberingExplanation', event.target.value)}
+                    draftKey={`eb:${round.inspection.inspectionId}:inspection:defect-explanation`}
+                    disabled={isLocked}
+                    onSave={(value) =>
+                      handleInspectionTextSave('defectNumberingExplanation', value)
+                    }
                     rows={4}
                     className={`${inputClassName()} resize-y leading-6`}
                   />
@@ -3843,7 +4083,13 @@ export default function EbInspectionRoundClient({
                 </button>
               }
             >
-              <ReportDraftSectionsEditor sections={reportSections} onChange={setReportSections} />
+              <ReportDraftSectionsEditor
+                sections={reportSections}
+                inspectionId={round.inspection.inspectionId}
+                disabled={isLocked}
+                onSectionChange={handleReportSectionChange}
+                onSectionTextSave={handleReportSectionTextSave}
+              />
             </ReviewSection>
 
             <ReviewSection
@@ -3933,7 +4179,7 @@ export default function EbInspectionRoundClient({
                   <button
                     type="button"
                     onClick={handleNewNote}
-                    disabled={isLocked}
+                    disabled={isLocked || saving}
                     className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-emerald-700 px-3 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                   >
                     <Plus size={14} />
@@ -3950,6 +4196,8 @@ export default function EbInspectionRoundClient({
                     const canMoveUp = index > 0
                     const canMoveDown = index < filteredNotes.length - 1
                     const noteDropKey = `note:${note.id}`
+                    const queuedNoteImages = queuedImagesByNoteId.get(note.id) ?? []
+                    const savedNoteImages = imagesByNoteId.get(note.id) ?? []
                     return (
                       <article
                         key={note.id}
@@ -3977,7 +4225,26 @@ export default function EbInspectionRoundClient({
                         <span className="truncate text-gray-700">{note.location || '-'}</span>
                         <span className="truncate text-gray-950">{note.noteText}</span>
                         <div className="flex min-w-0 items-center gap-1.5">
-                          {(imagesByNoteId.get(note.id) ?? []).slice(0, 3).map((image) => (
+                          {queuedNoteImages.slice(0, 3).map((item) => {
+                            const previewUrl =
+                              imageUploadQueue.previewUrls[item.id] ?? item.sourcePreviewUrl
+                            return previewUrl ? (
+                              <div key={item.id} className="relative h-8 w-8 shrink-0">
+                                <img
+                                  src={previewUrl}
+                                  alt="Bild som väntar på uppladdning"
+                                  className="h-8 w-8 rounded-md border border-emerald-100 object-cover opacity-70"
+                                />
+                                <Loader2
+                                  size={13}
+                                  className="absolute left-2 top-2 animate-spin text-white drop-shadow"
+                                />
+                              </div>
+                            ) : null
+                          })}
+                          {savedNoteImages
+                            .slice(0, Math.max(0, 3 - queuedNoteImages.length))
+                            .map((image) => (
                             <img
                               key={image.id}
                               src={imagePreviewSrc(image)}
@@ -3986,9 +4253,9 @@ export default function EbInspectionRoundClient({
                               decoding="async"
                               className="h-8 w-8 shrink-0 rounded-md border border-emerald-100 object-cover"
                             />
-                          ))}
+                            ))}
                           <span className="shrink-0 text-xs font-medium text-gray-600">
-                            {imagesByNoteId.get(note.id)?.length ?? 0} st
+                            {savedNoteImages.length + queuedNoteImages.length} st
                           </span>
                           <button
                             type="button"
@@ -3996,16 +4263,12 @@ export default function EbInspectionRoundClient({
                               event.stopPropagation()
                               chooseNoteRowImage(note)
                             }}
-                            disabled={isLocked || uploadingImage}
+                            disabled={isLocked}
                             className="ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
                             aria-label="Lägg till bild"
                             title="Lägg till bild"
                           >
-                            {uploadingImage && uploadingImageNoteId === note.id ? (
-                              <Loader2 size={15} className="animate-spin" />
-                            ) : (
-                              <ImageIcon size={15} />
-                            )}
+                            <ImageIcon size={15} />
                           </button>
                         </div>
                         <div className="flex justify-start gap-1">
@@ -4091,7 +4354,7 @@ export default function EbInspectionRoundClient({
                   <button
                     type="button"
                     onClick={uploadNewCheckpointBankImage}
-                    disabled={isLocked || uploadingImage || uploadingCheckpointImageId === checkpointImageBankTarget.id}
+                    disabled={isLocked}
                     className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                   >
                     {uploadingCheckpointImageId === checkpointImageBankTarget.id ? (
@@ -4144,7 +4407,7 @@ export default function EbInspectionRoundClient({
                       {availableProjectImageAttachments.map((attachment) => {
                         const title = projectAttachmentTitle(attachment)
                         const imageUrl = projectAttachmentPreviewSrc(attachment)
-                        const isCopying = copyingProjectAttachmentId === attachment.id
+                        const isCopying = queuedProjectAttachmentIds.has(attachment.id)
 
                         return (
                           <ProjectAttachmentImageCard
@@ -4155,7 +4418,7 @@ export default function EbInspectionRoundClient({
                             isLocked={isLocked}
                             isCopying={isCopying}
                             isDeleting={deletingProjectAttachmentId === attachment.id}
-                            actionDisabled={Boolean(copyingProjectAttachmentId)}
+                            actionDisabled={false}
                             onPreview={() => setPreviewImageKey(`project:${attachment.id}`)}
                             onAdd={() => void copyProjectAttachmentToCheckpoint(attachment)}
                             onDelete={() => void deleteProjectAttachmentFromBank(attachment)}
@@ -4267,7 +4530,7 @@ export default function EbInspectionRoundClient({
               <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_32rem]">
               <form onSubmit={(event) => void handleSubmit(event)} className="min-h-0 space-y-3 overflow-y-auto p-4">
                 <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={(event) => void handleImageSelected(event)} className="hidden" />
-                <input ref={galleryInputRef} type="file" accept="image/*" onChange={(event) => void handleImageSelected(event)} className="hidden" />
+                <input ref={galleryInputRef} type="file" accept="image/*" multiple onChange={(event) => void handleImageSelected(event)} className="hidden" />
 
                 <div className="grid grid-cols-2 gap-3">
                   <label className="block">
@@ -4368,24 +4631,28 @@ export default function EbInspectionRoundClient({
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Noteringens bilder</p>
                       <p className="text-sm font-semibold text-gray-950">
-                        {editingNote ? (imagesByNoteId.get(editingNote.id)?.length ?? 0) : 0} st
+                        {editingNote
+                          ? (imagesByNoteId.get(editingNote.id)?.length ?? 0) +
+                            (queuedImagesByNoteId.get(editingNote.id)?.length ?? 0)
+                          : 0}{' '}
+                        st
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => cameraInputRef.current?.click()}
-                        disabled={isLocked || uploadingImage || !editingNote}
+                        disabled={isLocked || (!editingNote && !form.noteText.trim())}
                         className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                         aria-label="Kamera"
                         title="Kamera"
                       >
-                        {uploadingImage ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
+                        <Camera size={18} />
                       </button>
                       <button
                         type="button"
                         onClick={() => galleryInputRef.current?.click()}
-                        disabled={isLocked || uploadingImage || !editingNote}
+                        disabled={isLocked || (!editingNote && !form.noteText.trim())}
                         className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
                         aria-label="Bild"
                         title="Bild"
@@ -4395,9 +4662,21 @@ export default function EbInspectionRoundClient({
                     </div>
                   </div>
 
-                  {editingNote && (imagesByNoteId.get(editingNote.id)?.length ?? 0) > 0 ? (
+                  {editingNote &&
+                  (imagesByNoteId.get(editingNote.id)?.length ?? 0) +
+                    (queuedImagesByNoteId.get(editingNote.id)?.length ?? 0) >
+                    0 ? (
                     <div className="max-h-[28rem] overflow-y-auto pr-1">
                       <div className={imageViewCount === 1 ? 'grid grid-cols-1 gap-2' : imageViewCount === 4 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-2'}>
+                        {(queuedImagesByNoteId.get(editingNote.id) ?? []).map((item) => (
+                          <QueuedImagePreview
+                            key={item.id}
+                            item={item}
+                            previewUrl={imageUploadQueue.previewUrls[item.id] ?? item.sourcePreviewUrl}
+                            onRetry={() => void imageUploadQueue.retryItem(item.id)}
+                            onDiscard={() => void imageUploadQueue.discardItem(item.id)}
+                          />
+                        ))}
                         {(imagesByNoteId.get(editingNote.id) ?? []).map((image) => (
                           <div key={image.id} className="relative overflow-hidden rounded-md border border-emerald-100 bg-white">
                             <img
@@ -4665,7 +4944,7 @@ export default function EbInspectionRoundClient({
                             {availableProjectImageAttachments.map((attachment) => {
                               const title = projectAttachmentTitle(attachment)
                               const imageUrl = projectAttachmentPreviewSrc(attachment)
-                              const isCopying = copyingProjectAttachmentId === attachment.id
+                              const isCopying = queuedProjectAttachmentIds.has(attachment.id)
 
                               return (
                                 <ProjectAttachmentImageCard
@@ -4676,7 +4955,7 @@ export default function EbInspectionRoundClient({
                                   isLocked={isLocked}
                                   isCopying={isCopying}
                                   isDeleting={deletingProjectAttachmentId === attachment.id}
-                                  actionDisabled={Boolean(copyingProjectAttachmentId)}
+                                  actionDisabled={false}
                                   onPreview={() => setPreviewImageKey(`project:${attachment.id}`)}
                                   onAdd={() => void copyProjectAttachmentToNote(attachment)}
                                   onDelete={() => void deleteProjectAttachmentFromBank(attachment)}

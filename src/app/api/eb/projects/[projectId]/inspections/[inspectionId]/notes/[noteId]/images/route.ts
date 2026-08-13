@@ -26,6 +26,22 @@ type ProjectAttachmentImageRow = {
   content_type: string | null
 }
 
+type InspectionImageRow = {
+  id: string
+  inspection_id: string
+  eb_note_id: string | null
+  source_attachment_id?: string | null
+  file_path: string
+  thumbnail_file_path?: string | null
+  label: string | null
+  sort_order: number | null
+  created_at: string | null
+}
+
+const IMAGE_SELECT =
+  'id,inspection_id,eb_note_id,source_attachment_id,file_path,thumbnail_file_path,label,sort_order,created_at'
+const FALLBACK_IMAGE_SELECT = 'id,inspection_id,eb_note_id,file_path,label,sort_order,created_at'
+
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
 }
@@ -46,17 +62,7 @@ function isUniqueViolation(error: { code?: string | null; message?: string | nul
   return error.code === '23505' || text.includes('duplicate key')
 }
 
-function mapImage(row: {
-  id: string
-  inspection_id: string
-  eb_note_id: string | null
-  source_attachment_id?: string | null
-  file_path: string
-  thumbnail_file_path?: string | null
-  label: string | null
-  sort_order: number | null
-  created_at: string | null
-}) {
+function mapImage(row: InspectionImageRow) {
   const storage = createSupabaseAdminClient().storage.from(EB_NOTE_IMAGE_BUCKET)
   const publicUrl = storage.getPublicUrl(row.file_path).data.publicUrl
   const thumbnailUrl = row.thumbnail_file_path
@@ -76,6 +82,40 @@ function mapImage(row: {
     thumbnailUrl,
     createdAt: row.created_at ?? null,
   }
+}
+
+async function loadNoteImageById(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  imageId: string,
+  inspectionId: string,
+  noteId: string
+) {
+  const result = await admin
+    .from('inspection_images')
+    .select(IMAGE_SELECT)
+    .eq('id', imageId)
+    .eq('inspection_id', inspectionId)
+    .eq('eb_note_id', noteId)
+    .maybeSingle()
+
+  if (result.error && isMissingColumnError(result.error)) {
+    const fallback = await admin
+      .from('inspection_images')
+      .select(FALLBACK_IMAGE_SELECT)
+      .eq('id', imageId)
+      .eq('inspection_id', inspectionId)
+      .eq('eb_note_id', noteId)
+      .maybeSingle()
+    if (fallback.error) {
+      throw new Error(fallback.error.message ?? 'Kunde inte kontrollera befintlig bild.')
+    }
+    return (fallback.data as InspectionImageRow | null) ?? null
+  }
+
+  if (result.error) {
+    throw new Error(result.error.message ?? 'Kunde inte kontrollera befintlig bild.')
+  }
+  return (result.data as InspectionImageRow | null) ?? null
 }
 
 function resolveFileExtension(file: File) {
@@ -217,6 +257,17 @@ export async function POST(
     const formData = await request.formData()
     const fileEntry = formData.get('file')
     const thumbnailEntry = formData.get('thumbnail')
+    const clientImageIdEntry = formData.get('clientImageId')
+    const clientImageId = normalizeUuid(clientImageIdEntry)
+    if (clientImageIdEntry !== null && !clientImageId) {
+      return jsonError('Ogiltigt clientImageId.', 400)
+    }
+
+    if (clientImageId) {
+      const existingImage = await loadNoteImageById(admin, clientImageId, inspectionId, noteId)
+      if (existingImage) return NextResponse.json({ image: mapImage(existingImage) })
+    }
+
     if (!(fileEntry instanceof File)) return jsonError('Fil saknas.', 400)
     if (!fileEntry.type.toLowerCase().startsWith('image/')) {
       return jsonError('Endast bildfiler är tillåtna.', 400)
@@ -226,32 +277,21 @@ export async function POST(
       return jsonError('Filen är för stor (max 15 MB).', 400)
     }
 
-    const { data: currentImages, error: currentImagesError } = await admin
-      .from('inspection_images')
-      .select('sort_order')
-      .eq('inspection_id', inspectionId)
-      .eq('eb_note_id', noteId)
-      .order('sort_order', { ascending: false })
-      .limit(1)
-
-    if (currentImagesError) {
-      throw new Error(currentImagesError.message ?? 'Kunde inte läsa befintliga bilder.')
-    }
-
-    const maxSort = Array.isArray(currentImages)
-      ? Number((currentImages[0] as { sort_order?: unknown } | undefined)?.sort_order ?? 0)
-      : 0
-    const sortOrder = Number.isFinite(maxSort) ? maxSort + 10 : 10
+    const sortOrder = await loadNextImageSortOrder(admin, inspectionId, noteId)
     const capturedAt = new Date().toISOString()
-    const fileName = `${Date.now()}-${randomUUID().slice(0, 8)}.${resolveFileExtension(fileEntry)}`
-    const filePath = `${inspectionId}/eb-notes/${noteId}/${capturedAt.slice(0, 10)}/${fileName}`
+    const imageId = clientImageId ?? randomUUID()
+    const fileName = clientImageId
+      ? `${clientImageId}.${resolveFileExtension(fileEntry)}`
+      : `${Date.now()}-${imageId.slice(0, 8)}.${resolveFileExtension(fileEntry)}`
+    const pathGroup = clientImageId ? 'queued' : capturedAt.slice(0, 10)
+    const filePath = `${inspectionId}/eb-notes/${noteId}/${pathGroup}/${fileName}`
     const thumbnailPath = thumbnailEntry instanceof File
-      ? `${inspectionId}/eb-notes/${noteId}/${capturedAt.slice(0, 10)}/thumb-${fileName.replace(/\.[^.]+$/, '.jpg')}`
+      ? `${inspectionId}/eb-notes/${noteId}/${pathGroup}/thumb-${fileName.replace(/\.[^.]+$/, '.jpg')}`
       : null
 
     const { error: uploadError } = await admin.storage.from(EB_NOTE_IMAGE_BUCKET).upload(filePath, fileEntry, {
       cacheControl: '3600',
-      upsert: false,
+      upsert: Boolean(clientImageId),
       contentType: fileEntry.type || undefined,
     })
 
@@ -266,7 +306,7 @@ export async function POST(
         thumbnailEntry,
         {
           cacheControl: '3600',
-          upsert: false,
+          upsert: Boolean(clientImageId),
           contentType: thumbnailEntry.type || 'image/jpeg',
         }
       )
@@ -280,6 +320,7 @@ export async function POST(
     const { data: insertedImage, error: insertError } = await admin
       .from('inspection_images')
       .insert({
+        id: imageId,
         inspection_id: inspectionId,
         eb_note_id: noteId,
         file_path: filePath,
@@ -287,7 +328,7 @@ export async function POST(
         label: null,
         sort_order: sortOrder,
       })
-      .select('id,inspection_id,eb_note_id,source_attachment_id,file_path,thumbnail_file_path,label,sort_order,created_at')
+      .select(IMAGE_SELECT)
       .single()
 
     if (insertError && isMissingColumnError(insertError)) {
@@ -299,16 +340,25 @@ export async function POST(
       const { data: fallbackInsertedImage, error: fallbackInsertError } = await admin
         .from('inspection_images')
         .insert({
+          id: imageId,
           inspection_id: inspectionId,
           eb_note_id: noteId,
           file_path: filePath,
           label: null,
           sort_order: sortOrder,
         })
-        .select('id,inspection_id,eb_note_id,file_path,label,sort_order,created_at')
+        .select(FALLBACK_IMAGE_SELECT)
         .single()
 
       if (fallbackInsertError) {
+        if (clientImageId && isUniqueViolation(fallbackInsertError)) {
+          const existingImage = await loadNoteImageById(admin, clientImageId, inspectionId, noteId)
+          if (existingImage) {
+            uploadedPath = null
+            uploadedThumbnailPath = null
+            return NextResponse.json({ image: mapImage(existingImage) })
+          }
+        }
         throw new Error(fallbackInsertError.message ?? 'Kunde inte spara bildrad.')
       }
 
@@ -316,6 +366,14 @@ export async function POST(
     }
 
     if (insertError) {
+      if (clientImageId && isUniqueViolation(insertError)) {
+        const existingImage = await loadNoteImageById(admin, clientImageId, inspectionId, noteId)
+        if (existingImage) {
+          uploadedPath = null
+          uploadedThumbnailPath = null
+          return NextResponse.json({ image: mapImage(existingImage) })
+        }
+      }
       throw new Error(insertError.message ?? 'Kunde inte spara bildrad.')
     }
 

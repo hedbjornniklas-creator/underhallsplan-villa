@@ -505,9 +505,6 @@ type EbReportLinkRow = {
   created_at: string | null
   pdf_status: string | null
   pdf_error: string | null
-  pdf_storage_bucket: string | null
-  pdf_storage_path: string | null
-  pdf_base64: string | null
 }
 
 type EbDisciplineSettingRow = {
@@ -1328,13 +1325,7 @@ function normalizeEbReportPdfStatus(value: unknown): EbReportPdfStatus {
 
 function getEbReportPdfDownloadUrl(inspectionId: string, link: EbReportLinkRow | undefined) {
   if (!link) return null
-  const hasStoragePdf =
-    String(link.pdf_storage_bucket ?? '').trim().length > 0 &&
-    String(link.pdf_storage_path ?? '').trim().length > 0
-  const hasLegacyPdf = String(link.pdf_base64 ?? '').trim().length > 0
-  if (normalizeEbReportPdfStatus(link.pdf_status) !== 'ready' || (!hasStoragePdf && !hasLegacyPdf)) {
-    return null
-  }
+  if (normalizeEbReportPdfStatus(link.pdf_status) !== 'ready') return null
   return `/api/report-v2/${encodeURIComponent(inspectionId)}/pdf`
 }
 
@@ -1562,9 +1553,7 @@ async function fetchLatestReportLinksByInspectionIds(inspectionIds: string[]) {
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
     .from('inspection_report_links')
-    .select(
-      'inspection_id,created_at,pdf_status,pdf_error,pdf_storage_bucket,pdf_storage_path,pdf_base64'
-    )
+    .select('inspection_id,created_at,pdf_status,pdf_error')
     .in('inspection_id', inspectionIds)
     .is('revoked_at', null)
     .order('created_at', { ascending: false })
@@ -3457,6 +3446,35 @@ async function buildEbNoteContext(input: {
 export async function createEbNote(input: SaveEbNoteInput): Promise<EbNote> {
   await assertEbInspectionEditable(input)
   const admin = createSupabaseAdminClient()
+
+  if (input.noteId) {
+    const { data: existing, error: existingError } = await admin
+      .from('eb_notes')
+      .select('id,org_id,eb_project_id,inspection_id')
+      .eq('id', input.noteId)
+      .maybeSingle()
+
+    if (existingError) {
+      throw new Error(existingError.message ?? 'Kunde inte verifiera EB-noteringen.')
+    }
+    if (existing) {
+      const existingRow = existing as {
+        id: string
+        org_id: string
+        eb_project_id: string
+        inspection_id: string
+      }
+      if (
+        existingRow.org_id !== input.orgId ||
+        existingRow.eb_project_id !== input.projectId ||
+        existingRow.inspection_id !== input.inspectionId
+      ) {
+        throw new Error('EB_NOTE_ID_CONFLICT')
+      }
+      return updateEbNote({ ...input, noteId: input.noteId })
+    }
+  }
+
   const context = await buildEbNoteContext(input)
   const noteText = normalizeText(input.noteText)
   if (!noteText) {
@@ -3476,6 +3494,7 @@ export async function createEbNote(input: SaveEbNoteInput): Promise<EbNote> {
   const { data, error } = await admin
     .from('eb_notes')
     .insert({
+      ...(input.noteId ? { id: input.noteId } : {}),
       org_id: input.orgId,
       eb_project_id: input.projectId,
       inspection_id: input.inspectionId,
@@ -4829,35 +4848,45 @@ function buildEbReportDraft(input: {
 
 export async function saveEbReportDraft(input: SaveEbReportDraftInput): Promise<EbReportDraft> {
   await assertEbInspectionEditable(input)
-  const round = await getEbInspectionRound(input)
-  const participants = await listParticipantsForInspection(input)
-  const resolvedParticipants = enrichParticipantsForReport(round.project, participants)
-  const [attachments, inspectionDocuments] = await Promise.all([
-    listEbProjectAttachments({
-      orgId: input.orgId,
-      projectId: input.projectId,
-    }),
-    listEbInspectionDocuments(input),
-  ])
-  const inspectorText = await buildInspectorReportText({
-    orgId: input.orgId,
-    profileId: input.requestedByUserId,
-  })
-  const baseDraft = buildEbReportDraft({
-    round,
-    participants: resolvedParticipants,
-    attachments,
-    inspectionDocuments,
-    inspectorText,
-    storedDraft: await fetchEbReportDraft(input),
-  })
   const now = new Date().toISOString()
-  const allowedKeys = new Set(baseDraft.sections.map((section) => section.key))
-  const sanitizedSections = input.sections
+  const requestedSections = input.sections
     .map(normalizeEbReportDraftSection)
-    .filter((section): section is EbReportDraftSection => Boolean(section && allowedKeys.has(section.key)))
+    .filter((section): section is EbReportDraftSection => Boolean(section))
     .map((section) => ({ ...section, updatedAt: now }))
 
+  if (requestedSections.length === 0) {
+    throw new Error('EB_REPORT_DRAFT_EMPTY')
+  }
+
+  const storedDraft = await fetchEbReportDraft(input)
+  const storedKeys = new Set(storedDraft.sections.map((section) => section.key))
+  const needsRebuild =
+    storedDraft.sections.length === 0 ||
+    requestedSections.some((section) => !storedKeys.has(section.key))
+
+  let baseDraft = storedDraft
+  if (needsRebuild) {
+    const round = await getEbInspectionRound(input)
+    const [participants, inspectionDocuments, inspectorText] = await Promise.all([
+      listParticipantsForInspection(input),
+      listEbInspectionDocuments(input),
+      buildInspectorReportText({
+        orgId: input.orgId,
+        profileId: input.requestedByUserId,
+      }),
+    ])
+    baseDraft = buildEbReportDraft({
+      round,
+      participants: enrichParticipantsForReport(round.project, participants),
+      attachments: round.projectAttachments,
+      inspectionDocuments,
+      inspectorText,
+      storedDraft,
+    })
+  }
+
+  const allowedKeys = new Set(baseDraft.sections.map((section) => section.key))
+  const sanitizedSections = requestedSections.filter((section) => allowedKeys.has(section.key))
   if (sanitizedSections.length === 0) {
     throw new Error('EB_REPORT_DRAFT_EMPTY')
   }
