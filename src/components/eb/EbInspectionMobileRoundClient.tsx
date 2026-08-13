@@ -17,7 +17,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
-import type { EbInspectionRound, EbNote, EbNoteImage } from '@/lib/eb/server'
+import type { EbInspectionRound, EbNote, EbNoteImage, EbProjectAttachment } from '@/lib/eb/server'
 
 type EbInspectionMobileRoundClientProps = {
   initialRound: EbInspectionRound
@@ -149,6 +149,25 @@ function sortImages(images: EbNoteImage[]) {
 
 function isImageFile(file: File) {
   return file.type.startsWith('image/') || /\.(avif|gif|heic|heif|jpe?g|png|webp)$/i.test(file.name)
+}
+
+function proxiedImageSrc(url: string | null | undefined, max = 420, quality = 68) {
+  const trimmedUrl = url?.trim()
+  if (!trimmedUrl) return null
+  const params = new URLSearchParams({
+    url: trimmedUrl,
+    max: String(max),
+    q: String(quality),
+  })
+  return `/api/image-proxy?${params.toString()}`
+}
+
+function projectAttachmentPreviewSrc(attachment: EbProjectAttachment) {
+  return attachment.signedThumbnailUrl ?? proxiedImageSrc(attachment.signedUrl) ?? attachment.signedUrl
+}
+
+function projectAttachmentTitle(attachment: EbProjectAttachment) {
+  return attachment.title || attachment.fileName || 'Entreprenadbild'
 }
 
 function filterSuggestions(value: string, candidates: string[]) {
@@ -356,6 +375,7 @@ export default function EbInspectionMobileRoundClient({
   const galleryInputRef = useRef<HTMLInputElement | null>(null)
   const desktopGalleryInputRef = useRef<HTMLInputElement | null>(null)
   const noteHistoryOpenRef = useRef(false)
+  const pendingProjectAttachmentCopiesRef = useRef(new Set<string>())
   const initialDiscipline = initialRound.disciplines.find(
     (discipline) => discipline.id === initialDisciplineId
   )
@@ -370,6 +390,7 @@ export default function EbInspectionMobileRoundClient({
   const [refreshing, setRefreshing] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
   const [imageDragOver, setImageDragOver] = useState(false)
+  const [copyingProjectAttachmentId, setCopyingProjectAttachmentId] = useState<string | null>(null)
   const [imageUploadStatus, setImageUploadStatus] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
@@ -403,6 +424,20 @@ export default function EbInspectionMobileRoundClient({
       map.set(noteId, sortImages(images))
     }
     return map
+  }, [round.images])
+  const projectImageAttachments = useMemo(
+    () =>
+      (round.projectAttachments ?? []).filter(
+        (attachment) => attachment.attachmentType === 'image' && Boolean(attachment.signedUrl)
+      ),
+    [round.projectAttachments]
+  )
+  const linkedProjectAttachmentIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const image of round.images) {
+      if (image.noteId && image.sourceAttachmentId) ids.add(image.sourceAttachmentId)
+    }
+    return ids
   }, [round.images])
   const suggestionCandidates = useMemo(() => {
     const unique = new Map<string, string>()
@@ -692,6 +727,41 @@ export default function EbInspectionMobileRoundClient({
     event.stopPropagation()
     setImageDragOver(false)
     await uploadSelectedImages(Array.from(event.dataTransfer.files))
+  }
+
+  const copyProjectAttachmentToNote = async (attachment: EbProjectAttachment) => {
+    if (isLocked) {
+      setError(lockedMessage)
+      return
+    }
+    if (copyingProjectAttachmentId || uploadingImage) return
+    if (pendingProjectAttachmentCopiesRef.current.has(attachment.id)) return
+    pendingProjectAttachmentCopiesRef.current.add(attachment.id)
+
+    try {
+      setCopyingProjectAttachmentId(attachment.id)
+      setError(null)
+      const note = editingNote ?? (await saveCurrentNote())
+      const response = await fetch(`${notesBasePath}/${note.id}/images`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attachmentId: attachment.id, action: 'copyAttachment' }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as ImageResponse
+      if (!response.ok || !payload.image) {
+        throw new Error(payload.error ?? 'Kunde inte lägga till entreprenadbilden.')
+      }
+      upsertImageInState(payload.image)
+      if (payload.image.noteId && payload.image.noteId !== note.id) {
+        setError('Bilden är redan kopplad till en annan notering.')
+      }
+    } catch (copyError) {
+      setError(copyError instanceof Error ? copyError.message : 'Kunde inte lägga till entreprenadbilden.')
+    } finally {
+      setSaving(false)
+      setCopyingProjectAttachmentId(null)
+      pendingProjectAttachmentCopiesRef.current.delete(attachment.id)
+    }
   }
 
   const deleteImage = async (image: EbNoteImage) => {
@@ -1264,6 +1334,65 @@ export default function EbInspectionMobileRoundClient({
                           {imageUploadStatus ?? 'Laddar upp bild...'}
                         </p>
                       ) : null}
+
+                      <div className="mt-3 hidden md:block">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                              Bildbank
+                            </p>
+                            <p className="text-xs text-gray-600">Bilder uppladdade på entreprenaden.</p>
+                          </div>
+                          <span className="text-xs font-medium text-gray-500">{projectImageAttachments.length} st</span>
+                        </div>
+                        {projectImageAttachments.length === 0 ? (
+                          <p className="rounded-md border border-dashed border-emerald-200 bg-white/75 px-3 py-5 text-center text-sm text-gray-600">
+                            Inga bilder finns i bildbanken.
+                          </p>
+                        ) : (
+                          <div className="grid grid-cols-4 gap-2">
+                            {projectImageAttachments.map((attachment) => {
+                              const title = projectAttachmentTitle(attachment)
+                              const imageUrl = projectAttachmentPreviewSrc(attachment)
+                              const isCopying = copyingProjectAttachmentId === attachment.id
+                              const isLinked = linkedProjectAttachmentIds.has(attachment.id)
+
+                              return (
+                                <button
+                                  key={attachment.id}
+                                  type="button"
+                                  onClick={() => void copyProjectAttachmentToNote(attachment)}
+                                  disabled={isLocked || Boolean(copyingProjectAttachmentId) || isLinked}
+                                  className="relative overflow-hidden rounded-md border border-emerald-100 bg-white text-left transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                                  title={title}
+                                >
+                                  {imageUrl ? (
+                                    <img
+                                      src={imageUrl}
+                                      alt={title}
+                                      loading="lazy"
+                                      decoding="async"
+                                      className="aspect-square w-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex aspect-square w-full items-center justify-center bg-emerald-50 text-emerald-700">
+                                      <ImageIcon size={18} aria-hidden="true" />
+                                    </div>
+                                  )}
+                                  {isCopying ? (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-white/75">
+                                      <Loader2 className="h-5 w-5 animate-spin text-emerald-700" aria-hidden="true" />
+                                    </div>
+                                  ) : null}
+                                  <span className="block truncate px-1.5 py-1 text-[11px] font-semibold text-emerald-800">
+                                    {isLinked ? 'Redan kopplad' : isCopying ? 'Lägger till...' : 'Lägg till'}
+                                  </span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
 
                       {editingNote && (imagesByNoteId.get(editingNote.id)?.length ?? 0) > 0 ? (
                         <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
