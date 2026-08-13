@@ -146,6 +146,11 @@ type ProjectAttachmentsResponse = {
   error?: string
 }
 
+type ErrorToast = {
+  id: string
+  message: string
+}
+
 type ReorderResponse = {
   ok?: boolean
   error?: string
@@ -1219,6 +1224,7 @@ export default function EbInspectionRoundClient({
   const [imageViewCount, setImageViewCount] = useState(4)
   const [checkpointImageBankTargetId, setCheckpointImageBankTargetId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [errorToasts, setErrorToasts] = useState<ErrorToast[]>([])
   const [inspectionForm, setInspectionForm] = useState<InspectionDetailsFormState>(() =>
     buildInspectionDetailsForm(initialRound.inspection)
   )
@@ -1414,6 +1420,19 @@ export default function EbInspectionRoundClient({
   useEffect(() => {
     notesRef.current = round.notes
   }, [round.notes])
+
+  const dismissErrorToast = useCallback((toastId: string) => {
+    setErrorToasts((current) => current.filter((toast) => toast.id !== toastId))
+  }, [])
+
+  const showErrorToast = useCallback(
+    (message: string) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      setErrorToasts((current) => [{ id, message }, ...current].slice(0, 5))
+      window.setTimeout(() => dismissErrorToast(id), 4000)
+    },
+    [dismissErrorToast]
+  )
 
   useEffect(() => {
     return () => {
@@ -2354,10 +2373,12 @@ export default function EbInspectionRoundClient({
 
     const imageFiles = files.filter(isImageFile).slice(0, IMAGE_BANK_MAX_BATCH_FILES)
     if (imageFiles.length === 0) {
+      showErrorToast('Välj en eller flera bildfiler.')
       setError('Välj en eller flera bildfiler.')
       return
     }
     if (files.filter(isImageFile).length > IMAGE_BANK_MAX_BATCH_FILES) {
+      showErrorToast(`Max ${IMAGE_BANK_MAX_BATCH_FILES} bilder kan laddas upp åt gången.`)
       setError(`Max ${IMAGE_BANK_MAX_BATCH_FILES} bilder kan laddas upp åt gången.`)
     }
 
@@ -2383,6 +2404,7 @@ export default function EbInspectionRoundClient({
         setRound((current) => ({ ...current, projectAttachments: payload.attachments ?? current.projectAttachments }))
       }
     } catch (uploadError) {
+      showErrorToast(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp bild till bildbanken.')
       setError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp bild till bildbanken.')
     } finally {
       setUploadingProjectImages(false)
@@ -2792,6 +2814,30 @@ export default function EbInspectionRoundClient({
   return (
     <Protected>
       <main className="relative min-h-full overflow-hidden">
+        {errorToasts.length > 0 ? (
+          <div className="fixed right-4 top-4 z-[220] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2">
+            {errorToasts.map((toast) => (
+              <div
+                key={toast.id}
+                role="alert"
+                className="animate-in slide-in-from-top-2 fade-in rounded-md bg-black px-3 py-2 text-sm font-medium leading-5 text-white shadow-2xl"
+              >
+                <div className="flex items-start gap-3">
+                  <p className="min-w-0 flex-1">{toast.message}</p>
+                  <button
+                    type="button"
+                    onClick={() => dismissErrorToast(toast.id)}
+                    className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white/80 transition hover:bg-white/10 hover:text-white"
+                    aria-label="Stäng felmeddelande"
+                    title="Stäng"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <input
           ref={noteRowImageInputRef}
           type="file"
