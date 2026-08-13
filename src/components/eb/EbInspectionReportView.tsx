@@ -1653,7 +1653,6 @@ export default function EbInspectionReportView({
       report.reportDraft.sections.filter(
         (section) =>
           section.isRelevant &&
-          section.status !== 'not_applicable' &&
           !isEbReportSectionIntegrated(section.key) &&
           isEbReportSectionApplicable({
             sectionKey: section.key,

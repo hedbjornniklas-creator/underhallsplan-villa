@@ -320,9 +320,36 @@ export type EbReportDraftSection = {
   source: EbReportSectionSource
   status: EbReportSectionStatus
   isRelevant: boolean
+  relevanceOverridden?: boolean
   text: string
   updatedAt: string | null
   contentMode: EbReportSectionContentMode
+}
+
+function mergeEbStructuredReportSection(
+  current: EbReportDraftSection,
+  existing: EbReportDraftSection,
+  fallbackUpdatedAt: string
+): EbReportDraftSection {
+  const relevanceOverridden = existing.relevanceOverridden === true
+  const isRelevant = relevanceOverridden ? existing.isRelevant : current.isRelevant
+
+  return {
+    ...current,
+    title: existing.title,
+    sbrPoint: existing.sbrPoint,
+    source: existing.source,
+    contentMode: existing.contentMode,
+    status:
+      !isRelevant
+        ? 'not_applicable'
+        : relevanceOverridden && current.status === 'not_applicable'
+          ? 'draft'
+          : current.status,
+    isRelevant,
+    relevanceOverridden,
+    updatedAt: existing.updatedAt ?? fallbackUpdatedAt,
+  }
 }
 
 export type EbReportProjectSnapshot = Omit<EbProjectListItem, 'inspections'>
@@ -3025,6 +3052,7 @@ function normalizeEbReportDraftSection(value: unknown): EbReportDraftSection | n
     source: isEbReportSource(raw.source) ? raw.source : 'manual',
     status: isEbReportStatus(raw.status) ? raw.status : 'draft',
     isRelevant: raw.isRelevant !== false,
+    relevanceOverridden: raw.relevanceOverridden === true,
     text,
     updatedAt: normalizeText(raw.updatedAt),
     contentMode: ebReportSectionContentMode(key),
@@ -5130,24 +5158,19 @@ function buildEbReportDraft(input: {
   const copiedTemplateSections = storedDraft.sections.map((existing) => {
     const current = defaultsByKey.get(existing.key)
     if (!current || existing.contentMode === 'editable') return existing
-    return {
-      ...current,
-      title: existing.title,
-      sbrPoint: existing.sbrPoint,
-      source: existing.source,
-      contentMode: existing.contentMode,
-      updatedAt: existing.updatedAt,
-    }
+    return mergeEbStructuredReportSection(current, existing, storedDraft.updatedAt ?? now)
   })
   const initializedSections = defaultsWithModes.map((section) => {
     const existing = existingByKey.get(section.key)
-    if (section.contentMode === 'structured' || !existing) {
-      return section
+    if (!existing) return section
+    if (section.contentMode === 'structured') {
+      return mergeEbStructuredReportSection(section, existing, storedDraft.updatedAt ?? now)
     }
     return {
       ...section,
       status: existing.status,
       isRelevant: existing.isRelevant,
+      relevanceOverridden: existing.relevanceOverridden,
       text: existing.text,
       updatedAt: existing.updatedAt ?? storedDraft.updatedAt ?? now,
     }
@@ -5188,7 +5211,10 @@ export async function saveEbReportDraft(input: SaveEbReportDraftInput): Promise<
   const sectionsByKey = new Map(baseDraft.sections.map((section) => [section.key, section]))
   const sanitizedSections = requestedSections.filter((section) => {
     const existing = sectionsByKey.get(section.key)
-    return existing?.contentMode === 'editable'
+    return Boolean(
+      existing &&
+        (existing.contentMode === 'editable' || section.relevanceOverridden === true)
+    )
   })
   if (sanitizedSections.length === 0) {
     throw new Error('EB_REPORT_DRAFT_EMPTY')
@@ -5197,10 +5223,29 @@ export async function saveEbReportDraft(input: SaveEbReportDraftInput): Promise<
   for (const requested of sanitizedSections) {
     const existing = sectionsByKey.get(requested.key)
     if (!existing) continue
+
+    if (existing.contentMode === 'structured') {
+      sectionsByKey.set(requested.key, {
+        ...existing,
+        status:
+          requested.isRelevant
+            ? existing.status === 'not_applicable'
+              ? 'draft'
+              : existing.status
+            : 'not_applicable',
+        isRelevant: requested.isRelevant,
+        relevanceOverridden: true,
+        updatedAt: now,
+      })
+      continue
+    }
+
     sectionsByKey.set(requested.key, {
       ...existing,
       status: requested.status,
       isRelevant: requested.isRelevant,
+      relevanceOverridden:
+        requested.relevanceOverridden === true || existing.relevanceOverridden === true,
       text: requested.text,
       updatedAt: now,
     })

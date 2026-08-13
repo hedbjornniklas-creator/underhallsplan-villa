@@ -1509,10 +1509,11 @@ function ReportDraftSectionsEditor({
                 <input
                   type="checkbox"
                   checked={section.isRelevant}
-                  disabled={disabled || section.contentMode === 'structured'}
+                  disabled={disabled}
                   onChange={(event) =>
                     updateSection(section.key, {
                       isRelevant: event.target.checked,
+                      relevanceOverridden: true,
                       status: event.target.checked ? 'draft' : 'not_applicable',
                     })
                   }
@@ -2674,11 +2675,19 @@ export default function EbInspectionRoundClient({
       const currentSection = reportSectionsRef.current.find(
         (section) => section.key === nextSection.key
       )
-      if (!currentSection || currentSection.contentMode !== 'editable') return
+      if (!currentSection) return
       const mergedSection = {
         ...currentSection,
-        status: nextSection.status,
+        status:
+          currentSection.contentMode === 'editable'
+            ? nextSection.status
+            : nextSection.isRelevant
+              ? currentSection.status === 'not_applicable'
+                ? 'draft'
+                : currentSection.status
+              : 'not_applicable',
         isRelevant: nextSection.isRelevant,
+        relevanceOverridden: nextSection.relevanceOverridden === true,
       }
       replaceReportSection(mergedSection)
       resetReportDraftAutosaveError()

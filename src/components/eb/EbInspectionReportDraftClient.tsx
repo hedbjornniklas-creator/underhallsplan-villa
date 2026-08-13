@@ -760,6 +760,7 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                       onChange={(event) =>
                         updateActiveSection({
                           isRelevant: event.target.checked,
+                          relevanceOverridden: true,
                           status: event.target.checked ? 'draft' : 'not_applicable',
                         })
                       }
@@ -768,10 +769,11 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                   </label>
                   <select
                     value={activeSection.status}
+                    disabled={activeSection.contentMode === 'structured'}
                     onChange={(event) =>
                       updateActiveSection({ status: event.target.value as EbReportSectionStatus })
                     }
-                    className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold"
+                    className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold disabled:cursor-default disabled:bg-gray-50 disabled:text-gray-500"
                   >
                     {Object.entries(statusLabels).map(([value, label]) => (
                       <option key={value} value={value}>
@@ -785,8 +787,9 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
               <textarea
                 value={activeSection.text}
                 onChange={(event) => updateActiveSection({ text: event.target.value })}
+                readOnly={activeSection.contentMode === 'structured'}
                 rows={18}
-                className="mt-5 w-full rounded-lg border border-gray-300 bg-white p-4 text-sm leading-6 text-gray-950 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                className="mt-5 w-full rounded-lg border border-gray-300 bg-white p-4 text-sm leading-6 text-gray-950 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 read-only:cursor-default read-only:bg-gray-50 read-only:text-gray-700"
               />
             </section>
           ) : null}
