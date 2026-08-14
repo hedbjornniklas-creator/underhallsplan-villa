@@ -3,7 +3,8 @@ import RenoAppHeader from '@/components/renoapp/RenoAppHeader'
 
 export const metadata = {
   title: 'RenoApp',
-  description: 'RenoApp MVP for BRF renovation applications',
+  description:
+    'RenoApp samlar renoveringsansökan, underlag, kompletteringar och beslut för bostadsrättsföreningar.',
 }
 
 export default function RenoAppLayout({ children }: { children: ReactNode }) {

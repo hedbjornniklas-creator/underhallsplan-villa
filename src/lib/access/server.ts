@@ -152,24 +152,24 @@ const PLATFORM_ENTRY_CONFIG: Record<PlatformProductKey, PlatformEntryProduct> = 
   renoapp: {
     key: 'renoapp',
     label: 'RenoApp',
-    description: 'Ansökningar, styrelsegranskning och beslut för BRF.',
+    description: 'Granska renoveringsansökningar, begär kompletteringar och dokumentera beslut för din BRF.',
     href: '/renoapp/app',
   },
   dashboard: {
     key: 'dashboard',
-    label: 'Dashboard',
-    description: 'Besiktning, fastighetsdata och operativa moduler.',
+    label: 'BesiktApp',
+    description: 'Skapa uppdrag, genomför besiktningar och tekniska utredningar samt ta fram utlåtanden.',
     href: '/dashboard-v1',
   },
   hushub_admin: {
     key: 'hushub_admin',
-    label: 'HusHub Admin',
-    description: 'Intern administration och framtida accesshantering.',
+    label: 'Administration',
+    description: 'Hantera användare, behörigheter och gemensamma inställningar för HusHub.',
     href: '/admin',
   },
 }
 
-const PLATFORM_ENTRY_ORDER: PlatformProductKey[] = ['renoapp', 'dashboard', 'hushub_admin']
+const PLATFORM_ENTRY_ORDER: PlatformProductKey[] = ['dashboard', 'renoapp', 'hushub_admin']
 
 function parseRelation(value: RelationValue) {
   if (!value) return null

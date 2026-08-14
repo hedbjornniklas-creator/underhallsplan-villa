@@ -20,7 +20,9 @@ function ModuleCard({ module }: { module: ModuleCardData }) {
     ? module.badgeClass
     : 'border-gray-200 bg-gray-100 text-gray-500'
   const accentClass = module.active ? module.accentClass : 'from-gray-300 to-gray-400'
-  const buttonLabel = module.active ? `Öppna ${module.title}` : `${module.title} är inte aktiv`
+  const buttonLabel = module.active
+    ? `Öppna ${module.title}`
+    : `Du saknar behörighet till ${module.title}`
 
   return (
     <article
@@ -43,7 +45,7 @@ function ModuleCard({ module }: { module: ModuleCardData }) {
               className="h-6 w-auto object-contain"
             />
             <span className={`mt-0.5 inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-xs font-medium ${badgeClass}`}>
-              {module.active ? 'Aktiv modul' : 'Ej aktiv modul'}
+              {module.active ? 'Tillgänglig' : 'Saknar behörighet'}
             </span>
           </div>
 
@@ -103,9 +105,15 @@ export default function DashboardV1Client({ modules }: { modules: ModuleCardData
 
         <div className="relative mx-auto w-full max-w-6xl px-4 py-8 md:px-6 md:py-12">
           <header className="mx-auto max-w-4xl text-center">
-            <h1 className="text-xs font-semibold uppercase tracking-[0.26em] text-indigo-900/70">
-              Dashboard
+            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-indigo-900/70">
+              BesiktApp
+            </p>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl">
+              Välj arbetsområde
             </h1>
+            <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-slate-600 md:text-base">
+              Öppna den del av BesiktApp som passar uppdraget du ska arbeta med.
+            </p>
           </header>
 
           <section className="mx-auto mt-10 grid w-full max-w-6xl grid-cols-1 gap-5 place-items-center sm:grid-cols-2 sm:place-items-stretch lg:grid-cols-3">

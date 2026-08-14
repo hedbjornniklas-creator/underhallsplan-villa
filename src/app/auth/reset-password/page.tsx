@@ -1,7 +1,10 @@
 'use client'
 
 import { FormEvent, useEffect, useState } from 'react'
+import Image from 'next/image'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { ArrowLeft, KeyRound, LoaderCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 
@@ -18,18 +21,18 @@ function toFriendlyRecoveryError(message: string) {
   const normalized = message.toLowerCase()
 
   if (normalized.includes('otp_expired') || normalized.includes('has expired')) {
-    return 'Aterstallningslanken har gatt ut. Begar en ny lank fran inloggningssidan.'
+    return 'Återställningslänken har gått ut. Begär en ny länk från inloggningssidan.'
   }
 
   if (
     normalized.includes('both auth code and code verifier should be non-empty') ||
     normalized.includes('invalid request')
   ) {
-    return 'Aterstallningslanken ar ogiltig. Begar en ny lank fran inloggningssidan.'
+    return 'Återställningslänken är ogiltig. Begär en ny länk från inloggningssidan.'
   }
 
   if (normalized.includes('access_denied')) {
-    return 'Aterstallningslanken ar ogiltig eller har gatt ut.'
+    return 'Återställningslänken är ogiltig eller har gått ut.'
   }
 
   return message
@@ -98,7 +101,7 @@ export default function ResetPasswordPage() {
         if (!active) return
 
         if (!session) {
-          setError('Aterstallningssession saknas. Begar en ny lank fran inloggningssidan.')
+          setError('Återställningssession saknas. Begär en ny länk från inloggningssidan.')
           setLinkInvalid(true)
         } else {
           setError(null)
@@ -106,7 +109,7 @@ export default function ResetPasswordPage() {
         }
       } catch (initError) {
         const rawMessage =
-          initError instanceof Error ? initError.message : 'Kunde inte verifiera aterstallningslanken.'
+          initError instanceof Error ? initError.message : 'Kunde inte verifiera återställningslänken.'
         const message = toFriendlyRecoveryError(rawMessage)
         if (active) {
           setError(message)
@@ -142,12 +145,12 @@ export default function ResetPasswordPage() {
     if (linkInvalid) return
 
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
-      setError(`Losenordet maste vara minst ${MIN_PASSWORD_LENGTH} tecken.`)
+      setError(`Lösenordet måste vara minst ${MIN_PASSWORD_LENGTH} tecken.`)
       return
     }
 
     if (newPassword !== confirmPassword) {
-      setError('Losenorden matchar inte.')
+      setError('Lösenorden matchar inte.')
       return
     }
 
@@ -160,7 +163,7 @@ export default function ResetPasswordPage() {
       } = await supabase.auth.getSession()
 
       if (!session) {
-        throw new Error('Aterstallningssession saknas. Oppna aterstallningslanken igen.')
+        throw new Error('Återställningssession saknas. Öppna återställningslänken igen.')
       }
 
       const { error: updateError } = await supabase.auth.updateUser({
@@ -173,7 +176,7 @@ export default function ResetPasswordPage() {
       router.replace('/login?reset=success')
     } catch (submitError) {
       const rawMessage =
-        submitError instanceof Error ? submitError.message : 'Kunde inte uppdatera losenordet.'
+        submitError instanceof Error ? submitError.message : 'Kunde inte uppdatera lösenordet.'
       setError(toFriendlyRecoveryError(rawMessage))
     } finally {
       setSaving(false)
@@ -182,74 +185,117 @@ export default function ResetPasswordPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-slate-100 px-4 py-12 text-slate-900">
-        <div className="mx-auto max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          Verifierar aterstallningslank...
+      <ResetPasswordShell>
+        <div className="flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-blue-950">
+          <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+          <p className="text-sm font-medium">Verifierar återställningslänken …</p>
         </div>
-      </main>
+      </ResetPasswordShell>
     )
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-12 text-slate-900">
-      <div className="mx-auto max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h1 className="mb-4 text-2xl font-semibold">{'S\u00E4tt nytt l\u00F6senord'}</h1>
+    <ResetPasswordShell>
+      <div className="mb-7 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 text-blue-800">
+        <KeyRound size={22} aria-hidden="true" />
+      </div>
+      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-800">HusHub-konto</p>
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">Sätt nytt lösenord</h1>
+      <p className="mt-3 text-sm leading-7 text-stone-600">
+        Välj ett nytt lösenord med minst {MIN_PASSWORD_LENGTH} tecken. När det är sparat får du
+        logga in på nytt.
+      </p>
 
-        {error ? (
-          <p className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            {error}
-          </p>
-        ) : null}
+      {error ? (
+        <p
+          role="alert"
+          className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-800"
+        >
+          {error}
+        </p>
+      ) : null}
 
-        {linkInvalid ? (
+      {linkInvalid ? (
+        <Link
+          href="/login"
+          className="mt-7 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-stone-950 px-5 text-sm font-semibold text-white transition hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-2"
+        >
+          <ArrowLeft size={16} aria-hidden="true" />
+          Till inloggningen
+        </Link>
+      ) : (
+        <form onSubmit={handleSubmit} className="mt-7 space-y-5">
+          <div>
+            <label htmlFor="newPassword" className="mb-2 block text-sm font-semibold text-stone-800">
+              Nytt lösenord
+            </label>
+            <input
+              id="newPassword"
+              type="password"
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              minLength={MIN_PASSWORD_LENGTH}
+              required
+              className="h-12 w-full rounded-2xl border border-stone-300 bg-white px-4 text-sm text-stone-950 outline-none transition placeholder:text-stone-400 focus:border-blue-700 focus:ring-2 focus:ring-blue-700/20"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="confirmPassword" className="mb-2 block text-sm font-semibold text-stone-800">
+              Bekräfta nytt lösenord
+            </label>
+            <input
+              id="confirmPassword"
+              type="password"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              minLength={MIN_PASSWORD_LENGTH}
+              required
+              className="h-12 w-full rounded-2xl border border-stone-300 bg-white px-4 text-sm text-stone-950 outline-none transition placeholder:text-stone-400 focus:border-blue-700 focus:ring-2 focus:ring-blue-700/20"
+            />
+          </div>
+
           <button
-            type="button"
-            onClick={() => router.replace('/login')}
-            className="inline-flex h-11 w-full items-center justify-center rounded-lg bg-slate-900 px-4 text-sm font-medium text-white transition hover:bg-slate-700"
+            type="submit"
+            disabled={saving}
+            className="inline-flex min-h-12 w-full items-center justify-center rounded-2xl bg-blue-800 px-5 text-sm font-semibold text-white transition hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
           >
-            Till inloggning
+            {saving ? 'Sparar …' : 'Spara nytt lösenord'}
           </button>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="newPassword" className="mb-1 block text-sm font-medium text-slate-700">
-                {'Nytt l\u00F6senord'}
-              </label>
-              <input
-                id="newPassword"
-                type="password"
-                value={newPassword}
-                onChange={(event) => setNewPassword(event.target.value)}
-                minLength={MIN_PASSWORD_LENGTH}
-                required
-                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none ring-blue-500 transition focus:ring-2"
-              />
-            </div>
+        </form>
+      )}
+    </ResetPasswordShell>
+  )
+}
 
-            <div>
-              <label htmlFor="confirmPassword" className="mb-1 block text-sm font-medium text-slate-700">
-                {'Bekr\u00E4fta nytt l\u00F6senord'}
-              </label>
-              <input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                minLength={MIN_PASSWORD_LENGTH}
-                required
-                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none ring-blue-500 transition focus:ring-2"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={saving}
-              className="inline-flex h-11 w-full items-center justify-center rounded-lg bg-slate-900 px-4 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-60"
-            >
-              {saving ? 'Sparar...' : 'Uppdatera losenord'}
-            </button>
-          </form>
-        )}
+function ResetPasswordShell({ children }: { children: React.ReactNode }) {
+  return (
+    <main className="relative flex min-h-dvh items-center overflow-hidden bg-[#f3f1ec] px-5 py-12 text-stone-950">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_16%_18%,rgba(59,130,246,0.15),transparent_30%),radial-gradient(circle_at_85%_82%,rgba(16,185,129,0.09),transparent_26%)]"
+      />
+      <div className="relative mx-auto w-full max-w-md">
+        <Link
+          href="/"
+          className="mb-7 inline-flex items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-4 focus-visible:ring-offset-[#f3f1ec]"
+          aria-label="Till HusHubs startsida"
+        >
+          <Image
+            src="/landing/Hushub-check2.png"
+            alt=""
+            width={38}
+            height={38}
+            className="h-9 w-9 object-contain"
+            priority
+          />
+          <span className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-900">HusHub</span>
+        </Link>
+        <section className="rounded-[30px] border border-stone-200/80 bg-white/90 p-6 shadow-[0_28px_80px_-42px_rgba(30,41,59,0.45)] backdrop-blur-sm sm:p-8">
+          {children}
+        </section>
       </div>
     </main>
   )
