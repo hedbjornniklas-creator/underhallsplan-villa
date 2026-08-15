@@ -42,6 +42,18 @@ export function resolveEbAgreementVocabulary(standardAgreement: string | null | 
     }
   }
 
+  if (normalized.includes('offert')) {
+    return {
+      agreementLine: 'Offert',
+      clientLabel: 'Beställare',
+      clientShortLabel: 'Beställare',
+      contractorLabel: 'Entreprenör',
+      contractorShortLabel: 'Entreprenör',
+      contractorPluralLabel: 'Entreprenörer',
+      contractorOrgLabel: 'Entreprenör org.nr',
+    }
+  }
+
   if (normalized.includes('abs18') || normalized.includes('bas18')) {
     return {
       agreementLine: 'Enligt ABS 18',

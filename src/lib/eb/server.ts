@@ -4791,6 +4791,22 @@ function agreementReference(standardAgreement: string | null | undefined) {
   return vocabulary.agreementLine.replace(/^Enligt\s+/i, '')
 }
 
+function isOfferAgreement(standardAgreement: string | null | undefined) {
+  return String(standardAgreement ?? '')
+    .trim()
+    .toLocaleLowerCase('sv-SE')
+    .includes('offert')
+}
+
+function ebAgreementScopeLine(round: EbInspectionRound) {
+  const dateText = round.project.contractDate ?? 'datum ej angivet'
+  if (isOfferAgreement(round.project.standardAgreement)) {
+    return `Arbetenas omfattning framgår av offert daterad ${dateText}.`
+  }
+
+  return `Arbetenas omfattning framgår av skriftligt avtal enligt ${agreementReference(round.project.standardAgreement)} undertecknat av parterna ${dateText}.`
+}
+
 function ebAgreementChangeOrderLine(item: EbProjectAgreementItem) {
   const title = normalizeText(item.title) ?? 'Bilaga till avtalet enligt formulär Ändring och tilläggsarbeten'
   const dateText = item.documentDate ? ` undertecknat av parterna ${item.documentDate}` : ''
@@ -4814,7 +4830,7 @@ function ebContractDocumentsReportText(round: EbInspectionRound) {
   const agreementNote = normalizeText(round.project.agreementNote)
 
   return [
-    `Arbetenas omfattning framgår av skriftligt avtal enligt ${agreementReference(round.project.standardAgreement)} undertecknat av parterna ${round.project.contractDate ?? 'datum ej angivet'}.`,
+    ebAgreementScopeLine(round),
     [
       'Därutöver har skriftligt avtalats om ändringar och tilläggsarbeten enligt följande:',
       changeOrders.length > 0

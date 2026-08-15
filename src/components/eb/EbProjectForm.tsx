@@ -82,6 +82,7 @@ const STANDARD_AGREEMENT_OPTIONS = [
   { value: 'ABS 18', label: 'ABS 18' },
   { value: 'Konsumententreprenad', label: 'Konsumententreprenad' },
   { value: 'HF17', label: 'HF 17' },
+  { value: 'Offert', label: 'Offert' },
 ]
 
 const PROJECT_TEMPLATE_OPTIONS = [
@@ -543,7 +544,7 @@ export default function EbProjectForm({
                 ))}
               </select>
             </EbProjectFieldLabel>
-            <EbProjectFieldLabel label="Kontraktsdatum">
+            <EbProjectFieldLabel label="Datum">
               <input
                 type="date"
                 value={form.contractDate}
