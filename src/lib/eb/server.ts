@@ -2950,7 +2950,7 @@ export async function getEbInspectionReport(input: {
       inspection: liveRound.inspection,
     })
   const initializedAt = storedDraft.initializedAt ?? new Date().toISOString()
-  const sourceSnapshot =
+  let sourceSnapshot =
     storedDraft.sourceSnapshot ??
     createEbReportSourceSnapshot({
       project: liveRound.project,
@@ -2963,9 +2963,27 @@ export async function getEbInspectionReport(input: {
           besiktAppLogoUrl: BESIKTAPP_REPORT_LOGO_SRC,
           footer: { companyLines: [], contactLines: [] },
           signature: null,
-        },
+      },
       capturedAt: initializedAt,
     })
+  const projectSnapshotIsStale = Boolean(
+    storedDraft.sourceSnapshot &&
+      !liveRound.inspection.reportLockedAt &&
+      isLaterTimestamp(liveRound.project.updatedAt, storedDraft.sourceSnapshot.capturedAt)
+  )
+  if (projectSnapshotIsStale) {
+    const capturedAt = new Date().toISOString()
+    sourceSnapshot = {
+      ...sourceSnapshot,
+      capturedAt,
+      project: createEbReportSourceSnapshot({
+        project: liveRound.project,
+        inspectorText: sourceSnapshot.inspectorText,
+        branding: sourceSnapshot.branding,
+        capturedAt,
+      }).project,
+    }
+  }
   const project = applyEbReportProjectSnapshot(liveRound.project, sourceSnapshot.project)
   const round: EbInspectionRound = { ...liveRound, project }
   const resolvedParticipants = enrichParticipantsForReport(project, participants)
@@ -2977,6 +2995,7 @@ export async function getEbInspectionReport(input: {
     templateVersion: storedDraft.templateVersion || EB_REPORT_TEMPLATE_VERSION,
     initializedAt,
     sourceSnapshot,
+    updatedAt: projectSnapshotIsStale ? sourceSnapshot.capturedAt : storedDraft.updatedAt,
   }
   const reportDraft = buildEbReportDraft({
     round,
@@ -2992,12 +3011,13 @@ export async function getEbInspectionReport(input: {
     !storedDraft.initializedAt ||
     !storedDraft.sourceSnapshot ||
     storedSectionKeys.size === 0
+  const needsProjectSnapshotRefreshWrite = projectSnapshotIsStale
 
   let resolvedReportDraft = reportDraft
-  if (needsInitializationWrite && !liveRound.inspection.reportLockedAt) {
+  if ((needsInitializationWrite || needsProjectSnapshotRefreshWrite) && !liveRound.inspection.reportLockedAt) {
     resolvedReportDraft = await writeEbReportDraft(input, {
       ...reportDraft,
-      updatedAt: reportDraft.updatedAt ?? initializedAt,
+      updatedAt: reportDraft.updatedAt ?? sourceSnapshot.capturedAt ?? initializedAt,
     })
   }
 
@@ -3038,6 +3058,14 @@ function applyEbReportProjectSnapshot(
     ...snapshot,
     inspections: liveProject.inspections,
   }
+}
+
+function isLaterTimestamp(value: string | null | undefined, reference: string | null | undefined) {
+  if (!value || !reference) return false
+  const valueTime = Date.parse(value)
+  const referenceTime = Date.parse(reference)
+  if (!Number.isFinite(valueTime) || !Number.isFinite(referenceTime)) return false
+  return valueTime > referenceTime
 }
 
 function applyEbReportDateToBranding(
