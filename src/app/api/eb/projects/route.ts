@@ -82,6 +82,7 @@ export async function POST(request: Request) {
       contractForm: toText(body.contractForm) || null,
       procurementForm: toText(body.procurementForm) || null,
       contractDate: toText(body.contractDate) || null,
+      agreementNote: toText(body.agreementNote) || null,
       clientName: toText(body.clientName) || null,
       clientOrgNo: toText(body.clientOrgNo) || null,
       clientEmail: toText(body.clientEmail) || null,

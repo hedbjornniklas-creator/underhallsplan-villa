@@ -132,6 +132,7 @@ export type EbProjectListItem = {
   contractForm: string | null
   procurementForm: string | null
   contractDate: string | null
+  agreementNote: string | null
   notePrefix: string
   clientName: string | null
   clientOrgNo: string | null
@@ -605,6 +606,7 @@ type EbProjectRow = {
   contract_form: string | null
   procurement_form: string | null
   contract_date: string | null
+  agreement_note?: string | null
   note_prefix: string | null
   client_name: string | null
   client_org_no: string | null
@@ -911,6 +913,7 @@ export type CreateEbProjectInput = {
   contractForm?: string | null
   procurementForm?: string | null
   contractDate?: string | null
+  agreementNote?: string | null
   clientName?: string | null
   clientOrgNo?: string | null
   clientEmail?: string | null
@@ -1623,6 +1626,7 @@ function mapProject(
     contractForm: project.contract_form ?? null,
     procurementForm: project.procurement_form ?? null,
     contractDate: project.contract_date ?? null,
+    agreementNote: project.agreement_note ?? null,
     notePrefix: project.note_prefix ?? 'BES',
     clientName: project.client_name ?? null,
     clientOrgNo: project.client_org_no ?? null,
@@ -1651,10 +1655,11 @@ async function fetchProjectsByOrg(orgId: string, projectId?: string) {
   const legacyWithTemplateSelect =
     'id,org_id,owner_profile_id,property_id,project_template_key,drainage_system,drainage_inspection_stage,drainage_guidance_version,title,contract_name,object_description,property_designation,brf_apartment_number,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,client_address,client_postal_code,client_city,contractor_name,contractor_org_no,contractor_address,contractor_postal_code,contractor_city,status,created_at,updated_at'
   const withAgreementItemsSelect = `${withTemplateSelect},agreement_items`
+  const withAgreementNoteSelect = `${withAgreementItemsSelect},agreement_note`
   const legacyWithAgreementItemsSelect = `${legacyWithTemplateSelect},agreement_items`
   let query = admin
     .from('eb_projects')
-    .select(withAgreementItemsSelect)
+    .select(withAgreementNoteSelect)
     .eq('org_id', orgId)
     .order('updated_at', { ascending: false })
 
@@ -1668,7 +1673,7 @@ async function fetchProjectsByOrg(orgId: string, projectId?: string) {
     if (isMissingColumnError(error)) {
       let fallbackQuery = admin
         .from('eb_projects')
-        .select(legacyWithAgreementItemsSelect)
+        .select(withAgreementItemsSelect)
         .eq('org_id', orgId)
         .order('updated_at', { ascending: false })
 
@@ -1677,10 +1682,28 @@ async function fetchProjectsByOrg(orgId: string, projectId?: string) {
       }
 
       const fallback = await fallbackQuery
-      if (fallback.error) {
+      if (!fallback.error) {
+        return (fallback.data ?? []) as EbProjectRow[]
+      }
+      if (!isMissingColumnError(fallback.error)) {
         throw new Error(fallback.error.message ?? 'Kunde inte hämta EB-projekt.')
       }
-      return (fallback.data ?? []) as EbProjectRow[]
+
+      let legacyQuery = admin
+        .from('eb_projects')
+        .select(legacyWithAgreementItemsSelect)
+        .eq('org_id', orgId)
+        .order('updated_at', { ascending: false })
+
+      if (projectId) {
+        legacyQuery = legacyQuery.eq('id', projectId)
+      }
+
+      const legacy = await legacyQuery
+      if (legacy.error) {
+        throw new Error(legacy.error.message ?? 'Kunde inte hämta EB-projekt.')
+      }
+      return (legacy.data ?? []) as EbProjectRow[]
     }
     throw new Error(error.message ?? 'Kunde inte hämta EB-projekt.')
   }
@@ -3222,10 +3245,14 @@ function normalizeEbReportSourceSnapshot(value: unknown): EbReportSourceSnapshot
   if (!raw.project || typeof raw.project !== 'object') return null
   if (!normalizeText((raw.project as { id?: string | null }).id)) return null
   if (!raw.branding || typeof raw.branding !== 'object') return null
+  const project = raw.project as Partial<EbReportProjectSnapshot>
 
   return {
     capturedAt: normalizeText(raw.capturedAt) ?? new Date().toISOString(),
-    project: raw.project as EbReportProjectSnapshot,
+    project: {
+      ...project,
+      agreementNote: typeof project.agreementNote === 'string' ? project.agreementNote : null,
+    } as EbReportProjectSnapshot,
     inspectorText: typeof raw.inspectorText === 'string' ? raw.inspectorText : '',
     branding: raw.branding as EbReportBrandingSnapshot,
   }
@@ -3382,6 +3409,7 @@ export async function createEbProject(
         contract_form: normalizeText(input.contractForm),
         procurement_form: normalizeText(input.procurementForm),
         contract_date: normalizeDate(input.contractDate),
+        agreement_note: normalizeText(input.agreementNote),
         note_prefix: projectTemplateKey === 'drainage_foundation' ? 'DRÄN' : 'BES',
         client_name: normalizedClientName,
         client_org_no: normalizedClientOrgNo,
@@ -3473,6 +3501,7 @@ export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbPr
       contract_form: normalizeText(input.contractForm),
       procurement_form: normalizeText(input.procurementForm),
       contract_date: normalizeDate(input.contractDate),
+      agreement_note: normalizeText(input.agreementNote),
       note_prefix: normalizedNotePrefix,
       client_name: normalizedClientName,
       client_org_no: normalizedClientOrgNo,
@@ -4754,6 +4783,8 @@ function ebContractDocumentsReportText(round: EbInspectionRound) {
   const otherAgreementItems = reportItems.filter((item) => item.kind === 'other')
   const otherRows = otherAgreementItems.map(ebAgreementOtherLine)
 
+  const agreementNote = normalizeText(round.project.agreementNote)
+
   return [
     `Arbetenas omfattning framgår av skriftligt avtal enligt ${agreementReference(round.project.standardAgreement)} undertecknat av parterna ${round.project.contractDate ?? 'datum ej angivet'}.`,
     [
@@ -4768,7 +4799,8 @@ function ebContractDocumentsReportText(round: EbInspectionRound) {
         ? otherRows.join('\n')
         : '• Inga övriga handlingar eller överenskommelser är registrerade.',
     ].join('\n'),
-  ].join('\n\n')
+    agreementNote ? `Kommentar: ${agreementNote}` : null,
+  ].filter((paragraph): paragraph is string => Boolean(paragraph)).join('\n\n')
 }
 
 function previousInspectionStatusLabel(value: EbPreviousInspectionStatus | null) {
@@ -4990,7 +5022,10 @@ function buildEbReportDraft(input: {
       title: 'Avtal, handlingar och andra överenskommelser',
       sbrPoint: '10',
       source: 'project',
-      status: round.project.contractDate || includedAgreementItems.length > 0
+      status:
+        round.project.contractDate ||
+        includedAgreementItems.length > 0 ||
+        normalizeText(round.project.agreementNote)
         ? 'complete'
         : 'draft',
       isRelevant: sectionApplicable('contract_documents'),

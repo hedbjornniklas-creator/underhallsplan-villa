@@ -72,6 +72,7 @@ export async function PATCH(
       contractForm: toText(body.contractForm) || null,
       procurementForm: toText(body.procurementForm) || null,
       contractDate: toText(body.contractDate) || null,
+      agreementNote: toText(body.agreementNote) || null,
       notePrefix: toText(body.notePrefix) || null,
       clientName: toText(body.clientName) || null,
       clientOrgNo: toText(body.clientOrgNo) || null,

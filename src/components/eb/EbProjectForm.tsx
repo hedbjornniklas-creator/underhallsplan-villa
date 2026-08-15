@@ -23,6 +23,7 @@ export type EbProjectFormState = {
   contractForm: string
   procurementForm: string
   contractDate: string
+  agreementNote: string
   notePrefix: string
   clientName: string
   clientOrgNo: string
@@ -57,6 +58,7 @@ export const EMPTY_EB_PROJECT_FORM: EbProjectFormState = {
   contractForm: '',
   procurementForm: '',
   contractDate: '',
+  agreementNote: '',
   notePrefix: 'BES',
   clientName: '',
   clientOrgNo: '',
@@ -139,6 +141,7 @@ export function buildEbProjectForm(project: EbProjectListItem): EbProjectFormSta
     contractForm: project.contractForm ?? '',
     procurementForm: project.procurementForm ?? '',
     contractDate: project.contractDate ?? '',
+    agreementNote: project.agreementNote ?? '',
     notePrefix: project.notePrefix ?? 'BES',
     clientName: project.clientName ?? '',
     clientOrgNo: project.clientOrgNo ?? '',
@@ -562,6 +565,21 @@ export default function EbProjectForm({
                 className={ebProjectInputClassName()}
               />
             </EbProjectFieldLabel>
+          </div>
+
+          <div className="mt-4">
+            <EbProjectFieldLabel label="Kommentar">
+              <textarea
+                value={form.agreementNote}
+                onChange={(event) => onChange('agreementNote', event.target.value)}
+                rows={3}
+                placeholder="Notering om avtalet"
+                className={`${ebProjectInputClassName()} resize-y leading-6`}
+              />
+            </EbProjectFieldLabel>
+            <p className="mt-1 text-xs text-gray-600">
+              Visas sist under Avtal, handlingar och andra överenskommelser i utlåtandet.
+            </p>
           </div>
 
           <div className="mt-6 space-y-6">
