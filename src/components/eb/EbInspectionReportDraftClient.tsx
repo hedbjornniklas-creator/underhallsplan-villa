@@ -748,6 +748,13 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                   </p>
                   <h2 className="mt-1 text-xl font-bold">{activeSection.title}</h2>
                   <p className="mt-1 text-sm text-gray-500">Källa: {sourceLabels[activeSection.source]}</p>
+                  <p className="mt-1 text-xs font-semibold text-gray-600">
+                    {activeSection.contentMode === 'structured'
+                      ? 'Fältstyrd information'
+                      : activeSection.contentMode === 'mixed'
+                        ? 'Redigerbar text · Fältdata uppdateras automatiskt'
+                        : 'Redigerbar text'}
+                  </p>
                   <p className="mt-2 max-w-2xl rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
                     {sourceHints[activeSection.source]}
                   </p>
@@ -769,7 +776,7 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                   </label>
                   <select
                     value={activeSection.status}
-                    disabled={activeSection.contentMode === 'structured'}
+                    disabled={activeSection.contentMode !== 'editable'}
                     onChange={(event) =>
                       updateActiveSection({ status: event.target.value as EbReportSectionStatus })
                     }

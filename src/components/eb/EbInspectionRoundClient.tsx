@@ -76,8 +76,8 @@ type NoteFormState = {
   room: string
   placeDetail: string
   noteText: string
-  responsibleParty: string
-  tradeGroup: string
+  remediationAssigneeId: string
+  remediationAssigneeName: string
   investigationResponsibleParty: string
   investigationResponsibleNote: string
   investigationCostParty: string
@@ -503,8 +503,8 @@ function createInitialForm(round: EbInspectionRound): NoteFormState {
     room: '',
     placeDetail: '',
     noteText: '',
-    responsibleParty: '',
-    tradeGroup: '',
+    remediationAssigneeId: '',
+    remediationAssigneeName: '',
     investigationResponsibleParty: '',
     investigationResponsibleNote: '',
     investigationCostParty: '',
@@ -521,8 +521,8 @@ function formFromNote(note: EbNote): NoteFormState {
     room: note.room ?? '',
     placeDetail: note.placeDetail ?? '',
     noteText: note.noteText,
-    responsibleParty: note.responsibleParty ?? '',
-    tradeGroup: note.tradeGroup ?? '',
+    remediationAssigneeId: note.remediationAssigneeId ?? '',
+    remediationAssigneeName: note.remediationAssigneeName ?? note.tradeGroup ?? note.responsibleParty ?? '',
     investigationResponsibleParty: note.investigationResponsibleParty ?? '',
     investigationResponsibleNote: note.investigationResponsibleNote ?? '',
     investigationCostParty: note.investigationCostParty ?? '',
@@ -1489,11 +1489,15 @@ function ReportDraftSectionsEditor({
               <h3 className="mt-1 text-sm font-semibold text-gray-950">{section.title}</h3>
               <p className="mt-1 text-xs text-gray-500">
                 {REPORT_SECTION_SOURCE_LABELS[section.source]}
-                {section.contentMode === 'structured' ? ' · Automatisk' : ' · Redigerbar'}
+                {section.contentMode === 'structured'
+                  ? ' · Fältstyrd'
+                  : section.contentMode === 'mixed'
+                    ? ' · Redigerbar text · Fältdata automatiskt'
+                    : ' · Redigerbar'}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {section.contentMode === 'editable' ? (
+              {section.contentMode !== 'structured' ? (
                 <button
                   type="button"
                   onClick={() => void onResetSection(section.key)}
@@ -1523,7 +1527,7 @@ function ReportDraftSectionsEditor({
               </label>
               <select
                 value={section.status}
-                disabled={disabled || section.contentMode === 'structured'}
+                disabled={disabled || section.contentMode !== 'editable'}
                 onChange={(event) =>
                   updateSection(section.key, { status: event.target.value as EbReportSectionStatus })
                 }
@@ -1537,10 +1541,20 @@ function ReportDraftSectionsEditor({
               </select>
             </div>
           </div>
+          {section.contentMode === 'mixed' ? (
+            <p className="mt-3 rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+              Standardtexten redigeras här. Namn, datum, handlingar och andra sakuppgifter visas i
+              utlåtandet från sina respektive fält och kan inte ändras i texten.
+            </p>
+          ) : section.contentMode === 'structured' ? (
+            <p className="mt-3 text-xs text-gray-500">
+              Innehållet ändras i de fält som sektionen hämtar sina uppgifter från.
+            </p>
+          ) : null}
           <DebouncedTextarea
             value={section.text}
             draftKey={
-              section.contentMode === 'editable'
+              section.contentMode !== 'structured'
                 ? `eb:${inspectionId}:report-section:${section.key}`
                 : undefined
             }
@@ -2073,6 +2087,20 @@ export default function EbInspectionRoundClient({
     })
   }
 
+  const updateRemediationAssignee = (name: string) => {
+    const normalized = name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('sv-SE')
+    const match = round.remediationAssignees.find(
+      (assignee) =>
+        assignee.isActive &&
+        assignee.name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('sv-SE') === normalized
+    )
+    setForm((current) => ({
+      ...current,
+      remediationAssigneeName: name,
+      remediationAssigneeId: match?.id ?? '',
+    }))
+  }
+
   const updateParticipant = <K extends keyof EditableParticipant>(
     index: number,
     field: K,
@@ -2255,7 +2283,7 @@ export default function EbInspectionRoundClient({
     }
     if (resettingReportSectionKey || reportDraftSaving) return
     const section = reportSectionsRef.current.find((item) => item.key === sectionKey)
-    if (!section || section.contentMode !== 'editable') return
+    if (!section || section.contentMode === 'structured') return
     if (!window.confirm(`Återställ standardtexten för "${section.title}"?`)) return
 
     setResettingReportSectionKey(sectionKey)
@@ -2709,8 +2737,8 @@ export default function EbInspectionRoundClient({
       if (isLocked) throw new Error(lockedMessage)
       const section = reportSectionsRef.current.find((item) => item.key === sectionKey)
       if (!section) throw new Error('Utlåtandesektionen hittades inte.')
-      if (section.contentMode !== 'editable') {
-        throw new Error('Den automatiska utlåtandesektionen redigeras via besiktningsuppgifterna.')
+      if (section.contentMode === 'structured') {
+        throw new Error('Den fältstyrda utlåtandesektionen redigeras via besiktningsuppgifterna.')
       }
 
       const nextSection = { ...section, text }
@@ -2753,9 +2781,27 @@ export default function EbInspectionRoundClient({
         (suggestion) =>
           suggestion.phrase.toLocaleLowerCase('sv-SE') === note.noteText.toLocaleLowerCase('sv-SE')
       )
+      const hasRemediationAssignee =
+        !note.remediationAssigneeId ||
+        current.remediationAssignees.some((assignee) => assignee.id === note.remediationAssigneeId)
       return {
         ...current,
         notes,
+        remediationAssignees:
+          hasRemediationAssignee || !note.remediationAssigneeId || !note.remediationAssigneeName
+            ? current.remediationAssignees
+            : [
+                ...current.remediationAssignees,
+                {
+                  id: note.remediationAssigneeId,
+                  name: note.remediationAssigneeName,
+                  companyName: null,
+                  contactName: null,
+                  email: null,
+                  phone: null,
+                  isActive: true,
+                },
+              ].sort((left, right) => left.name.localeCompare(right.name, 'sv-SE')),
         suggestions: hasSuggestion
           ? current.suggestions
           : [
@@ -2796,6 +2842,7 @@ export default function EbInspectionRoundClient({
         body: JSON.stringify({
           ...payload.form,
           disciplineId: payload.disciplineId,
+          remediationAssigneeCommit: false,
         }),
       })
       const body = (await response.json().catch(() => ({}))) as NoteResponse
@@ -2877,6 +2924,7 @@ export default function EbInspectionRoundClient({
         body: JSON.stringify({
           ...formToSave,
           disciplineId,
+          remediationAssigneeCommit: true,
         }),
       })
       const payload = (await response.json().catch(() => ({}))) as NoteResponse
@@ -3124,8 +3172,9 @@ export default function EbInspectionRoundClient({
           room: '',
           placeDetail: '',
           noteText: checkpoint.comment?.trim() || checkpoint.title,
-          responsibleParty: '',
-          tradeGroup: 'Dränering',
+          remediationAssigneeId: '',
+          remediationAssigneeName: 'Dränering',
+          remediationAssigneeCommit: true,
         }),
       })
       const payload = (await response.json().catch(() => ({}))) as NoteResponse
@@ -4407,12 +4456,13 @@ export default function EbInspectionRoundClient({
 
           <div className="mt-3 min-h-[62vh]">
             <section className="min-w-0 border-y border-emerald-100 bg-white/82 backdrop-blur-sm">
-              <div className="grid grid-cols-[4rem_4rem_7rem_8rem_8rem_1fr_11rem_5rem_3rem] items-center gap-3 border-b border-emerald-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+              <div className="grid grid-cols-[4rem_4rem_7rem_8rem_8rem_9rem_1fr_11rem_5rem_3rem] items-center gap-3 border-b border-emerald-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
                 <span>Bet.</span>
                 <span>Nr</span>
                 <span>Status</span>
                 <span>Rum</span>
                 <span>Plats</span>
+                <span>Åtgärdas av</span>
                 <span>Notering</span>
                 <span>Bilder</span>
                 <span>Flytta</span>
@@ -4467,19 +4517,20 @@ export default function EbInspectionRoundClient({
                         onDragOver={(event) => handleBankImageDragOver(event, noteDropKey)}
                         onDragLeave={(event) => handleBankImageDragLeave(event, noteDropKey)}
                         onDrop={(event) => void handleBankImageDropOnNote(event, note)}
-                        className={`grid cursor-pointer grid-cols-[4rem_4rem_7rem_8rem_8rem_1fr_11rem_5rem_3rem] items-center gap-3 px-3 py-2 text-sm transition ${
+                        className={`grid cursor-pointer grid-cols-[4rem_4rem_7rem_8rem_8rem_9rem_1fr_11rem_5rem_3rem] items-center gap-3 px-3 py-2 text-sm transition ${
                           bankImageDropTarget === noteDropKey
                             ? 'bg-emerald-50 ring-2 ring-inset ring-emerald-400'
                             : 'hover:bg-emerald-50/70'
                         }`}
                       >
                         <span className="truncate text-sm font-semibold text-amber-900">
-                          {note.markerKey || note.responsibleParty || '-'}
+                          {note.markerKey || note.remediationAssigneeName || '-'}
                         </span>
                         <span className="font-semibold text-emerald-900">{displayNumberByNoteId.get(note.id) ?? '-'}</span>
                         <span className="truncate text-xs font-medium text-gray-700">{note.statusLabel ?? note.statusKey}</span>
                         <span className="truncate text-gray-700">{note.room || '-'}</span>
                         <span className="truncate text-gray-700">{note.location || '-'}</span>
+                        <span className="truncate text-gray-700">{note.remediationAssigneeName || '-'}</span>
                         <span className="truncate text-gray-950">{note.noteText}</span>
                         <div className="flex min-w-0 items-center gap-1.5">
                           {queuedNoteImages.slice(0, 3).map((item) => {
@@ -4977,24 +5028,39 @@ export default function EbInspectionRoundClient({
                 </section>
 
 
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="block">
-                    <span className="block text-xs font-semibold text-gray-700">Ansvarig</span>
-                    <input
-                      value={form.responsibleParty}
-                      onChange={(event) => updateField('responsibleParty', event.target.value)}
-                      className={`${inputClassName()} mt-1`}
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="block text-xs font-semibold text-gray-700">Yrkesgrupp</span>
-                    <input
-                      value={form.tradeGroup}
-                      onChange={(event) => updateField('tradeGroup', event.target.value)}
-                      className={`${inputClassName()} mt-1`}
-                    />
-                  </label>
-                </div>
+                <label className="block">
+                  <span className="block text-xs font-semibold text-gray-700">Åtgärdas av</span>
+                  <input
+                    value={form.remediationAssigneeName}
+                    onChange={(event) => updateRemediationAssignee(event.target.value)}
+                    onBlur={() => {
+                      if (
+                        !isLocked &&
+                        form.noteText.trim() &&
+                        form.remediationAssigneeName.trim() &&
+                        !form.remediationAssigneeId
+                      ) {
+                        void saveCurrentNote().catch((error) =>
+                          showError(error, 'Kunde inte spara Åtgärdas av.')
+                        )
+                      }
+                    }}
+                    list="eb-remediation-assignees-desktop"
+                    placeholder="Välj befintlig eller skriv en ny, till exempel Målare"
+                    autoComplete="off"
+                    className={`${inputClassName()} mt-1`}
+                  />
+                  <datalist id="eb-remediation-assignees-desktop">
+                    {round.remediationAssignees
+                      .filter((assignee) => assignee.isActive)
+                      .map((assignee) => (
+                        <option key={assignee.id} value={assignee.name} />
+                      ))}
+                  </datalist>
+                  <span className="mt-1 block text-xs text-gray-500">
+                    Befintliga val återanvänds automatiskt. Ett nytt namn läggs till när noteringen sparas.
+                  </span>
+                </label>
 
                 {showReportFields ? (
                 <section className="rounded-md border border-emerald-100 bg-emerald-50/25 p-3">

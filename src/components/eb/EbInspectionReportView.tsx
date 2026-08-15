@@ -404,6 +404,21 @@ function InspectorReport({
   )
 }
 
+function EditableReportText({ text }: { text: string }) {
+  const normalized = normalizeReportText(text)
+  if (!normalized) return null
+
+  return (
+    <div className="space-y-2 text-[10.5pt] leading-[1.35] text-black">
+      {normalized.split(/\n{2,}/).map((block, index) => (
+        <p key={`${index}-${block}`} className="whitespace-pre-wrap">
+          {block}
+        </p>
+      ))}
+    </div>
+  )
+}
+
 function InspectionTimeReport({
   report,
   section,
@@ -469,7 +484,13 @@ function contractorRepresentativeLabel(report: EbInspectionReport) {
   return contractor.startsWith('hantverk') ? 'för hantverkaren:' : 'för entreprenören:'
 }
 
-function ParticipantsReport({ report }: { report: EbInspectionReport }) {
+function ParticipantsReport({
+  report,
+  section,
+}: {
+  report: EbInspectionReport
+  section: EbInspectionReport['reportDraft']['sections'][number]
+}) {
   const presentParticipants = report.participants.filter((participant) => participant.attended)
   const clientParticipants = presentParticipants.filter((participant) => isParticipantForParty(participant, 'client'))
   const contractorParticipants = presentParticipants.filter((participant) =>
@@ -482,9 +503,15 @@ function ParticipantsReport({ report }: { report: EbInspectionReport }) {
   )
 
   return (
-    <ReportSection title="Närvarande" headingMarker>
+    <ReportSection title={section.title} headingMarker>
       <div className="text-[10.5pt] leading-[1.35] text-black">
-        <p className="mb-2">Vid besiktningen var parterna representerade av:</p>
+        <div className="mb-2">
+          {section.contentMode === 'mixed' ? (
+            <EditableReportText text={section.text} />
+          ) : (
+            <p>Vid besiktningen var parterna representerade av:</p>
+          )}
+        </div>
         <dl className="grid gap-y-1">
           <div className="grid grid-cols-[62mm_1fr] gap-x-4">
             <dt>för beställaren:</dt>
@@ -575,9 +602,11 @@ function PreviousInspectionsReport({ report }: { report: EbInspectionReport }) {
 function isTestingDocumentationDocumentBlock(block: string) {
   const lines = printableReportLines(block)
   if (lines.length === 0) return false
-  return (
-    lines.every((line) => line.trim().startsWith('•')) ||
-    normalizeReportText(block).startsWith('Inga dokument har markerats')
+  if (normalizeReportText(block).startsWith('Inga dokument har markerats')) return true
+  return lines.every(
+    (line) =>
+      line.trim().startsWith('•') &&
+      (/\bDatum:\s*/i.test(line) || /överlämnas\.?$/i.test(line))
   )
 }
 
@@ -585,11 +614,21 @@ function isTestingDocumentationConclusion(block: string) {
   return normalizeReportText(block).startsWith('Där avtalad dokumentation')
 }
 
-function testingDocumentationBlocks(text: string) {
+function testingDocumentationBlocks(text: string, filterLegacyDocumentList: boolean) {
   const proseBlocks = normalizeReportText(text)
     .split(/\n{2,}/)
     .map((block) => block.trim())
-    .filter((block) => block && !isTestingDocumentationDocumentBlock(block))
+    .filter(
+      (block) =>
+        block && (!filterLegacyDocumentList || !isTestingDocumentationDocumentBlock(block))
+    )
+
+  if (!filterLegacyDocumentList) {
+    return {
+      beforeList: proseBlocks.slice(0, 2),
+      afterList: proseBlocks.slice(2),
+    }
+  }
 
   return {
     beforeList: proseBlocks.filter((block) => !isTestingDocumentationConclusion(block)),
@@ -613,13 +652,16 @@ function TestingDocumentationReport({
   report: EbInspectionReport
   section: EbInspectionReport['reportDraft']['sections'][number]
 }) {
-  const { beforeList, afterList } = testingDocumentationBlocks(section.text)
+  const { beforeList, afterList } = testingDocumentationBlocks(
+    section.text,
+    section.contentMode !== 'mixed'
+  )
   const documents = report.inspectionDocuments
     .filter((document) => document.status === 'present')
     .sort((left, right) => left.sortOrder - right.sortOrder)
 
   return (
-    <ReportSection title="Provning, dokumentation">
+    <ReportSection title={section.title}>
       <div className="space-y-2 text-[10.5pt] leading-[1.35] text-black">
         {beforeList.map((block, index) => (
           <p key={`${block}-${index}`} className="whitespace-pre-wrap">
@@ -967,6 +1009,73 @@ function DistributionListReport({ report }: { report: EbInspectionReport }) {
   )
 }
 
+function ContinuedFinalInspectionReport({
+  report,
+  section,
+}: {
+  report: EbInspectionReport
+  section: EbInspectionReport['reportDraft']['sections'][number]
+}) {
+  const date = report.inspection.continuedFinalInspectionDate?.trim()
+  const time = report.inspection.continuedFinalInspectionTime?.trim().slice(0, 5)
+
+  if (section.contentMode !== 'mixed') {
+    return (
+      <ReportSection title={section.title}>
+        <ReportText text={section.text} />
+      </ReportSection>
+    )
+  }
+
+  return (
+    <ReportSection title={section.title}>
+      <div className="space-y-2 text-[10.5pt] leading-[1.35] text-black">
+        <EditableReportText text={section.text} />
+        {date || time ? (
+          <p>
+            Enligt överenskommelse verkställs ny slutbesiktning{' '}
+            {date || 'Klicka här - ange datum'}, kl {time || '??:??'}.
+          </p>
+        ) : null}
+      </div>
+    </ReportSection>
+  )
+}
+
+function ReclamationNoticeReport({
+  report,
+  section,
+}: {
+  report: EbInspectionReport
+  section: EbInspectionReport['reportDraft']['sections'][number]
+}) {
+  const warrantyEndDate = report.inspection.warrantyEndDate?.trim()
+  const warrantyScope = report.inspection.warrantyScope?.trim()
+
+  if (section.contentMode !== 'mixed') {
+    return (
+      <ReportSection title={section.title}>
+        <ReportText text={section.text} />
+      </ReportSection>
+    )
+  }
+
+  return (
+    <ReportSection title={section.title}>
+      <div className="space-y-2 text-[10.5pt] leading-[1.35] text-black">
+        <EditableReportText text={section.text} />
+        {warrantyEndDate && warrantyScope ? (
+          <ul className="list-disc pl-7">
+            <li>{warrantyEndDate} för {warrantyScope}</li>
+          </ul>
+        ) : (
+          <p>-</p>
+        )}
+      </div>
+    </ReportSection>
+  )
+}
+
 function InspectorSignatureCard({
   signature,
   onImageError,
@@ -1037,59 +1146,102 @@ function defectNoErrorPartsPolicyText(report: EbInspectionReport) {
 
 function DefectsConditionsReport({
   report,
+  section,
   displayNumberByNoteId,
 }: {
   report: EbInspectionReport
+  section: EbInspectionReport['reportDraft']['sections'][number]
   displayNumberByNoteId: Map<string, number>
 }) {
   const markers = usedReportMarkers(report)
+  const markerLegendSection = report.reportDraft.sections.find(
+    (candidate) => candidate.key === 'marker_legend'
+  )
+  const deductionSection = report.reportDraft.sections.find(
+    (candidate) => candidate.key === 'deduction'
+  )
+  const showMarkerLegend = markerLegendSection?.isRelevant !== false
+  const showDeduction = deductionSection?.isRelevant !== false
 
   return (
-    <ReportSection title="Fel, bristfälligheter, anmärkningar och förhållanden">
+    <ReportSection title={section.title}>
       <div className="space-y-2 text-[10.5pt] leading-[1.35] text-black">
-        <p>
-          Under denna rubrik redovisas de fel, bristfälligheter, anmärkningar och förhållanden som
-          antecknats vid besiktningen.
-        </p>
-        <p className="underline">Förklaringar för respektive kolumn:</p>
-
-        <dl className="grid gap-y-1">
-          <div className="grid grid-cols-[22mm_1fr] gap-x-4">
-            <dt>Bes.</dt>
-            <dd>Besiktningstyp och löpnummer för den besiktning där noteringen gjordes.</dd>
-          </div>
-          <div className="grid grid-cols-[22mm_1fr] gap-x-4">
-            <dt>Bet.</dt>
-            <dd>Beteckning med markering:</dd>
-          </div>
-
-          {markers.map((marker) => (
-            <div key={marker.key} className="grid grid-cols-[22mm_1fr] gap-x-4">
-              <dt className="pl-[16mm] font-bold">{marker.key}</dt>
-              <dd>{markerExplanation(marker)}</dd>
-              {marker.key === 'N' ? (
-                <DeductionNotesList report={report} displayNumberByNoteId={displayNumberByNoteId} />
+        {section.contentMode !== 'mixed' ? (
+          <p>
+            Under denna rubrik redovisas de fel, bristfälligheter, anmärkningar och förhållanden som
+            antecknats vid besiktningen.
+          </p>
+        ) : (
+          <EditableReportText text={section.text} />
+        )}
+        {showMarkerLegend ? (
+          markerLegendSection?.contentMode === 'mixed' ? (
+            <>
+              <EditableReportText text={markerLegendSection.text} />
+              {markers.length > 0 ? (
+                <div className="pt-1">
+                  <p className="underline">Använda beteckningar:</p>
+                  <dl className="mt-2 grid gap-y-1">
+                    {markers.map((marker) => (
+                      <div key={marker.key} className="grid grid-cols-[22mm_1fr] gap-x-4">
+                        <dt className="font-bold">{marker.key}</dt>
+                        <dd>{markerExplanation(marker)}</dd>
+                        {marker.key === 'N' && showDeduction ? (
+                          <DeductionNotesList
+                            report={report}
+                            displayNumberByNoteId={displayNumberByNoteId}
+                          />
+                        ) : null}
+                      </div>
+                    ))}
+                  </dl>
+                </div>
               ) : null}
-            </div>
-          ))}
-
-          <div className="grid grid-cols-[22mm_1fr] gap-x-4 pt-1">
-            <dt>Nr</dt>
-            <dd>Ordningsnummer på fel / bristfällighet / anmärkning.</dd>
-          </div>
-          <div className="grid grid-cols-[22mm_1fr] gap-x-4">
-            <dt>Del/Rum</dt>
-            <dd>Bygg- eller installationsdel / alternativt rumsnummer / rumsbenämning.</dd>
-          </div>
-          <div className="grid grid-cols-[22mm_1fr] gap-x-4">
-            <dt>Fel</dt>
-            <dd>Fel / bristfällighet / anmärkning.</dd>
-          </div>
-          <div className="grid grid-cols-[22mm_1fr] gap-x-4">
-            <dt>Avhjälpt /sign</dt>
-            <dd>Kolumn för intygande av hantverkaren att avhjälpande har skett med datum och signatur.</dd>
-          </div>
-        </dl>
+            </>
+          ) : (
+            <>
+              <p className="underline">Förklaringar för respektive kolumn:</p>
+              <dl className="grid gap-y-1">
+                <div className="grid grid-cols-[22mm_1fr] gap-x-4">
+                  <dt>Bes.</dt>
+                  <dd>Besiktningstyp och löpnummer för den besiktning där noteringen gjordes.</dd>
+                </div>
+                <div className="grid grid-cols-[22mm_1fr] gap-x-4">
+                  <dt>Bet.</dt>
+                  <dd>Beteckning med markering:</dd>
+                </div>
+                {markers.map((marker) => (
+                  <div key={marker.key} className="grid grid-cols-[22mm_1fr] gap-x-4">
+                    <dt className="pl-[16mm] font-bold">{marker.key}</dt>
+                    <dd>{markerExplanation(marker)}</dd>
+                    {marker.key === 'N' && showDeduction ? (
+                      <DeductionNotesList
+                        report={report}
+                        displayNumberByNoteId={displayNumberByNoteId}
+                      />
+                    ) : null}
+                  </div>
+                ))}
+                <div className="grid grid-cols-[22mm_1fr] gap-x-4 pt-1">
+                  <dt>Nr</dt>
+                  <dd>Ordningsnummer på fel / bristfällighet / anmärkning.</dd>
+                </div>
+                <div className="grid grid-cols-[22mm_1fr] gap-x-4">
+                  <dt>Del/Rum</dt>
+                  <dd>Bygg- eller installationsdel / alternativt rumsnummer / rumsbenämning.</dd>
+                </div>
+                <div className="grid grid-cols-[22mm_1fr] gap-x-4">
+                  <dt>Fel</dt>
+                  <dd>Fel / bristfällighet / anmärkning.</dd>
+                </div>
+                <div className="grid grid-cols-[22mm_1fr] gap-x-4">
+                  <dt>Avhjälpt /sign</dt>
+                  <dd>Kolumn för intygande av hantverkaren att avhjälpande har skett med datum och signatur.</dd>
+                </div>
+              </dl>
+            </>
+          )
+        ) : null}
 
         <div className="pt-3">
           <p className="underline">Övriga förklaringar:</p>
@@ -1674,8 +1826,7 @@ export default function EbInspectionReportView({
           !(
             section.key === 'previous_inspections_tests' &&
             report.inspection.previousInspections.every((row) => !row.status && !row.date?.trim())
-          ) &&
-          hasPrintableReportText(section.text)
+          )
       ),
     [
       report.inspection.previousInspections,
@@ -1716,7 +1867,12 @@ export default function EbInspectionReportView({
     return grouped
   }, [report.images])
   const checkpointNumberByNote = useMemo(() => checkpointNumberByNoteId(report), [report])
-  const inspectorSignature = useMemo(() => inspectorSignatureForReport(report), [report])
+  const inspectorSignature = useMemo(() => {
+    const signatureSection = report.reportDraft.sections.find(
+      (section) => section.key === 'signature_certificate'
+    )
+    return signatureSection?.isRelevant === false ? null : inspectorSignatureForReport(report)
+  }, [report])
   const reportBlocks = useMemo<EbPrintableBlock[]>(() => {
     const blocks: EbPrintableBlock[] = [
       {
@@ -1734,7 +1890,7 @@ export default function EbInspectionReportView({
         id: `section-${scopeSection.key}`,
         node: (
           <ReportSection title={scopeSection.title}>
-            <ReportText text={scopeSection.text} />
+            <EditableReportText text={scopeSection.text} />
           </ReportSection>
         ),
       })
@@ -1758,7 +1914,7 @@ export default function EbInspectionReportView({
       if (section.key === 'participants') {
         blocks.push({
           id: `section-${section.key}`,
-          node: <ParticipantsReport report={report} />,
+          node: <ParticipantsReport report={report} section={section} />,
         })
         continue
       }
@@ -1813,11 +1969,21 @@ export default function EbInspectionReportView({
         continue
       }
       if (section.key === 'defects_appendices') {
+        const notesSection = report.reportDraft.sections.find((candidate) => candidate.key === 'notes')
+        const deductionSection = report.reportDraft.sections.find(
+          (candidate) => candidate.key === 'deduction'
+        )
         blocks.push({
           id: 'defects-conditions',
-          node: <DefectsConditionsReport report={report} displayNumberByNoteId={displayNumberByNoteId} />,
+          node: (
+            <DefectsConditionsReport
+              report={report}
+              section={section}
+              displayNumberByNoteId={displayNumberByNoteId}
+            />
+          ),
         })
-        const noteChunks = chunkArray(notes, 4)
+        const noteChunks = notesSection?.isRelevant === false ? [] : chunkArray(notes, 4)
         noteChunks.forEach((chunk, chunkIndex) => {
           blocks.push({
             id: `note-table-${chunkIndex}`,
@@ -1834,10 +2000,12 @@ export default function EbInspectionReportView({
             ),
           })
         })
-        blocks.push({
-          id: 'deduction-agreement-summary',
-          node: <DeductionAgreementSummary report={report} />,
-        })
+        if (deductionSection?.isRelevant !== false) {
+          blocks.push({
+            id: 'deduction-agreement-summary',
+            node: <DeductionAgreementSummary report={report} />,
+          })
+        }
         continue
       }
       if (section.key === 'contract_documents') {
@@ -1858,6 +2026,20 @@ export default function EbInspectionReportView({
         })
         continue
       }
+      if (section.key === 'continued_final_inspection') {
+        blocks.push({
+          id: `section-${section.key}`,
+          node: <ContinuedFinalInspectionReport report={report} section={section} />,
+        })
+        continue
+      }
+      if (section.key === 'reclamation_notice') {
+        blocks.push({
+          id: `section-${section.key}`,
+          node: <ReclamationNoticeReport report={report} section={section} />,
+        })
+        continue
+      }
       if (section.key === 'distribution_list') {
         blocks.push({
           id: `section-${section.key}`,
@@ -1872,6 +2054,8 @@ export default function EbInspectionReportView({
           <ReportSection title={section.title}>
             {section.key === 'contract_parties' ? (
               <ContractPartiesReport report={report} />
+            ) : section.contentMode === 'editable' || section.contentMode === 'mixed' ? (
+              <EditableReportText text={section.text} />
             ) : (
               <ReportText text={section.text} />
             )}

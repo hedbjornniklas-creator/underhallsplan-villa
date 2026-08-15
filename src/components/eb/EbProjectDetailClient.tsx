@@ -9,6 +9,7 @@ import {
   ClipboardCheck,
   Download,
   FileText,
+  ListChecks,
   Lock,
   Loader2,
   Pencil,
@@ -2119,6 +2120,13 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
+                <Link
+                  href={`/eb/projects/${currentProject.id}/remediation`}
+                  className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                >
+                  <ListChecks size={16} />
+                  Åtgärdsportal
+                </Link>
                 <button
                   type="button"
                   onClick={() => setEditDialogOpen(true)}

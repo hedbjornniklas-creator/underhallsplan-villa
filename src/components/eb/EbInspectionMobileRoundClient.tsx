@@ -45,8 +45,8 @@ type NoteFormState = {
   room: string
   placeDetail: string
   noteText: string
-  responsibleParty: string
-  tradeGroup: string
+  remediationAssigneeId: string
+  remediationAssigneeName: string
   investigationResponsibleParty: string
   investigationResponsibleNote: string
   investigationCostParty: string
@@ -69,6 +69,7 @@ type NoteSaveJob = {
   disciplineId: string
   fingerprint: string
   form: NoteFormState
+  commitRemediationAssignee?: boolean
 }
 
 type NoteSaveBatch = Record<string, NoteSaveJob>
@@ -106,8 +107,8 @@ function createClientId() {
   })
 }
 
-function noteFormFingerprint(form: NoteFormState) {
-  return JSON.stringify(form)
+function noteFormFingerprint(form: NoteFormState, commitRemediationAssignee = false) {
+  return JSON.stringify({ form, commitRemediationAssignee })
 }
 
 function noteSaveStorageKey(inspectionId: string) {
@@ -196,8 +197,8 @@ function createInitialForm(round: EbInspectionRound): NoteFormState {
     room: '',
     placeDetail: '',
     noteText: '',
-    responsibleParty: '',
-    tradeGroup: '',
+    remediationAssigneeId: '',
+    remediationAssigneeName: '',
     investigationResponsibleParty: '',
     investigationResponsibleNote: '',
     investigationCostParty: '',
@@ -214,8 +215,8 @@ function formFromNote(note: EbNote): NoteFormState {
     room: note.room ?? '',
     placeDetail: note.placeDetail ?? '',
     noteText: note.noteText,
-    responsibleParty: note.responsibleParty ?? '',
-    tradeGroup: note.tradeGroup ?? '',
+    remediationAssigneeId: note.remediationAssigneeId ?? '',
+    remediationAssigneeName: note.remediationAssigneeName ?? note.tradeGroup ?? note.responsibleParty ?? '',
     investigationResponsibleParty: note.investigationResponsibleParty ?? '',
     investigationResponsibleNote: note.investigationResponsibleNote ?? '',
     investigationCostParty: note.investigationCostParty ?? '',
@@ -685,6 +686,24 @@ export default function EbInspectionMobileRoundClient({
     })
   }
 
+  const updateRemediationAssignee = (name: string) => {
+    const normalized = name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('sv-SE')
+    const match = round.remediationAssignees.find(
+      (assignee) =>
+        assignee.isActive &&
+        assignee.name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('sv-SE') === normalized
+    )
+    setForm(() => {
+      const next = {
+        ...formRef.current,
+        remediationAssigneeName: name,
+        remediationAssigneeId: match?.id ?? '',
+      }
+      formRef.current = next
+      return next
+    })
+  }
+
   const replaceForm = (nextForm: NoteFormState) => {
     formRef.current = nextForm
     setForm(nextForm)
@@ -749,9 +768,27 @@ export default function EbInspectionMobileRoundClient({
         (suggestion) =>
           suggestion.phrase.toLocaleLowerCase('sv-SE') === phrase.toLocaleLowerCase('sv-SE')
       )
+      const hasRemediationAssignee =
+        !note.remediationAssigneeId ||
+        current.remediationAssignees.some((assignee) => assignee.id === note.remediationAssigneeId)
       return {
         ...current,
         notes,
+        remediationAssignees:
+          hasRemediationAssignee || !note.remediationAssigneeId || !note.remediationAssigneeName
+            ? current.remediationAssignees
+            : [
+                ...current.remediationAssignees,
+                {
+                  id: note.remediationAssigneeId,
+                  name: note.remediationAssigneeName,
+                  companyName: null,
+                  contactName: null,
+                  email: null,
+                  phone: null,
+                  isActive: true,
+                },
+              ].sort((left, right) => left.name.localeCompare(right.name, 'sv-SE')),
         suggestions:
           phrase && !hasSuggestion
             ? [
@@ -783,6 +820,7 @@ export default function EbInspectionMobileRoundClient({
             body: JSON.stringify({
               ...job.form,
               disciplineId: job.disciplineId,
+              remediationAssigneeCommit: job.commitRemediationAssignee === true,
               ...(noteExists ? {} : { clientNoteId: job.draftId }),
             }),
           }
@@ -813,6 +851,20 @@ export default function EbInspectionMobileRoundClient({
       for (const note of Object.values(savedNotes)) {
         if (activeDraftIdRef.current === note.id) {
           setEditingNote(note)
+          if (
+            note.remediationAssigneeId &&
+            note.remediationAssigneeName &&
+            formRef.current.remediationAssigneeName.trim().toLocaleLowerCase('sv-SE') ===
+              note.remediationAssigneeName.trim().toLocaleLowerCase('sv-SE')
+          ) {
+            const nextForm = {
+              ...formRef.current,
+              remediationAssigneeId: note.remediationAssigneeId,
+              remediationAssigneeName: note.remediationAssigneeName,
+            }
+            formRef.current = nextForm
+            setForm(nextForm)
+          }
         }
       }
     },
@@ -828,13 +880,19 @@ export default function EbInspectionMobileRoundClient({
   const { enqueue: enqueueNoteSave } = noteAutosave
 
   const queueNoteSnapshot = useCallback(
-    (draftId: string, snapshot: NoteFormState, disciplineId: string): Promise<EbNote> => {
+    (
+      draftId: string,
+      snapshot: NoteFormState,
+      disciplineId: string,
+      options?: { commitRemediationAssignee?: boolean }
+    ): Promise<EbNote> => {
       if (isLocked) return Promise.reject(new Error(lockedMessage))
       if (!snapshot.noteText.trim()) {
         return Promise.reject(new Error('Skriv en noteringstext innan du sparar.'))
       }
 
-      const fingerprint = noteFormFingerprint(snapshot)
+      const commitRemediationAssignee = options?.commitRemediationAssignee === true
+      const fingerprint = noteFormFingerprint(snapshot, commitRemediationAssignee)
       const pending = noteSavePromisesRef.current.get(draftId)
       if (pending?.fingerprint === fingerprint) return pending.promise
 
@@ -848,6 +906,7 @@ export default function EbInspectionMobileRoundClient({
         disciplineId,
         fingerprint,
         form: { ...snapshot },
+        commitRemediationAssignee,
       }
       lastQueuedFingerprintRef.current.set(draftId, fingerprint)
       noteSaveJobsRef.current.set(draftId, job)
@@ -884,7 +943,8 @@ export default function EbInspectionMobileRoundClient({
     await queueNoteSnapshot(
       storedJob.draftId,
       storedJob.form,
-      storedJob.disciplineId
+      storedJob.disciplineId,
+      { commitRemediationAssignee: storedJob.commitRemediationAssignee === true }
     )
   }
 
@@ -914,7 +974,9 @@ export default function EbInspectionMobileRoundClient({
     const disciplineId = editingNote?.disciplineId ?? activeDisciplineId
     if (!draftId) return Promise.reject(new Error('Noteringsutkast saknas.'))
     if (!disciplineId) return Promise.reject(new Error('Fack saknas för rundan.'))
-    return queueNoteSnapshot(draftId, formRef.current, disciplineId)
+    return queueNoteSnapshot(draftId, formRef.current, disciplineId, {
+      commitRemediationAssignee: true,
+    })
   }, [activeDisciplineId, editingNote?.disciplineId, queueNoteSnapshot])
 
   saveActiveDraftRef.current = () => {
@@ -922,7 +984,9 @@ export default function EbInspectionMobileRoundClient({
     const disciplineId = editingNote?.disciplineId ?? activeDisciplineId
     const snapshot = formRef.current
     if (!draftId || !disciplineId || !snapshot.noteText.trim() || isLocked) return
-    void queueNoteSnapshot(draftId, snapshot, disciplineId).catch(() => undefined)
+    void queueNoteSnapshot(draftId, snapshot, disciplineId, {
+      commitRemediationAssignee: true,
+    }).catch(() => undefined)
   }
 
   useEffect(() => {
@@ -1390,8 +1454,9 @@ export default function EbInspectionMobileRoundClient({
                       {note.room ? <span>Rum: {note.room}</span> : null}
                       {note.location ? <span>Plats: {note.location}</span> : null}
                       {note.placeDetail ? <span>Detalj: {note.placeDetail}</span> : null}
-                      {note.tradeGroup ? <span>Yrkesgrupp: {note.tradeGroup}</span> : null}
-                      {note.responsibleParty ? <span>Ansvarig: {note.responsibleParty}</span> : null}
+                      {note.remediationAssigneeName ? (
+                        <span>Åtgärdas av: {note.remediationAssigneeName}</span>
+                      ) : null}
                     </div>
                   </button>
                   {(imagesByNoteId.get(note.id)?.length ?? 0) +
@@ -1863,24 +1928,39 @@ export default function EbInspectionMobileRoundClient({
                       ) : null}
                     </section>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="block">
-                      <span className="block text-xs font-semibold text-gray-700">Ansvarig</span>
-                      <input
-                        value={form.responsibleParty}
-                        onChange={(event) => updateField('responsibleParty', event.target.value)}
-                        className={`${inputClassName()} mt-1`}
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="block text-xs font-semibold text-gray-700">Yrkesgrupp</span>
-                      <input
-                        value={form.tradeGroup}
-                        onChange={(event) => updateField('tradeGroup', event.target.value)}
-                        className={`${inputClassName()} mt-1`}
-                      />
-                    </label>
-                  </div>
+                  <label className="block">
+                    <span className="block text-xs font-semibold text-gray-700">Åtgärdas av</span>
+                    <input
+                      value={form.remediationAssigneeName}
+                      onChange={(event) => updateRemediationAssignee(event.target.value)}
+                      onBlur={() => {
+                        if (
+                          !isLocked &&
+                          formRef.current.noteText.trim() &&
+                          formRef.current.remediationAssigneeName.trim() &&
+                          !formRef.current.remediationAssigneeId
+                        ) {
+                          void saveCurrentNote().catch((error) =>
+                            showError(error, 'Kunde inte spara Åtgärdas av.')
+                          )
+                        }
+                      }}
+                      list="eb-remediation-assignees-mobile"
+                      placeholder="Välj befintlig eller skriv en ny"
+                      autoComplete="off"
+                      className={`${inputClassName()} mt-1`}
+                    />
+                    <datalist id="eb-remediation-assignees-mobile">
+                      {round.remediationAssignees
+                        .filter((assignee) => assignee.isActive)
+                        .map((assignee) => (
+                          <option key={assignee.id} value={assignee.name} />
+                        ))}
+                    </datalist>
+                    <span className="mt-1 block text-xs text-gray-500">
+                      Ett nytt namn läggs till när noteringen sparas.
+                    </span>
+                  </label>
 
                   {showReportFields ? (
                   <section className="rounded-md border border-emerald-100 bg-emerald-50/25 p-2.5">

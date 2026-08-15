@@ -59,6 +59,9 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'EB_NOTE_ID_CONFLICT') return jsonError('Noteringens id används redan.', 409)
   if (message === 'EB_DISCIPLINE_REQUIRED') return jsonError('Välj fack innan noteringen sparas.', 400)
   if (message === 'EB_NOTE_TEXT_REQUIRED') return jsonError('Skriv en noteringstext.', 400)
+  if (message === 'EB_REMEDIATION_ASSIGNEE_NOT_FOUND') {
+    return jsonError('Valet Åtgärdas av finns inte längre. Välj ett annat.', 400)
+  }
   return jsonError(fallback, 500)
 }
 
@@ -83,6 +86,9 @@ export async function POST(
       room: toText(body.room) || null,
       placeDetail: toText(body.placeDetail) || null,
       noteText: toText(body.noteText) || null,
+      remediationAssigneeId: toUuid(body.remediationAssigneeId),
+      remediationAssigneeName: toText(body.remediationAssigneeName) || null,
+      remediationAssigneeCommit: body.remediationAssigneeCommit === true,
       responsibleParty: toText(body.responsibleParty) || null,
       tradeGroup: toText(body.tradeGroup) || null,
       investigationResponsibleParty: toPartyKey(body.investigationResponsibleParty),

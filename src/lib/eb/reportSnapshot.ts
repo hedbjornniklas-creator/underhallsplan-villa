@@ -98,6 +98,7 @@ export function getEbInspectionReportFromSnapshot(value: unknown): EbInspectionR
     disciplines: legacy.disciplines ?? [],
     markers: legacy.markers ?? [],
     statuses: legacy.statuses ?? [],
+    remediationAssignees: [],
     notes: legacy.notes ?? [],
     images: legacy.images ?? [],
     branding: legacy.branding,

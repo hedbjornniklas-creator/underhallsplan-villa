@@ -176,6 +176,16 @@ export type EbNoteStatus = {
   isDefault: boolean
 }
 
+export type EbRemediationAssigneeOption = {
+  id: string
+  name: string
+  companyName: string | null
+  contactName: string | null
+  email: string | null
+  phone: string | null
+  isActive: boolean
+}
+
 export type EbNote = {
   id: string
   projectId: string
@@ -188,6 +198,8 @@ export type EbNote = {
   markerKey: string | null
   statusKey: string
   noteText: string
+  remediationAssigneeId: string | null
+  remediationAssigneeName: string | null
   responsibleParty: string | null
   tradeGroup: string | null
   investigationResponsibleParty: EbPartyKey | null
@@ -276,6 +288,7 @@ export type EbInspectionRound = {
   disciplines: EbDiscipline[]
   markers: EbNoteMarker[]
   statuses: EbNoteStatus[]
+  remediationAssignees: EbRemediationAssigneeOption[]
   notes: EbNote[]
   images: EbNoteImage[]
   projectAttachments: EbProjectAttachment[]
@@ -294,12 +307,12 @@ export type EbReportSectionSource =
   | 'standard_text'
   | 'manual'
 
-export type EbReportSectionContentMode = 'editable' | 'structured'
+export type EbReportSectionContentMode = 'editable' | 'mixed' | 'structured'
 
 export const EB_REPORT_DRAFT_SCHEMA_VERSION = 1 as const
 export const EB_REPORT_TEMPLATE_KEY = 'eb_default'
 export const EB_REPORT_TEMPLATE_TITLE = 'EB-utlåtande'
-export const EB_REPORT_TEMPLATE_VERSION = 1
+export const EB_REPORT_TEMPLATE_VERSION = 2
 
 const EB_EDITABLE_REPORT_SECTION_KEYS = new Set([
   'scope',
@@ -309,8 +322,23 @@ const EB_EDITABLE_REPORT_SECTION_KEYS = new Set([
   'other_notes',
 ])
 
+const EB_MIXED_REPORT_SECTION_KEYS = new Set([
+  'participants',
+  'testing_documentation',
+  'defects_appendices',
+  'marker_legend',
+  'continued_final_inspection',
+  'reclamation_notice',
+])
+
 function ebReportSectionContentMode(key: string): EbReportSectionContentMode {
-  return EB_EDITABLE_REPORT_SECTION_KEYS.has(key) ? 'editable' : 'structured'
+  if (EB_EDITABLE_REPORT_SECTION_KEYS.has(key)) return 'editable'
+  if (EB_MIXED_REPORT_SECTION_KEYS.has(key)) return 'mixed'
+  return 'structured'
+}
+
+function isEbReportSectionContentMode(value: unknown): value is EbReportSectionContentMode {
+  return value === 'editable' || value === 'mixed' || value === 'structured'
 }
 
 export type EbReportDraftSection = {
@@ -339,7 +367,7 @@ function mergeEbStructuredReportSection(
     title: existing.title,
     sbrPoint: existing.sbrPoint,
     source: existing.source,
-    contentMode: existing.contentMode,
+    contentMode: current.contentMode,
     status:
       !isRelevant
         ? 'not_applicable'
@@ -348,8 +376,88 @@ function mergeEbStructuredReportSection(
           : current.status,
     isRelevant,
     relevanceOverridden,
+    text:
+      current.contentMode === 'mixed' && existing.contentMode === 'structured'
+        ? migrateEbMixedReportSectionText(current, existing)
+        : current.text,
     updatedAt: existing.updatedAt ?? fallbackUpdatedAt,
   }
+}
+
+function mergeEbMixedReportSection(
+  current: EbReportDraftSection,
+  existing: EbReportDraftSection,
+  fallbackUpdatedAt: string
+) {
+  return {
+    ...mergeEbStructuredReportSection(current, existing, fallbackUpdatedAt),
+    text: existing.text,
+  }
+}
+
+function reportTextBlocks(value: string) {
+  return value
+    .replace(/\r\n/g, '\n')
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+}
+
+function isLegacyTestingDocumentationList(block: string) {
+  const lines = block
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  if (lines.length === 0) return false
+  if (block.startsWith('Inga dokument har markerats')) return true
+  return lines.every(
+    (line) =>
+      line.startsWith('•') &&
+      (/\bDatum:\s*/i.test(line) || /överlämnas\.?$/i.test(line))
+  )
+}
+
+function migrateEbMixedReportSectionText(
+  current: EbReportDraftSection,
+  existing: EbReportDraftSection
+) {
+  const blocks = reportTextBlocks(existing.text)
+  if (current.key === 'testing_documentation') {
+    const prose = blocks.filter((block) => !isLegacyTestingDocumentationList(block)).join('\n\n')
+    return prose || current.text
+  }
+  if (current.key === 'continued_final_inspection') {
+    const prose = blocks
+      .filter((block) => !block.startsWith('Enligt överenskommelse verkställs ny slutbesiktning'))
+      .join('\n\n')
+    return prose || current.text
+  }
+  if (current.key === 'reclamation_notice') {
+    const prose = blocks
+      .map((block) =>
+        block.startsWith('Särskild varugaranti enligt nedan gäller till och med:')
+          ? block.split('\n')[0]
+          : block
+      )
+      .join('\n\n')
+    return prose || current.text
+  }
+  if (current.key === 'defects_appendices') return current.text
+  if (current.key === 'participants') return current.text
+  if (current.key === 'marker_legend') {
+    const prose = blocks
+      .filter((block) => {
+        const lines = block.split('\n').map((line) => line.trim()).filter(Boolean)
+        return !(
+          lines.length > 0 &&
+          lines.every((line) => /^[A-ZÅÄÖ0-9]{1,4}:\s+/.test(line))
+        )
+      })
+      .filter((block) => !block.startsWith('Inga särskilda beteckningar'))
+      .join('\n\n')
+    return prose || current.text
+  }
+  return existing.text || current.text
 }
 
 export type EbReportProjectSnapshot = Omit<EbProjectListItem, 'inspections'>
@@ -636,6 +744,7 @@ type EbNoteRow = {
   marker_key: string | null
   status_key: string | null
   note_text: string | null
+  remediation_assignee_id?: string | null
   responsible_party: string | null
   trade_group: string | null
   investigation_responsible_party: string | null
@@ -884,6 +993,9 @@ export type SaveEbNoteInput = {
   markerKey?: string | null
   statusKey?: string | null
   noteText?: string | null
+  remediationAssigneeId?: string | null
+  remediationAssigneeName?: string | null
+  remediationAssigneeCommit?: boolean
   responsibleParty?: string | null
   tradeGroup?: string | null
   investigationResponsibleParty?: EbPartyKey | null
@@ -2173,6 +2285,8 @@ function mapNote(
     markerKey: row.marker_key ?? null,
     statusKey,
     noteText: row.note_text ?? '',
+    remediationAssigneeId: row.remediation_assignee_id ?? null,
+    remediationAssigneeName: row.trade_group ?? row.responsible_party ?? null,
     responsibleParty: row.responsible_party ?? null,
     tradeGroup: row.trade_group ?? null,
     investigationResponsibleParty: normalizePartyKey(row.investigation_responsible_party),
@@ -2339,6 +2453,43 @@ async function listEbNoteStatuses() {
   return ((data ?? []) as EbStatusRow[]).map(mapStatus)
 }
 
+export async function listEbRemediationAssignees(input: {
+  orgId: string
+  projectId: string
+}): Promise<EbRemediationAssigneeOption[]> {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('eb_remediation_assignees')
+    .select('id,name,company_name,contact_name,email,phone,is_active')
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .order('is_active', { ascending: false })
+    .order('name', { ascending: true })
+
+  if (error) {
+    if (isMissingRelationError(error)) return []
+    throw new Error(error.message ?? 'Kunde inte hämta listan Åtgärdas av.')
+  }
+
+  return ((data ?? []) as Array<{
+    id: string
+    name: string
+    company_name: string | null
+    contact_name: string | null
+    email: string | null
+    phone: string | null
+    is_active: boolean | null
+  }>).map((row) => ({
+    id: row.id,
+    name: row.name,
+    companyName: row.company_name ?? null,
+    contactName: row.contact_name ?? null,
+    email: row.email ?? null,
+    phone: row.phone ?? null,
+    isActive: row.is_active ?? true,
+  }))
+}
+
 async function listEbNotes(input: {
   orgId: string
   projectId: string
@@ -2351,7 +2502,7 @@ async function listEbNotes(input: {
   const baseSelect =
     'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,sort_order,created_at,updated_at'
   const withReportMetadataSelect =
-    'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,investigation_responsible_party,investigation_responsible_note,investigation_cost_party,investigation_due_date,deduction_amount,sort_order,created_at,updated_at'
+    'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,remediation_assignee_id,responsible_party,trade_group,investigation_responsible_party,investigation_responsible_note,investigation_cost_party,investigation_due_date,deduction_amount,sort_order,created_at,updated_at'
   const { data, error } = await admin
     .from('eb_notes')
     .select(withReportMetadataSelect)
@@ -2606,10 +2757,11 @@ export async function getEbInspectionRound(input: {
   inspectionId: string
 }): Promise<EbInspectionRound> {
   const { project, inspection } = await getEbInspectionRoundBase(input)
-  const [disciplines, markers, statuses, suggestions, checkpoints] = await Promise.all([
+  const [disciplines, markers, statuses, remediationAssignees, suggestions, checkpoints] = await Promise.all([
     listEbDisciplines(input),
     listEbNoteMarkers(),
     listEbNoteStatuses(),
+    listEbRemediationAssignees({ orgId: input.orgId, projectId: input.projectId }),
     listEbNoteSuggestions({ orgId: input.orgId, profileId: input.requestedByUserId }),
     listEbInspectionCheckpoints({
       orgId: input.orgId,
@@ -2638,6 +2790,7 @@ export async function getEbInspectionRound(input: {
     disciplines,
     markers,
     statuses,
+    remediationAssignees,
     notes,
     images,
     projectAttachments,
@@ -3055,7 +3208,11 @@ function normalizeEbReportDraftSection(value: unknown): EbReportDraftSection | n
     relevanceOverridden: raw.relevanceOverridden === true,
     text,
     updatedAt: normalizeText(raw.updatedAt),
-    contentMode: ebReportSectionContentMode(key),
+    contentMode: isEbReportSectionContentMode(raw.contentMode)
+      ? raw.contentMode
+      : EB_MIXED_REPORT_SECTION_KEYS.has(key)
+        ? 'structured'
+        : ebReportSectionContentMode(key),
   }
 }
 
@@ -3736,6 +3893,53 @@ function resolveEbNoteOptions(input: {
   }
 }
 
+async function resolveEbNoteRemediationAssignee(input: SaveEbNoteInput) {
+  const admin = createSupabaseAdminClient()
+  const requestedId = normalizeText(input.remediationAssigneeId)
+  const requestedName =
+    normalizeText(input.remediationAssigneeName) ??
+    normalizeText(input.tradeGroup) ??
+    normalizeText(input.responsibleParty)
+
+  if (requestedId) {
+    const { data, error } = await admin
+      .from('eb_remediation_assignees')
+      .select('id,name')
+      .eq('id', requestedId)
+      .eq('org_id', input.orgId)
+      .eq('eb_project_id', input.projectId)
+      .eq('is_active', true)
+      .maybeSingle()
+    if (error) throw new Error(error.message ?? 'Kunde inte verifiera Åtgärdas av.')
+    if (!data) throw new Error('EB_REMEDIATION_ASSIGNEE_NOT_FOUND')
+    return { id: String(data.id), name: String(data.name) }
+  }
+
+  if (!requestedName) return { id: null, name: null }
+  if (input.remediationAssigneeCommit !== true) {
+    return { id: null, name: requestedName }
+  }
+  const normalizedName = requestedName.trim().replace(/\s+/g, ' ').toLocaleLowerCase('sv-SE')
+  const { data, error } = await admin
+    .from('eb_remediation_assignees')
+    .upsert(
+      {
+        org_id: input.orgId,
+        eb_project_id: input.projectId,
+        name: requestedName,
+        normalized_name: normalizedName,
+        is_active: true,
+        created_by: input.requestedByUserId,
+        updated_by: input.requestedByUserId,
+      },
+      { onConflict: 'eb_project_id,normalized_name' }
+    )
+    .select('id,name')
+    .single()
+  if (error || !data) throw new Error(error?.message ?? 'Kunde inte spara Åtgärdas av.')
+  return { id: String(data.id), name: String(data.name) }
+}
+
 async function buildEbNoteContext(input: {
   orgId: string
   requestedByUserId?: string
@@ -3795,6 +3999,7 @@ export async function createEbNote(input: SaveEbNoteInput): Promise<EbNote> {
   }
 
   const context = await buildEbNoteContext(input)
+  const remediationAssignee = await resolveEbNoteRemediationAssignee(input)
   const noteText = normalizeText(input.noteText)
   if (!noteText) {
     throw new Error('EB_NOTE_TEXT_REQUIRED')
@@ -3825,8 +4030,9 @@ export async function createEbNote(input: SaveEbNoteInput): Promise<EbNote> {
       marker_key: options.markerKey,
       status_key: options.statusKey,
       note_text: noteText,
-      responsible_party: normalizeText(input.responsibleParty),
-      trade_group: normalizeText(input.tradeGroup),
+      remediation_assignee_id: remediationAssignee.id,
+      responsible_party: null,
+      trade_group: remediationAssignee.name,
       investigation_responsible_party: normalizePartyKey(input.investigationResponsibleParty),
       investigation_responsible_note: normalizeText(input.investigationResponsibleNote),
       investigation_cost_party:
@@ -3840,7 +4046,7 @@ export async function createEbNote(input: SaveEbNoteInput): Promise<EbNote> {
       updated_by: input.requestedByUserId,
     })
     .select(
-      'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,investigation_responsible_party,investigation_responsible_note,investigation_cost_party,investigation_due_date,deduction_amount,sort_order,created_at,updated_at'
+      'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,remediation_assignee_id,responsible_party,trade_group,investigation_responsible_party,investigation_responsible_note,investigation_cost_party,investigation_due_date,deduction_amount,sort_order,created_at,updated_at'
     )
     .single()
 
@@ -3869,6 +4075,7 @@ export async function updateEbNote(input: SaveEbNoteInput & { noteId: string }):
   await assertEbInspectionEditable(input)
   const admin = createSupabaseAdminClient()
   const context = await buildEbNoteContext(input)
+  const remediationAssignee = await resolveEbNoteRemediationAssignee(input)
   const noteText = normalizeText(input.noteText)
   if (!noteText) {
     throw new Error('EB_NOTE_TEXT_REQUIRED')
@@ -3893,8 +4100,9 @@ export async function updateEbNote(input: SaveEbNoteInput & { noteId: string }):
       marker_key: options.markerKey,
       status_key: options.statusKey,
       note_text: noteText,
-      responsible_party: normalizeText(input.responsibleParty),
-      trade_group: normalizeText(input.tradeGroup),
+      remediation_assignee_id: remediationAssignee.id,
+      responsible_party: null,
+      trade_group: remediationAssignee.name,
       investigation_responsible_party: normalizePartyKey(input.investigationResponsibleParty),
       investigation_responsible_note: normalizeText(input.investigationResponsibleNote),
       investigation_cost_party:
@@ -3910,7 +4118,7 @@ export async function updateEbNote(input: SaveEbNoteInput & { noteId: string }):
     .eq('inspection_id', input.inspectionId)
     .eq('id', input.noteId)
     .select(
-      'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,investigation_responsible_party,investigation_responsible_note,investigation_cost_party,investigation_due_date,deduction_amount,sort_order,created_at,updated_at'
+      'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,remediation_assignee_id,responsible_party,trade_group,investigation_responsible_party,investigation_responsible_note,investigation_cost_party,investigation_due_date,deduction_amount,sort_order,created_at,updated_at'
     )
     .maybeSingle()
 
@@ -4419,40 +4627,6 @@ function ebAttachmentReportRow(attachment: EbProjectAttachment) {
   return details.length > 0 ? `${heading}\n${details.join('\n')}` : heading
 }
 
-function isHandoverDocument(document: EbInspectionDocument) {
-  return normalizeText(document.resultLabel)?.toLocaleLowerCase('sv-SE').includes('överlämnas') ?? false
-}
-
-function ebInspectionDocumentReportRow(document: EbInspectionDocument) {
-  if (isHandoverDocument(document)) {
-    if (document.status === 'present') return `• ${document.title} överlämnas.`
-    return null
-  }
-
-  if (document.status === 'present') {
-    const date = document.documentDate ?? 'datum ej angivet'
-    return `• ${document.title} Datum: ${date}`
-  }
-  return null
-}
-
-function ebTestingDocumentationReportText(documents: EbInspectionDocument[]) {
-  const standardText = ebStandardText('EB_REPORT_TESTING_DOCUMENTATION')
-  const [intro, ...rest] = standardText.split(/\n{2,}/)
-  const beforeList = rest.length > 1 ? rest.slice(0, -1).join('\n\n') : ''
-  const conclusion = rest.length > 1 ? rest[rest.length - 1] : rest.join('\n\n')
-  const documentRows = documents
-    .map(ebInspectionDocumentReportRow)
-    .filter((row): row is string => Boolean(row))
-
-  const documentText =
-    documentRows.length > 0
-      ? documentRows.join('\n')
-      : 'Inga dokument har markerats som redovisade för granskning.'
-
-  return [intro, beforeList, documentText, conclusion].map(normalizeText).filter(Boolean).join('\n\n')
-}
-
 function ebNoteReportReference(round: EbInspectionRound, note: EbNote) {
   return `${round.project.notePrefix} ${note.noteNumber ?? '-'}`
 }
@@ -4497,20 +4671,6 @@ function ebApprovalDecisionReportText(round: EbInspectionRound) {
   ])
 }
 
-function ebContinuedFinalInspectionReportText(round: EbInspectionRound) {
-  const date = normalizeText(round.inspection.continuedFinalInspectionDate)
-  const time = normalizeText(round.inspection.continuedFinalInspectionTime)?.slice(0, 5)
-  const scheduleLine =
-    date || time
-      ? `Enligt överenskommelse verkställs ny slutbesiktning ${date ?? 'Klicka här - ange datum'}, kl ${time ?? '??:??'}.`
-      : null
-
-  return reportList([
-    ebStandardText('EB_REPORT_CONTINUED_FINAL_INSPECTION'),
-    scheduleLine,
-  ])
-}
-
 function ebRemedyDeadlineAgreementReportText(round: EbInspectionRound) {
   const remedyDeadline = normalizeText(round.inspection.defaultRemedyDeadline)
   const remedyAgreement = remedyDeadline
@@ -4536,23 +4696,6 @@ function ebRemedyDeadlineAgreementReportText(round: EbInspectionRound) {
         ? 'Efterbesiktning har inte påkallats vid tidpunkten för utlåtandets upprättande.'
         : null,
     round.inspection.afterInspectionNoticeInReport ? 'Denna notering gäller som kallelse.' : null,
-  ])
-}
-
-function ebReclamationNoticeReportText(round: EbInspectionRound) {
-  const warrantyEndDate = normalizeText(round.inspection.warrantyEndDate)
-  const warrantyScope = normalizeText(round.inspection.warrantyScope)
-  const warrantyText =
-    warrantyEndDate && warrantyScope
-      ? [
-          'Särskild varugaranti enligt nedan gäller till och med:',
-          `• ${warrantyEndDate} för ${warrantyScope}`,
-        ].join('\n')
-      : 'Särskild varugaranti enligt nedan gäller till och med:\n-'
-
-  return reportList([
-    ebStandardText('EB_REPORT_RECLAMATION_NOTICE'),
-    warrantyText,
   ])
 }
 
@@ -4709,7 +4852,7 @@ function buildEbReportDraft(input: {
   const includedAttachments = attachments.filter((attachment) => attachment.includeInReport)
   const contractDocuments = ebContractDocumentsReportText(round)
   const includedAgreementItems = round.project.agreementItems.filter((item) => item.includeInReport)
-  const testingDocumentationText = ebTestingDocumentationReportText(inspectionDocuments)
+  const testingDocumentationText = ebStandardText('EB_REPORT_TESTING_DOCUMENTATION')
   const hasReviewedDocuments = inspectionDocuments.some((document) => document.status === 'present')
   const hasDocumentRemarks = inspectionDocuments.some((document) => document.status !== 'na')
   const appendices = includedAttachments.length > 0
@@ -4795,7 +4938,7 @@ function buildEbReportDraft(input: {
       source: 'participants',
       status: presentParticipantRows.length > 0 ? 'complete' : 'missing',
       isRelevant: true,
-      text: presentParticipantRows.length > 0 ? presentParticipantRows.join('\n\n') : 'Inga närvarande är registrerade.',
+      text: ebStandardText('EB_REPORT_PARTICIPANTS_INTRO'),
       updatedAt: null,
     },
     {
@@ -4912,10 +5055,7 @@ function buildEbReportDraft(input: {
           : 'missing'
         : 'not_applicable',
       isRelevant: sectionApplicable('defects_appendices'),
-      text:
-        noteCount > 0
-          ? 'Under denna rubrik är angivna förhållanden som besiktningsmannen anser utgöra fel.'
-          : ebStandardText('EB_REPORT_DEFECTS_APPENDICES_EMPTY'),
+      text: ebStandardText('EB_REPORT_DEFECTS_APPENDICES_EMPTY'),
       updatedAt: null,
     },
     {
@@ -4929,13 +5069,7 @@ function buildEbReportDraft(input: {
           : 'missing'
         : 'not_applicable',
       isRelevant: sectionApplicable('marker_legend'),
-      text:
-        round.markers.length > 0
-          ? reportList([
-              round.markers.map((marker) => `${marker.key}: ${marker.label}`).join('\n'),
-              ebStandardText('EB_REPORT_NOTE_LEGEND'),
-            ])
-          : ebStandardText('EB_REPORT_MARKER_LEGEND_MISSING'),
+      text: ebStandardText('EB_REPORT_NOTE_LEGEND'),
       updatedAt: null,
     },
     {
@@ -5009,7 +5143,7 @@ function buildEbReportDraft(input: {
       isRelevant:
         sectionApplicable('continued_final_inspection') &&
         round.inspection.requiresContinuedFinalInspection === true,
-      text: ebContinuedFinalInspectionReportText(round),
+      text: ebStandardText('EB_REPORT_CONTINUED_FINAL_INSPECTION'),
       updatedAt: null,
     },
     {
@@ -5043,7 +5177,7 @@ function buildEbReportDraft(input: {
       source: 'standard_text',
       status: sectionApplicable('reclamation_notice') ? 'complete' : 'not_applicable',
       isRelevant: sectionApplicable('reclamation_notice'),
-      text: ebReclamationNoticeReportText(round),
+      text: ebStandardText('EB_REPORT_RECLAMATION_NOTICE'),
       updatedAt: null,
     },
     {
@@ -5157,14 +5291,23 @@ function buildEbReportDraft(input: {
   )
   const copiedTemplateSections = storedDraft.sections.map((existing) => {
     const current = defaultsByKey.get(existing.key)
-    if (!current || existing.contentMode === 'editable') return existing
+    if (!current) return existing
+    if (existing.contentMode === current.contentMode) {
+      if (current.contentMode === 'editable') return existing
+      if (current.contentMode === 'mixed') {
+        return mergeEbMixedReportSection(current, existing, storedDraft.updatedAt ?? now)
+      }
+    }
     return mergeEbStructuredReportSection(current, existing, storedDraft.updatedAt ?? now)
   })
   const initializedSections = defaultsWithModes.map((section) => {
     const existing = existingByKey.get(section.key)
     if (!existing) return section
-    if (section.contentMode === 'structured') {
+    if (existing.contentMode !== section.contentMode || section.contentMode === 'structured') {
       return mergeEbStructuredReportSection(section, existing, storedDraft.updatedAt ?? now)
+    }
+    if (section.contentMode === 'mixed') {
+      return mergeEbMixedReportSection(section, existing, storedDraft.updatedAt ?? now)
     }
     return {
       ...section,
@@ -5213,7 +5356,7 @@ export async function saveEbReportDraft(input: SaveEbReportDraftInput): Promise<
     const existing = sectionsByKey.get(section.key)
     return Boolean(
       existing &&
-        (existing.contentMode === 'editable' || section.relevanceOverridden === true)
+        (existing.contentMode !== 'structured' || section.relevanceOverridden === true)
     )
   })
   if (sanitizedSections.length === 0) {
@@ -5235,6 +5378,24 @@ export async function saveEbReportDraft(input: SaveEbReportDraftInput): Promise<
             : 'not_applicable',
         isRelevant: requested.isRelevant,
         relevanceOverridden: true,
+        updatedAt: now,
+      })
+      continue
+    }
+
+    if (existing.contentMode === 'mixed') {
+      sectionsByKey.set(requested.key, {
+        ...existing,
+        status:
+          requested.isRelevant
+            ? existing.status === 'not_applicable'
+              ? 'draft'
+              : existing.status
+            : 'not_applicable',
+        isRelevant: requested.isRelevant,
+        relevanceOverridden:
+          requested.relevanceOverridden === true || existing.relevanceOverridden === true,
+        text: requested.text,
         updatedAt: now,
       })
       continue
@@ -5358,7 +5519,7 @@ export async function resetEbReportDraftSection(input: Omit<SaveEbReportDraftInp
   await assertEbInspectionEditable(input)
   const report = await getEbInspectionReport(input)
   const currentSection = report.reportDraft.sections.find((section) => section.key === input.sectionKey)
-  if (!currentSection || currentSection.contentMode !== 'editable') {
+  if (!currentSection || currentSection.contentMode === 'structured') {
     throw new Error('EB_REPORT_SECTION_NOT_EDITABLE')
   }
 

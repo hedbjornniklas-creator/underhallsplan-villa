@@ -1,8 +1,7 @@
-Förklaringar för noteringsförteckningen:
+Förklaringar för respektive kolumn:
+Bes. anger besiktningstyp och löpnummer för den besiktning där noteringen gjordes.
 Bet. anger noteringens beteckning.
-Nr anger noteringens ordningsnummer.
-Del/Rum anger byggdel, installationsdel, rum eller plats.
+Nr anger ordningsnummer på fel, bristfällighet eller anmärkning.
+Del/Rum anger bygg- eller installationsdel, rumsnummer eller rumsbenämning.
 Fel anger det förhållande som besiktningsmannen har noterat.
-Avhjälpt/sign är avsett för entreprenörens intygande av att avhjälpande har skett med datum och signatur.
-
-Rums- och väggangivelser avser den orientering som använts vid besiktningen. Väggar, fönster, dörrar och motsvarande anges normalt från vänster till höger utifrån den riktning som använts vid besiktningen. Om en notering senare intygas avhjälpt av entreprenören innebär det inte att avhjälpandet är kontrollerat av besiktningsmannen, om inte detta uttryckligen anges.
+Avhjälpt/sign är avsett för hantverkarens intygande av att avhjälpande har skett med datum och signatur.

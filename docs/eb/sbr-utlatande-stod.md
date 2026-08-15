@@ -140,6 +140,7 @@ EB-standardtexter ska inte hårdkodas i React-komponenter eller i `src/lib/eb/se
 EB-texterna ligger här:
 
 - `src/content/standardtexts/eb/EB_REPORT_SCOPE.txt`
+- `src/content/standardtexts/eb/EB_REPORT_PARTICIPANTS_INTRO.txt`
 - `src/content/standardtexts/eb/EB_REPORT_INSPECTORS.txt`
 - `src/content/standardtexts/eb/EB_REPORT_SUMMONS_MISSING.txt`
 - `src/content/standardtexts/eb/EB_REPORT_CONFLICT_OF_INTEREST.txt`
@@ -169,6 +170,18 @@ EB-texterna ligger här:
 Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de ska inte vara en kopia av SBR:s malltext.
 
 ## SBR-punkter
+
+### Redigering i Granska
+
+När arbetsversionen skapas kopieras mallens standardtexter till `report_draft`. Den kopierade texten är därefter utlåtandets egen text och ändras inte när mallen ändras.
+
+Sektionerna har tre innehållslägen:
+
+- `editable`: hela texten redigeras i Granska.
+- `structured`: innehållet kommer från dedikerade projekt-, besiktnings-, deltagar- eller noteringsfält och ändras i dessa fält.
+- `mixed`: standardtexten redigeras i Granska, medan tillhörande sakuppgifter och listor fortsatt byggs från sina dedikerade fält.
+
+`Provning, dokumentation` är en blandad sektion. Bedömnings- och standardtexten sparas i arbetsversionen och kan redigeras, men handlingarnas titel, status och datum hämtas alltid från `Provning och dokumentation`. Samma princip används för ingressen till `Närvarande` (deltagarna förblir fältstyrda), den redigerbara ingressen och kolumnförklaringarna till `Fel och förhållanden`, standardtexten för ny slutbesiktning och reklamationsfrister. En sektion tas med eller utesluts med valet `Relevant`.
 
 | SBR-punkt | Stöd i Hushub | Källa |
 |---|---|---|
