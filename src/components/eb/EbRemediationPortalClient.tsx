@@ -126,6 +126,7 @@ export default function EbRemediationPortalClient({
 }: Props) {
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [busyKey, setBusyKey] = useState<string | null>(null)
+  const busyKeyRef = useRef<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const noticeTimerRef = useRef<number | null>(null)
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([])
@@ -149,11 +150,13 @@ export default function EbRemediationPortalClient({
   const [inviteRole, setInviteRole] = useState<EbRemediationAccessRole>('contractor_admin')
   const [comments, setComments] = useState<Record<string, string>>({})
   const [uploading, setUploading] = useState<Record<string, number>>({})
+  const uploadingTaskIdsRef = useRef(new Set<string>())
 
   const role = workspace.access.role
   const canManage = internal || role === 'contractor_admin'
   const canRespond = role === 'assignee' || role === 'contractor_admin'
   const isReadOnly = role === 'contractor_viewer'
+  const isBusy = Boolean(busyKey) || Object.keys(uploading).length > 0
 
   const showNotice = (message: string) => {
     setNotice(message)
@@ -162,6 +165,8 @@ export default function EbRemediationPortalClient({
   }
 
   const callAction = async (action: string, payload: Record<string, unknown>, key = action) => {
+    if (busyKeyRef.current || uploadingTaskIdsRef.current.size > 0) return false
+    busyKeyRef.current = key
     setBusyKey(key)
     try {
       const response = await fetch(endpoint, {
@@ -182,11 +187,16 @@ export default function EbRemediationPortalClient({
       showNotice(error instanceof Error ? error.message : 'Åtgärden misslyckades.')
       return false
     } finally {
-      setBusyKey(null)
+      if (busyKeyRef.current === key) {
+        busyKeyRef.current = null
+        setBusyKey(null)
+      }
     }
   }
 
-  const reload = async () => {
+  const reload = async (allowDuringUpload = false) => {
+    if (busyKeyRef.current || (!allowDuringUpload && uploadingTaskIdsRef.current.size > 0)) return
+    busyKeyRef.current = 'reload'
     setBusyKey('reload')
     try {
       const response = await fetch(endpoint, { cache: 'no-store' })
@@ -199,7 +209,10 @@ export default function EbRemediationPortalClient({
     } catch (error) {
       showNotice(error instanceof Error ? error.message : 'Kunde inte uppdatera sidan.')
     } finally {
-      setBusyKey(null)
+      if (busyKeyRef.current === 'reload') {
+        busyKeyRef.current = null
+        setBusyKey(null)
+      }
     }
   }
 
@@ -269,7 +282,7 @@ export default function EbRemediationPortalClient({
   }
 
   const changeStatus = async (taskId: string, status: EbRemediationStatus) => {
-    await callAction('status', { taskId, status }, `status-${taskId}`)
+    await callAction('status', { taskId, status }, `status-${taskId}-${status}`)
   }
 
   const addComment = async (taskId: string) => {
@@ -281,7 +294,8 @@ export default function EbRemediationPortalClient({
   const uploadImages = async (taskId: string, event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []).slice(0, 15)
     event.target.value = ''
-    if (files.length === 0) return
+    if (files.length === 0 || busyKeyRef.current || uploadingTaskIdsRef.current.size > 0) return
+    uploadingTaskIdsRef.current.add(taskId)
     setUploading((current) => ({ ...current, [taskId]: files.length }))
     try {
       const results = await Promise.all(
@@ -297,11 +311,12 @@ export default function EbRemediationPortalClient({
       )
       const latest = [...results].reverse().find(Boolean)
       if (latest) setWorkspace(latest)
-      await reload()
+      await reload(true)
     } catch (error) {
       showNotice(error instanceof Error ? error.message : 'Kunde inte ladda upp bilderna.')
-      await reload()
+      await reload(true)
     } finally {
+      uploadingTaskIdsRef.current.delete(taskId)
       setUploading((current) => {
         const next = { ...current }
         delete next[taskId]
@@ -336,6 +351,17 @@ export default function EbRemediationPortalClient({
         </div>
       ) : null}
 
+      {isBusy ? (
+        <div
+          className="fixed bottom-4 right-4 z-[290] inline-flex items-center gap-2 rounded-md bg-gray-950 px-3 py-2 text-sm font-semibold text-white shadow-2xl print:hidden"
+          role="status"
+          aria-live="polite"
+        >
+          <Loader2 size={16} className="animate-spin" />
+          {Object.keys(uploading).length > 0 ? 'Bilder laddas upp...' : 'Åtgärden genomförs...'}
+        </div>
+      ) : null}
+
       <header className="border-b border-gray-200 bg-white print:border-black">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-start lg:justify-between lg:px-8">
           <div className="flex min-w-0 items-start gap-3">
@@ -357,7 +383,7 @@ export default function EbRemediationPortalClient({
               <ShieldCheck size={14} />
               {role === 'internal' ? 'Besiktningsman' : role === 'contractor_admin' ? 'Entreprenör · administratör' : role === 'contractor_viewer' ? 'Entreprenör · läsbehörighet' : 'Utförare'}
             </span>
-            <button type="button" onClick={() => void reload()} disabled={busyKey === 'reload'} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50" title="Uppdatera" aria-label="Uppdatera">
+            <button type="button" onClick={() => void reload()} disabled={isBusy} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50" title="Uppdatera" aria-label="Uppdatera">
               <RefreshCw size={16} className={busyKey === 'reload' ? 'animate-spin' : ''} />
             </button>
             <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50">
@@ -397,7 +423,7 @@ export default function EbRemediationPortalClient({
               <label className="block"><span className="text-xs font-semibold text-gray-700">Namn</span><input value={inviteName} onChange={(event) => setInviteName(event.target.value)} className={`${inputClassName()} mt-1`} /></label>
               <label className="block"><span className="text-xs font-semibold text-gray-700">E-post</span><input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} className={`${inputClassName()} mt-1`} /></label>
               <label className="block"><span className="text-xs font-semibold text-gray-700">Behörighet</span><select value={inviteRole} onChange={(event) => setInviteRole(event.target.value as EbRemediationAccessRole)} className={`${inputClassName()} mt-1`}><option value="contractor_admin">Administratör</option><option value="contractor_viewer">Läsbehörighet</option></select></label>
-              <button type="button" onClick={() => void sendContractorLink()} disabled={busyKey === 'send-contractor'} className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">
+              <button type="button" onClick={() => void sendContractorLink()} disabled={isBusy} className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">
                 {busyKey === 'send-contractor' ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Skicka länk
               </button>
             </div>
@@ -416,7 +442,7 @@ export default function EbRemediationPortalClient({
               <label><span className="text-xs font-semibold text-gray-700">Kontaktperson</span><input value={newAssignee.contactName} onChange={(event) => setNewAssignee((current) => ({ ...current, contactName: event.target.value }))} className={`${inputClassName()} mt-1`} /></label>
               <label><span className="text-xs font-semibold text-gray-700">E-post</span><input type="email" value={newAssignee.email} onChange={(event) => setNewAssignee((current) => ({ ...current, email: event.target.value }))} className={`${inputClassName()} mt-1`} /></label>
               <label><span className="text-xs font-semibold text-gray-700">Telefon</span><input type="tel" value={newAssignee.phone} onChange={(event) => setNewAssignee((current) => ({ ...current, phone: event.target.value }))} className={`${inputClassName()} mt-1`} /></label>
-              <button type="button" onClick={() => void createAssignee()} disabled={busyKey === 'create-assignee'} className="inline-flex items-center justify-center gap-2 rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-60">
+              <button type="button" onClick={() => void createAssignee()} disabled={isBusy} className="inline-flex items-center justify-center gap-2 rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-60">
                 {busyKey === 'create-assignee' ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Lägg till
               </button>
             </div>
@@ -432,8 +458,8 @@ export default function EbRemediationPortalClient({
                       <input type="email" value={draft.email} onChange={(event) => setAssigneeDrafts((current) => ({ ...current, [assignee.id]: { ...draft, email: event.target.value } }))} aria-label="E-post" placeholder="E-post" className={inputClassName()} />
                       <input type="tel" value={draft.phone} onChange={(event) => setAssigneeDrafts((current) => ({ ...current, [assignee.id]: { ...draft, phone: event.target.value } }))} aria-label="Telefon" placeholder="Telefon" className={inputClassName()} />
                       <div className="flex items-center justify-end gap-2">
-                        <button type="button" onClick={() => void saveAssignee(assignee.id)} disabled={busyKey === `save-assignee-${assignee.id}`} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50" title="Spara" aria-label="Spara mottagare">{busyKey === `save-assignee-${assignee.id}` ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}</button>
-                        <button type="button" onClick={() => void sendAssigneeLink(assignee.id)} disabled={!draft.email || busyKey === `send-assignee-${assignee.id}` || busyKey === `save-assignee-${assignee.id}`} className="inline-flex items-center gap-2 rounded-md border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-40">{busyKey === `send-assignee-${assignee.id}` || busyKey === `save-assignee-${assignee.id}` ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />} Skicka lista</button>
+                        <button type="button" onClick={() => void saveAssignee(assignee.id)} disabled={isBusy} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50" title="Spara" aria-label="Spara mottagare">{busyKey === `save-assignee-${assignee.id}` ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}</button>
+                        <button type="button" onClick={() => void sendAssigneeLink(assignee.id)} disabled={!draft.email || isBusy} className="inline-flex items-center gap-2 rounded-md border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40">{busyKey === `send-assignee-${assignee.id}` || busyKey === `save-assignee-${assignee.id}` ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />} Skicka lista</button>
                       </div>
                     </div>
                   )
@@ -451,7 +477,7 @@ export default function EbRemediationPortalClient({
                 <thead className="bg-gray-50 text-xs text-gray-600"><tr><th className="px-4 py-2">Mottagare</th><th className="px-4 py-2">Behörighet</th><th className="px-4 py-2">Senast använd</th><th className="px-4 py-2">Giltig till</th><th className="px-4 py-2 text-right">Åtgärd</th></tr></thead>
                 <tbody className="divide-y divide-gray-200">
                   {workspace.accessLinks.map((link) => (
-                    <tr key={link.id}><td className="px-4 py-2"><p className="font-medium">{link.displayName ?? link.email}</p><p className="text-xs text-gray-500">{link.email}</p></td><td className="px-4 py-2">{link.role === 'contractor_admin' ? 'Administratör' : link.role === 'contractor_viewer' ? 'Läsbehörighet' : 'Utförare'}</td><td className="px-4 py-2 text-gray-600">{formatDateTime(link.lastUsedAt)}</td><td className="px-4 py-2 text-gray-600">{formatDate(link.expiresAt)}</td><td className="px-4 py-2 text-right">{link.revokedAt ? <span className="text-xs text-gray-500">Återkallad</span> : <button type="button" onClick={() => void callAction('revoke_link', { linkId: link.id }, `revoke-${link.id}`)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-700 hover:underline"><Trash2 size={13} /> Återkalla</button>}</td></tr>
+                    <tr key={link.id}><td className="px-4 py-2"><p className="font-medium">{link.displayName ?? link.email}</p><p className="text-xs text-gray-500">{link.email}</p></td><td className="px-4 py-2">{link.role === 'contractor_admin' ? 'Administratör' : link.role === 'contractor_viewer' ? 'Läsbehörighet' : 'Utförare'}</td><td className="px-4 py-2 text-gray-600">{formatDateTime(link.lastUsedAt)}</td><td className="px-4 py-2 text-gray-600">{formatDate(link.expiresAt)}</td><td className="px-4 py-2 text-right">{link.revokedAt ? <span className="text-xs text-gray-500">Återkallad</span> : <button type="button" onClick={() => void callAction('revoke_link', { linkId: link.id }, `revoke-${link.id}`)} disabled={isBusy} className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50">{busyKey === `revoke-${link.id}` ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} {busyKey === `revoke-${link.id}` ? 'Återkallar...' : 'Återkalla'}</button>}</td></tr>
                   ))}
                 </tbody>
               </table>
@@ -473,7 +499,7 @@ export default function EbRemediationPortalClient({
               <p className="self-center text-sm font-semibold text-emerald-900">{selectedTaskIds.length} valda</p>
               <label className="min-w-56"><span className="text-xs font-semibold text-emerald-900">Åtgärdas av</span><select value={bulkAssigneeId} onChange={(event) => setBulkAssigneeId(event.target.value)} className={`${inputClassName()} mt-1`}><option value="">Ej tilldelad</option>{workspace.assignees.filter((assignee) => assignee.isActive).map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}</select></label>
               <label><span className="text-xs font-semibold text-emerald-900">Klar senast</span><input type="date" value={bulkDueDate} onChange={(event) => setBulkDueDate(event.target.value)} className={`${inputClassName()} mt-1`} /></label>
-              <button type="button" onClick={() => void assignTasks(selectedTaskIds, bulkAssigneeId, bulkDueDate)} className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800"><Check size={16} /> Tilldela</button>
+              <button type="button" onClick={() => void assignTasks(selectedTaskIds, bulkAssigneeId, bulkDueDate)} disabled={isBusy} className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">{busyKey?.startsWith('assign-') ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {busyKey?.startsWith('assign-') ? 'Tilldelar...' : 'Tilldela'}</button>
             </div>
           ) : null}
 
@@ -505,18 +531,18 @@ export default function EbRemediationPortalClient({
                           <div className="flex shrink-0 flex-col gap-2 lg:w-64 print:w-auto">
                             <p className="text-xs font-semibold text-gray-500">Åtgärdas av</p>
                             {canManage ? (
-                              <select value={task.assigneeId ?? ''} onChange={(event) => void assignTasks([task.id], event.target.value)} className={inputClassName()}><option value="">Ej tilldelad</option>{workspace.assignees.filter((item) => item.isActive || item.id === task.assigneeId).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+                              <div className="space-y-1"><select value={task.assigneeId ?? ''} onChange={(event) => void assignTasks([task.id], event.target.value)} disabled={isBusy} aria-busy={busyKey === `assign-${task.id}`} className={inputClassName()}><option value="">Ej tilldelad</option>{workspace.assignees.filter((item) => item.isActive || item.id === task.assigneeId).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{busyKey === `assign-${task.id}` ? <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800"><Loader2 size={12} className="animate-spin" /> Tilldelar...</span> : null}</div>
                             ) : <p className="text-sm font-semibold">{assignee?.name ?? 'Ej tilldelad'}</p>}
                           </div>
                         </div>
 
                         {canRespond && !internal ? (
                           <div className="mt-4 flex flex-wrap gap-2 print:hidden">
-                            {task.status !== 'in_progress' && task.status !== 'reported_remedied' ? <button type="button" onClick={() => void changeStatus(task.id, 'in_progress')} className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900"><Clock3 size={14} /> Påbörja</button> : null}
-                            {role === 'assignee' ? <button type="button" onClick={() => void changeStatus(task.id, 'ready_for_review')} className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-xs font-semibold text-white"><Check size={14} /> Klar för kontroll</button> : null}
-                            {role === 'assignee' ? <button type="button" onClick={() => void changeStatus(task.id, 'cannot_remedy')} className="inline-flex items-center gap-2 rounded-md border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-800"><CircleAlert size={14} /> Kan inte avhjälpas</button> : null}
-                            {role === 'contractor_admin' && task.status === 'ready_for_review' ? <button type="button" onClick={() => void changeStatus(task.id, 'reported_remedied')} className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-xs font-semibold text-white"><CheckCircle2 size={14} /> Markera anmäld avhjälpt</button> : null}
-                            {role === 'contractor_admin' && task.status === 'ready_for_review' ? <button type="button" onClick={() => void changeStatus(task.id, 'returned')} className="inline-flex items-center gap-2 rounded-md border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-800"><RotateCcw size={14} /> Återlämna</button> : null}
+                            {task.status !== 'in_progress' && task.status !== 'reported_remedied' ? <button type="button" onClick={() => void changeStatus(task.id, 'in_progress')} disabled={isBusy} className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900 disabled:cursor-not-allowed disabled:opacity-50">{busyKey === `status-${task.id}-in_progress` ? <Loader2 size={14} className="animate-spin" /> : <Clock3 size={14} />} {busyKey === `status-${task.id}-in_progress` ? 'Startar...' : 'Påbörja'}</button> : null}
+                            {role === 'assignee' ? <button type="button" onClick={() => void changeStatus(task.id, 'ready_for_review')} disabled={isBusy} className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{busyKey === `status-${task.id}-ready_for_review` ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} {busyKey === `status-${task.id}-ready_for_review` ? 'Sparar...' : 'Klar för kontroll'}</button> : null}
+                            {role === 'assignee' ? <button type="button" onClick={() => void changeStatus(task.id, 'cannot_remedy')} disabled={isBusy} className="inline-flex items-center gap-2 rounded-md border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-800 disabled:cursor-not-allowed disabled:opacity-50">{busyKey === `status-${task.id}-cannot_remedy` ? <Loader2 size={14} className="animate-spin" /> : <CircleAlert size={14} />} {busyKey === `status-${task.id}-cannot_remedy` ? 'Sparar...' : 'Kan inte avhjälpas'}</button> : null}
+                            {role === 'contractor_admin' && task.status === 'ready_for_review' ? <button type="button" onClick={() => void changeStatus(task.id, 'reported_remedied')} disabled={isBusy} className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{busyKey === `status-${task.id}-reported_remedied` ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} {busyKey === `status-${task.id}-reported_remedied` ? 'Sparar...' : 'Markera anmäld avhjälpt'}</button> : null}
+                            {role === 'contractor_admin' && task.status === 'ready_for_review' ? <button type="button" onClick={() => void changeStatus(task.id, 'returned')} disabled={isBusy} className="inline-flex items-center gap-2 rounded-md border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-800 disabled:cursor-not-allowed disabled:opacity-50">{busyKey === `status-${task.id}-returned` ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} {busyKey === `status-${task.id}-returned` ? 'Återlämnar...' : 'Återlämna'}</button> : null}
                           </div>
                         ) : null}
 
@@ -529,9 +555,9 @@ export default function EbRemediationPortalClient({
 
                         {!internal && canRespond ? (
                           <div className="mt-4 print:hidden">
-                            <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-50">
+                            <label className={`inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 ${isBusy || Boolean(uploading[task.id]) ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-gray-50'}`}>
                               <ImagePlus size={15} /> Lägg till åtgärdsbilder
-                              <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => void uploadImages(task.id, event)} />
+                              <input type="file" accept="image/*" multiple disabled={isBusy || Boolean(uploading[task.id])} className="sr-only" onChange={(event) => void uploadImages(task.id, event)} />
                             </label>
                             <p className="mt-1 text-xs text-gray-500">Max 15 bilder åt gången och 15 MB per bild. Uppladdningen sker i bakgrunden.</p>
                           </div>
@@ -542,7 +568,7 @@ export default function EbRemediationPortalClient({
                           <div className="mt-3 space-y-2">
                             {events.length === 0 ? <p className="text-xs text-gray-500">Ingen historik ännu.</p> : events.map((event) => <div key={event.id} className="border-l-2 border-gray-200 pl-3 text-xs"><div className="flex flex-wrap gap-x-2 text-gray-500"><span className="font-semibold text-gray-700">{event.actorName ?? event.actorEmail ?? 'System'}</span><span>{formatDateTime(event.createdAt)}</span></div><p className="mt-1 text-gray-700">{event.eventType === 'comment' ? event.message : event.eventType === 'task_created' ? 'Åtgärdsuppgiften skapades.' : event.eventType === 'assigned' ? 'Tilldelningen ändrades.' : event.eventType === 'photo_added' ? 'En åtgärdsbild lades till.' : event.fromStatus && event.toStatus ? `Status ändrades från ${statusLabel(event.fromStatus)} till ${statusLabel(event.toStatus)}.` : 'Uppgiften uppdaterades.'}</p></div>)}
                           </div>
-                          {!isReadOnly ? <div className="mt-3 flex gap-2 print:hidden"><input value={comments[task.id] ?? ''} onChange={(event) => setComments((current) => ({ ...current, [task.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void addComment(task.id) } }} placeholder="Skriv en kommentar" className={inputClassName()} /><button type="button" onClick={() => void addComment(task.id)} disabled={busyKey === `comment-${task.id}`} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white disabled:opacity-50" aria-label="Skicka kommentar" title="Skicka kommentar">{busyKey === `comment-${task.id}` ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}</button></div> : null}
+                          {!isReadOnly ? <div className="mt-3 flex gap-2 print:hidden"><input value={comments[task.id] ?? ''} onChange={(event) => setComments((current) => ({ ...current, [task.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if (!busyKeyRef.current) void addComment(task.id) } }} disabled={isBusy} placeholder="Skriv en kommentar" className={inputClassName()} /><button type="button" onClick={() => void addComment(task.id)} disabled={isBusy} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white disabled:cursor-not-allowed disabled:opacity-50" aria-label="Skicka kommentar" title="Skicka kommentar">{busyKey === `comment-${task.id}` ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}</button></div> : null}
                         </details>
                       </div>
                     </div>

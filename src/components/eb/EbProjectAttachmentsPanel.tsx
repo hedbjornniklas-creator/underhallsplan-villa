@@ -287,6 +287,8 @@ export default function EbProjectAttachmentsPanel({
   const [draggingType, setDraggingType] = useState<EbAttachmentType | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
+  const attachmentOperationRef = useRef(false)
+  const attachmentBusy = Boolean(uploadingType || deletingId || savingId)
 
   const documents = attachments.filter((attachment) => attachment.attachmentType === 'document')
   const images = attachments.filter((attachment) => attachment.attachmentType === 'image')
@@ -314,11 +316,12 @@ export default function EbProjectAttachmentsPanel({
   }
 
   const handleFilesUpload = async (attachmentType: EbAttachmentType, files: File[]) => {
-    if (uploadingType) return
+    if (attachmentOperationRef.current) return
     const uploadFiles = files.filter(Boolean)
     if (uploadFiles.length === 0) return
 
     try {
+      attachmentOperationRef.current = true
       setUploadingType(attachmentType)
 
       for (const file of uploadFiles) {
@@ -346,6 +349,7 @@ export default function EbProjectAttachmentsPanel({
     } catch (uploadError) {
       showError(uploadError, 'Kunde inte ladda upp bilaga.')
     } finally {
+      attachmentOperationRef.current = false
       setUploadingType(null)
     }
   }
@@ -355,10 +359,11 @@ export default function EbProjectAttachmentsPanel({
   }
 
   const handleSaveMetadata = async (attachment: EbProjectAttachment) => {
-    if (savingId) return
+    if (attachmentOperationRef.current) return
     const edit = attachmentEdits[attachment.id] ?? buildAttachmentEditState(attachment)
 
     try {
+      attachmentOperationRef.current = true
       setSavingId(attachment.id)
       const response = await fetch(`/api/eb/projects/${projectId}/attachments/${attachment.id}`, {
         method: 'PATCH',
@@ -375,16 +380,18 @@ export default function EbProjectAttachmentsPanel({
     } catch (saveError) {
       showError(saveError, 'Kunde inte spara bilageuppgifter.')
     } finally {
+      attachmentOperationRef.current = false
       setSavingId(null)
     }
   }
 
   const handleDelete = async (attachment: EbProjectAttachment) => {
-    if (deletingId) return
+    if (attachmentOperationRef.current) return
     const confirmed = window.confirm(`Ta bort ${attachmentTitle(attachment)}?`)
-    if (!confirmed) return
+    if (!confirmed || attachmentOperationRef.current) return
 
     try {
+      attachmentOperationRef.current = true
       setDeletingId(attachment.id)
       const response = await fetch(`/api/eb/projects/${projectId}/attachments/${attachment.id}`, {
         method: 'DELETE',
@@ -399,6 +406,7 @@ export default function EbProjectAttachmentsPanel({
     } catch (deleteError) {
       showError(deleteError, 'Kunde inte ta bort bilaga.')
     } finally {
+      attachmentOperationRef.current = false
       setDeletingId(null)
     }
   }
@@ -414,13 +422,13 @@ export default function EbProjectAttachmentsPanel({
           <UploadButton
             type="document"
             busy={uploadingType === 'document'}
-            disabled={Boolean(uploadingType && uploadingType !== 'document')}
+            disabled={attachmentBusy}
             onFile={handleUpload}
           />
           <UploadButton
             type="image"
             busy={uploadingType === 'image'}
-            disabled={Boolean(uploadingType && uploadingType !== 'image')}
+            disabled={attachmentBusy}
             onFile={handleUpload}
           />
         </div>
@@ -435,7 +443,7 @@ export default function EbProjectAttachmentsPanel({
           <AttachmentDropZone
             type="document"
             active={draggingType === 'document'}
-            disabled={Boolean(uploadingType)}
+            disabled={attachmentBusy}
             busy={uploadingType === 'document'}
             onActiveChange={setDraggingType}
             onFiles={(type, files) => void handleFilesUpload(type, files)}
@@ -529,7 +537,7 @@ export default function EbProjectAttachmentsPanel({
                         <button
                           type="button"
                           onClick={() => void handleSaveMetadata(attachment)}
-                          disabled={savingId === attachment.id}
+                          disabled={attachmentBusy}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
                           aria-label="Spara"
                           title="Spara"
@@ -539,7 +547,7 @@ export default function EbProjectAttachmentsPanel({
                         <button
                           type="button"
                           onClick={() => void handleDelete(attachment)}
-                          disabled={deletingId === attachment.id}
+                          disabled={attachmentBusy}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                           aria-label="Ta bort"
                           title="Ta bort"
@@ -563,7 +571,7 @@ export default function EbProjectAttachmentsPanel({
           <AttachmentDropZone
             type="image"
             active={draggingType === 'image'}
-            disabled={Boolean(uploadingType)}
+            disabled={attachmentBusy}
             busy={uploadingType === 'image'}
             onActiveChange={setDraggingType}
             onFiles={(type, files) => void handleFilesUpload(type, files)}
@@ -600,7 +608,7 @@ export default function EbProjectAttachmentsPanel({
                     <button
                       type="button"
                       onClick={() => void handleDelete(attachment)}
-                      disabled={deletingId === attachment.id}
+                      disabled={attachmentBusy}
                       className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                       aria-label="Ta bort"
                       title="Ta bort"

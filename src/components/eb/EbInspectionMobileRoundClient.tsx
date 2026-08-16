@@ -486,6 +486,7 @@ export default function EbInspectionMobileRoundClient({
   const noteSavePromisesRef = useRef(
     new Map<string, { fingerprint: string; promise: Promise<EbNote> }>()
   )
+  const noteActionPendingRef = useRef(false)
   const initialDiscipline = initialRound.disciplines.find(
     (discipline) => discipline.id === initialDisciplineId
   )
@@ -502,6 +503,7 @@ export default function EbInspectionMobileRoundClient({
   const [imageDragOver, setImageDragOver] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
+  const [noteActionPending, setNoteActionPending] = useState<'save-and-new' | 'save-and-close' | null>(null)
   const isLocked = Boolean(round.inspection.reportLockedAt)
   const lockedMessage = 'Utlåtandet är låst och kan inte ändras.'
 
@@ -1162,9 +1164,17 @@ export default function EbInspectionMobileRoundClient({
       return
     }
 
-    void saveCurrentNote().catch((submitError) => {
-      showError(submitError, 'Kunde inte spara noteringen.')
-    })
+    if (noteActionPendingRef.current) return
+    noteActionPendingRef.current = true
+    setNoteActionPending('save-and-close')
+    void saveCurrentNote()
+      .catch((submitError) => {
+        showError(submitError, 'Kunde inte spara noteringen.')
+      })
+      .finally(() => {
+        noteActionPendingRef.current = false
+        setNoteActionPending(null)
+      })
     closeNoteSheet()
   }
 
@@ -1179,9 +1189,17 @@ export default function EbInspectionMobileRoundClient({
       return
     }
 
-    void saveCurrentNote().catch((submitError) => {
-      showError(submitError, 'Kunde inte spara noteringen.')
-    })
+    if (noteActionPendingRef.current) return
+    noteActionPendingRef.current = true
+    setNoteActionPending('save-and-new')
+    void saveCurrentNote()
+      .catch((submitError) => {
+        showError(submitError, 'Kunde inte spara noteringen.')
+      })
+      .finally(() => {
+        noteActionPendingRef.current = false
+        setNoteActionPending(null)
+      })
     const nextDraftId = createClientId()
     activeDraftIdRef.current = nextDraftId
     setActiveDraftId(nextDraftId)
@@ -1911,7 +1929,7 @@ export default function EbInspectionMobileRoundClient({
                               <button
                                 type="button"
                                 onClick={() => void deleteImage(image)}
-                                disabled={isLocked || deletingImageId === image.id}
+                                disabled={isLocked || Boolean(deletingImageId)}
                                 className="absolute right-1 top-1 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
                                 aria-label="Radera bild"
                                 title="Radera bild"
@@ -2057,19 +2075,19 @@ export default function EbInspectionMobileRoundClient({
                     <button
                       type="button"
                       onClick={handleSaveAndNew}
-                      disabled={isLocked || !activeDisciplineId}
+                      disabled={isLocked || !activeDisciplineId || Boolean(noteActionPending)}
                       className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <Plus size={16} />
-                      Spara och ny
+                      {noteActionPending === 'save-and-new' ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                      {noteActionPending === 'save-and-new' ? 'Sparar...' : 'Spara och ny'}
                     </button>
                     <button
                       type="submit"
-                      disabled={isLocked || !activeDisciplineId}
+                      disabled={isLocked || !activeDisciplineId || Boolean(noteActionPending)}
                       className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                     >
-                      <Save size={18} />
-                      Spara och stäng
+                      {noteActionPending === 'save-and-close' ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                      {noteActionPending === 'save-and-close' ? 'Sparar...' : 'Spara och stäng'}
                     </button>
                   </div>
                 </div>

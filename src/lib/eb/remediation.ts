@@ -907,12 +907,13 @@ export async function assignEbRemediationTasks(input: {
 
   const { data: currentRows, error: currentError } = await admin
     .from('eb_remediation_tasks')
-    .select('id,status,remediation_assignee_id')
+    .select('id,status,remediation_assignee_id,assignment_managed_by,due_date,updated_at')
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
     .in('id', taskIds)
   if (currentError) throw new Error(currentError.message ?? 'Kunde inte läsa valda åtgärdsuppgifter.')
   if ((currentRows ?? []).length !== taskIds.length) throw new Error('EB_REMEDIATION_TASK_NOT_FOUND')
+  const normalizedDueDate = input.dueDate === undefined ? undefined : normalizeText(input.dueDate)
 
   for (const current of currentRows ?? []) {
     const currentStatus = current.status as EbRemediationStatus
@@ -921,19 +922,30 @@ export async function assignEbRemediationTasks(input: {
         ? 'assigned'
         : currentStatus
       : 'unassigned'
+    const assignmentUnchanged =
+      current.remediation_assignee_id === input.assigneeId &&
+      current.assignment_managed_by === 'contractor' &&
+      currentStatus === nextStatus &&
+      (normalizedDueDate === undefined || normalizeText(current.due_date) === normalizedDueDate)
+    if (assignmentUnchanged) continue
+
     const values: Record<string, unknown> = {
       remediation_assignee_id: input.assigneeId,
       assignment_managed_by: 'contractor',
       status: nextStatus,
     }
-    if (input.dueDate !== undefined) values.due_date = normalizeText(input.dueDate)
-    const { error } = await admin
+    if (normalizedDueDate !== undefined) values.due_date = normalizedDueDate
+    const { data: updatedTask, error } = await admin
       .from('eb_remediation_tasks')
       .update(values)
       .eq('id', current.id)
       .eq('org_id', input.orgId)
       .eq('eb_project_id', input.projectId)
+      .eq('updated_at', current.updated_at)
+      .select('id')
+      .maybeSingle()
     if (error) throw new Error(error.message ?? 'Kunde inte tilldela åtgärdsuppgiften.')
+    if (!updatedTask) continue
     await insertEvent({
       orgId: input.orgId,
       projectId: input.projectId,
@@ -959,9 +971,10 @@ export async function changeEbRemediationTaskStatus(input: {
 }) {
   if (!STATUS_VALUES.has(input.status)) throw new Error('EB_REMEDIATION_STATUS_INVALID')
   const task = await requireTask(input)
+  if (task.status === input.status) return
   const admin = createSupabaseAdminClient()
   const reported = input.status === 'reported_remedied'
-  const { error } = await admin
+  const { data: updatedTask, error } = await admin
     .from('eb_remediation_tasks')
     .update({
       status: input.status,
@@ -971,7 +984,11 @@ export async function changeEbRemediationTaskStatus(input: {
     .eq('id', input.taskId)
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
+    .eq('updated_at', task.updated_at)
+    .select('id')
+    .maybeSingle()
   if (error) throw new Error(error.message ?? 'Kunde inte uppdatera status.')
+  if (!updatedTask) return
   await insertEvent({
     orgId: input.orgId,
     projectId: input.projectId,

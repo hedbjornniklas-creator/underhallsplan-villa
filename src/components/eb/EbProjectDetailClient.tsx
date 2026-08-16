@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
   ArrowLeft,
   CalendarDays,
@@ -832,9 +832,10 @@ function CreateInspectionDialog({
           <button
             type="button"
             onClick={onClose}
+            disabled={submitting}
             aria-label="Stäng"
             title="Stäng"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <X size={18} />
           </button>
@@ -1160,9 +1161,10 @@ function InspectionDetailsDialog({
           <button
             type="button"
             onClick={onClose}
+            disabled={submitting}
             aria-label="Stäng"
             title="Stäng"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <X size={18} />
           </button>
@@ -1673,9 +1675,10 @@ function EditProjectDialog({
           <button
             type="button"
             onClick={onClose}
+            disabled={submitting}
             aria-label="Stäng"
             title="Stäng"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <X size={18} />
           </button>
@@ -1688,7 +1691,8 @@ function EditProjectDialog({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+              disabled={submitting}
+              className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Avbryt
             </button>
@@ -1722,7 +1726,10 @@ function InvitationDialog({
 }) {
   const { showError } = useEbToast()
   const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
+  const invitationOperationRef = useRef(false)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [participants, setParticipants] = useState<EditableParticipant[]>([])
@@ -1793,10 +1800,12 @@ function InvitationDialog({
   }
 
   const handleSave = async () => {
-    if (sending) return
+    if (invitationOperationRef.current) return
 
     try {
-      setSending(true)
+      invitationOperationRef.current = true
+      setSaving(true)
+      setStatusMessage(null)
       const response = await fetch(
         `/api/eb/projects/${project.id}/inspections/${inspection.inspectionId}/invitation`,
         {
@@ -1818,18 +1827,22 @@ function InvitationDialog({
       setSubject(payload.subject ?? subject)
       setBody(payload.body ?? body)
       setParticipants((payload.participants ?? []).map(toLocalParticipant))
+      setStatusMessage('Kallelsen och deltagarna är sparade.')
     } catch (saveError) {
       showError(saveError, 'Kunde inte spara kallelse och deltagare.')
     } finally {
-      setSending(false)
+      invitationOperationRef.current = false
+      setSaving(false)
     }
   }
 
   const handleSend = async () => {
-    if (sending) return
+    if (invitationOperationRef.current) return
 
     try {
+      invitationOperationRef.current = true
       setSending(true)
+      setStatusMessage(null)
 
       const response = await fetch(
         `/api/eb/projects/${project.id}/inspections/${inspection.inspectionId}/invitation`,
@@ -1854,6 +1867,7 @@ function InvitationDialog({
     } catch (sendError) {
       showError(sendError, 'Kunde inte skicka kallelse.')
     } finally {
+      invitationOperationRef.current = false
       setSending(false)
     }
   }
@@ -1871,9 +1885,10 @@ function InvitationDialog({
           <button
             type="button"
             onClick={onClose}
+            disabled={loading || saving || sending}
             aria-label="Stäng"
             title="Stäng"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <X size={18} />
           </button>
@@ -1918,11 +1933,17 @@ function InvitationDialog({
             </div>
           )}
 
+          {statusMessage ? (
+            <p className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800" role="status">
+              {statusMessage}
+            </p>
+          ) : null}
+
           <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button
               type="button"
               onClick={onClose}
-              disabled={sending}
+              disabled={loading || saving || sending}
               className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Avbryt
@@ -1930,16 +1951,16 @@ function InvitationDialog({
             <button
               type="button"
               onClick={() => void handleSave()}
-              disabled={loading || sending}
+              disabled={loading || saving || sending}
               className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {sending ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={16} />}
-              Spara
+              {saving ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={16} />}
+              {saving ? 'Sparar...' : 'Spara'}
             </button>
             <button
               type="button"
               onClick={() => void handleSend()}
-              disabled={loading || sending}
+              disabled={loading || saving || sending}
               className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
             >
               {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
@@ -1962,6 +1983,42 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
   const [invitationInspection, setInvitationInspection] = useState<EbInspectionSummary | null>(null)
   const [reportActionInspectionId, setReportActionInspectionId] = useState<string | null>(null)
   const [deletingInspectionId, setDeletingInspectionId] = useState<string | null>(null)
+  const processingPdfInspectionId =
+    currentProject.inspections.find((inspection) => inspection.reportPdfStatus === 'processing')
+      ?.inspectionId ?? null
+
+  useEffect(() => {
+    if (!processingPdfInspectionId) return
+
+    let cancelled = false
+    let timer: number | null = null
+    const pollPdfStatus = async () => {
+      try {
+        const response = await fetch(
+          `/api/eb/projects/${currentProject.id}/inspections/${processingPdfInspectionId}/report-delivery`,
+          { cache: 'no-store' }
+        )
+        const payload = (await response.json().catch(() => ({}))) as ReportDeliveryResponse
+        if (!response.ok || !payload.project) {
+          throw new Error(payload.error ?? 'Kunde inte uppdatera PDF-status.')
+        }
+        if (cancelled) return
+        setCurrentProject(payload.project)
+        if (payload.pdfStatus === 'processing') {
+          timer = window.setTimeout(() => void pollPdfStatus(), 2000)
+        }
+      } catch (error) {
+        if (!cancelled) showError(error, 'Kunde inte uppdatera PDF-status.')
+      }
+    }
+
+    timer = window.setTimeout(() => void pollPdfStatus(), 1200)
+    return () => {
+      cancelled = true
+      if (timer) window.clearTimeout(timer)
+    }
+  }, [currentProject.id, processingPdfInspectionId, showError])
+
   const addressLine = [currentProject.address, currentProject.postalCode, currentProject.city]
     .filter(Boolean)
     .join(', ')
@@ -2213,9 +2270,12 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                                   {isLocked ? 'Låst' : 'Utkast'}
                                 </span>
                                 <span
-                                  className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getPdfStatusClassName(inspection)}`}
+                                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${getPdfStatusClassName(inspection)}`}
                                   title={inspection.reportPdfStatus === 'failed' ? 'Den sparade PDF-filen kunde inte skapas.' : undefined}
                                 >
+                                  {inspection.reportPdfStatus === 'processing' ? (
+                                    <Loader2 size={12} className="animate-spin" />
+                                  ) : null}
                                   {getPdfStatusLabel(inspection)}
                                 </span>
                               </div>

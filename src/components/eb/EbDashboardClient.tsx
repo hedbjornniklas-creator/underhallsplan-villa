@@ -119,9 +119,10 @@ function CreateProjectDialog({
           <button
             type="button"
             onClick={onClose}
+            disabled={submitting}
             aria-label="Stäng"
             title="Stäng"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <X size={18} />
           </button>

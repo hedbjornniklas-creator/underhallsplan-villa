@@ -18,6 +18,7 @@ import {
 import {
   ArrowLeft,
   Camera,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -743,7 +744,7 @@ function ProjectAttachmentImageCard({
         <button
           type="button"
           onClick={onAdd}
-          disabled={isLocked || actionDisabled}
+          disabled={isLocked || actionDisabled || isCopying || isDeleting}
           className="min-w-0 flex-1 px-2 py-1.5 text-left text-[11px] font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-wait disabled:opacity-60"
         >
           {isCopying ? 'Lägger till...' : 'Lägg till'}
@@ -751,7 +752,7 @@ function ProjectAttachmentImageCard({
         <button
           type="button"
           onClick={onDelete}
-          disabled={isLocked || isDeleting}
+          disabled={isLocked || isDeleting || isCopying}
           className="inline-flex h-8 w-8 shrink-0 items-center justify-center border-l border-emerald-100 text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
           aria-label="Radera från bildbank"
           title="Radera från bildbank"
@@ -1452,6 +1453,7 @@ function ReportDraftSectionsEditor({
   sections,
   inspectionId,
   disabled,
+  resettingSectionKey,
   onSectionChange,
   onSectionTextSave,
   onResetSection,
@@ -1459,6 +1461,7 @@ function ReportDraftSectionsEditor({
   sections: EbReportDraftSection[]
   inspectionId: string
   disabled: boolean
+  resettingSectionKey: string | null
   onSectionChange: (section: EbReportDraftSection) => void
   onSectionTextSave: (sectionKey: string, text: string) => Promise<void>
   onResetSection: (sectionKey: string) => Promise<void>
@@ -1502,11 +1505,16 @@ function ReportDraftSectionsEditor({
                   type="button"
                   onClick={() => void onResetSection(section.key)}
                   disabled={disabled}
-                  title="Återställ standardtext"
+                  title={resettingSectionKey === section.key ? 'Återställer standardtext...' : 'Återställ standardtext'}
                   aria-label={`Återställ standardtext för ${section.title}`}
+                  aria-busy={resettingSectionKey === section.key}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-50 hover:text-gray-950 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <RefreshCw size={15} />
+                  {resettingSectionKey === section.key ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : (
+                    <RefreshCw size={15} />
+                  )}
                 </button>
               ) : null}
               <label className="inline-flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-semibold">
@@ -1655,6 +1663,8 @@ export default function EbInspectionRoundClient({
   const lastSavedNotesRef = useRef(initialRound.notes)
   const orderSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const orderSaveVersionRef = useRef(0)
+  const orderSaveInFlightRef = useRef(false)
+  const pendingNoteOrderRef = useRef<{ notes: EbNote[]; version: number } | null>(null)
   const noteAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastAutosavedNoteFormRef = useRef<string | null>(null)
   const [round, setRound] = useState(initialRound)
@@ -1674,6 +1684,9 @@ export default function EbInspectionRoundClient({
   const [orderSaving, setOrderSaving] = useState(false)
   const [movingImageId, setMovingImageId] = useState<string | null>(null)
   const [deletingProjectAttachmentId, setDeletingProjectAttachmentId] = useState<string | null>(null)
+  const [pendingProjectAttachmentCopyIds, setPendingProjectAttachmentCopyIds] = useState<Set<string>>(
+    () => new Set()
+  )
   const [uploadingProjectImages, setUploadingProjectImages] = useState(false)
   const [imageBankDragOver, setImageBankDragOver] = useState(false)
   const [bankImageDropTarget, setBankImageDropTarget] = useState<string | null>(null)
@@ -1994,31 +2007,44 @@ export default function EbInspectionRoundClient({
       setOrderSaving(false)
       return
     }
+
+    pendingNoteOrderRef.current = { notes: notesToSave, version }
+    if (orderSaveInFlightRef.current) return
+    orderSaveInFlightRef.current = true
     setOrderSaving(true)
+
     try {
-      const response = await fetch(`${notesBasePath}/reorder`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderedNoteIds: sortNotes(notesToSave).map((note) => note.id) }),
-      })
-      const payload = (await response.json().catch(() => ({}))) as ReorderResponse
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error ?? 'Kunde inte spara noteringsordningen.')
-      }
-      if (version === orderSaveVersionRef.current) {
-        lastSavedNotesRef.current = notesToSave
-      }
-    } catch (orderError) {
-      if (version === orderSaveVersionRef.current) {
-        const fallbackNotes = lastSavedNotesRef.current
-        notesRef.current = fallbackNotes
-        setRound((currentRound) => ({ ...currentRound, notes: fallbackNotes }))
-        showError(orderError, 'Kunde inte spara noteringsordningen.')
+      while (pendingNoteOrderRef.current) {
+        const pending = pendingNoteOrderRef.current
+        pendingNoteOrderRef.current = null
+
+        try {
+          const response = await fetch(`${notesBasePath}/reorder`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderedNoteIds: sortNotes(pending.notes).map((note) => note.id),
+            }),
+          })
+          const payload = (await response.json().catch(() => ({}))) as ReorderResponse
+          if (!response.ok || !payload.ok) {
+            throw new Error(payload.error ?? 'Kunde inte spara noteringsordningen.')
+          }
+          if (pending.version === orderSaveVersionRef.current) {
+            lastSavedNotesRef.current = pending.notes
+          }
+        } catch (orderError) {
+          if (pending.version === orderSaveVersionRef.current) {
+            const fallbackNotes = lastSavedNotesRef.current
+            notesRef.current = fallbackNotes
+            setRound((currentRound) => ({ ...currentRound, notes: fallbackNotes }))
+            showError(orderError, 'Kunde inte spara noteringsordningen.')
+          }
+        }
       }
     } finally {
-      if (version === orderSaveVersionRef.current) {
-        setOrderSaving(false)
-      }
+      orderSaveInFlightRef.current = false
+      setOrderSaving(false)
     }
   }
 
@@ -2043,6 +2069,7 @@ export default function EbInspectionRoundClient({
       clearTimeout(orderSaveTimerRef.current)
       orderSaveTimerRef.current = null
     }
+    pendingNoteOrderRef.current = null
     setOrderSaving(false)
   }
 
@@ -2546,6 +2573,17 @@ export default function EbInspectionRoundClient({
     documentsAutosave.error ??
     checkpointsAutosave.error ??
     reportDraftAutosave.error
+  const reviewAutosaveLastSavedAt = [
+    inspectionAutosave.lastSavedAt,
+    participantsAutosave.lastSavedAt,
+    documentsAutosave.lastSavedAt,
+    checkpointsAutosave.lastSavedAt,
+    reportDraftAutosave.lastSavedAt,
+  ].reduce<Date | null>((latest, value) => {
+    if (!value) return latest
+    if (!latest || value.getTime() > latest.getTime()) return value
+    return latest
+  }, null)
 
   useEffect(() => {
     if (inspectionAutosaveTimerRef.current) {
@@ -3285,6 +3323,7 @@ export default function EbInspectionRoundClient({
     }
     if (pendingProjectAttachmentCopiesRef.current.has(attachment.id)) return
     pendingProjectAttachmentCopiesRef.current.add(attachment.id)
+    setPendingProjectAttachmentCopyIds((current) => new Set(current).add(attachment.id))
 
     try {
       const note = targetNote ?? editingNote ?? (await saveCurrentNote())
@@ -3294,6 +3333,11 @@ export default function EbInspectionRoundClient({
       showError(copyError, 'Kunde inte lägga entreprenadbilden i uppladdningskön.')
     } finally {
       pendingProjectAttachmentCopiesRef.current.delete(attachment.id)
+      setPendingProjectAttachmentCopyIds((current) => {
+        const next = new Set(current)
+        next.delete(attachment.id)
+        return next
+      })
     }
   }
 
@@ -3665,6 +3709,36 @@ export default function EbInspectionRoundClient({
             <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 shadow-sm">
               {reviewAutosaveError ?? 'Autospar misslyckades'}
             </p>
+          ) : null}
+
+          {reviewAutosaveStatus !== 'idle' || reviewAutosaveLastSavedAt || resettingReportSectionKey ? (
+            <div
+              className={`fixed bottom-4 right-4 z-[210] inline-flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold shadow-xl ${
+                reviewAutosaveStatus === 'error'
+                  ? 'border-rose-200 bg-rose-50 text-rose-800'
+                  : 'border-emerald-200 bg-white text-emerald-800'
+              }`}
+              role="status"
+              aria-live="polite"
+            >
+              {reviewAutosaveStatus === 'saving' || resettingReportSectionKey ? (
+                <Loader2 size={15} className="animate-spin" />
+              ) : reviewAutosaveStatus === 'error' ? (
+                <X size={15} />
+              ) : (
+                <CheckCircle2 size={15} />
+              )}
+              {resettingReportSectionKey
+                ? 'Återställer standardtext...'
+                : reviewAutosaveStatus === 'saving'
+                  ? 'Autosparar...'
+                  : reviewAutosaveStatus === 'error'
+                    ? reviewAutosaveError ?? 'Autospar misslyckades'
+                    : `Sparat ${reviewAutosaveLastSavedAt?.toLocaleTimeString('sv-SE', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      }) ?? ''}`}
+            </div>
           ) : null}
 
           {imageUploadQueue.counts.total > 0 || imageUploadQueue.queueError ? (
@@ -4392,6 +4466,7 @@ export default function EbInspectionRoundClient({
                 sections={visibleReportSections}
                 inspectionId={round.inspection.inspectionId}
                 disabled={isLocked || Boolean(resettingReportSectionKey)}
+                resettingSectionKey={resettingReportSectionKey}
                 onSectionChange={handleReportSectionChange}
                 onSectionTextSave={handleReportSectionTextSave}
                 onResetSection={resetReportSection}
@@ -4715,7 +4790,9 @@ export default function EbInspectionRoundClient({
                       {availableProjectImageAttachments.map((attachment) => {
                         const title = projectAttachmentTitle(attachment)
                         const imageUrl = projectAttachmentPreviewSrc(attachment)
-                        const isCopying = queuedProjectAttachmentIds.has(attachment.id)
+                        const isCopying =
+                          pendingProjectAttachmentCopyIds.has(attachment.id) ||
+                          queuedProjectAttachmentIds.has(attachment.id)
 
                         return (
                           <ProjectAttachmentImageCard
@@ -5267,7 +5344,9 @@ export default function EbInspectionRoundClient({
                             {availableProjectImageAttachments.map((attachment) => {
                               const title = projectAttachmentTitle(attachment)
                               const imageUrl = projectAttachmentPreviewSrc(attachment)
-                              const isCopying = queuedProjectAttachmentIds.has(attachment.id)
+                              const isCopying =
+                                pendingProjectAttachmentCopyIds.has(attachment.id) ||
+                                queuedProjectAttachmentIds.has(attachment.id)
 
                               return (
                                 <ProjectAttachmentImageCard
