@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import {
   ArrowLeft,
   CalendarDays,
@@ -244,6 +244,15 @@ function getPdfStatusClassName(inspection: EbInspectionSummary) {
 
 function inputClassName() {
   return 'w-full rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-950 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100'
+}
+
+function inspectionNavigationClassName(primary: boolean, busy: boolean) {
+  const base =
+    'inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600'
+  const variant = primary
+    ? 'bg-emerald-700 text-white hover:bg-emerald-800'
+    : 'border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50'
+  return busy ? `${base} ${variant} pointer-events-none cursor-wait opacity-70` : `${base} ${variant}`
 }
 
 function fieldLabel(label: string, children: ReactNode) {
@@ -1983,6 +1992,7 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
   const [invitationInspection, setInvitationInspection] = useState<EbInspectionSummary | null>(null)
   const [reportActionInspectionId, setReportActionInspectionId] = useState<string | null>(null)
   const [deletingInspectionId, setDeletingInspectionId] = useState<string | null>(null)
+  const [pendingNavigationKey, setPendingNavigationKey] = useState<string | null>(null)
   const processingPdfInspectionId =
     currentProject.inspections.find((inspection) => inspection.reportPdfStatus === 'processing')
       ?.inspectionId ?? null
@@ -2045,6 +2055,14 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
   const handleUpdated = (updatedProject: EbProjectListItem) => {
     setCurrentProject(updatedProject)
     router.refresh()
+  }
+
+  const handleInspectionNavigation = (event: MouseEvent<HTMLAnchorElement>, key: string) => {
+    if (pendingNavigationKey) {
+      event.preventDefault()
+      return
+    }
+    setPendingNavigationKey(key)
   }
 
   const handleLockInspection = async (inspection: EbInspectionSummary) => {
@@ -2241,6 +2259,13 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                     const isWorking = reportActionInspectionId === inspection.inspectionId
                     const isDeleting = deletingInspectionId === inspection.inspectionId
                     const actionInProgress = Boolean(reportActionInspectionId || deletingInspectionId)
+                    const roundNavigationKey = `${inspection.inspectionId}:round`
+                    const reviewNavigationKey = `${inspection.inspectionId}:perform`
+                    const reportNavigationKey = `${inspection.inspectionId}:report`
+                    const isRoundNavigating = pendingNavigationKey === roundNavigationKey
+                    const isReviewNavigating = pendingNavigationKey === reviewNavigationKey
+                    const isReportNavigating = pendingNavigationKey === reportNavigationKey
+                    const navigationInProgress = Boolean(pendingNavigationKey)
 
                     return (
                       <article key={inspection.inspectionId} className="p-4">
@@ -2301,24 +2326,33 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
                             <Link
                               href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/round`}
-                              className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                              onClick={(event) => handleInspectionNavigation(event, roundNavigationKey)}
+                              aria-disabled={navigationInProgress}
+                              aria-busy={isRoundNavigating}
+                              className={inspectionNavigationClassName(true, navigationInProgress)}
                             >
-                              <Smartphone size={16} />
-                              Runda
+                              {isRoundNavigating ? <Loader2 size={16} className="animate-spin" /> : <Smartphone size={16} />}
+                              {isRoundNavigating ? 'Öppnar runda...' : 'Runda'}
                             </Link>
                             <Link
                               href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/perform`}
-                              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                              onClick={(event) => handleInspectionNavigation(event, reviewNavigationKey)}
+                              aria-disabled={navigationInProgress}
+                              aria-busy={isReviewNavigating}
+                              className={inspectionNavigationClassName(false, navigationInProgress)}
                             >
-                              <ClipboardCheck size={16} />
-                              Granska
+                              {isReviewNavigating ? <Loader2 size={16} className="animate-spin" /> : <ClipboardCheck size={16} />}
+                              {isReviewNavigating ? 'Öppnar granska...' : 'Granska'}
                             </Link>
                             <Link
                               href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/report`}
-                              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                              onClick={(event) => handleInspectionNavigation(event, reportNavigationKey)}
+                              aria-disabled={navigationInProgress}
+                              aria-busy={isReportNavigating}
+                              className={inspectionNavigationClassName(false, navigationInProgress)}
                             >
-                              <FileText size={16} />
-                              Utlåtande
+                              {isReportNavigating ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
+                              {isReportNavigating ? 'Öppnar utlåtande...' : 'Utlåtande'}
                             </Link>
                             {inspection.reportPdfDownloadUrl ? (
                               <Link
