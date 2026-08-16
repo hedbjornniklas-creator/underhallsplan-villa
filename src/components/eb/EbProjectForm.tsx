@@ -579,7 +579,7 @@ export default function EbProjectForm({
               />
             </EbProjectFieldLabel>
             <p className="mt-1 text-xs text-gray-600">
-              Visas sist under Avtal, handlingar och andra överenskommelser i utlåtandet.
+              Visas direkt efter den inledande avtalstexten i utl�tandet.
             </p>
           </div>
 

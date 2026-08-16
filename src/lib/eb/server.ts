@@ -4909,6 +4909,7 @@ function ebContractDocumentsReportText(round: EbInspectionRound) {
 
   return [
     ebAgreementScopeLine(round),
+    agreementNote ? `Kommentar: ${agreementNote}` : null,
     [
       'Därutöver har skriftligt avtalats om ändringar och tilläggsarbeten enligt följande:',
       changeOrders.length > 0
@@ -4921,7 +4922,6 @@ function ebContractDocumentsReportText(round: EbInspectionRound) {
         ? otherRows.join('\n')
         : '• Inga övriga handlingar eller överenskommelser är registrerade.',
     ].join('\n'),
-    agreementNote ? `Kommentar: ${agreementNote}` : null,
   ].filter((paragraph): paragraph is string => Boolean(paragraph)).join('\n\n')
 }
 
