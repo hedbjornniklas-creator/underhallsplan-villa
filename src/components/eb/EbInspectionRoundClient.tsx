@@ -1753,7 +1753,7 @@ export default function EbInspectionRoundClient({
     setRound((current) => ({
       ...current,
       images: sortImages([
-        ...current.images.filter((item) => item.id !== image.id),
+        ...current.images.filter((item) => !(item.id === image.id && item.noteId === image.noteId)),
         {
           ...image,
           sourceAttachmentId:
@@ -1821,15 +1821,6 @@ export default function EbInspectionRoundClient({
       ),
     [round.projectAttachments]
   )
-  const copiedProjectAttachmentIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const image of round.images) {
-      if (image.sourceAttachmentId) {
-        ids.add(image.sourceAttachmentId)
-      }
-    }
-    return ids
-  }, [round.images])
   const queuedProjectAttachmentIds = useMemo(
     () =>
       new Set(
@@ -1842,11 +1833,9 @@ export default function EbInspectionRoundClient({
   const availableProjectImageAttachments = useMemo(
     () =>
       projectImageAttachments.filter(
-        (attachment) =>
-          !copiedProjectAttachmentIds.has(attachment.id) &&
-          !queuedProjectAttachmentIds.has(attachment.id)
+        (attachment) => !queuedProjectAttachmentIds.has(attachment.id)
       ),
-    [copiedProjectAttachmentIds, projectImageAttachments, queuedProjectAttachmentIds]
+    [projectImageAttachments, queuedProjectAttachmentIds]
   )
   const checkpointGroups = useMemo(() => groupedCheckpoints(checkpoints), [checkpoints])
   const imageBankImages = useMemo(
@@ -2859,16 +2848,16 @@ export default function EbInspectionRoundClient({
   const updateImageInState = (image: EbNoteImage) => {
     setRound((current) => ({
       ...current,
-      images: sortImages(
-        current.images.map((item) =>
-          item.id === image.id
-            ? {
-                ...image,
-                sourceAttachmentId: image.sourceAttachmentId ?? item.sourceAttachmentId,
-              }
-            : item
-        )
-      ),
+      images: sortImages([
+        ...current.images.filter((item) => !(item.id === image.id && item.noteId === image.noteId)),
+        {
+          ...image,
+          sourceAttachmentId:
+            image.sourceAttachmentId ??
+            current.images.find((item) => item.id === image.id)?.sourceAttachmentId ??
+            null,
+        },
+      ]),
     }))
   }
 
@@ -3413,7 +3402,10 @@ export default function EbInspectionRoundClient({
       if (!response.ok || !payload.image) {
         throw new Error(payload.error ?? 'Kunde inte koppla loss bilden.')
       }
-      updateImageInState(payload.image)
+      setRound((current) => ({
+        ...current,
+        images: current.images.filter((item) => !(item.id === image.id && item.noteId === editingNote.id)),
+      }))
     } catch (deleteError) {
       showError(deleteError, 'Kunde inte koppla loss bilden.')
     } finally {
@@ -3444,7 +3436,7 @@ export default function EbInspectionRoundClient({
       }
       setRound((current) => ({
         ...current,
-        images: current.images.filter((item) => item.id !== image.id),
+        images: current.images.filter((item) => !(item.id === image.id && item.noteId === noteId)),
       }))
     } catch (deleteError) {
       showError(deleteError, 'Kunde inte radera bilden.')

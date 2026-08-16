@@ -1409,40 +1409,60 @@ function photoReferenceLabel(note: EbNote, checkpointNumber: number | undefined,
   return note.noteNumber ? `Notering ${note.noteNumber}` : 'Notering'
 }
 
+function compactPhotoReferences(references: string[]) {
+  const checkpointNumbers = references.flatMap((reference) => {
+    const match = reference.match(/^Kontrollpunkt\s+(\d+)$/)
+    return match ? [Number(match[1])] : []
+  })
+  if (checkpointNumbers.length === references.length && checkpointNumbers.length > 0) {
+    return `Kontrollpunkt ${checkpointNumbers.join(', ')}`
+  }
+
+  const noteNumbers = references.flatMap((reference) => {
+    const match = reference.match(/^Notering\s+(\d+)$/)
+    return match ? [Number(match[1])] : []
+  })
+  if (noteNumbers.length === references.length && noteNumbers.length > 0) {
+    return `Notering ${noteNumbers.join(', ')}`
+  }
+
+  return references.join(', ')
+}
+
+type PhotoAppendixItem = {
+  image: EbNoteImage
+  referenceLabel: string
+  location: string
+  noteText: string
+}
+
 function PhotoAppendixBlock({
-  note,
-  images,
-  referenceLabel,
+  items,
   showTitle = false,
   onImageError,
 }: {
-  note: EbNote
-  images: EbNoteImage[]
-  referenceLabel: string
+  items: PhotoAppendixItem[]
   showTitle?: boolean
   onImageError: (message: string) => void
 }) {
-  const location = noteLocationLine(note)
-
+  const referenceLabel = items[0]?.referenceLabel ?? 'Bild'
   return (
     <section className="eb-report-section">
       {showTitle ? <h2 className={REPORT_APPENDIX_HEADING_CLASS_NAME}>FOTOBILAGA</h2> : null}
-      <div className="mb-3 text-[10pt] leading-snug text-black">
-        <p className="font-bold">{referenceLabel}</p>
-        {location !== '-' ? <p>Del/Rum: {location}</p> : null}
-        {note.noteText?.trim() ? (
-          <p className="whitespace-pre-wrap">Notering: {note.noteText}</p>
-        ) : null}
-      </div>
       <div className="eb-report-photo-grid grid grid-cols-2 gap-x-6 gap-y-5">
-        {images.map((image) => (
+        {items.map((item) => (
           <figure
-            key={image.id}
-            className="eb-report-photo-figure grid h-[58mm] break-inside-avoid grid-rows-[minmax(0,1fr)]"
+            key={`${item.image.id}-${item.referenceLabel}`}
+            className="eb-report-photo-figure grid h-[64mm] break-inside-avoid grid-rows-[auto_minmax(0,1fr)] gap-1"
           >
+            <figcaption className="text-[9pt] leading-tight text-black">
+              <p className="font-bold">{item.referenceLabel}</p>
+              {item.location !== '-' ? <p>Del/Rum: {item.location}</p> : null}
+              {item.noteText ? <p className="line-clamp-2 whitespace-pre-wrap">Notering: {item.noteText}</p> : null}
+            </figcaption>
             <img
-              src={reportImageSrc(image)}
-              alt={`Bild till ${referenceLabel.toLocaleLowerCase('sv-SE')}`}
+              src={reportImageSrc(item.image)}
+              alt={`Bild till ${item.referenceLabel.toLocaleLowerCase('sv-SE')}`}
               data-eb-print-measure-image="true"
               onError={(event) => {
                 event.currentTarget.dataset.ebImageFailed = 'true'
@@ -2071,46 +2091,55 @@ export default function EbInspectionReportView({
       })
     }
 
-    let photoBlockIndex = 0
-    const usedPhotoImageKeys = new Set<string>()
-    notes
-      .map((note) => {
-        const checkpointNumber = checkpointNumberByNote.get(note.id)
-        const images = drainageReport && !checkpointNumber
-          ? []
-          : (imagesByNoteId.get(note.id) ?? []).filter((image) => {
-              const key = photoImageDedupKey(image)
-              if (usedPhotoImageKeys.has(key)) return false
-              usedPhotoImageKeys.add(key)
-              return true
-            })
-
-        return { note, images, checkpointNumber }
-      })
-      .filter((item) => item.images.length > 0)
-      .forEach(({ note, images, checkpointNumber }) => {
-        chunkArray(images, 2).forEach((imageChunk, imageChunkIndex) => {
-          const referenceLabel = photoReferenceLabel(
-            note,
-            checkpointNumber,
-            displayNumberByNoteId.get(note.id)
-          )
-          blocks.push({
-            id: `photo-${note.id}-${imageChunkIndex}`,
-            startsNewPage: photoBlockIndex === 0,
-            node: (
-              <PhotoAppendixBlock
-                images={imageChunk}
-                note={note}
-                referenceLabel={imageChunkIndex === 0 ? referenceLabel : `${referenceLabel} (forts.)`}
-                showTitle={photoBlockIndex === 0}
-                onImageError={showError}
-              />
-            ),
-          })
-          photoBlockIndex += 1
+    const photoItemsByKey = new Map<string, {
+      image: EbNoteImage
+      references: string[]
+      locations: string[]
+      noteTexts: string[]
+    }>()
+    for (const note of notes) {
+      const checkpointNumber = checkpointNumberByNote.get(note.id)
+      if (drainageReport && !checkpointNumber) continue
+      const referenceLabel = photoReferenceLabel(note, checkpointNumber, displayNumberByNoteId.get(note.id))
+      const location = noteLocationLine(note)
+      const noteText = note.noteText?.trim() ?? ''
+      for (const image of imagesByNoteId.get(note.id) ?? []) {
+        const key = photoImageDedupKey(image)
+        const existing = photoItemsByKey.get(key)
+        if (existing) {
+          if (!existing.references.includes(referenceLabel)) existing.references.push(referenceLabel)
+          if (location !== '-' && !existing.locations.includes(location)) existing.locations.push(location)
+          if (noteText && !existing.noteTexts.includes(noteText)) existing.noteTexts.push(noteText)
+          continue
+        }
+        photoItemsByKey.set(key, {
+          image,
+          references: [referenceLabel],
+          locations: location === '-' ? [] : [location],
+          noteTexts: noteText ? [noteText] : [],
         })
+      }
+    }
+    const photoItems: PhotoAppendixItem[] = Array.from(photoItemsByKey.values()).map((item) => ({
+      image: item.image,
+      referenceLabel: compactPhotoReferences(item.references),
+      location: item.locations.join(', ') || '-',
+      noteText: item.noteTexts.join('\n'),
+    }))
+
+    chunkArray(photoItems, 2).forEach((itemChunk, chunkIndex) => {
+      blocks.push({
+        id: `photo-${chunkIndex}`,
+        startsNewPage: chunkIndex === 0,
+        node: (
+          <PhotoAppendixBlock
+            items={itemChunk}
+            showTitle={chunkIndex === 0}
+            onImageError={showError}
+          />
+        ),
       })
+    })
 
     return blocks
   }, [

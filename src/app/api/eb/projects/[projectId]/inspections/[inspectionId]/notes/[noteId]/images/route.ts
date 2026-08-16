@@ -203,6 +203,69 @@ async function loadNextImageSortOrder(
   return Number.isFinite(maxSort) ? maxSort + 10 : 10
 }
 
+async function createNoteImageLink(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  input: {
+    orgId: string
+    projectId: string
+    inspectionId: string
+    noteId: string
+    imageId: string
+    sortOrder: number
+  }
+) {
+  const { error } = await admin
+    .from('eb_note_image_links')
+    .insert({
+      org_id: input.orgId,
+      eb_project_id: input.projectId,
+      inspection_id: input.inspectionId,
+      eb_note_id: input.noteId,
+      inspection_image_id: input.imageId,
+      sort_order: input.sortOrder,
+    })
+
+  if (error) {
+    if (isUniqueViolation(error)) return true
+    if (error.code === '42P01') return false
+    throw new Error(error.message ?? 'Kunde inte spara bildkoppling.')
+  }
+
+  return true
+}
+
+async function deleteNoteImageLink(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  input: { noteId: string; imageId: string }
+) {
+  const { error } = await admin
+    .from('eb_note_image_links')
+    .delete()
+    .eq('eb_note_id', input.noteId)
+    .eq('inspection_image_id', input.imageId)
+
+  if (error) {
+    if (error.code === '42P01') return false
+    throw new Error(error.message ?? 'Kunde inte ta bort bildkoppling.')
+  }
+
+  return true
+}
+
+async function countImageLinks(admin: ReturnType<typeof createSupabaseAdminClient>, imageId: string) {
+  const { count, error } = await admin
+    .from('eb_note_image_links')
+    .select('id', { count: 'exact', head: true })
+    .eq('inspection_image_id', imageId)
+
+  if (error) {
+    if (error.code === '42P01') return null
+    throw new Error(error.message ?? 'Kunde inte kontrollera bildkopplingar.')
+  }
+
+  return count ?? 0
+}
+
 async function requireEbContext() {
   await requireModuleAccess({
     productKey: 'dashboard',
@@ -362,7 +425,16 @@ export async function POST(
         throw new Error(fallbackInsertError.message ?? 'Kunde inte spara bildrad.')
       }
 
-      return NextResponse.json({ image: mapImage(fallbackInsertedImage) })
+      await createNoteImageLink(admin, {
+        orgId: org.orgId,
+        projectId,
+        inspectionId,
+        noteId,
+        imageId,
+        sortOrder,
+      })
+
+      return NextResponse.json({ image: { ...mapImage(fallbackInsertedImage), noteId } })
     }
 
     if (insertError) {
@@ -377,7 +449,16 @@ export async function POST(
       throw new Error(insertError.message ?? 'Kunde inte spara bildrad.')
     }
 
-    return NextResponse.json({ image: mapImage(insertedImage) })
+    await createNoteImageLink(admin, {
+      orgId: org.orgId,
+      projectId,
+      inspectionId,
+      noteId,
+      imageId,
+      sortOrder,
+    })
+
+    return NextResponse.json({ image: { ...mapImage(insertedImage), noteId } })
   } catch (error) {
     if (uploadedPath) {
       await createSupabaseAdminClient().storage.from(EB_NOTE_IMAGE_BUCKET).remove([uploadedPath])
@@ -423,13 +504,18 @@ export async function DELETE(
       .select('id,file_path,thumbnail_file_path')
       .eq('id', imageId)
       .eq('inspection_id', inspectionId)
-      .eq('eb_note_id', noteId)
       .maybeSingle()
 
     if (imageError) {
       throw new Error(imageError.message ?? 'Kunde inte läsa bildrad.')
     }
     if (!imageRow?.id) return jsonError('Bilden hittades inte.', 404)
+
+    const linkDeleted = await deleteNoteImageLink(admin, { noteId, imageId })
+    const remainingLinks = linkDeleted ? await countImageLinks(admin, imageId) : null
+    if (linkDeleted && remainingLinks !== 0) {
+      return NextResponse.json({ ok: true })
+    }
 
     const filePaths = [imageRow.file_path, imageRow.thumbnail_file_path]
       .map((path) => String(path ?? '').trim())
@@ -446,7 +532,6 @@ export async function DELETE(
       .delete()
       .eq('id', imageId)
       .eq('inspection_id', inspectionId)
-      .eq('eb_note_id', noteId)
 
     if (deleteError) {
       throw new Error(deleteError.message ?? 'Kunde inte ta bort bildrad.')
@@ -555,23 +640,24 @@ export async function PATCH(
           throw new Error(existingImageResult.error.message ?? 'Kunde inte kontrollera befintlig bildkoppling.')
         }
         if (existingImageResult.data?.id) {
-          if (!existingImageResult.data.eb_note_id) {
-            const { data: attachedImage, error: attachExistingError } = await admin
+          const sortOrder = await loadNextImageSortOrder(admin, inspectionId, noteId)
+          const linked = await createNoteImageLink(admin, {
+            orgId: org.orgId,
+            projectId,
+            inspectionId,
+            noteId,
+            imageId: existingImageResult.data.id,
+            sortOrder,
+          })
+          if (!linked) {
+            await admin
               .from('inspection_images')
               .update({ eb_note_id: noteId })
               .eq('id', existingImageResult.data.id)
               .eq('inspection_id', inspectionId)
-              .select(imageSelect)
-              .single()
-
-            if (attachExistingError || !attachedImage) {
-              throw new Error(attachExistingError?.message ?? 'Kunde inte koppla befintlig bild.')
-            }
-
-            return NextResponse.json({ image: mapImage(attachedImage) })
           }
 
-          return NextResponse.json({ image: mapImage(existingImageResult.data) })
+          return NextResponse.json({ image: { ...mapImage(existingImageResult.data), noteId, sortOrder } })
         }
 
         const sourceStorage = admin.storage.from(attachmentRow.storage_bucket || EB_PROJECT_ATTACHMENTS_BUCKET)
@@ -670,7 +756,16 @@ export async function PATCH(
             throw new Error(fallbackInsertError.message ?? 'Kunde inte spara bildrad.')
           }
 
-          return NextResponse.json({ image: mapImage(fallbackInsertedImage) })
+          await createNoteImageLink(admin, {
+            orgId: org.orgId,
+            projectId,
+            inspectionId,
+            noteId,
+            imageId: fallbackInsertedImage.id,
+            sortOrder,
+          })
+
+          return NextResponse.json({ image: { ...mapImage(fallbackInsertedImage), noteId } })
         }
 
         if (insertError && isUniqueViolation(insertError)) {
@@ -689,20 +784,23 @@ export async function PATCH(
             }
             uploadedPath = null
             uploadedThumbnailPath = null
-            if (!duplicateImageResult.data.eb_note_id) {
-              const { data: attachedDuplicateImage, error: attachDuplicateError } = await admin
+            const sortOrder = await loadNextImageSortOrder(admin, inspectionId, noteId)
+            const linked = await createNoteImageLink(admin, {
+              orgId: org.orgId,
+              projectId,
+              inspectionId,
+              noteId,
+              imageId: duplicateImageResult.data.id,
+              sortOrder,
+            })
+            if (!linked) {
+              await admin
                 .from('inspection_images')
                 .update({ eb_note_id: noteId })
                 .eq('id', duplicateImageResult.data.id)
                 .eq('inspection_id', inspectionId)
-                .select(imageSelect)
-                .single()
-
-              if (!attachDuplicateError && attachedDuplicateImage?.id) {
-                return NextResponse.json({ image: mapImage(attachedDuplicateImage) })
-              }
             }
-            return NextResponse.json({ image: mapImage(duplicateImageResult.data) })
+            return NextResponse.json({ image: { ...mapImage(duplicateImageResult.data), noteId, sortOrder } })
           }
         }
 
@@ -710,7 +808,16 @@ export async function PATCH(
           throw new Error(insertError?.message ?? 'Kunde inte spara bildrad.')
         }
 
-        return NextResponse.json({ image: mapImage(insertedImage) })
+        await createNoteImageLink(admin, {
+          orgId: org.orgId,
+          projectId,
+          inspectionId,
+          noteId,
+          imageId: insertedImage.id,
+          sortOrder,
+        })
+
+        return NextResponse.json({ image: { ...mapImage(insertedImage), noteId } })
       } catch (copyError) {
         const pathsToRemove = [uploadedPath, uploadedThumbnailPath].filter((path): path is string =>
           Boolean(path)
@@ -736,6 +843,28 @@ export async function PATCH(
       throw new Error(imageError.message ?? 'Kunde inte läsa bildrad.')
     }
     if (!imageRow?.id) return jsonError('Bilden hittades inte.', 404)
+
+    if (action === 'attach') {
+      const sortOrder = await loadNextImageSortOrder(admin, inspectionId, noteId)
+      const linked = await createNoteImageLink(admin, {
+        orgId: org.orgId,
+        projectId,
+        inspectionId,
+        noteId,
+        imageId,
+        sortOrder,
+      })
+      if (linked) {
+        return NextResponse.json({ image: { ...mapImage(imageRow), noteId, sortOrder } })
+      }
+    }
+
+    if (action === 'detach') {
+      const unlinked = await deleteNoteImageLink(admin, { noteId, imageId })
+      if (unlinked) {
+        return NextResponse.json({ image: { ...mapImage(imageRow), noteId: null } })
+      }
+    }
 
     const nextNoteId = action === 'attach' ? noteId : null
     const { data: updatedImage, error: updateError } = await admin

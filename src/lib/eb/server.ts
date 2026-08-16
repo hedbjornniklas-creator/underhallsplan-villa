@@ -790,6 +790,12 @@ type EbNoteImageRow = {
   created_at: string | null
 }
 
+type EbNoteImageLinkRow = {
+  eb_note_id: string
+  inspection_image_id: string
+  sort_order: number | null
+}
+
 type EbProjectAttachmentRow = {
   id: string
   eb_project_id: string
@@ -2604,13 +2610,49 @@ async function listEbNoteImagesWithoutSourceAttachment(input: { inspectionId: st
     throw new Error(error.message ?? 'Kunde inte hämta EB-bilder.')
   }
 
-  return ((data ?? []) as EbNoteImageRow[]).map((row) => {
+  const mappedById = new Map<string, EbNoteImage>()
+  for (const row of (data ?? []) as EbNoteImageRow[]) {
     const publicUrl = admin.storage.from(EB_NOTE_IMAGE_BUCKET).getPublicUrl(row.file_path).data.publicUrl
     const thumbnailUrl = row.thumbnail_file_path
       ? admin.storage.from(EB_NOTE_IMAGE_BUCKET).getPublicUrl(row.thumbnail_file_path).data.publicUrl
       : null
-    return mapNoteImage(row, publicUrl, thumbnailUrl)
-  })
+    mappedById.set(row.id, mapNoteImage(row, publicUrl, thumbnailUrl))
+  }
+
+  const linkResult = await admin
+    .from('eb_note_image_links')
+    .select('eb_note_id,inspection_image_id,sort_order')
+    .eq('inspection_id', input.inspectionId)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (linkResult.error) {
+    if (isMissingRelationError(linkResult.error)) return Array.from(mappedById.values())
+    throw new Error(linkResult.error.message ?? 'Kunde inte hÃ¤mta EB-bildkopplingar.')
+  }
+
+  const linkedImages: EbNoteImage[] = []
+  const linkedKeys = new Set<string>()
+  for (const link of (linkResult.data ?? []) as EbNoteImageLinkRow[]) {
+    const image = mappedById.get(link.inspection_image_id)
+    if (!image) continue
+    const key = `${link.eb_note_id}:${link.inspection_image_id}`
+    if (linkedKeys.has(key)) continue
+    linkedKeys.add(key)
+    linkedImages.push({
+      ...image,
+      noteId: link.eb_note_id,
+      sortOrder: link.sort_order ?? image.sortOrder,
+    })
+  }
+
+  for (const image of mappedById.values()) {
+    if (image.noteId && !linkedKeys.has(`${image.noteId}:${image.id}`)) {
+      linkedImages.push(image)
+    }
+  }
+
+  return linkedImages
 }
 
 async function listEbNoteImages(input: { inspectionId: string }) {
@@ -2628,13 +2670,49 @@ async function listEbNoteImages(input: { inspectionId: string }) {
     throw new Error(error.message ?? 'Kunde inte hämta EB-bilder.')
   }
 
-  return ((data ?? []) as EbNoteImageRow[]).map((row) => {
+  const mappedById = new Map<string, EbNoteImage>()
+  for (const row of (data ?? []) as EbNoteImageRow[]) {
     const publicUrl = admin.storage.from(EB_NOTE_IMAGE_BUCKET).getPublicUrl(row.file_path).data.publicUrl
     const thumbnailUrl = row.thumbnail_file_path
       ? admin.storage.from(EB_NOTE_IMAGE_BUCKET).getPublicUrl(row.thumbnail_file_path).data.publicUrl
       : null
-    return mapNoteImage(row, publicUrl, thumbnailUrl)
-  })
+    mappedById.set(row.id, mapNoteImage(row, publicUrl, thumbnailUrl))
+  }
+
+  const linkResult = await admin
+    .from('eb_note_image_links')
+    .select('eb_note_id,inspection_image_id,sort_order')
+    .eq('inspection_id', input.inspectionId)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (linkResult.error) {
+    if (isMissingRelationError(linkResult.error)) return Array.from(mappedById.values())
+    throw new Error(linkResult.error.message ?? 'Kunde inte hämta EB-bildkopplingar.')
+  }
+
+  const linkedImages: EbNoteImage[] = []
+  const linkedKeys = new Set<string>()
+  for (const link of (linkResult.data ?? []) as EbNoteImageLinkRow[]) {
+    const image = mappedById.get(link.inspection_image_id)
+    if (!image) continue
+    const key = `${link.eb_note_id}:${link.inspection_image_id}`
+    if (linkedKeys.has(key)) continue
+    linkedKeys.add(key)
+    linkedImages.push({
+      ...image,
+      noteId: link.eb_note_id,
+      sortOrder: link.sort_order ?? image.sortOrder,
+    })
+  }
+
+  for (const image of mappedById.values()) {
+    if (image.noteId && !linkedKeys.has(`${image.noteId}:${image.id}`)) {
+      linkedImages.push(image)
+    }
+  }
+
+  return linkedImages
 }
 
 async function listEbNoteSuggestions(input: {
