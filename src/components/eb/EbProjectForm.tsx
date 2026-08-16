@@ -579,7 +579,7 @@ export default function EbProjectForm({
               />
             </EbProjectFieldLabel>
             <p className="mt-1 text-xs text-gray-600">
-              Visas direkt efter den inledande avtalstexten i utlåtandet.
+              Visas direkt efter den inledande avtalstexten i utlÃ¥tandet.
             </p>
           </div>
 
