@@ -3,13 +3,14 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from 'next/link'
-import { ArrowLeft, ClipboardCheck, Printer } from 'lucide-react'
+import { ArrowLeft, ClipboardCheck, Loader2, Printer } from 'lucide-react'
 import {
   useEffect,
   useLayoutEffect,
   useMemo,
   useState,
   type CSSProperties,
+  type MouseEvent,
   type ReactNode,
 } from 'react'
 import { useEbToast } from '@/components/eb/EbToastProvider'
@@ -32,6 +33,14 @@ type EbInspectionReportViewProps = {
   report: EbInspectionReport
   showInternalActions?: boolean
   publicActions?: ReactNode
+}
+
+function reportNavigationClassName(emerald: boolean, busy: boolean) {
+  const base = 'inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition'
+  const variant = emerald
+    ? 'border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50'
+    : 'border border-gray-300 bg-white text-gray-800 hover:bg-gray-50'
+  return busy ? `${base} ${variant} pointer-events-none cursor-wait opacity-70` : `${base} ${variant}`
 }
 
 function sortNotes(notes: EbNote[]) {
@@ -1825,6 +1834,7 @@ export default function EbInspectionReportView({
   publicActions,
 }: EbInspectionReportViewProps) {
   const { showError } = useEbToast()
+  const [pendingNavigationKey, setPendingNavigationKey] = useState<string | null>(null)
   const printTitle = reportPrintTitle(report)
   const notes = useMemo(() => sortNotes(report.notes), [report.notes])
   const displayNumberByNoteId = useMemo(
@@ -1832,6 +1842,13 @@ export default function EbInspectionReportView({
     [notes]
   )
   const drainageReport = isDrainageReport(report)
+  const handleNavigation = (event: MouseEvent<HTMLAnchorElement>, key: string) => {
+    if (pendingNavigationKey) {
+      event.preventDefault()
+      return
+    }
+    setPendingNavigationKey(key)
+  }
   const printableSections = useMemo(
     () =>
       report.reportDraft.sections.filter(
@@ -2165,6 +2182,11 @@ export default function EbInspectionReportView({
       }
     }
   }, [printTitle])
+  const projectNavigationKey = `project:${report.project.id}`
+  const reviewNavigationKey = `review:${report.inspection.inspectionId}`
+  const isProjectNavigating = pendingNavigationKey === projectNavigationKey
+  const isReviewNavigating = pendingNavigationKey === reviewNavigationKey
+  const navigationInProgress = Boolean(pendingNavigationKey)
 
   return (
     <main className="eb-report-print-root min-h-screen bg-neutral-200 text-black print:min-h-0 print:bg-white">
@@ -2174,9 +2196,12 @@ export default function EbInspectionReportView({
             {showInternalActions ? (
               <Link
                 href={`/eb/projects/${report.project.id}`}
-                className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
+                onClick={(event) => handleNavigation(event, projectNavigationKey)}
+                aria-disabled={navigationInProgress}
+                aria-busy={isProjectNavigating}
+                className={reportNavigationClassName(false, navigationInProgress)}
               >
-                <ArrowLeft size={16} />
+                {isProjectNavigating ? <Loader2 size={16} className="animate-spin" /> : <ArrowLeft size={16} />}
                 Till entreprenaden
               </Link>
             ) : <span />}
@@ -2184,9 +2209,12 @@ export default function EbInspectionReportView({
               <div className="flex items-center gap-2">
                 <Link
                   href={`/eb/projects/${report.project.id}/inspections/${report.inspection.inspectionId}/perform`}
-                  className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
+                  onClick={(event) => handleNavigation(event, reviewNavigationKey)}
+                  aria-disabled={navigationInProgress}
+                  aria-busy={isReviewNavigating}
+                  className={reportNavigationClassName(true, navigationInProgress)}
                 >
-                  <ClipboardCheck size={16} />
+                  {isReviewNavigating ? <Loader2 size={16} className="animate-spin" /> : <ClipboardCheck size={16} />}
                   Granska
                 </Link>
                 <button

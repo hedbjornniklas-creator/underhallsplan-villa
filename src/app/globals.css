@@ -260,23 +260,32 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     column-gap: 6mm !important;
-    row-gap: 5mm !important;
+    row-gap: 4mm !important;
   }
 
   .eb-print-paged-document .eb-report-photo-figure {
     display: grid !important;
-    height: 58mm !important;
-    max-height: 58mm !important;
+    height: 64mm !important;
+    max-height: 64mm !important;
     margin: 0 !important;
     overflow: hidden !important;
-    grid-template-rows: minmax(0, 1fr) !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    gap: 1mm !important;
+  }
+
+  .eb-print-paged-document .eb-report-photo-figure figcaption {
+    display: block !important;
+    max-height: 15mm !important;
+    overflow: hidden !important;
+    font-size: 9pt !important;
+    line-height: 1.15 !important;
   }
 
   .eb-print-paged-document img.eb-report-photo-image {
     width: 100% !important;
-    height: 58mm !important;
+    height: 48mm !important;
     max-width: 100% !important;
-    max-height: 58mm !important;
+    max-height: 48mm !important;
     object-fit: contain !important;
     object-position: left center !important;
   }

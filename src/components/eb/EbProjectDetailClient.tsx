@@ -255,6 +255,12 @@ function inspectionNavigationClassName(primary: boolean, busy: boolean) {
   return busy ? `${base} ${variant} pointer-events-none cursor-wait opacity-70` : `${base} ${variant}`
 }
 
+function inspectionNavigationIconClassName(busy: boolean) {
+  const base =
+    'mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600'
+  return busy ? `${base} pointer-events-none cursor-wait opacity-70` : base
+}
+
 function fieldLabel(label: string, children: ReactNode) {
   return (
     <label className="block">
@@ -2046,6 +2052,11 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
   const contractorAddressLine = [currentProject.contractorAddress, [currentProject.contractorPostalCode, currentProject.contractorCity].filter(Boolean).join(' ')]
     .filter(Boolean)
     .join(', ')
+  const backNavigationKey = 'eb'
+  const remediationNavigationKey = `remediation:${currentProject.id}`
+  const isBackNavigating = pendingNavigationKey === backNavigationKey
+  const isRemediationNavigating = pendingNavigationKey === remediationNavigationKey
+  const navigationInProgress = Boolean(pendingNavigationKey)
 
   const handleCreated = (updatedProject: EbProjectListItem) => {
     setCurrentProject(updatedProject)
@@ -2180,11 +2191,14 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
               <div className="flex min-w-0 items-start gap-3">
                 <Link
                   href="/eb"
+                  onClick={(event) => handleInspectionNavigation(event, backNavigationKey)}
                   aria-label="Tillbaka"
                   title="Tillbaka"
-                  className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                  aria-disabled={navigationInProgress}
+                  aria-busy={isBackNavigating}
+                  className={inspectionNavigationIconClassName(navigationInProgress)}
                 >
-                  <ArrowLeft size={17} strokeWidth={2} />
+                  {isBackNavigating ? <Loader2 size={17} className="animate-spin" /> : <ArrowLeft size={17} strokeWidth={2} />}
                 </Link>
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">EB-projekt</p>
@@ -2197,9 +2211,12 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
               <div className="flex flex-wrap gap-2">
                 <Link
                   href={`/eb/projects/${currentProject.id}/remediation`}
-                  className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                  onClick={(event) => handleInspectionNavigation(event, remediationNavigationKey)}
+                  aria-disabled={navigationInProgress}
+                  aria-busy={isRemediationNavigating}
+                  className={inspectionNavigationClassName(false, navigationInProgress)}
                 >
-                  <ListChecks size={16} />
+                  {isRemediationNavigating ? <Loader2 size={16} className="animate-spin" /> : <ListChecks size={16} />}
                   Åtgärdsportal
                 </Link>
                 <button

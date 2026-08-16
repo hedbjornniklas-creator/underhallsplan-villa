@@ -1,8 +1,8 @@
 ﻿'use client'
 
 import Link from 'next/link'
-import { ArrowLeft, Check, FileText, Save } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { ArrowLeft, Check, FileText, Loader2, Save } from 'lucide-react'
+import type { MouseEvent, ReactNode } from 'react'
 import { useMemo, useState, useTransition } from 'react'
 import { useEbToast } from '@/components/eb/EbToastProvider'
 import {
@@ -19,6 +19,14 @@ import type {
 
 type Props = {
   initialReport: EbInspectionReport
+}
+
+function draftNavigationClassName(emerald: boolean, busy: boolean) {
+  const base = 'inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition'
+  const variant = emerald
+    ? 'border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50'
+    : 'border border-gray-300 bg-white text-gray-800 hover:bg-gray-50'
+  return busy ? `${base} ${variant} pointer-events-none cursor-wait opacity-70` : `${base} ${variant}`
 }
 
 const statusLabels: Record<EbReportSectionStatus, string> = {
@@ -271,8 +279,17 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
   const [activeKey, setActiveKey] = useState(sections[0]?.key ?? '')
   const [message, setMessage] = useState<string | null>(null)
   const [draftDirty, setDraftDirty] = useState(false)
+  const [pendingNavigationKey, setPendingNavigationKey] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const [isStructuredPending, startStructuredTransition] = useTransition()
+
+  const handleNavigation = (event: MouseEvent<HTMLAnchorElement>, key: string) => {
+    if (pendingNavigationKey) {
+      event.preventDefault()
+      return
+    }
+    setPendingNavigationKey(key)
+  }
   const preliminaryInspection = isEbPreliminaryInspection(initialReport.inspection.variant)
   const supportsFinalDecision = isEbFinalDecisionInspection(initialReport.inspection.variant)
   const visibleSections = useMemo(
@@ -395,6 +412,11 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
       }
     })
   }
+  const reportNavigationKey = `report:${initialReport.inspection.inspectionId}`
+  const reviewNavigationKey = `review:${initialReport.inspection.inspectionId}`
+  const isReportNavigating = pendingNavigationKey === reportNavigationKey
+  const isReviewNavigating = pendingNavigationKey === reviewNavigationKey
+  const navigationInProgress = Boolean(pendingNavigationKey)
 
   return (
     <main className="min-h-screen bg-gray-50 text-gray-950">
@@ -402,17 +424,23 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
             href={`/eb/projects/${initialReport.project.id}/inspections/${initialReport.inspection.inspectionId}/report`}
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
+            onClick={(event) => handleNavigation(event, reportNavigationKey)}
+            aria-disabled={navigationInProgress}
+            aria-busy={isReportNavigating}
+            className={draftNavigationClassName(false, navigationInProgress)}
           >
-            <ArrowLeft size={16} />
+            {isReportNavigating ? <Loader2 size={16} className="animate-spin" /> : <ArrowLeft size={16} />}
             Till utlåtande
           </Link>
           <div className="flex items-center gap-2">
             <Link
               href={`/eb/projects/${initialReport.project.id}/inspections/${initialReport.inspection.inspectionId}/perform`}
-              className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
+              onClick={(event) => handleNavigation(event, reviewNavigationKey)}
+              aria-disabled={navigationInProgress}
+              aria-busy={isReviewNavigating}
+              className={draftNavigationClassName(true, navigationInProgress)}
             >
-              <FileText size={16} />
+              {isReviewNavigating ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
               Granska
             </Link>
             <button

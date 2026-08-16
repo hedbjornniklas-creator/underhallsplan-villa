@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent, type MouseEvent } from 'react'
 import {
   ArrowLeft,
   Building2,
@@ -32,6 +32,18 @@ type CreateProjectFormState = EbProjectFormState
 type CreateProjectResponse = {
   project?: EbProjectListItem
   error?: string
+}
+
+function navigationLinkClassName(busy: boolean) {
+  const base =
+    'inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600'
+  return busy ? `${base} pointer-events-none cursor-wait opacity-70` : base
+}
+
+function navigationIconLinkClassName(busy: boolean) {
+  const base =
+    'inline-flex h-9 w-9 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600'
+  return busy ? `${base} pointer-events-none cursor-wait opacity-70` : base
 }
 
 const INITIAL_FORM: CreateProjectFormState = {
@@ -158,6 +170,7 @@ function CreateProjectDialog({
 }
 
 function ProjectRow({ project }: { project: EbProjectListItem }) {
+  const [navigating, setNavigating] = useState(false)
   const primaryInspection = getPrimaryInspection(project)
   const address = [project.address, project.postalCode, project.city].filter(Boolean).join(', ')
   const objectIdentifier = project.propertyDesignation || project.brfApartmentNumber
@@ -166,7 +179,17 @@ function ProjectRow({ project }: { project: EbProjectListItem }) {
   return (
     <Link
       href={`/eb/projects/${project.id}`}
-      className="grid gap-3 border-b border-emerald-100 bg-white/82 px-4 py-3 text-left transition hover:bg-emerald-50/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 md:grid-cols-[1.4fr_1fr_0.7fr_0.7fr]"
+      onClick={(event) => {
+        if (navigating) {
+          event.preventDefault()
+          return
+        }
+        setNavigating(true)
+      }}
+      aria-busy={navigating}
+      className={`grid gap-3 border-b border-emerald-100 bg-white/82 px-4 py-3 text-left transition hover:bg-emerald-50/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 md:grid-cols-[1.4fr_1fr_0.7fr_0.7fr] ${
+        navigating ? 'pointer-events-none cursor-wait opacity-70' : ''
+      }`}
     >
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold text-gray-950">{project.title}</p>
@@ -186,6 +209,7 @@ function ProjectRow({ project }: { project: EbProjectListItem }) {
         <p>{formatDate(primaryInspection?.date ?? null)}</p>
       </div>
       <div className="flex items-start justify-between gap-2 md:justify-end">
+        {navigating ? <Loader2 size={16} className="mt-1 animate-spin text-emerald-700" /> : null}
         <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
           {getStatusLabel(project.status)}
         </span>
@@ -200,6 +224,7 @@ export default function EbDashboardClient({
 }: EbDashboardClientProps) {
   const [projects, setProjects] = useState(initialProjects)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [pendingNavigationKey, setPendingNavigationKey] = useState<string | null>(null)
   const counts = useMemo(
     () => ({
       projects: projects.length,
@@ -216,6 +241,18 @@ export default function EbDashboardClient({
   const handleCreated = (project: EbProjectListItem) => {
     setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)])
   }
+
+  const handleNavigation = (event: MouseEvent<HTMLAnchorElement>, key: string) => {
+    if (pendingNavigationKey) {
+      event.preventDefault()
+      return
+    }
+    setPendingNavigationKey(key)
+  }
+
+  const isBackNavigating = pendingNavigationKey === 'dashboard'
+  const isSettingsNavigating = pendingNavigationKey === 'settings'
+  const navigationInProgress = Boolean(pendingNavigationKey)
 
   return (
     <Protected>
@@ -235,11 +272,14 @@ export default function EbDashboardClient({
               <div className="flex items-center gap-3">
                 <Link
                   href="/dashboard-v1"
+                  onClick={(event) => handleNavigation(event, 'dashboard')}
                   aria-label="Tillbaka"
                   title="Tillbaka"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                  aria-disabled={navigationInProgress}
+                  aria-busy={isBackNavigating}
+                  className={navigationIconLinkClassName(navigationInProgress)}
                 >
-                  <ArrowLeft size={17} strokeWidth={2} />
+                  {isBackNavigating ? <Loader2 size={17} className="animate-spin" /> : <ArrowLeft size={17} strokeWidth={2} />}
                 </Link>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">EB</p>
@@ -249,9 +289,12 @@ export default function EbDashboardClient({
               <div className="flex flex-wrap gap-2">
                 <Link
                   href="/settings"
-                  className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                  onClick={(event) => handleNavigation(event, 'settings')}
+                  aria-disabled={navigationInProgress}
+                  aria-busy={isSettingsNavigating}
+                  className={navigationLinkClassName(navigationInProgress)}
                 >
-                  <Settings size={16} />
+                  {isSettingsNavigating ? <Loader2 size={16} className="animate-spin" /> : <Settings size={16} />}
                   Inställningar
                 </Link>
                 <button

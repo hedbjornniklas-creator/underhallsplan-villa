@@ -12,6 +12,7 @@ import {
   type ChangeEvent,
   type DragEvent,
   type FormEvent,
+  type MouseEvent,
 } from 'react'
 import {
   ArrowLeft,
@@ -36,6 +37,18 @@ import type { EbInspectionRound, EbNote, EbNoteImage, EbProjectAttachment } from
 type EbInspectionMobileRoundClientProps = {
   initialRound: EbInspectionRound
   initialDisciplineId: string | null
+}
+
+function mobileNavigationIconClassName(busy: boolean) {
+  const base =
+    'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600'
+  return busy ? `${base} pointer-events-none cursor-wait opacity-70` : base
+}
+
+function mobileNavigationSquareClassName(busy: boolean) {
+  const base =
+    'inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50'
+  return busy ? `${base} pointer-events-none cursor-wait opacity-70` : base
 }
 
 type NoteFormState = {
@@ -504,6 +517,7 @@ export default function EbInspectionMobileRoundClient({
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
   const [noteActionPending, setNoteActionPending] = useState<'save-and-new' | 'save-and-close' | null>(null)
+  const [pendingNavigationKey, setPendingNavigationKey] = useState<string | null>(null)
   const isLocked = Boolean(round.inspection.reportLockedAt)
   const lockedMessage = 'Utlåtandet är låst och kan inte ändras.'
 
@@ -760,6 +774,14 @@ export default function EbInspectionMobileRoundClient({
     setActiveDraftId(null)
     setEditingNote(null)
     replaceForm(createInitialForm(round))
+  }
+
+  const handleNavigation = (event: MouseEvent<HTMLAnchorElement>, key: string) => {
+    if (pendingNavigationKey) {
+      event.preventDefault()
+      return
+    }
+    setPendingNavigationKey(key)
   }
 
   const upsertNoteInState = useCallback((note: EbNote) => {
@@ -1253,6 +1275,12 @@ export default function EbInspectionMobileRoundClient({
     }
   }
 
+  const projectNavigationKey = `project:${round.project.id}`
+  const adminNavigationKey = `admin:${round.inspection.inspectionId}`
+  const isProjectNavigating = pendingNavigationKey === projectNavigationKey
+  const isAdminNavigating = pendingNavigationKey === adminNavigationKey
+  const navigationInProgress = Boolean(pendingNavigationKey)
+
   return (
     <Protected>
       <main className="min-h-dvh bg-[#fbfefc] pb-16 text-gray-950">
@@ -1261,11 +1289,14 @@ export default function EbInspectionMobileRoundClient({
             <div className="flex items-start gap-3">
               <Link
                 href={`/eb/projects/${round.project.id}`}
+                onClick={(event) => handleNavigation(event, projectNavigationKey)}
                 aria-label="Tillbaka"
                 title="Tillbaka"
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                aria-disabled={navigationInProgress}
+                aria-busy={isProjectNavigating}
+                className={mobileNavigationIconClassName(navigationInProgress)}
               >
-                <ArrowLeft size={17} strokeWidth={2} />
+                {isProjectNavigating ? <Loader2 size={17} className="animate-spin" /> : <ArrowLeft size={17} strokeWidth={2} />}
               </Link>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -1426,11 +1457,14 @@ export default function EbInspectionMobileRoundClient({
             </div>
             <Link
               href={adminHref}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50"
+              onClick={(event) => handleNavigation(event, adminNavigationKey)}
+              aria-disabled={navigationInProgress}
+              aria-busy={isAdminNavigating}
+              className={mobileNavigationSquareClassName(navigationInProgress)}
               aria-label="Admin"
               title="Admin"
             >
-              <Settings size={16} />
+              {isAdminNavigating ? <Loader2 size={16} className="animate-spin" /> : <Settings size={16} />}
             </Link>
           </section>
 

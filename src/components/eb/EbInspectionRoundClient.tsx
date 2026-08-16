@@ -13,6 +13,7 @@ import {
   type ChangeEvent,
   type DragEvent,
   type FormEvent,
+  type MouseEvent,
   type ReactNode,
 } from 'react'
 import {
@@ -280,6 +281,21 @@ const CHECKPOINT_STATUS_OPTIONS: Array<{
 
 function inputClassName() {
   return 'w-full rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-950 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100'
+}
+
+function navigationLinkClassName(primary: boolean, busy: boolean) {
+  const base =
+    'inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600'
+  const variant = primary
+    ? 'bg-emerald-700 text-white hover:bg-emerald-800'
+    : 'border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50'
+  return busy ? `${base} ${variant} pointer-events-none cursor-wait opacity-70` : `${base} ${variant}`
+}
+
+function navigationIconLinkClassName(busy: boolean) {
+  const base =
+    'mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600'
+  return busy ? `${base} pointer-events-none cursor-wait opacity-70` : base
 }
 
 function isImageFile(file: File) {
@@ -1719,6 +1735,7 @@ export default function EbInspectionRoundClient({
   const [refreshingReportSource, setRefreshingReportSource] = useState<'project' | 'inspector' | null>(null)
   const [resettingReportSectionKey, setResettingReportSectionKey] = useState<string | null>(null)
   const [reviewMessage, setReviewMessage] = useState<string | null>(null)
+  const [pendingNavigationKey, setPendingNavigationKey] = useState<string | null>(null)
   const inspectionAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const participantsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const documentsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1736,6 +1753,13 @@ export default function EbInspectionRoundClient({
   const isDrainageProject = isEbDrainageTemplate(round.project.projectTemplateKey)
   const preliminaryInspection = isEbPreliminaryInspection(round.inspection.variant)
   const supportsFinalDecision = isEbFinalDecisionInspection(round.inspection.variant)
+  const handleNavigation = (event: MouseEvent<HTMLAnchorElement>, key: string) => {
+    if (pendingNavigationKey) {
+      event.preventDefault()
+      return
+    }
+    setPendingNavigationKey(key)
+  }
   const visibleReportSections = useMemo(
     () =>
       reportSections.filter((section) =>
@@ -3599,6 +3623,13 @@ export default function EbInspectionRoundClient({
     round.project.contractForm,
     round.project.procurementForm,
   ].filter(Boolean).join(' - ')
+  const projectNavigationKey = `project:${round.project.id}`
+  const reportNavigationKey = `report:${round.inspection.inspectionId}`
+  const mobileRoundNavigationKey = `mobile:${round.inspection.inspectionId}`
+  const isProjectNavigating = pendingNavigationKey === projectNavigationKey
+  const isReportNavigating = pendingNavigationKey === reportNavigationKey
+  const isMobileRoundNavigating = pendingNavigationKey === mobileRoundNavigationKey
+  const navigationInProgress = Boolean(pendingNavigationKey)
 
   return (
     <Protected>
@@ -3642,11 +3673,14 @@ export default function EbInspectionRoundClient({
               <div className="flex min-w-0 items-start gap-3">
                 <Link
                   href={`/eb/projects/${round.project.id}`}
+                  onClick={(event) => handleNavigation(event, projectNavigationKey)}
                   aria-label="Tillbaka"
                   title="Tillbaka"
-                  className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                  aria-disabled={navigationInProgress}
+                  aria-busy={isProjectNavigating}
+                  className={navigationIconLinkClassName(navigationInProgress)}
                 >
-                  <ArrowLeft size={17} strokeWidth={2} />
+                  {isProjectNavigating ? <Loader2 size={17} className="animate-spin" /> : <ArrowLeft size={17} strokeWidth={2} />}
                 </Link>
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">
@@ -3662,18 +3696,24 @@ export default function EbInspectionRoundClient({
               <div className="flex flex-wrap items-center gap-2">
                 <Link
                   href={`/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/report`}
-                  className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                  onClick={(event) => handleNavigation(event, reportNavigationKey)}
+                  aria-disabled={navigationInProgress}
+                  aria-busy={isReportNavigating}
+                  className={navigationLinkClassName(false, navigationInProgress)}
                 >
-                  <FileText size={16} />
+                  {isReportNavigating ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
                   Utlåtande
                 </Link>
                 <Link
                   href={`/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/round${
                     activeDisciplineId ? `?disciplineId=${activeDisciplineId}` : ''
                   }`}
-                  className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                  onClick={(event) => handleNavigation(event, mobileRoundNavigationKey)}
+                  aria-disabled={navigationInProgress}
+                  aria-busy={isMobileRoundNavigating}
+                  className={navigationLinkClassName(true, navigationInProgress)}
                 >
-                  <Smartphone size={16} />
+                  {isMobileRoundNavigating ? <Loader2 size={16} className="animate-spin" /> : <Smartphone size={16} />}
                   Mobil runda
                 </Link>
               </div>

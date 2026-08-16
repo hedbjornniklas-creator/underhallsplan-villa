@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from 'next/link'
-import { useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { useMemo, useRef, useState, type ChangeEvent, type MouseEvent } from 'react'
 import {
   ArrowLeft,
   Check,
@@ -41,6 +41,12 @@ type Props = {
   endpoint: string
   internal?: boolean
   backHref?: string | null
+}
+
+function backNavigationClassName(busy: boolean) {
+  const base =
+    'mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 print:hidden'
+  return busy ? `${base} pointer-events-none cursor-wait opacity-70` : base
 }
 
 type ApiResponse = {
@@ -134,6 +140,7 @@ export default function EbRemediationPortalClient({
   const [filterAssignee, setFilterAssignee] = useState('all')
   const [bulkAssigneeId, setBulkAssigneeId] = useState('')
   const [bulkDueDate, setBulkDueDate] = useState('')
+  const [backNavigationPending, setBackNavigationPending] = useState(false)
   const [newAssignee, setNewAssignee] = useState<AssigneeDraft>({
     name: '',
     companyName: '',
@@ -157,6 +164,14 @@ export default function EbRemediationPortalClient({
   const canRespond = role === 'assignee' || role === 'contractor_admin'
   const isReadOnly = role === 'contractor_viewer'
   const isBusy = Boolean(busyKey) || Object.keys(uploading).length > 0
+
+  const handleBackNavigation = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (backNavigationPending) {
+      event.preventDefault()
+      return
+    }
+    setBackNavigationPending(true)
+  }
 
   const showNotice = (message: string) => {
     setNotice(message)
@@ -366,8 +381,14 @@ export default function EbRemediationPortalClient({
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-start lg:justify-between lg:px-8">
           <div className="flex min-w-0 items-start gap-3">
             {backHref ? (
-              <Link href={backHref} className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 print:hidden" aria-label="Tillbaka">
-                <ArrowLeft size={17} />
+              <Link
+                href={backHref}
+                onClick={handleBackNavigation}
+                aria-label="Tillbaka"
+                aria-busy={backNavigationPending}
+                className={backNavigationClassName(backNavigationPending)}
+              >
+                {backNavigationPending ? <Loader2 size={17} className="animate-spin" /> : <ArrowLeft size={17} />}
               </Link>
             ) : null}
             <div className="min-w-0">
