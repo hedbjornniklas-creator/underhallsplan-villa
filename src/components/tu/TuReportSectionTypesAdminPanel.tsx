@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { TU_STANDARD_REPORT_SECTION_TYPES } from '@/lib/tu/reportSectionTypes'
 
@@ -107,6 +108,9 @@ export default function TuReportSectionTypesAdminPanel() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<TuReportSectionTypeDraft | null>(null)
+  const [seeding, setSeeding] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [deletingRowId, setDeletingRowId] = useState<string | null>(null)
   const settingsClient = useMemo(() => supabase as unknown as SettingsClient, [])
 
   const filteredRows = useMemo(() => {
@@ -190,7 +194,9 @@ export default function TuReportSectionTypesAdminPanel() {
   }
 
   const seedStandardRows = async () => {
+    if (seeding) return
     setError(null)
+    setSeeding(true)
     try {
       const seededRows = await upsertStandardSectionTypes(settingsClient)
       setRows(seededRows)
@@ -198,11 +204,13 @@ export default function TuReportSectionTypesAdminPanel() {
     } catch (seedError) {
       setError(seedError instanceof Error ? seedError.message : 'Kunde inte lägga in standardrubriker.')
       return
+    } finally {
+      setSeeding(false)
     }
   }
 
   const saveDraft = async () => {
-    if (!draft) return
+    if (!draft || saving) return
     const title = draft.title.trim()
     const key = draft.id ? draft.key.trim() : createKeyFromTitle(draft.key || title)
 
@@ -226,57 +234,69 @@ export default function TuReportSectionTypesAdminPanel() {
     }
 
     setError(null)
-    if (draft.id) {
-      const { error: updateError } = await settingsClient
-        .from('settings_tu_report_section_types')
-        .update(payload)
-        .eq('id', draft.id)
+    setSaving(true)
+    try {
+      if (draft.id) {
+        const { error: updateError } = await settingsClient
+          .from('settings_tu_report_section_types')
+          .update(payload)
+          .eq('id', draft.id)
 
-      if (updateError) {
-        setError(updateError.message)
+        if (updateError) {
+          setError(updateError.message)
+          return
+        }
+
+        setRows((current) =>
+          current.map((row) => (row.id === draft.id ? ({ ...row, ...payload } as TuReportSectionTypeRow) : row))
+        )
+        setDraft(null)
+        return
+      }
+
+      const { data, error: insertError } = await settingsClient
+        .from('settings_tu_report_section_types')
+        .insert(payload)
+        .select('id, key, title, description, sort_order, is_active, is_system')
+        .single()
+
+      if (insertError) {
+        setError(insertError.message)
         return
       }
 
       setRows((current) =>
-        current.map((row) => (row.id === draft.id ? ({ ...row, ...payload } as TuReportSectionTypeRow) : row))
+        [...current, data as TuReportSectionTypeRow].sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title, 'sv'))
       )
       setDraft(null)
-      return
+    } finally {
+      setSaving(false)
     }
-
-    const { data, error: insertError } = await settingsClient
-      .from('settings_tu_report_section_types')
-      .insert(payload)
-      .select('id, key, title, description, sort_order, is_active, is_system')
-      .single()
-
-    if (insertError) {
-      setError(insertError.message)
-      return
-    }
-
-    setRows((current) =>
-      [...current, data as TuReportSectionTypeRow].sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title, 'sv'))
-    )
-    setDraft(null)
   }
 
   const deleteRow = async (row: TuReportSectionTypeRow) => {
+    if (deletingRowId) return
     if (row.is_system) {
       setError('Systemdelar kan inte tas bort. Inaktivera dem om de inte ska visas i dropdownen.')
       return
     }
     if (!confirm(`Ta bort "${row.title}"? Befintliga utlåtanden som redan använder delen påverkas inte.`)) return
-    const { error: deleteError } = await settingsClient
-      .from('settings_tu_report_section_types')
-      .delete()
-      .eq('id', row.id)
-    if (deleteError) {
-      setError(deleteError.message)
-      return
+    setError(null)
+    setDeletingRowId(row.id)
+    try {
+      const { error: deleteError } = await settingsClient
+        .from('settings_tu_report_section_types')
+        .delete()
+        .eq('id', row.id)
+      if (deleteError) {
+        setError(deleteError.message)
+        return
+      }
+      setRows((current) => current.filter((item) => item.id !== row.id))
+      if (draft?.id === row.id) setDraft(null)
+    } finally {
+      setDeletingRowId(null)
     }
-    setRows((current) => current.filter((item) => item.id !== row.id))
-    if (draft?.id === row.id) setDraft(null)
   }
 
   return (
@@ -307,9 +327,12 @@ export default function TuReportSectionTypesAdminPanel() {
           <button
             type="button"
             onClick={() => void seedStandardRows()}
-            className="h-9 rounded border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 hover:bg-violet-50"
+            disabled={seeding}
+            aria-busy={seeding}
+            className="inline-flex h-9 items-center justify-center gap-2 rounded border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-wait disabled:opacity-60"
           >
-            Lägg in standardrubriker
+            {seeding ? <Loader2 size={14} className="animate-spin" aria-hidden /> : null}
+            {seeding ? 'Lägger in...' : 'Lägg in standardrubriker'}
           </button>
         </div>
       </div>
@@ -337,9 +360,12 @@ export default function TuReportSectionTypesAdminPanel() {
               <button
                 type="button"
                 onClick={() => void saveDraft()}
-                className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700"
+                disabled={saving}
+                aria-busy={saving}
+                className="inline-flex items-center gap-2 rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-wait disabled:bg-emerald-300"
               >
-                Spara
+                {saving ? <Loader2 size={14} className="animate-spin" aria-hidden /> : null}
+                {saving ? 'Sparar...' : 'Spara'}
               </button>
             </div>
           </div>
@@ -430,8 +456,10 @@ export default function TuReportSectionTypesAdminPanel() {
             </tr>
           </thead>
           <tbody className="divide-y">
-            {filteredRows.map((row) => (
-              <tr key={row.id}>
+            {filteredRows.map((row) => {
+              const deleting = deletingRowId === row.id
+              return (
+              <tr key={row.id} className={deleting ? 'bg-violet-50/60' : undefined}>
                 <td className="py-2 pr-3 font-mono text-xs">{row.key}</td>
                 <td className="py-2 pr-3 font-medium text-gray-950">{row.title}</td>
                 <td className="max-w-[28rem] truncate py-2 pr-3 text-gray-600" title={row.description ?? ''}>
@@ -444,7 +472,8 @@ export default function TuReportSectionTypesAdminPanel() {
                   <button
                     type="button"
                     onClick={() => openEditDraft(row)}
-                    className="mr-3 text-emerald-700 underline"
+                    disabled={Boolean(deletingRowId)}
+                    className="mr-3 text-emerald-700 underline disabled:cursor-not-allowed disabled:text-gray-400"
                   >
                     Editera
                   </button>
@@ -452,14 +481,18 @@ export default function TuReportSectionTypesAdminPanel() {
                     <button
                       type="button"
                       onClick={() => void deleteRow(row)}
-                      className="text-rose-700 underline"
+                      disabled={Boolean(deletingRowId)}
+                      aria-busy={deleting}
+                      className="inline-flex items-center gap-1 text-rose-700 underline disabled:cursor-wait disabled:text-gray-400"
                     >
-                      Ta bort
+                      {deleting ? <Loader2 size={13} className="animate-spin" aria-hidden /> : null}
+                      {deleting ? 'Tar bort...' : 'Ta bort'}
                     </button>
                   ) : null}
                 </td>
               </tr>
-            ))}
+              )
+            })}
             {!loading && filteredRows.length === 0 ? (
               <tr>
                 <td className="py-4 text-gray-500" colSpan={7}>

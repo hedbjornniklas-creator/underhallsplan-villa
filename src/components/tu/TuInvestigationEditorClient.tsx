@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ChevronDown, ChevronUp, ClipboardList, FileText, Image as ImageIcon, Mic, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, ClipboardList, FileText, Image as ImageIcon, Loader2, Mic, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import TuEvidenceWorkspace from '@/components/tu/TuEvidenceWorkspace'
 import TuFieldLogWorkspace from '@/components/tu/TuFieldLogWorkspace'
@@ -27,6 +27,9 @@ const MAX_IMAGE_UPLOAD_BYTES = 15 * 1024 * 1024
 
 type TuImageSectionKey = 'bank' | 'appendix' | 'cover'
 type TuImageViewCount = 9 | 4 | 1
+type TuImageActionTarget = TuImageSectionKey | 'delete' | 'reorder'
+type TuDocumentActionTarget = 'include' | 'delete'
+type AppendixImageOrderUpdate = { id: string; sortOrder: number }
 
 type TuInvestigationImage = {
   id: string
@@ -745,13 +748,19 @@ export default function TuInvestigationEditorClient({
   const [imagesLoading, setImagesLoading] = useState(true)
   const [imageBusy, setImageBusy] = useState(false)
   const [imageActionIds, setImageActionIds] = useState<Set<string>>(() => new Set())
+  const [imageActionTargets, setImageActionTargets] = useState<Record<string, TuImageActionTarget>>({})
+  const [imageDropBusySection, setImageDropBusySection] = useState<TuImageSectionKey | null>(null)
   const [imageError, setImageError] = useState<string | null>(null)
   const [imageUploadProgress, setImageUploadProgress] = useState<string | null>(null)
   const [imageViewCount, setImageViewCount] = useState<TuImageViewCount>(9)
   const [previewImageId, setPreviewImageId] = useState<string | null>(null)
+  const [appendixReorderStatus, setAppendixReorderStatus] = useState<'idle' | 'queued' | 'saving'>('idle')
+  const [appendixInsertIndex, setAppendixInsertIndex] = useState<number | null>(null)
+  const [appendixDropBusyIndex, setAppendixDropBusyIndex] = useState<number | null>(null)
   const [documents, setDocuments] = useState<TuInvestigationDocument[]>([])
   const [documentsLoading, setDocumentsLoading] = useState(true)
   const [documentBusy, setDocumentBusy] = useState(false)
+  const [documentActionTargets, setDocumentActionTargets] = useState<Record<string, TuDocumentActionTarget>>({})
   const [documentError, setDocumentError] = useState<string | null>(null)
   const [documentDropActive, setDocumentDropActive] = useState(false)
   const [coverDropActive, setCoverDropActive] = useState(false)
@@ -787,6 +796,10 @@ export default function TuInvestigationEditorClient({
   const documentFileInputRef = useRef<HTMLInputElement>(null)
   const imageErrorRef = useRef<HTMLDivElement>(null)
   const pendingFocusSectionIdRef = useRef<string | null>(null)
+  const imagesRef = useRef<TuInvestigationImage[]>([])
+  const appendixReorderTimerRef = useRef<number | null>(null)
+  const appendixReorderVersionRef = useRef(0)
+  const appendixReorderUpdatesRef = useRef<AppendixImageOrderUpdate[]>([])
 
   const saveTuPatch = useCallback(
     async (body: Record<string, unknown>): Promise<TuSavePatchResponse> => {
@@ -822,8 +835,20 @@ export default function TuInvestigationEditorClient({
   }, [draft])
 
   useEffect(() => {
+    imagesRef.current = images
+  }, [images])
+
+  useEffect(() => {
     objectDetailsRef.current = objectDetails
   }, [objectDetails])
+
+  useEffect(() => {
+    return () => {
+      if (appendixReorderTimerRef.current) {
+        window.clearTimeout(appendixReorderTimerRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     assignmentPartiesRef.current = assignmentParties
@@ -1275,6 +1300,52 @@ export default function TuInvestigationEditorClient({
         ? 'Kunde inte spara'
         : `Sparad: ${autosaveSavedAt}`
 
+  const imageSectionLabel = (sectionKey: TuImageSectionKey) => {
+    if (sectionKey === 'cover') return 'omslagsbild'
+    if (sectionKey === 'appendix') return 'bildbilaga'
+    return 'bildbank'
+  }
+
+  const setImageActionTarget = (imageId: string, target: TuImageActionTarget | null) => {
+    setImageActionIds((current) => {
+      const next = new Set(current)
+      if (target) {
+        next.add(imageId)
+      } else {
+        next.delete(imageId)
+      }
+      return next
+    })
+    setImageActionTargets((current) => {
+      const next = { ...current }
+      if (target) {
+        next[imageId] = target
+      } else {
+        delete next[imageId]
+      }
+      return next
+    })
+  }
+
+  const setDocumentActionTarget = (documentId: string, target: TuDocumentActionTarget | null) => {
+    setDocumentActionTargets((current) => {
+      const next = { ...current }
+      if (target) {
+        next[documentId] = target
+      } else {
+        delete next[documentId]
+      }
+      return next
+    })
+  }
+
+  const showImageOperationMessage = (message: string) => {
+    setImageUploadProgress(message)
+    window.setTimeout(() => {
+      setImageUploadProgress((current) => (current === message ? null : current))
+    }, 2500)
+  }
+
   const uploadImages = async (files: File[], sectionKey: TuImageSectionKey) => {
     if (locked || files.length === 0) return []
     const imageFiles = files.filter(isImageFile)
@@ -1295,6 +1366,7 @@ export default function TuInvestigationEditorClient({
     }
 
     setImageBusy(true)
+    setImageDropBusySection(sectionKey)
     setImageError(null)
     setImageUploadProgress(`Startar uppladdning av ${imageFiles.length} bild${imageFiles.length === 1 ? '' : 'er'}...`)
     const uploadedImages: TuInvestigationImage[] = []
@@ -1362,7 +1434,11 @@ export default function TuInvestigationEditorClient({
         const completePayload = (await completeResponse.json().catch(() => ({}))) as ImageApiResponse
         const nextImages = completePayload.images ?? (completePayload.image ? [completePayload.image] : [])
         uploadedImages.push(...nextImages)
-        setImages((current) => upsertImages(current, nextImages))
+        setImages((current) => {
+          const next = upsertImages(current, nextImages)
+          imagesRef.current = next
+          return next
+        })
       }
       setImageUploadProgress(`Uppladdning klar: ${uploadedImages.length} bild${uploadedImages.length === 1 ? '' : 'er'}.`)
       return uploadedImages.map((image) => image.id)
@@ -1371,6 +1447,7 @@ export default function TuInvestigationEditorClient({
       return uploadedImages.map((image) => image.id)
     } finally {
       setImageBusy(false)
+      setImageDropBusySection(null)
       window.setTimeout(() => {
         setImageUploadProgress(null)
       }, 3500)
@@ -1427,6 +1504,7 @@ export default function TuInvestigationEditorClient({
     if (!previewImage) return null
     const canNavigate = previewImages.length > 1 && previewImageIndex >= 0
     const previewImageActionBusy = imageBusy || imageActionIds.has(previewImage.id)
+    const previewActionTarget = imageActionTargets[previewImage.id] ?? null
     const sectionLabel =
       previewImage.sectionKey === 'cover'
         ? 'Omslagsbild'
@@ -1487,19 +1565,29 @@ export default function TuInvestigationEditorClient({
                 type="button"
                 onClick={() => void moveImageToSection(previewImage.id, 'appendix')}
                 disabled={locked || previewImageActionBusy || previewImage.sectionKey === 'appendix'}
+                aria-busy={previewActionTarget === 'appendix'}
                 className="inline-flex h-9 items-center gap-2 rounded-md border border-white/25 bg-white px-3 text-xs font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/45"
               >
-                <MoveDown size={14} aria-hidden />
-                {previewImage.sectionKey === 'appendix' ? 'Finns i bilaga' : 'Lägg till i bilaga'}
+                {previewActionTarget === 'appendix' ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <MoveDown size={14} aria-hidden />}
+                {previewActionTarget === 'appendix'
+                  ? 'Lägger till...'
+                  : previewImage.sectionKey === 'appendix'
+                    ? 'Finns i bilaga'
+                    : 'Lägg till i bilaga'}
               </button>
               <button
                 type="button"
                 onClick={() => void moveImageToSection(previewImage.id, 'cover')}
                 disabled={locked || previewImageActionBusy || previewImage.sectionKey === 'cover'}
+                aria-busy={previewActionTarget === 'cover'}
                 className="inline-flex h-9 items-center gap-2 rounded-md bg-violet-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/45"
               >
-                <ImageIcon size={14} aria-hidden />
-                {previewImage.sectionKey === 'cover' ? 'Vald omslagsbild' : 'Använd som omslagsbild'}
+                {previewActionTarget === 'cover' ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <ImageIcon size={14} aria-hidden />}
+                {previewActionTarget === 'cover'
+                  ? 'Väljer...'
+                  : previewImage.sectionKey === 'cover'
+                    ? 'Vald omslagsbild'
+                    : 'Använd som omslagsbild'}
               </button>
             </div>
           </div>
@@ -1508,22 +1596,31 @@ export default function TuInvestigationEditorClient({
     )
   }
 
+  const patchImageRequest = async (imageId: string, patch: Record<string, unknown>) => {
+    const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}/images`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageId, ...patch }),
+    })
+    const payload = (await response.json().catch(() => ({}))) as ImageApiResponse
+    if (!response.ok) throw new Error(payload.error ?? 'Kunde inte spara bild.')
+    return payload.image ?? null
+  }
+
   const patchImage = async (imageId: string, patch: Record<string, unknown>) => {
     if (locked) return null
     setImageBusy(true)
     setImageError(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}/images`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageId, ...patch }),
-      })
-      const payload = (await response.json().catch(() => ({}))) as ImageApiResponse
-      if (!response.ok) throw new Error(payload.error ?? 'Kunde inte spara bild.')
-      if (payload.image) {
-        setImages((current) => upsertImages(current, [payload.image as TuInvestigationImage]))
+      const savedImage = await patchImageRequest(imageId, patch)
+      if (savedImage) {
+        setImages((current) => {
+          const next = upsertImages(current, [savedImage as TuInvestigationImage])
+          imagesRef.current = next
+          return next
+        })
       }
-      return payload.image ?? null
+      return savedImage
     } catch (patchError) {
       setImageError(patchError instanceof Error ? patchError.message : 'Kunde inte spara bild.')
       return null
@@ -1533,8 +1630,9 @@ export default function TuInvestigationEditorClient({
   }
 
   const deleteImage = async (imageId: string) => {
-    if (locked) return
+    if (locked || imageBusy || imageActionIds.has(imageId)) return
     if (!confirm('Ta bort bilden?')) return
+    setImageActionTarget(imageId, 'delete')
     setImageBusy(true)
     setImageError(null)
     try {
@@ -1545,11 +1643,16 @@ export default function TuInvestigationEditorClient({
       })
       const payload = (await response.json().catch(() => ({}))) as ImageApiResponse
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte ta bort bild.')
-      setImages((current) => current.filter((image) => image.id !== imageId))
+      setImages((current) => {
+        const next = current.filter((image) => image.id !== imageId)
+        imagesRef.current = next
+        return next
+      })
     } catch (deleteError) {
       setImageError(deleteError instanceof Error ? deleteError.message : 'Kunde inte ta bort bild.')
     } finally {
       setImageBusy(false)
+      setImageActionTarget(imageId, null)
     }
   }
 
@@ -1573,12 +1676,15 @@ export default function TuInvestigationEditorClient({
 
   const moveImageToSection = async (imageId: string, sectionKey: TuImageSectionKey) => {
     if (locked || imageBusy || imageActionIds.has(imageId)) return
+    const movingImage = images.find((image) => image.id === imageId)
+    if (!movingImage) return
+    if (movingImage.sectionKey === sectionKey) {
+      showImageOperationMessage(`Bilden finns redan i ${imageSectionLabel(sectionKey)}.`)
+      return
+    }
 
-    setImageActionIds((current) => {
-      const next = new Set(current)
-      next.add(imageId)
-      return next
-    })
+    setImageActionTarget(imageId, sectionKey)
+    setImageDropBusySection(sectionKey)
 
     try {
       if (sectionKey === 'cover') {
@@ -1592,19 +1698,19 @@ export default function TuInvestigationEditorClient({
         }
       }
 
-      await patchImage(imageId, {
+      const movedImage = await patchImage(imageId, {
         sectionKey,
         sortOrder:
           sectionKey === 'appendix'
             ? lastSortOrderForSection(sectionKey, imageId)
             : firstSortOrderForSection(sectionKey, imageId),
       })
+      if (movedImage) {
+        showImageOperationMessage(`Bilden flyttades till ${imageSectionLabel(sectionKey)}.`)
+      }
     } finally {
-      setImageActionIds((current) => {
-        const next = new Set(current)
-        next.delete(imageId)
-        return next
-      })
+      setImageActionTarget(imageId, null)
+      setImageDropBusySection(null)
     }
   }
 
@@ -1613,6 +1719,7 @@ export default function TuInvestigationEditorClient({
     setCoverDropActive(false)
     setBankDropActive(false)
     setAppendixDropActive(false)
+    setAppendixInsertIndex(null)
     if (locked) return
 
     const droppedFiles = getDroppedImageFiles(event)
@@ -1634,34 +1741,216 @@ export default function TuInvestigationEditorClient({
     event.dataTransfer.dropEffect = hasExternalImageFiles(event) ? 'copy' : 'move'
   }
 
-  const handleMoveAppendixImage = async (imageId: string, direction: -1 | 1) => {
-    const currentIndex = appendixImages.findIndex((image) => image.id === imageId)
-    const targetIndex = currentIndex + direction
-    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= appendixImages.length) return
-
-    const reordered = [...appendixImages]
-    const current = reordered[currentIndex]
-    const target = reordered[targetIndex]
-    reordered[currentIndex] = target
-    reordered[targetIndex] = current
-
-    const updates = reordered.map((image, index) => ({
+  const buildAppendixOrderUpdates = (visibleOrder: TuInvestigationImage[]) =>
+    [...visibleOrder].reverse().map((image, index) => ({
       id: image.id,
       sortOrder: (index + 1) * 10,
     }))
 
-    setImages((currentImages) =>
-      sortTuImages(
+  const applyAppendixVisibleOrder = (
+    visibleOrder: TuInvestigationImage[],
+    options: { movedImageId?: string } = {}
+  ) => {
+    const updates = buildAppendixOrderUpdates(visibleOrder)
+    const updateById = new Map(updates.map((update) => [update.id, update.sortOrder]))
+
+    setImages((currentImages) => {
+      const nextImages = sortTuImages(
         currentImages.map((image) => {
-          const update = updates.find((item) => item.id === image.id)
-          return update ? { ...image, sortOrder: update.sortOrder } : image
+          const sortOrder = updateById.get(image.id)
+          if (sortOrder === undefined) return image
+          return {
+            ...image,
+            sectionKey: image.id === options.movedImageId ? 'appendix' : image.sectionKey,
+            sortOrder,
+          }
         })
       )
-    )
+      imagesRef.current = nextImages
+      return nextImages
+    })
 
-    for (const update of updates) {
-      await patchImage(update.id, { sortOrder: update.sortOrder })
+    scheduleAppendixImageOrderSave(updates)
+    return updates
+  }
+
+  const persistAppendixImageOrder = async (version: number) => {
+    const updates = appendixReorderUpdatesRef.current
+    if (updates.length === 0) {
+      if (version === appendixReorderVersionRef.current) setAppendixReorderStatus('idle')
+      return
     }
+
+    setAppendixReorderStatus('saving')
+    try {
+      await Promise.all(
+        updates.map((update) => patchImageRequest(update.id, { sortOrder: update.sortOrder }))
+      )
+    } catch (orderError) {
+      setImageError(orderError instanceof Error ? orderError.message : 'Kunde inte spara bildordningen.')
+    } finally {
+      if (version === appendixReorderVersionRef.current) {
+        appendixReorderUpdatesRef.current = []
+        setAppendixReorderStatus('idle')
+      }
+    }
+  }
+
+  const scheduleAppendixImageOrderSave = (updates: AppendixImageOrderUpdate[]) => {
+    appendixReorderUpdatesRef.current = updates
+    appendixReorderVersionRef.current += 1
+    const version = appendixReorderVersionRef.current
+    setAppendixReorderStatus('queued')
+    if (appendixReorderTimerRef.current) {
+      window.clearTimeout(appendixReorderTimerRef.current)
+    }
+    appendixReorderTimerRef.current = window.setTimeout(() => {
+      appendixReorderTimerRef.current = null
+      void persistAppendixImageOrder(version)
+    }, 550)
+  }
+
+  const insertImageInAppendixVisibleOrder = async (imageId: string, rawInsertIndex: number) => {
+    if (locked || imageBusy || imageActionIds.has(imageId)) return
+    const allImages = imagesRef.current
+    const previousImages = allImages
+    const movingImage = allImages.find((image) => image.id === imageId)
+    if (!movingImage) return
+
+    const currentVisibleOrder = sortTuImagesNewestFirst(
+      allImages.filter((image) => image.sectionKey === 'appendix' && image.id !== imageId)
+    )
+    const originalVisibleIndex = sortTuImagesNewestFirst(
+      allImages.filter((image) => image.sectionKey === 'appendix')
+    ).findIndex((image) => image.id === imageId)
+    const adjustedInsertIndex =
+      originalVisibleIndex >= 0 && originalVisibleIndex < rawInsertIndex ? rawInsertIndex - 1 : rawInsertIndex
+    const insertIndex = Math.max(0, Math.min(adjustedInsertIndex, currentVisibleOrder.length))
+    const nextVisibleOrder = [...currentVisibleOrder]
+    nextVisibleOrder.splice(insertIndex, 0, { ...movingImage, sectionKey: 'appendix' })
+
+    const updates = applyAppendixVisibleOrder(nextVisibleOrder, { movedImageId: imageId })
+    const movedUpdate = updates.find((update) => update.id === imageId)
+    if (!movedUpdate) return
+
+    if (movingImage.sectionKey !== 'appendix') {
+      setImageActionTarget(imageId, 'appendix')
+      setImageDropBusySection('appendix')
+      setAppendixDropBusyIndex(insertIndex)
+      try {
+        const savedImage = await patchImageRequest(imageId, {
+          sectionKey: 'appendix',
+          sortOrder: movedUpdate.sortOrder,
+        })
+        if (savedImage) {
+          setImages((current) => {
+            const next = upsertImages(current, [savedImage as TuInvestigationImage])
+            imagesRef.current = next
+            return next
+          })
+        }
+        showImageOperationMessage('Bilden lades in i bildbilagan.')
+      } catch (moveError) {
+        if (appendixReorderTimerRef.current) {
+          window.clearTimeout(appendixReorderTimerRef.current)
+          appendixReorderTimerRef.current = null
+        }
+        appendixReorderUpdatesRef.current = []
+        appendixReorderVersionRef.current += 1
+        setAppendixReorderStatus('idle')
+        imagesRef.current = previousImages
+        setImages(previousImages)
+        setImageError(moveError instanceof Error ? moveError.message : 'Kunde inte lägga in bilden i bilagan.')
+      } finally {
+        setImageActionTarget(imageId, null)
+        setImageDropBusySection(null)
+        setAppendixDropBusyIndex(null)
+      }
+    }
+  }
+
+  const handleAppendixInsertDragOver = (event: React.DragEvent, insertIndex: number) => {
+    if (locked) return
+    if (!hasExternalImageFiles(event) && !hasDraggedTuImage(event)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = hasExternalImageFiles(event) ? 'copy' : 'move'
+    setAppendixInsertIndex(insertIndex)
+  }
+
+  const handleAppendixInsertDrop = async (event: React.DragEvent, insertIndex: number) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setAppendixInsertIndex(null)
+    if (locked) return
+
+    const imageId = event.dataTransfer.getData(TU_IMAGE_DRAG_DATA_TYPE)
+    if (imageId) {
+      await insertImageInAppendixVisibleOrder(imageId, insertIndex)
+      return
+    }
+
+    const droppedFiles = getDroppedImageFiles(event)
+    if (droppedFiles.length > 0) {
+      const uploadedImageIds = await uploadImages(droppedFiles, 'appendix')
+      if (uploadedImageIds.length > 0) {
+        const uploadedIdSet = new Set(uploadedImageIds)
+        const allImages = imagesRef.current
+        const uploadedImages = uploadedImageIds
+          .map((uploadedImageId) => allImages.find((image) => image.id === uploadedImageId))
+          .filter((image): image is TuInvestigationImage => Boolean(image))
+        const currentVisibleOrder = sortTuImagesNewestFirst(
+          allImages.filter((image) => image.sectionKey === 'appendix' && !uploadedIdSet.has(image.id))
+        )
+        const nextVisibleOrder = [...currentVisibleOrder]
+        const insertAt = Math.max(0, Math.min(insertIndex, currentVisibleOrder.length))
+        nextVisibleOrder.splice(insertAt, 0, ...uploadedImages)
+        applyAppendixVisibleOrder(nextVisibleOrder)
+      }
+    }
+  }
+
+  const handleMoveAppendixImage = (imageId: string, visibleDirection: -1 | 1) => {
+    if (locked || imageBusy || imageActionIds.has(imageId)) return
+    const visibleOrder = sortTuImagesNewestFirst(
+      imagesRef.current.filter((image) => image.sectionKey === 'appendix')
+    )
+    const currentIndex = visibleOrder.findIndex((image) => image.id === imageId)
+    const targetIndex = currentIndex + visibleDirection
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= visibleOrder.length) return
+
+    const nextVisibleOrder = [...visibleOrder]
+    const current = nextVisibleOrder[currentIndex]
+    const target = nextVisibleOrder[targetIndex]
+    nextVisibleOrder[currentIndex] = target
+    nextVisibleOrder[targetIndex] = current
+
+    applyAppendixVisibleOrder(nextVisibleOrder)
+  }
+
+  const renderAppendixInsertZone = (insertIndex: number) => {
+    const active = appendixInsertIndex === insertIndex || appendixDropBusyIndex === insertIndex
+    return (
+      <div
+        aria-label="Släpp bild här i bildbilagan"
+        onDragEnter={(event) => handleAppendixInsertDragOver(event, insertIndex)}
+        onDragOver={(event) => handleAppendixInsertDragOver(event, insertIndex)}
+        onDragLeave={() => {
+          setAppendixInsertIndex((current) => (current === insertIndex ? null : current))
+        }}
+        onDrop={(event) => void handleAppendixInsertDrop(event, insertIndex)}
+        className={`group flex h-5 items-center rounded-md transition ${
+          locked ? 'pointer-events-none opacity-50' : ''
+        }`}
+      >
+        <span
+          className={`block h-1 w-full rounded-full border transition ${
+            active
+              ? 'border-violet-500 bg-violet-500 shadow-[0_0_0_4px_rgba(124,58,237,0.12)]'
+              : 'border-transparent bg-transparent group-hover:border-violet-200 group-hover:bg-violet-100'
+          }`}
+        />
+      </div>
+    )
   }
 
   const uploadDocument = async (file: File | null | undefined) => {
@@ -1690,9 +1979,10 @@ export default function TuInvestigationEditorClient({
   }
 
   const deleteDocument = async (documentId: string) => {
-    if (locked) return
+    if (locked || documentBusy || documentActionTargets[documentId]) return
     if (!confirm('Ta bort dokumentet?')) return
 
+    setDocumentActionTarget(documentId, 'delete')
     setDocumentBusy(true)
     setDocumentError(null)
     try {
@@ -1708,12 +1998,14 @@ export default function TuInvestigationEditorClient({
       setDocumentError(deleteError instanceof Error ? deleteError.message : 'Kunde inte ta bort dokument.')
     } finally {
       setDocumentBusy(false)
+      setDocumentActionTarget(documentId, null)
     }
   }
 
   const patchDocument = async (documentId: string, patch: Record<string, unknown>) => {
-    if (locked) return
+    if (locked || documentBusy || documentActionTargets[documentId]) return
 
+    setDocumentActionTarget(documentId, 'include')
     setDocumentBusy(true)
     setDocumentError(null)
     try {
@@ -1729,6 +2021,7 @@ export default function TuInvestigationEditorClient({
       setDocumentError(patchError instanceof Error ? patchError.message : 'Kunde inte spara dokument.')
     } finally {
       setDocumentBusy(false)
+      setDocumentActionTarget(documentId, null)
     }
   }
 
@@ -2089,10 +2382,11 @@ export default function TuInvestigationEditorClient({
               type="button"
               onClick={() => coverFileInputRef.current?.click()}
               disabled={locked || imageBusy}
+              aria-busy={imageDropBusySection === 'cover'}
               className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
-              <Upload size={16} aria-hidden />
-              Ladda upp omslag
+              {imageDropBusySection === 'cover' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />}
+              {imageDropBusySection === 'cover' ? 'Bearbetar...' : 'Ladda upp omslag'}
             </button>
             <input
               ref={coverFileInputRef}
@@ -2109,31 +2403,40 @@ export default function TuInvestigationEditorClient({
 
           <div
             onDragEnter={() => !locked && setCoverDropActive(true)}
-            onDragLeave={() => setCoverDropActive(false)}
-            onDragOver={handleDragOverDropZone}
-            onDrop={(event) => void handleDropToSection(event, 'cover')}
-            className={`flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed px-4 py-5 text-center transition ${
-              coverDropActive
+              onDragLeave={() => setCoverDropActive(false)}
+              onDragOver={handleDragOverDropZone}
+              onDrop={(event) => void handleDropToSection(event, 'cover')}
+              className={`flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed px-4 py-5 text-center transition ${
+              coverDropActive || imageDropBusySection === 'cover'
                 ? 'border-violet-500 bg-violet-50 text-violet-900'
                 : 'border-violet-200 bg-violet-50/50 text-gray-600'
-            } ${locked ? 'opacity-60' : ''}`}
-          >
-            {coverImage ? (
-              <div className="grid w-full gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
-                <button
-                  type="button"
-                  onClick={() => setPreviewImageId(coverImage.id)}
-                  className="block overflow-hidden rounded-md text-left focus:outline-none focus:ring-2 focus:ring-violet-300"
-                  aria-label="Visa omslagsbild"
-                  title="Visa bild"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={coverImage.publicUrl}
-                    alt={coverImage.caption ?? 'Omslagsbild'}
-                    className="aspect-[4/3] w-full object-cover"
-                  />
-                </button>
+            } ${locked ? 'opacity-60' : ''} ${imageDropBusySection === 'cover' ? 'cursor-wait ring-2 ring-violet-100' : ''}`}
+              aria-busy={imageDropBusySection === 'cover'}
+            >
+              {coverImage ? (
+                <div className="grid w-full gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
+                <div className="relative overflow-hidden rounded-md">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewImageId(coverImage.id)}
+                    disabled={imageActionIds.has(coverImage.id)}
+                    className="block overflow-hidden rounded-md text-left focus:outline-none focus:ring-2 focus:ring-violet-300 disabled:cursor-wait"
+                    aria-label="Visa omslagsbild"
+                    title="Visa bild"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={coverImage.publicUrl}
+                      alt={coverImage.caption ?? 'Omslagsbild'}
+                      className={`aspect-[4/3] w-full object-cover ${imageActionIds.has(coverImage.id) ? 'opacity-55' : ''}`}
+                    />
+                  </button>
+                  {imageActionIds.has(coverImage.id) ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-white/55 text-violet-900">
+                      <Loader2 size={18} className="animate-spin" aria-hidden />
+                    </div>
+                  ) : null}
+                </div>
                 <div className="text-left">
                   <p className="text-sm font-semibold text-gray-950">Vald omslagsbild</p>
                   <p className="mt-1 text-sm text-gray-600">
@@ -2143,29 +2446,42 @@ export default function TuInvestigationEditorClient({
                     <button
                       type="button"
                       onClick={() => void moveImageToSection(coverImage.id, 'bank')}
-                      disabled={locked || imageBusy}
-                      className="rounded-md border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                      disabled={locked || imageBusy || imageActionIds.has(coverImage.id)}
+                      aria-busy={imageActionTargets[coverImage.id] === 'bank'}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
                     >
-                      Flytta till bildbank
+                      {imageActionTargets[coverImage.id] === 'bank' ? <Loader2 size={12} className="animate-spin" aria-hidden /> : null}
+                      {imageActionTargets[coverImage.id] === 'bank' ? 'Flyttar...' : 'Flytta till bildbank'}
                     </button>
                     <button
                       type="button"
                       onClick={() => void deleteImage(coverImage.id)}
-                      disabled={locked || imageBusy}
+                      disabled={locked || imageBusy || imageActionIds.has(coverImage.id)}
+                      aria-busy={imageActionTargets[coverImage.id] === 'delete'}
                       className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
                       aria-label="Ta bort omslagsbild"
                       title="Ta bort omslagsbild"
                     >
-                      <Trash2 size={10} aria-hidden />
+                      {imageActionTargets[coverImage.id] === 'delete' ? <Loader2 size={10} className="animate-spin" aria-hidden /> : <Trash2 size={10} aria-hidden />}
                     </button>
                   </div>
                 </div>
               </div>
             ) : (
               <>
-                <ImageIcon size={24} className="mb-2 text-violet-500" aria-hidden />
-                <p className="text-sm font-medium">Släpp omslagsbild här</p>
-                <p className="mt-1 text-xs text-gray-500">Du kan även använda knappen ovan eller dra från bildbanken.</p>
+                {imageDropBusySection === 'cover' ? (
+                  <Loader2 size={24} className="mb-2 animate-spin text-violet-700" aria-hidden />
+                ) : (
+                  <ImageIcon size={24} className="mb-2 text-violet-500" aria-hidden />
+                )}
+                <p className="text-sm font-medium">
+                  {imageDropBusySection === 'cover' ? 'Väljer omslagsbild...' : 'Släpp omslagsbild här'}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  {imageDropBusySection === 'cover'
+                    ? 'Vänta tills bilden är sparad.'
+                    : 'Du kan även använda knappen ovan eller dra från bildbanken.'}
+                </p>
               </>
             )}
           </div>
@@ -2204,10 +2520,11 @@ export default function TuInvestigationEditorClient({
                   type="button"
                   onClick={() => bankFileInputRef.current?.click()}
                   disabled={locked || imageBusy}
+                  aria-busy={imageDropBusySection === 'bank'}
                   className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                 >
-                  <Upload size={16} aria-hidden />
-                  Ladda upp
+                  {imageDropBusySection === 'bank' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />}
+                  {imageDropBusySection === 'bank' ? 'Bearbetar...' : 'Ladda upp'}
                 </button>
               </div>
               <input
@@ -2230,14 +2547,27 @@ export default function TuInvestigationEditorClient({
               onDragOver={handleDragOverDropZone}
               onDrop={(event) => void handleDropToSection(event, 'bank')}
               className={`mb-4 flex ${bankImages.length > 0 ? 'min-h-16 py-3' : 'min-h-28 py-5'} flex-col items-center justify-center rounded-lg border border-dashed px-4 text-center transition ${
-                bankDropActive
+                bankDropActive || imageDropBusySection === 'bank'
                   ? 'border-violet-500 bg-violet-50 text-violet-900'
                   : 'border-violet-200 bg-violet-50/50 text-gray-600'
-              } ${locked ? 'opacity-60' : ''}`}
+              } ${locked ? 'opacity-60' : ''} ${imageDropBusySection === 'bank' ? 'cursor-wait ring-2 ring-violet-100' : ''}`}
+              aria-busy={imageDropBusySection === 'bank'}
             >
-              <ImageIcon size={24} className="mb-2 text-violet-500" aria-hidden />
-              <p className="text-sm font-medium">Släpp bilder här</p>
-              <p className="mt-1 text-xs text-gray-500">Eller dra tillbaka bilder från bilagan.</p>
+              {imageDropBusySection === 'bank' ? (
+                <Loader2 size={24} className="mb-2 animate-spin text-violet-700" aria-hidden />
+              ) : (
+                <ImageIcon size={24} className="mb-2 text-violet-500" aria-hidden />
+              )}
+              <p className="text-sm font-medium">
+                {imageDropBusySection === 'bank'
+                  ? 'Flyttar till bildbank...'
+                  : bankDropActive
+                    ? 'Släpp för att flytta till bildbank'
+                    : 'Släpp bilder här'}
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                {imageDropBusySection === 'bank' ? 'Vänta tills bilden är sparad.' : 'Eller dra tillbaka bilder från bilagan.'}
+              </p>
             </div>
 
             {imagesLoading ? (
@@ -2251,26 +2581,49 @@ export default function TuInvestigationEditorClient({
             ) : (
               <div className="max-h-[560px] overflow-y-auto pr-1">
                 <div className={getTuImageGridClass(imageViewCount)}>
-                  {bankImages.map((image) => (
+                  {bankImages.map((image) => {
+                    const actionTarget = imageActionTargets[image.id] ?? null
+                    const actionPending = Boolean(actionTarget)
+                    return (
                     <div
                       key={image.id}
-                      draggable={!locked}
+                      draggable={!locked && !actionPending && !imageBusy}
                       onDragStart={(event) => {
                         event.dataTransfer.effectAllowed = 'move'
                         event.dataTransfer.setData(TU_IMAGE_DRAG_DATA_TYPE, image.id)
                       }}
-                      className="group relative overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm"
+                      className={`group relative overflow-hidden rounded-md border bg-white shadow-sm transition ${
+                        actionPending ? 'cursor-wait border-violet-300 ring-2 ring-violet-100' : 'border-gray-200'
+                      }`}
+                      aria-busy={actionPending}
                     >
                       <button
                         type="button"
                         onClick={() => setPreviewImageId(image.id)}
-                        className="block w-full overflow-hidden text-left focus:outline-none focus:ring-2 focus:ring-violet-300"
+                        disabled={actionPending}
+                        className="block w-full overflow-hidden text-left focus:outline-none focus:ring-2 focus:ring-violet-300 disabled:cursor-wait"
                         aria-label="Visa bild"
                         title="Visa bild"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={image.publicUrl} alt={image.caption ?? 'TU-bild'} className={getTuImageClass(imageViewCount)} />
+                        <img
+                          src={image.publicUrl}
+                          alt={image.caption ?? 'TU-bild'}
+                          className={`${getTuImageClass(imageViewCount)} ${actionPending ? 'opacity-55' : ''}`}
+                        />
                       </button>
+                      {actionPending ? (
+                        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 bg-white/55 text-xs font-semibold text-violet-900">
+                          <Loader2 size={18} className="animate-spin" aria-hidden />
+                          {actionTarget === 'appendix'
+                            ? 'Lägger i bilaga'
+                            : actionTarget === 'cover'
+                              ? 'Väljer omslag'
+                              : actionTarget === 'delete'
+                                ? 'Tar bort'
+                                : 'Sparar'}
+                        </div>
+                      ) : null}
                       <div className="absolute bottom-1.5 right-1.5 flex gap-1 rounded-md bg-white/45 p-0.5 opacity-65 shadow-sm ring-1 ring-black/5 transition group-hover:bg-white/80 group-hover:opacity-100">
                         <button
                           type="button"
@@ -2278,12 +2631,13 @@ export default function TuInvestigationEditorClient({
                             event.stopPropagation()
                             void moveImageToSection(image.id, 'cover')
                           }}
-                          disabled={locked || imageBusy || imageActionIds.has(image.id)}
+                          disabled={locked || imageBusy || actionPending}
+                          aria-busy={actionTarget === 'cover'}
                           className="inline-flex h-6 w-6 items-center justify-center rounded bg-violet-700/75 text-white transition hover:bg-violet-800 hover:opacity-100 disabled:cursor-not-allowed disabled:bg-gray-300/60"
                           aria-label="Använd som omslag"
                           title="Använd som omslag"
                         >
-                          <ImageIcon size={11} aria-hidden />
+                          {actionTarget === 'cover' ? <Loader2 size={11} className="animate-spin" aria-hidden /> : <ImageIcon size={11} aria-hidden />}
                         </button>
                         <button
                           type="button"
@@ -2291,16 +2645,18 @@ export default function TuInvestigationEditorClient({
                             event.stopPropagation()
                             void moveImageToSection(image.id, 'appendix')
                           }}
-                          disabled={locked || imageBusy || imageActionIds.has(image.id)}
+                          disabled={locked || imageBusy || actionPending}
+                          aria-busy={actionTarget === 'appendix'}
                           className="inline-flex h-6 w-6 items-center justify-center rounded border border-violet-200/70 bg-white/75 text-violet-800 transition hover:bg-violet-50 hover:opacity-100 disabled:cursor-not-allowed disabled:border-gray-200/70 disabled:text-gray-400"
                           aria-label="Lägg i bilaga"
                           title="Lägg i bilaga"
                         >
-                          <MoveDown size={11} aria-hidden />
+                          {actionTarget === 'appendix' ? <Loader2 size={11} className="animate-spin" aria-hidden /> : <MoveDown size={11} aria-hidden />}
                         </button>
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -2310,18 +2666,25 @@ export default function TuInvestigationEditorClient({
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="text-base font-semibold text-gray-950">Bildbilaga</h2>
-                <p className="mt-1 text-sm text-gray-600">
-                  {appendixImages.length} bild{appendixImages.length === 1 ? '' : 'er'} i bilagan.
+              <p className="mt-1 text-sm text-gray-600">
+                {appendixImages.length} bild{appendixImages.length === 1 ? '' : 'er'} i bilagan.
+              </p>
+              {appendixReorderStatus !== 'idle' ? (
+                <p className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-violet-700">
+                  <Loader2 size={12} className="animate-spin" aria-hidden />
+                  {appendixReorderStatus === 'queued' ? 'Ordningen sparas strax...' : 'Sparar bildordning...'}
                 </p>
-              </div>
+              ) : null}
+            </div>
               <button
                 type="button"
                 onClick={() => appendixFileInputRef.current?.click()}
                 disabled={locked || imageBusy}
+                aria-busy={imageDropBusySection === 'appendix'}
                 className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
               >
-                <Upload size={16} aria-hidden />
-                Direkt till bilaga
+                {imageDropBusySection === 'appendix' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />}
+                {imageDropBusySection === 'appendix' ? 'Bearbetar...' : 'Direkt till bilaga'}
               </button>
               <input
                 ref={appendixFileInputRef}
@@ -2343,15 +2706,28 @@ export default function TuInvestigationEditorClient({
               onDragOver={handleDragOverDropZone}
               onDrop={(event) => void handleDropToSection(event, 'appendix')}
               className={`mb-4 flex ${appendixImages.length > 0 ? 'min-h-16 py-3' : 'min-h-28 py-5'} flex-col items-center justify-center rounded-lg border border-dashed px-4 text-center transition ${
-                appendixDropActive
+                appendixDropActive || imageDropBusySection === 'appendix'
                   ? 'border-violet-500 bg-violet-50 text-violet-900'
                   : 'border-violet-200 bg-violet-50/50 text-gray-600'
-              } ${locked ? 'opacity-60' : ''}`}
+              } ${locked ? 'opacity-60' : ''} ${imageDropBusySection === 'appendix' ? 'cursor-wait ring-2 ring-violet-100' : ''}`}
+              aria-busy={imageDropBusySection === 'appendix'}
             >
-              <ImageIcon size={24} className="mb-2 text-violet-500" aria-hidden />
-              <p className="text-sm font-medium">Släpp bilder i bilagan</p>
+              {imageDropBusySection === 'appendix' ? (
+                <Loader2 size={24} className="mb-2 animate-spin text-violet-700" aria-hidden />
+              ) : (
+                <ImageIcon size={24} className="mb-2 text-violet-500" aria-hidden />
+              )}
+              <p className="text-sm font-medium">
+                {imageDropBusySection === 'appendix'
+                  ? 'Lägger till i bilagan...'
+                  : appendixDropActive
+                    ? 'Släpp för att lägga i bildbilaga'
+                    : 'Släpp bilder i bilagan'}
+              </p>
               <p className="mt-1 text-xs text-gray-500">
-                Senaste bilden visas överst här. Utskriften följer ordningen bilderna lades till.
+                {imageDropBusySection === 'appendix'
+                  ? 'Vänta tills bilden är sparad innan du släpper nästa.'
+                  : 'Senaste bilden visas överst här. Utskriften följer ordningen bilderna lades till.'}
               </p>
             </div>
 
@@ -2361,30 +2737,55 @@ export default function TuInvestigationEditorClient({
               </div>
             ) : (
               <div className="max-h-[640px] space-y-3 overflow-y-auto pr-1">
-                {appendixImagesForEditor.map((image) => {
+                {renderAppendixInsertZone(0)}
+                {appendixImagesForEditor.map((image, visibleIndex) => {
                   const printIndex = appendixImages.findIndex((appendixImage) => appendixImage.id === image.id)
                   const printNumber = printIndex >= 0 ? printIndex + 1 : null
+                  const actionTarget = imageActionTargets[image.id] ?? null
+                  const actionPending = Boolean(actionTarget)
 
                   return (
-                    <div
-                      key={image.id}
-                      draggable={!locked}
-                      onDragStart={(event) => {
-                        event.dataTransfer.effectAllowed = 'move'
-                        event.dataTransfer.setData(TU_IMAGE_DRAG_DATA_TYPE, image.id)
-                      }}
-                      className="grid gap-3 rounded-md border border-gray-200 bg-white p-2 shadow-sm sm:grid-cols-[112px_minmax(0,1fr)]"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setPreviewImageId(image.id)}
-                        className="block overflow-hidden rounded-md text-left focus:outline-none focus:ring-2 focus:ring-violet-300 sm:w-28"
-                        aria-label="Visa bilagebild"
-                        title="Visa bild"
+                    <div key={image.id} className="space-y-3">
+                      <div
+                        draggable={!locked && !imageBusy && !actionPending}
+                        onDragStart={(event) => {
+                          event.dataTransfer.effectAllowed = 'move'
+                          event.dataTransfer.setData(TU_IMAGE_DRAG_DATA_TYPE, image.id)
+                        }}
+                        className={`grid gap-3 rounded-md border bg-white p-2 shadow-sm transition sm:grid-cols-[112px_minmax(0,1fr)] ${
+                          actionPending ? 'cursor-wait border-violet-300 ring-2 ring-violet-100' : 'border-gray-200'
+                        }`}
+                        aria-busy={actionPending}
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={image.publicUrl} alt={image.caption ?? 'Bilagebild'} className="aspect-square w-full object-cover" />
-                      </button>
+                      <div className="relative overflow-hidden rounded-md sm:w-28">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewImageId(image.id)}
+                          disabled={actionPending}
+                          className="block overflow-hidden rounded-md text-left focus:outline-none focus:ring-2 focus:ring-violet-300 disabled:cursor-wait"
+                          aria-label="Visa bilagebild"
+                          title="Visa bild"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={image.publicUrl}
+                            alt={image.caption ?? 'Bilagebild'}
+                            className={`aspect-square w-full object-cover ${actionPending ? 'opacity-55' : ''}`}
+                          />
+                        </button>
+                        {actionPending ? (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-white/55 text-[11px] font-semibold text-violet-900">
+                            <Loader2 size={16} className="animate-spin" aria-hidden />
+                            {actionTarget === 'bank'
+                              ? 'Flyttar'
+                              : actionTarget === 'cover'
+                                ? 'Väljer omslag'
+                                : actionTarget === 'delete'
+                                  ? 'Tar bort'
+                                  : 'Sparar'}
+                          </div>
+                        ) : null}
+                      </div>
                       <div className="min-w-0 space-y-2">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-xs font-medium text-gray-600">
@@ -2393,74 +2794,81 @@ export default function TuInvestigationEditorClient({
                           <div className="flex flex-wrap gap-1.5">
                             <button
                               type="button"
-                              onClick={() => void handleMoveAppendixImage(image.id, -1)}
-                              disabled={locked || imageBusy || printIndex <= 0}
+                              onClick={() => handleMoveAppendixImage(image.id, -1)}
+                              disabled={locked || imageBusy || actionPending || visibleIndex <= 0}
                               className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
-                              aria-label="Flytta tidigare i utskrift"
-                              title="Flytta tidigare i utskrift"
+                              aria-label="Flytta upp i listan"
+                              title="Flytta upp i listan"
                             >
                               <MoveUp size={10} aria-hidden />
                             </button>
                             <button
                               type="button"
-                              onClick={() => void handleMoveAppendixImage(image.id, 1)}
-                              disabled={locked || imageBusy || printIndex < 0 || printIndex === appendixImages.length - 1}
+                              onClick={() => handleMoveAppendixImage(image.id, 1)}
+                              disabled={locked || imageBusy || actionPending || visibleIndex === appendixImagesForEditor.length - 1}
                               className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-gray-200 text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
-                              aria-label="Flytta senare i utskrift"
-                              title="Flytta senare i utskrift"
+                              aria-label="Flytta ned i listan"
+                              title="Flytta ned i listan"
                             >
                               <MoveDown size={10} aria-hidden />
                             </button>
                           <button
                             type="button"
                             onClick={() => void moveImageToSection(image.id, 'bank')}
-                            disabled={locked || imageBusy}
+                            disabled={locked || imageBusy || actionPending}
+                            aria-busy={actionTarget === 'bank'}
                             className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
                             aria-label="Flytta till bildbank"
                             title="Flytta till bildbank"
                           >
-                            <ImageIcon size={10} aria-hidden />
+                            {actionTarget === 'bank' ? <Loader2 size={10} className="animate-spin" aria-hidden /> : <ImageIcon size={10} aria-hidden />}
                           </button>
                           <button
                             type="button"
                             onClick={() => void moveImageToSection(image.id, 'cover')}
-                            disabled={locked || imageBusy}
+                            disabled={locked || imageBusy || actionPending}
+                            aria-busy={actionTarget === 'cover'}
                             className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] bg-violet-700 text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                             aria-label="Använd som omslag"
                             title="Använd som omslag"
                           >
-                            <Upload size={10} aria-hidden />
+                            {actionTarget === 'cover' ? <Loader2 size={10} className="animate-spin" aria-hidden /> : <Upload size={10} aria-hidden />}
                           </button>
                           <button
                             type="button"
                             onClick={() => void deleteImage(image.id)}
-                            disabled={locked || imageBusy}
+                            disabled={locked || imageBusy || actionPending}
+                            aria-busy={actionTarget === 'delete'}
                             className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
                             aria-label="Ta bort bild"
                             title="Ta bort bild"
                           >
-                            <Trash2 size={10} aria-hidden />
+                            {actionTarget === 'delete' ? <Loader2 size={10} className="animate-spin" aria-hidden /> : <Trash2 size={10} aria-hidden />}
                           </button>
                         </div>
                       </div>
                       <textarea
                         value={image.caption ?? ''}
                         rows={3}
-                        disabled={locked}
+                        disabled={locked || actionPending}
                         onChange={(event) => {
                           const caption = event.target.value
-                          setImages((current) =>
-                            current.map((currentImage) =>
+                          setImages((current) => {
+                            const next = current.map((currentImage) =>
                               currentImage.id === image.id ? { ...currentImage, caption } : currentImage
                             )
-                          )
+                            imagesRef.current = next
+                            return next
+                          })
                         }}
                         onBlur={(event) => void patchImage(image.id, { caption: event.target.value })}
                         className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
                         placeholder="Kort beskrivande text"
                       />
+                      </div>
+                      </div>
+                      {renderAppendixInsertZone(visibleIndex + 1)}
                     </div>
-                  </div>
                   )
                 })}
               </div>
@@ -2483,10 +2891,11 @@ export default function TuInvestigationEditorClient({
               type="button"
               onClick={() => documentFileInputRef.current?.click()}
               disabled={locked || documentBusy}
+              aria-busy={documentBusy}
               className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
-              <Upload size={16} aria-hidden />
-              Ladda upp dokument
+              {documentBusy ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />}
+              {documentBusy ? 'Arbetar...' : 'Ladda upp dokument'}
             </button>
             <input
               ref={documentFileInputRef}
@@ -2511,14 +2920,23 @@ export default function TuInvestigationEditorClient({
             }}
             onDrop={(event) => void handleDocumentDrop(event)}
             className={`mb-4 flex min-h-28 flex-col items-center justify-center rounded-lg border border-dashed px-4 py-5 text-center transition ${
-              documentDropActive
+              documentDropActive || documentBusy
                 ? 'border-violet-500 bg-violet-50 text-violet-900'
                 : 'border-violet-200 bg-violet-50/50 text-gray-600'
-            } ${locked ? 'opacity-60' : ''}`}
+            } ${locked ? 'opacity-60' : ''} ${documentBusy ? 'cursor-wait ring-2 ring-violet-100' : ''}`}
+            aria-busy={documentBusy}
           >
-            <FileText size={24} className="mb-2 text-violet-500" aria-hidden />
-            <p className="text-sm font-medium">Släpp dokument här</p>
-            <p className="mt-1 text-xs text-gray-500">PDF, Word, Excel eller textfil. Max 25 MB.</p>
+            {documentBusy ? (
+              <Loader2 size={24} className="mb-2 animate-spin text-violet-700" aria-hidden />
+            ) : (
+              <FileText size={24} className="mb-2 text-violet-500" aria-hidden />
+            )}
+            <p className="text-sm font-medium">
+              {documentBusy ? 'Sparar dokument...' : documentDropActive ? 'Släpp för att ladda upp dokument' : 'Släpp dokument här'}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">
+              {documentBusy ? 'Vänta tills dokumentet är sparat.' : 'PDF, Word, Excel eller textfil. Max 25 MB.'}
+            </p>
           </div>
 
           {documentsLoading ? (
@@ -2531,14 +2949,20 @@ export default function TuInvestigationEditorClient({
             </div>
           ) : (
             <div className="divide-y divide-gray-100 rounded-md border border-gray-200">
-              {documents.map((document) => (
+              {documents.map((document) => {
+                const documentActionTarget = documentActionTargets[document.id] ?? null
+                const documentActionPending = Boolean(documentActionTarget)
+                return (
                 <div
                   key={document.id}
-                  className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  className={`flex flex-col gap-3 px-3 py-3 transition sm:flex-row sm:items-center sm:justify-between ${
+                    documentActionPending ? 'cursor-wait bg-violet-50/50' : ''
+                  }`}
+                  aria-busy={documentActionPending}
                 >
                   <div className="flex min-w-0 items-start gap-3">
                     <div className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-700">
-                      <FileText size={18} aria-hidden />
+                      {documentActionPending ? <Loader2 size={18} className="animate-spin" aria-hidden /> : <FileText size={18} aria-hidden />}
                     </div>
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold text-gray-950">
@@ -2558,7 +2982,7 @@ export default function TuInvestigationEditorClient({
                       <input
                         type="checkbox"
                         checked={document.includeInDelivery}
-                        disabled={locked || documentBusy}
+                        disabled={locked || documentBusy || documentActionPending}
                         onChange={(event) =>
                           void patchDocument(document.id, { includeInDelivery: event.target.checked })
                         }
@@ -2579,16 +3003,18 @@ export default function TuInvestigationEditorClient({
                     <button
                       type="button"
                       onClick={() => void deleteDocument(document.id)}
-                      disabled={locked || documentBusy}
+                      disabled={locked || documentBusy || documentActionPending}
+                      aria-busy={documentActionTarget === 'delete'}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
                       aria-label="Ta bort dokument"
                       title="Ta bort dokument"
                     >
-                      <Trash2 size={16} aria-hidden />
+                      {documentActionTarget === 'delete' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Trash2 size={16} aria-hidden />}
                     </button>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </section>

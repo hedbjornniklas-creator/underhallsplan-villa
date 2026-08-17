@@ -10,6 +10,7 @@ import {
   FileText,
   IdCard,
   ListChecks,
+  Loader2,
   Mail,
   Play,
   Plus,
@@ -715,10 +716,11 @@ function AssignmentConfirmationsCard({
           type="button"
           onClick={onOpenDialog}
           disabled={busy === 'quick-send'}
-          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+          aria-busy={busy === 'quick-send'}
+          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-wait disabled:bg-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
         >
-          <Send size={16} aria-hidden />
-          Skicka uppdragsbekräftelse
+          {busy === 'quick-send' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Send size={16} aria-hidden />}
+          {busy === 'quick-send' ? 'Öppnar...' : 'Skicka uppdragsbekräftelse'}
         </button>
       </div>
       <div className="mt-3 min-h-0 flex-1 rounded-lg border border-violet-100 bg-white/70 p-2">
@@ -764,10 +766,11 @@ function StartInvestigationCard({
           type="button"
           onClick={onOpenDialog}
           disabled={busy === 'scratch'}
+          aria-busy={busy === 'scratch'}
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-wait disabled:bg-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
         >
-          <Plus size={16} aria-hidden />
-          Ny utredning
+          {busy === 'scratch' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Plus size={16} aria-hidden />}
+          {busy === 'scratch' ? 'Öppnar...' : 'Ny utredning'}
         </button>
       </div>
       <div className="mt-3 min-h-0 flex-1 rounded-lg border border-violet-100 bg-white/70 p-2">
@@ -1083,9 +1086,10 @@ function StartFromAssignmentDialog({
             type="button"
             onClick={() => onSubmit(reportTemplateKey)}
             disabled={busy || !canSubmit}
+            aria-busy={busy}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-wait disabled:bg-violet-300"
           >
-            <Play size={15} aria-hidden />
+            {busy ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <Play size={15} aria-hidden />}
             {busy ? 'Startar...' : 'Starta utredning'}
           </button>
         </div>
@@ -1276,18 +1280,20 @@ function QuickAssignmentDialog({
           type="button"
           onClick={() => onSubmit(false)}
           disabled={busy === 'draft'}
+          aria-busy={busy === 'draft'}
           className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-wait disabled:opacity-60"
         >
-          <Plus size={16} aria-hidden />
-          Spara utkast
+          {busy === 'draft' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Plus size={16} aria-hidden />}
+          {busy === 'draft' ? 'Sparar...' : 'Spara utkast'}
           </button>
           <button
           type="button"
           onClick={() => onSubmit(true)}
           disabled={busy === 'quick-send'}
+          aria-busy={busy === 'quick-send'}
           className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-wait disabled:bg-violet-300"
         >
-          <Mail size={16} aria-hidden />
+          {busy === 'quick-send' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Mail size={16} aria-hidden />}
             {busy === 'quick-send' ? 'Skickar...' : 'Skicka uppdragsbekräftelse'}
           </button>
         </div>
@@ -1437,9 +1443,10 @@ function ScratchInvestigationDialog({
           type="button"
           onClick={onSubmit}
           disabled={busy === 'scratch' || !canSubmit}
+          aria-busy={busy === 'scratch'}
           className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-wait disabled:bg-violet-300 sm:w-auto"
         >
-          <CalendarDays size={16} aria-hidden />
+          {busy === 'scratch' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <CalendarDays size={16} aria-hidden />}
           {busy === 'scratch' ? 'Skapar...' : 'Skapa utredning'}
           </button>
         </div>

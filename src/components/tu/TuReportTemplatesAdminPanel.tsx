@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { TU_STANDARD_REPORT_TEMPLATES } from '@/lib/tu/reportTemplates'
 
@@ -194,6 +195,11 @@ export default function TuReportTemplatesAdminPanel() {
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null)
+  const [savingSection, setSavingSection] = useState(false)
+  const [deletingSectionId, setDeletingSectionId] = useState<string | null>(null)
+  const [seedingTemplates, setSeedingTemplates] = useState(false)
   const [reorderingSectionId, setReorderingSectionId] = useState<string | null>(null)
 
   const selectedTemplate = selectedTemplateId
@@ -280,7 +286,9 @@ export default function TuReportTemplatesAdminPanel() {
   }, [])
 
   const seedStandardTemplates = async () => {
+    if (seedingTemplates) return
     setError(null)
+    setSeedingTemplates(true)
     const templateRows = TU_STANDARD_REPORT_TEMPLATES.map((template) => ({
       key: template.key,
       title: template.title,
@@ -293,51 +301,55 @@ export default function TuReportTemplatesAdminPanel() {
       is_system: true,
     }))
 
-    const { error: templateError } = await settingsClient
-      .from('settings_tu_report_templates')
-      .upsert(templateRows, { onConflict: 'key' })
-    if (templateError) {
-      setError(templateError.message)
-      return
+    try {
+      const { error: templateError } = await settingsClient
+        .from('settings_tu_report_templates')
+        .upsert(templateRows, { onConflict: 'key' })
+      if (templateError) {
+        setError(templateError.message)
+        return
+      }
+
+      const { data: savedTemplateData, error: reloadError } = await settingsClient
+        .from('settings_tu_report_templates')
+        .select(TEMPLATE_COLUMNS)
+      if (reloadError) {
+        setError(reloadError.message)
+        return
+      }
+
+      const idByKey = new Map(((savedTemplateData ?? []) as TemplateRow[]).map((template) => [template.key, template.id]))
+      const sectionRows = TU_STANDARD_REPORT_TEMPLATES.flatMap((template) => {
+        const templateId = idByKey.get(template.key)
+        if (!templateId) return []
+        return (template.sections ?? []).map((section) => ({
+          template_id: templateId,
+          template_section_key: section.templateSectionKey,
+          section_type_key: section.sectionTypeKey,
+          title_override: section.titleOverride ?? null,
+          default_content: section.defaultContent ?? null,
+          ai_instruction: section.aiInstruction ?? null,
+          sort_order: section.sortOrder,
+          is_required: section.isRequired,
+          include_in_toc: section.includeInToc,
+          allow_delete: section.allowDelete,
+        }))
+      })
+
+      const { error: sectionError } = await settingsClient
+        .from('settings_tu_report_template_sections')
+        .upsert(sectionRows, { onConflict: 'template_id,template_section_key' })
+      if (sectionError) {
+        setError(sectionError.message)
+        return
+      }
+
+      setTemplateDraft(null)
+      setSectionDraft(null)
+      await loadAll()
+    } finally {
+      setSeedingTemplates(false)
     }
-
-    const { data: savedTemplateData, error: reloadError } = await settingsClient
-      .from('settings_tu_report_templates')
-      .select(TEMPLATE_COLUMNS)
-    if (reloadError) {
-      setError(reloadError.message)
-      return
-    }
-
-    const idByKey = new Map(((savedTemplateData ?? []) as TemplateRow[]).map((template) => [template.key, template.id]))
-    const sectionRows = TU_STANDARD_REPORT_TEMPLATES.flatMap((template) => {
-      const templateId = idByKey.get(template.key)
-      if (!templateId) return []
-      return (template.sections ?? []).map((section) => ({
-        template_id: templateId,
-        template_section_key: section.templateSectionKey,
-        section_type_key: section.sectionTypeKey,
-        title_override: section.titleOverride ?? null,
-        default_content: section.defaultContent ?? null,
-        ai_instruction: section.aiInstruction ?? null,
-        sort_order: section.sortOrder,
-        is_required: section.isRequired,
-        include_in_toc: section.includeInToc,
-        allow_delete: section.allowDelete,
-      }))
-    })
-
-    const { error: sectionError } = await settingsClient
-      .from('settings_tu_report_template_sections')
-      .upsert(sectionRows, { onConflict: 'template_id,template_section_key' })
-    if (sectionError) {
-      setError(sectionError.message)
-      return
-    }
-
-    setTemplateDraft(null)
-    setSectionDraft(null)
-    await loadAll()
   }
 
   const openNewTemplate = () => {
@@ -366,7 +378,7 @@ export default function TuReportTemplatesAdminPanel() {
   }
 
   const saveTemplateDraft = async () => {
-    if (!templateDraft) return
+    if (!templateDraft || savingTemplate) return
     const title = templateDraft.title.trim()
     const key = templateDraft.id ? templateDraft.key.trim() : createKeyFromTitle(templateDraft.key || title)
     const nextDraft = { ...templateDraft, key }
@@ -382,57 +394,69 @@ export default function TuReportTemplatesAdminPanel() {
     }
 
     setError(null)
-    if (templateDraft.id) {
-      const { error: updateError } = await settingsClient
-        .from('settings_tu_report_templates')
-        .update(payload)
-        .eq('id', templateDraft.id)
-      if (updateError) {
-        setError(updateError.message)
+    setSavingTemplate(true)
+    try {
+      if (templateDraft.id) {
+        const { error: updateError } = await settingsClient
+          .from('settings_tu_report_templates')
+          .update(payload)
+          .eq('id', templateDraft.id)
+        if (updateError) {
+          setError(updateError.message)
+          return
+        }
+        setTemplates((current) =>
+          current
+            .map((template) => (template.id === templateDraft.id ? ({ ...template, ...payload } as TemplateRow) : template))
+            .sort(sortTemplates)
+        )
+        setTemplateDraft((current) => (current ? { ...current, ...nextDraft } : current))
         return
       }
-      setTemplates((current) =>
-        current
-          .map((template) => (template.id === templateDraft.id ? ({ ...template, ...payload } as TemplateRow) : template))
-          .sort(sortTemplates)
-      )
-      setTemplateDraft((current) => (current ? { ...current, ...nextDraft } : current))
-      return
-    }
 
-    const { data, error: insertError } = await settingsClient
-      .from('settings_tu_report_templates')
-      .insert(payload)
-      .select(TEMPLATE_COLUMNS)
-      .single()
-    if (insertError) {
-      setError(insertError.message)
-      return
+      const { data, error: insertError } = await settingsClient
+        .from('settings_tu_report_templates')
+        .insert(payload)
+        .select(TEMPLATE_COLUMNS)
+        .single()
+      if (insertError) {
+        setError(insertError.message)
+        return
+      }
+      const created = data as TemplateRow
+      setTemplates((current) => [...current, created].sort(sortTemplates))
+      setSelectedTemplateId(created.id)
+      setTemplateDraft(templateToDraft(created))
+      setPanelOpen(true)
+    } finally {
+      setSavingTemplate(false)
     }
-    const created = data as TemplateRow
-    setTemplates((current) => [...current, created].sort(sortTemplates))
-    setSelectedTemplateId(created.id)
-    setTemplateDraft(templateToDraft(created))
-    setPanelOpen(true)
   }
 
   const deleteTemplate = async (template: TemplateRow) => {
+    if (deletingTemplateId) return
     if (template.is_system) {
       setError('Systemmallar kan inte tas bort. Inaktivera mallen om den inte ska kunna väljas.')
       return
     }
     if (!confirm(`Ta bort mallen "${template.title}"? Skapade utlåtanden påverkas inte.`)) return
-    const { error: deleteError } = await settingsClient
-      .from('settings_tu_report_templates')
-      .delete()
-      .eq('id', template.id)
-    if (deleteError) {
-      setError(deleteError.message)
-      return
+    setError(null)
+    setDeletingTemplateId(template.id)
+    try {
+      const { error: deleteError } = await settingsClient
+        .from('settings_tu_report_templates')
+        .delete()
+        .eq('id', template.id)
+      if (deleteError) {
+        setError(deleteError.message)
+        return
+      }
+      setTemplates((current) => current.filter((item) => item.id !== template.id))
+      setSections((current) => current.filter((item) => item.template_id !== template.id))
+      if (selectedTemplateId === template.id || templateDraft?.id === template.id) closePanel()
+    } finally {
+      setDeletingTemplateId(null)
     }
-    setTemplates((current) => current.filter((item) => item.id !== template.id))
-    setSections((current) => current.filter((item) => item.template_id !== template.id))
-    if (selectedTemplateId === template.id || templateDraft?.id === template.id) closePanel()
   }
 
   const openNewSection = () => {
@@ -486,7 +510,7 @@ export default function TuReportTemplatesAdminPanel() {
   }
 
   const saveSectionDraft = async () => {
-    if (!sectionDraft) return
+    if (!sectionDraft || savingSection) return
     const payload = sectionPayload(sectionDraft)
     if (!payload.section_type_key) {
       setError('Välj deltyp för mallsektionen.')
@@ -498,36 +522,42 @@ export default function TuReportTemplatesAdminPanel() {
     }
 
     setError(null)
-    if (sectionDraft.id) {
-      const { error: updateError } = await settingsClient
-        .from('settings_tu_report_template_sections')
-        .update(payload)
-        .eq('id', sectionDraft.id)
-      if (updateError) {
-        setError(updateError.message)
+    setSavingSection(true)
+    try {
+      if (sectionDraft.id) {
+        const { error: updateError } = await settingsClient
+          .from('settings_tu_report_template_sections')
+          .update(payload)
+          .eq('id', sectionDraft.id)
+        if (updateError) {
+          setError(updateError.message)
+          return
+        }
+        setSections((current) =>
+          current.map((section) => (section.id === sectionDraft.id ? ({ ...section, ...payload } as TemplateSectionRow) : section))
+        )
+        setSectionDraft(null)
         return
       }
-      setSections((current) =>
-        current.map((section) => (section.id === sectionDraft.id ? ({ ...section, ...payload } as TemplateSectionRow) : section))
-      )
-      setSectionDraft(null)
-      return
-    }
 
-    const { data, error: insertError } = await settingsClient
-      .from('settings_tu_report_template_sections')
-      .insert(payload)
-      .select(SECTION_COLUMNS)
-      .single()
-    if (insertError) {
-      setError(insertError.message)
-      return
+      const { data, error: insertError } = await settingsClient
+        .from('settings_tu_report_template_sections')
+        .insert(payload)
+        .select(SECTION_COLUMNS)
+        .single()
+      if (insertError) {
+        setError(insertError.message)
+        return
+      }
+      setSections((current) => [...current, data as TemplateSectionRow])
+      setSectionDraft(null)
+    } finally {
+      setSavingSection(false)
     }
-    setSections((current) => [...current, data as TemplateSectionRow])
-    setSectionDraft(null)
   }
 
   const moveSection = async (sectionId: string, direction: -1 | 1) => {
+    if (reorderingSectionId) return
     const currentIndex = selectedTemplateSections.findIndex((section) => section.id === sectionId)
     const targetIndex = currentIndex + direction
     if (currentIndex < 0 || targetIndex < 0 || targetIndex >= selectedTemplateSections.length) return
@@ -542,6 +572,7 @@ export default function TuReportTemplatesAdminPanel() {
 
     setError(null)
     setReorderingSectionId(sectionId)
+    try {
     const results = await Promise.all(
       updates.map((section) =>
         settingsClient
@@ -553,7 +584,6 @@ export default function TuReportTemplatesAdminPanel() {
     const failed = results.find((result) => result.error)
     if (failed?.error) {
       setError(failed.error.message)
-      setReorderingSectionId(null)
       return
     }
 
@@ -569,12 +599,18 @@ export default function TuReportTemplatesAdminPanel() {
       const sortOrder = sortOrderById.get(current.id)
       return typeof sortOrder === 'number' ? { ...current, sort_order: sortOrder } : current
     })
-    setReorderingSectionId(null)
+    } finally {
+      setReorderingSectionId(null)
+    }
   }
 
   const deleteSection = async (section: TemplateSectionRow) => {
+    if (deletingSectionId) return
     if (!confirm('Ta bort sektionen från mallen? Skapade utlåtanden påverkas inte.')) return
-    const { error: deleteError } = await settingsClient
+    setError(null)
+    setDeletingSectionId(section.id)
+    try {
+      const { error: deleteError } = await settingsClient
       .from('settings_tu_report_template_sections')
       .delete()
       .eq('id', section.id)
@@ -582,8 +618,11 @@ export default function TuReportTemplatesAdminPanel() {
       setError(deleteError.message)
       return
     }
-    setSections((current) => current.filter((item) => item.id !== section.id))
-    if (sectionDraft?.id === section.id) setSectionDraft(null)
+      setSections((current) => current.filter((item) => item.id !== section.id))
+      if (sectionDraft?.id === section.id) setSectionDraft(null)
+    } finally {
+      setDeletingSectionId(null)
+    }
   }
 
   return (
@@ -614,9 +653,12 @@ export default function TuReportTemplatesAdminPanel() {
           <button
             type="button"
             onClick={() => void seedStandardTemplates()}
-            className="h-9 rounded border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 hover:bg-violet-50"
+            disabled={seedingTemplates}
+            aria-busy={seedingTemplates}
+            className="inline-flex h-9 items-center justify-center gap-2 rounded border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-wait disabled:opacity-60"
           >
-            Lägg in standardmallar
+            {seedingTemplates ? <Loader2 size={14} className="animate-spin" aria-hidden /> : null}
+            {seedingTemplates ? 'Lägger in...' : 'Lägg in standardmallar'}
           </button>
         </div>
       </div>
@@ -644,9 +686,12 @@ export default function TuReportTemplatesAdminPanel() {
               <button
                 type="button"
                 onClick={() => void saveTemplateDraft()}
-                className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700"
+                disabled={savingTemplate}
+                aria-busy={savingTemplate}
+                className="inline-flex items-center gap-2 rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-wait disabled:bg-emerald-300"
               >
-                Spara
+                {savingTemplate ? <Loader2 size={14} className="animate-spin" aria-hidden /> : null}
+                {savingTemplate ? 'Sparar...' : 'Spara'}
               </button>
             </div>
           </div>
@@ -783,6 +828,7 @@ export default function TuReportTemplatesAdminPanel() {
               {filteredTemplates.map((template) => {
                 const sectionCount = sections.filter((section) => section.template_id === template.id).length
                 const isSelected = panelOpen && selectedTemplateId === template.id
+                const templateDeleting = deletingTemplateId === template.id
 
                 return (
                   <tr
@@ -830,9 +876,12 @@ export default function TuReportTemplatesAdminPanel() {
                               event.stopPropagation()
                               void deleteTemplate(template)
                             }}
-                            className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-medium text-rose-800 hover:bg-rose-100"
+                            disabled={Boolean(deletingTemplateId)}
+                            aria-busy={templateDeleting}
+                            className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-medium text-rose-800 hover:bg-rose-100 disabled:cursor-wait disabled:opacity-60"
                           >
-                            Ta bort
+                            {templateDeleting ? <Loader2 size={12} className="animate-spin" aria-hidden /> : null}
+                            {templateDeleting ? 'Tar bort...' : 'Ta bort'}
                           </button>
                         ) : null}
                       </div>
@@ -895,9 +944,12 @@ export default function TuReportTemplatesAdminPanel() {
                 <button
                   type="button"
                   onClick={() => void saveTemplateDraft()}
-                  className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700"
+                  disabled={savingTemplate}
+                  aria-busy={savingTemplate}
+                  className="inline-flex items-center gap-2 rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-wait disabled:bg-emerald-300"
                 >
-                  Spara mall
+                  {savingTemplate ? <Loader2 size={14} className="animate-spin" aria-hidden /> : null}
+                  {savingTemplate ? 'Sparar...' : 'Spara mall'}
                 </button>
               </div>
 
@@ -1027,8 +1079,8 @@ export default function TuReportTemplatesAdminPanel() {
                 <button
                   type="button"
                   onClick={openNewSection}
-                  disabled={sectionTypes.length === 0}
-                  className="h-9 rounded bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-gray-300"
+                  disabled={sectionTypes.length === 0 || savingSection}
+                  className="h-9 rounded bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-300"
                 >
                   + Lägg till sektion
                 </button>
@@ -1051,9 +1103,12 @@ export default function TuReportTemplatesAdminPanel() {
                       <button
                         type="button"
                         onClick={() => void saveSectionDraft()}
-                        className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700"
+                        disabled={savingSection}
+                        aria-busy={savingSection}
+                        className="inline-flex items-center gap-2 rounded bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-wait disabled:bg-emerald-300"
                       >
-                        Spara
+                        {savingSection ? <Loader2 size={14} className="animate-spin" aria-hidden /> : null}
+                        {savingSection ? 'Sparar...' : 'Spara'}
                       </button>
                     </div>
                   </div>
@@ -1193,24 +1248,29 @@ export default function TuReportTemplatesAdminPanel() {
                     {selectedTemplateSections.map((section, index) => {
                       const sectionType = sectionTypeByKey.get(section.section_type_key)
                       const isMoving = reorderingSectionId === section.id
+                      const isDeletingSection = deletingSectionId === section.id
                       return (
-                        <tr key={section.id}>
+                        <tr key={section.id} className={isMoving || isDeletingSection ? 'bg-violet-50/60' : undefined}>
                           <td className="py-2 pr-3 align-top">
                             <div className="flex gap-1">
                               <button
                                 type="button"
                                 onClick={() => void moveSection(section.id, -1)}
                                 disabled={index === 0 || Boolean(reorderingSectionId)}
-                                className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                                aria-busy={isMoving}
+                                className="inline-flex items-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-wait disabled:opacity-40"
                               >
+                                {isMoving ? <Loader2 size={11} className="animate-spin" aria-hidden /> : null}
                                 Upp
                               </button>
                               <button
                                 type="button"
                                 onClick={() => void moveSection(section.id, 1)}
                                 disabled={index === selectedTemplateSections.length - 1 || Boolean(reorderingSectionId)}
-                                className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                                aria-busy={isMoving}
+                                className="inline-flex items-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-wait disabled:opacity-40"
                               >
+                                {isMoving ? <Loader2 size={11} className="animate-spin" aria-hidden /> : null}
                                 Ned
                               </button>
                             </div>
@@ -1238,16 +1298,20 @@ export default function TuReportTemplatesAdminPanel() {
                             <button
                               type="button"
                               onClick={() => openEditSection(section)}
-                              className="mr-3 text-emerald-700 underline"
+                              disabled={Boolean(deletingSectionId) || Boolean(reorderingSectionId)}
+                              className="mr-3 text-emerald-700 underline disabled:cursor-not-allowed disabled:text-gray-400"
                             >
                               Editera
                             </button>
                             <button
                               type="button"
                               onClick={() => void deleteSection(section)}
-                              className="text-rose-700 underline"
+                              disabled={Boolean(deletingSectionId) || Boolean(reorderingSectionId)}
+                              aria-busy={isDeletingSection}
+                              className="inline-flex items-center gap-1 text-rose-700 underline disabled:cursor-wait disabled:text-gray-400"
                             >
-                              Ta bort
+                              {isDeletingSection ? <Loader2 size={13} className="animate-spin" aria-hidden /> : null}
+                              {isDeletingSection ? 'Tar bort...' : 'Ta bort'}
                             </button>
                           </td>
                         </tr>

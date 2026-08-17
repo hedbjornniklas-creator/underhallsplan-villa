@@ -216,6 +216,7 @@ export default function TuEvidenceWorkspace({
   const [aiBusy, setAiBusy] = useState(false)
   const [suggestion, setSuggestion] = useState<TuEvidenceAiSuggestion | null>(null)
   const [suggestionBusy, setSuggestionBusy] = useState(false)
+  const [imageSectionActionIds, setImageSectionActionIds] = useState<Set<string>>(() => new Set())
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
@@ -397,6 +398,24 @@ export default function TuEvidenceWorkspace({
       imageIds: [...new Set([...current.imageIds, ...uploadedImageIds])],
     }))
     setSavedMessage('Bilden är uppladdad och kopplad. Spara observationen för att behålla kopplingen.')
+  }
+
+  const setImageSectionWithFeedback = async (imageId: string, sectionKey: 'bank' | 'appendix' | 'cover') => {
+    if (locked || imageBusy || imageSectionActionIds.has(imageId)) return
+    setImageSectionActionIds((current) => {
+      const next = new Set(current)
+      next.add(imageId)
+      return next
+    })
+    try {
+      await onSetImageSection(imageId, sectionKey)
+    } finally {
+      setImageSectionActionIds((current) => {
+        const next = new Set(current)
+        next.delete(imageId)
+        return next
+      })
+    }
   }
 
   const startRecording = async () => {
@@ -615,15 +634,16 @@ export default function TuEvidenceWorkspace({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => imageInputRef.current?.click()}
-              disabled={locked || imageBusy}
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
-            >
-              <Camera size={16} aria-hidden />
-              Ta eller ladda upp bild
-            </button>
+              <button
+                type="button"
+                onClick={() => imageInputRef.current?.click()}
+                disabled={locked || imageBusy}
+                aria-busy={imageBusy}
+                className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+              >
+                {imageBusy ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Camera size={16} aria-hidden />}
+                {imageBusy ? 'Laddar upp...' : 'Ta eller ladda upp bild'}
+              </button>
             <input
               ref={imageInputRef}
               type="file"
@@ -882,10 +902,11 @@ export default function TuEvidenceWorkspace({
                   type="button"
                   onClick={() => imageInputRef.current?.click()}
                   disabled={locked || imageBusy}
+                  aria-busy={imageBusy}
                   className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-800 transition hover:bg-gray-50 disabled:text-gray-400"
                 >
-                  <Upload size={14} aria-hidden />
-                  Ladda upp
+                  {imageBusy ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Upload size={14} aria-hidden />}
+                  {imageBusy ? 'Laddar...' : 'Ladda upp'}
                 </button>
               </div>
               {images.length === 0 ? (
@@ -896,30 +917,43 @@ export default function TuEvidenceWorkspace({
                 <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
                   {images.map((image) => {
                     const selected = form.imageIds.includes(image.id)
+                    const sectionPending = imageSectionActionIds.has(image.id)
                     return (
                       <div
                         key={image.id}
-                        className={`relative overflow-hidden rounded-md border bg-white ${
-                          selected ? 'border-violet-600 ring-2 ring-violet-100' : 'border-gray-200'
+                        className={`relative overflow-hidden rounded-md border bg-white transition ${
+                          sectionPending
+                            ? 'cursor-wait border-violet-300 ring-2 ring-violet-100'
+                            : selected
+                              ? 'border-violet-600 ring-2 ring-violet-100'
+                              : 'border-gray-200'
                         }`}
+                        aria-busy={sectionPending}
                       >
                         <button
                           type="button"
                           onClick={() => onPreviewImage(image.id)}
-                          className="block w-full text-left"
+                          disabled={sectionPending}
+                          className="block w-full text-left disabled:cursor-wait"
                           aria-label="Granska bild i fullformat"
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={image.publicUrl}
                             alt={image.caption ?? 'Besiktningsbild'}
-                            className="aspect-square w-full object-cover"
+                            className={`aspect-square w-full object-cover ${sectionPending ? 'opacity-55' : ''}`}
                           />
                         </button>
+                        {sectionPending ? (
+                          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 bg-white/55 text-[11px] font-semibold text-violet-900">
+                            <Loader2 size={16} className="animate-spin" aria-hidden />
+                            Lägger i bilaga
+                          </div>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => toggleImage(image.id)}
-                          disabled={locked}
+                          disabled={locked || sectionPending}
                           aria-pressed={selected}
                           aria-label={selected ? 'Ta bort bildkoppling' : 'Koppla bild till observation'}
                           title={selected ? 'Ta bort bildkoppling' : 'Koppla bild till observation'}
@@ -944,13 +978,14 @@ export default function TuEvidenceWorkspace({
                             {image.sectionKey !== 'appendix' ? (
                               <button
                                 type="button"
-                                onClick={() => void onSetImageSection(image.id, 'appendix')}
-                                disabled={locked || imageBusy}
+                                onClick={() => void setImageSectionWithFeedback(image.id, 'appendix')}
+                                disabled={locked || imageBusy || sectionPending}
+                                aria-busy={sectionPending}
                                 className="inline-flex h-7 w-7 items-center justify-center rounded text-violet-700 hover:bg-violet-50 disabled:text-gray-300"
                                 aria-label="Lägg i bildbilaga"
                                 title="Lägg i bildbilaga"
                               >
-                                <Paperclip size={13} aria-hidden />
+                                {sectionPending ? <Loader2 size={13} className="animate-spin" aria-hidden /> : <Paperclip size={13} aria-hidden />}
                               </button>
                             ) : null}
                           </span>
