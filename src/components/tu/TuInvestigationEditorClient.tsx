@@ -2794,15 +2794,6 @@ export default function TuInvestigationEditorClient({
                     <div className="rounded-md border border-gray-200 bg-gray-50/60 p-3">
                       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                         <h3 className="text-sm font-semibold text-gray-950">Underrubriker</h3>
-                        <button
-                          type="button"
-                          onClick={() => void addReportSubsection(sectionId)}
-                          disabled={locked}
-                          className="inline-flex h-8 items-center gap-2 rounded-md border border-violet-200 bg-white px-2.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
-                        >
-                          <Plus size={14} aria-hidden />
-                          Lägg till underrubrik
-                        </button>
                       </div>
 
                       {(section.subsections ?? []).length === 0 ? (
@@ -2877,6 +2868,18 @@ export default function TuInvestigationEditorClient({
                           ))}
                         </div>
                       )}
+
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => void addReportSubsection(sectionId)}
+                          disabled={locked}
+                          className="inline-flex h-8 items-center gap-2 rounded-md border border-violet-200 bg-white px-2.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                        >
+                          <Plus size={14} aria-hidden />
+                          Lägg till underrubrik
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
