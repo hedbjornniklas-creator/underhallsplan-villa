@@ -2271,7 +2271,7 @@ export default function TuInvestigationEditorClient({
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={image.publicUrl} alt={image.caption ?? 'TU-bild'} className={getTuImageClass(imageViewCount)} />
                       </button>
-                      <div className="absolute bottom-2 right-2 flex gap-1 rounded-md bg-white/95 p-1 shadow-sm ring-1 ring-black/5">
+                      <div className="absolute bottom-1.5 right-1.5 flex gap-1 rounded-md bg-white/45 p-0.5 opacity-65 shadow-sm ring-1 ring-black/5 transition group-hover:bg-white/80 group-hover:opacity-100">
                         <button
                           type="button"
                           onClick={(event) => {
@@ -2279,11 +2279,11 @@ export default function TuInvestigationEditorClient({
                             void moveImageToSection(image.id, 'cover')
                           }}
                           disabled={locked || imageBusy || imageActionIds.has(image.id)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-violet-700 text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                          className="inline-flex h-6 w-6 items-center justify-center rounded bg-violet-700/75 text-white transition hover:bg-violet-800 hover:opacity-100 disabled:cursor-not-allowed disabled:bg-gray-300/60"
                           aria-label="Använd som omslag"
                           title="Använd som omslag"
                         >
-                          <ImageIcon size={15} aria-hidden />
+                          <ImageIcon size={11} aria-hidden />
                         </button>
                         <button
                           type="button"
@@ -2292,11 +2292,11 @@ export default function TuInvestigationEditorClient({
                             void moveImageToSection(image.id, 'appendix')
                           }}
                           disabled={locked || imageBusy || imageActionIds.has(image.id)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-violet-200 bg-white text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                          className="inline-flex h-6 w-6 items-center justify-center rounded border border-violet-200/70 bg-white/75 text-violet-800 transition hover:bg-violet-50 hover:opacity-100 disabled:cursor-not-allowed disabled:border-gray-200/70 disabled:text-gray-400"
                           aria-label="Lägg i bilaga"
                           title="Lägg i bilaga"
                         >
-                          <MoveDown size={15} aria-hidden />
+                          <MoveDown size={11} aria-hidden />
                         </button>
                       </div>
                     </div>
