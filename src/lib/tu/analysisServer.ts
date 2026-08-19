@@ -521,47 +521,77 @@ export async function createTuInspectionAnalysisRun(input: {
   userId: string
 }) {
   const admin = createSupabaseAdminClient()
+  const now = new Date().toISOString()
   const { data: activeRun, error: activeError } = await admin
     .from('tu_ai_runs')
-    .select('id')
+    .select('id,status,heartbeat_at,started_at,created_at')
     .eq('org_id', input.orgId)
     .eq('inspection_id', input.inspectionId)
     .eq('operation', 'inspection_analysis')
     .in('status', ['queued', 'processing'])
     .maybeSingle()
   if (activeError) throw new Error(activeError.message)
-  if (activeRun) return String((activeRun as { id: string }).id)
+  const active = activeRun as {
+    id: string
+    status: string
+    heartbeat_at: string | null
+    started_at: string | null
+    created_at: string | null
+  } | null
+  let runId = active ? String(active.id) : ''
+  if (active) {
+    const lastActivity = active.heartbeat_at ?? active.started_at ?? active.created_at
+    const staleBefore = Date.now() - STALE_RUN_MINUTES * 60 * 1000
+    if (lastActivity && new Date(lastActivity).getTime() < staleBefore) {
+      const staleMessage = 'En tidigare analysstart avbröts innan arbetsflödet skapades. En ny körning startas.'
+      const { error: staleError } = await admin
+        .from('tu_ai_runs')
+        .update({
+          status: 'failed',
+          error_message: staleMessage,
+          progress_stage: 'failed',
+          progress_message: staleMessage,
+          heartbeat_at: now,
+          completed_at: now,
+        })
+        .eq('id', active.id)
+        .in('status', ['queued', 'processing'])
+      if (staleError) throw new Error(staleError.message)
+      runId = ''
+    }
+  }
 
-  const { snapshot } = await buildAnalysisSnapshot(input)
-  const inputHash = createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')
-  const now = new Date().toISOString()
-  const imageCount = Array.isArray(snapshot.images)
-    ? Math.min(snapshot.images.length, configuredMaxImages())
-    : 0
-  const { data: runData, error: runError } = await admin
-    .from('tu_ai_runs')
-    .insert({
-      org_id: input.orgId,
-      inspection_id: input.inspectionId,
-      operation: 'inspection_analysis',
-      status: 'queued',
-      model: TU_ANALYSIS_MODEL,
-      ruleset_key: RULESET_KEY,
-      ruleset_version: RULESET_VERSION,
-      input_snapshot: snapshot,
-      input_hash: inputHash,
-      attempt_count: 0,
-      progress_stage: 'queued',
-      progress_current: 0,
-      progress_total: imageCount,
-      progress_message: 'Analysen väntar på att starta.',
-      heartbeat_at: now,
-      created_by: input.userId,
-    })
-    .select('id')
-    .single()
-  if (runError || !runData) throw new Error(runError?.message ?? 'TU_ANALYSIS_RUN_CREATE_FAILED')
-  const runId = String((runData as { id: string }).id)
+  if (!runId) {
+    const { snapshot } = await buildAnalysisSnapshot(input)
+    const inputHash = createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')
+    const imageCount = Array.isArray(snapshot.images)
+      ? Math.min(snapshot.images.length, configuredMaxImages())
+      : 0
+    const { data: runData, error: runError } = await admin
+      .from('tu_ai_runs')
+      .insert({
+        org_id: input.orgId,
+        inspection_id: input.inspectionId,
+        operation: 'inspection_analysis',
+        status: 'queued',
+        model: TU_ANALYSIS_MODEL,
+        ruleset_key: RULESET_KEY,
+        ruleset_version: RULESET_VERSION,
+        input_snapshot: snapshot,
+        input_hash: inputHash,
+        attempt_count: 0,
+        progress_stage: 'queued',
+        progress_current: 0,
+        progress_total: imageCount,
+        progress_message: 'Analysen väntar på att starta.',
+        heartbeat_at: now,
+        created_by: input.userId,
+      })
+      .select('id')
+      .single()
+    if (runError || !runData) throw new Error(runError?.message ?? 'TU_ANALYSIS_RUN_CREATE_FAILED')
+    runId = String((runData as { id: string }).id)
+  }
 
   const { data: existingWorkflow, error: workflowReadError } = await admin
     .from('tu_analysis_workflows')
