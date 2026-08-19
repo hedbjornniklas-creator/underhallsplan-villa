@@ -6,6 +6,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
   isTuAnalysisCertainty,
   isTuAnalysisItemType,
+  isTuAnalysisProgressStage,
   isTuAnalysisReviewStatus,
   isTuAnalysisRunStatus,
   isTuAnalysisWorkflowStatus,
@@ -51,6 +52,11 @@ type RunRow = {
   ruleset_version: number
   attempt_count: number | null
   error_message: string | null
+  progress_stage: string | null
+  progress_current: number | null
+  progress_total: number | null
+  progress_message: string | null
+  heartbeat_at: string | null
   output_payload: unknown
   created_at: string | null
   started_at: string | null
@@ -131,6 +137,11 @@ const RUN_COLUMNS = [
   'ruleset_version',
   'attempt_count',
   'error_message',
+  'progress_stage',
+  'progress_current',
+  'progress_total',
+  'progress_message',
+  'heartbeat_at',
   'output_payload',
   'created_at',
   'started_at',
@@ -182,14 +193,25 @@ function isoOrNow(value: string | null | undefined) {
 
 function mapRun(row: RunRow): TuAnalysisRun {
   const output = record(row.output_payload)
+  const status = isTuAnalysisRunStatus(row.status) ? row.status : 'failed'
+  const fallbackProgressStage = status === 'processing'
+    ? 'preparing'
+    : status
   return {
     id: row.id,
-    status: isTuAnalysisRunStatus(row.status) ? row.status : 'failed',
+    status,
     model: row.model,
     rulesetKey: row.ruleset_key,
     rulesetVersion: row.ruleset_version,
     attemptCount: row.attempt_count ?? 0,
     errorMessage: row.error_message,
+    progressStage: isTuAnalysisProgressStage(row.progress_stage)
+      ? row.progress_stage
+      : fallbackProgressStage,
+    progressCurrent: Math.max(0, row.progress_current ?? 0),
+    progressTotal: Math.max(0, row.progress_total ?? 0),
+    progressMessage: cleanText(row.progress_message) || null,
+    heartbeatAt: row.heartbeat_at,
     overview: cleanText(output.overview) || null,
     warnings: stringArray(output.warnings),
     createdAt: isoOrNow(row.created_at),
@@ -364,11 +386,11 @@ export async function getTuAnalysisWorkflow(input: {
     if (itemError) throw new Error(itemError.message)
     if (runData) {
       run = mapRun(runData as unknown as RunRow)
-      const runStartedAt = run.startedAt ?? run.createdAt
+      const lastHeartbeatAt = run.heartbeatAt ?? run.startedAt ?? run.createdAt
       const staleBefore = Date.now() - STALE_RUN_MINUTES * 60 * 1000
       if (
         (run.status === 'queued' || run.status === 'processing')
-        && new Date(runStartedAt).getTime() < staleBefore
+        && new Date(lastHeartbeatAt).getTime() < staleBefore
       ) {
         const staleMessage = 'Analysjobbet avbröts eller överskred tillåten körtid. Försök igen.'
         const { error: staleError } = await admin
@@ -376,12 +398,22 @@ export async function getTuAnalysisWorkflow(input: {
           .update({
             status: 'failed',
             error_message: staleMessage,
+            progress_stage: 'failed',
+            progress_message: staleMessage,
+            heartbeat_at: new Date().toISOString(),
             completed_at: new Date().toISOString(),
           })
           .eq('id', run.id)
           .in('status', ['queued', 'processing'])
         if (staleError) throw new Error(staleError.message)
-        run = { ...run, status: 'failed', errorMessage: staleMessage }
+        run = {
+          ...run,
+          status: 'failed',
+          errorMessage: staleMessage,
+          progressStage: 'failed',
+          progressMessage: staleMessage,
+          heartbeatAt: new Date().toISOString(),
+        }
       }
     }
     items = ((itemData ?? []) as unknown as ItemRow[]).map(mapItem)
@@ -503,6 +535,9 @@ export async function createTuInspectionAnalysisRun(input: {
   const { snapshot } = await buildAnalysisSnapshot(input)
   const inputHash = createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')
   const now = new Date().toISOString()
+  const imageCount = Array.isArray(snapshot.images)
+    ? Math.min(snapshot.images.length, configuredMaxImages())
+    : 0
   const { data: runData, error: runError } = await admin
     .from('tu_ai_runs')
     .insert({
@@ -516,6 +551,11 @@ export async function createTuInspectionAnalysisRun(input: {
       input_snapshot: snapshot,
       input_hash: inputHash,
       attempt_count: 0,
+      progress_stage: 'queued',
+      progress_current: 0,
+      progress_total: imageCount,
+      progress_message: 'Analysen väntar på att starta.',
+      heartbeat_at: now,
       created_by: input.userId,
     })
     .select('id')
@@ -790,8 +830,27 @@ export async function runTuInspectionAnalysis(input: {
   runId: string
 }) {
   const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) throw new Error('OPENAI_API_KEY_MISSING')
   const admin = createSupabaseAdminClient()
+  if (!apiKey) {
+    const now = new Date().toISOString()
+    const message = 'OPENAI_API_KEY_MISSING'
+    const { error } = await admin
+      .from('tu_ai_runs')
+      .update({
+        status: 'failed',
+        error_message: message,
+        progress_stage: 'failed',
+        progress_message: 'Analysen kunde inte starta eftersom AI-konfigurationen saknas.',
+        heartbeat_at: now,
+        completed_at: now,
+      })
+      .eq('id', input.runId)
+      .eq('org_id', input.orgId)
+      .eq('inspection_id', input.inspectionId)
+      .in('status', ['queued', 'processing'])
+    if (error) throw new Error(error.message)
+    return
+  }
   const startedAt = new Date().toISOString()
   const { data: claimed, error: claimError } = await admin
     .from('tu_ai_runs')
@@ -800,6 +859,10 @@ export async function runTuInspectionAnalysis(input: {
       started_at: startedAt,
       completed_at: null,
       error_message: null,
+      progress_stage: 'preparing',
+      progress_current: 0,
+      progress_message: 'Förbereder observationer, mätvärden och bilder.',
+      heartbeat_at: startedAt,
     })
     .eq('id', input.runId)
     .eq('org_id', input.orgId)
@@ -822,10 +885,32 @@ export async function runTuInspectionAnalysis(input: {
     if (error) throw new Error(error.message)
     return (data as { status?: string } | null)?.status === 'processing'
   }
-  await admin
+  const updateProgress = async (progress: {
+    stage: 'preparing' | 'analyzing_images' | 'synthesizing' | 'saving'
+    current?: number
+    total?: number
+    message: string
+  }) => {
+    const { error } = await admin
+      .from('tu_ai_runs')
+      .update({
+        progress_stage: progress.stage,
+        progress_current: progress.current,
+        progress_total: progress.total,
+        progress_message: progress.message,
+        heartbeat_at: new Date().toISOString(),
+      })
+      .eq('id', input.runId)
+      .eq('org_id', input.orgId)
+      .eq('inspection_id', input.inspectionId)
+      .eq('status', 'processing')
+    if (error) throw new Error(error.message)
+  }
+  const { error: attemptError } = await admin
     .from('tu_ai_runs')
     .update({ attempt_count: (claimedRun.attempt_count ?? 0) + 1 })
     .eq('id', input.runId)
+  if (attemptError) throw new Error(attemptError.message)
 
   try {
     const snapshot = record(claimedRun.input_snapshot)
@@ -833,13 +918,36 @@ export async function runTuInspectionAnalysis(input: {
     const maxImages = configuredMaxImages()
     const selectedImages = images.slice(0, maxImages)
     const imageAnalyses: ImageAnalysis[] = []
+    if (selectedImages.length > 0) {
+      await updateProgress({
+        stage: 'analyzing_images',
+        current: 0,
+        total: selectedImages.length,
+        message: `Analyserar bilder 0 av ${selectedImages.length}.`,
+      })
+    }
     for (let index = 0; index < selectedImages.length; index += IMAGE_BATCH_SIZE) {
       if (!await runStillProcessing()) return
+      const batch = selectedImages.slice(index, index + IMAGE_BATCH_SIZE)
       imageAnalyses.push(...await analyzeImageBatch({
         apiKey,
-        images: selectedImages.slice(index, index + IMAGE_BATCH_SIZE),
+        images: batch,
       }))
+      const completedImages = Math.min(index + batch.length, selectedImages.length)
+      await updateProgress({
+        stage: 'analyzing_images',
+        current: completedImages,
+        total: selectedImages.length,
+        message: `Analyserar bilder ${completedImages} av ${selectedImages.length}.`,
+      })
     }
+    if (!await runStillProcessing()) return
+    await updateProgress({
+      stage: 'synthesizing',
+      current: selectedImages.length,
+      total: selectedImages.length,
+      message: 'Sammanställer observationer, mätvärden och bildiakttagelser.',
+    })
     const analysis = await synthesizeInspection({ apiKey, snapshot, imageAnalyses })
     if (images.length > selectedImages.length) {
       analysis.warnings.push(
@@ -883,6 +991,12 @@ export async function runTuInspectionAnalysis(input: {
       }))
 
     if (!await runStillProcessing()) return
+    await updateProgress({
+      stage: 'saving',
+      current: selectedImages.length,
+      total: selectedImages.length,
+      message: 'Sparar analysresultatet för granskning.',
+    })
 
     const { error: deleteError } = await admin
       .from('tu_ai_analysis_items')
@@ -909,6 +1023,11 @@ export async function runTuInspectionAnalysis(input: {
         output_payload: outputPayload,
         completed_at: completedAt,
         error_message: null,
+        progress_stage: 'completed',
+        progress_current: selectedImages.length,
+        progress_total: selectedImages.length,
+        progress_message: 'Analysen är klar för granskning.',
+        heartbeat_at: completedAt,
       })
       .eq('id', input.runId)
       .eq('status', 'processing')
@@ -928,6 +1047,9 @@ export async function runTuInspectionAnalysis(input: {
       .update({
         status: 'failed',
         error_message: message,
+        progress_stage: 'failed',
+        progress_message: 'Analysen kunde inte slutföras. Öppna Analys och försök igen.',
+        heartbeat_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
       })
       .eq('id', input.runId)

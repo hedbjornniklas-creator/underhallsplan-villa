@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, BrainCircuit, ChevronDown, ChevronUp, ClipboardList, FileText, Image as ImageIcon, Loader2, Mic, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
+import TuAnalysisActivityBanner from '@/components/tu/TuAnalysisActivityBanner'
 import TuAnalysisWorkspace from '@/components/tu/TuAnalysisWorkspace'
 import TuEvidenceWorkspace from '@/components/tu/TuEvidenceWorkspace'
 import TuFieldLogWorkspace from '@/components/tu/TuFieldLogWorkspace'
@@ -2086,6 +2087,12 @@ export default function TuInvestigationEditorClient({
             Utlåtandet är låst och kan inte ändras.
           </div>
         ) : null}
+
+        <TuAnalysisActivityBanner
+          inspectionId={investigation.inspectionId}
+          enabled={evidenceWorkspaceEnabled && workspaceView !== 'analysis'}
+          onOpenAnalysis={() => setWorkspaceView('analysis')}
+        />
 
         {evidenceWorkspaceEnabled ? (
           <nav

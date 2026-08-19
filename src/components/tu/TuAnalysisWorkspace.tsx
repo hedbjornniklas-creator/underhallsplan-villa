@@ -6,6 +6,7 @@ import {
   BrainCircuit,
   Check,
   CheckCircle2,
+  Clock3,
   FileText,
   Image as ImageIcon,
   Loader2,
@@ -13,11 +14,15 @@ import {
   RotateCcw,
   X,
 } from 'lucide-react'
-import type {
-  TuAnalysisItem,
-  TuAnalysisResponse,
-  TuAnalysisValidation,
-  TuAnalysisWorkflow,
+import {
+  getTuAnalysisProgressMessage,
+  getTuAnalysisProgressPercent,
+  getTuAnalysisProgressStep,
+  TU_ANALYSIS_UPDATED_EVENT,
+  type TuAnalysisItem,
+  type TuAnalysisResponse,
+  type TuAnalysisValidation,
+  type TuAnalysisWorkflow,
 } from '@/lib/tu/analysis'
 import type { TuReportSection } from '@/lib/tu/server'
 
@@ -74,6 +79,26 @@ async function responseError(response: Response, fallback: string) {
   return typeof payload.error === 'string' && payload.error.trim() ? payload.error : fallback
 }
 
+function elapsedText(value: string | null | undefined, now: number) {
+  if (!value) return 'Startar snart'
+  const elapsedSeconds = Math.max(0, Math.floor((now - new Date(value).getTime()) / 1000))
+  if (elapsedSeconds < 60) return `${elapsedSeconds} sek`
+  const minutes = Math.floor(elapsedSeconds / 60)
+  const seconds = elapsedSeconds % 60
+  if (minutes < 60) return `${minutes} min ${seconds} sek`
+  const hours = Math.floor(minutes / 60)
+  return `${hours} tim ${minutes % 60} min`
+}
+
+function clockText(value: string | null | undefined) {
+  if (!value) return 'Inte startad'
+  return new Intl.DateTimeFormat('sv-SE', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(new Date(value))
+}
+
 export default function TuAnalysisWorkspace({
   inspectionId,
   refreshToken,
@@ -91,6 +116,7 @@ export default function TuAnalysisWorkspace({
   const [actionBusy, setActionBusy] = useState<string | null>(null)
   const [itemBusyId, setItemBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [now, setNow] = useState(() => Date.now())
   const imageById = useMemo(() => new Map(images.map((image) => [image.id, image])), [images])
   const editableSections = useMemo(
     () => sections.filter((section) => section.key !== 'assignment_parties' && section.key !== 'signature'),
@@ -100,7 +126,10 @@ export default function TuAnalysisWorkspace({
   const applyResponse = useCallback((payload: TuAnalysisResponse) => {
     if (payload.workflow) setWorkflow(payload.workflow)
     if (payload.validation) setValidation(payload.validation)
-  }, [])
+    window.dispatchEvent(new CustomEvent(TU_ANALYSIS_UPDATED_EVENT, {
+      detail: { inspectionId, workflow: payload.workflow },
+    }))
+  }, [inspectionId])
 
   const loadState = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -131,6 +160,13 @@ export default function TuAnalysisWorkspace({
     const timer = window.setInterval(() => void loadState(true), 3500)
     return () => window.clearInterval(timer)
   }, [loadState, shouldPoll])
+
+  useEffect(() => {
+    if (!shouldPoll) return
+    setNow(Date.now())
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [shouldPoll])
 
   const runAction = useCallback(async (action: 'complete' | 'retry' | 'reopen' | 'approve') => {
     setActionBusy(action)
@@ -174,6 +210,9 @@ export default function TuAnalysisWorkspace({
   const processing = shouldPoll
   const failed = workflow?.run?.status === 'failed'
   const queuePending = queueCounts.total > 0
+  const progressPercent = getTuAnalysisProgressPercent(workflow?.run)
+  const progressStep = getTuAnalysisProgressStep(workflow?.run)
+  const progressMessage = getTuAnalysisProgressMessage(workflow?.run)
 
   if (loading) {
     return (
@@ -272,14 +311,76 @@ export default function TuAnalysisWorkspace({
         ) : null}
 
         {processing ? (
-          <div className="py-8 text-center">
-            <span className="mx-auto inline-flex size-12 items-center justify-center rounded-full bg-violet-50 text-violet-700">
-              <Loader2 size={24} className="animate-spin" aria-hidden />
-            </span>
-            <h3 className="mt-3 text-base font-semibold text-gray-950">Analysen pågår i bakgrunden</h3>
-            <p className="mx-auto mt-1 max-w-xl text-sm leading-5 text-gray-600">
-              Observationer, mätvärden och bilder behandlas i ett sammanhållet underlag. Du kan lämna sidan och återkomma senare.
-            </p>
+          <div className="space-y-5 py-2">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-violet-50 text-violet-700">
+                <Loader2 size={22} className="animate-spin" aria-hidden />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-violet-700">
+                      Steg {progressStep.current} av {progressStep.total} · {progressStep.label}
+                    </p>
+                    <h3 className="mt-1 text-base font-semibold text-gray-950">Analysen pågår i bakgrunden</h3>
+                  </div>
+                  <span className="text-sm font-semibold tabular-nums text-violet-800">{progressPercent}%</span>
+                </div>
+                <p className="mt-2 text-sm leading-5 text-gray-700" aria-live="polite">
+                  {progressMessage}
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <div
+                className="h-2.5 overflow-hidden rounded-full bg-violet-100"
+                role="progressbar"
+                aria-label="Analysens förlopp"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progressPercent}
+              >
+                <div
+                  className="h-full rounded-full bg-violet-700 transition-[width] duration-500"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+              <div className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-3">
+                <span className="inline-flex items-center gap-1.5">
+                  <Clock3 size={14} className="text-violet-700" aria-hidden />
+                  Startad {clockText(workflow?.run?.startedAt ?? workflow?.run?.createdAt)}
+                </span>
+                <span className="tabular-nums">Pågått {elapsedText(workflow?.run?.startedAt ?? workflow?.run?.createdAt, now)}</span>
+                <span className="tabular-nums sm:text-right">
+                  Senast aktivitet {elapsedText(workflow?.run?.heartbeatAt, now)} sedan
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-md border border-violet-100 bg-violet-50/60 px-4 py-3">
+              <p className="text-sm font-semibold text-gray-950">Du behöver inte göra något medan analysen arbetar.</p>
+              <p className="mt-1 text-sm leading-5 text-gray-700">
+                Du kan lämna sidan och återkomma senare. Undvik att ändra observationer eller bilder tills analysen är klar, eftersom en sådan ändring avbryter den aktuella körningen.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={onOpenField}
+                className="inline-flex h-10 items-center rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+              >
+                Visa fältloggen
+              </button>
+              <button
+                type="button"
+                onClick={onOpenEvidence}
+                className="inline-flex h-10 items-center rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+              >
+                Visa underlaget
+              </button>
+            </div>
           </div>
         ) : null}
 
@@ -317,6 +418,17 @@ export default function TuAnalysisWorkspace({
 
         {!processing && !failed && workflow && workflow.status !== 'in_progress' ? (
           <div className="space-y-5">
+            {workflow.status === 'analysis_ready' ? (
+              <div className="flex gap-3 rounded-md border border-emerald-200 bg-emerald-50 p-4">
+                <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-emerald-700" aria-hidden />
+                <div>
+                  <h3 className="font-semibold text-emerald-950">Analysen är klar</h3>
+                  <p className="mt-1 text-sm leading-5 text-emerald-900">
+                    Nästa steg är att granska förslagen nedan. Godkänn, avvisa eller justera varje punkt innan analysen förs över till utlåtandet.
+                  </p>
+                </div>
+              </div>
+            ) : null}
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="border-b border-gray-200 pb-3">
                 <div className="text-2xl font-semibold text-amber-700">{pendingCount}</div>

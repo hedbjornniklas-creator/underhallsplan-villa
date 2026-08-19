@@ -8,6 +8,18 @@ export type TuAnalysisWorkflowStatus =
 
 export type TuAnalysisRunStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled'
 
+export type TuAnalysisProgressStage =
+  | 'queued'
+  | 'preparing'
+  | 'analyzing_images'
+  | 'synthesizing'
+  | 'saving'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export const TU_ANALYSIS_UPDATED_EVENT = 'tu-analysis-updated'
+
 export type TuAnalysisItemType =
   | 'verified_observation'
   | 'party_statement'
@@ -60,11 +72,99 @@ export type TuAnalysisRun = {
   rulesetVersion: number
   attemptCount: number
   errorMessage: string | null
+  progressStage: TuAnalysisProgressStage
+  progressCurrent: number
+  progressTotal: number
+  progressMessage: string | null
+  heartbeatAt: string | null
   overview: string | null
   warnings: string[]
   createdAt: string
   startedAt: string | null
   completedAt: string | null
+}
+
+export function isTuAnalysisProgressStage(value: unknown): value is TuAnalysisProgressStage {
+  return (
+    value === 'queued'
+    || value === 'preparing'
+    || value === 'analyzing_images'
+    || value === 'synthesizing'
+    || value === 'saving'
+    || value === 'completed'
+    || value === 'failed'
+    || value === 'cancelled'
+  )
+}
+
+export function getTuAnalysisProgressPercent(run: TuAnalysisRun | null | undefined) {
+  if (!run) return 2
+  switch (run.progressStage) {
+    case 'queued':
+      return 2
+    case 'preparing':
+      return 8
+    case 'analyzing_images': {
+      const ratio = run.progressTotal > 0
+        ? Math.min(1, Math.max(0, run.progressCurrent / run.progressTotal))
+        : 0
+      return Math.round(12 + ratio * 58)
+    }
+    case 'synthesizing':
+      return 78
+    case 'saving':
+      return 94
+    case 'completed':
+      return 100
+    case 'failed':
+    case 'cancelled':
+      return 100
+  }
+}
+
+export function getTuAnalysisProgressStep(run: TuAnalysisRun | null | undefined) {
+  switch (run?.progressStage) {
+    case 'analyzing_images':
+      return { current: 2, total: 4, label: 'Bildanalys' }
+    case 'synthesizing':
+      return { current: 3, total: 4, label: 'Samlad bedömning' }
+    case 'saving':
+    case 'completed':
+      return { current: 4, total: 4, label: run.progressStage === 'saving' ? 'Sparar resultat' : 'Klar' }
+    case 'failed':
+      return { current: 4, total: 4, label: 'Avbruten' }
+    case 'cancelled':
+      return { current: 4, total: 4, label: 'Avbruten' }
+    case 'queued':
+    case 'preparing':
+    default:
+      return { current: 1, total: 4, label: run?.progressStage === 'preparing' ? 'Förbereder underlag' : 'Väntar på start' }
+  }
+}
+
+export function getTuAnalysisProgressMessage(run: TuAnalysisRun | null | undefined) {
+  if (run?.progressMessage) return run.progressMessage
+  switch (run?.progressStage) {
+    case 'preparing':
+      return 'Förbereder observationer, mätvärden och bilder.'
+    case 'analyzing_images':
+      return run.progressTotal > 0
+        ? `Analyserar bilder ${run.progressCurrent} av ${run.progressTotal}.`
+        : 'Analyserar bilder.'
+    case 'synthesizing':
+      return 'Sammanställer hela besiktningsunderlaget.'
+    case 'saving':
+      return 'Sparar analysresultatet för granskning.'
+    case 'completed':
+      return 'Analysen är klar för granskning.'
+    case 'failed':
+      return 'Analysen kunde inte slutföras.'
+    case 'cancelled':
+      return 'Analysen avbröts eftersom underlaget ändrades.'
+    case 'queued':
+    default:
+      return 'Analysen väntar på att starta.'
+  }
 }
 
 export type TuAnalysisWorkflow = {
