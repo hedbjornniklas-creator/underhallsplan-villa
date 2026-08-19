@@ -1268,6 +1268,28 @@ export default function TuInvestigationEditorClient({
     await saveSectionById(sectionId, nextText)
   }
 
+  const applyWholeReportDraft = async (
+    generatedSections: Array<{ sectionId: string; text: string }>
+  ) => {
+    if (locked) throw new Error('Utlåtandet är låst och kan inte ändras.')
+    const textBySectionId = new Map(
+      generatedSections.map((section) => [section.sectionId, section.text.trim()])
+    )
+    const knownSectionIds = new Set(
+      draftRef.current.sections.map((section) => getSectionInstanceId(section))
+    )
+    if (generatedSections.some((section) => !knownSectionIds.has(section.sectionId))) {
+      throw new Error('En rapportdel i AI-utkastet finns inte längre i utlåtandet.')
+    }
+    const nextDraft = {
+      sections: draftRef.current.sections.map((section) => {
+        const nextText = textBySectionId.get(getSectionInstanceId(section))
+        return nextText === undefined ? section : { ...section, text: nextText }
+      }),
+    }
+    await saveDraft(nextDraft, 'Kunde inte föra över rapportutkastet.')
+  }
+
   const openReportWorkspace = (sectionId?: string) => {
     if (sectionId) pendingFocusSectionIdRef.current = sectionId
     setWorkspaceView('report')
@@ -2190,6 +2212,8 @@ export default function TuInvestigationEditorClient({
             onPreviewImage={setPreviewImageId}
             onOpenField={() => setWorkspaceView('field')}
             onOpenEvidence={() => setWorkspaceView('evidence')}
+            onApplyReportDraft={applyWholeReportDraft}
+            onOpenReport={() => openReportWorkspace()}
           />
         ) : (
           <>

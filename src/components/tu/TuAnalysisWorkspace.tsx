@@ -7,7 +7,6 @@ import {
   Check,
   CheckCircle2,
   Clock3,
-  FileText,
   Image as ImageIcon,
   Loader2,
   RefreshCw,
@@ -25,6 +24,7 @@ import {
   type TuAnalysisWorkflow,
 } from '@/lib/tu/analysis'
 import type { TuReportSection } from '@/lib/tu/server'
+import TuWholeReportDraftPanel from '@/components/tu/TuWholeReportDraftPanel'
 
 type AnalysisImage = {
   id: string
@@ -51,6 +51,8 @@ type Props = {
   onPreviewImage: (imageId: string) => void
   onOpenField: () => void
   onOpenEvidence: () => void
+  onApplyReportDraft: (sections: Array<{ sectionId: string; text: string }>) => Promise<void>
+  onOpenReport: () => void
 }
 
 const TYPE_LABELS: Record<TuAnalysisItem['itemType'], string> = {
@@ -109,6 +111,8 @@ export default function TuAnalysisWorkspace({
   onPreviewImage,
   onOpenField,
   onOpenEvidence,
+  onApplyReportDraft,
+  onOpenReport,
 }: Props) {
   const [workflow, setWorkflow] = useState<TuAnalysisWorkflow | null>(null)
   const [validation, setValidation] = useState<TuAnalysisValidation | null>(null)
@@ -585,16 +589,18 @@ export default function TuAnalysisWorkspace({
               </div>
             ) : null}
 
+            {workflow.status === 'analysis_approved' ? (
+              <TuWholeReportDraftPanel
+                inspectionId={inspectionId}
+                locked={locked}
+                onApplyDraft={onApplyReportDraft}
+                onOpenReport={onOpenReport}
+                onOpenSectionWriter={onOpenEvidence}
+              />
+            ) : null}
+
             <div className="flex flex-wrap gap-2 border-t border-gray-200 pt-4">
-              {workflow.status === 'analysis_approved' ? (
-                <button
-                  type="button"
-                  onClick={onOpenEvidence}
-                  className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white transition hover:bg-violet-800"
-                >
-                  <FileText size={16} aria-hidden /> Skapa textförslag
-                </button>
-              ) : (
+              {workflow.status !== 'analysis_approved' ? (
                 <button
                   type="button"
                   onClick={() => void runAction('approve')}
@@ -604,7 +610,7 @@ export default function TuAnalysisWorkspace({
                   {actionBusy === 'approve' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <CheckCircle2 size={16} aria-hidden />}
                   Godkänn analysen
                 </button>
-              )}
+              ) : null}
               <button
                 type="button"
                 onClick={() => void runAction('reopen')}
