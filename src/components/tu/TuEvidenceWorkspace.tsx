@@ -214,6 +214,7 @@ export default function TuEvidenceWorkspace({
   const [transcribing, setTranscribing] = useState(false)
   const [aiSectionId, setAiSectionId] = useState(() => defaultAiSectionId(sections))
   const [aiBusy, setAiBusy] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
   const [suggestion, setSuggestion] = useState<TuEvidenceAiSuggestion | null>(null)
   const [suggestionBusy, setSuggestionBusy] = useState(false)
   const [analysisApproved, setAnalysisApproved] = useState(false)
@@ -584,6 +585,7 @@ export default function TuEvidenceWorkspace({
     if (locked || aiBusy || !aiSectionId) return
     setAiBusy(true)
     setError(null)
+    setAiError(null)
     setSuggestion(null)
     try {
       const response = await fetch(`/api/tu/investigations/${inspectionId}/evidence-draft`, {
@@ -597,7 +599,7 @@ export default function TuEvidenceWorkspace({
       }
       setSuggestion(payload.suggestion)
     } catch (suggestionError) {
-      setError(suggestionError instanceof Error ? suggestionError.message : 'Kunde inte skapa textförslaget.')
+      setAiError(suggestionError instanceof Error ? suggestionError.message : 'Kunde inte skapa textförslaget.')
     } finally {
       setAiBusy(false)
     }
@@ -1222,6 +1224,13 @@ export default function TuEvidenceWorkspace({
               {aiBusy ? 'Skapar...' : 'Skapa textförslag'}
             </button>
           </div>
+
+          {aiError ? (
+            <div className="mt-3 flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900" role="alert">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden />
+              <span>{aiError}</span>
+            </div>
+          ) : null}
 
           {reviewedCount === 0 && !analysisApproved ? (
             <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
