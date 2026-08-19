@@ -216,6 +216,7 @@ export default function TuEvidenceWorkspace({
   const [aiBusy, setAiBusy] = useState(false)
   const [suggestion, setSuggestion] = useState<TuEvidenceAiSuggestion | null>(null)
   const [suggestionBusy, setSuggestionBusy] = useState(false)
+  const [analysisApproved, setAnalysisApproved] = useState(false)
   const [imageSectionActionIds, setImageSectionActionIds] = useState<Set<string>>(() => new Set())
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
@@ -269,6 +270,26 @@ export default function TuEvidenceWorkspace({
     if (refreshToken <= 0) return
     void refreshObservationList()
   }, [refreshObservationList, refreshToken])
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadAnalysisStatus() {
+      try {
+        const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis`, {
+          cache: 'no-store',
+        })
+        if (!response.ok) return
+        const payload = await readJson<{ workflow?: { status?: string } }>(response)
+        if (!cancelled) setAnalysisApproved(payload.workflow?.status === 'analysis_approved')
+      } catch {
+        // Section drafting remains available without the optional holistic analysis.
+      }
+    }
+    void loadAnalysisStatus()
+    return () => {
+      cancelled = true
+    }
+  }, [inspectionId, refreshToken])
 
   useEffect(() => {
     if (!recording) return
@@ -1157,7 +1178,10 @@ export default function TuEvidenceWorkspace({
             </div>
             <div>
               <h2 className="text-base font-semibold text-gray-950">AI-förslag till utlåtandet</h2>
-              <p className="mt-0.5 text-sm text-gray-600">Underlag: {reviewedCount} faktagranskade observationer</p>
+              <p className="mt-0.5 text-sm text-gray-600">
+                Underlag: {reviewedCount} faktagranskade observationer
+                {analysisApproved ? ' och godkänd helhetsanalys' : ''}
+              </p>
             </div>
           </div>
           <button
@@ -1199,7 +1223,7 @@ export default function TuEvidenceWorkspace({
             </button>
           </div>
 
-          {reviewedCount === 0 ? (
+          {reviewedCount === 0 && !analysisApproved ? (
             <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden />
               Inga observationer är faktagranskade. Ett förslag kan bara bygga på ärendets grunduppgifter.

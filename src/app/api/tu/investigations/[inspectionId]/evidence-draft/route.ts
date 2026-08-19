@@ -182,6 +182,7 @@ export async function POST(
       listTuObservations({ orgId: orgContext.orgId, inspectionId }),
       listTuInvestigationImages({ orgId: orgContext.orgId, inspectionId }),
     ])
+    const admin = createSupabaseAdminClient()
     const reviewedEvidence = observations.filter(
       (observation) => observation.reviewStatus === 'reviewed' && observation.includeInReport
     )
@@ -213,6 +214,34 @@ export async function POST(
       })),
     }))
 
+    let approvedAnalysis: Array<Record<string, unknown>> = []
+    const { data: workflowData, error: workflowError } = await admin
+      .from('tu_analysis_workflows')
+      .select('status,current_analysis_run_id')
+      .eq('org_id', orgContext.orgId)
+      .eq('inspection_id', inspectionId)
+      .maybeSingle()
+    if (workflowError && workflowError.code !== '42P01') throw new Error(workflowError.message)
+    const workflow = workflowData as {
+      status?: string
+      current_analysis_run_id?: string | null
+    } | null
+    if (workflow?.status === 'analysis_approved' && workflow.current_analysis_run_id) {
+      const { data: analysisData, error: analysisError } = await admin
+        .from('tu_ai_analysis_items')
+        .select(
+          'item_type,title,summary,certainty,target_section_id,source_observation_ids,source_image_ids,source_measurement_ids,supporting_reasons,contradicting_reasons,warnings'
+        )
+        .eq('org_id', orgContext.orgId)
+        .eq('inspection_id', inspectionId)
+        .eq('run_id', workflow.current_analysis_run_id)
+        .eq('review_status', 'accepted')
+        .eq('include_in_report', true)
+        .order('sort_order', { ascending: true })
+      if (analysisError) throw new Error(analysisError.message)
+      approvedAnalysis = (analysisData ?? []) as Array<Record<string, unknown>>
+    }
+
     const inputSnapshot = {
       ruleset: 'tu_moisture_v1',
       reportTemplateKey: investigation.reportTemplateKey,
@@ -239,9 +268,9 @@ export async function POST(
         apartmentNumber: investigation.apartmentNumber,
       },
       evidence: evidencePayload,
+      approvedAnalysis,
     }
 
-    const admin = createSupabaseAdminClient()
     const { data: runData, error: runError } = await admin
       .from('tu_ai_runs')
       .insert({
@@ -278,6 +307,8 @@ export async function POST(
           'Formulera osäkerheter uttryckligen. Utse inte juridiskt ansvarig part och lämna inga juridiska slutsatser.',
           'Skriv sakligt, precist och proportionerligt på svenska. Undvik upprepning och utfyllnad.',
           'Följ sektionens aiInstruction när den finns.',
+          'approvedAnalysis innehåller endast besiktningsmannens godkända helhetsanalys. Använd den som strukturerat underlag och behåll redovisade osäkerheter.',
+          'Om approvedAnalysis finns ska du prioritera poster som är tilldelade targetSection.id men använda övriga poster för sammanhang och för att undvika motsägelser.',
           'sourceObservationIds får endast innehålla observationId som faktiskt finns i underlaget.',
           'Om underlaget inte räcker ska texten säga det och warnings förklara vad som saknas.',
         ].join('\n'),

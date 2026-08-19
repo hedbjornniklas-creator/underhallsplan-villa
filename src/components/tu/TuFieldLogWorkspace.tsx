@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  BrainCircuit,
   Camera,
   Check,
   ChevronRight,
@@ -45,6 +46,7 @@ type Props = {
   queue: TuFieldQueueController
   onPreviewImage: (imageId: string) => void
   onOpenEvidence: () => void
+  onOpenAnalysis: () => void
 }
 
 type TimelineItem =
@@ -98,6 +100,7 @@ export default function TuFieldLogWorkspace({
   queue,
   onPreviewImage,
   onOpenEvidence,
+  onOpenAnalysis,
 }: Props) {
   const [observations, setObservations] = useState<TuObservation[]>([])
   const [loading, setLoading] = useState(true)
@@ -496,15 +499,25 @@ export default function TuFieldLogWorkspace({
             Spara det du ser och hör i den ordning det kommer. Struktureringen görs senare under Bearbeta underlag.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onOpenEvidence}
-          className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm hover:bg-violet-50"
-        >
-          <FileText size={16} aria-hidden />
-          Bearbeta underlag
-          <ChevronRight size={15} aria-hidden />
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onOpenEvidence}
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm hover:bg-violet-50"
+          >
+            <FileText size={16} aria-hidden />
+            Bearbeta underlag
+          </button>
+          <button
+            type="button"
+            onClick={onOpenAnalysis}
+            className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
+          >
+            <BrainCircuit size={16} aria-hidden />
+            Slutför besiktning
+            <ChevronRight size={15} aria-hidden />
+          </button>
+        </div>
       </div>
 
       {renderQueueStatus()}

@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ChevronDown, ChevronUp, ClipboardList, FileText, Image as ImageIcon, Loader2, Mic, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, BrainCircuit, ChevronDown, ChevronUp, ClipboardList, FileText, Image as ImageIcon, Loader2, Mic, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
+import TuAnalysisWorkspace from '@/components/tu/TuAnalysisWorkspace'
 import TuEvidenceWorkspace from '@/components/tu/TuEvidenceWorkspace'
 import TuFieldLogWorkspace from '@/components/tu/TuFieldLogWorkspace'
 import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
@@ -775,7 +776,7 @@ export default function TuInvestigationEditorClient({
   const evidenceWorkspaceEnabled =
     initialInvestigation.reportTemplateKey === TU_MOISTURE_DAMAGE_TEMPLATE_KEY
   const locked = Boolean(investigation.reportLockedAt)
-  const [workspaceView, setWorkspaceView] = useState<'field' | 'evidence' | 'report'>(
+  const [workspaceView, setWorkspaceView] = useState<'field' | 'evidence' | 'analysis' | 'report'>(
     evidenceWorkspaceEnabled ? 'field' : 'report'
   )
   const handleFieldImageUploaded = useCallback((image: TuFieldServerImage) => {
@@ -2088,7 +2089,7 @@ export default function TuInvestigationEditorClient({
 
         {evidenceWorkspaceEnabled ? (
           <nav
-            className="grid grid-cols-3 rounded-md border border-gray-200 bg-white p-1 shadow-sm"
+            className="grid grid-cols-4 rounded-md border border-gray-200 bg-white p-1 shadow-sm"
             aria-label="Arbetsläge"
           >
             <button
@@ -2120,6 +2121,19 @@ export default function TuInvestigationEditorClient({
             </button>
             <button
               type="button"
+              onClick={() => setWorkspaceView('analysis')}
+              aria-pressed={workspaceView === 'analysis'}
+              className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded px-2 text-xs font-semibold transition sm:gap-2 sm:px-3 sm:text-sm ${
+                workspaceView === 'analysis'
+                  ? 'bg-violet-700 text-white shadow-sm'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <BrainCircuit size={16} aria-hidden />
+              Analys
+            </button>
+            <button
+              type="button"
               onClick={() => setWorkspaceView('report')}
               aria-pressed={workspaceView === 'report'}
               className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded px-2 text-xs font-semibold transition sm:gap-2 sm:px-3 sm:text-sm ${
@@ -2142,6 +2156,7 @@ export default function TuInvestigationEditorClient({
             queue={fieldQueue}
             onPreviewImage={setPreviewImageId}
             onOpenEvidence={() => setWorkspaceView('evidence')}
+            onOpenAnalysis={() => setWorkspaceView('analysis')}
           />
         ) : evidenceWorkspaceEnabled && workspaceView === 'evidence' ? (
           <TuEvidenceWorkspace
@@ -2156,6 +2171,18 @@ export default function TuInvestigationEditorClient({
             onPreviewImage={setPreviewImageId}
             onApplySuggestion={applyEvidenceSuggestion}
             onOpenReport={openReportWorkspace}
+          />
+        ) : evidenceWorkspaceEnabled && workspaceView === 'analysis' ? (
+          <TuAnalysisWorkspace
+            inspectionId={investigation.inspectionId}
+            refreshToken={fieldQueue.completedRevision}
+            locked={locked}
+            sections={draft.sections}
+            images={images}
+            queueCounts={fieldQueue.counts}
+            onPreviewImage={setPreviewImageId}
+            onOpenField={() => setWorkspaceView('field')}
+            onOpenEvidence={() => setWorkspaceView('evidence')}
           />
         ) : (
           <>
