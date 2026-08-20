@@ -1,9 +1,10 @@
 import DashboardV1Client, { type ModuleCardData } from './DashboardV1Client'
 import { hasCurrentUserAccess } from '@/lib/access/server'
+import type { PlatformModuleKeyMap } from '@/lib/access/model'
 
 const MODULE_CATALOG: Array<
   Omit<ModuleCardData, 'active'> & {
-    moduleKey: 'inspections' | 'construction_inspections' | 'technical_investigations'
+    moduleKey: PlatformModuleKeyMap['dashboard']
   }
 > = [
   {
@@ -35,6 +36,16 @@ const MODULE_CATALOG: Array<
     href: '/tu',
     accentClass: 'from-violet-600 to-fuchsia-400',
     badgeClass: 'border-violet-200 bg-violet-50 text-violet-700',
+  },
+  {
+    id: 'tasks',
+    moduleKey: 'tasks',
+    title: 'Uppdrag',
+    description:
+      'Tilldela, följ upp och kontrollera uppgifter så att ansvar och nästa steg alltid är tydliga.',
+    href: '/uppdrag',
+    accentClass: 'from-amber-500 to-orange-400',
+    badgeClass: 'border-amber-200 bg-amber-50 text-amber-800',
   },
 ]
 

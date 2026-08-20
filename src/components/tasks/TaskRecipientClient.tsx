@@ -1,0 +1,1281 @@
+'use client'
+
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import {
+  AlertTriangle,
+  ArrowRight,
+  CalendarClock,
+  Camera,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  CircleDashed,
+  Clock3,
+  Copy,
+  FileText,
+  History,
+  Image as ImageIcon,
+  Link2Off,
+  Loader2,
+  MessageSquareText,
+  Mic,
+  Paperclip,
+  Send,
+  Sparkles,
+  Square,
+  UserPlus,
+  UserRound,
+  X,
+} from 'lucide-react'
+import type { TaskChannel, TaskEvidenceRequirement } from '@/lib/tasks/contracts'
+import type { ExternalTaskWorkspace } from '@/lib/tasks/external'
+import { TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
+
+type Props = {
+  initialWorkspace: ExternalTaskWorkspace
+  endpoint: string
+}
+
+type ApiResponse = {
+  workspace?: ExternalTaskWorkspace
+  notice?: string
+  warning?: string | null
+  accessUrl?: string
+  transcript?: string
+  error?: string
+}
+
+type ActionPanel = 'waiting' | 'deadline' | 'delegate' | null
+
+type Toast = {
+  tone: 'success' | 'error'
+  message: string
+}
+
+const inputClassName =
+  'min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-100 disabled:bg-slate-100 disabled:text-slate-500'
+
+const maxAttachmentBytes = 25 * 1024 * 1024
+
+function attachmentTypeLabel(type: ExternalTaskWorkspace['task']['attachments'][number]['type']) {
+  if (type === 'photo') return 'Foto'
+  if (type === 'document') return 'Dokument'
+  if (type === 'audio') return 'Röstmeddelande'
+  return 'Textunderlag'
+}
+
+function recordingExtension(contentType: string) {
+  if (contentType.includes('mp4')) return 'm4a'
+  if (contentType.includes('ogg')) return 'ogg'
+  if (contentType.includes('mpeg')) return 'mp3'
+  if (contentType.includes('wav')) return 'wav'
+  return 'webm'
+}
+
+function formatDate(value: string, withTime = false) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('sv-SE', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
+  }).format(date)
+}
+
+function toDateInput(value: Date) {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function startOfToday() {
+  const date = new Date()
+  date.setHours(0, 0, 0, 0)
+  return date
+}
+
+function addDays(value: Date, days: number) {
+  const next = new Date(value)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function toIso(value: string) {
+  return new Date(`${value}T12:00:00`).toISOString()
+}
+
+function requirementState(status: string, key?: string) {
+  if (status === 'verified') return { done: true, label: 'Verifierad' }
+  if (status === 'not_required') return { done: true, label: 'Inte tillämplig' }
+  if (status === 'waived') return { done: true, label: 'Undantag godkänt' }
+  if (status === 'evidence_detected' && key === 'completion_evidence') {
+    return { done: true, label: 'Underlag mottaget – klart att skicka för kontroll' }
+  }
+  if (status === 'evidence_detected') return { done: false, label: 'Underlag mottaget – väntar på kontroll' }
+  return { done: false, label: 'Återstår' }
+}
+
+function deadlineRequestLabel(status: string) {
+  if (status === 'approved') return 'Godkänd'
+  if (status === 'rejected') return 'Avslagen'
+  if (status === 'cancelled') return 'Återkallad'
+  return 'Väntar på beslut'
+}
+
+function accessClosedCopy(state: 'expired' | 'revoked') {
+  return state === 'expired'
+    ? {
+        title: 'Länken har gått ut',
+        text: 'Be uppdragsgivaren skicka en ny personlig länk om du fortfarande ska hantera uppgiften.',
+      }
+    : {
+        title: 'Länken har återkallats',
+        text: 'Den här länken kan inte längre användas. Kontakta uppdragsgivaren om du behöver fortsatt åtkomst.',
+      }
+}
+
+function SigneMark() {
+  return (
+    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-sm">
+      <Sparkles size={21} aria-hidden="true" />
+    </span>
+  )
+}
+
+export default function TaskRecipientClient({ initialWorkspace, endpoint }: Props) {
+  const [workspace, setWorkspace] = useState(initialWorkspace)
+  const [busyAction, setBusyAction] = useState<string | null>(null)
+  const [toast, setToast] = useState<Toast | null>(null)
+  const [comment, setComment] = useState('')
+  const [panel, setPanel] = useState<ActionPanel>(null)
+  const [waitingReason, setWaitingReason] = useState('')
+  const [waitingDate, setWaitingDate] = useState('')
+  const [deadlineReason, setDeadlineReason] = useState('')
+  const [requestedDueDate, setRequestedDueDate] = useState('')
+  const [delegateTitle, setDelegateTitle] = useState('')
+  const [delegateDescription, setDelegateDescription] = useState('')
+  const [delegateName, setDelegateName] = useState('')
+  const [delegateEmail, setDelegateEmail] = useState('')
+  const [delegatePhone, setDelegatePhone] = useState('')
+  const [delegateDueDate, setDelegateDueDate] = useState('')
+  const [delegateFollowupDate, setDelegateFollowupDate] = useState('')
+  const [delegatePrimaryChannel, setDelegatePrimaryChannel] = useState<TaskChannel>('email')
+  const [delegateFallbackChannel, setDelegateFallbackChannel] = useState<TaskChannel | ''>('whatsapp')
+  const [delegateEvidenceRequirement, setDelegateEvidenceRequirement] = useState<TaskEvidenceRequirement>('optional')
+  const [evidenceText, setEvidenceText] = useState('')
+  const [delegatedAccessUrl, setDelegatedAccessUrl] = useState<string | null>(null)
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordingSeconds, setRecordingSeconds] = useState(0)
+  const photoInputRef = useRef<HTMLInputElement>(null)
+  const documentInputRef = useRef<HTMLInputElement>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const recordingChunksRef = useRef<Blob[]>([])
+  const recordingStartedAtRef = useRef<number | null>(null)
+
+  const task = workspace.task
+  const today = useMemo(() => startOfToday(), [])
+  const todayInput = toDateInput(today)
+  const dueDate = useMemo(() => new Date(task.dueAt), [task.dueAt])
+  const dueDateInput = Number.isNaN(dueDate.getTime()) ? '' : toDateInput(dueDate)
+  const waitingWindowOpen = !Number.isNaN(dueDate.getTime()) && dueDate.getTime() >= today.getTime()
+  const pendingDeadlineRequest = task.deadlineRequests.find((request) => request.status === 'pending') ?? null
+  const requirementsComplete = task.requirements.every((requirement) => requirementState(requirement.status, requirement.key).done)
+  const prestartBlocked = task.requirements.some(
+    (requirement) =>
+      ['written_quote', 'written_client_approval', 'warranty_basis'].includes(requirement.key) &&
+      !requirementState(requirement.status, requirement.key).done
+  )
+  const childrenComplete = workspace.children.every((child) => ['approved', 'cancelled'].includes(child.status))
+  const readyForReviewBlocked = !requirementsComplete || !childrenComplete
+  const isBusy = busyAction !== null
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(null), 5000)
+    return () => window.clearTimeout(timer)
+  }, [toast])
+
+  useEffect(() => {
+    if (!panel) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isBusy) setPanel(null)
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [isBusy, panel])
+
+  useEffect(() => {
+    if (!isRecording) return
+    const timer = window.setInterval(() => {
+      const startedAt = recordingStartedAtRef.current
+      if (startedAt) setRecordingSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)))
+    }, 500)
+    return () => window.clearInterval(timer)
+  }, [isRecording])
+
+  useEffect(() => {
+    return () => {
+      const recorder = mediaRecorderRef.current
+      if (recorder?.state === 'recording') {
+        recorder.ondataavailable = null
+        recorder.onstop = null
+        recorder.stop()
+      }
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+    }
+  }, [])
+
+  const showToast = (message: string, tone: Toast['tone']) => setToast({ message, tone })
+
+  const runAction = async (
+    action: 'start' | 'waiting' | 'ready_for_review' | 'comment' | 'request_deadline_change' | 'create_subtask',
+    payload: Record<string, unknown>,
+    successMessage: string
+  ) => {
+    if (isBusy || workspace.accessState !== 'open') return false
+    setBusyAction(action)
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, payload }),
+      })
+      const body = (await response.json().catch(() => ({}))) as ApiResponse
+      if (!response.ok) throw new Error(body.error || 'Kunde inte uppdatera uppgiften.')
+      if (body.workspace) setWorkspace(body.workspace)
+      if (body.accessUrl) {
+        setDelegatedAccessUrl(body.accessUrl)
+        try {
+          await navigator.clipboard.writeText(body.accessUrl)
+        } catch {
+          // Länken visas i sidan om webbläsaren inte ger urklippsåtkomst.
+        }
+      }
+      showToast(body.warning || body.notice || successMessage, 'success')
+      return true
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Kunde inte uppdatera uppgiften.', 'error')
+      return false
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const uploadEvidence = async (
+    action: 'attachment' | 'transcribe',
+    url: string,
+    formData: FormData,
+    successMessage: string
+  ) => {
+    if (isBusy || workspace.accessState !== 'open') return false
+    setBusyAction(action)
+    try {
+      const response = await fetch(url, { method: 'POST', body: formData })
+      const body = (await response.json().catch(() => ({}))) as ApiResponse
+      if (!response.ok) throw new Error(body.error || 'Kunde inte spara underlaget.')
+      if (body.workspace) setWorkspace(body.workspace)
+      showToast(body.notice || successMessage, 'success')
+      return true
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Kunde inte spara underlaget.', 'error')
+      return false
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const submitTextEvidence = async (event: FormEvent) => {
+    event.preventDefault()
+    const text = evidenceText.trim()
+    if (!text) return
+    const formData = new FormData()
+    formData.append('text', text)
+    formData.append(
+      'completionEvidence',
+      String(['optional', 'any', 'text'].includes(task.evidenceRequirement))
+    )
+    const ok = await uploadEvidence('attachment', `${endpoint}/attachments`, formData, 'Textunderlaget sparades.')
+    if (ok) setEvidenceText('')
+  }
+
+  const submitFileEvidence = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+    if (file.size > maxAttachmentBytes) {
+      showToast('Filen är för stor. Maximal storlek är 25 MB.', 'error')
+      return
+    }
+    const formData = new FormData()
+    formData.append('file', file)
+    const evidenceType = file.type.startsWith('image/') ? 'photo' : 'document'
+    formData.append(
+      'completionEvidence',
+      String(
+        ['optional', 'any'].includes(task.evidenceRequirement) ||
+          task.evidenceRequirement === evidenceType
+      )
+    )
+    await uploadEvidence('attachment', `${endpoint}/attachments`, formData, 'Underlaget sparades.')
+  }
+
+  const stopRecording = () => {
+    const recorder = mediaRecorderRef.current
+    if (recorder?.state === 'recording') recorder.stop()
+  }
+
+  const startRecording = async () => {
+    if (isBusy || isRecording) return
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      showToast('Röstinspelning stöds inte i den här webbläsaren.', 'error')
+      return
+    }
+
+    setBusyAction('microphone')
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const preferredType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((type) =>
+        MediaRecorder.isTypeSupported(type)
+      )
+      const recorder = preferredType
+        ? new MediaRecorder(stream, { mimeType: preferredType })
+        : new MediaRecorder(stream)
+
+      mediaStreamRef.current = stream
+      mediaRecorderRef.current = recorder
+      recordingChunksRef.current = []
+      recordingStartedAtRef.current = Date.now()
+      setRecordingSeconds(0)
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recordingChunksRef.current.push(event.data)
+      }
+      recorder.onerror = () => {
+        stream.getTracks().forEach((track) => track.stop())
+        mediaStreamRef.current = null
+        mediaRecorderRef.current = null
+        setIsRecording(false)
+        setBusyAction(null)
+        showToast('Inspelningen avbröts. Försök igen.', 'error')
+      }
+      recorder.onstop = () => {
+        const durationSeconds = Math.max(
+          1,
+          Math.round((Date.now() - (recordingStartedAtRef.current ?? Date.now())) / 1000)
+        )
+        const contentType = recorder.mimeType || recordingChunksRef.current[0]?.type || 'audio/webm'
+        const audio = new Blob(recordingChunksRef.current, { type: contentType })
+        stream.getTracks().forEach((track) => track.stop())
+        mediaStreamRef.current = null
+        mediaRecorderRef.current = null
+        recordingStartedAtRef.current = null
+        recordingChunksRef.current = []
+        setIsRecording(false)
+
+        if (audio.size <= 0) {
+          showToast('Inspelningen blev tom. Försök igen.', 'error')
+          return
+        }
+        if (audio.size > maxAttachmentBytes) {
+          showToast('Inspelningen är för stor. Spela in ett kortare meddelande.', 'error')
+          return
+        }
+
+        const formData = new FormData()
+        formData.append(
+          'audio',
+          new File([audio], `rostmeddelande.${recordingExtension(contentType)}`, { type: contentType })
+        )
+        formData.append('durationSeconds', String(durationSeconds))
+        formData.append(
+          'completionEvidence',
+          String(['optional', 'any', 'text'].includes(task.evidenceRequirement))
+        )
+        void uploadEvidence(
+          'transcribe',
+          `${endpoint}/transcribe`,
+          formData,
+          'Röstmeddelandet transkriberades.'
+        )
+      }
+
+      recorder.start()
+      setIsRecording(true)
+      setBusyAction('recording')
+    } catch (error) {
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+      mediaStreamRef.current = null
+      mediaRecorderRef.current = null
+      setBusyAction(null)
+      const permissionDenied = error instanceof DOMException && ['NotAllowedError', 'SecurityError'].includes(error.name)
+      showToast(
+        permissionDenied
+          ? 'Tillåt mikrofonen i webbläsaren för att spela in ett röstmeddelande.'
+          : 'Kunde inte starta mikrofonen.',
+        'error'
+      )
+    }
+  }
+
+  const openPanel = (nextPanel: Exclude<ActionPanel, null>) => {
+    if (nextPanel === 'waiting') {
+      const suggested = addDays(today, 1)
+      const bounded = waitingWindowOpen && suggested.getTime() > dueDate.getTime() ? dueDate : suggested
+      setWaitingDate(toDateInput(bounded))
+      setWaitingReason('')
+    } else if (nextPanel === 'deadline') {
+      const firstAllowed = addDays(dueDate.getTime() > today.getTime() ? dueDate : today, 1)
+      setRequestedDueDate(toDateInput(firstAllowed))
+      setDeadlineReason('')
+    } else {
+      const suggestedDueDate = addDays(today, 7)
+      const boundedDueDate = suggestedDueDate.getTime() > dueDate.getTime() ? dueDate : suggestedDueDate
+      const suggestedFollowupDate = addDays(today, 2)
+      const boundedFollowupDate = suggestedFollowupDate.getTime() > boundedDueDate.getTime()
+        ? boundedDueDate
+        : suggestedFollowupDate
+      setDelegateTitle('')
+      setDelegateDescription('')
+      setDelegateName('')
+      setDelegateEmail('')
+      setDelegatePhone('')
+      setDelegateDueDate(toDateInput(boundedDueDate))
+      setDelegateFollowupDate(toDateInput(boundedFollowupDate))
+      setDelegatePrimaryChannel('email')
+      setDelegateFallbackChannel('whatsapp')
+      setDelegateEvidenceRequirement('optional')
+    }
+    setPanel(nextPanel)
+  }
+
+  const submitComment = async (event: FormEvent) => {
+    event.preventDefault()
+    const message = comment.trim()
+    if (!message) return
+    const ok = await runAction('comment', { taskId: task.id, message }, 'Kommentaren har skickats.')
+    if (ok) setComment('')
+  }
+
+  const submitWaiting = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!waitingReason.trim() || !waitingDate || !waitingWindowOpen) return
+    const ok = await runAction(
+      'waiting',
+      {
+        taskId: task.id,
+        message: waitingReason.trim(),
+        nextFollowupAt: toIso(waitingDate),
+        version: task.version,
+      },
+      'Uppgiften är markerad som väntande.'
+    )
+    if (ok) setPanel(null)
+  }
+
+  const submitDeadlineRequest = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!deadlineReason.trim() || !requestedDueDate) return
+    const ok = await runAction(
+      'request_deadline_change',
+      {
+        taskId: task.id,
+        reason: deadlineReason.trim(),
+        requestedDueAt: toIso(requestedDueDate),
+      },
+      'Din begäran har skickats till uppdragsgivaren.'
+    )
+    if (ok) setPanel(null)
+  }
+
+  const submitDelegation = async (event: FormEvent) => {
+    event.preventDefault()
+    const title = delegateTitle.trim()
+    const name = delegateName.trim()
+    const email = delegateEmail.trim()
+    const phone = delegatePhone.trim()
+    if (!title || !name || !delegateDueDate || !delegateFollowupDate) return
+    if (!email && !phone) {
+      showToast('Ange minst e-post eller telefon till den nya ansvariga.', 'error')
+      return
+    }
+    if (delegatePrimaryChannel === 'email' && !email) {
+      showToast('E-post krävs när huvudkanalen är e-post.', 'error')
+      return
+    }
+    if (delegatePrimaryChannel === 'whatsapp' && !phone) {
+      showToast('Telefonnummer krävs när huvudkanalen är WhatsApp.', 'error')
+      return
+    }
+    if (delegateFallbackChannel === delegatePrimaryChannel) {
+      showToast('Reservkanalen måste skilja sig från huvudkanalen.', 'error')
+      return
+    }
+    if (delegateFallbackChannel === 'email' && !email) {
+      showToast('E-post krävs för att använda e-post som reservkanal.', 'error')
+      return
+    }
+    if (delegateFallbackChannel === 'whatsapp' && !phone) {
+      showToast('Telefonnummer krävs för att använda WhatsApp som reservkanal.', 'error')
+      return
+    }
+
+    if (
+      delegateDueDate < todayInput ||
+      !dueDateInput ||
+      delegateDueDate > dueDateInput ||
+      delegateFollowupDate < todayInput ||
+      delegateFollowupDate > delegateDueDate
+    ) {
+      showToast('Datumen måste ligga från idag till och med föräldrauppgiftens slutdatum.', 'error')
+      return
+    }
+
+    const ok = await runAction(
+      'create_subtask',
+      {
+        parentTaskId: task.id,
+        title,
+        description: delegateDescription.trim(),
+        assignee: {
+          name,
+          ...(email ? { email } : {}),
+          ...(phone ? { phone } : {}),
+        },
+        dueAt: toIso(delegateDueDate),
+        nextFollowupAt: toIso(delegateFollowupDate),
+        primaryChannel: delegatePrimaryChannel,
+        fallbackChannel: delegateFallbackChannel || null,
+        evidenceRequirement: delegateEvidenceRequirement,
+        version: task.version,
+      },
+      'Underuppgiften skapades och tilldelades.'
+    )
+    if (ok) setPanel(null)
+  }
+
+  if (workspace.accessState !== 'open') {
+    const copy = accessClosedCopy(workspace.accessState)
+    return (
+      <main className="flex min-h-dvh items-center bg-[#f6f4ef] px-4 py-10 text-slate-950">
+        <section className="mx-auto w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/5 sm:p-8">
+          <SigneMark />
+          <div className="mt-6 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-700">
+            <Link2Off size={23} aria-hidden="true" />
+          </div>
+          <p className="mt-5 text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Signe</p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight">{copy.title}</h1>
+          <p className="mt-3 text-sm leading-7 text-slate-600">{copy.text}</p>
+        </section>
+      </main>
+    )
+  }
+
+  const activeForAssignee = ['assigned', 'in_progress', 'waiting', 'returned'].includes(task.status)
+  const canStart = ['assigned', 'waiting', 'returned'].includes(task.status)
+  const canMarkWaiting = ['assigned', 'in_progress', 'returned'].includes(task.status)
+  const showActionBar = activeForAssignee
+  const delegateHasContact = Boolean(delegateEmail.trim() || delegatePhone.trim())
+  const delegateChannelsCovered =
+    (delegatePrimaryChannel !== 'email' || Boolean(delegateEmail.trim())) &&
+    (delegatePrimaryChannel !== 'whatsapp' || Boolean(delegatePhone.trim())) &&
+    (delegateFallbackChannel !== 'email' || Boolean(delegateEmail.trim())) &&
+    (delegateFallbackChannel !== 'whatsapp' || Boolean(delegatePhone.trim())) &&
+    delegateFallbackChannel !== delegatePrimaryChannel
+  const delegateDatesValid = Boolean(
+    delegateDueDate &&
+    delegateFollowupDate &&
+    dueDateInput &&
+    delegateDueDate >= todayInput &&
+    delegateDueDate <= dueDateInput &&
+    delegateFollowupDate >= todayInput &&
+    delegateFollowupDate <= delegateDueDate
+  )
+  const canSubmitDelegation = Boolean(
+    delegateTitle.trim() &&
+    delegateName.trim() &&
+    delegateHasContact &&
+    delegateChannelsCovered &&
+    delegateDatesValid
+  )
+
+  return (
+    <main className={`min-h-dvh bg-[#f6f4ef] text-slate-950 ${showActionBar ? 'pb-[calc(6.5rem+env(safe-area-inset-bottom))]' : 'pb-8'}`}>
+      {toast ? (
+        <div
+          className={`fixed inset-x-4 top-4 z-[80] mx-auto flex max-w-md items-start gap-3 rounded-2xl px-4 py-3 text-sm font-semibold shadow-2xl ${
+            toast.tone === 'success' ? 'bg-emerald-800 text-white' : 'bg-rose-700 text-white'
+          }`}
+          role={toast.tone === 'error' ? 'alert' : 'status'}
+          aria-live={toast.tone === 'error' ? 'assertive' : 'polite'}
+        >
+          {toast.tone === 'success' ? <CheckCircle2 className="mt-0.5 shrink-0" size={18} /> : <AlertTriangle className="mt-0.5 shrink-0" size={18} />}
+          <span className="min-w-0 flex-1">{toast.message}</span>
+          <button type="button" onClick={() => setToast(null)} className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white/80 hover:bg-white/10" aria-label="Stäng meddelande">
+            <X size={15} aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
+
+      <header className="border-b border-amber-200/70 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-xl items-center gap-3 px-4 py-4 sm:px-6">
+          <SigneMark />
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Signe följer upp</p>
+            <p className="mt-0.5 truncate text-sm text-slate-600">Hej {workspace.recipientName}</p>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto w-full max-w-xl px-4 py-5 sm:px-6 sm:py-7">
+        <section className="overflow-hidden rounded-3xl border border-amber-200/80 bg-white shadow-xl shadow-amber-950/5">
+          <div className="bg-gradient-to-br from-amber-50 via-white to-orange-50 px-5 py-5 sm:px-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <TaskStatusBadge status={task.status} />
+              {task.contextLabel ? <span className="text-xs font-semibold text-slate-500">{task.contextLabel}</span> : null}
+            </div>
+            <h1 className="mt-4 text-2xl font-semibold leading-tight tracking-tight text-slate-950 sm:text-3xl">{task.title}</h1>
+            {task.description ? <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">{task.description}</p> : null}
+          </div>
+
+          <dl className="grid grid-cols-2 gap-px bg-slate-200">
+            <div className="min-w-0 bg-white p-4">
+              <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500"><UserRound size={14} /> Ansvarig</dt>
+              <dd className="mt-2 break-words text-sm font-semibold text-slate-900">{task.assigneeName}</dd>
+            </div>
+            <div className="min-w-0 bg-white p-4">
+              <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500"><CalendarClock size={14} /> Deadline</dt>
+              <dd className="mt-2 text-sm font-semibold text-slate-900">{formatDate(task.dueAt)}</dd>
+            </div>
+            <div className="min-w-0 bg-white p-4">
+              <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Uppdragsgivare</dt>
+              <dd className="mt-2 break-words text-sm font-semibold text-slate-900">{task.issuerName}</dd>
+            </div>
+            <div className="min-w-0 bg-white p-4">
+              <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500"><Clock3 size={14} /> Nästa uppföljning</dt>
+              <dd className="mt-2 text-sm font-semibold text-slate-900">{formatDate(task.nextFollowupAt)}</dd>
+            </div>
+          </dl>
+        </section>
+
+        {pendingDeadlineRequest ? (
+          <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-start gap-3">
+              <CalendarClock className="mt-0.5 shrink-0 text-amber-700" size={20} />
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-amber-950">Förlängning begärd till {formatDate(pendingDeadlineRequest.requestedDueAt)}</h2>
+                <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-amber-900">{pendingDeadlineRequest.reason}</p>
+                <p className="mt-2 text-xs font-semibold text-amber-700">Väntar på uppdragsgivarens godkännande.</p>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {delegatedAccessUrl ? (
+          <section className="mt-4 rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
+            <p className="text-sm font-semibold text-slate-900">Personlig länk till den nya ansvariga</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">Dela länken manuellt om Signe inte kunde skicka den i vald kanal.</p>
+            <div className="mt-3 flex gap-2">
+              <input
+                readOnly
+                value={delegatedAccessUrl}
+                aria-label="Personlig uppdragslänk"
+                className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs text-slate-700"
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(delegatedAccessUrl)
+                    showToast('Länken kopierades.', 'success')
+                  } catch {
+                    showToast('Markera och kopiera länken manuellt.', 'error')
+                  }
+                }}
+                className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-semibold text-white"
+              >
+                <Copy size={16} /> Kopiera
+              </button>
+            </div>
+          </section>
+        ) : null}
+
+        {task.requirements.length > 0 ? (
+          <section className="mt-6" aria-labelledby="recipient-requirements-heading">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Innan uppgiften avslutas</p>
+                <h2 id="recipient-requirements-heading" className="mt-1 text-lg font-semibold">Kontrollpunkter</h2>
+              </div>
+              <span className="text-xs font-semibold text-slate-500">
+                {task.requirements.filter((item) => requirementState(item.status, item.key).done).length}/{task.requirements.length}
+              </span>
+            </div>
+            <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              {task.requirements.map((requirement) => {
+                const state = requirementState(requirement.status, requirement.key)
+                return (
+                  <div key={requirement.id} className="flex min-h-16 items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-0">
+                    {state.done ? <CheckCircle2 className="shrink-0 text-emerald-600" size={21} /> : <CircleDashed className="shrink-0 text-amber-500" size={21} />}
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold leading-5 text-slate-800">{requirement.label}</p>
+                      <p className="mt-1 text-xs text-slate-500">{state.label}</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        ) : null}
+
+        <section className="mt-6" aria-labelledby="recipient-evidence-heading">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Visa vad som är gjort</p>
+            <h2 id="recipient-evidence-heading" className="mt-1 text-lg font-semibold">Underlag och färdigbevis</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              Lägg till foto, dokument, text eller ett röstmeddelande. Signe sparar underlaget till uppgiften.
+            </p>
+          </div>
+
+          {activeForAssignee ? (
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={isBusy || isRecording}
+                  onClick={() => photoInputRef.current?.click()}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Camera size={18} aria-hidden="true" /> Ta foto
+                </button>
+                <button
+                  type="button"
+                  disabled={isBusy || isRecording}
+                  onClick={() => documentInputRef.current?.click()}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Paperclip size={18} aria-hidden="true" /> Välj fil
+                </button>
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(event) => void submitFileEvidence(event)}
+                  className="sr-only"
+                  tabIndex={-1}
+                />
+                <input
+                  ref={documentInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/heic,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                  onChange={(event) => void submitFileEvidence(event)}
+                  className="sr-only"
+                  tabIndex={-1}
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={isBusy && !isRecording}
+                onClick={isRecording ? stopRecording : () => void startRecording()}
+                className={`mt-2 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                  isRecording
+                    ? 'bg-rose-700 text-white hover:bg-rose-800'
+                    : 'bg-amber-100 text-amber-950 hover:bg-amber-200'
+                }`}
+              >
+                {busyAction === 'microphone' ? (
+                  <Loader2 className="animate-spin" size={18} aria-hidden="true" />
+                ) : isRecording ? (
+                  <Square size={17} fill="currentColor" aria-hidden="true" />
+                ) : (
+                  <Mic size={18} aria-hidden="true" />
+                )}
+                {isRecording
+                  ? `Stoppa och skicka · ${String(Math.floor(recordingSeconds / 60)).padStart(2, '0')}:${String(recordingSeconds % 60).padStart(2, '0')}`
+                  : 'Spela in röstmeddelande'}
+              </button>
+              {isRecording ? (
+                <p className="mt-2 text-center text-xs font-semibold text-rose-700" role="status">Inspelning pågår. Tryck på knappen när du är klar.</p>
+              ) : null}
+
+              <form onSubmit={submitTextEvidence} className="mt-3 border-t border-slate-100 pt-3">
+                <label htmlFor="recipient-evidence-text" className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                  <FileText size={15} aria-hidden="true" /> Beskriv underlaget
+                </label>
+                <textarea
+                  id="recipient-evidence-text"
+                  value={evidenceText}
+                  onChange={(event) => setEvidenceText(event.target.value)}
+                  rows={3}
+                  placeholder="Exempel: Vattenutkastaren är monterad och provtryckt."
+                  className={`${inputClassName} mt-2 resize-y`}
+                  disabled={isBusy || isRecording}
+                />
+                <button
+                  type="submit"
+                  disabled={isBusy || isRecording || !evidenceText.trim()}
+                  className="mt-2 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {busyAction === 'attachment' ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
+                  Spara textunderlag
+                </button>
+              </form>
+              <p className="mt-3 text-center text-[11px] leading-4 text-slate-500">Maximal filstorlek är 25 MB.</p>
+            </div>
+          ) : null}
+
+          {task.attachments.length > 0 ? (
+            <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              {task.attachments.map((attachment) => {
+                const content = (
+                  <>
+                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+                      {attachment.type === 'photo' ? (
+                        <ImageIcon size={19} aria-hidden="true" />
+                      ) : attachment.type === 'audio' ? (
+                        <Mic size={19} aria-hidden="true" />
+                      ) : (
+                        <FileText size={19} aria-hidden="true" />
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block break-words text-sm font-semibold text-slate-900">
+                        {attachment.title || attachment.fileName || attachmentTypeLabel(attachment.type)}
+                      </span>
+                      <span className="mt-1 block text-xs text-slate-500">
+                        {attachmentTypeLabel(attachment.type)} · {formatDate(attachment.createdAt, true)}
+                      </span>
+                      {attachment.isCompletionEvidence ? (
+                        <span className="mt-1.5 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Färdigbevis</span>
+                      ) : null}
+                    </span>
+                    {attachment.type !== 'text' ? <ChevronRight className="shrink-0 text-slate-400" size={18} aria-hidden="true" /> : null}
+                  </>
+                )
+
+                return (
+                  <article key={attachment.id} className="border-b border-slate-100 last:border-0">
+                    {attachment.type === 'text' ? (
+                      <div className="flex items-start gap-3 px-4 py-3">{content}</div>
+                    ) : (
+                      <a
+                        href={`${endpoint}/attachments/${attachment.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex min-h-16 items-center gap-3 px-4 py-3 hover:bg-slate-50"
+                      >
+                        {content}
+                      </a>
+                    )}
+                    {attachment.textContent ? (
+                      <p className="whitespace-pre-wrap px-4 pb-4 text-sm leading-6 text-slate-700">{attachment.textContent}</p>
+                    ) : null}
+                    {attachment.transcriptText ? (
+                      <div className="mx-4 mb-4 rounded-xl bg-slate-50 px-3 py-2.5 text-sm leading-6 text-slate-700">
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Transkribering</p>
+                        <p className="mt-1 whitespace-pre-wrap">{attachment.transcriptText}</p>
+                      </div>
+                    ) : null}
+                  </article>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="mt-3 rounded-2xl border border-dashed border-slate-300 bg-white/60 px-4 py-5 text-center text-sm text-slate-500">Inget underlag har lagts till ännu.</p>
+          )}
+        </section>
+
+        {workspace.children.length > 0 || workspace.canDelegate ? (
+          <section className="mt-6" aria-labelledby="recipient-children-heading">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 id="recipient-children-heading" className="text-lg font-semibold">Underuppgifter</h2>
+                {workspace.canDelegate ? <p className="mt-1 text-sm leading-5 text-slate-600">Tilldela nästa steg till exakt en ny ansvarig.</p> : null}
+              </div>
+              {workspace.canDelegate && activeForAssignee ? (
+                <button
+                  type="button"
+                  disabled={isBusy || isRecording || !waitingWindowOpen}
+                  onClick={() => openPanel('delegate')}
+                  title={!waitingWindowOpen ? 'Föräldrauppgiftens slutdatum har passerat. Begär mer tid först.' : undefined}
+                  className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-amber-100 px-3 text-sm font-semibold text-amber-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <UserPlus size={17} aria-hidden="true" /> Delegera
+                </button>
+              ) : null}
+            </div>
+            {workspace.children.length > 0 ? (
+              <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                {workspace.children.map((child) => (
+                  <div key={child.id} className="flex min-h-16 items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-0">
+                    <ChevronRight className="shrink-0 text-slate-400" size={18} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-900">{child.title}</p>
+                      <p className="mt-1 truncate text-xs text-slate-500">{child.assigneeName} · {formatDate(child.dueAt)}</p>
+                    </div>
+                    <TaskStatusBadge status={child.status} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 rounded-2xl border border-dashed border-slate-300 bg-white/60 px-4 py-5 text-center text-sm text-slate-500">Inga underuppgifter ännu.</p>
+            )}
+          </section>
+        ) : null}
+
+        <section className="mt-6" aria-labelledby="recipient-history-heading">
+          <div className="flex items-center gap-2">
+            <History className="text-amber-700" size={19} />
+            <h2 id="recipient-history-heading" className="text-lg font-semibold">Historik och kommunikation</h2>
+          </div>
+
+          <form onSubmit={submitComment} className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+            <label htmlFor="recipient-comment" className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+              <MessageSquareText size={15} /> Skriv till uppdragsgivaren
+            </label>
+            <textarea
+              id="recipient-comment"
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              rows={3}
+              placeholder="Skriv en status eller fråga…"
+              className={`${inputClassName} mt-2 resize-y`}
+            />
+            <button
+              type="submit"
+              disabled={isBusy || !comment.trim()}
+              className="mt-2 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busyAction === 'comment' ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
+              Skicka kommentar
+            </button>
+          </form>
+
+          <div className="mt-5 space-y-5">
+            {task.events.length > 0 ? (
+              task.events.map((event) => (
+                <article key={event.id} className="relative pl-7">
+                  <span className="absolute left-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-amber-400 ring-4 ring-amber-100" />
+                  <p className="text-xs font-semibold text-slate-700">{event.actorName} · {formatDate(event.createdAt, true)}</p>
+                  {event.fromStatus && event.toStatus ? (
+                    <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                      {taskStatusLabel(event.fromStatus)} <ArrowRight size={12} /> {taskStatusLabel(event.toStatus)}
+                    </p>
+                  ) : null}
+                  {event.message ? <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{event.message}</p> : null}
+                </article>
+              ))
+            ) : (
+              <p className="rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-6 text-center text-sm text-slate-500">Ingen historik ännu.</p>
+            )}
+          </div>
+        </section>
+
+        {task.deadlineRequests.some((request) => request.status !== 'pending') ? (
+          <details className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+            <summary className="cursor-pointer text-sm font-semibold text-slate-700">Tidigare datumförfrågningar</summary>
+            <div className="mt-3 space-y-3 border-t border-slate-100 pt-3">
+              {task.deadlineRequests.filter((request) => request.status !== 'pending').map((request) => (
+                <div key={request.id} className="text-sm text-slate-600">
+                  <p><span className="font-semibold text-slate-800">{formatDate(request.requestedDueAt)}</span> · {deadlineRequestLabel(request.status)}</p>
+                  <p className="mt-1">{request.reason}</p>
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
+
+        {readyForReviewBlocked && activeForAssignee ? (
+          <div className="mt-6 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+            <AlertTriangle className="mt-0.5 shrink-0" size={19} />
+            <p>
+              {!requirementsComplete && !childrenComplete
+                ? 'Kontrollpunkterna och underuppgifterna behöver bli klara innan uppgiften kan skickas för kontroll.'
+                : !requirementsComplete
+                  ? 'Kontrollpunkterna behöver bli klara innan uppgiften kan skickas för kontroll.'
+                  : 'Underuppgifterna behöver bli klara innan uppgiften kan skickas för kontroll.'}
+            </p>
+          </div>
+        ) : null}
+
+        {prestartBlocked && canStart ? (
+          <div className="mt-4 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+            <AlertTriangle className="mt-0.5 shrink-0" size={19} />
+            <p>
+              Uppdragsgivaren behöver kontrollera offert, beställargodkännande eller garantiunderlag innan arbetet kan startas.
+            </p>
+          </div>
+        ) : null}
+
+        <p className="mt-8 text-center text-xs leading-5 text-slate-500">Signe är den digitala uppföljningsassistenten för det här uppdraget.</p>
+      </div>
+
+      {showActionBar ? (
+        <footer className="fixed inset-x-0 bottom-0 z-30 border-t border-amber-200 bg-white/95 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur">
+          <div className="mx-auto flex w-full max-w-xl gap-2 overflow-x-auto px-4 sm:px-6">
+            {canStart ? (
+              <button
+                type="button"
+                disabled={isBusy || prestartBlocked}
+                onClick={() => void runAction('start', { taskId: task.id, version: task.version }, 'Uppgiften är startad.')}
+                title={prestartBlocked ? 'Förberedande kontrollpunkter återstår.' : undefined}
+                className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-2xl bg-indigo-700 px-4 text-sm font-semibold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {busyAction === 'start' ? <Loader2 className="animate-spin" size={18} /> : <ArrowRight size={18} />}
+                {task.status === 'waiting' ? 'Återuppta' : 'Starta'}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              disabled={isBusy || readyForReviewBlocked}
+              onClick={() => void runAction('ready_for_review', { taskId: task.id, version: task.version }, 'Uppgiften har skickats för kontroll.')}
+              title={readyForReviewBlocked ? 'Kontrollpunkter eller underuppgifter återstår.' : undefined}
+              className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-2xl bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {busyAction === 'ready_for_review' ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
+              Klar för kontroll
+            </button>
+            {canMarkWaiting ? (
+              <button
+                type="button"
+                disabled={isBusy || !waitingWindowOpen}
+                onClick={() => openPanel('waiting')}
+                title={!waitingWindowOpen ? 'Slutdatumet har passerat. Begär mer tid först.' : undefined}
+                className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Clock3 size={18} /> Väntar
+              </button>
+            ) : null}
+            <button
+              type="button"
+              disabled={isBusy || Boolean(pendingDeadlineRequest)}
+              onClick={() => openPanel('deadline')}
+              className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <CalendarClock size={18} /> Begär mer tid
+            </button>
+          </div>
+        </footer>
+      ) : null}
+
+      {panel ? (
+        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/55 p-0 backdrop-blur-[2px] sm:items-center sm:justify-center sm:p-4">
+          <button type="button" className="absolute inset-0 cursor-default" onClick={isBusy ? undefined : () => setPanel(null)} aria-label="Stäng dialog" />
+          <section role="dialog" aria-modal="true" aria-labelledby="recipient-action-title" className="relative max-h-[88dvh] w-full overflow-y-auto rounded-t-3xl bg-white px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 shadow-2xl sm:max-w-md sm:rounded-3xl sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">
+                  {panel === 'delegate' ? 'Signe tilldelar vidare' : 'Signe meddelar uppdragsgivaren'}
+                </p>
+                <h2 id="recipient-action-title" className="mt-2 text-xl font-semibold">
+                  {panel === 'waiting'
+                    ? 'Vad väntar uppgiften på?'
+                    : panel === 'deadline'
+                      ? 'Begär nytt slutdatum'
+                      : 'Delegera en underuppgift'}
+                </h2>
+              </div>
+              <button type="button" onClick={() => setPanel(null)} disabled={isBusy} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-50" aria-label="Stäng">
+                <X size={21} />
+              </button>
+            </div>
+
+            {panel === 'waiting' ? (
+              <form onSubmit={submitWaiting} className="mt-5 space-y-4">
+                <label className="block text-sm font-semibold text-slate-700">
+                  Orsak
+                  <textarea value={waitingReason} onChange={(event) => setWaitingReason(event.target.value)} rows={3} placeholder="Exempel: väntar på materialleverans" className={`${inputClassName} mt-2 resize-y`} />
+                </label>
+                <label className="block text-sm font-semibold text-slate-700">
+                  När ska Signe följa upp igen?
+                  <input type="date" min={todayInput} max={dueDateInput || undefined} value={waitingDate} onChange={(event) => setWaitingDate(event.target.value)} className={`${inputClassName} mt-2`} />
+                </label>
+                {!waitingWindowOpen ? <p className="text-sm text-rose-700">Slutdatumet har passerat. Begär ett nytt slutdatum först.</p> : null}
+                <button type="submit" disabled={isBusy || !waitingReason.trim() || !waitingDate || !waitingWindowOpen} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
+                  {busyAction === 'waiting' ? <Loader2 className="animate-spin" size={18} /> : <Clock3 size={18} />}
+                  Spara vänteläge
+                </button>
+              </form>
+            ) : panel === 'deadline' ? (
+              <form onSubmit={submitDeadlineRequest} className="mt-5 space-y-4">
+                <label className="block text-sm font-semibold text-slate-700">
+                  Önskat nytt slutdatum
+                  <input type="date" min={toDateInput(addDays(dueDate.getTime() > today.getTime() ? dueDate : today, 1))} value={requestedDueDate} onChange={(event) => setRequestedDueDate(event.target.value)} className={`${inputClassName} mt-2`} />
+                </label>
+                <label className="block text-sm font-semibold text-slate-700">
+                  Varför behövs mer tid?
+                  <textarea value={deadlineReason} onChange={(event) => setDeadlineReason(event.target.value)} rows={3} placeholder="Beskriv orsaken kort" className={`${inputClassName} mt-2 resize-y`} />
+                </label>
+                <p className="text-xs leading-5 text-slate-500">Slutdatumet ändras först när {task.issuerName} har godkänt begäran.</p>
+                <button type="submit" disabled={isBusy || !deadlineReason.trim() || !requestedDueDate} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
+                  {busyAction === 'request_deadline_change' ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
+                  Skicka begäran
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={submitDelegation} className="mt-5 space-y-4">
+                <p className="rounded-xl bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
+                  Den nya ansvariga får en egen personlig länk. Underuppgiftens datum kan aldrig gå förbi {formatDate(task.dueAt)}.
+                </p>
+
+                <label className="block text-sm font-semibold text-slate-700">
+                  Vad ska göras?
+                  <input
+                    autoFocus
+                    required
+                    value={delegateTitle}
+                    onChange={(event) => setDelegateTitle(event.target.value)}
+                    placeholder="Exempel: Ta fram skriftlig offert"
+                    className={`${inputClassName} mt-2`}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-slate-700">
+                  Beskrivning, frivilligt
+                  <textarea
+                    value={delegateDescription}
+                    onChange={(event) => setDelegateDescription(event.target.value)}
+                    rows={3}
+                    placeholder="Beskriv önskat resultat och viktig bakgrund."
+                    className={`${inputClassName} mt-2 resize-y`}
+                  />
+                </label>
+
+                <fieldset className="rounded-2xl border border-slate-200 p-3">
+                  <legend className="px-1 text-sm font-semibold text-slate-700">Ny extern ansvarig</legend>
+                  <div className="mt-2 space-y-3">
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Namn
+                      <input
+                        required
+                        value={delegateName}
+                        onChange={(event) => setDelegateName(event.target.value)}
+                        autoComplete="name"
+                        className={`${inputClassName} mt-2`}
+                      />
+                    </label>
+                    <label className="block text-sm font-semibold text-slate-700">
+                      E-post
+                      <input
+                        type="email"
+                        value={delegateEmail}
+                        onChange={(event) => setDelegateEmail(event.target.value)}
+                        autoComplete="email"
+                        inputMode="email"
+                        placeholder="namn@foretag.se"
+                        className={`${inputClassName} mt-2`}
+                      />
+                    </label>
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Telefon / WhatsApp
+                      <input
+                        type="tel"
+                        value={delegatePhone}
+                        onChange={(event) => setDelegatePhone(event.target.value)}
+                        autoComplete="tel"
+                        inputMode="tel"
+                        placeholder="+46 70 123 45 67"
+                        className={`${inputClassName} mt-2`}
+                      />
+                    </label>
+                    {!delegateHasContact ? <p className="text-xs text-slate-500">Minst e-post eller telefon krävs.</p> : null}
+                  </div>
+                </fieldset>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block min-w-0 text-sm font-semibold text-slate-700">
+                    Slutdatum
+                    <input
+                      required
+                      type="date"
+                      min={todayInput}
+                      max={dueDateInput || undefined}
+                      value={delegateDueDate}
+                      onChange={(event) => {
+                        setDelegateDueDate(event.target.value)
+                        if (delegateFollowupDate > event.target.value) setDelegateFollowupDate(event.target.value)
+                      }}
+                      className={`${inputClassName} mt-2 px-3`}
+                    />
+                  </label>
+                  <label className="block min-w-0 text-sm font-semibold text-slate-700">
+                    Uppföljning
+                    <input
+                      required
+                      type="date"
+                      min={todayInput}
+                      max={delegateDueDate || dueDateInput || undefined}
+                      value={delegateFollowupDate}
+                      onChange={(event) => setDelegateFollowupDate(event.target.value)}
+                      className={`${inputClassName} mt-2 px-3`}
+                    />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block min-w-0 text-sm font-semibold text-slate-700">
+                    Huvudkanal
+                    <select
+                      value={delegatePrimaryChannel}
+                      onChange={(event) => {
+                        const channel = event.target.value as TaskChannel
+                        setDelegatePrimaryChannel(channel)
+                        if (delegateFallbackChannel === channel) setDelegateFallbackChannel('')
+                      }}
+                      className={`${inputClassName} mt-2 px-3`}
+                    >
+                      <option value="email">E-post</option>
+                      <option value="whatsapp">WhatsApp</option>
+                    </select>
+                  </label>
+                  <label className="block min-w-0 text-sm font-semibold text-slate-700">
+                    Reservkanal
+                    <select
+                      value={delegateFallbackChannel}
+                      onChange={(event) => setDelegateFallbackChannel(event.target.value as TaskChannel | '')}
+                      className={`${inputClassName} mt-2 px-3`}
+                    >
+                      <option value="">Ingen</option>
+                      {delegatePrimaryChannel !== 'email' ? <option value="email">E-post</option> : null}
+                      {delegatePrimaryChannel !== 'whatsapp' ? <option value="whatsapp">WhatsApp</option> : null}
+                    </select>
+                  </label>
+                </div>
+
+                <label className="block text-sm font-semibold text-slate-700">
+                  Krav på färdigbevis
+                  <select
+                    value={delegateEvidenceRequirement}
+                    onChange={(event) => setDelegateEvidenceRequirement(event.target.value as TaskEvidenceRequirement)}
+                    className={`${inputClassName} mt-2`}
+                  >
+                    <option value="optional">Frivilligt</option>
+                    <option value="photo">Foto</option>
+                    <option value="document">Dokument</option>
+                    <option value="text">Textredovisning</option>
+                    <option value="any">Valfritt bevis krävs</option>
+                  </select>
+                </label>
+
+                {!delegateChannelsCovered && delegateHasContact ? (
+                  <p className="text-sm leading-5 text-rose-700">Kontaktuppgifterna måste stödja valda kommunikationskanaler.</p>
+                ) : null}
+                <button
+                  type="submit"
+                  disabled={isBusy || !canSubmitDelegation}
+                  className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {busyAction === 'create_subtask' ? <Loader2 className="animate-spin" size={18} /> : <UserPlus size={18} />}
+                  {busyAction === 'create_subtask' ? 'Skapar underuppgift…' : 'Skapa och tilldela'}
+                </button>
+              </form>
+            )}
+          </section>
+        </div>
+      ) : null}
+    </main>
+  )
+}

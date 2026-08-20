@@ -78,3 +78,27 @@ Relationer:
 - Bucket for inspection photos.
 - file_path stored in inspection_images.file_path.
 
+## Modul: Uppdrag v1
+
+Fullständigt schema, constraints, RPC:er och RLS finns i
+`docs/db/2026-08-20_01_operational_tasks_foundation.sql`.
+
+Kärntabeller:
+- `organization_contacts`: externa och valfritt profilkopplade mottagare per organisation.
+- `operational_tasks`: rotuppdrag och underuppdrag; exakt en uppdragsgivare och en ansvarig.
+- `task_requirements`, `task_events`, `task_attachments`: kontrollpunkter, audit trail och färdigbevis.
+- `task_deadline_change_requests`: begärd förlängning och uppdragsgivarens beslut.
+- `task_access_links`: enbart SHA-256-hash av personliga, tidsbegränsade externa länkar.
+- `task_followup_rules`, `task_messages`, `task_message_deliveries`, `task_automation_jobs`: uppföljnings- och kommunikationskö.
+- `task_ai_runs`, `task_ai_suggestions`: auditerbara Signe-körningar och människogranskade förslag.
+
+V1-gränser per organisation är två undernivåer, fem öppna barn per uppgift,
+fem AI-barn per uppgift, tre väntande AI-förslag per rot och femton aktiva
+efterkommande uppgifter.
+Binära bevis lagras privat i Storage-bucket `task-evidence` (25 MB per fil);
+servern använder service role och signerade läslänkar.
+
+Atomiska Uppdrag-RPC:er hanterar skapande av rot-/underuppdrag, statusövergång,
+kontrollpunktsbeslut, deadlinebegäran/-beslut och rotation av externa länkar.
+Kontrollpunkter som verifieras binds till ett konkret bevis när regeln kräver det.
+
