@@ -30,13 +30,13 @@ function taskErrorResponse(error: unknown) {
   const code = error instanceof Error ? error.message : 'TASK_UNKNOWN_ERROR'
   const badRequest: Record<string, string> = {
     TASK_TITLE_REQUIRED: 'Ange vad som ska göras.',
-    TASK_CREATE_INPUT_INVALID: 'Kontrollera titel, ansvarig, datum och kanaler.',
+    TASK_CREATE_INPUT_INVALID: 'Kontrollera titel, mottagare, datum och kanaler.',
     TASK_REQUIREMENTS_INPUT_INVALID: 'Kontrollpunkterna är ogiltiga.',
     TASK_DUE_REQUIRED: 'Ange ett giltigt slutdatum.',
     TASK_FOLLOWUP_REQUIRED: 'Ange när Signe ska följa upp nästa gång.',
     TASK_FOLLOWUP_AFTER_DUE: 'Nästa uppföljning måste ligga senast på slutdatumet.',
-    TASK_ASSIGNEE_REQUIRED: 'Välj en ansvarig.',
-    TASK_ASSIGNEE_NOT_IN_ORG: 'Den interna ansvariga tillhör inte organisationen.',
+    TASK_ASSIGNEE_REQUIRED: 'Välj en mottagare.',
+    TASK_ASSIGNEE_NOT_IN_ORG: 'Den interna mottagaren tillhör inte organisationen.',
     TASK_CONTACT_NOT_FOUND: 'Den externa kontakten kunde inte hittas.',
     TASK_CONTACT_NAME_REQUIRED: 'Ange namn på den externa mottagaren.',
     TASK_CONTACT_METHOD_REQUIRED: 'Ange e-post eller telefonnummer till mottagaren.',

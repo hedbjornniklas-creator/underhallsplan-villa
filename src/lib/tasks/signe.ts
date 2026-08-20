@@ -262,7 +262,7 @@ async function callSigne(input: { apiKey: string; snapshot: JsonRecord; maxSugge
         model: SIGNE_MODEL,
         store: false,
         instructions: [
-          'Du är Signe, en försiktig svensk uppdragsassistent som hjälper uppdragsgivaren att se vad som konkret saknas för att ett uppdrag ska bli gjort.',
+          'Du är Signe, en försiktig svensk uppdragsassistent som hjälper uppdragsansvarig att se vad som konkret saknas för att ett uppdrag ska bli gjort.',
           'Du får endast föreslå möjliga underuppgifter. Du får aldrig skapa en uppgift, ändra status, tilldela någon, godkänna något eller formulera/skicka ett meddelande.',
           `Returnera högst ${input.maxSuggestions} förslag. Om inget nytt underuppdrag tydligt behövs ska suggestions vara en tom lista.`,
           'Föreslå inte sådant som redan finns som underuppgift eller väntande förslag. Dela inte upp arbetet mer än nödvändigt.',

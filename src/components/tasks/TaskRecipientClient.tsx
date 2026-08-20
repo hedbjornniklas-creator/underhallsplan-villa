@@ -128,11 +128,11 @@ function accessClosedCopy(state: 'expired' | 'revoked') {
   return state === 'expired'
     ? {
         title: 'Länken har gått ut',
-        text: 'Be uppdragsgivaren skicka en ny personlig länk om du fortfarande ska hantera uppgiften.',
+        text: 'Be uppdragsansvarig skicka en ny personlig länk om du fortfarande ska hantera uppgiften.',
       }
     : {
         title: 'Länken har återkallats',
-        text: 'Den här länken kan inte längre användas. Kontakta uppdragsgivaren om du behöver fortsatt åtkomst.',
+        text: 'Den här länken kan inte längre användas. Kontakta uppdragsansvarig om du behöver fortsatt åtkomst.',
       }
 }
 
@@ -485,7 +485,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
         reason: deadlineReason.trim(),
         requestedDueAt: toIso(requestedDueDate),
       },
-      'Din begäran har skickats till uppdragsgivaren.'
+      'Din begäran har skickats till uppdragsansvarig.'
     )
     if (ok) setPanel(null)
   }
@@ -498,7 +498,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
     const phone = delegatePhone.trim()
     if (!title || !name || !delegateDueDate || !delegateFollowupDate) return
     if (!email && !phone) {
-      showToast('Ange minst e-post eller telefon till den nya ansvariga.', 'error')
+      showToast('Ange minst e-post eller telefon till den nya mottagaren.', 'error')
       return
     }
     if (delegatePrimaryChannel === 'email' && !email) {
@@ -642,7 +642,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
 
           <dl className="grid grid-cols-2 gap-px bg-slate-200">
             <div className="min-w-0 bg-white p-4">
-              <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500"><UserRound size={14} /> Ansvarig</dt>
+              <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500"><UserRound size={14} /> Mottagare</dt>
               <dd className="mt-2 break-words text-sm font-semibold text-slate-900">{task.assigneeName}</dd>
             </div>
             <div className="min-w-0 bg-white p-4">
@@ -650,7 +650,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
               <dd className="mt-2 text-sm font-semibold text-slate-900">{formatDate(task.dueAt)}</dd>
             </div>
             <div className="min-w-0 bg-white p-4">
-              <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Uppdragsgivare</dt>
+              <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Uppdragsansvarig</dt>
               <dd className="mt-2 break-words text-sm font-semibold text-slate-900">{task.issuerName}</dd>
             </div>
             <div className="min-w-0 bg-white p-4">
@@ -667,7 +667,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
               <div className="min-w-0">
                 <h2 className="text-sm font-semibold text-amber-950">Förlängning begärd till {formatDate(pendingDeadlineRequest.requestedDueAt)}</h2>
                 <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-amber-900">{pendingDeadlineRequest.reason}</p>
-                <p className="mt-2 text-xs font-semibold text-amber-700">Väntar på uppdragsgivarens godkännande.</p>
+                <p className="mt-2 text-xs font-semibold text-amber-700">Väntar på beslut från uppdragsansvarig.</p>
               </div>
             </div>
           </section>
@@ -675,7 +675,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
 
         {delegatedAccessUrl ? (
           <section className="mt-4 rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
-            <p className="text-sm font-semibold text-slate-900">Personlig länk till den nya ansvariga</p>
+            <p className="text-sm font-semibold text-slate-900">Personlig länk till den nya mottagaren</p>
             <p className="mt-1 text-xs leading-5 text-slate-500">Dela länken manuellt om Signe inte kunde skicka den i vald kanal.</p>
             <div className="mt-3 flex gap-2">
               <input
@@ -894,7 +894,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 id="recipient-children-heading" className="text-lg font-semibold">Underuppgifter</h2>
-                {workspace.canDelegate ? <p className="mt-1 text-sm leading-5 text-slate-600">Tilldela nästa steg till exakt en ny ansvarig.</p> : null}
+                {workspace.canDelegate ? <p className="mt-1 text-sm leading-5 text-slate-600">Skapa ett underuppdrag till en mottagare. Du blir uppdragsansvarig för underuppgiften.</p> : null}
               </div>
               {workspace.canDelegate && activeForAssignee ? (
                 <button
@@ -935,7 +935,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
 
           <form onSubmit={submitComment} className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
             <label htmlFor="recipient-comment" className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
-              <MessageSquareText size={15} /> Skriv till uppdragsgivaren
+              <MessageSquareText size={15} /> Skriv till uppdragsansvarig
             </label>
             <textarea
               id="recipient-comment"
@@ -1006,7 +1006,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
           <div className="mt-4 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
             <AlertTriangle className="mt-0.5 shrink-0" size={19} />
             <p>
-              Uppdragsgivaren behöver kontrollera offert, beställargodkännande eller garantiunderlag innan arbetet kan startas.
+              Uppdragsansvarig behöver kontrollera offert, beställargodkännande eller garantiunderlag innan arbetet kan startas.
             </p>
           </div>
         ) : null}
@@ -1069,7 +1069,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">
-                  {panel === 'delegate' ? 'Signe tilldelar vidare' : 'Signe meddelar uppdragsgivaren'}
+                  {panel === 'delegate' ? 'Signe tilldelar vidare' : 'Signe meddelar uppdragsansvarig'}
                 </p>
                 <h2 id="recipient-action-title" className="mt-2 text-xl font-semibold">
                   {panel === 'waiting'
@@ -1119,7 +1119,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
             ) : (
               <form onSubmit={submitDelegation} className="mt-5 space-y-4">
                 <p className="rounded-xl bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
-                  Den nya ansvariga får en egen personlig länk. Underuppgiftens datum kan aldrig gå förbi {formatDate(task.dueAt)}.
+                  Den nya mottagaren får en egen personlig länk. Du blir uppdragsansvarig för underuppgiften. Underuppgiftens datum kan aldrig gå förbi {formatDate(task.dueAt)}.
                 </p>
 
                 <label className="block text-sm font-semibold text-slate-700">
@@ -1145,7 +1145,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
                 </label>
 
                 <fieldset className="rounded-2xl border border-slate-200 p-3">
-                  <legend className="px-1 text-sm font-semibold text-slate-700">Ny extern ansvarig</legend>
+                  <legend className="px-1 text-sm font-semibold text-slate-700">Ny extern mottagare</legend>
                   <div className="mt-2 space-y-3">
                     <label className="block text-sm font-semibold text-slate-700">
                       Namn

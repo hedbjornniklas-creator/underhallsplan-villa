@@ -385,7 +385,7 @@ async function loadRecipients(admin: AdminClient, task: OperationalTask) {
   const creator: Recipient = {
     kind: 'profile',
     id: issuer.id,
-    name: issuer.full_name || issuer.email || 'Uppdragsgivaren',
+    name: issuer.full_name || issuer.email || 'Uppdragsansvarig',
     email: issuer.email,
     whatsappNumber: issuer.phone,
   }
@@ -401,7 +401,7 @@ async function loadRecipients(admin: AdminClient, task: OperationalTask) {
       ? {
           kind: 'profile',
           id: assigneeProfile.id,
-          name: assigneeProfile.full_name || assigneeProfile.email || 'Ansvarig',
+          name: assigneeProfile.full_name || assigneeProfile.email || 'Mottagare',
           email: assigneeProfile.email,
           whatsappNumber: assigneeProfile.phone,
         }

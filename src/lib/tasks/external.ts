@@ -343,13 +343,13 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
       : Promise.resolve({ data: [], error: null }),
   ])
   const childProfiles = new Map(
-    (childProfilesResult.data ?? []).map((profile) => [String(profile.id), profile.full_name || profile.email || 'Intern ansvarig'])
+    (childProfilesResult.data ?? []).map((profile) => [String(profile.id), profile.full_name || profile.email || 'Intern mottagare'])
   )
   const childContacts = new Map(
-    (childContactsResult.data ?? []).map((contact) => [String(contact.id), contact.name || 'Extern ansvarig'])
+    (childContactsResult.data ?? []).map((contact) => [String(contact.id), contact.name || 'Extern mottagare'])
   )
 
-  const issuerName = issuerResult.data?.full_name?.trim() || issuerResult.data?.email?.trim() || 'Uppdragsgivaren'
+  const issuerName = issuerResult.data?.full_name?.trim() || issuerResult.data?.email?.trim() || 'Uppdragsansvarig'
   const recipientName = String(contactResult.data.name)
 
   return {
@@ -420,8 +420,8 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
       status: child.status as TaskStatus,
       dueAt: String(child.due_at),
       assigneeName: child.assignee_profile_id
-        ? childProfiles.get(String(child.assignee_profile_id)) ?? 'Intern ansvarig'
-        : childContacts.get(String(child.assignee_contact_id)) ?? 'Extern ansvarig',
+        ? childProfiles.get(String(child.assignee_profile_id)) ?? 'Intern mottagare'
+        : childContacts.get(String(child.assignee_contact_id)) ?? 'Extern mottagare',
     })),
   }
 }
@@ -573,7 +573,7 @@ async function createExternalSubtask(input: {
     warning: issued.warning,
     notice: issued.warning
       ? 'Underuppgiften skapades. Den personliga länken behöver delas manuellt.'
-      : 'Underuppgiften skapades och den ansvariga har fått sin personliga länk.',
+      : 'Underuppgiften skapades och mottagaren har fått sin personliga länk.',
   }
 }
 
@@ -724,7 +724,7 @@ export async function issueTaskAccessLink(input: {
     .select('full_name,email')
     .eq('id', task.issuer_profile_id)
     .maybeSingle()
-  const issuerName = issuer?.full_name?.trim() || 'Din uppdragsgivare'
+  const issuerName = issuer?.full_name?.trim() || 'Uppdragsansvarig'
   const subject = `Nytt uppdrag: ${task.title}`
   const bodyText = `${contact.name},\n\n${issuerName} har tilldelat dig uppgiften ”${task.title}”.\nSlutdatum: ${new Intl.DateTimeFormat('sv-SE').format(new Date(task.due_at))}.\n\nÖppna uppgiften: ${accessUrl}\n\nLänken är personlig och ska inte vidarebefordras. Signe är en digital uppföljningsassistent.`
   const bodyHtml = `<p>${escapeHtml(contact.name)},</p><p><strong>${escapeHtml(issuerName)}</strong> har tilldelat dig uppgiften <strong>${escapeHtml(task.title)}</strong>.</p><p>Slutdatum: ${escapeHtml(new Intl.DateTimeFormat('sv-SE').format(new Date(task.due_at)))}</p><p><a href="${escapeHtml(accessUrl)}">Öppna uppgiften</a></p><p>Länken är personlig och ska inte vidarebefordras. Signe är en digital uppföljningsassistent.</p>`

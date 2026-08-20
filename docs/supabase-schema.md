@@ -89,9 +89,9 @@ före Uppdrag-migrationen.
 
 Kärntabeller:
 - `organization_contacts`: externa och valfritt profilkopplade mottagare per organisation.
-- `operational_tasks`: rotuppdrag och underuppdrag; exakt en uppdragsgivare och en ansvarig.
+- `operational_tasks`: rotuppdrag och underuppdrag; skaparen är uppdragsansvarig och varje uppdrag har exakt en mottagare.
 - `task_requirements`, `task_events`, `task_attachments`: kontrollpunkter, audit trail och färdigbevis.
-- `task_deadline_change_requests`: begärd förlängning och uppdragsgivarens beslut.
+- `task_deadline_change_requests`: begärd förlängning och uppdragsansvarigs beslut.
 - `task_access_links`: enbart SHA-256-hash av personliga, tidsbegränsade externa länkar.
 - `task_followup_rules`, `task_messages`, `task_message_deliveries`, `task_automation_jobs`: uppföljnings- och kommunikationskö.
 - `task_ai_runs`, `task_ai_suggestions`: auditerbara Signe-körningar och människogranskade förslag.

@@ -242,9 +242,12 @@ export default function TaskComposerSheet({
             </div>
 
             <fieldset className="rounded-2xl border border-slate-200 bg-white p-4">
-              <legend className="px-1 text-sm font-semibold text-slate-800">Exakt en ansvarig</legend>
-              <label className="mt-2 block">
-                <span className="sr-only">Ansvarig</span>
+              <legend className="px-1 text-sm font-semibold text-slate-800">Mottagare</legend>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Du blir uppdragsansvarig. Mottagaren är den person som ska agera på uppdraget.
+              </p>
+              <label className="mt-3 block">
+                <span className="sr-only">Mottagare</span>
                 <select
                   required
                   value={assigneeRef}

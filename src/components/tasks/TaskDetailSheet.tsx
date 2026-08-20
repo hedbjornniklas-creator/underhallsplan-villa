@@ -306,14 +306,20 @@ export default function TaskDetailSheet({
           <dl className="mt-5 grid grid-cols-2 gap-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
               <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <UserRound size={14} /> Ansvarig
+                <ShieldCheck size={14} /> Uppdragsansvarig
+              </dt>
+              <dd className="mt-2 text-sm font-semibold text-slate-900">{task.issuerName}</dd>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
+              <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <UserRound size={14} /> Mottagare
               </dt>
               <dd className="mt-2 text-sm font-semibold text-slate-900">{task.assignee.name}</dd>
               {task.assignee.companyName ? <dd className="mt-0.5 text-xs text-slate-500">{task.assignee.companyName}</dd> : null}
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
               <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <ShieldCheck size={14} /> Bollen ligger hos
+                <CircleDashed size={14} /> Bollen hos
               </dt>
               <dd className="mt-2 text-sm font-semibold text-slate-900">{ballText}</dd>
             </div>
@@ -323,7 +329,7 @@ export default function TaskDetailSheet({
               </dt>
               <dd className="mt-2 text-sm font-semibold text-slate-900">{formatDate(task.dueAt)}</dd>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
+            <div className="col-span-2 rounded-2xl border border-slate-200 bg-white p-3.5">
               <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <Clock3 size={14} /> Signe följer upp
               </dt>
@@ -729,7 +735,7 @@ export default function TaskDetailSheet({
           <section className="mt-6">
             <h3 className="text-sm font-semibold text-slate-950">Historik och kommunikation</h3>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              Kommentarer delas med både uppdragsgivaren och den ansvariga.
+              Kommentarer delas med både uppdragsansvarig och mottagare.
             </p>
             <form onSubmit={submitComment} className="mt-2 flex gap-2">
               <input
@@ -824,7 +830,7 @@ export default function TaskDetailSheet({
 
             {canActAsAssignee && prestartBlocked && ['assigned', 'waiting', 'returned'].includes(task.status) ? (
               <p className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
-                Arbetet kan startas när uppdragsgivaren har kontrollerat offert, beställargodkännande eller garantiunderlag.
+                Arbetet kan startas när uppdragsansvarig har kontrollerat offert, beställargodkännande eller garantiunderlag.
               </p>
             ) : null}
 

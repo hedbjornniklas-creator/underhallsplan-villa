@@ -107,7 +107,7 @@ function TaskCard({ task, parentTitle, onClick }: { task: TaskView; parentTitle:
           <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-2">
             <span className="flex min-w-0 items-center gap-1.5">
               <UserRoundCheck size={14} className="shrink-0" />
-              <span className="truncate">Bollen: <strong className="font-semibold text-slate-700">{ballText}</strong></span>
+              <span className="truncate">Bollen hos: <strong className="font-semibold text-slate-700">{ballText}</strong></span>
             </span>
             <span className="flex items-center gap-1.5">
               <Clock3 size={14} className="shrink-0" />
@@ -372,7 +372,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                     <input
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
-                      placeholder="Sök uppgift, projekt eller ansvarig"
+                      placeholder="Sök uppgift, projekt, uppdragsansvarig eller mottagare"
                       className="min-h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-sm outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-100"
                     />
                   </label>

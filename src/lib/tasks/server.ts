@@ -547,7 +547,7 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       fallbackChannel: task.fallback_channel,
       evidenceRequirement: task.evidence_requirement,
       issuerId: task.issuer_profile_id,
-      issuerName: issuer?.full_name?.trim() || issuer?.email?.trim() || 'Uppdragsgivare',
+      issuerName: issuer?.full_name?.trim() || issuer?.email?.trim() || 'Uppdragsansvarig',
       assignee,
       reviewRound: task.review_round,
       version: task.version,
@@ -915,7 +915,7 @@ async function requestDeadlineChange(input: TaskActionInput) {
     p_actor_access_link_id: null,
   })
   if (error) throw taskDatabaseError(error, 'TASK_EXTENSION_CREATE_FAILED')
-  return 'Förlängningen skickades till uppdragsgivaren.'
+  return 'Förlängningen skickades till uppdragsansvarig.'
 }
 
 async function decideDeadlineChange(input: TaskActionInput) {
@@ -979,7 +979,7 @@ export async function performTaskInternalAction(input: TaskActionInput): Promise
       warning = issued.warning ?? undefined
       notice = issued.warning
         ? `${notice} Den personliga länken skapades men behöver delas manuellt.`
-        : `${notice} Den ansvariga har fått sin personliga länk.`
+        : `${notice} Mottagaren har fått sin personliga länk.`
     }
   } else if (input.action === 'transition') {
     notice = await transitionTask(input)
