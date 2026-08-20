@@ -6,6 +6,7 @@ import {
   sendTaskAccessLinkEmail,
   sendTaskWhatsAppAccessLink,
 } from './automation'
+import { buildTaskEmailHtml } from './emailTemplates'
 import { isTaskStatus } from './domain'
 import type {
   TaskChannel,
@@ -726,8 +727,21 @@ export async function issueTaskAccessLink(input: {
     .maybeSingle()
   const issuerName = issuer?.full_name?.trim() || 'Uppdragsansvarig'
   const subject = `Nytt uppdrag: ${task.title}`
-  const bodyText = `${contact.name},\n\n${issuerName} har tilldelat dig uppgiften ”${task.title}”.\nSlutdatum: ${new Intl.DateTimeFormat('sv-SE').format(new Date(task.due_at))}.\n\nÖppna uppgiften: ${accessUrl}\n\nLänken är personlig och ska inte vidarebefordras. Signe är en digital uppföljningsassistent.`
-  const bodyHtml = `<p>${escapeHtml(contact.name)},</p><p><strong>${escapeHtml(issuerName)}</strong> har tilldelat dig uppgiften <strong>${escapeHtml(task.title)}</strong>.</p><p>Slutdatum: ${escapeHtml(new Intl.DateTimeFormat('sv-SE').format(new Date(task.due_at)))}</p><p><a href="${escapeHtml(accessUrl)}">Öppna uppgiften</a></p><p>Länken är personlig och ska inte vidarebefordras. Signe är en digital uppföljningsassistent.</p>`
+  const dueLabel = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' }).format(new Date(task.due_at))
+  const bodyText = `${contact.name},\n\n${issuerName} har tilldelat dig uppgiften ”${task.title}”.\nSlutdatum: ${dueLabel}.\n\nÖppna uppgiften: ${accessUrl}\n\nLänken är personlig och ska inte vidarebefordras. Signe är HusHubs digitala uppföljningsassistent.`
+  const bodyHtml = buildTaskEmailHtml({
+    previewText: `${issuerName} har tilldelat dig uppdraget ${task.title}.`,
+    eyebrow: 'Nytt uppdrag',
+    heading: 'Du har fått ett nytt uppdrag',
+    recipientName: contact.name,
+    lead: `${issuerName} har tilldelat dig följande uppdrag.`,
+    taskTitle: task.title,
+    dueLabel,
+    instruction: 'Öppna uppdraget för att läsa hela beskrivningen, uppdatera status och lämna underlag.',
+    actionUrl: accessUrl,
+    actionLabel: 'Öppna uppdraget',
+    notice: 'Länken är personlig. Vidarebefordra den inte till någon annan.',
+  })
   const auditBodyText = `${contact.name} fick en personlig uppdragslänk till ”${task.title}”. Själva länktoken sparas inte i meddelandeloggen.`
   const { data: message, error: messageError } = await admin
     .from('task_messages')
@@ -874,13 +888,4 @@ function taskDeliveryErrorCode(error: unknown, channel: TaskChannel) {
     : channel === 'email'
       ? 'TASK_EMAIL_PROVIDER_FAILED'
       : 'TASK_WHATSAPP_PROVIDER_FAILED'
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
 }

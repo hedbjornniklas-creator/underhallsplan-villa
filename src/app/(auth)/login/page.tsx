@@ -9,6 +9,42 @@ import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { ArrowLeft, CheckCircle2, ClipboardCheck, Layers3 } from 'lucide-react'
 import PasswordAuthPanel from '@/components/auth/PasswordAuthPanel'
 
+type WorkspaceDestination = '/dashboard-v1' | '/renoapp/app'
+
+const workspaces: Array<{
+  destination: WorkspaceDestination
+  label: string
+  description: string
+  icon: typeof ClipboardCheck
+  accent: 'blue' | 'emerald'
+}> = [
+  {
+    destination: '/dashboard-v1',
+    label: 'BesiktApp',
+    description: 'Besiktningar, utredningar och utlåtanden.',
+    icon: ClipboardCheck,
+    accent: 'blue',
+  },
+  {
+    destination: '/renoapp/app',
+    label: 'RenoApp',
+    description: 'Renoveringsärenden för BRF och styrelse.',
+    icon: Layers3,
+    accent: 'emerald',
+  },
+]
+
+function requestedDestination() {
+  if (typeof window === 'undefined') return null
+
+  const next = new URLSearchParams(window.location.search).get('next')
+  return next === '/dashboard-v1' || next === '/renoapp/app' ? next : null
+}
+
+function resolveEntryDestination(selectedWorkspace: WorkspaceDestination | null) {
+  return selectedWorkspace ?? requestedDestination() ?? '/app'
+}
+
 function isRecoveryContext() {
   if (typeof window === 'undefined') return false
   const search = new URLSearchParams(window.location.search)
@@ -26,10 +62,13 @@ export default function LoginPage() {
   const router = useRouter()
 
   const [resetSuccess, setResetSuccess] = useState(false)
+  const [selectedWorkspace, setSelectedWorkspace] = useState<WorkspaceDestination | null>(null)
   const authRedirectTo =
     typeof window === 'undefined' ? undefined : `${window.location.origin}/auth/reset-password`
 
   useEffect(() => {
+    let active = true
+
     if (isRecoveryContext()) {
       const query = window.location.search ?? ''
       const hash = window.location.hash ?? ''
@@ -44,7 +83,7 @@ export default function LoginPage() {
     )
 
     supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
-      if (data.session) router.replace('/app')
+      if (active && data.session) router.replace(resolveEntryDestination(selectedWorkspace))
     })
 
     const { data } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
@@ -52,14 +91,31 @@ export default function LoginPage() {
         router.replace('/auth/reset-password')
         return
       }
-      if (session) router.replace('/app')
+      if (session) router.replace(resolveEntryDestination(selectedWorkspace))
     })
 
     return () => {
+      active = false
       window.clearTimeout(resetSuccessTimer)
       data.subscription.unsubscribe()
     }
-  }, [router])
+  }, [router, selectedWorkspace])
+
+  const chooseWorkspace = async (destination: WorkspaceDestination) => {
+    setSelectedWorkspace(destination)
+
+    const { data } = await supabase.auth.getSession()
+    if (data.session) {
+      router.replace(destination)
+      return
+    }
+
+    window.requestAnimationFrame(() => {
+      document.getElementById('inloggning')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
+  const selectedWorkspaceDetails = workspaces.find((workspace) => workspace.destination === selectedWorkspace)
 
   return (
     <main className="relative min-h-dvh overflow-hidden bg-[#f3f1ec] text-stone-950">
@@ -98,27 +154,49 @@ export default function LoginPage() {
             </p>
 
             <div className="mt-10 grid max-w-2xl gap-3 sm:grid-cols-2">
-              <div className="rounded-3xl border border-blue-200/80 bg-white/70 p-5 shadow-[0_22px_60px_-42px_rgba(30,64,175,0.5)]">
-                <ClipboardCheck className="text-blue-700" size={22} aria-hidden="true" />
-                <h2 className="mt-4 text-lg font-semibold">BesiktApp</h2>
-                <p className="mt-2 text-sm leading-6 text-stone-600">Besiktningar, utredningar och utlåtanden.</p>
-              </div>
-              <div className="rounded-3xl border border-emerald-200/80 bg-white/70 p-5 shadow-[0_22px_60px_-42px_rgba(6,95,70,0.4)]">
-                <Layers3 className="text-emerald-700" size={22} aria-hidden="true" />
-                <h2 className="mt-4 text-lg font-semibold">RenoApp</h2>
-                <p className="mt-2 text-sm leading-6 text-stone-600">Renoveringsärenden för BRF och styrelse.</p>
-              </div>
+              {workspaces.map((workspace) => {
+                const Icon = workspace.icon
+                const isSelected = selectedWorkspace === workspace.destination
+                const isBesiktApp = workspace.accent === 'blue'
+
+                return (
+                  <button
+                    key={workspace.destination}
+                    type="button"
+                    onClick={() => void chooseWorkspace(workspace.destination)}
+                    aria-pressed={isSelected}
+                    className={`rounded-3xl border p-5 text-left shadow-[0_22px_60px_-42px_rgba(30,64,175,0.5)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 active:scale-[0.99] ${
+                      isBesiktApp
+                        ? 'border-blue-200/80 bg-white/70 hover:border-blue-400 hover:bg-blue-50 focus-visible:ring-blue-700'
+                        : 'border-emerald-200/80 bg-white/70 shadow-[0_22px_60px_-42px_rgba(6,95,70,0.4)] hover:border-emerald-400 hover:bg-emerald-50 focus-visible:ring-emerald-700'
+                    } ${isSelected ? (isBesiktApp ? 'ring-2 ring-blue-700' : 'ring-2 ring-emerald-700') : ''}`}
+                  >
+                    <Icon className={isBesiktApp ? 'text-blue-700' : 'text-emerald-700'} size={22} aria-hidden="true" />
+                    <h2 className="mt-4 text-lg font-semibold">{workspace.label}</h2>
+                    <p className="mt-2 text-sm leading-6 text-stone-600">{workspace.description}</p>
+                    <span className={isBesiktApp ? 'mt-4 block text-sm font-semibold text-blue-800' : 'mt-4 block text-sm font-semibold text-emerald-800'}>
+                      Logga in till {workspace.label}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           </div>
 
           <p className="text-xs leading-6 text-stone-500">HusHub samlar specialiserade verktyg för tydligare fastighetsarbete.</p>
         </section>
 
-        <section className="flex items-center border-t border-stone-200/80 bg-white/75 px-6 py-12 backdrop-blur-sm sm:px-10 lg:border-l lg:border-t-0 lg:px-14 xl:px-20">
+        <section id="inloggning" className="scroll-mt-6 flex items-center border-t border-stone-200/80 bg-white/75 px-6 py-12 backdrop-blur-sm sm:px-10 lg:border-l lg:border-t-0 lg:px-14 xl:px-20">
           <div className="mx-auto w-full max-w-md">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Inloggning</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">Välkommen tillbaka</h2>
-            <p className="mt-3 text-sm leading-7 text-stone-600">Använd kontot du fått via din organisation eller BRF.</p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">
+              {selectedWorkspaceDetails ? `Logga in till ${selectedWorkspaceDetails.label}` : 'Välkommen tillbaka'}
+            </h2>
+            <p className="mt-3 text-sm leading-7 text-stone-600">
+              {selectedWorkspaceDetails
+                ? `Efter inloggning öppnas ${selectedWorkspaceDetails.label} direkt.`
+                : 'Använd kontot du fått via din organisation eller BRF.'}
+            </p>
 
             {resetSuccess ? (
               <div className="mt-6 flex gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">

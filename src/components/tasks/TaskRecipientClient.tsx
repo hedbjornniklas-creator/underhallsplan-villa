@@ -21,7 +21,6 @@ import {
   Mic,
   Paperclip,
   Send,
-  Sparkles,
   Square,
   UserPlus,
   UserRound,
@@ -29,6 +28,7 @@ import {
 } from 'lucide-react'
 import type { TaskChannel, TaskEvidenceRequirement } from '@/lib/tasks/contracts'
 import type { ExternalTaskWorkspace } from '@/lib/tasks/external'
+import { SigneMark } from './SigneMark'
 import { TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
 
 type Props = {
@@ -134,14 +134,6 @@ function accessClosedCopy(state: 'expired' | 'revoked') {
         title: 'Länken har återkallats',
         text: 'Den här länken kan inte längre användas. Kontakta uppdragsansvarig om du behöver fortsatt åtkomst.',
       }
-}
-
-function SigneMark() {
-  return (
-    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-sm">
-      <Sparkles size={21} aria-hidden="true" />
-    </span>
-  )
 }
 
 export default function TaskRecipientClient({ initialWorkspace, endpoint }: Props) {

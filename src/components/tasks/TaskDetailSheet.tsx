@@ -19,7 +19,6 @@ import {
   RotateCcw,
   Send,
   ShieldCheck,
-  Sparkles,
   Square,
   UserRound,
   X,
@@ -31,6 +30,7 @@ import type {
   TaskView,
   TaskWorkspace,
 } from '@/lib/tasks/contracts'
+import { SigneCheckIcon } from './SigneMark'
 import { TaskRiskDot, TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
 
 type Props = {
@@ -444,7 +444,7 @@ export default function TaskDetailSheet({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h3 className="flex items-center gap-2 text-sm font-semibold text-violet-950">
-                  <Sparkles size={17} /> Signe · förslag på nästa steg
+                  <SigneCheckIcon size={19} /> Signe · förslag på nästa steg
                 </h3>
                 <p className="mt-1 text-xs leading-5 text-violet-800">
                   Signe kan föreslå högst tre underuppgifter. Förslagen skapar inget och skickar inget förrän du själv väljer hur du vill gå vidare.
@@ -457,7 +457,7 @@ export default function TaskDetailSheet({
                   onClick={() => onAction('request_signe_suggestions', { taskId: task.id })}
                   className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 text-sm font-semibold text-white hover:bg-violet-800 disabled:opacity-50"
                 >
-                  <Sparkles size={16} /> Be Signe föreslå nästa steg
+                  <SigneCheckIcon size={18} /> Be Signe föreslå nästa steg
                 </button>
               ) : null}
             </div>
@@ -470,7 +470,7 @@ export default function TaskDetailSheet({
                     <article key={suggestion.id} className="rounded-2xl border border-violet-200 bg-white p-4 shadow-sm">
                       <div className="flex items-start gap-3">
                         <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
-                          <Sparkles size={17} />
+                          <SigneCheckIcon size={19} />
                         </span>
                         <div className="min-w-0 flex-1">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600">

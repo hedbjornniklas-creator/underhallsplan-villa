@@ -11,6 +11,7 @@ import {
   type TaskReminderPolicy,
 } from '@/lib/tasks/domain'
 import type { TaskStatus } from '@/lib/tasks/contracts'
+import { buildTaskEmailHtml } from '@/lib/tasks/emailTemplates'
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 
@@ -604,15 +605,6 @@ async function loadFollowupPolicy(admin: AdminClient, task: OperationalTask) {
   }
 }
 
-function htmlEscape(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
 function appBaseUrl() {
   const configured = process.env.APP_BASE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim()
   if (!configured) throw automationError('TASK_AUTOMATION_APP_URL_MISSING')
@@ -698,18 +690,20 @@ function buildReminderContent(input: {
     '',
     'Hälsningar, Signe',
   ].filter((line): line is string => line !== null).join('\n')
-  const actionLink = internalUrl
-    ? `<p><a href="${htmlEscape(internalUrl)}" style="display:inline-block;padding:12px 18px;border-radius:8px;background:#143f38;color:#fff;text-decoration:none">Öppna uppdraget</a></p>`
-    : `<p>${htmlEscape(externalLinkNote ?? '')}</p>`
-  const html = [
-    `<p>${htmlEscape(input.recipient.name)},</p>`,
-    `<p><strong>${htmlEscape(heading)}:</strong> ${htmlEscape(input.task.title)}</p>`,
-    contextText ? `<p>${htmlEscape(contextText)}</p>` : '',
-    `<p>Slutdatum: <strong>${htmlEscape(dueLabel)}</strong></p>`,
-    `<p>${htmlEscape(instruction)}</p>`,
-    actionLink,
-    '<p>Hälsningar,<br><strong>Signe</strong></p>',
-  ].join('')
+  const html = buildTaskEmailHtml({
+    previewText: `${heading}: ${input.task.title}`,
+    eyebrow: 'Signe följer upp',
+    heading,
+    recipientName: input.recipient.name,
+    lead: 'Signe följer upp uppdraget och ser till att nästa steg blir tydligt.',
+    taskTitle: input.task.title,
+    contextLabel: input.task.context_label,
+    dueLabel,
+    instruction,
+    actionUrl: internalUrl,
+    actionLabel: 'Öppna uppdraget',
+    notice: externalLinkNote,
+  })
   return { subject: `${heading}: ${input.task.title}`, text, html }
 }
 

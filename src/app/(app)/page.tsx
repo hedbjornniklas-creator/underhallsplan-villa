@@ -44,9 +44,14 @@ export default function HomePage() {
     router.replace(`/auth/reset-password${query}${hash}`)
   }, [router])
 
-  const handleDashboardEntry = async () => {
+  const handleDashboardEntry = async (destination: '/dashboard-v1' | '/renoapp/app' | null = null) => {
     const { data } = await supabase.auth.getSession()
-    router.push(data.session ? '/app' : '/login')
+    if (data.session) {
+      router.push(destination ?? '/app')
+      return
+    }
+
+    router.push(destination ? `/login?next=${encodeURIComponent(destination)}` : '/login')
   }
 
   return (
@@ -289,7 +294,7 @@ export default function HomePage() {
               <div className="mt-auto pt-9">
                 <button
                   type="button"
-                  onClick={() => void handleDashboardEntry()}
+                  onClick={() => void handleDashboardEntry('/dashboard-v1')}
                   className={`inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-full bg-[#1769a7] px-6 text-sm font-semibold text-white transition hover:bg-[#125886] ${focusRing}`}
                 >
                   Öppna BesiktApp
@@ -375,7 +380,7 @@ export default function HomePage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => void handleDashboardEntry()}
+                    onClick={() => void handleDashboardEntry('/dashboard-v1')}
                     className={`inline-flex cursor-pointer items-center gap-2 rounded text-sm font-semibold text-[#1769a7] hover:text-[#125886] ${focusRing}`}
                   >
                     Till BesiktApp <ArrowRight aria-hidden="true" className="h-4 w-4" />

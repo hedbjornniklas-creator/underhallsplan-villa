@@ -12,7 +12,6 @@ import {
   Plus,
   RefreshCw,
   Search,
-  Sparkles,
   UserRoundCheck,
   X,
 } from 'lucide-react'
@@ -25,6 +24,7 @@ import type {
 } from '@/lib/tasks/contracts'
 import TaskComposerSheet from './TaskComposerSheet'
 import TaskDetailSheet from './TaskDetailSheet'
+import { SigneCheckIcon } from './SigneMark'
 import { TaskRiskDot, TaskStatusBadge } from './TaskStatusBadge'
 
 type FilterKey = 'all' | 'my_ball' | 'review' | 'overdue'
@@ -271,7 +271,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
           <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-amber-800">
-                <Sparkles size={15} /> Signe håller i uppföljningen
+                <SigneCheckIcon size={17} /> Signe håller i uppföljningen
               </div>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">Uppdrag</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
