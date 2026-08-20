@@ -116,7 +116,7 @@ export default function DashboardV1Client({ modules }: { modules: ModuleCardData
             </p>
           </header>
 
-          <section className="mx-auto mt-10 grid w-full max-w-6xl grid-cols-1 gap-5 place-items-center sm:grid-cols-2 sm:place-items-stretch lg:grid-cols-4">
+          <section className="mx-auto mt-10 grid w-full max-w-6xl grid-cols-1 gap-5 place-items-center sm:grid-cols-2 sm:place-items-stretch lg:grid-cols-3">
             {modules.map((module, index) => {
               const centerSingleCard = modules.length === 1 && index === 0
               return (
