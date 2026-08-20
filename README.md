@@ -39,18 +39,21 @@ Open `http://localhost:3000`.
 
 ## Uppdrag v1 deployment
 
-1. Apply `docs/db/2026-08-20_01_operational_tasks_foundation.sql` to Supabase.
-2. Set `APP_BASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`,
+1. Apply `docs/db/2026-08-20_00_platform_access_assignments_rls.sql` to
+   Supabase. Run it separately so its short exclusive table lock is released
+   before the main migration starts.
+2. Apply `docs/db/2026-08-20_01_operational_tasks_foundation.sql` to Supabase.
+3. Set `APP_BASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`,
    `ASSIGNMENTS_MAIL_FROM`, `OPENAI_API_KEY` and `CRON_SECRET` in the server
    environment.
-3. For WhatsApp, also set `WHATSAPP_ACCESS_TOKEN`,
+4. For WhatsApp, also set `WHATSAPP_ACCESS_TOKEN`,
    `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TEMPLATE_NAME`,
    `WHATSAPP_ASSIGNMENT_TEMPLATE_NAME`, `WHATSAPP_TEMPLATE_LANGUAGE` and
    `WHATSAPP_API_VERSION`. The general template expects the reminder fields;
    the assignment template expects recipient name, task title, due date and
    personal access URL. Both Meta templates must be approved before automated
    messages can be delivered.
-4. `vercel.json` runs the durable follow-up worker daily so Hobby deployments
+5. `vercel.json` runs the durable follow-up worker daily so Hobby deployments
    remain valid. On Vercel Pro the schedule can be changed to `*/15 * * * *`
    for fifteen-minute follow-up resolution.
 

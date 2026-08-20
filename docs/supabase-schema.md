@@ -82,6 +82,10 @@ Relationer:
 
 Fullständigt schema, constraints, RPC:er och RLS finns i
 `docs/db/2026-08-20_01_operational_tasks_foundation.sql`.
+Den korta förmigrationen
+`docs/db/2026-08-20_00_platform_access_assignments_rls.sql` stänger direkt
+webbläsaråtkomst till den gemensamma behörighetstabellen och ska köras separat
+före Uppdrag-migrationen.
 
 Kärntabeller:
 - `organization_contacts`: externa och valfritt profilkopplade mottagare per organisation.
