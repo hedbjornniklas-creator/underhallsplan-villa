@@ -138,6 +138,11 @@ type AiSuggestionRow = {
   created_at: string
 }
 
+type FollowupRuleRow = {
+  task_id: string
+  initial_dispatch_pending: boolean
+}
+
 type InternalTaskContext = {
   orgId: string
   userId: string
@@ -314,8 +319,9 @@ async function loadRows(orgId: string) {
   let deadlineRequests: DeadlineRequestRow[] = []
   let attachments: AttachmentRow[] = []
   let aiSuggestions: AiSuggestionRow[] = []
+  let followupRules: FollowupRuleRow[] = []
   if (taskIds.length > 0) {
-    const [requirementsResult, eventsResult, deadlineResult, attachmentsResult, suggestionsResult] = await Promise.all([
+    const [requirementsResult, eventsResult, deadlineResult, attachmentsResult, suggestionsResult, followupResult] = await Promise.all([
       admin
         .from('task_requirements')
         .select('id,task_id,requirement_key,label,status,is_required,verified_by_profile_id,verified_at')
@@ -343,20 +349,26 @@ async function loadRows(orgId: string) {
         .eq('status', 'pending')
         .eq('suggestion_type', 'create_subtask')
         .order('created_at', { ascending: false }),
+      admin
+        .from('task_followup_rules')
+        .select('task_id,initial_dispatch_pending')
+        .in('task_id', taskIds),
     ])
     if (requirementsResult.error) throw new Error('TASK_REQUIREMENTS_READ_FAILED')
     if (eventsResult.error) throw new Error('TASK_EVENTS_READ_FAILED')
     if (deadlineResult.error) throw new Error('TASK_DEADLINES_READ_FAILED')
     if (attachmentsResult.error) throw new Error('TASK_ATTACHMENTS_READ_FAILED')
     if (suggestionsResult.error) throw new Error('TASK_AI_SUGGESTIONS_READ_FAILED')
+    if (followupResult.error) throw new Error('TASKS_SCHEMA_REQUIRED')
     requirements = (requirementsResult.data ?? []) as RequirementRow[]
     events = (eventsResult.data ?? []) as EventRow[]
     deadlineRequests = (deadlineResult.data ?? []) as DeadlineRequestRow[]
     attachments = (attachmentsResult.data ?? []) as AttachmentRow[]
     aiSuggestions = (suggestionsResult.data ?? []) as AiSuggestionRow[]
+    followupRules = (followupResult.data ?? []) as FollowupRuleRow[]
   }
 
-  return { tasks, contacts, profiles, requirements, events, deadlineRequests, attachments, aiSuggestions }
+  return { tasks, contacts, profiles, requirements, events, deadlineRequests, attachments, aiSuggestions, followupRules }
 }
 
 export async function getTaskWorkspace(input: InternalTaskContext): Promise<TaskWorkspace> {
@@ -420,6 +432,9 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
     list.push(suggestion)
     aiSuggestionsByTask.set(suggestion.task_id, list)
   }
+  const initialDispatchByTask = new Map(
+    rows.followupRules.map((rule) => [rule.task_id, rule.initial_dispatch_pending])
+  )
 
   const childCounts = new Map<string, { total: number; open: number }>()
   for (const task of visibleTasks) {
@@ -467,6 +482,7 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       createdAt: request.created_at,
     }))
     const hasPendingDeadlineRequest = deadlineViews.some((request) => request.status === 'pending')
+    const initialDispatchPending = initialDispatchByTask.get(task.id) ?? false
     const attachmentViews: TaskAttachmentView[] = (attachmentsByTask.get(task.id) ?? []).map((attachment) => ({
       id: attachment.id,
       type: attachment.attachment_type,
@@ -540,12 +556,16 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
         dueAt: task.due_at,
         nextFollowUpAt: task.next_followup_at,
       }).level,
-      ballHolder: hasPendingDeadlineRequest ? 'issuer' : getTaskBallHolderKind(task.status),
+      ballHolder:
+        initialDispatchPending || hasPendingDeadlineRequest
+          ? 'issuer'
+          : getTaskBallHolderKind(task.status),
       dueAt: task.due_at,
       nextFollowupAt: task.next_followup_at,
       primaryChannel: task.primary_channel,
       fallbackChannel: task.fallback_channel,
       evidenceRequirement: task.evidence_requirement,
+      initialDispatchPending,
       issuerId: task.issuer_profile_id,
       issuerName: issuer?.full_name?.trim() || issuer?.email?.trim() || 'Uppdragsansvarig',
       assignee,
@@ -783,7 +803,7 @@ async function createTask(input: TaskActionInput) {
   const expectedParentVersion = parent
     ? requireExpectedVersion(input.payload.parentVersion)
     : null
-  const { data: createdData, error } = await admin.rpc('create_operational_task', {
+  const { data: createdData, error } = await admin.rpc('create_operational_task_with_dispatch_control', {
     p_org_id: input.orgId,
     p_title: title,
     p_due_at: dueAt,
@@ -803,6 +823,7 @@ async function createTask(input: TaskActionInput) {
     p_actor_contact_id: null,
     p_actor_access_link_id: null,
     p_source_ai_suggestion_id: sourceAiSuggestionId,
+    p_defer_initial_dispatch: input.payload.sendAssignment === false,
   })
   if (error) throw taskDatabaseError(error, 'TASK_CREATE_FAILED')
   const created = Array.isArray(createdData) ? createdData[0] : createdData
@@ -817,6 +838,26 @@ async function createTask(input: TaskActionInput) {
         ? 'Underuppgiften skapades.'
         : 'Uppgiften skapades.',
   }
+}
+
+async function dispatchTaskAssignment(input: TaskActionInput) {
+  const taskId = asText(input.payload.taskId)
+  if (!taskId) throw new Error('TASK_NOT_FOUND')
+  const task = await requireTask(input.orgId, taskId)
+  if (!input.isOrgAdmin && task.issuer_profile_id !== input.userId) {
+    throw new Error('TASK_DISPATCH_FORBIDDEN')
+  }
+  if (isTerminalTaskStatus(task.status)) throw new Error('TASK_TERMINAL')
+
+  const admin = createSupabaseAdminClient()
+  const { error } = await admin.rpc('finalize_operational_task_initial_dispatch', {
+    p_org_id: input.orgId,
+    p_task_id: task.id,
+    p_actor_profile_id: input.userId,
+  })
+  if (error) throw taskDatabaseError(error, 'TASK_ASSIGNMENT_QUEUE_FAILED')
+
+  return 'Uppdraget och bilagorna är klara. Signe skickar uppdraget till mottagaren.'
 }
 
 async function transitionTask(input: TaskActionInput) {
@@ -964,10 +1005,12 @@ export async function performTaskInternalAction(input: TaskActionInput): Promise
   let notice: string
   let accessUrl: string | undefined
   let warning: string | undefined
+  let createdTaskId: string | undefined
   if (input.action === 'create_task' || input.action === 'create_subtask') {
     const created = await createTask(input)
+    createdTaskId = created.taskId
     notice = created.notice
-    if (created.hasExternalAssignee) {
+    if (created.hasExternalAssignee && input.payload.sendAssignment !== false) {
       const issued = await issueTaskAccessLink({
         orgId: input.orgId,
         userId: input.userId,
@@ -980,6 +1023,8 @@ export async function performTaskInternalAction(input: TaskActionInput): Promise
       notice = issued.warning
         ? `${notice} Den personliga länken skapades men behöver delas manuellt.`
         : `${notice} Mottagaren har fått sin personliga länk.`
+    } else if (input.payload.sendAssignment === false) {
+      notice = `${notice} Utskicket till mottagaren väntar tills underlagen har sparats.`
     }
   } else if (input.action === 'transition') {
     notice = await transitionTask(input)
@@ -993,9 +1038,12 @@ export async function performTaskInternalAction(input: TaskActionInput): Promise
     notice = await decideDeadlineChange(input)
   } else if (input.action === 'issue_access_link') {
     const issued = await issueAccessLink(input)
+    await dispatchTaskAssignment(input)
     accessUrl = issued.accessUrl
     warning = issued.warning ?? undefined
     notice = issued.warning ? 'Länken skapades och kopierades.' : 'Länken skapades och skickades.'
+  } else if (input.action === 'dispatch_assignment') {
+    notice = await dispatchTaskAssignment(input)
   } else if (input.action === 'request_signe_suggestions') {
     const taskId = asText(input.payload.taskId)
     if (!taskId) throw new Error('TASK_NOT_FOUND')
@@ -1015,5 +1063,5 @@ export async function performTaskInternalAction(input: TaskActionInput): Promise
   }
 
   const workspace = await getTaskWorkspace(input)
-  return { workspace, notice, warning, accessUrl }
+  return { workspace, notice, warning, accessUrl, createdTaskId }
 }

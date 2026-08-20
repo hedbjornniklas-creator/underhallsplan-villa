@@ -91,6 +91,8 @@ function taskErrorResponse(error: unknown) {
     SIGNE_TASK_CLOSED: 'Signe kan inte analysera ett avslutat uppdrag.',
     SIGNE_REJECTION_REASON_REQUIRED: 'Beskriv varför förslaget avvisas.',
     TASK_ACTION_INVALID: 'Åtgärden stöds inte.',
+    TASK_INITIAL_DISPATCH_TERMINAL: 'Uppgiften är stängd och kan inte skickas.',
+    TASK_INITIAL_DISPATCH_FINALIZE_INPUT_INVALID: 'Uppgiften kunde inte förberedas för utskick.',
   }
   const forbidden = new Set([
     'TASK_SUBTASK_FORBIDDEN',
@@ -102,9 +104,12 @@ function taskErrorResponse(error: unknown) {
     'TASK_EXTENSION_REQUEST_FORBIDDEN',
     'TASK_EXTENSION_DECIDE_FORBIDDEN',
     'TASK_ACCESS_ISSUE_FORBIDDEN',
+    'TASK_DISPATCH_FORBIDDEN',
     'TASK_REVIEW_ACTION_FORBIDDEN',
     'TASK_ACTOR_NOT_IN_ORG',
     'TASK_CREATE_FORBIDDEN',
+    'TASK_CREATE_WITH_DISPATCH_CONTROL_FORBIDDEN',
+    'TASK_INITIAL_DISPATCH_FINALIZE_FORBIDDEN',
     'TASK_SUBTASK_CREATE_FORBIDDEN',
     'TASK_REQUIREMENT_DECISION_FORBIDDEN',
     'SIGNE_ANALYZE_FORBIDDEN',
@@ -188,15 +193,19 @@ export async function POST(request: Request) {
       payload,
       requestOrigin: new URL(request.url).origin,
     })
-    after(async () => {
-      try {
-        await runTaskFollowupBatch({ limit: 5 })
-      } catch {
-        console.error('[tasks.api] opportunistic follow-up failed', {
-          code: 'TASK_AUTOMATION_BATCH_FAILED',
-        })
-      }
-    })
+    const assignmentDeferred =
+      (action === 'create_task' || action === 'create_subtask') && payload.sendAssignment === false
+    if (!assignmentDeferred) {
+      after(async () => {
+        try {
+          await runTaskFollowupBatch({ limit: 5 })
+        } catch {
+          console.error('[tasks.api] opportunistic follow-up failed', {
+            code: 'TASK_AUTOMATION_BATCH_FAILED',
+          })
+        }
+      })
+    }
     return NextResponse.json(result)
   } catch (error) {
     return taskErrorResponse(error)

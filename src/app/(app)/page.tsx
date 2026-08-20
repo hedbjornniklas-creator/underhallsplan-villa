@@ -78,6 +78,12 @@ export default function HomePage() {
             </Link>
 
             <nav aria-label="Huvudnavigation" className="hidden items-center gap-7 lg:flex">
+              <Link
+                href="/renoapp/apply"
+                className={`rounded text-sm font-semibold text-[#3e7c24] transition hover:text-[#2f651a] ${focusRing}`}
+              >
+                Skapa ansökan
+              </Link>
               <a
                 href="#produkter"
                 className={`rounded text-sm font-medium text-stone-600 transition hover:text-[#173357] ${focusRing}`}
@@ -117,6 +123,12 @@ export default function HomePage() {
             aria-label="Mobilnavigation"
             className="-mx-5 flex gap-6 overflow-x-auto border-t border-stone-900/10 px-5 py-3 text-sm font-medium text-stone-600 sm:-mx-8 sm:px-8 lg:hidden"
           >
+            <Link
+              href="/renoapp/apply"
+              className={`shrink-0 rounded font-semibold text-[#3e7c24] ${focusRing}`}
+            >
+              Skapa ansökan
+            </Link>
             <a href="#produkter" className={`shrink-0 rounded ${focusRing}`}>
               Produkter
             </a>
@@ -157,22 +169,32 @@ export default function HomePage() {
               besiktningsföretag från uppdrag till utlåtande. RenoApp hjälper bostadsrättsföreningar
               från ansökan till beslut.
             </p>
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-              <a
-                href="#produkter"
-                className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#173357] px-6 text-sm font-semibold text-white shadow-[0_14px_30px_-16px_rgba(23,51,87,0.75)] transition hover:bg-[#0f2948] ${focusRing}`}
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+              <Link
+                href="/renoapp/apply"
+                className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#4d962c] px-6 text-sm font-semibold text-white shadow-[0_14px_30px_-16px_rgba(77,150,44,0.65)] transition hover:bg-[#3e7c24] ${focusRing}`}
               >
-                Utforska produkterna
-                <ArrowRight aria-hidden="true" className="h-4 w-4" />
-              </a>
+                Skapa renoveringsansökan
+                <FileCheck2 aria-hidden="true" className="h-4 w-4" />
+              </Link>
               <button
                 type="button"
                 onClick={() => void handleDashboardEntry()}
                 className={`inline-flex min-h-12 cursor-pointer items-center justify-center rounded-full border border-stone-900/15 bg-white/70 px-6 text-sm font-semibold text-[#173357] transition hover:border-stone-900/30 hover:bg-white ${focusRing}`}
               >
-                Gå till din arbetsyta
+                Logga in till arbetsyta
               </button>
+              <a
+                href="#produkter"
+                className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-3 text-sm font-semibold text-[#173357] transition hover:text-[#0f2948] ${focusRing}`}
+              >
+                Utforska produkterna
+                <ArrowRight aria-hidden="true" className="h-4 w-4" />
+              </a>
             </div>
+            <p className="mt-4 text-sm leading-6 text-stone-600">
+              Är du boende? Börja med ansökan – du behöver inget konto.
+            </p>
           </div>
 
           <div className="relative mx-auto w-full max-w-xl lg:ml-auto">
@@ -337,12 +359,19 @@ export default function HomePage() {
                   Tydlig granskning och dokumenterat beslut
                 </li>
               </ul>
-              <div className="mt-auto pt-9">
+              <div className="mt-auto flex flex-col gap-3 pt-9 sm:flex-row sm:flex-wrap">
                 <Link
-                  href="/renoapp"
+                  href="/renoapp/apply"
                   className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#4d962c] px-6 text-sm font-semibold text-white transition hover:bg-[#3e7c24] ${focusRing}`}
                 >
-                  Utforska RenoApp
+                  Skapa ansökan
+                  <ArrowRight aria-hidden="true" className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                </Link>
+                <Link
+                  href="/renoapp"
+                  className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-[#4d962c]/35 bg-white px-6 text-sm font-semibold text-[#3e7c24] transition hover:border-[#4d962c]/60 hover:bg-[#f5f9f1] ${focusRing}`}
+                >
+                  För styrelse och BRF
                   <ArrowRight aria-hidden="true" className="h-4 w-4 transition group-hover:translate-x-0.5" />
                 </Link>
               </div>

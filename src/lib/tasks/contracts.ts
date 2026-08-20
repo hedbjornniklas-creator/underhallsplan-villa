@@ -105,6 +105,7 @@ export type TaskView = {
   primaryChannel: TaskChannel
   fallbackChannel: TaskChannel | null
   evidenceRequirement: TaskEvidenceRequirement
+  initialDispatchPending: boolean
   issuerId: string
   issuerName: string
   assignee: TaskPerson
@@ -152,4 +153,5 @@ export type TaskActionResponse = {
   notice?: string
   warning?: string
   accessUrl?: string
+  createdTaskId?: string
 }

@@ -306,7 +306,9 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
         .from('task_attachments')
         .select('id,attachment_type,title,file_name,text_content,transcript_text,is_completion_evidence,created_at')
         .eq('task_id', task.id)
-        .eq('uploaded_by_contact_id', access.contact_id)
+        .or(
+          `uploaded_by_contact_id.eq.${access.contact_id},and(is_completion_evidence.eq.false,uploaded_by_profile_id.eq.${task.issuer_profile_id})`
+        )
         .order('created_at', { ascending: false }),
       access.scope === 'branch'
         ? admin

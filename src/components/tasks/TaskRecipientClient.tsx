@@ -724,10 +724,10 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
 
         <section className="mt-6" aria-labelledby="recipient-evidence-heading">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Visa vad som är gjort</p>
-            <h2 id="recipient-evidence-heading" className="mt-1 text-lg font-semibold">Underlag och färdigbevis</h2>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Underlag i uppdraget</p>
+            <h2 id="recipient-evidence-heading" className="mt-1 text-lg font-semibold">Bilagor och färdigbevis</h2>
             <p className="mt-1 text-sm leading-6 text-slate-600">
-              Lägg till foto, dokument, text eller ett röstmeddelande. Signe sparar underlaget till uppgiften.
+              Här finns bilder och dokument från uppdragsansvarig. Du kan också lägga till underlag som visar vad som har gjorts.
             </p>
           </div>
 
@@ -843,7 +843,9 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
                       </span>
                       {attachment.isCompletionEvidence ? (
                         <span className="mt-1.5 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Färdigbevis</span>
-                      ) : null}
+                      ) : (
+                        <span className="mt-1.5 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">Underlag</span>
+                      )}
                     </span>
                     {attachment.type !== 'text' ? <ChevronRight className="shrink-0 text-slate-400" size={18} aria-hidden="true" /> : null}
                   </>

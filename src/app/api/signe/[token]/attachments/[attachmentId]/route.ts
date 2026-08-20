@@ -19,7 +19,9 @@ export async function GET(
       .select('id')
       .eq('id', attachmentId)
       .eq('task_id', task.id)
-      .eq('uploaded_by_contact_id', access.contact_id)
+      .or(
+        `uploaded_by_contact_id.eq.${access.contact_id},and(is_completion_evidence.eq.false,uploaded_by_profile_id.eq.${task.issuer_profile_id})`
+      )
       .maybeSingle()
     if (error || !attachment) throw new Error('TASK_ATTACHMENT_NOT_FOUND')
     const signedUrl = await createTaskAttachmentSignedUrl({
@@ -27,7 +29,10 @@ export async function GET(
       taskId: task.id,
       attachmentId,
     })
-    return NextResponse.redirect(signedUrl)
+    const response = NextResponse.redirect(signedUrl)
+    response.headers.set('Cache-Control', 'private, no-store')
+    response.headers.set('Referrer-Policy', 'no-referrer')
+    return response
   } catch (error) {
     const code = error instanceof Error ? error.message : 'TASK_ATTACHMENT_FAILED'
     const status = code === 'TASK_ACCESS_NOT_FOUND' || code === 'TASK_ATTACHMENT_NOT_FOUND' ? 404 : code === 'TASK_ACCESS_CLOSED' ? 410 : 403

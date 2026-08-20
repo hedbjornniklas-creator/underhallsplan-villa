@@ -181,7 +181,10 @@ export default function TaskDetailSheet({
     setSuggestionRejectReason('')
   }
 
-  const uploadFile = async (event: ChangeEvent<HTMLInputElement>) => {
+  const uploadFile = async (
+    event: ChangeEvent<HTMLInputElement>,
+    completionEvidenceOverride?: boolean
+  ) => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
@@ -191,8 +194,9 @@ export default function TaskDetailSheet({
     form.append(
       'completionEvidence',
       String(
-        ['optional', 'any'].includes(task.evidenceRequirement) ||
-          task.evidenceRequirement === evidenceType
+        completionEvidenceOverride ??
+          (['optional', 'any'].includes(task.evidenceRequirement) ||
+            task.evidenceRequirement === evidenceType)
       )
     )
     await onUpload(task.id, form)
@@ -337,7 +341,33 @@ export default function TaskDetailSheet({
             </div>
           </dl>
 
-          {task.assignee.kind === 'contact' && canActAsIssuer ? (
+          {task.initialDispatchPending && canActAsIssuer ? (
+            <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-amber-950">Utskicket väntar</p>
+                <p className="mt-0.5 text-xs leading-5 text-amber-900">
+                  Lägg till eventuella återstående underlag nedan. Mottagaren meddelas först när du väljer att skicka uppdraget.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  onAction(
+                    task.assignee.kind === 'contact' ? 'issue_access_link' : 'dispatch_assignment',
+                    task.assignee.kind === 'contact'
+                      ? { taskId: task.id, sendEmail: true }
+                      : { taskId: task.id }
+                  )
+                }
+                className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-amber-700 px-4 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-50"
+              >
+                <Send size={17} /> Skicka uppdraget
+              </button>
+            </div>
+          ) : null}
+
+          {task.assignee.kind === 'contact' && canActAsIssuer && !task.initialDispatchPending ? (
             <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm font-semibold text-blue-950">Extern mottagare</p>
@@ -615,6 +645,18 @@ export default function TaskDetailSheet({
               <h3 className="text-sm font-semibold text-slate-950">Underlag och färdigbevis</h3>
               <span className="text-xs text-slate-500">{task.attachments.length} bilagor</span>
             </div>
+            {canActAsIssuer ? (
+              <label className="mt-2 inline-flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-900 hover:bg-amber-100">
+                <Paperclip size={17} /> Lägg till underlag som mottagaren ska se
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif,application/pdf,.doc,.docx,.xls,.xlsx,text/plain"
+                  disabled={busy}
+                  onChange={(event) => void uploadFile(event, false)}
+                  className="sr-only"
+                />
+              </label>
+            ) : null}
             <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                 <Camera size={17} /> Foto
@@ -701,7 +743,7 @@ export default function TaskDetailSheet({
                           {attachment.title || attachment.fileName || (attachment.type === 'text' ? 'Textredovisning' : 'Bilaga')}
                         </p>
                         <p className="mt-0.5 text-xs text-slate-500">
-                          {formatDate(attachment.createdAt, true)}{attachment.isCompletionEvidence ? ' · Färdigbevis' : ''}
+                          {formatDate(attachment.createdAt, true)} · {attachment.isCompletionEvidence ? 'Färdigbevis' : 'Underlag'}
                         </p>
                       </div>
                       {attachment.fileName ? (

@@ -9,11 +9,14 @@ export const MAX_TASK_ATTACHMENT_BYTES = 25 * 1024 * 1024
 const TRANSCRIPTIONS_URL = 'https://api.openai.com/v1/audio/transcriptions'
 const TRANSCRIPTION_MODEL = process.env.OPENAI_TASK_TRANSCRIPTION_MODEL?.trim() || 'gpt-4o-transcribe'
 
-const ALLOWED_CONTENT_TYPES: Record<string, { type: 'photo' | 'document' | 'audio'; extension: string }> = {
+type AllowedAttachment = { type: 'photo' | 'document' | 'audio'; extension: string }
+
+const ALLOWED_CONTENT_TYPES: Record<string, AllowedAttachment> = {
   'image/jpeg': { type: 'photo', extension: 'jpg' },
   'image/png': { type: 'photo', extension: 'png' },
   'image/webp': { type: 'photo', extension: 'webp' },
   'image/heic': { type: 'photo', extension: 'heic' },
+  'image/heif': { type: 'photo', extension: 'heif' },
   'application/pdf': { type: 'document', extension: 'pdf' },
   'application/msword': { type: 'document', extension: 'doc' },
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': {
@@ -35,6 +38,27 @@ const ALLOWED_CONTENT_TYPES: Record<string, { type: 'photo' | 'document' | 'audi
   'audio/x-m4a': { type: 'audio', extension: 'm4a' },
 }
 
+const FALLBACK_CONTENT_TYPES: Record<string, { contentType: string; allowed: AllowedAttachment }> = {
+  jpg: { contentType: 'image/jpeg', allowed: { type: 'photo', extension: 'jpg' } },
+  jpeg: { contentType: 'image/jpeg', allowed: { type: 'photo', extension: 'jpg' } },
+  png: { contentType: 'image/png', allowed: { type: 'photo', extension: 'png' } },
+  webp: { contentType: 'image/webp', allowed: { type: 'photo', extension: 'webp' } },
+  heic: { contentType: 'image/heic', allowed: { type: 'photo', extension: 'heic' } },
+  heif: { contentType: 'image/heif', allowed: { type: 'photo', extension: 'heif' } },
+  pdf: { contentType: 'application/pdf', allowed: { type: 'document', extension: 'pdf' } },
+  doc: { contentType: 'application/msword', allowed: { type: 'document', extension: 'doc' } },
+  docx: {
+    contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    allowed: { type: 'document', extension: 'docx' },
+  },
+  xls: { contentType: 'application/vnd.ms-excel', allowed: { type: 'document', extension: 'xls' } },
+  xlsx: {
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    allowed: { type: 'document', extension: 'xlsx' },
+  },
+  txt: { contentType: 'text/plain', allowed: { type: 'document', extension: 'txt' } },
+}
+
 export type TaskAttachmentActor =
   | {
       type: 'profile'
@@ -53,6 +77,15 @@ export type TaskAttachmentActor =
 
 function normalizedContentType(value: string) {
   return value.split(';')[0]?.trim().toLowerCase() ?? ''
+}
+
+function resolveFileType(file: File) {
+  const declaredContentType = normalizedContentType(file.type)
+  const declared = ALLOWED_CONTENT_TYPES[declaredContentType]
+  if (declared) return { contentType: declaredContentType, allowed: declared }
+  if (declaredContentType && declaredContentType !== 'application/octet-stream') return null
+  const extension = file.name.split('.').pop()?.toLowerCase() ?? ''
+  return FALLBACK_CONTENT_TYPES[extension] ?? null
 }
 
 function safeFileName(value: string, fallbackExtension: string) {
@@ -134,9 +167,9 @@ export async function storeTaskFileEvidence(input: {
 }) {
   if (input.file.size <= 0) throw new Error('TASK_ATTACHMENT_EMPTY')
   if (input.file.size > MAX_TASK_ATTACHMENT_BYTES) throw new Error('TASK_ATTACHMENT_TOO_LARGE')
-  const contentType = normalizedContentType(input.file.type)
-  const allowed = ALLOWED_CONTENT_TYPES[contentType]
-  if (!allowed) throw new Error('TASK_ATTACHMENT_TYPE_INVALID')
+  const resolvedType = resolveFileType(input.file)
+  if (!resolvedType) throw new Error('TASK_ATTACHMENT_TYPE_INVALID')
+  const { contentType, allowed } = resolvedType
   const originalName = safeFileName(input.file.name, allowed.extension)
   const storagePath = `${input.orgId}/${input.taskId}/${Date.now()}-${randomUUID()}.${allowed.extension}`
   const bytes = await input.file.arrayBuffer()
@@ -280,16 +313,22 @@ export async function createTaskAttachmentSignedUrl(input: {
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
     .from('task_attachments')
-    .select('storage_bucket,file_path,file_name')
+    .select('storage_bucket,file_path,file_name,content_type')
     .eq('id', input.attachmentId)
     .eq('task_id', input.taskId)
     .eq('org_id', input.orgId)
     .maybeSingle()
   if (error) throw new Error('TASK_ATTACHMENT_READ_FAILED')
   if (!data?.storage_bucket || !data.file_path) throw new Error('TASK_ATTACHMENT_NOT_FOUND')
+  const opensInline =
+    data.content_type?.startsWith('image/') || data.content_type === 'application/pdf'
   const { data: signed, error: signedError } = await admin.storage
     .from(data.storage_bucket)
-    .createSignedUrl(data.file_path, 60, { download: data.file_name ?? true })
+    .createSignedUrl(
+      data.file_path,
+      60,
+      opensInline ? undefined : { download: data.file_name ?? true }
+    )
   if (signedError || !signed) throw new Error('TASK_ATTACHMENT_SIGN_FAILED')
   return signed.signedUrl
 }

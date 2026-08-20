@@ -200,7 +200,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
     }
   }
 
-  const runAction = async (action: string, payload: Record<string, unknown>) => {
+  const runAction = async (action: string, payload: Record<string, unknown>): Promise<TaskActionResponse> => {
     setBusy(true)
     setError(null)
     setNotice(null)
@@ -212,16 +212,24 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
       })
       const body = (await response.json().catch(() => ({}))) as Partial<TaskActionResponse> & { error?: string }
       if (!response.ok || !body.workspace) throw new Error(body.error || 'Åtgärden misslyckades.')
-      setWorkspace(body.workspace)
-      setNotice(body.warning ?? body.notice ?? 'Sparat.')
-      if (body.accessUrl) {
-        setAccessLink(body.accessUrl)
+      const result: TaskActionResponse = {
+        workspace: body.workspace,
+        notice: body.notice,
+        warning: body.warning,
+        accessUrl: body.accessUrl,
+        createdTaskId: body.createdTaskId,
+      }
+      setWorkspace(result.workspace)
+      setNotice(result.warning ?? result.notice ?? 'Sparat.')
+      if (result.accessUrl) {
+        setAccessLink(result.accessUrl)
         try {
-          await navigator.clipboard.writeText(body.accessUrl)
+          await navigator.clipboard.writeText(result.accessUrl)
         } catch {
           // Länken visas nedan om webbläsaren inte tillåter urklipp.
         }
       }
+      return result
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'Åtgärden misslyckades.')
       throw actionError
@@ -252,6 +260,39 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
     } finally {
       setBusy(false)
     }
+  }
+
+  const uploadInitialAttachments = async (taskId: string, files: File[]) => {
+    if (files.length === 0) return { uploaded: 0, failed: [] as string[] }
+    setBusy(true)
+    setError(null)
+    const failed: string[] = []
+    let uploaded = 0
+    try {
+      for (const file of files) {
+        try {
+          const formData = new FormData()
+          formData.append('file', file)
+          formData.append('title', file.name)
+          formData.append('completionEvidence', 'false')
+          const response = await fetch(`/api/tasks/${taskId}/attachments`, {
+            method: 'POST',
+            body: formData,
+          })
+          const body = (await response.json().catch(() => ({}))) as Partial<TaskActionResponse> & {
+            error?: string
+          }
+          if (!response.ok || !body.workspace) throw new Error(body.error || 'Uppladdningen misslyckades.')
+          setWorkspace(body.workspace)
+          uploaded += 1
+        } catch {
+          failed.push(file.name)
+        }
+      }
+    } finally {
+      setBusy(false)
+    }
+    return { uploaded, failed }
   }
 
   const openComposer = (
@@ -418,7 +459,9 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                 workspace={workspace}
                 busy={busy}
                 onClose={() => setSelectedTaskId(null)}
-                onAction={runAction}
+                onAction={async (action, payload) => {
+                  await runAction(action, payload)
+                }}
                 onUpload={uploadEvidence}
                 onCreateSubtask={(task, suggestion) => {
                   setSelectedTaskId(null)
@@ -441,10 +484,67 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                   setComposerSuggestion(null)
                 }}
                 onCreate={async (payload) => {
-                  await runAction(payload.parentTaskId ? 'create_subtask' : 'create_task', payload)
+                  const { attachments, ...taskPayload } = payload
+                  const isExternalRecipient = !payload.assigneeRef.startsWith('profile:')
+                  const deferAssignment = attachments.length > 0
+                  const created = await runAction(
+                    payload.parentTaskId ? 'create_subtask' : 'create_task',
+                    {
+                      ...taskPayload,
+                      sendAssignment: !deferAssignment,
+                    }
+                  )
+                  const createdTaskId = created.createdTaskId
+                  if (!createdTaskId) throw new Error('Uppgiften skapades men kunde inte öppnas för bilagor.')
                   setComposerOpen(false)
                   setComposerParentId(null)
                   setComposerSuggestion(null)
+
+                  const uploadResult = await uploadInitialAttachments(createdTaskId, attachments)
+                  if (uploadResult.failed.length > 0) {
+                    let recipientNotice = ''
+                    if (deferAssignment && !isExternalRecipient) {
+                      try {
+                        const dispatched = await runAction('dispatch_assignment', { taskId: createdTaskId })
+                        recipientNotice = ` ${dispatched.notice ?? 'Signe meddelar mottagaren.'}`
+                      } catch {
+                        recipientNotice = ' Mottagaren kunde inte meddelas automatiskt.'
+                      }
+                    }
+                    setNotice(`Uppgiften skapades och finns kvar i översikten.${recipientNotice}`)
+                    setError(
+                      `Uppgiften skapades, men ${uploadResult.failed.length} ${
+                        uploadResult.failed.length === 1 ? 'fil kunde' : 'filer kunde'
+                      } inte laddas upp: ${uploadResult.failed.join(', ')}. Lägg till dem från uppdraget.${
+                        deferAssignment && isExternalRecipient ? ' Mottagaren har därför inte meddelats ännu.' : ''
+                      }`
+                    )
+                    setSelectedTaskId(createdTaskId)
+                    return
+                  }
+
+                  let dispatchResult = created
+                  if (deferAssignment) {
+                    try {
+                      dispatchResult = isExternalRecipient
+                        ? await runAction('issue_access_link', {
+                            taskId: createdTaskId,
+                            sendEmail: true,
+                          })
+                        : await runAction('dispatch_assignment', { taskId: createdTaskId })
+                    } catch {
+                      setSelectedTaskId(createdTaskId)
+                      return
+                    }
+                  }
+
+                  if (uploadResult.uploaded > 0) {
+                    setNotice(
+                      `${dispatchResult.warning ?? dispatchResult.notice ?? 'Uppgiften skapades.'} ${
+                        uploadResult.uploaded
+                      } ${uploadResult.uploaded === 1 ? 'bilaga sparades' : 'bilagor sparades'}.`
+                    )
+                  }
                 }}
               />
             ) : null}

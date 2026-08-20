@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { CalendarClock, ChevronDown, UserPlus, X } from 'lucide-react'
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
+import { CalendarClock, Camera, ChevronDown, FileText, Image as ImageIcon, Paperclip, Trash2, UserPlus, X } from 'lucide-react'
 import type {
   TaskChannel,
   TaskAiSuggestionView,
@@ -31,6 +31,7 @@ type CreatePayload = {
   primaryChannel: TaskChannel
   fallbackChannel: TaskChannel | ''
   evidenceRequirement: TaskEvidenceRequirement
+  attachments: File[]
 }
 
 type Props = {
@@ -63,6 +64,37 @@ function addDays(days: number) {
 
 const inputClass =
   'min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-100'
+
+const MAX_INITIAL_ATTACHMENTS = 10
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+const MAX_INITIAL_ATTACHMENT_TOTAL_BYTES = 100 * 1024 * 1024
+const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif'
+const DOCUMENT_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain'
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} kB`
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`
+}
+
+function fileKey(file: File) {
+  return `${file.name}:${file.size}:${file.lastModified}`
+}
+
+function supportedInitialAttachment(file: File) {
+  const type = file.type.toLowerCase()
+  if (['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(type)) return true
+  if (
+    [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/plain',
+    ].includes(type)
+  ) return true
+  return /\.(jpe?g|png|webp|hei[cf]|pdf|docx?|xlsx?|txt)$/i.test(file.name)
+}
 
 export default function TaskComposerSheet({
   open,
@@ -97,6 +129,8 @@ export default function TaskComposerSheet({
   const [primaryChannel, setPrimaryChannel] = useState<TaskChannel>('email')
   const [fallbackChannel, setFallbackChannel] = useState<TaskChannel | ''>('whatsapp')
   const [evidenceRequirement, setEvidenceRequirement] = useState<TaskEvidenceRequirement>('optional')
+  const [attachments, setAttachments] = useState<File[]>([])
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -124,6 +158,44 @@ export default function TaskComposerSheet({
     ((primaryChannel !== 'email' && fallbackChannel !== 'email') || Boolean(externalEmail)) &&
       ((primaryChannel !== 'whatsapp' && fallbackChannel !== 'whatsapp') || Boolean(externalPhone))
 
+  const addAttachments = (event: ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (selected.length === 0) return
+
+    const unsupported = selected.filter((file) => !supportedInitialAttachment(file))
+    const empty = selected.filter((file) => file.size <= 0)
+    const tooLarge = selected.filter((file) => file.size > MAX_ATTACHMENT_BYTES)
+    const valid = selected.filter(
+      (file) => supportedInitialAttachment(file) && file.size > 0 && file.size <= MAX_ATTACHMENT_BYTES
+    )
+    const existing = new Set(attachments.map(fileKey))
+    const unique = valid.filter((file) => !existing.has(fileKey(file)))
+    const available = Math.max(0, MAX_INITIAL_ATTACHMENTS - attachments.length)
+    let totalBytes = attachments.reduce((sum, file) => sum + file.size, 0)
+    const accepted: File[] = []
+    for (const file of unique.slice(0, available)) {
+      if (totalBytes + file.size > MAX_INITIAL_ATTACHMENT_TOTAL_BYTES) continue
+      accepted.push(file)
+      totalBytes += file.size
+    }
+    setAttachments((current) => [...current, ...accepted])
+
+    if (unsupported.length > 0) {
+      setAttachmentError('Någon fil hade ett format som inte stöds.')
+    } else if (empty.length > 0) {
+      setAttachmentError('En tom fil kan inte laddas upp.')
+    } else if (tooLarge.length > 0) {
+      setAttachmentError('En fil får vara högst 25 MB.')
+    } else if (unique.length > available) {
+      setAttachmentError(`Du kan lägga till högst ${MAX_INITIAL_ATTACHMENTS} filer.`)
+    } else if (accepted.length < unique.length) {
+      setAttachmentError('Bilagorna får tillsammans vara högst 100 MB.')
+    } else {
+      setAttachmentError(null)
+    }
+  }
+
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (!title.trim() || !assigneeRef || !dueDate || !followupDate) return
@@ -149,6 +221,7 @@ export default function TaskComposerSheet({
       primaryChannel,
       fallbackChannel,
       evidenceRequirement,
+      attachments,
     })
   }
 
@@ -378,6 +451,69 @@ export default function TaskComposerSheet({
                 <option value="any">Valfritt bevis krävs</option>
               </select>
             </label>
+
+            <fieldset className="rounded-2xl border border-slate-200 bg-white p-4">
+              <legend className="px-1 text-sm font-semibold text-slate-800">Bilder och dokument</legend>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Lägg till ritningar, foton, offerter eller andra underlag. Mottagaren kan öppna dem direkt i uppdraget.
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 transition hover:border-amber-300 hover:bg-amber-50">
+                  <Camera size={17} /> Bild eller foto
+                  <input
+                    type="file"
+                    accept={IMAGE_ACCEPT}
+                    multiple
+                    className="sr-only"
+                    onChange={addAttachments}
+                  />
+                </label>
+                <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 transition hover:border-amber-300 hover:bg-amber-50">
+                  <Paperclip size={17} /> Dokument
+                  <input
+                    type="file"
+                    accept={DOCUMENT_ACCEPT}
+                    multiple
+                    className="sr-only"
+                    onChange={addAttachments}
+                  />
+                </label>
+              </div>
+
+              {attachmentError ? <p className="mt-2 text-xs leading-5 text-rose-700">{attachmentError}</p> : null}
+
+              {attachments.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {attachments.map((file) => {
+                    const key = fileKey(file)
+                    const isImage = file.type.startsWith('image/') || /\.(jpe?g|png|webp|hei[cf])$/i.test(file.name)
+                    return (
+                      <div key={key} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
+                          {isImage ? <ImageIcon size={18} /> : <FileText size={18} />}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-slate-800">{file.name}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">{formatFileSize(file.size)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAttachments((current) => current.filter((item) => fileKey(item) !== key))
+                            setAttachmentError(null)
+                          }}
+                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-rose-50 hover:text-rose-700"
+                          aria-label={`Ta bort ${file.name}`}
+                        >
+                          <Trash2 size={17} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                  <p className="text-right text-xs text-slate-500">{attachments.length} av {MAX_INITIAL_ATTACHMENTS} filer</p>
+                </div>
+              ) : null}
+            </fieldset>
           </div>
 
           <div className="sticky bottom-0 -mx-5 mt-6 border-t border-slate-200 bg-white/95 px-5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:-mx-6 sm:px-6">
