@@ -169,6 +169,8 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const photoInputRef = useRef<HTMLInputElement>(null)
   const documentInputRef = useRef<HTMLInputElement>(null)
+  const evidenceSectionRef = useRef<HTMLElement>(null)
+  const commentInputRef = useRef<HTMLTextAreaElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const recordingChunksRef = useRef<Blob[]>([])
@@ -610,6 +612,15 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
     delegateDatesValid
   )
 
+  const scrollToEvidence = () => {
+    evidenceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const scrollToComment = () => {
+    commentInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    window.setTimeout(() => commentInputRef.current?.focus(), 350)
+  }
+
   return (
     <main className={`min-h-dvh bg-[#f6f4ef] text-slate-950 ${showActionBar ? 'pb-[calc(6.5rem+env(safe-area-inset-bottom))]' : 'pb-8'}`}>
       {toast ? (
@@ -667,6 +678,86 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
               <dd className="mt-2 text-sm font-semibold text-slate-900">{formatDate(task.nextFollowupAt)}</dd>
             </div>
           </dl>
+        </section>
+
+        <section className="mt-4 rounded-3xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm" aria-labelledby="recipient-next-step-heading">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-700">Ditt nästa steg</p>
+          {activeForAssignee ? (
+            <>
+              <h2 id="recipient-next-step-heading" className="mt-2 text-lg font-semibold text-indigo-950">
+                {prestartBlocked
+                  ? 'Skicka in underlaget som behövs'
+                  : canStart
+                    ? task.status === 'waiting'
+                      ? 'Återuppta uppdraget när du kan fortsätta'
+                      : 'Bekräfta att du börjar med uppdraget'
+                    : 'Dokumentera arbetet och skicka det för kontroll'}
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-indigo-900">
+                {prestartBlocked
+                  ? 'Ladda upp offert eller annat efterfrågat dokument. Uppdragsansvarig kontrollerar underlaget innan arbetet får starta.'
+                  : canStart
+                    ? 'När du startar ser uppdragsansvarig att uppgiften är omhändertagen. Du kan fortfarande lägga till bilder, dokument och kommentarer.'
+                    : 'Lägg till foto, dokument, text eller röstmeddelande. Välj sedan Klar för kontroll när uppgiften är färdig.'}
+              </p>
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                {prestartBlocked ? (
+                  <button
+                    type="button"
+                    disabled={isBusy || isRecording}
+                    onClick={() => documentInputRef.current?.click()}
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-700 px-4 text-sm font-semibold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Paperclip size={18} aria-hidden="true" /> Ladda upp offert eller dokument
+                  </button>
+                ) : canStart ? (
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => void runAction('start', { taskId: task.id, version: task.version }, task.status === 'waiting' ? 'Uppgiften är återupptagen.' : 'Uppgiften är startad.')}
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-700 px-4 text-sm font-semibold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busyAction === 'start' ? <Loader2 className="animate-spin" size={18} /> : <ArrowRight size={18} />}
+                    {task.status === 'waiting' ? 'Återuppta uppdraget' : 'Starta uppdraget'}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={isBusy || isRecording}
+                    onClick={scrollToEvidence}
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-700 px-4 text-sm font-semibold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Camera size={18} aria-hidden="true" /> Lägg till underlag
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={scrollToComment}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-white px-4 text-sm font-semibold text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  <MessageSquareText size={18} aria-hidden="true" /> Skriv ett meddelande
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h2 id="recipient-next-step-heading" className="mt-2 text-lg font-semibold text-indigo-950">
+                {task.status === 'ready_for_review'
+                  ? 'Uppgiften väntar på kontroll'
+                  : task.status === 'approved'
+                    ? 'Uppgiften är godkänd och klar'
+                    : 'Uppgiften är avslutad'}
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-indigo-900">
+                {task.status === 'ready_for_review'
+                  ? 'Uppdragsansvarig har bollen nu. Du behöver inte göra något om du inte får en begäran om rättning.'
+                  : task.status === 'approved'
+                    ? 'Uppdragsansvarig har kontrollerat och godkänt uppgiften.'
+                    : 'Uppdraget har återkallats och kan inte längre ändras.'}
+              </p>
+            </>
+          )}
         </section>
 
         {pendingDeadlineRequest ? (
@@ -739,7 +830,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
           </section>
         ) : null}
 
-        <section className="mt-6" aria-labelledby="recipient-evidence-heading">
+        <section ref={evidenceSectionRef} className="mt-6 scroll-mt-4" aria-labelledby="recipient-evidence-heading">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Underlag i uppdraget</p>
             <h2 id="recipient-evidence-heading" className="mt-1 text-lg font-semibold">Bilagor och färdigbevis</h2>
@@ -958,6 +1049,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
               <MessageSquareText size={15} /> Skriv till uppdragsansvarig
             </label>
             <textarea
+              ref={commentInputRef}
               id="recipient-comment"
               value={comment}
               onChange={(event) => setComment(event.target.value)}

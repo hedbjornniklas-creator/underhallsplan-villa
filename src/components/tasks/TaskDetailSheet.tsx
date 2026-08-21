@@ -106,6 +106,8 @@ export default function TaskDetailSheet({
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const recordingStartedAtRef = useRef<number | null>(null)
+  const evidenceSectionRef = useRef<HTMLElement>(null)
+  const documentInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!task) return
@@ -368,6 +370,68 @@ export default function TaskDetailSheet({
               <dd className="mt-2 text-sm font-semibold text-slate-900">{formatDate(task.nextFollowupAt)}</dd>
             </div>
           </dl>
+
+          {(canActAsAssignee || (canActAsIssuer && task.status === 'ready_for_review')) ? (
+            <section className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-4" aria-labelledby="task-next-step-heading">
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-indigo-700">Ditt nästa steg</p>
+              {canActAsIssuer && task.status === 'ready_for_review' ? (
+                <>
+                  <h3 id="task-next-step-heading" className="mt-2 text-base font-semibold text-indigo-950">Kontrollera mottagarens underlag</h3>
+                  <p className="mt-1 text-sm leading-6 text-indigo-900">Granska bilagor och kommentarer. Godkänn uppgiften eller begär rättning längst ned.</p>
+                  <button
+                    type="button"
+                    onClick={() => evidenceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    className="mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-indigo-700 px-4 text-sm font-semibold text-white hover:bg-indigo-800"
+                  >
+                    <FileText size={17} /> Granska underlaget
+                  </button>
+                </>
+              ) : ['assigned', 'waiting', 'returned'].includes(task.status) && prestartBlocked ? (
+                <>
+                  <h3 id="task-next-step-heading" className="mt-2 text-base font-semibold text-indigo-950">Ladda upp efterfrågat underlag</h3>
+                  <p className="mt-1 text-sm leading-6 text-indigo-900">Skicka in offert eller annat efterfrågat dokument. Uppdragsansvarig kontrollerar det innan arbetet får starta.</p>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => documentInputRef.current?.click()}
+                    className="mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-indigo-700 px-4 text-sm font-semibold text-white hover:bg-indigo-800 disabled:opacity-50"
+                  >
+                    <Paperclip size={17} /> Ladda upp offert eller dokument
+                  </button>
+                </>
+              ) : ['assigned', 'waiting', 'returned'].includes(task.status) ? (
+                <>
+                  <h3 id="task-next-step-heading" className="mt-2 text-base font-semibold text-indigo-950">{task.status === 'waiting' ? 'Återuppta uppdraget' : 'Bekräfta att du börjar'}</h3>
+                  <p className="mt-1 text-sm leading-6 text-indigo-900">Då ser uppdragsansvarig att uppgiften är omhändertagen.</p>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => transition('in_progress')}
+                    className="mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-indigo-700 px-4 text-sm font-semibold text-white hover:bg-indigo-800 disabled:opacity-50"
+                  >
+                    <ArrowRight size={17} /> {task.status === 'waiting' ? 'Återuppta uppdraget' : 'Starta uppdraget'}
+                  </button>
+                </>
+              ) : task.status === 'in_progress' ? (
+                <>
+                  <h3 id="task-next-step-heading" className="mt-2 text-base font-semibold text-indigo-950">Dokumentera det som är gjort</h3>
+                  <p className="mt-1 text-sm leading-6 text-indigo-900">Lägg till foto, dokument, text eller röstmeddelande och skicka sedan uppgiften för kontroll.</p>
+                  <button
+                    type="button"
+                    onClick={() => evidenceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    className="mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-indigo-700 px-4 text-sm font-semibold text-white hover:bg-indigo-800"
+                  >
+                    <Camera size={17} /> Lägg till underlag
+                  </button>
+                </>
+              ) : null}
+            </section>
+          ) : task.status === 'ready_for_review' ? (
+            <section className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-indigo-700">Nästa steg</p>
+              <p className="mt-2 text-sm font-semibold text-indigo-950">Uppgiften väntar på kontroll från {task.issuerName}.</p>
+            </section>
+          ) : null}
 
           {task.initialDispatchPending && canActAsIssuer ? (
             <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -668,7 +732,7 @@ export default function TaskDetailSheet({
             )}
           </section>
 
-          <section className="mt-6">
+          <section ref={evidenceSectionRef} className="mt-6 scroll-mt-4">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-slate-950">Underlag och färdigbevis</h3>
               <span className="text-xs text-slate-500">{task.attachments.length} bilagor</span>
@@ -708,6 +772,7 @@ export default function TaskDetailSheet({
               <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                 <Camera size={17} /> Foto
                 <input
+                  ref={documentInputRef}
                   type="file"
                   accept="image/*"
                   capture="environment"
