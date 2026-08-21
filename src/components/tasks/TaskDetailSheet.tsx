@@ -30,6 +30,7 @@ import type {
   TaskView,
   TaskWorkspace,
 } from '@/lib/tasks/contracts'
+import TaskAttachmentDropZone from './TaskAttachmentDropZone'
 import { SigneCheckIcon } from './SigneMark'
 import { TaskRiskDot, TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
 
@@ -72,6 +73,12 @@ function toIso(value: string) {
 
 const smallInput =
   'min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-100'
+const TASK_ATTACHMENT_ACCEPT =
+  'image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.txt,text/plain'
+
+function isImageAttachmentFile(file: File) {
+  return file.type.toLowerCase().startsWith('image/') || /\.(jpe?g|png|webp|hei[cf])$/i.test(file.name)
+}
 
 export default function TaskDetailSheet({
   task,
@@ -89,6 +96,7 @@ export default function TaskDetailSheet({
   const [date, setDate] = useState(addDays(2))
   const [evidenceText, setEvidenceText] = useState('')
   const [evidencePanelOpen, setEvidencePanelOpen] = useState(false)
+  const [dropUploadBusy, setDropUploadBusy] = useState(false)
   const [recording, setRecording] = useState(false)
   const [mediaError, setMediaError] = useState<string | null>(null)
   const [rejectingSuggestionId, setRejectingSuggestionId] = useState<string | null>(null)
@@ -123,10 +131,11 @@ export default function TaskDetailSheet({
   if (!task) return null
 
   const currentId = workspace.currentUser.id
+  const isTaskIssuer = task.issuerId === currentId
   const canActAsAssignee =
     workspace.currentUser.isOrgAdmin ||
     (task.assignee.kind === 'profile' && task.assignee.id === currentId)
-  const canActAsIssuer = workspace.currentUser.isOrgAdmin || task.issuerId === currentId
+  const canActAsIssuer = workspace.currentUser.isOrgAdmin || isTaskIssuer
   const canCreateChild =
     !['approved', 'cancelled'].includes(task.status) &&
     task.depth < workspace.limits.maxDepth &&
@@ -190,7 +199,7 @@ export default function TaskDetailSheet({
     if (!file) return
     const form = new FormData()
     form.append('file', file)
-    const evidenceType = file.type.startsWith('image/') ? 'photo' : 'document'
+    const evidenceType = isImageAttachmentFile(file) ? 'photo' : 'document'
     form.append(
       'completionEvidence',
       String(
@@ -200,6 +209,25 @@ export default function TaskDetailSheet({
       )
     )
     await onUpload(task.id, form)
+  }
+
+  const uploadDroppedFiles = async (files: File[]) => {
+    setDropUploadBusy(true)
+    try {
+      for (const file of files) {
+        const form = new FormData()
+        form.append('file', file)
+        const evidenceType = isImageAttachmentFile(file) ? 'photo' : 'document'
+        const completionEvidence = isTaskIssuer
+          ? false
+          : ['optional', 'any'].includes(task.evidenceRequirement) ||
+            task.evidenceRequirement === evidenceType
+        form.append('completionEvidence', String(completionEvidence))
+        await onUpload(task.id, form)
+      }
+    } finally {
+      setDropUploadBusy(false)
+    }
   }
 
   const submitTextEvidence = async () => {
@@ -644,6 +672,25 @@ export default function TaskDetailSheet({
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-slate-950">Underlag och färdigbevis</h3>
               <span className="text-xs text-slate-500">{task.attachments.length} bilagor</span>
+            </div>
+            <div className="mt-2">
+              <TaskAttachmentDropZone
+                accept={TASK_ATTACHMENT_ACCEPT}
+                title={
+                  isTaskIssuer
+                    ? 'Dra och släpp underlag till mottagaren här'
+                    : 'Dra och släpp foto eller dokument här'
+                }
+                activeTitle="Släpp för att ladda upp filerna"
+                description={
+                  isTaskIssuer
+                    ? 'Filerna visas som underlag för mottagaren. Max 25 MB per fil.'
+                    : 'Filer som motsvarar beviskravet registreras som färdigbevis. Max 25 MB per fil.'
+                }
+                disabled={busy || ['ready_for_review', 'approved', 'cancelled'].includes(task.status)}
+                busy={dropUploadBusy}
+                onFiles={uploadDroppedFiles}
+              />
             </div>
             {canActAsIssuer ? (
               <label className="mt-2 inline-flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-900 hover:bg-amber-100">

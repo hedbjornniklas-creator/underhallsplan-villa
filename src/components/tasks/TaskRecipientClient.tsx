@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import type { TaskChannel, TaskEvidenceRequirement } from '@/lib/tasks/contracts'
 import type { ExternalTaskWorkspace } from '@/lib/tasks/external'
+import TaskAttachmentDropZone from './TaskAttachmentDropZone'
 import { SigneMark } from './SigneMark'
 import { TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
 
@@ -56,6 +57,12 @@ const inputClassName =
   'min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-100 disabled:bg-slate-100 disabled:text-slate-500'
 
 const maxAttachmentBytes = 25 * 1024 * 1024
+const taskAttachmentAccept =
+  'image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.txt,text/plain'
+
+function isImageAttachmentFile(file: File) {
+  return file.type.toLowerCase().startsWith('image/') || /\.(jpe?g|png|webp|hei[cf])$/i.test(file.name)
+}
 
 function attachmentTypeLabel(type: ExternalTaskWorkspace['task']['attachments'][number]['type']) {
   if (type === 'photo') return 'Foto'
@@ -293,17 +300,14 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
     if (ok) setEvidenceText('')
   }
 
-  const submitFileEvidence = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0]
-    event.currentTarget.value = ''
-    if (!file) return
+  const uploadFileEvidence = async (file: File) => {
     if (file.size > maxAttachmentBytes) {
       showToast('Filen är för stor. Maximal storlek är 25 MB.', 'error')
-      return
+      return false
     }
     const formData = new FormData()
     formData.append('file', file)
-    const evidenceType = file.type.startsWith('image/') ? 'photo' : 'document'
+    const evidenceType = isImageAttachmentFile(file) ? 'photo' : 'document'
     formData.append(
       'completionEvidence',
       String(
@@ -311,7 +315,20 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
           task.evidenceRequirement === evidenceType
       )
     )
-    await uploadEvidence('attachment', `${endpoint}/attachments`, formData, 'Underlaget sparades.')
+    return uploadEvidence('attachment', `${endpoint}/attachments`, formData, 'Underlaget sparades.')
+  }
+
+  const submitFileEvidence = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (file) await uploadFileEvidence(file)
+  }
+
+  const submitDroppedEvidence = async (files: File[]) => {
+    for (const file of files) {
+      const uploaded = await uploadFileEvidence(file)
+      if (!uploaded) break
+    }
   }
 
   const stopRecording = () => {
@@ -733,7 +750,16 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
 
           {activeForAssignee ? (
             <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-              <div className="grid grid-cols-2 gap-2">
+              <TaskAttachmentDropZone
+                accept={taskAttachmentAccept}
+                title="Dra och släpp foto eller dokument här"
+                activeTitle="Släpp för att ladda upp filerna"
+                description="Du kan släppa flera filer samtidigt. Max 25 MB per fil."
+                disabled={isBusy || isRecording}
+                busy={busyAction === 'attachment'}
+                onFiles={submitDroppedEvidence}
+              />
+              <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   disabled={isBusy || isRecording}
@@ -762,7 +788,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
                 <input
                   ref={documentInputRef}
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,image/heic,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                  accept={taskAttachmentAccept}
                   onChange={(event) => void submitFileEvidence(event)}
                   className="sr-only"
                   tabIndex={-1}

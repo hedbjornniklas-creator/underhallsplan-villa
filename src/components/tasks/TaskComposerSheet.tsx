@@ -10,6 +10,7 @@ import type {
   TaskPerson,
   TaskView,
 } from '@/lib/tasks/contracts'
+import TaskAttachmentDropZone from './TaskAttachmentDropZone'
 
 type CreatePayload = {
   parentTaskId: string | null
@@ -70,6 +71,7 @@ const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 const MAX_INITIAL_ATTACHMENT_TOTAL_BYTES = 100 * 1024 * 1024
 const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif'
 const DOCUMENT_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain'
+const INITIAL_ATTACHMENT_ACCEPT = `${IMAGE_ACCEPT},${DOCUMENT_ACCEPT}`
 
 function formatFileSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} kB`
@@ -158,9 +160,7 @@ export default function TaskComposerSheet({
     ((primaryChannel !== 'email' && fallbackChannel !== 'email') || Boolean(externalEmail)) &&
       ((primaryChannel !== 'whatsapp' && fallbackChannel !== 'whatsapp') || Boolean(externalPhone))
 
-  const addAttachments = (event: ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(event.target.files ?? [])
-    event.target.value = ''
+  const addAttachmentFiles = (selected: File[]) => {
     if (selected.length === 0) return
 
     const unsupported = selected.filter((file) => !supportedInitialAttachment(file))
@@ -194,6 +194,12 @@ export default function TaskComposerSheet({
     } else {
       setAttachmentError(null)
     }
+  }
+
+  const addAttachments = (event: ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    addAttachmentFiles(selected)
   }
 
   const submit = async (event: FormEvent) => {
@@ -457,6 +463,16 @@ export default function TaskComposerSheet({
               <p className="mt-1 text-xs leading-5 text-slate-500">
                 Lägg till ritningar, foton, offerter eller andra underlag. Mottagaren kan öppna dem direkt i uppdraget.
               </p>
+              <div className="mt-3">
+                <TaskAttachmentDropZone
+                  accept={INITIAL_ATTACHMENT_ACCEPT}
+                  title="Dra och släpp bilder eller dokument här"
+                  activeTitle="Släpp för att lägga till underlagen"
+                  description="Du kan även klicka här och välja flera filer. Max 10 filer, 25 MB per fil."
+                  disabled={busy}
+                  onFiles={addAttachmentFiles}
+                />
+              </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 transition hover:border-amber-300 hover:bg-amber-50">
                   <Camera size={17} /> Bild eller foto
