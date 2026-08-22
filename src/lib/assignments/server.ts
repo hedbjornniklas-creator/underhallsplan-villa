@@ -108,6 +108,7 @@ export type AssignmentDetails = AssignmentListItem & {
   price_amount: number | null
   currency: string
   property_id: string | null
+  assignment_details: Record<string, unknown>
 }
 
 export type AssignmentAddonOffer = {
@@ -287,7 +288,8 @@ const ASSIGNMENT_DETAIL_SELECT = `
   notes_internal,
   price_amount,
   currency,
-  property_id
+  property_id,
+  assignment_details
 `
 
 const PROPERTY_SNAPSHOT_COLUMNS =
@@ -736,12 +738,16 @@ export async function createAssignment(input: {
   apartmentNumber?: string | null
   apartmentHolderName?: string | null
   invoiceEmail?: string | null
+  invoiceName?: string | null
+  invoiceAddress?: string | null
+  personalIdentityNumber?: string | null
   ordererRole?: string | null
   preferredDate?: string | null
   preferredTime?: string | null
   priceAmount?: number | null
   currency?: string | null
   notesInternal?: string | null
+  assignmentDetails?: Record<string, unknown> | null
 }) {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const { data, error } = await admin
@@ -769,12 +775,16 @@ export async function createAssignment(input: {
       apartment_number: input.apartmentNumber ?? null,
       apartment_holder_name: input.apartmentHolderName ?? null,
       invoice_email: input.invoiceEmail ?? null,
+      invoice_name: input.invoiceName ?? null,
+      invoice_address: input.invoiceAddress ?? null,
+      personal_identity_number: input.personalIdentityNumber ?? null,
       orderer_role: input.ordererRole ?? null,
       preferred_date: input.preferredDate ?? null,
       preferred_time: input.preferredTime ?? null,
       price_amount: input.priceAmount ?? null,
       currency: input.currency ?? 'SEK',
       notes_internal: input.notesInternal ?? null,
+      assignment_details: input.assignmentDetails ?? {},
       created_by: input.createdBy,
       updated_by: input.createdBy,
     })
@@ -841,6 +851,7 @@ export async function updateAssignmentById(input: {
     status: AssignmentStatus
     archived_at: string | null
     archived_by: string | null
+    assignment_details: Record<string, unknown>
   }>
 }) {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
@@ -929,6 +940,11 @@ export async function createReissuedAssignmentDraft(input: {
     priceAmount: source.price_amount,
     currency: source.currency,
     notesInternal: source.notes_internal,
+    invoiceEmail: source.invoice_email,
+    invoiceName: source.invoice_name,
+    invoiceAddress: source.invoice_address,
+    personalIdentityNumber: source.personal_identity_number,
+    assignmentDetails: source.assignment_details,
   })
 
   try {
@@ -983,6 +999,7 @@ export class AssignmentEmailSendError extends Error {
 
 function getTermsRoleForAssignment(assignment: Pick<AssignmentDetails, 'assignment_type' | 'orderer_role'>) {
   if (assignment.assignment_type === 'TU') return 'technical' as const
+  if (assignment.assignment_type === 'EB') return 'construction' as const
   return parseAssignmentTermsRole(assignment.orderer_role)
 }
 
@@ -1474,7 +1491,7 @@ export async function resolvePublicAssignmentByToken(token: string) {
   const { data, error } = await admin
     .from('assignment_links')
     .select(
-      'id,assignment_id,org_id,expires_at,used_at,revoked_at,terms_version,assignments(id,status,assignment_type,responsible_profile_id,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city,preliminary_address,scope_description,preferred_date,preferred_time,price_amount,currency,property_address,property_postal_code,property_city,property_municipality,property_owner_name,cadastral_id,brf_name,apartment_number,apartment_holder_name,orderer_role,accepted_at)'
+      'id,assignment_id,org_id,expires_at,used_at,revoked_at,terms_version,assignments(id,status,assignment_type,responsible_profile_id,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city,preliminary_address,scope_description,preferred_date,preferred_time,price_amount,currency,property_address,property_postal_code,property_city,property_municipality,property_owner_name,cadastral_id,brf_name,apartment_number,apartment_holder_name,invoice_name,invoice_address,invoice_email,personal_identity_number,orderer_role,accepted_at,assignment_details)'
     )
     .eq('token_hash', tokenHash)
     .maybeSingle()

@@ -33,8 +33,13 @@ type AssignmentSummary = {
   brf_name: string | null
   apartment_number: string | null
   apartment_holder_name: string | null
+  invoice_name: string | null
+  invoice_address: string | null
+  invoice_email: string | null
+  personal_identity_number: string | null
   orderer_role: string | null
   accepted_at: string | null
+  assignment_details: Record<string, unknown> | null
 }
 
 type TermsDocument = {
@@ -83,6 +88,7 @@ type AcceptReadResponse = {
       buyer: TermsDocument
       apartment: TermsDocument
       technical: TermsDocument
+      construction: TermsDocument
     }
   }
 }
@@ -264,6 +270,7 @@ export default function AssignmentAcceptPage() {
   }, [data])
 
   const isTechnicalAssignment = data?.assignment.assignment_type === 'TU'
+  const isEbAssignment = data?.assignment.assignment_type === 'EB'
   const usesApartmentObject =
     lockedOrdererRole === 'apartment' ||
     (isTechnicalAssignment && Boolean(form?.brfName.trim() || form?.apartmentNumber.trim()))
@@ -271,11 +278,17 @@ export default function AssignmentAcceptPage() {
   const activeTerms = useMemo(() => {
     if (!data) return null
     if (isTechnicalAssignment) return data.terms.documents.technical
+    if (isEbAssignment) return data.terms.documents.construction
     if (lockedOrdererRole === 'buyer') return data.terms.documents.buyer
     if (lockedOrdererRole === 'apartment') return data.terms.documents.apartment
     if (lockedOrdererRole === 'seller') return data.terms.documents.seller
     return null
-  }, [data, isTechnicalAssignment, lockedOrdererRole])
+  }, [data, isEbAssignment, isTechnicalAssignment, lockedOrdererRole])
+
+  const ebDetails = useMemo(() => {
+    if (!isEbAssignment || !data?.assignment.assignment_details) return null
+    return data.assignment.assignment_details
+  }, [data, isEbAssignment])
 
   const inspectorName = data?.inspector?.full_name || INSPECTOR_FALLBACK.name
   const inspectorSbrLine1 = data?.inspector?.sbr_group || INSPECTOR_FALLBACK.sbrLine1
@@ -350,8 +363,8 @@ export default function AssignmentAcceptPage() {
     const missingObjectFields = usesApartmentObjectForSubmit
       ? !form.brfName.trim() ||
         !form.apartmentNumber.trim() ||
-        (!isTechnicalAssignment && !form.apartmentHolderName.trim())
-      : isTechnicalAssignment
+        (!isTechnicalAssignment && !isEbAssignment && !form.apartmentHolderName.trim())
+      : isTechnicalAssignment || isEbAssignment
         ? !form.cadastralId.trim()
         : !form.cadastralId.trim() || !form.propertyOwnerName.trim()
 
@@ -428,7 +441,11 @@ export default function AssignmentAcceptPage() {
 
       setSuccess(
         `Tack. Uppdragsbekräftelsen är registrerad (${data.terms.version}, ${
-          isTechnicalAssignment ? 'Teknisk utredning' : roleToLabel(lockedOrdererRole)
+          isTechnicalAssignment
+            ? 'Teknisk utredning'
+            : isEbAssignment
+              ? 'Entreprenadbesiktning'
+              : roleToLabel(lockedOrdererRole)
         }).`
       )
       setData((prev) => (prev ? { ...prev, state: 'used' } : prev))
@@ -446,6 +463,8 @@ export default function AssignmentAcceptPage() {
         style={{
           backgroundImage: isTechnicalAssignment
             ? 'radial-gradient(100% 70% at 50% 0%, rgba(237,233,254,0.55) 0%, rgba(237,233,254,0) 60%), linear-gradient(135deg, #4c1d95 0%, #7c3aed 42%, #c084fc 100%)'
+            : isEbAssignment
+              ? 'radial-gradient(100% 70% at 50% 0%, rgba(209,250,229,0.55) 0%, rgba(209,250,229,0) 60%), linear-gradient(135deg, #064e3b 0%, #047857 42%, #34d399 100%)'
             : 'radial-gradient(100% 70% at 50% 0%, rgba(219,234,254,0.5) 0%, rgba(219,234,254,0) 60%), linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 42%, #60a5fa 100%)',
         }}
       />
@@ -483,9 +502,9 @@ export default function AssignmentAcceptPage() {
 
             <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-sky-50 px-4 py-3 shadow-sm md:gap-3">
-                {isTechnicalAssignment ? (
+                {isTechnicalAssignment || isEbAssignment ? (
                   <p className="pr-1 text-base font-bold uppercase tracking-wide text-violet-900 md:text-lg">
-                    TEKNISK UTREDNING
+                    {isEbAssignment ? 'ENTREPRENADBESIKTNING' : 'TEKNISK UTREDNING'}
                   </p>
                 ) : (
                   <>
@@ -542,9 +561,9 @@ export default function AssignmentAcceptPage() {
                     onChange={(value) => updateField('propertyMunicipality', value)}
                     disabled={!canSubmit}
                   />
-                  {isTechnicalAssignment ? (
+                  {isTechnicalAssignment || isEbAssignment ? (
                     <TextAreaField
-                      label="Utredningens omfattning"
+                      label={isEbAssignment ? 'Besiktningens omfattning' : 'Utredningens omfattning'}
                       value={form.scopeDescription}
                       onChange={(value) => updateField('scopeDescription', value)}
                       disabled
@@ -565,7 +584,7 @@ export default function AssignmentAcceptPage() {
                         disabled={!canSubmit}
                       />
                       <Field
-                        label={isTechnicalAssignment ? 'Bostadsrättsinnehavare' : 'Bostadsrättsinnehavare *'}
+                        label={isTechnicalAssignment || isEbAssignment ? 'Bostadsrättsinnehavare' : 'Bostadsrättsinnehavare *'}
                         value={form.apartmentHolderName}
                         onChange={(value) => updateField('apartmentHolderName', value)}
                         disabled={!canSubmit}
@@ -580,7 +599,7 @@ export default function AssignmentAcceptPage() {
                         disabled={!canSubmit}
                       />
                       <Field
-                        label={isTechnicalAssignment ? 'Fastighetsägare' : 'Fastighetsägare *'}
+                        label={isTechnicalAssignment || isEbAssignment ? 'Fastighetsägare' : 'Fastighetsägare *'}
                         value={form.propertyOwnerName}
                         onChange={(value) => updateField('propertyOwnerName', value)}
                         disabled={!canSubmit}
@@ -684,7 +703,11 @@ export default function AssignmentAcceptPage() {
                       <div className="space-y-2 pt-5">
                         <p className="text-xs font-semibold uppercase tracking-wide text-gray-700">Kostnad</p>
                         <Field
-                          label="Pris (SEK) *"
+                          label={
+                            isEbAssignment && ebDetails?.pricingModel === 'hourly'
+                              ? 'Timpris (SEK) *'
+                              : 'Pris (SEK) *'
+                          }
                           type="number"
                           step="0.01"
                           min="0"
@@ -704,6 +727,86 @@ export default function AssignmentAcceptPage() {
                   </div>
                 </SectionCard>
               </div>
+
+              {isEbAssignment && ebDetails ? (
+                <SectionCard title="Uppdragets särskilda villkor">
+                  <div className="grid gap-2 text-sm text-gray-700 md:grid-cols-2">
+                    <AssignmentFact label="Avtalsvillkor" value={String(ebDetails.contractTerms ?? 'ABK 09')} />
+                    <AssignmentFact
+                      label="Moms"
+                      value={ebDetails.vatIncluded === true ? 'Ingår i angivna priser' : 'Tillkommer'}
+                    />
+                    <AssignmentFact label="Betalningsvillkor" value={String(ebDetails.paymentTerms ?? 'Ej angivet')} />
+                    <AssignmentFact
+                      label="Resa"
+                      value={
+                        ebDetails.travelIncluded === true
+                          ? 'Ingår'
+                          : String(ebDetails.travelTerms ?? 'Debiteras separat')
+                      }
+                    />
+                    <AssignmentFact
+                      label="Budget"
+                      value={formatOptionalMoney(ebDetails.budgetAmount, data.assignment.currency)}
+                    />
+                    <AssignmentFact
+                      label="Biträdande besiktningsman"
+                      value={formatOptionalMoney(ebDetails.assistantHourlyRate, data.assignment.currency)}
+                    />
+                    <AssignmentFact
+                      label="Påslag externa kostnader"
+                      value={
+                        typeof ebDetails.expenseMarkupPercent === 'number'
+                          ? `${ebDetails.expenseMarkupPercent} %`
+                          : 'Ej angivet'
+                      }
+                    />
+                    <AssignmentFact
+                      label="Sen avbokning"
+                      value={String(ebDetails.cancellationTerms ?? 'Enligt överenskommelse')}
+                    />
+                    <AssignmentFact label="Fakturamottagare" value={data.assignment.invoice_name || 'Ej angivet'} />
+                    <AssignmentFact
+                      label="Org.nr/personnummer"
+                      value={data.assignment.personal_identity_number || 'Ej angivet'}
+                    />
+                    <AssignmentFact label="Faktura-e-post" value={data.assignment.invoice_email || 'Ej angivet'} />
+                    <AssignmentFact label="Fakturaadress" value={data.assignment.invoice_address || 'Ej angivet'} />
+                    <AssignmentFact
+                      label="Referens/märkning"
+                      value={String(ebDetails.invoiceReference ?? 'Ej angivet')}
+                    />
+                    <AssignmentFact
+                      label="Ansvarsförsäkring"
+                      value={String(ebDetails.insuranceTerms ?? 'Enligt ABK 09')}
+                    />
+                  </div>
+                  {typeof ebDetails.basisDocuments === 'string' && ebDetails.basisDocuments.trim() ? (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Underlag</p>
+                      <p className="mt-1 whitespace-pre-wrap">{ebDetails.basisDocuments}</p>
+                    </div>
+                  ) : null}
+                  {typeof ebDetails.executionNotes === 'string' && ebDetails.executionNotes.trim() ? (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Genomförande och avgränsningar</p>
+                      <p className="mt-1 whitespace-pre-wrap">{ebDetails.executionNotes}</p>
+                    </div>
+                  ) : null}
+                  {typeof ebDetails.scheduleNotes === 'string' && ebDetails.scheduleNotes.trim() ? (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Tider</p>
+                      <p className="mt-1 whitespace-pre-wrap">{ebDetails.scheduleNotes}</p>
+                    </div>
+                  ) : null}
+                  {typeof ebDetails.specialTerms === 'string' && ebDetails.specialTerms.trim() ? (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Särskilda villkor</p>
+                      <p className="mt-1 whitespace-pre-wrap">{ebDetails.specialTerms}</p>
+                    </div>
+                  ) : null}
+                </SectionCard>
+              ) : null}
 
               {data.addonOffers.length > 0 ? (
                 <SectionCard title="Tilläggsuppdrag">
@@ -764,7 +867,11 @@ export default function AssignmentAcceptPage() {
             <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">
-                  {isTechnicalAssignment ? 'Villkor för teknisk utredning' : 'Villkor för besiktning'}
+                  {isTechnicalAssignment
+                    ? 'Villkor för teknisk utredning'
+                    : isEbAssignment
+                      ? 'Villkor för entreprenadbesiktning'
+                      : 'Villkor för besiktning'}
                 </h2>
                 <span className="text-xs font-medium text-gray-500">Version {data.terms.version}</span>
               </div>
@@ -788,7 +895,7 @@ export default function AssignmentAcceptPage() {
               >
                 {saving
                   ? 'Sparar...'
-                  : isTechnicalAssignment
+                  : isTechnicalAssignment || isEbAssignment
                     ? 'Godkänn uppdrag'
                     : 'Godkänn villkor och skicka uppdrag'}
               </button>
@@ -803,6 +910,21 @@ export default function AssignmentAcceptPage() {
         ) : null}
       </div>
     </main>
+  )
+}
+
+function formatOptionalMoney(value: unknown, currency: string) {
+  const amount = typeof value === 'number' ? value : Number(String(value ?? '').replace(',', '.'))
+  if (!Number.isFinite(amount) || amount < 0) return 'Ej angivet'
+  return `${amount.toLocaleString('sv-SE', { maximumFractionDigits: 2 })} ${currency || 'SEK'}`
+}
+
+function AssignmentFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">{label}</p>
+      <p className="mt-1 whitespace-pre-wrap">{value}</p>
+    </div>
   )
 }
 

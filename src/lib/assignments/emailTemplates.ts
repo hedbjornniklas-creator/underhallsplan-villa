@@ -1,6 +1,6 @@
 ﻿import 'server-only'
 
-type TermsRole = 'seller' | 'buyer' | 'apartment' | 'technical'
+type TermsRole = 'seller' | 'buyer' | 'apartment' | 'technical' | 'construction'
 type AssignmentType = 'OB' | 'STATUS' | 'UHP' | 'EB' | 'TU'
 
 type AssignmentForEmail = {
@@ -152,6 +152,7 @@ function termsRoleToLabel(role: TermsRole, format: 'html' | 'text' = 'text') {
   if (role === 'buyer') return format === 'html' ? 'Köpare' : 'Köpare'
   if (role === 'apartment') return format === 'html' ? 'Lägenhet' : 'Lägenhet'
   if (role === 'technical') return format === 'html' ? 'Teknisk utredning' : 'Teknisk utredning'
+  if (role === 'construction') return format === 'html' ? 'Entreprenadbesiktning' : 'Entreprenadbesiktning'
   return format === 'html' ? 'Säljare' : 'Säljare'
 }
 

@@ -4,9 +4,10 @@ import { createHash } from 'node:crypto'
 import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import type { StandardTextId } from '@/content/standardtexts/registry'
 
-export type AssignmentTermsRole = 'seller' | 'buyer' | 'apartment' | 'technical'
+export type AssignmentTermsRole = 'seller' | 'buyer' | 'apartment' | 'technical' | 'construction'
 
 export const ASSIGNMENT_TERMS_VERSION = '2026-02-21.v1'
+export const EB_ASSIGNMENT_TERMS_VERSION = '2026-08-22.eb.v1'
 
 export type AssignmentTermsDocument = {
   version: string
@@ -43,6 +44,14 @@ export function parseAssignmentTermsRole(value: string | null | undefined): Assi
   ) {
     return 'technical'
   }
+  if (
+    lowered === 'eb' ||
+    lowered.includes('construction') ||
+    lowered.includes('entreprenad') ||
+    lowered.includes('besiktningsuppdrag')
+  ) {
+    return 'construction'
+  }
   if (lowered.includes('sell') || lowered.includes('salj')) return 'seller'
   return null
 }
@@ -57,6 +66,7 @@ export function getAssignmentTermsTemplateId(role: AssignmentTermsRole): Standar
   if (role === 'buyer') return 'STD_ASSIGNMENT_TEMPLATE_BUYER_2026'
   if (role === 'apartment') return 'STD_ASSIGNMENT_TEMPLATE_APARTMENT_2026'
   if (role === 'technical') return 'STD_ASSIGNMENT_TEMPLATE_TU_2026'
+  if (role === 'construction') return 'STD_ASSIGNMENT_TEMPLATE_EB_2026'
   return 'STD_ASSIGNMENT_TEMPLATE_SELLER_2026'
 }
 
@@ -65,7 +75,7 @@ export function getAssignmentTermsDocument(role: AssignmentTermsRole): Assignmen
   const text = loadStandardText(templateId)
 
   return {
-    version: ASSIGNMENT_TERMS_VERSION,
+    version: role === 'construction' ? EB_ASSIGNMENT_TERMS_VERSION : ASSIGNMENT_TERMS_VERSION,
     role,
     templateId,
     text,
@@ -79,5 +89,6 @@ export function getAllAssignmentTermsDocuments() {
     buyer: getAssignmentTermsDocument('buyer'),
     apartment: getAssignmentTermsDocument('apartment'),
     technical: getAssignmentTermsDocument('technical'),
+    construction: getAssignmentTermsDocument('construction'),
   } as const
 }

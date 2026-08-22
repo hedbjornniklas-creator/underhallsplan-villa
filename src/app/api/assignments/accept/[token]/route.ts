@@ -10,7 +10,6 @@ import {
 } from '@/lib/assignments/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
-  ASSIGNMENT_TERMS_VERSION,
   getAllAssignmentTermsDocuments,
   getAssignmentTermsDocument,
   parseAssignmentTermsRole,
@@ -55,8 +54,13 @@ type PublicAssignmentSummary = {
   brf_name: string | null
   apartment_number: string | null
   apartment_holder_name: string | null
+  invoice_name: string | null
+  invoice_address: string | null
+  invoice_email: string | null
+  personal_identity_number: string | null
   orderer_role: string | null
   accepted_at: string | null
+  assignment_details: Record<string, unknown> | null
 }
 
 type PublicInspectorProfile = {
@@ -168,7 +172,13 @@ function toState(link: PublicLink): PublicState {
   const revoked = Boolean(link.revoked_at)
   const assignment = normalizeAssignment(link)
   const cancelled = assignment?.status?.toLowerCase() === 'cancelled'
-  const outdated = !link.terms_version || link.terms_version !== ASSIGNMENT_TERMS_VERSION
+  const termsRole = assignment?.assignment_type === 'TU'
+    ? 'technical'
+    : assignment?.assignment_type === 'EB'
+      ? 'construction'
+      : parseAssignmentTermsRole(assignment?.orderer_role)
+  const expectedTermsVersion = termsRole ? getAssignmentTermsDocument(termsRole).version : null
+  const outdated = !link.terms_version || !expectedTermsVersion || link.terms_version !== expectedTermsVersion
 
   if (cancelled) return 'revoked'
   if (revoked) return 'revoked'
@@ -193,6 +203,14 @@ export async function GET(
     if (!assignment) return jsonError('Uppdraget kunde inte hittas.', 404)
 
     const terms = getAllAssignmentTermsDocuments()
+    const assignmentTermsRole = assignment.assignment_type === 'TU'
+      ? 'technical'
+      : assignment.assignment_type === 'EB'
+        ? 'construction'
+        : parseAssignmentTermsRole(assignment.orderer_role)
+    const assignmentTerms = assignmentTermsRole
+      ? getAssignmentTermsDocument(assignmentTermsRole)
+      : terms.seller
     let inspector: PublicInspectorProfile | null = null
     let addonOffers: PublicAddonOffer[] = []
     let selectedAddonServiceIds: string[] = []
@@ -230,7 +248,7 @@ export async function GET(
           }
         : null
 
-      if (assignment.assignment_type !== 'TU') {
+      if (assignment.assignment_type !== 'TU' && assignment.assignment_type !== 'EB') {
         try {
           addonOffers = await listAddonOffersForProfile({
             orgId: link.org_id,
@@ -264,7 +282,7 @@ export async function GET(
       addonOffers,
       selectedAddonServiceIds,
       terms: {
-        version: ASSIGNMENT_TERMS_VERSION,
+        version: assignmentTerms.version,
         documents: {
           seller: {
             hash: terms.seller.documentHash,
@@ -285,6 +303,11 @@ export async function GET(
             hash: terms.technical.documentHash,
             text: terms.technical.text,
             templateId: terms.technical.templateId,
+          },
+          construction: {
+            hash: terms.construction.documentHash,
+            text: terms.construction.text,
+            templateId: terms.construction.templateId,
           },
         },
       },
@@ -321,8 +344,11 @@ export async function POST(
     }
 
     const isTechnicalAssignment = assignment.assignment_type === 'TU'
+    const isEbAssignment = assignment.assignment_type === 'EB'
     const termsRole = isTechnicalAssignment
       ? 'technical'
+      : isEbAssignment
+        ? 'construction'
       : parseAssignmentTermsRole(assignment.orderer_role)
     if (!termsRole) {
       return jsonError('Välj om du är köpare, säljare eller lägenhetsköpare.', 409)
@@ -375,7 +401,7 @@ export async function POST(
       if (!brfName || !apartmentNumber || (!isTechnicalAssignment && !apartmentHolderName)) {
         return jsonError('Ange BRF och lägenhetsnummer.', 400)
       }
-    } else if (!cadastralId || (!isTechnicalAssignment && !propertyOwnerName)) {
+    } else if (!cadastralId || (!isTechnicalAssignment && !isEbAssignment && !propertyOwnerName)) {
       return jsonError('Ange fastighetsbeteckning.', 400)
     }
 
@@ -384,6 +410,8 @@ export async function POST(
         ? isApartmentObject
           ? 'Teknisk utredning - Lägenhet'
           : 'Teknisk utredning - Villa'
+        : termsRole === 'construction'
+          ? 'Entreprenadbesiktning'
         : termsRole === 'buyer'
           ? 'Köpare'
           : termsRole === 'apartment'
@@ -395,7 +423,7 @@ export async function POST(
       return jsonError('Pris är obligatoriskt och måste vara giltigt.', 409)
     }
 
-    const selectedAddonServiceIdsInput = isTechnicalAssignment ? [] : body.selectedAddonServiceIds
+    const selectedAddonServiceIdsInput = isTechnicalAssignment || isEbAssignment ? [] : body.selectedAddonServiceIds
     let selectedAddonServiceIds: string[] = []
     if (selectedAddonServiceIdsInput !== undefined) {
       if (!Array.isArray(selectedAddonServiceIdsInput)) {
@@ -464,6 +492,10 @@ export async function POST(
       orderer_role: roleLabel,
       terms_document_hash: terms.documentHash,
       addon_service_ids: selectedAddonServiceIds,
+      assignment_details:
+        assignment.assignment_details && typeof assignment.assignment_details === 'object'
+          ? assignment.assignment_details
+          : {},
     }
 
     await consumeAssignmentToken({

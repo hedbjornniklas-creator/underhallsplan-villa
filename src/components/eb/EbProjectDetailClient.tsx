@@ -8,6 +8,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   Download,
+  FileCheck2,
   FileText,
   ListChecks,
   Lock,
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react'
 import Protected from '@/components/Protected'
 import EbProjectAttachmentsPanel from '@/components/eb/EbProjectAttachmentsPanel'
+import EbAssignmentConfirmationDialog from '@/components/eb/EbAssignmentConfirmationDialog'
 import { useEbToast } from '@/components/eb/EbToastProvider'
 import EbProjectForm, {
   buildEbProjectForm,
@@ -44,6 +46,7 @@ import type {
   EbProjectListItem,
 } from '@/lib/eb/server'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
+import type { EbAssignmentConfirmationSummary } from '@/lib/eb/assignmentConfirmationTypes'
 
 const DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION =
   'Fönster, dörrar, väggar etc numreras från vänster till höger. Vägg 1 = vägg till vänster om entrévägg. Vägg 2 = nästa vägg till höger om vägg 1 osv.'
@@ -51,6 +54,7 @@ const DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION =
 type EbProjectDetailClientProps = {
   project: EbProjectListItem
   attachments: EbProjectAttachment[]
+  assignmentConfirmations: EbAssignmentConfirmationSummary[]
 }
 
 type InspectionFormState = {
@@ -1730,12 +1734,14 @@ function InvitationDialog({
   open,
   project,
   inspection,
+  assignmentConfirmation,
   onClose,
   onSent,
 }: {
   open: boolean
   project: EbProjectListItem
   inspection: EbInspectionSummary | null
+  assignmentConfirmation: EbAssignmentConfirmationSummary | null
   onClose: () => void
   onSent: (project: EbProjectListItem) => void
 }) {
@@ -1854,6 +1860,16 @@ function InvitationDialog({
   const handleSend = async () => {
     if (invitationOperationRef.current) return
 
+    const hasAcceptedAssignment = Boolean(assignmentConfirmation?.acceptedAt)
+    if (
+      !hasAcceptedAssignment &&
+      !window.confirm(
+        'Det finns ingen godkänd uppdragsbekräftelse för den här besiktningen. Vill du ändå skicka kallelsen?'
+      )
+    ) {
+      return
+    }
+
     try {
       invitationOperationRef.current = true
       setSending(true)
@@ -1868,6 +1884,7 @@ function InvitationDialog({
             subject,
             body,
             participants: participantPayload(participants),
+            allowWithoutAcceptedAssignment: !hasAcceptedAssignment,
           }),
         }
       )
@@ -1988,7 +2005,11 @@ function InvitationDialog({
   )
 }
 
-export default function EbProjectDetailClient({ project, attachments }: EbProjectDetailClientProps) {
+export default function EbProjectDetailClient({
+  project,
+  attachments,
+  assignmentConfirmations,
+}: EbProjectDetailClientProps) {
   const router = useRouter()
   const { showError } = useEbToast()
   const [currentProject, setCurrentProject] = useState(project)
@@ -1996,6 +2017,14 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [detailsInspection, setDetailsInspection] = useState<EbInspectionSummary | null>(null)
   const [invitationInspection, setInvitationInspection] = useState<EbInspectionSummary | null>(null)
+  const [assignmentInspection, setAssignmentInspection] = useState<EbInspectionSummary | null>(null)
+  const [assignmentConfirmationByInspection, setAssignmentConfirmationByInspection] = useState<
+    Record<string, EbAssignmentConfirmationSummary>
+  >(() =>
+    Object.fromEntries(
+      assignmentConfirmations.map((confirmation) => [confirmation.inspectionId, confirmation])
+    )
+  )
   const [reportActionInspectionId, setReportActionInspectionId] = useState<string | null>(null)
   const [deletingInspectionId, setDeletingInspectionId] = useState<string | null>(null)
   const [pendingNavigationKey, setPendingNavigationKey] = useState<string | null>(null)
@@ -2069,6 +2098,13 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
   const handleUpdated = (updatedProject: EbProjectListItem) => {
     setCurrentProject(updatedProject)
     router.refresh()
+  }
+
+  const handleAssignmentConfirmationUpdated = (summary: EbAssignmentConfirmationSummary) => {
+    setAssignmentConfirmationByInspection((current) => ({
+      ...current,
+      [summary.inspectionId]: summary,
+    }))
   }
 
   const handleInspectionNavigation = (event: MouseEvent<HTMLAnchorElement>, key: string) => {
@@ -2286,6 +2322,9 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                     const isReviewNavigating = pendingNavigationKey === reviewNavigationKey
                     const isReportNavigating = pendingNavigationKey === reportNavigationKey
                     const navigationInProgress = Boolean(pendingNavigationKey)
+                    const assignmentConfirmation =
+                      assignmentConfirmationByInspection[inspection.inspectionId] ?? null
+                    const assignmentAccepted = Boolean(assignmentConfirmation?.acceptedAt)
 
                     return (
                       <article key={inspection.inspectionId} className="p-4">
@@ -2322,6 +2361,21 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                                     <Loader2 size={12} className="animate-spin" />
                                   ) : null}
                                   {getPdfStatusLabel(inspection)}
+                                </span>
+                                <span
+                                  className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                                    assignmentAccepted
+                                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                      : assignmentConfirmation
+                                        ? 'border-blue-200 bg-blue-50 text-blue-800'
+                                        : 'border-gray-200 bg-gray-50 text-gray-600'
+                                  }`}
+                                >
+                                  {assignmentAccepted
+                                    ? 'Uppdrag godkänt'
+                                    : assignmentConfirmation
+                                      ? 'Uppdrag skickat/utkast'
+                                      : 'Uppdrag saknas'}
                                 </span>
                               </div>
                               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
@@ -2374,6 +2428,15 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                               {isReportNavigating ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
                               {isReportNavigating ? 'Öppnar utlåtande...' : 'Utlåtande'}
                             </Link>
+                            <button
+                              type="button"
+                              onClick={() => setAssignmentInspection(inspection)}
+                              disabled={navigationInProgress}
+                              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <FileCheck2 size={16} />
+                              Uppdragsbekräftelse
+                            </button>
                             <button
                               type="button"
                               onClick={() => setInvitationInspection(inspection)}
@@ -2544,8 +2607,20 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
           open={Boolean(invitationInspection)}
           project={currentProject}
           inspection={invitationInspection}
+          assignmentConfirmation={
+            invitationInspection
+              ? assignmentConfirmationByInspection[invitationInspection.inspectionId] ?? null
+              : null
+          }
           onClose={() => setInvitationInspection(null)}
           onSent={handleCreated}
+        />
+        <EbAssignmentConfirmationDialog
+          open={Boolean(assignmentInspection)}
+          project={currentProject}
+          inspection={assignmentInspection}
+          onClose={() => setAssignmentInspection(null)}
+          onUpdated={handleAssignmentConfirmationUpdated}
         />
       </main>
     </Protected>

@@ -2,12 +2,14 @@
 
 ## Mål
 
-Varje EB-besiktning ska i ett senare steg kunna få en egen uppdragsbekräftelse som kunden granskar och godkänner före besiktningen.
+Varje EB-besiktning har en egen uppdragsbekräftelse som kunden granskar och godkänner före besiktningen.
+
+Lösningen återanvänder plattformens gemensamma tabeller och flöden för `assignments`, personliga länkar, e-postlogg och godkännandesnapshots. `eb_assignment_confirmations` innehåller bara kopplingen mellan EB-besiktningen och respektive version.
 
 ## Ägarskap av uppgifter
 
 - Entreprenaden lagrar administrativa förval för fakturamottagare, faktura-e-post, fakturaadress och referens.
-- Besiktningen lagrar uppdragets omfattning, pris, valuta och vald villkorsversion.
+- Uppdragsbekräftelsens version lagrar uppdragets omfattning, pris, valuta och vald villkorsversion.
 - När uppdragsbekräftelsen skapas kopieras aktuella förval till en versionsbunden arbetskopia för besiktningen.
 - Senare ändringar i entreprenaden får inte ändra en redan skickad eller godkänd uppdragsbekräftelse.
 - Fakturauppgifter och pris ska inte visas i EB-utlåtandet.
@@ -33,6 +35,8 @@ Varje EB-besiktning ska i ett senare steg kunna få en egen uppdragsbekräftelse
 5. Lås den skickade versionen.
 6. Låt kunden godkänna via personlig länk och spara en oföränderlig godkännandesnapshot.
 7. Vid ändring skapas en ny version; tidigare version behålls för historik.
+
+En kallelse kan skickas utan godkänd uppdragsbekräftelse, men användaren måste först bekräfta en tydlig säkerhetsfråga. API:t kräver samma uttryckliga undantag så varningen inte bara är ett gränssnittsskydd.
 
 ## Fortsatt fakturering
 

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
+import { hasAcceptedEbAssignmentConfirmation } from '@/lib/eb/assignmentConfirmationServer'
 import {
   getEbInvitationContext,
   saveEbInvitationDraft,
@@ -107,6 +108,19 @@ export async function POST(
     const { projectId, inspectionId } = await context.params
     const org = await requireEbContext()
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const hasAcceptedAssignment = await hasAcceptedEbAssignmentConfirmation({
+      orgId: org.orgId,
+      inspectionId,
+    })
+    if (!hasAcceptedAssignment && body.allowWithoutAcceptedAssignment !== true) {
+      return NextResponse.json(
+        {
+          error: 'Det finns ingen godkänd uppdragsbekräftelse för besiktningen.',
+          requiresAssignmentConfirmation: true,
+        },
+        { status: 409 }
+      )
+    }
     const participants = Array.isArray(body.participants)
       ? body.participants
           .map((participant, index) => toParticipant(participant, index))

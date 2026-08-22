@@ -1,6 +1,8 @@
 import { notFound, redirect } from 'next/navigation'
 import EbProjectDetailClient from '@/components/eb/EbProjectDetailClient'
 import { requireOrgContext } from '@/lib/assignments/server'
+import { listEbAssignmentConfirmationSummaries } from '@/lib/eb/assignmentConfirmationServer'
+import type { EbAssignmentConfirmationSummary } from '@/lib/eb/assignmentConfirmationTypes'
 import {
   getEbProjectById,
   listEbProjectAttachments,
@@ -18,6 +20,7 @@ export default async function EbProjectPage({
   const { projectId } = await params
   let project: EbProjectListItem | null = null
   let attachments: EbProjectAttachment[] = []
+  let assignmentConfirmations: EbAssignmentConfirmationSummary[] = []
 
   try {
     const context = await requireOrgContext()
@@ -26,10 +29,16 @@ export default async function EbProjectPage({
       projectId,
     })
     if (project) {
-      attachments = await listEbProjectAttachments({
-        orgId: context.orgId,
-        projectId,
-      })
+      ;[attachments, assignmentConfirmations] = await Promise.all([
+        listEbProjectAttachments({
+          orgId: context.orgId,
+          projectId,
+        }),
+        listEbAssignmentConfirmationSummaries({
+          orgId: context.orgId,
+          inspectionIds: project.inspections.map((inspection) => inspection.inspectionId),
+        }),
+      ])
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
@@ -43,5 +52,11 @@ export default async function EbProjectPage({
     notFound()
   }
 
-  return <EbProjectDetailClient project={project} attachments={attachments} />
+  return (
+    <EbProjectDetailClient
+      project={project}
+      attachments={attachments}
+      assignmentConfirmations={assignmentConfirmations}
+    />
+  )
 }
