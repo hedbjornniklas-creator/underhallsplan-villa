@@ -343,7 +343,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
               <div className="flex items-start gap-3">
                 <Link2 className="mt-0.5 shrink-0" size={18} />
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold">Personlig mottagarlänk</p>
+                  <p className="font-semibold">Mottagarens uppdragslänk</p>
                   <a href={accessLink} target="_blank" rel="noreferrer" className="mt-1 block truncate text-xs underline underline-offset-2">
                     {accessLink}
                   </a>

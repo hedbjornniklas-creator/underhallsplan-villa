@@ -125,10 +125,10 @@ function EmptyWorkspaceState() {
           organisation eller BRF.
         </p>
         <Link
-          href="/"
+          href="/mina-uppdrag"
           className="mt-7 inline-flex items-center gap-2 rounded-full bg-stone-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2"
         >
-          Till HusHub
+          Öppna Mina uppdrag
           <ArrowRight size={16} aria-hidden="true" />
         </Link>
       </section>

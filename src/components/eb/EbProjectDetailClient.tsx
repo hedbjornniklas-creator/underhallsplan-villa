@@ -2052,6 +2052,9 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
   const contractorAddressLine = [currentProject.contractorAddress, [currentProject.contractorPostalCode, currentProject.contractorCity].filter(Boolean).join(' ')]
     .filter(Boolean)
     .join(', ')
+  const invoiceAddressLine = [currentProject.invoiceAddress, [currentProject.invoicePostalCode, currentProject.invoiceCity].filter(Boolean).join(' ')]
+    .filter(Boolean)
+    .join(', ')
   const backNavigationKey = 'eb'
   const remediationNavigationKey = `remediation:${currentProject.id}`
   const isBackNavigating = pendingNavigationKey === backNavigationKey
@@ -2371,6 +2374,15 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                               {isReportNavigating ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
                               {isReportNavigating ? 'Öppnar utlåtande...' : 'Utlåtande'}
                             </Link>
+                            <button
+                              type="button"
+                              onClick={() => setInvitationInspection(inspection)}
+                              disabled={navigationInProgress}
+                              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <Send size={16} />
+                              Kallelse
+                            </button>
                             {inspection.reportPdfDownloadUrl ? (
                               <Link
                                 href={inspection.reportPdfDownloadUrl}
@@ -2449,6 +2461,11 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                     <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.clientName ?? 'Ej satt'}</dd>
                     {currentProject.clientOrgNo ? <dd className="text-xs text-gray-600">{currentProject.clientOrgNo}</dd> : null}
                     {clientAddressLine ? <dd className="text-xs text-gray-600">{clientAddressLine}</dd> : null}
+                    {currentProject.clientEmail ? <dd className="text-xs text-gray-600">{currentProject.clientEmail}</dd> : null}
+                    {currentProject.clientPhone ? <dd className="text-xs text-gray-600">{currentProject.clientPhone}</dd> : null}
+                    {!currentProject.clientIsPropertyOwner ? (
+                      <dd className="mt-1 text-xs text-gray-600">Fastighetsägare: {currentProject.propertyOwnerName ?? 'Ej satt'}</dd>
+                    ) : null}
                   </div>
                   <div>
                     <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
@@ -2457,6 +2474,8 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                     <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.contractorName ?? 'Ej satt'}</dd>
                     {currentProject.contractorOrgNo ? <dd className="text-xs text-gray-600">{currentProject.contractorOrgNo}</dd> : null}
                     {contractorAddressLine ? <dd className="text-xs text-gray-600">{contractorAddressLine}</dd> : null}
+                    {currentProject.contractorEmail ? <dd className="text-xs text-gray-600">{currentProject.contractorEmail}</dd> : null}
+                    {currentProject.contractorPhone ? <dd className="text-xs text-gray-600">{currentProject.contractorPhone}</dd> : null}
                   </div>
                   <div>
                     <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Kontrakt</dt>
@@ -2474,6 +2493,14 @@ export default function EbProjectDetailClient({ project, attachments }: EbProjec
                       <dd className="text-xs text-gray-600">{currentProject.brfApartmentNumber}</dd>
                     ) : null}
                     <dd className="text-xs text-gray-600">{addressLine || 'Adress ej satt'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Fakturering av besiktningar</dt>
+                    <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.invoiceName ?? 'Ej satt'}</dd>
+                    {currentProject.invoiceOrgNo ? <dd className="text-xs text-gray-600">{currentProject.invoiceOrgNo}</dd> : null}
+                    {currentProject.invoiceReference ? <dd className="text-xs text-gray-600">Referens: {currentProject.invoiceReference}</dd> : null}
+                    {currentProject.invoiceEmail ? <dd className="text-xs text-gray-600">{currentProject.invoiceEmail}</dd> : null}
+                    {invoiceAddressLine ? <dd className="text-xs text-gray-600">{invoiceAddressLine}</dd> : null}
                   </div>
                 </dl>
               </section>

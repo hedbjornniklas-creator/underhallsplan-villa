@@ -137,15 +137,30 @@ export type EbProjectListItem = {
   clientName: string | null
   clientOrgNo: string | null
   clientEmail: string | null
+  clientPhone: string | null
+  clientAddressMatchesObject: boolean
   clientAddress: string | null
   clientPostalCode: string | null
   clientCity: string | null
+  clientIsPropertyOwner: boolean
+  propertyOwnerName: string | null
   contractorName: string | null
   contractorOrgNo: string | null
   contractorEmail: string | null
+  contractorPhone: string | null
   contractorAddress: string | null
   contractorPostalCode: string | null
   contractorCity: string | null
+  invoiceRecipientMatchesClient: boolean
+  invoiceName: string | null
+  invoiceOrgNo: string | null
+  invoiceReference: string | null
+  invoiceEmailMatchesClient: boolean
+  invoiceEmail: string | null
+  invoiceAddressMatchesClient: boolean
+  invoiceAddress: string | null
+  invoicePostalCode: string | null
+  invoiceCity: string | null
   agreementItems: EbProjectAgreementItem[]
   status: string
   createdAt: string | null
@@ -611,15 +626,30 @@ type EbProjectRow = {
   client_name: string | null
   client_org_no: string | null
   client_email?: string | null
+  client_phone?: string | null
+  client_address_matches_object?: boolean | null
   client_address: string | null
   client_postal_code: string | null
   client_city: string | null
+  client_is_property_owner?: boolean | null
+  property_owner_name?: string | null
   contractor_name: string | null
   contractor_org_no: string | null
   contractor_email?: string | null
+  contractor_phone?: string | null
   contractor_address: string | null
   contractor_postal_code: string | null
   contractor_city: string | null
+  invoice_recipient_matches_client?: boolean | null
+  invoice_name?: string | null
+  invoice_org_no?: string | null
+  invoice_reference?: string | null
+  invoice_email_matches_client?: boolean | null
+  invoice_email?: string | null
+  invoice_address_matches_client?: boolean | null
+  invoice_address?: string | null
+  invoice_postal_code?: string | null
+  invoice_city?: string | null
   agreement_items?: unknown
   status: string | null
   created_at: string | null
@@ -923,15 +953,30 @@ export type CreateEbProjectInput = {
   clientName?: string | null
   clientOrgNo?: string | null
   clientEmail?: string | null
+  clientPhone?: string | null
+  clientAddressMatchesObject?: boolean | null
   clientAddress?: string | null
   clientPostalCode?: string | null
   clientCity?: string | null
+  clientIsPropertyOwner?: boolean | null
+  propertyOwnerName?: string | null
   contractorName?: string | null
   contractorOrgNo?: string | null
   contractorEmail?: string | null
+  contractorPhone?: string | null
   contractorAddress?: string | null
   contractorPostalCode?: string | null
   contractorCity?: string | null
+  invoiceRecipientMatchesClient?: boolean | null
+  invoiceName?: string | null
+  invoiceOrgNo?: string | null
+  invoiceReference?: string | null
+  invoiceEmailMatchesClient?: boolean | null
+  invoiceEmail?: string | null
+  invoiceAddressMatchesClient?: boolean | null
+  invoiceAddress?: string | null
+  invoicePostalCode?: string | null
+  invoiceCity?: string | null
   agreementItems?: EbProjectAgreementItem[] | null
 }
 
@@ -1637,15 +1682,30 @@ function mapProject(
     clientName: project.client_name ?? null,
     clientOrgNo: project.client_org_no ?? null,
     clientEmail: project.client_email ?? null,
+    clientPhone: project.client_phone ?? null,
+    clientAddressMatchesObject: project.client_address_matches_object === true,
     clientAddress: project.client_address ?? null,
     clientPostalCode: project.client_postal_code ?? null,
     clientCity: project.client_city ?? null,
+    clientIsPropertyOwner: project.client_is_property_owner !== false,
+    propertyOwnerName: project.property_owner_name ?? project.client_name ?? null,
     contractorName: project.contractor_name ?? null,
     contractorOrgNo: project.contractor_org_no ?? null,
     contractorEmail: project.contractor_email ?? null,
+    contractorPhone: project.contractor_phone ?? null,
     contractorAddress: project.contractor_address ?? null,
     contractorPostalCode: project.contractor_postal_code ?? null,
     contractorCity: project.contractor_city ?? null,
+    invoiceRecipientMatchesClient: project.invoice_recipient_matches_client !== false,
+    invoiceName: project.invoice_name ?? project.client_name ?? null,
+    invoiceOrgNo: project.invoice_org_no ?? project.client_org_no ?? null,
+    invoiceReference: project.invoice_reference ?? null,
+    invoiceEmailMatchesClient: project.invoice_email_matches_client !== false,
+    invoiceEmail: project.invoice_email ?? project.client_email ?? null,
+    invoiceAddressMatchesClient: project.invoice_address_matches_client !== false,
+    invoiceAddress: project.invoice_address ?? project.client_address ?? null,
+    invoicePostalCode: project.invoice_postal_code ?? project.client_postal_code ?? null,
+    invoiceCity: project.invoice_city ?? project.client_city ?? null,
     agreementItems: normalizeAgreementItems(project.agreement_items),
     status: project.status ?? 'draft',
     createdAt: project.created_at ?? null,
@@ -1662,10 +1722,11 @@ async function fetchProjectsByOrg(orgId: string, projectId?: string) {
     'id,org_id,owner_profile_id,property_id,project_template_key,drainage_system,drainage_inspection_stage,drainage_guidance_version,title,contract_name,object_description,property_designation,brf_apartment_number,address,postal_code,city,municipality,standard_agreement,contract_form,procurement_form,contract_date,note_prefix,client_name,client_org_no,client_address,client_postal_code,client_city,contractor_name,contractor_org_no,contractor_address,contractor_postal_code,contractor_city,status,created_at,updated_at'
   const withAgreementItemsSelect = `${withTemplateSelect},agreement_items`
   const withAgreementNoteSelect = `${withAgreementItemsSelect},agreement_note`
+  const withPartyRelationsAndBillingSelect = `${withAgreementNoteSelect},client_phone,client_address_matches_object,client_is_property_owner,property_owner_name,contractor_phone,invoice_recipient_matches_client,invoice_name,invoice_org_no,invoice_reference,invoice_email_matches_client,invoice_email,invoice_address_matches_client,invoice_address,invoice_postal_code,invoice_city`
   const legacyWithAgreementItemsSelect = `${legacyWithTemplateSelect},agreement_items`
   let query = admin
     .from('eb_projects')
-    .select(withAgreementNoteSelect)
+    .select(withPartyRelationsAndBillingSelect)
     .eq('org_id', orgId)
     .order('updated_at', { ascending: false })
 
@@ -1679,7 +1740,7 @@ async function fetchProjectsByOrg(orgId: string, projectId?: string) {
     if (isMissingColumnError(error)) {
       let fallbackQuery = admin
         .from('eb_projects')
-        .select(withAgreementItemsSelect)
+        .select(withAgreementNoteSelect)
         .eq('org_id', orgId)
         .order('updated_at', { ascending: false })
 
@@ -1693,6 +1754,24 @@ async function fetchProjectsByOrg(orgId: string, projectId?: string) {
       }
       if (!isMissingColumnError(fallback.error)) {
         throw new Error(fallback.error.message ?? 'Kunde inte hämta EB-projekt.')
+      }
+
+      let agreementItemsQuery = admin
+        .from('eb_projects')
+        .select(withAgreementItemsSelect)
+        .eq('org_id', orgId)
+        .order('updated_at', { ascending: false })
+
+      if (projectId) {
+        agreementItemsQuery = agreementItemsQuery.eq('id', projectId)
+      }
+
+      const agreementItemsFallback = await agreementItemsQuery
+      if (!agreementItemsFallback.error) {
+        return (agreementItemsFallback.data ?? []) as EbProjectRow[]
+      }
+      if (!isMissingColumnError(agreementItemsFallback.error)) {
+        throw new Error(agreementItemsFallback.error.message ?? 'Kunde inte hÃ¤mta EB-projekt.')
       }
 
       let legacyQuery = admin
@@ -3358,6 +3437,56 @@ function normalizeEbReportSourceSnapshot(value: unknown): EbReportSourceSnapshot
     project: {
       ...project,
       agreementNote: typeof project.agreementNote === 'string' ? project.agreementNote : null,
+      clientPhone: typeof project.clientPhone === 'string' ? project.clientPhone : null,
+      clientAddressMatchesObject: project.clientAddressMatchesObject === true,
+      clientIsPropertyOwner: project.clientIsPropertyOwner !== false,
+      propertyOwnerName:
+        typeof project.propertyOwnerName === 'string'
+          ? project.propertyOwnerName
+          : typeof project.clientName === 'string'
+            ? project.clientName
+            : null,
+      contractorPhone: typeof project.contractorPhone === 'string' ? project.contractorPhone : null,
+      invoiceRecipientMatchesClient: project.invoiceRecipientMatchesClient !== false,
+      invoiceName:
+        typeof project.invoiceName === 'string'
+          ? project.invoiceName
+          : typeof project.clientName === 'string'
+            ? project.clientName
+            : null,
+      invoiceOrgNo:
+        typeof project.invoiceOrgNo === 'string'
+          ? project.invoiceOrgNo
+          : typeof project.clientOrgNo === 'string'
+            ? project.clientOrgNo
+            : null,
+      invoiceReference: typeof project.invoiceReference === 'string' ? project.invoiceReference : null,
+      invoiceEmailMatchesClient: project.invoiceEmailMatchesClient !== false,
+      invoiceEmail:
+        typeof project.invoiceEmail === 'string'
+          ? project.invoiceEmail
+          : typeof project.clientEmail === 'string'
+            ? project.clientEmail
+            : null,
+      invoiceAddressMatchesClient: project.invoiceAddressMatchesClient !== false,
+      invoiceAddress:
+        typeof project.invoiceAddress === 'string'
+          ? project.invoiceAddress
+          : typeof project.clientAddress === 'string'
+            ? project.clientAddress
+            : null,
+      invoicePostalCode:
+        typeof project.invoicePostalCode === 'string'
+          ? project.invoicePostalCode
+          : typeof project.clientPostalCode === 'string'
+            ? project.clientPostalCode
+            : null,
+      invoiceCity:
+        typeof project.invoiceCity === 'string'
+          ? project.invoiceCity
+          : typeof project.clientCity === 'string'
+            ? project.clientCity
+            : null,
     } as EbReportProjectSnapshot,
     inspectorText: typeof raw.inspectorText === 'string' ? raw.inspectorText : '',
     branding: raw.branding as EbReportBrandingSnapshot,
@@ -3444,15 +3573,50 @@ export async function createEbProject(
   const normalizedClientName = normalizeText(input.clientName)
   const normalizedClientOrgNo = normalizeText(input.clientOrgNo)
   const normalizedClientEmail = normalizeText(input.clientEmail)
-  const normalizedClientAddress = normalizeText(input.clientAddress)
-  const normalizedClientPostalCode = normalizeText(input.clientPostalCode)
-  const normalizedClientCity = normalizeText(input.clientCity)
+  const normalizedClientPhone = normalizeText(input.clientPhone)
+  const clientAddressMatchesObject = input.clientAddressMatchesObject === true
+  const normalizedClientAddress = clientAddressMatchesObject
+    ? normalizedAddress
+    : normalizeText(input.clientAddress)
+  const normalizedClientPostalCode = clientAddressMatchesObject
+    ? normalizeText(input.postalCode)
+    : normalizeText(input.clientPostalCode)
+  const normalizedClientCity = clientAddressMatchesObject
+    ? normalizeText(input.city)
+    : normalizeText(input.clientCity)
+  const clientIsPropertyOwner = input.clientIsPropertyOwner !== false
+  const normalizedPropertyOwnerName = clientIsPropertyOwner
+    ? normalizedClientName
+    : normalizeText(input.propertyOwnerName)
   const normalizedContractorName = normalizeText(input.contractorName)
   const normalizedContractorOrgNo = normalizeText(input.contractorOrgNo)
   const normalizedContractorEmail = normalizeText(input.contractorEmail)
+  const normalizedContractorPhone = normalizeText(input.contractorPhone)
   const normalizedContractorAddress = normalizeText(input.contractorAddress)
   const normalizedContractorPostalCode = normalizeText(input.contractorPostalCode)
   const normalizedContractorCity = normalizeText(input.contractorCity)
+  const invoiceRecipientMatchesClient = input.invoiceRecipientMatchesClient !== false
+  const normalizedInvoiceName = invoiceRecipientMatchesClient
+    ? normalizedClientName
+    : normalizeText(input.invoiceName)
+  const normalizedInvoiceOrgNo = invoiceRecipientMatchesClient
+    ? normalizedClientOrgNo
+    : normalizeText(input.invoiceOrgNo)
+  const normalizedInvoiceReference = normalizeText(input.invoiceReference)
+  const invoiceEmailMatchesClient = input.invoiceEmailMatchesClient !== false
+  const normalizedInvoiceEmail = invoiceEmailMatchesClient
+    ? normalizedClientEmail
+    : normalizeText(input.invoiceEmail)
+  const invoiceAddressMatchesClient = input.invoiceAddressMatchesClient !== false
+  const normalizedInvoiceAddress = invoiceAddressMatchesClient
+    ? normalizedClientAddress
+    : normalizeText(input.invoiceAddress)
+  const normalizedInvoicePostalCode = invoiceAddressMatchesClient
+    ? normalizedClientPostalCode
+    : normalizeText(input.invoicePostalCode)
+  const normalizedInvoiceCity = invoiceAddressMatchesClient
+    ? normalizedClientCity
+    : normalizeText(input.invoiceCity)
   const projectTemplateKey = normalizeProjectTemplateKey(input.projectTemplateKey)
   const drainageSystem = projectTemplateKey === 'drainage_foundation'
     ? normalizeDrainageSystem(input.drainageSystem) ?? 'generic'
@@ -3480,7 +3644,7 @@ export async function createEbProject(
         municipality: normalizeText(input.municipality),
         cadastral_id: normalizeText(input.propertyDesignation),
         client_name: normalizedClientName,
-        owner_name: normalizedClientName,
+        owner_name: normalizedPropertyOwnerName,
       })
       .select('id')
       .single()
@@ -3520,15 +3684,30 @@ export async function createEbProject(
         client_name: normalizedClientName,
         client_org_no: normalizedClientOrgNo,
         client_email: normalizedClientEmail,
+        client_phone: normalizedClientPhone,
+        client_address_matches_object: clientAddressMatchesObject,
         client_address: normalizedClientAddress,
         client_postal_code: normalizedClientPostalCode,
         client_city: normalizedClientCity,
+        client_is_property_owner: clientIsPropertyOwner,
+        property_owner_name: normalizedPropertyOwnerName,
         contractor_name: normalizedContractorName,
         contractor_org_no: normalizedContractorOrgNo,
         contractor_email: normalizedContractorEmail,
+        contractor_phone: normalizedContractorPhone,
         contractor_address: normalizedContractorAddress,
         contractor_postal_code: normalizedContractorPostalCode,
         contractor_city: normalizedContractorCity,
+        invoice_recipient_matches_client: invoiceRecipientMatchesClient,
+        invoice_name: normalizedInvoiceName,
+        invoice_org_no: normalizedInvoiceOrgNo,
+        invoice_reference: normalizedInvoiceReference,
+        invoice_email_matches_client: invoiceEmailMatchesClient,
+        invoice_email: normalizedInvoiceEmail,
+        invoice_address_matches_client: invoiceAddressMatchesClient,
+        invoice_address: normalizedInvoiceAddress,
+        invoice_postal_code: normalizedInvoicePostalCode,
+        invoice_city: normalizedInvoiceCity,
         agreement_items: agreementItems,
         status: 'active',
       })
@@ -3565,15 +3744,50 @@ export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbPr
   const normalizedClientName = normalizeText(input.clientName)
   const normalizedClientOrgNo = normalizeText(input.clientOrgNo)
   const normalizedClientEmail = normalizeText(input.clientEmail)
-  const normalizedClientAddress = normalizeText(input.clientAddress)
-  const normalizedClientPostalCode = normalizeText(input.clientPostalCode)
-  const normalizedClientCity = normalizeText(input.clientCity)
+  const normalizedClientPhone = normalizeText(input.clientPhone)
+  const clientAddressMatchesObject = input.clientAddressMatchesObject === true
+  const normalizedClientAddress = clientAddressMatchesObject
+    ? normalizedAddress
+    : normalizeText(input.clientAddress)
+  const normalizedClientPostalCode = clientAddressMatchesObject
+    ? normalizeText(input.postalCode)
+    : normalizeText(input.clientPostalCode)
+  const normalizedClientCity = clientAddressMatchesObject
+    ? normalizeText(input.city)
+    : normalizeText(input.clientCity)
+  const clientIsPropertyOwner = input.clientIsPropertyOwner !== false
+  const normalizedPropertyOwnerName = clientIsPropertyOwner
+    ? normalizedClientName
+    : normalizeText(input.propertyOwnerName)
   const normalizedContractorName = normalizeText(input.contractorName)
   const normalizedContractorOrgNo = normalizeText(input.contractorOrgNo)
   const normalizedContractorEmail = normalizeText(input.contractorEmail)
+  const normalizedContractorPhone = normalizeText(input.contractorPhone)
   const normalizedContractorAddress = normalizeText(input.contractorAddress)
   const normalizedContractorPostalCode = normalizeText(input.contractorPostalCode)
   const normalizedContractorCity = normalizeText(input.contractorCity)
+  const invoiceRecipientMatchesClient = input.invoiceRecipientMatchesClient !== false
+  const normalizedInvoiceName = invoiceRecipientMatchesClient
+    ? normalizedClientName
+    : normalizeText(input.invoiceName)
+  const normalizedInvoiceOrgNo = invoiceRecipientMatchesClient
+    ? normalizedClientOrgNo
+    : normalizeText(input.invoiceOrgNo)
+  const normalizedInvoiceReference = normalizeText(input.invoiceReference)
+  const invoiceEmailMatchesClient = input.invoiceEmailMatchesClient !== false
+  const normalizedInvoiceEmail = invoiceEmailMatchesClient
+    ? normalizedClientEmail
+    : normalizeText(input.invoiceEmail)
+  const invoiceAddressMatchesClient = input.invoiceAddressMatchesClient !== false
+  const normalizedInvoiceAddress = invoiceAddressMatchesClient
+    ? normalizedClientAddress
+    : normalizeText(input.invoiceAddress)
+  const normalizedInvoicePostalCode = invoiceAddressMatchesClient
+    ? normalizedClientPostalCode
+    : normalizeText(input.invoicePostalCode)
+  const normalizedInvoiceCity = invoiceAddressMatchesClient
+    ? normalizedClientCity
+    : normalizeText(input.invoiceCity)
   const normalizedNotePrefix = normalizeText(input.notePrefix) ?? 'BES'
   const projectTemplateKey = normalizeProjectTemplateKey(input.projectTemplateKey)
   const drainageSystem = projectTemplateKey === 'drainage_foundation'
@@ -3612,15 +3826,30 @@ export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbPr
       client_name: normalizedClientName,
       client_org_no: normalizedClientOrgNo,
       client_email: normalizedClientEmail,
+      client_phone: normalizedClientPhone,
+      client_address_matches_object: clientAddressMatchesObject,
       client_address: normalizedClientAddress,
       client_postal_code: normalizedClientPostalCode,
       client_city: normalizedClientCity,
+      client_is_property_owner: clientIsPropertyOwner,
+      property_owner_name: normalizedPropertyOwnerName,
       contractor_name: normalizedContractorName,
       contractor_org_no: normalizedContractorOrgNo,
       contractor_email: normalizedContractorEmail,
+      contractor_phone: normalizedContractorPhone,
       contractor_address: normalizedContractorAddress,
       contractor_postal_code: normalizedContractorPostalCode,
       contractor_city: normalizedContractorCity,
+      invoice_recipient_matches_client: invoiceRecipientMatchesClient,
+      invoice_name: normalizedInvoiceName,
+      invoice_org_no: normalizedInvoiceOrgNo,
+      invoice_reference: normalizedInvoiceReference,
+      invoice_email_matches_client: invoiceEmailMatchesClient,
+      invoice_email: normalizedInvoiceEmail,
+      invoice_address_matches_client: invoiceAddressMatchesClient,
+      invoice_address: normalizedInvoiceAddress,
+      invoice_postal_code: normalizedInvoicePostalCode,
+      invoice_city: normalizedInvoiceCity,
       agreement_items: agreementItems,
     })
     .eq('org_id', input.orgId)
@@ -3641,7 +3870,7 @@ export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbPr
         municipality: normalizeText(input.municipality),
         cadastral_id: normalizeText(input.propertyDesignation),
         client_name: normalizedClientName,
-        owner_name: normalizedClientName,
+        owner_name: normalizedPropertyOwnerName,
       })
       .eq('id', existing.propertyId)
 
@@ -4470,7 +4699,7 @@ function buildDefaultParticipants(project: EbProjectListItem): EbInvitationParti
       companyName: project.clientName,
       personName: project.clientName,
       email: project.clientEmail,
-      phone: null,
+      phone: project.clientPhone,
       receivesInvitation: true,
       attended: false,
       receivesReport: true,
@@ -4487,7 +4716,7 @@ function buildDefaultParticipants(project: EbProjectListItem): EbInvitationParti
       companyName: project.contractorName,
       personName: project.contractorName,
       email: project.contractorEmail,
-      phone: null,
+      phone: project.contractorPhone,
       receivesInvitation: true,
       attended: false,
       receivesReport: true,

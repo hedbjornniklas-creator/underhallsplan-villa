@@ -712,7 +712,7 @@ async function resolveAssignee(input: {
     const phone = optionalText(source.phone)
     const companyName = optionalText(source.companyName)
     if (!name) throw new Error('TASK_CONTACT_NAME_REQUIRED')
-    if (!email && !phone) throw new Error('TASK_CONTACT_METHOD_REQUIRED')
+    if (!email) throw new Error('TASK_CONTACT_EMAIL_REQUIRED')
     const { data, error } = await admin
       .from('organization_contacts')
       .insert({
@@ -791,7 +791,7 @@ async function createTask(input: TaskActionInput) {
       : null
   const assignee = await resolveAssignee({ orgId: input.orgId, assigneeRef, newContact })
   if (assignee.assignee_contact_id) {
-    if ((primaryChannel === 'email' || fallbackChannel === 'email') && !assignee.contactEmail) {
+    if (!assignee.contactEmail) {
       throw new Error('TASK_CONTACT_EMAIL_REQUIRED')
     }
     if ((primaryChannel === 'whatsapp' || fallbackChannel === 'whatsapp') && !assignee.contactPhone) {
@@ -1021,8 +1021,8 @@ export async function performTaskInternalAction(input: TaskActionInput): Promise
       accessUrl = issued.accessUrl
       warning = issued.warning ?? undefined
       notice = issued.warning
-        ? `${notice} Den personliga länken skapades men behöver delas manuellt.`
-        : `${notice} Mottagaren har fått sin personliga länk.`
+        ? `${notice} ${issued.warning}`
+        : `${notice} Mottagaren har fått sin uppdragslänk.`
     } else if (input.payload.sendAssignment === false) {
       notice = `${notice} Utskicket till mottagaren väntar tills underlagen har sparats.`
     }
@@ -1041,7 +1041,7 @@ export async function performTaskInternalAction(input: TaskActionInput): Promise
     await dispatchTaskAssignment(input)
     accessUrl = issued.accessUrl
     warning = issued.warning ?? undefined
-    notice = issued.warning ? 'Länken skapades och kopierades.' : 'Länken skapades och skickades.'
+    notice = issued.warning ?? 'Uppdragslänken skapades och skickades.'
   } else if (input.action === 'dispatch_assignment') {
     notice = await dispatchTaskAssignment(input)
   } else if (input.action === 'request_signe_suggestions') {

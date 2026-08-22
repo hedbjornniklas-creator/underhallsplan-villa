@@ -464,7 +464,7 @@ export default function TaskDetailSheet({
               <div>
                 <p className="text-sm font-semibold text-blue-950">Extern mottagare</p>
                 <p className="mt-0.5 text-xs leading-5 text-blue-800">
-                  Skapa en ny personlig länk. Tidigare aktiva länkar återkallas automatiskt.
+                  Skicka en ny kontoaktivering eller en direktlänk till mottagarens portal.
                 </p>
               </div>
               <button

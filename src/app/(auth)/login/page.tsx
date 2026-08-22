@@ -6,10 +6,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
-import { ArrowLeft, CheckCircle2, ClipboardCheck, Layers3 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ClipboardCheck, Layers3, ListChecks } from 'lucide-react'
 import PasswordAuthPanel from '@/components/auth/PasswordAuthPanel'
 
-type WorkspaceDestination = '/dashboard-v1' | '/renoapp/app'
+type WorkspaceDestination = '/dashboard-v1' | '/renoapp/app' | '/mina-uppdrag'
 
 const workspaces: Array<{
   destination: WorkspaceDestination
@@ -32,13 +32,20 @@ const workspaces: Array<{
     icon: Layers3,
     accent: 'emerald',
   },
+  {
+    destination: '/mina-uppdrag',
+    label: 'Mina uppdrag',
+    description: 'Samla uppdrag, återkoppling och underlag på ett ställe.',
+    icon: ListChecks,
+    accent: 'blue',
+  },
 ]
 
 function requestedDestination() {
   if (typeof window === 'undefined') return null
 
   const next = new URLSearchParams(window.location.search).get('next')
-  return next === '/dashboard-v1' || next === '/renoapp/app' ? next : null
+  return next === '/dashboard-v1' || next === '/renoapp/app' || next === '/mina-uppdrag' ? next : null
 }
 
 function resolveEntryDestination(selectedWorkspace: WorkspaceDestination | null) {

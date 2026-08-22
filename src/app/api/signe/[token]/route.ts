@@ -18,7 +18,7 @@ function errorResponse(error: unknown) {
     TASK_CREATE_INPUT_INVALID: 'Kontrollera mottagare, datum och kanaler.',
     TASK_CONTACT_NAME_REQUIRED: 'Ange namn på den nya mottagaren.',
     TASK_CONTACT_METHOD_REQUIRED: 'Ange e-post eller telefon till den nya mottagaren.',
-    TASK_CONTACT_EMAIL_REQUIRED: 'E-post krävs för den valda kanalen.',
+    TASK_CONTACT_EMAIL_REQUIRED: 'En extern mottagare måste ha e-post för Mina uppdrag.',
     TASK_CONTACT_WHATSAPP_REQUIRED: 'Telefonnummer krävs för WhatsApp.',
     TASK_CHANNELS_MUST_DIFFER: 'Reservkanalen måste skilja sig från huvudkanalen.',
     TASK_PARENT_CLOSED: 'Det går inte att delegera från ett stängt uppdrag.',

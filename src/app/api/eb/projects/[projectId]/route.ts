@@ -19,6 +19,10 @@ function toText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function toBoolean(value: unknown, fallback: boolean) {
+  return typeof value === 'boolean' ? value : fallback
+}
+
 async function requireEbContext() {
   await requireModuleAccess({
     productKey: 'dashboard',
@@ -77,15 +81,30 @@ export async function PATCH(
       clientName: toText(body.clientName) || null,
       clientOrgNo: toText(body.clientOrgNo) || null,
       clientEmail: toText(body.clientEmail) || null,
+      clientPhone: toText(body.clientPhone) || null,
+      clientAddressMatchesObject: toBoolean(body.clientAddressMatchesObject, false),
       clientAddress: toText(body.clientAddress) || null,
       clientPostalCode: toText(body.clientPostalCode) || null,
       clientCity: toText(body.clientCity) || null,
+      clientIsPropertyOwner: toBoolean(body.clientIsPropertyOwner, true),
+      propertyOwnerName: toText(body.propertyOwnerName) || null,
       contractorName: toText(body.contractorName) || null,
       contractorOrgNo: toText(body.contractorOrgNo) || null,
       contractorEmail: toText(body.contractorEmail) || null,
+      contractorPhone: toText(body.contractorPhone) || null,
       contractorAddress: toText(body.contractorAddress) || null,
       contractorPostalCode: toText(body.contractorPostalCode) || null,
       contractorCity: toText(body.contractorCity) || null,
+      invoiceRecipientMatchesClient: toBoolean(body.invoiceRecipientMatchesClient, true),
+      invoiceName: toText(body.invoiceName) || null,
+      invoiceOrgNo: toText(body.invoiceOrgNo) || null,
+      invoiceReference: toText(body.invoiceReference) || null,
+      invoiceEmailMatchesClient: toBoolean(body.invoiceEmailMatchesClient, true),
+      invoiceEmail: toText(body.invoiceEmail) || null,
+      invoiceAddressMatchesClient: toBoolean(body.invoiceAddressMatchesClient, true),
+      invoiceAddress: toText(body.invoiceAddress) || null,
+      invoicePostalCode: toText(body.invoicePostalCode) || null,
+      invoiceCity: toText(body.invoiceCity) || null,
       agreementItems: Array.isArray(body.agreementItems) ? body.agreementItems : [],
     })
 

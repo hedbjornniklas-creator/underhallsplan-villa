@@ -12,6 +12,7 @@ import {
 } from '@/lib/tasks/domain'
 import type { TaskStatus } from '@/lib/tasks/contracts'
 import { buildTaskEmailHtml } from '@/lib/tasks/emailTemplates'
+import { ensureRecipientTaskEntryLink } from '@/lib/tasks/recipientAuth'
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 
@@ -667,6 +668,7 @@ function buildReminderContent(input: {
   action: TaskReminderAction
   task: OperationalTask
   recipient: Recipient
+  recipientActionUrl?: string | null
 }) {
   const heading = actionHeading(input.action)
   const instruction = actionInstruction(input.action)
@@ -674,8 +676,11 @@ function buildReminderContent(input: {
   const internalUrl = input.recipient.kind === 'profile'
     ? `${appBaseUrl()}/uppdrag?task=${encodeURIComponent(input.task.id)}`
     : null
+  const actionUrl = internalUrl ?? input.recipientActionUrl ?? null
   const externalLinkNote = input.recipient.kind === 'contact'
-    ? 'Öppna uppdraget via den personliga länken i det första utskicket.'
+    ? actionUrl
+      ? 'Logga in med e-post och lösenord. Från Mina uppdrag når du även dina övriga uppgifter.'
+      : 'Öppna uppdraget via den personliga länken i det första utskicket.'
     : null
   const contextText = input.task.context_label ? `Projekt: ${input.task.context_label}` : null
   const text = [
@@ -686,7 +691,7 @@ function buildReminderContent(input: {
     `Slutdatum: ${dueLabel}`,
     '',
     instruction,
-    internalUrl ? `Öppna uppdraget: ${internalUrl}` : externalLinkNote,
+    actionUrl ? `Öppna uppdraget: ${actionUrl}` : externalLinkNote,
     '',
     'Hälsningar, Signe',
   ].filter((line): line is string => line !== null).join('\n')
@@ -700,11 +705,23 @@ function buildReminderContent(input: {
     contextLabel: input.task.context_label,
     dueLabel,
     instruction,
-    actionUrl: internalUrl,
+    actionUrl,
     actionLabel: 'Öppna uppdraget',
     notice: externalLinkNote,
   })
-  return { subject: `${heading}: ${input.task.title}`, text, html }
+  const auditText = [
+    `${input.recipient.name},`,
+    '',
+    `${heading}: ${input.task.title}`,
+    contextText,
+    `Slutdatum: ${dueLabel}`,
+    '',
+    instruction,
+    actionUrl ? 'En direktlänk bifogades i leveransen men sparades inte i meddelandeloggen.' : externalLinkNote,
+    '',
+    'Hälsningar, Signe',
+  ].filter((line): line is string => line !== null).join('\n')
+  return { subject: `${heading}: ${input.task.title}`, text, html, auditText, actionUrl }
 }
 
 function normalizedWhatsAppNumber(value: string | null) {
@@ -919,7 +936,8 @@ async function ensureDelivery(input: {
   channel: TaskCommunicationChannel
   idempotencyKey: string
   isFallback: boolean
-  content: { subject: string; text: string; html: string }
+  recipientAddress: string | null
+  content: { subject: string; text: string; html: string; auditText: string; actionUrl: string | null }
 }) {
   const { data: existingData, error: existingError } = await input.admin
     .from('task_message_deliveries')
@@ -939,7 +957,7 @@ async function ensureDelivery(input: {
       message_type: messageType(input.action),
       actor_type: 'system',
       actor_name: 'Signe',
-      body_text: input.content.text,
+      body_text: input.content.auditText,
       generated_by_ai: false,
       metadata: {
         target: input.action.target,
@@ -957,7 +975,7 @@ async function ensureDelivery(input: {
     .single()
   if (messageError || !messageData?.id) throw automationError('TASK_MESSAGE_CREATE_FAILED')
 
-  const address = deliveryAddress(input.recipient, input.channel)
+  const address = input.recipientAddress
     ?? `missing:${input.recipient.kind}:${input.recipient.id}`
   const { data: deliveryData, error: deliveryError } = await input.admin
     .from('task_message_deliveries')
@@ -1071,12 +1089,70 @@ async function deliverViaChannel(input: {
   idempotencyKey: string
   isFallback: boolean
 }): Promise<DeliveryResult> {
+  const { data: knownDelivery, error: knownDeliveryError } = await input.admin
+    .from('task_message_deliveries')
+    .select('id,message_id,channel,status,attempt_count,max_attempts,idempotency_key,created_at')
+    .eq('org_id', input.task.org_id)
+    .eq('idempotency_key', input.idempotencyKey)
+    .maybeSingle()
+  if (knownDeliveryError) throw automationError('TASK_DELIVERY_READ_FAILED')
+  if (knownDelivery && SUCCESSFUL_DELIVERY_STATUSES.has(knownDelivery.status)) {
+    const delivery = knownDelivery as StoredDelivery
+    await recordDeliveryEvent({
+      admin: input.admin,
+      job: input.job,
+      task: input.task,
+      action: input.action,
+      recipient: input.recipient,
+      channel: input.channel,
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      isFallback: input.isFallback,
+    })
+    return { delivered: true, deliveryId: delivery.id, messageId: delivery.message_id, errorCode: null }
+  }
+
+  if (knownDelivery) {
+    const delivery = knownDelivery as StoredDelivery
+    if (delivery.channel !== input.channel) {
+      throw automationError('TASK_DELIVERY_CHANNEL_CONFLICT')
+    }
+    if (delivery.status === 'cancelled' || delivery.attempt_count >= delivery.max_attempts) {
+      return {
+        delivered: false,
+        deliveryId: delivery.id,
+        messageId: delivery.message_id,
+        errorCode: 'TASK_DELIVERY_ATTEMPTS_EXHAUSTED',
+      }
+    }
+  }
+
+  let recipientActionUrl: string | null = null
+  let recipientEntryMode: 'activation' | 'activation_required' | 'portal' | null = null
+  let recipientEntryDeliveryKey: string | null = null
+  let canonicalRecipientEmail: string | null = null
+  if (input.recipient.kind === 'contact' && input.recipient.email) {
+    const entry = await ensureRecipientTaskEntryLink({
+      contactId: input.recipient.id,
+      taskId: input.task.id,
+      baseUrl: appBaseUrl(),
+      allowActivation: input.channel === 'email',
+    })
+    recipientActionUrl = entry.url
+    recipientEntryMode = entry.mode
+    recipientEntryDeliveryKey = entry.deliveryKey
+    canonicalRecipientEmail = entry.recipientEmail
+  }
+  const recipientAddress = input.channel === 'email' && input.recipient.kind === 'contact'
+    ? canonicalRecipientEmail
+    : deliveryAddress(input.recipient, input.channel)
   const content = buildReminderContent({
     action: input.action,
     task: input.task,
     recipient: input.recipient,
+    recipientActionUrl,
   })
-  const delivery = await ensureDelivery({ ...input, content })
+  const delivery = await ensureDelivery({ ...input, content, recipientAddress })
   if (delivery.channel !== input.channel) {
     throw automationError('TASK_DELIVERY_CHANNEL_CONFLICT')
   }
@@ -1107,6 +1183,15 @@ async function deliverViaChannel(input: {
       errorCode: 'TASK_DELIVERY_ATTEMPTS_EXHAUSTED',
     }
   }
+  if (recipientEntryMode === 'activation_required') {
+    await updateDeliveryFailure(input.admin, delivery.id, 'TASK_RECIPIENT_ACTIVATION_EMAIL_REQUIRED')
+    return {
+      delivered: false,
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      errorCode: 'TASK_RECIPIENT_ACTIVATION_EMAIL_REQUIRED',
+    }
+  }
   if (delivery.status === 'sending' && input.channel === 'whatsapp') {
     await updateDeliveryFailure(input.admin, delivery.id, 'TASK_WHATSAPP_DELIVERY_AMBIGUOUS')
     return {
@@ -1117,7 +1202,7 @@ async function deliverViaChannel(input: {
     }
   }
 
-  const address = deliveryAddress(input.recipient, input.channel)
+  const address = recipientAddress
   if (!address) {
     await updateDeliveryFailure(input.admin, delivery.id, 'TASK_DELIVERY_ADDRESS_MISSING')
     return {
@@ -1146,6 +1231,11 @@ async function deliverViaChannel(input: {
 
   let providerMessageId: string | null
   try {
+    // Each activation retry rotates the secret. Bind provider deduplication to
+    // that token row so Resend cannot return an older email with a revoked URL.
+    const providerIdempotencyKey = recipientEntryMode === 'activation' && recipientEntryDeliveryKey
+      ? `${input.idempotencyKey}:${recipientEntryDeliveryKey}`
+      : input.idempotencyKey
     providerMessageId = input.channel === 'email'
       ? await sendResendEmail({
           to: address,
@@ -1153,16 +1243,25 @@ async function deliverViaChannel(input: {
           subject: content.subject,
           text: content.text,
           html: content.html,
-          idempotencyKey: input.idempotencyKey,
+          idempotencyKey: providerIdempotencyKey,
         })
       : await sendWhatsAppTemplate({
           to: address,
-          templateName: process.env.WHATSAPP_TEMPLATE_NAME?.trim() || null,
-          parameters: [
-            input.recipient.name.slice(0, 256),
-            input.task.title.slice(0, 1024),
-            dueDateLabel(input.task.due_at),
-          ],
+          templateName: input.recipient.kind === 'contact' && content.actionUrl
+            ? process.env.WHATSAPP_PORTAL_REMINDER_TEMPLATE_NAME?.trim() || null
+            : process.env.WHATSAPP_TEMPLATE_NAME?.trim() || null,
+          parameters: input.recipient.kind === 'contact' && content.actionUrl
+            ? [
+                input.recipient.name.slice(0, 256),
+                input.task.title.slice(0, 1024),
+                dueDateLabel(input.task.due_at),
+                content.actionUrl,
+              ]
+            : [
+                input.recipient.name.slice(0, 256),
+                input.task.title.slice(0, 1024),
+                dueDateLabel(input.task.due_at),
+              ],
           idempotencyKey: input.idempotencyKey,
         })
   } catch (error) {
@@ -1230,12 +1329,24 @@ async function deliverAction(input: {
   })
   if (primaryResult.delivered) return
 
-  const fallbackChannel = input.action.target === 'assignee'
+  const activationEmailFallbackRequired = input.action.target === 'assignee'
+    && input.action.kind !== 'delivery_fallback'
+    && input.task.primary_channel === 'whatsapp'
+    && selectedChannel === 'whatsapp'
+    && primaryResult.errorCode === 'TASK_RECIPIENT_ACTIVATION_EMAIL_REQUIRED'
+    && recipient.kind === 'contact'
+    && Boolean(recipient.email?.trim())
+  const configuredFallbackChannel = input.action.target === 'assignee'
     && input.action.kind !== 'delivery_fallback'
     && input.task.fallback_channel
     && input.task.fallback_channel !== selectedChannel
     ? input.task.fallback_channel
     : null
+  // Before account activation, email is the trust-establishing channel even
+  // when WhatsApp is the task's configured primary channel.
+  const fallbackChannel: TaskCommunicationChannel | null = activationEmailFallbackRequired
+    ? 'email'
+    : configuredFallbackChannel
   if (!fallbackChannel) {
     throw automationError(primaryResult.errorCode ?? 'TASK_DELIVERY_FAILED')
   }

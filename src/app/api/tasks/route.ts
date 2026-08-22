@@ -40,7 +40,7 @@ function taskErrorResponse(error: unknown) {
     TASK_CONTACT_NOT_FOUND: 'Den externa kontakten kunde inte hittas.',
     TASK_CONTACT_NAME_REQUIRED: 'Ange namn på den externa mottagaren.',
     TASK_CONTACT_METHOD_REQUIRED: 'Ange e-post eller telefonnummer till mottagaren.',
-    TASK_CONTACT_EMAIL_REQUIRED: 'E-post krävs för den valda kanalen.',
+    TASK_CONTACT_EMAIL_REQUIRED: 'En extern mottagare måste ha e-post för Mina uppdrag.',
     TASK_CONTACT_WHATSAPP_REQUIRED: 'Telefonnummer krävs för WhatsApp.',
     TASK_EXTERNAL_ASSIGNEE_REQUIRED: 'Uppgiften är tilldelad en intern användare och behöver ingen extern länk.',
     TASK_CHILD_AFTER_PARENT_DUE: 'Underuppgiften får inte ha ett senare slutdatum än huvuduppgiften.',
@@ -156,6 +156,9 @@ function taskErrorResponse(error: unknown) {
     code.includes('operational_tasks') ||
     code.includes('organization_contacts') ||
     code === 'TASKS_SCHEMA_REQUIRED' ||
+    code === 'TASK_RECIPIENT_IDENTITY_ENSURE_FAILED' ||
+    code === 'TASK_RECIPIENT_PORTAL_GRANT_FAILED' ||
+    code === 'TASK_RECIPIENT_ACTIVATION_CREATE_FAILED' ||
     code === 'TASK_AI_SUGGESTIONS_READ_FAILED' ||
     code === 'SIGNE_SCHEMA_REQUIRED'
   ) {

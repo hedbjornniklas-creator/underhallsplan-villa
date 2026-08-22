@@ -157,7 +157,8 @@ export default function TaskComposerSheet({
   const hasExternalAssignee = isNewContact || Boolean(selectedExternal)
   const externalChannelsCovered =
     !hasExternalAssignee ||
-    ((primaryChannel !== 'email' && fallbackChannel !== 'email') || Boolean(externalEmail)) &&
+    Boolean(externalEmail) &&
+      ((primaryChannel !== 'email' && fallbackChannel !== 'email') || Boolean(externalEmail)) &&
       ((primaryChannel !== 'whatsapp' && fallbackChannel !== 'whatsapp') || Boolean(externalPhone))
 
   const addAttachmentFiles = (selected: File[]) => {
@@ -347,7 +348,7 @@ export default function TaskComposerSheet({
                       .filter((person) => person.kind === 'contact' && person.isActive)
                       .map((person) => (
                         <option key={`contact:${person.id}`} value={`contact:${person.id}`}>
-                          {person.name}{person.companyName ? ` – ${person.companyName}` : ''}
+                          {person.name}{person.companyName ? ` – ${person.companyName}` : ''}{person.email ? ` · ${person.email}` : ''}
                         </option>
                       ))}
                   </optgroup>
@@ -366,13 +367,16 @@ export default function TaskComposerSheet({
                     <input value={contactCompany} onChange={(event) => setContactCompany(event.target.value)} className={inputClass} />
                   </label>
                   <label className="block">
-                    <span className="mb-1 block text-xs font-semibold text-slate-600">E-post</span>
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">E-post för Mina uppdrag</span>
                     <input type="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} className={inputClass} />
                   </label>
                   <label className="block">
                     <span className="mb-1 block text-xs font-semibold text-slate-600">Telefon / WhatsApp</span>
                     <input type="tel" value={contactPhone} onChange={(event) => setContactPhone(event.target.value)} className={inputClass} />
                   </label>
+                  <p className="sm:col-span-2 text-xs leading-5 text-slate-500">
+                    Med en personlig e-postadress kan mottagaren aktivera sitt konto och samla alla uppdrag på en sida. Delade adresser ger alla som kan läsa inkorgen samma portalåtkomst.
+                  </p>
                 </div>
               ) : null}
             </fieldset>
@@ -439,7 +443,13 @@ export default function TaskComposerSheet({
 
             {!externalChannelsCovered ? (
               <p className="text-sm leading-5 text-rose-700">
-                Den externa kontakten saknar uppgift för vald huvud- eller reservkanal.
+                En extern mottagare måste ha e-post för Mina uppdrag och kontaktuppgift för valda kanaler.
+              </p>
+            ) : null}
+
+            {hasExternalAssignee && externalEmail ? (
+              <p className="text-xs leading-5 text-slate-500">
+                Första kontoaktiveringen skickas alltid till mottagarens e-post. När kontot är aktiverat använder Signe vald huvud- och reservkanal.
               </p>
             ) : null}
 

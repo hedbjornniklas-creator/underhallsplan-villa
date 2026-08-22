@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { randomUUID } from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import {
@@ -15,6 +16,7 @@ import type {
   TaskStatus,
 } from './contracts'
 import type { TaskAttachmentActor } from './attachments'
+import { ensureRecipientTaskEntryLink } from './recipientAuth'
 
 export type ExternalTaskWorkspace = {
   accessState: 'open' | 'expired' | 'revoked'
@@ -500,8 +502,7 @@ async function createExternalSubtask(input: {
   const email = asText(assignee.email).toLowerCase() || null
   const phone = asText(assignee.phone) || null
   if (!name) throw new Error('TASK_CONTACT_NAME_REQUIRED')
-  if (!email && !phone) throw new Error('TASK_CONTACT_METHOD_REQUIRED')
-  if ((primaryChannel === 'email' || fallbackChannel === 'email') && !email) {
+  if (!email) {
     throw new Error('TASK_CONTACT_EMAIL_REQUIRED')
   }
   if ((primaryChannel === 'whatsapp' || fallbackChannel === 'whatsapp') && !phone) {
@@ -575,8 +576,8 @@ async function createExternalSubtask(input: {
     accessUrl: issued.accessUrl,
     warning: issued.warning,
     notice: issued.warning
-      ? 'Underuppgiften skapades. Den personliga länken behöver delas manuellt.'
-      : 'Underuppgiften skapades och mottagaren har fått sin personliga länk.',
+      ? 'Underuppgiften skapades, men mottagaren behöver meddelas.'
+      : 'Underuppgiften skapades och mottagaren har fått sin uppdragslänk.',
   }
 }
 
@@ -705,23 +706,59 @@ export async function issueTaskAccessLink(input: {
     .maybeSingle()
   if (contactError || !contact) throw new Error('TASK_CONTACT_NOT_FOUND')
 
-  const token = generateAssignmentToken()
-  const expiresAt = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString()
-  const { data: rotatedLink, error: linkError } = await admin.rpc('rotate_operational_task_access_link', {
-    p_task_id: task.id,
-    p_contact_id: contact.id,
-    p_token_hash: hashAssignmentToken(token),
-    p_expires_at: expiresAt,
-    p_created_by_profile_id: input.userId,
-    p_role: 'assignee',
-    p_scope: 'task',
-  })
-  if (linkError) throw taskDatabaseError(linkError, 'TASK_ACCESS_CREATE_FAILED')
-  const link = Array.isArray(rotatedLink) ? rotatedLink[0] : rotatedLink
-  if (!link || typeof link.id !== 'string') throw new Error('TASK_ACCESS_CREATE_FAILED')
+  let link: { id: string } | null = null
+  let recipientIdentityId: string | null = null
+  let entryMode: 'activation' | 'portal' | 'legacy' = 'legacy'
+  let deliveryKey: string
+  let accessUrl: string
+  let deliveryEmail = asText(contact.email) || null
 
-  const accessUrl = `${publicBaseUrl}/signe/${token}`
-  if (input.sendEmail === false) return { accessUrl, warning: null as string | null }
+  const entry = await ensureRecipientTaskEntryLink({
+    contactId: contact.id,
+    taskId: task.id,
+    baseUrl: publicBaseUrl,
+  }).catch((error: unknown) => {
+    if (error instanceof Error && error.message === 'TASK_RECIPIENT_EMAIL_INVALID') return null
+    throw error
+  })
+  if (entry) {
+    accessUrl = entry.url
+    entryMode = entry.mode
+    recipientIdentityId = entry.recipientIdentityId
+    deliveryEmail = entry.recipientEmail
+    deliveryKey = `${entry.deliveryKey}:${randomUUID()}`
+  } else {
+    const token = generateAssignmentToken()
+    const expiresAt = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString()
+    const { data: rotatedLink, error: linkError } = await admin.rpc('rotate_operational_task_access_link', {
+      p_task_id: task.id,
+      p_contact_id: contact.id,
+      p_token_hash: hashAssignmentToken(token),
+      p_expires_at: expiresAt,
+      p_created_by_profile_id: input.userId,
+      p_role: 'assignee',
+      p_scope: 'task',
+    })
+    if (linkError) throw taskDatabaseError(linkError, 'TASK_ACCESS_CREATE_FAILED')
+    const rotated = Array.isArray(rotatedLink) ? rotatedLink[0] : rotatedLink
+    if (!rotated || typeof rotated.id !== 'string') throw new Error('TASK_ACCESS_CREATE_FAILED')
+    link = { id: rotated.id }
+    deliveryKey = `legacy:${rotated.id}`
+    accessUrl = `${publicBaseUrl}/signe/${token}`
+  }
+  // An activation URL proves control over the recipient email and can unlock
+  // grants from several organizations. It must therefore only leave this
+  // process through the verified email delivery below, never through the
+  // internal API response or creator UI.
+  const responseAccessUrl = entryMode === 'activation' ? undefined : accessUrl
+  if (input.sendEmail === false) {
+    return {
+      accessUrl: responseAccessUrl,
+      warning: entryMode === 'activation'
+        ? 'Aktiveringslänken skickas endast direkt till mottagarens e-postadress.'
+        : null as string | null,
+    }
+  }
   const { data: issuer } = await admin
     .from('profiles')
     .select('full_name,email')
@@ -730,7 +767,12 @@ export async function issueTaskAccessLink(input: {
   const issuerName = issuer?.full_name?.trim() || 'Uppdragsansvarig'
   const subject = `Nytt uppdrag: ${task.title}`
   const dueLabel = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' }).format(new Date(task.due_at))
-  const bodyText = `${contact.name},\n\n${issuerName} har tilldelat dig uppgiften ”${task.title}”.\nSlutdatum: ${dueLabel}.\n\nÖppna uppgiften: ${accessUrl}\n\nLänken är personlig och ska inte vidarebefordras. Signe är HusHubs digitala uppföljningsassistent.`
+  const activationInstruction = entryMode === 'activation'
+    ? 'Öppna länken och välj ett lösenord. Därefter hittar du både detta och framtida uppdrag under Mina uppdrag.'
+    : entryMode === 'portal'
+      ? 'Logga in för att öppna uppdraget. Från samma sida kommer du åt alla dina uppdrag.'
+      : 'Länken är personlig och ska inte vidarebefordras.'
+  const bodyText = `${contact.name},\n\n${issuerName} har tilldelat dig uppgiften ”${task.title}”.\nSlutdatum: ${dueLabel}.\n\n${activationInstruction}\n\nÖppna uppgiften: ${accessUrl}\n\nSigne är HusHubs digitala uppföljningsassistent.`
   const bodyHtml = buildTaskEmailHtml({
     previewText: `${issuerName} har tilldelat dig uppdraget ${task.title}.`,
     eyebrow: 'Nytt uppdrag',
@@ -739,12 +781,16 @@ export async function issueTaskAccessLink(input: {
     lead: `${issuerName} har tilldelat dig följande uppdrag.`,
     taskTitle: task.title,
     dueLabel,
-    instruction: 'Öppna uppdraget för att läsa hela beskrivningen, uppdatera status och lämna underlag.',
+    instruction: entryMode === 'activation'
+      ? 'Aktivera ditt konto genom att välja ett lösenord. Uppdraget öppnas direkt efter aktiveringen.'
+      : 'Öppna uppdraget för att läsa hela beskrivningen, uppdatera status och lämna underlag.',
     actionUrl: accessUrl,
-    actionLabel: 'Öppna uppdraget',
-    notice: 'Länken är personlig. Vidarebefordra den inte till någon annan.',
+    actionLabel: entryMode === 'activation' ? 'Aktivera konto och öppna uppdraget' : 'Öppna uppdraget',
+    notice: entryMode === 'portal'
+      ? 'Du använder samma e-post och lösenord för alla dina uppdrag i HusHub.'
+      : 'Länken är personlig. Vidarebefordra den inte till någon annan.',
   })
-  const auditBodyText = `${contact.name} fick en personlig uppdragslänk till ”${task.title}”. Själva länktoken sparas inte i meddelandeloggen.`
+  const auditBodyText = `${contact.name} fick en ${entryMode === 'activation' ? 'kontoaktivering' : entryMode === 'portal' ? 'portallänk' : 'personlig uppdragslänk'} till ”${task.title}”. Själva länktoken sparas inte i meddelandeloggen.`
   const { data: message, error: messageError } = await admin
     .from('task_messages')
     .insert({
@@ -757,7 +803,9 @@ export async function issueTaskAccessLink(input: {
       actor_name: issuerName,
       body_text: auditBodyText,
       metadata: {
-        accessLinkId: link.id,
+        ...(link ? { accessLinkId: link.id } : {}),
+        ...(recipientIdentityId ? { recipientIdentityId } : {}),
+        entryMode,
         target: 'assignee',
         tokenPersisted: false,
       },
@@ -765,7 +813,12 @@ export async function issueTaskAccessLink(input: {
     .select('id')
     .single()
   if (messageError || !message) {
-    return { accessUrl, warning: 'Länken skapades men utskicksloggen kunde inte sparas. Kopiera länken manuellt.' }
+    return {
+      accessUrl: responseAccessUrl,
+      warning: entryMode === 'activation'
+        ? 'Aktiveringslänken kunde inte skickas eftersom utskicksloggen inte kunde sparas.'
+        : 'Länken skapades men utskicksloggen kunde inte sparas. Kopiera länken manuellt.',
+    }
   }
 
   const primaryChannel = isTaskChannel(task.primary_channel) ? task.primary_channel : null
@@ -773,13 +826,17 @@ export async function issueTaskAccessLink(input: {
     && task.fallback_channel !== primaryChannel
     ? task.fallback_channel
     : null
-  const channels = [primaryChannel, fallbackChannel]
+  const configuredChannels = [primaryChannel, fallbackChannel]
     .filter((channel): channel is TaskChannel => channel !== null)
+  // The first portal activation proves control over the account email. Do not
+  // let a WhatsApp fallback activate an email/password account without email
+  // verification. Once active, the creator's channel choices apply normally.
+  const channels: TaskChannel[] = entryMode === 'activation' ? ['email'] : configuredChannels
   const whatsappAddress = asText(contact.whatsapp_number) || asText(contact.phone) || null
 
   for (const [channelIndex, channel] of channels.entries()) {
-    const recipientAddress = channel === 'email' ? asText(contact.email) : whatsappAddress
-    const idempotencyKey = `task-access:${String(link.id)}:${channel}`
+    const recipientAddress = channel === 'email' ? deliveryEmail : whatsappAddress
+    const idempotencyKey = `task-entry:${deliveryKey}:${channel}`
     const errorCode = !recipientAddress
       ? channel === 'email'
         ? 'TASK_CONTACT_EMAIL_REQUIRED'
@@ -801,7 +858,9 @@ export async function issueTaskAccessLink(input: {
         error_message: errorCode,
         idempotency_key: idempotencyKey,
         provider_payload: {
-          accessLinkId: link.id,
+          ...(link ? { accessLinkId: link.id } : {}),
+          ...(recipientIdentityId ? { recipientIdentityId } : {}),
+          entryMode,
           assignment: true,
           tokenPersisted: false,
         },
@@ -829,19 +888,19 @@ export async function issueTaskAccessLink(input: {
             idempotencyKey,
           })
       const sentAt = new Date().toISOString()
-      const [{ error: deliveryUpdateError }, { error: linkUpdateError }, { error: eventError }] =
-        await Promise.all([
-          admin
-            .from('task_message_deliveries')
-            .update({
-              status: 'sent',
-              sent_at: sentAt,
-              provider_message_id: result.providerMessageId,
-              error_message: null,
-            })
-            .eq('id', delivery.id),
-          admin.from('task_access_links').update({ sent_at: sentAt }).eq('id', link.id),
-          admin.from('task_events').insert({
+      const deliveryUpdate = await admin
+        .from('task_message_deliveries')
+        .update({
+          status: 'sent',
+          sent_at: sentAt,
+          provider_message_id: result.providerMessageId,
+          error_message: null,
+        })
+        .eq('id', delivery.id)
+      const linkUpdate = link
+        ? await admin.from('task_access_links').update({ sent_at: sentAt }).eq('id', link.id)
+        : { error: null }
+      const eventResult = await admin.from('task_events').insert({
             org_id: input.orgId,
             task_id: task.id,
             event_type: 'assignment_delivery_sent',
@@ -851,19 +910,20 @@ export async function issueTaskAccessLink(input: {
             message: `Den personliga uppdragslänken skickades till ${contact.name} via ${channel === 'email' ? 'e-post' : 'WhatsApp'}.`,
             metadata: {
               taskMutationApplied: true,
-              accessLinkId: link.id,
+              ...(link ? { accessLinkId: link.id } : {}),
+              ...(recipientIdentityId ? { recipientIdentityId } : {}),
+              entryMode,
               messageId: message.id,
               deliveryId: delivery.id,
               channel,
               isFallback: channelIndex > 0,
               tokenPersisted: false,
             },
-          }),
-        ])
-      if (deliveryUpdateError || linkUpdateError || eventError) {
-        return { accessUrl, warning: null as string | null }
+          })
+      if (deliveryUpdate.error || linkUpdate.error || eventResult.error) {
+        return { accessUrl: responseAccessUrl, warning: null as string | null }
       }
-      return { accessUrl, warning: null as string | null }
+      return { accessUrl: responseAccessUrl, warning: null as string | null }
     } catch (error) {
       const providerErrorCode = taskDeliveryErrorCode(error, channel)
       await admin
@@ -878,8 +938,10 @@ export async function issueTaskAccessLink(input: {
   }
 
   return {
-    accessUrl,
-    warning: 'Den personliga länken kunde inte skickas i vald kanal eller reservkanal. Kopiera länken manuellt.',
+    accessUrl: responseAccessUrl,
+    warning: entryMode === 'activation'
+      ? 'Aktiveringslänken kunde inte skickas via e-post. Kontrollera adressen och försök igen.'
+      : 'Uppdragslänken kunde inte skickas i vald kanal eller reservkanal. Kopiera länken manuellt.',
   }
 }
 

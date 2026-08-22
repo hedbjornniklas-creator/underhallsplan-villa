@@ -1,4 +1,4 @@
-import type { EbInspectionReport } from '@/lib/eb/server'
+import type { EbInspectionReport, EbReportProjectSnapshot } from '@/lib/eb/server'
 
 export type EbReportSnapshotPayloadV1 = {
   schema: 'eb_report_snapshot_v1'
@@ -35,17 +35,42 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+function sanitizeEbProjectForDelivery<T extends EbReportProjectSnapshot>(project: T): T {
+  return {
+    ...project,
+    clientEmail: null,
+    contractorEmail: null,
+    invoiceRecipientMatchesClient: true,
+    invoiceName: null,
+    invoiceOrgNo: null,
+    invoiceReference: null,
+    invoiceEmailMatchesClient: true,
+    invoiceEmail: null,
+    invoiceAddressMatchesClient: true,
+    invoiceAddress: null,
+    invoicePostalCode: null,
+    invoiceCity: null,
+    agreementItems: [],
+  } as T
+}
+
 export function createEbReportSnapshotPayloadV1(
   report: EbInspectionReport
 ): EbReportSnapshotPayloadV1 {
   const snapshotReport: EbInspectionReport = {
     ...report,
     project: {
-      ...report.project,
-      clientEmail: null,
-      contractorEmail: null,
-      agreementItems: [],
+      ...sanitizeEbProjectForDelivery(report.project),
       inspections: [report.inspection],
+    },
+    reportDraft: {
+      ...report.reportDraft,
+      sourceSnapshot: report.reportDraft.sourceSnapshot
+        ? {
+            ...report.reportDraft.sourceSnapshot,
+            project: sanitizeEbProjectForDelivery(report.reportDraft.sourceSnapshot.project),
+          }
+        : null,
     },
     projectAttachments: [],
     suggestions: [],

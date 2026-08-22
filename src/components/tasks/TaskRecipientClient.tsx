@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import {
   AlertTriangle,
@@ -8,6 +9,7 @@ import {
   Camera,
   Check,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   CircleDashed,
   Clock3,
@@ -35,6 +37,8 @@ import { TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
 type Props = {
   initialWorkspace: ExternalTaskWorkspace
   endpoint: string
+  backHref?: string
+  backLabel?: string
 }
 
 type ApiResponse = {
@@ -143,7 +147,12 @@ function accessClosedCopy(state: 'expired' | 'revoked') {
       }
 }
 
-export default function TaskRecipientClient({ initialWorkspace, endpoint }: Props) {
+export default function TaskRecipientClient({
+  initialWorkspace,
+  endpoint,
+  backHref,
+  backLabel = 'Mina uppdrag',
+}: Props) {
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [toast, setToast] = useState<Toast | null>(null)
@@ -508,8 +517,8 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
     const email = delegateEmail.trim()
     const phone = delegatePhone.trim()
     if (!title || !name || !delegateDueDate || !delegateFollowupDate) return
-    if (!email && !phone) {
-      showToast('Ange minst e-post eller telefon till den nya mottagaren.', 'error')
+    if (!email) {
+      showToast('E-post krävs för mottagarens Mina uppdrag-konto.', 'error')
       return
     }
     if (delegatePrimaryChannel === 'email' && !email) {
@@ -588,7 +597,7 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
   const canStart = ['assigned', 'waiting', 'returned'].includes(task.status)
   const canMarkWaiting = ['assigned', 'in_progress', 'returned'].includes(task.status)
   const showActionBar = activeForAssignee
-  const delegateHasContact = Boolean(delegateEmail.trim() || delegatePhone.trim())
+  const delegateHasContact = Boolean(delegateEmail.trim())
   const delegateChannelsCovered =
     (delegatePrimaryChannel !== 'email' || Boolean(delegateEmail.trim())) &&
     (delegatePrimaryChannel !== 'whatsapp' || Boolean(delegatePhone.trim())) &&
@@ -641,6 +650,16 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
 
       <header className="border-b border-amber-200/70 bg-white/90 backdrop-blur">
         <div className="mx-auto flex w-full max-w-xl items-center gap-3 px-4 py-4 sm:px-6">
+          {backHref ? (
+            <Link
+              href={backHref}
+              className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              aria-label={`Tillbaka till ${backLabel}`}
+            >
+              <ChevronLeft size={18} aria-hidden="true" />
+              <span className="hidden sm:inline">{backLabel}</span>
+            </Link>
+          ) : null}
           <SigneMark />
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Signe följer upp</p>
@@ -1293,7 +1312,11 @@ export default function TaskRecipientClient({ initialWorkspace, endpoint }: Prop
                         className={`${inputClassName} mt-2`}
                       />
                     </label>
-                    {!delegateHasContact ? <p className="text-xs text-slate-500">Minst e-post eller telefon krävs.</p> : null}
+                    {!delegateHasContact ? (
+                      <p className="text-xs text-slate-500">E-post krävs för mottagarens Mina uppdrag-konto.</p>
+                    ) : (
+                      <p className="text-xs text-slate-500">Första kontoaktiveringen skickas alltid via e-post.</p>
+                    )}
                   </div>
                 </fieldset>
 

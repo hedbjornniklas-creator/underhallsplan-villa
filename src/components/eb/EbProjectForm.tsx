@@ -28,15 +28,30 @@ export type EbProjectFormState = {
   clientName: string
   clientOrgNo: string
   clientEmail: string
+  clientPhone: string
+  clientAddressMatchesObject: boolean
   clientAddress: string
   clientPostalCode: string
   clientCity: string
+  clientIsPropertyOwner: boolean
+  propertyOwnerName: string
   contractorName: string
   contractorOrgNo: string
   contractorEmail: string
+  contractorPhone: string
   contractorAddress: string
   contractorPostalCode: string
   contractorCity: string
+  invoiceRecipientMatchesClient: boolean
+  invoiceName: string
+  invoiceOrgNo: string
+  invoiceReference: string
+  invoiceEmailMatchesClient: boolean
+  invoiceEmail: string
+  invoiceAddressMatchesClient: boolean
+  invoiceAddress: string
+  invoicePostalCode: string
+  invoiceCity: string
   agreementItems: EbProjectAgreementItem[]
 }
 
@@ -63,15 +78,30 @@ export const EMPTY_EB_PROJECT_FORM: EbProjectFormState = {
   clientName: '',
   clientOrgNo: '',
   clientEmail: '',
+  clientPhone: '',
+  clientAddressMatchesObject: false,
   clientAddress: '',
   clientPostalCode: '',
   clientCity: '',
+  clientIsPropertyOwner: true,
+  propertyOwnerName: '',
   contractorName: '',
   contractorOrgNo: '',
   contractorEmail: '',
+  contractorPhone: '',
   contractorAddress: '',
   contractorPostalCode: '',
   contractorCity: '',
+  invoiceRecipientMatchesClient: true,
+  invoiceName: '',
+  invoiceOrgNo: '',
+  invoiceReference: '',
+  invoiceEmailMatchesClient: true,
+  invoiceEmail: '',
+  invoiceAddressMatchesClient: true,
+  invoiceAddress: '',
+  invoicePostalCode: '',
+  invoiceCity: '',
   agreementItems: [],
 }
 
@@ -147,15 +177,30 @@ export function buildEbProjectForm(project: EbProjectListItem): EbProjectFormSta
     clientName: project.clientName ?? '',
     clientOrgNo: project.clientOrgNo ?? '',
     clientEmail: project.clientEmail ?? '',
+    clientPhone: project.clientPhone ?? '',
+    clientAddressMatchesObject: project.clientAddressMatchesObject,
     clientAddress: project.clientAddress ?? '',
     clientPostalCode: project.clientPostalCode ?? '',
     clientCity: project.clientCity ?? '',
+    clientIsPropertyOwner: project.clientIsPropertyOwner,
+    propertyOwnerName: project.propertyOwnerName ?? '',
     contractorName: project.contractorName ?? '',
     contractorOrgNo: project.contractorOrgNo ?? '',
     contractorEmail: project.contractorEmail ?? '',
+    contractorPhone: project.contractorPhone ?? '',
     contractorAddress: project.contractorAddress ?? '',
     contractorPostalCode: project.contractorPostalCode ?? '',
     contractorCity: project.contractorCity ?? '',
+    invoiceRecipientMatchesClient: project.invoiceRecipientMatchesClient,
+    invoiceName: project.invoiceName ?? '',
+    invoiceOrgNo: project.invoiceOrgNo ?? '',
+    invoiceReference: project.invoiceReference ?? '',
+    invoiceEmailMatchesClient: project.invoiceEmailMatchesClient,
+    invoiceEmail: project.invoiceEmail ?? '',
+    invoiceAddressMatchesClient: project.invoiceAddressMatchesClient,
+    invoiceAddress: project.invoiceAddress ?? '',
+    invoicePostalCode: project.invoicePostalCode ?? '',
+    invoiceCity: project.invoiceCity ?? '',
     agreementItems: project.agreementItems ?? [],
   }
 }
@@ -183,6 +228,41 @@ export function EbProjectFieldLabel({
   )
 }
 
+function EbSameAsCheckbox({
+  checked,
+  label,
+  description,
+  onChange,
+}: {
+  checked: boolean
+  label: string
+  description: string
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2.5 text-sm text-gray-800">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-0.5 h-4 w-4 rounded border-gray-300 text-emerald-700 focus:ring-emerald-500"
+      />
+      <span>
+        <span className="block font-medium">{label}</span>
+        <span className="mt-0.5 block text-xs text-gray-600">{description}</span>
+      </span>
+    </label>
+  )
+}
+
+function EbResolvedValue({ value, emptyText }: { value: string; emptyText: string }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+      {value || emptyText}
+    </div>
+  )
+}
+
 export default function EbProjectForm({
   form,
   onChange,
@@ -201,6 +281,21 @@ export default function EbProjectForm({
   ]
   const changeOrders = form.agreementItems.filter((item) => item.kind === 'change_order')
   const otherAgreements = form.agreementItems.filter((item) => item.kind === 'other')
+  const objectAddressLine = [form.address, [form.postalCode, form.city].filter(Boolean).join(' ')]
+    .filter(Boolean)
+    .join(', ')
+  const resolvedClientAddressLine = form.clientAddressMatchesObject
+    ? objectAddressLine
+    : [form.clientAddress, [form.clientPostalCode, form.clientCity].filter(Boolean).join(' ')]
+        .filter(Boolean)
+        .join(', ')
+  const resolvedInvoiceName = form.invoiceRecipientMatchesClient ? form.clientName : form.invoiceName
+  const resolvedInvoiceEmail = form.invoiceEmailMatchesClient ? form.clientEmail : form.invoiceEmail
+  const resolvedInvoiceAddressLine = form.invoiceAddressMatchesClient
+    ? resolvedClientAddressLine
+    : [form.invoiceAddress, [form.invoicePostalCode, form.invoiceCity].filter(Boolean).join(' ')]
+        .filter(Boolean)
+        .join(', ')
 
   const updateAgreementItem = <K extends keyof EbProjectAgreementItem>(
     id: string,
@@ -406,13 +501,6 @@ export default function EbProjectForm({
                 required
               />
             </EbProjectFieldLabel>
-            <EbProjectFieldLabel label="Kontraktsnamn">
-              <input
-                value={form.contractName}
-                onChange={(event) => onChange('contractName', event.target.value)}
-                className={ebProjectInputClassName()}
-              />
-            </EbProjectFieldLabel>
             {showNotePrefix ? (
               <EbProjectFieldLabel label="Noteringsserie">
                 <input
@@ -478,6 +566,10 @@ export default function EbProjectForm({
                 />
               </EbProjectFieldLabel>
             </div>
+            <div className="md:col-span-2 mt-2 border-t border-emerald-100 pt-4">
+              <h4 className="text-sm font-semibold text-gray-950">Beställare och fastighetsägare</h4>
+              <p className="mt-1 text-xs text-gray-600">Kontaktuppgifterna används även som förval för kallelser.</p>
+            </div>
             <EbProjectFieldLabel label={vocabulary.clientLabel}>
               <input
                 value={form.clientName}
@@ -485,7 +577,7 @@ export default function EbProjectForm({
                 className={ebProjectInputClassName()}
               />
             </EbProjectFieldLabel>
-            <EbProjectFieldLabel label="Beställare org.nr">
+            <EbProjectFieldLabel label="Beställare org.nr / personnummer">
               <input
                 value={form.clientOrgNo}
                 onChange={(event) => onChange('clientOrgNo', event.target.value)}
@@ -500,30 +592,188 @@ export default function EbProjectForm({
                 className={ebProjectInputClassName()}
               />
             </EbProjectFieldLabel>
-            <EbProjectFieldLabel label="Beställare adress">
+            <EbProjectFieldLabel label="Beställare telefon">
               <input
-                value={form.clientAddress}
-                onChange={(event) => onChange('clientAddress', event.target.value)}
+                type="tel"
+                value={form.clientPhone}
+                onChange={(event) => onChange('clientPhone', event.target.value)}
                 className={ebProjectInputClassName()}
               />
             </EbProjectFieldLabel>
-            <div className="grid grid-cols-[0.7fr_1fr] gap-3">
-              <EbProjectFieldLabel label="Postnummer">
-                <input
-                  value={form.clientPostalCode}
-                  onChange={(event) => onChange('clientPostalCode', event.target.value)}
-                  className={ebProjectInputClassName()}
-                />
-              </EbProjectFieldLabel>
-              <EbProjectFieldLabel label="Ort">
-                <input
-                  value={form.clientCity}
-                  onChange={(event) => onChange('clientCity', event.target.value)}
-                  className={ebProjectInputClassName()}
-                />
-              </EbProjectFieldLabel>
+            <div className="md:col-span-2">
+              <EbSameAsCheckbox
+                checked={form.clientAddressMatchesObject}
+                label="Beställarens adress är samma som objektadressen"
+                description="Adress, postnummer och ort följer objektuppgifterna."
+                onChange={(checked) => onChange('clientAddressMatchesObject', checked)}
+              />
             </div>
+            {form.clientAddressMatchesObject ? (
+              <div className="md:col-span-2">
+                <EbResolvedValue value={objectAddressLine} emptyText="Objektadress saknas." />
+              </div>
+            ) : (
+              <>
+                <EbProjectFieldLabel label="Beställare adress">
+                  <input
+                    value={form.clientAddress}
+                    onChange={(event) => onChange('clientAddress', event.target.value)}
+                    className={ebProjectInputClassName()}
+                  />
+                </EbProjectFieldLabel>
+                <div className="grid grid-cols-[0.7fr_1fr] gap-3">
+                  <EbProjectFieldLabel label="Postnummer">
+                    <input
+                      value={form.clientPostalCode}
+                      onChange={(event) => onChange('clientPostalCode', event.target.value)}
+                      className={ebProjectInputClassName()}
+                    />
+                  </EbProjectFieldLabel>
+                  <EbProjectFieldLabel label="Ort">
+                    <input
+                      value={form.clientCity}
+                      onChange={(event) => onChange('clientCity', event.target.value)}
+                      className={ebProjectInputClassName()}
+                    />
+                  </EbProjectFieldLabel>
+                </div>
+              </>
+            )}
+            <div className="md:col-span-2">
+              <EbSameAsCheckbox
+                checked={form.clientIsPropertyOwner}
+                label="Beställaren är fastighetsägare"
+                description="Avmarkera om objektet ägs av någon annan."
+                onChange={(checked) => onChange('clientIsPropertyOwner', checked)}
+              />
+            </div>
+            {form.clientIsPropertyOwner ? (
+              <div className="md:col-span-2">
+                <EbResolvedValue value={form.clientName} emptyText="Beställarens namn saknas." />
+              </div>
+            ) : (
+              <EbProjectFieldLabel label="Fastighetsägare">
+                <input
+                  value={form.propertyOwnerName}
+                  onChange={(event) => onChange('propertyOwnerName', event.target.value)}
+                  className={ebProjectInputClassName()}
+                />
+              </EbProjectFieldLabel>
+            )}
           </div>
+          <details className="mt-5 rounded-lg border border-emerald-100 bg-white">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-950">
+              Fakturering av besiktningar
+            </summary>
+            <div className="border-t border-emerald-100 p-4">
+              <p className="mb-4 text-xs text-gray-600">
+                Administrativa förval för besiktningsmannens fakturering. Uppgifterna visas inte i utlåtandet.
+              </p>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <EbSameAsCheckbox
+                    checked={form.invoiceRecipientMatchesClient}
+                    label="Fakturamottagaren är beställaren"
+                    description="Namn och org.nr/personnummer följer beställarens uppgifter."
+                    onChange={(checked) => onChange('invoiceRecipientMatchesClient', checked)}
+                  />
+                </div>
+                {form.invoiceRecipientMatchesClient ? (
+                  <div className="md:col-span-2">
+                    <EbResolvedValue
+                      value={[resolvedInvoiceName, form.clientOrgNo].filter(Boolean).join(', ')}
+                      emptyText="Beställaruppgifter saknas."
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <EbProjectFieldLabel label="Fakturamottagare">
+                      <input
+                        value={form.invoiceName}
+                        onChange={(event) => onChange('invoiceName', event.target.value)}
+                        className={ebProjectInputClassName()}
+                      />
+                    </EbProjectFieldLabel>
+                    <EbProjectFieldLabel label="Org.nr / personnummer">
+                      <input
+                        value={form.invoiceOrgNo}
+                        onChange={(event) => onChange('invoiceOrgNo', event.target.value)}
+                        className={ebProjectInputClassName()}
+                      />
+                    </EbProjectFieldLabel>
+                  </>
+                )}
+                <EbProjectFieldLabel label="Fakturareferens">
+                  <input
+                    value={form.invoiceReference}
+                    onChange={(event) => onChange('invoiceReference', event.target.value)}
+                    className={ebProjectInputClassName()}
+                  />
+                </EbProjectFieldLabel>
+                <div className="md:col-span-2">
+                  <EbSameAsCheckbox
+                    checked={form.invoiceEmailMatchesClient}
+                    label="Faktura-e-post är samma som beställarens e-post"
+                    description="Avmarkera om fakturan ska skickas till en annan e-postadress."
+                    onChange={(checked) => onChange('invoiceEmailMatchesClient', checked)}
+                  />
+                </div>
+                {form.invoiceEmailMatchesClient ? (
+                  <div className="md:col-span-2">
+                    <EbResolvedValue value={resolvedInvoiceEmail} emptyText="Beställarens e-post saknas." />
+                  </div>
+                ) : (
+                  <EbProjectFieldLabel label="Faktura-e-post">
+                    <input
+                      type="email"
+                      value={form.invoiceEmail}
+                      onChange={(event) => onChange('invoiceEmail', event.target.value)}
+                      className={ebProjectInputClassName()}
+                    />
+                  </EbProjectFieldLabel>
+                )}
+                <div className="md:col-span-2">
+                  <EbSameAsCheckbox
+                    checked={form.invoiceAddressMatchesClient}
+                    label="Fakturaadressen är samma som beställarens adress"
+                    description="Adress, postnummer och ort följer beställarens effektiva adress."
+                    onChange={(checked) => onChange('invoiceAddressMatchesClient', checked)}
+                  />
+                </div>
+                {form.invoiceAddressMatchesClient ? (
+                  <div className="md:col-span-2">
+                    <EbResolvedValue value={resolvedInvoiceAddressLine} emptyText="Beställaradress saknas." />
+                  </div>
+                ) : (
+                  <>
+                    <EbProjectFieldLabel label="Fakturaadress">
+                      <input
+                        value={form.invoiceAddress}
+                        onChange={(event) => onChange('invoiceAddress', event.target.value)}
+                        className={ebProjectInputClassName()}
+                      />
+                    </EbProjectFieldLabel>
+                    <div className="grid grid-cols-[0.7fr_1fr] gap-3">
+                      <EbProjectFieldLabel label="Postnummer">
+                        <input
+                          value={form.invoicePostalCode}
+                          onChange={(event) => onChange('invoicePostalCode', event.target.value)}
+                          className={ebProjectInputClassName()}
+                        />
+                      </EbProjectFieldLabel>
+                      <EbProjectFieldLabel label="Ort">
+                        <input
+                          value={form.invoiceCity}
+                          onChange={(event) => onChange('invoiceCity', event.target.value)}
+                          className={ebProjectInputClassName()}
+                        />
+                      </EbProjectFieldLabel>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </details>
         </section>
       ) : null}
 
@@ -531,6 +781,17 @@ export default function EbProjectForm({
         <section>
           <h3 className="text-sm font-semibold text-gray-950">Avtal</h3>
           <div className="mt-3 grid gap-4 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <EbProjectFieldLabel label="Kontraktsnamn">
+                <input
+                  value={form.contractName}
+                  onChange={(event) => onChange('contractName', event.target.value)}
+                  placeholder={form.title || 'Samma som projektnamnet'}
+                  className={ebProjectInputClassName()}
+                />
+              </EbProjectFieldLabel>
+              <p className="mt-1 text-xs text-gray-600">Lämna tomt om kontraktsnamnet är samma som projektnamnet.</p>
+            </div>
             <EbProjectFieldLabel label="Standardavtal">
               <select
                 value={form.standardAgreement}
@@ -638,6 +899,14 @@ export default function EbProjectForm({
                 type="email"
                 value={form.contractorEmail}
                 onChange={(event) => onChange('contractorEmail', event.target.value)}
+                className={ebProjectInputClassName()}
+              />
+            </EbProjectFieldLabel>
+            <EbProjectFieldLabel label={`${vocabulary.contractorShortLabel} telefon`}>
+              <input
+                type="tel"
+                value={form.contractorPhone}
+                onChange={(event) => onChange('contractorPhone', event.target.value)}
                 className={ebProjectInputClassName()}
               />
             </EbProjectFieldLabel>
