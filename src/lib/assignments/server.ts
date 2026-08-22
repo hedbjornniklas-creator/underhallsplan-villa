@@ -10,7 +10,7 @@ import {
 } from '@/lib/assignments/emailTemplates'
 import {
   getAssignmentTermsDocument,
-  parseAssignmentTermsRole,
+  resolveAssignmentTermsRole,
 } from '@/lib/assignments/terms'
 import {
   isBaseAssignmentAddonKey,
@@ -997,10 +997,14 @@ export class AssignmentEmailSendError extends Error {
   }
 }
 
-function getTermsRoleForAssignment(assignment: Pick<AssignmentDetails, 'assignment_type' | 'orderer_role'>) {
-  if (assignment.assignment_type === 'TU') return 'technical' as const
-  if (assignment.assignment_type === 'EB') return 'construction' as const
-  return parseAssignmentTermsRole(assignment.orderer_role)
+function getTermsRoleForAssignment(
+  assignment: Pick<AssignmentDetails, 'assignment_type' | 'orderer_role' | 'assignment_details'>
+) {
+  return resolveAssignmentTermsRole({
+    assignmentType: assignment.assignment_type,
+    ordererRole: assignment.orderer_role,
+    assignmentDetails: assignment.assignment_details,
+  })
 }
 
 function toSwedishDateString(value: string | null) {

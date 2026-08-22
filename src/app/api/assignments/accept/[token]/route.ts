@@ -12,7 +12,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
   getAllAssignmentTermsDocuments,
   getAssignmentTermsDocument,
-  parseAssignmentTermsRole,
+  resolveAssignmentTermsRole,
 } from '@/lib/assignments/terms'
 import { isBaseAssignmentAddonKey } from '@/lib/assignments/addons'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
@@ -164,6 +164,13 @@ function roleLooksLikeApartment(value: string | null | undefined) {
   return normalized.includes('lagenhet') || normalized.includes('apartment') || normalized.includes('apt')
 }
 
+function requiresConsumerEarlyStartConsent(preferredDate: string) {
+  if (!DATE_REGEX.test(preferredDate)) return false
+  const serviceDate = Date.parse(`${preferredDate}T23:59:59.999Z`)
+  if (!Number.isFinite(serviceDate)) return false
+  return serviceDate < Date.now() + 14 * 24 * 60 * 60 * 1000
+}
+
 function toState(link: PublicLink): PublicState {
   const now = Date.now()
   const expiresAt = String(link.expires_at ?? '')
@@ -172,11 +179,13 @@ function toState(link: PublicLink): PublicState {
   const revoked = Boolean(link.revoked_at)
   const assignment = normalizeAssignment(link)
   const cancelled = assignment?.status?.toLowerCase() === 'cancelled'
-  const termsRole = assignment?.assignment_type === 'TU'
-    ? 'technical'
-    : assignment?.assignment_type === 'EB'
-      ? 'construction'
-      : parseAssignmentTermsRole(assignment?.orderer_role)
+  const termsRole = assignment
+    ? resolveAssignmentTermsRole({
+        assignmentType: assignment.assignment_type,
+        ordererRole: assignment.orderer_role,
+        assignmentDetails: assignment.assignment_details,
+      })
+    : null
   const expectedTermsVersion = termsRole ? getAssignmentTermsDocument(termsRole).version : null
   const outdated = !link.terms_version || !expectedTermsVersion || link.terms_version !== expectedTermsVersion
 
@@ -203,11 +212,11 @@ export async function GET(
     if (!assignment) return jsonError('Uppdraget kunde inte hittas.', 404)
 
     const terms = getAllAssignmentTermsDocuments()
-    const assignmentTermsRole = assignment.assignment_type === 'TU'
-      ? 'technical'
-      : assignment.assignment_type === 'EB'
-        ? 'construction'
-        : parseAssignmentTermsRole(assignment.orderer_role)
+    const assignmentTermsRole = resolveAssignmentTermsRole({
+      assignmentType: assignment.assignment_type,
+      ordererRole: assignment.orderer_role,
+      assignmentDetails: assignment.assignment_details,
+    })
     const assignmentTerms = assignmentTermsRole
       ? getAssignmentTermsDocument(assignmentTermsRole)
       : terms.seller
@@ -309,6 +318,16 @@ export async function GET(
             text: terms.construction.text,
             templateId: terms.construction.templateId,
           },
+          constructionBusiness: {
+            hash: terms.constructionBusiness.documentHash,
+            text: terms.constructionBusiness.text,
+            templateId: terms.constructionBusiness.templateId,
+          },
+          constructionConsumer: {
+            hash: terms.constructionConsumer.documentHash,
+            text: terms.constructionConsumer.text,
+            templateId: terms.constructionConsumer.templateId,
+          },
         },
       },
     })
@@ -345,11 +364,11 @@ export async function POST(
 
     const isTechnicalAssignment = assignment.assignment_type === 'TU'
     const isEbAssignment = assignment.assignment_type === 'EB'
-    const termsRole = isTechnicalAssignment
-      ? 'technical'
-      : isEbAssignment
-        ? 'construction'
-      : parseAssignmentTermsRole(assignment.orderer_role)
+    const termsRole = resolveAssignmentTermsRole({
+      assignmentType: assignment.assignment_type,
+      ordererRole: assignment.orderer_role,
+      assignmentDetails: assignment.assignment_details,
+    })
     if (!termsRole) {
       return jsonError('Välj om du är köpare, säljare eller lägenhetsköpare.', 409)
     }
@@ -386,6 +405,22 @@ export async function POST(
       return jsonError('Ange en giltig tid.', 400)
     }
 
+    const isConsumerEbAssignment = termsRole === 'construction_consumer'
+    const consumerWithdrawalAcknowledged = body.consumerWithdrawalAcknowledged === true
+    const startDuringWithdrawalPeriod = body.startDuringWithdrawalPeriod === true
+    const earlyStartConsentRequired =
+      isConsumerEbAssignment && requiresConsumerEarlyStartConsent(preferredDate)
+
+    if (isConsumerEbAssignment && !consumerWithdrawalAcknowledged) {
+      return jsonError('Bekräfta att du har tagit del av informationen om ångerrätt.', 400)
+    }
+    if (earlyStartConsentRequired && !startDuringWithdrawalPeriod) {
+      return jsonError(
+        'Besiktningen infaller under ångerfristen. Du behöver uttryckligen begära att uppdraget får påbörjas under denna tid.',
+        400
+      )
+    }
+
     const cadastralId = typeof body.cadastralId === 'string' ? body.cadastralId.trim() : ''
     const brfName = typeof body.brfName === 'string' ? body.brfName.trim() : ''
     const apartmentNumber = typeof body.apartmentNumber === 'string' ? body.apartmentNumber.trim() : ''
@@ -410,6 +445,10 @@ export async function POST(
         ? isApartmentObject
           ? 'Teknisk utredning - Lägenhet'
           : 'Teknisk utredning - Villa'
+        : termsRole === 'construction_consumer'
+          ? 'Entreprenadbesiktning - Konsument'
+        : termsRole === 'construction_business'
+          ? 'Entreprenadbesiktning - Företag'
         : termsRole === 'construction'
           ? 'Entreprenadbesiktning'
         : termsRole === 'buyer'
@@ -496,6 +535,13 @@ export async function POST(
         assignment.assignment_details && typeof assignment.assignment_details === 'object'
           ? assignment.assignment_details
           : {},
+      consumer_withdrawal_acknowledged: isConsumerEbAssignment
+        ? consumerWithdrawalAcknowledged
+        : null,
+      consumer_early_start_required: isConsumerEbAssignment ? earlyStartConsentRequired : null,
+      consumer_early_start_requested: isConsumerEbAssignment
+        ? startDuringWithdrawalPeriod
+        : null,
     }
 
     await consumeAssignmentToken({

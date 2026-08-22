@@ -1,6 +1,13 @@
 ﻿import 'server-only'
 
-type TermsRole = 'seller' | 'buyer' | 'apartment' | 'technical' | 'construction'
+type TermsRole =
+  | 'seller'
+  | 'buyer'
+  | 'apartment'
+  | 'technical'
+  | 'construction'
+  | 'construction_business'
+  | 'construction_consumer'
 type AssignmentType = 'OB' | 'STATUS' | 'UHP' | 'EB' | 'TU'
 
 type AssignmentForEmail = {
@@ -24,6 +31,7 @@ type AssignmentForEmail = {
   apartment_number: string | null
   apartment_holder_name: string | null
   orderer_role?: string | null
+  assignment_details?: Record<string, unknown> | null
 }
 
 type AssignmentAddonOrderForEmail = {
@@ -152,8 +160,39 @@ function termsRoleToLabel(role: TermsRole, format: 'html' | 'text' = 'text') {
   if (role === 'buyer') return format === 'html' ? 'Köpare' : 'Köpare'
   if (role === 'apartment') return format === 'html' ? 'Lägenhet' : 'Lägenhet'
   if (role === 'technical') return format === 'html' ? 'Teknisk utredning' : 'Teknisk utredning'
+  if (role === 'construction_business') {
+    return format === 'html' ? 'Entreprenadbesiktning – företag' : 'Entreprenadbesiktning – företag'
+  }
+  if (role === 'construction_consumer') {
+    return format === 'html'
+      ? 'Entreprenadbesiktning – privat konsument'
+      : 'Entreprenadbesiktning – privat konsument'
+  }
   if (role === 'construction') return format === 'html' ? 'Entreprenadbesiktning' : 'Entreprenadbesiktning'
   return format === 'html' ? 'Säljare' : 'Säljare'
+}
+
+function isConstructionTermsRole(role: TermsRole) {
+  return (
+    role === 'construction' ||
+    role === 'construction_business' ||
+    role === 'construction_consumer'
+  )
+}
+
+function getConstructionEmailFacts(assignment: AssignmentForEmail, role: TermsRole) {
+  if (!isConstructionTermsRole(role)) return null
+  const details = assignment.assignment_details
+  const underlyingContract = toDisplayValue(
+    typeof details?.underlyingContract === 'string' ? details.underlyingContract : null
+  )
+  const vatLabel =
+    role === 'construction_consumer'
+      ? 'Priset inkluderar moms'
+      : role === 'construction_business'
+        ? 'Moms tillkommer'
+        : 'Enligt uppdragsbekräftelsen'
+  return { underlyingContract, vatLabel }
 }
 
 function roleLooksLikeApartment(value: string | null | undefined) {
@@ -267,15 +306,20 @@ export function buildAssignmentConfirmationEmail(
   const roleLabelText = termsRoleToLabel(input.termsRole, 'text')
   const assignmentType = assignmentTypeToLabel(input.assignment.assignment_type)
   const isTechnicalAssignment = input.assignment.assignment_type === 'TU'
+  const constructionFacts = getConstructionEmailFacts(input.assignment, input.termsRole)
   const scopeDescription = toDisplayValue(input.assignment.scope_description)
   const assignmentHeadingHtml = isTechnicalAssignment
     ? 'Teknisk utredning'
-    : `&Ouml;verl&aring;telsebesiktning f&ouml;r
+    : constructionFacts
+      ? roleLabelHtml
+      : `&Ouml;verl&aring;telsebesiktning f&ouml;r
                   <span style="display:inline-block;margin-left:8px;padding:5px 12px;border-radius:999px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.45);">${roleLabelHtml}</span>`
   const assignmentHeadingText = isTechnicalAssignment
     ? 'Teknisk utredning'
-    : `Överlåtelsebesiktning för ${roleLabelText}`
-  const roleSuffixText = isTechnicalAssignment ? '' : ` (${roleLabelText})`
+    : constructionFacts
+      ? roleLabelText
+      : `Överlåtelsebesiktning för ${roleLabelText}`
+  const roleSuffixText = isTechnicalAssignment || constructionFacts ? '' : ` (${roleLabelText})`
   const orgName = toDisplayValue(input.orgName, 'BesiktApp')
   const subject = `Uppdragsbekr\u00e4ftelse - ${orgName}`
   const ctaButton = buildBulletproofButton({
@@ -369,6 +413,8 @@ export function buildAssignmentConfirmationEmail(
                     <div style="font-size:13px;line-height:1.5;"><strong>Datum:</strong> ${escapeHtml(inspectionDate)}</div>
                     <div style="font-size:13px;line-height:1.5;"><strong>Tid:</strong> ${escapeHtml(inspectionTime)}</div>
                     <div style="font-size:13px;line-height:1.5;"><strong>Kostnad:</strong> ${escapeHtml(priceText)}</div>
+                    ${constructionFacts ? `<div style="font-size:13px;line-height:1.5;"><strong>Moms:</strong> ${escapeHtml(constructionFacts.vatLabel)}</div>
+                    <div style="font-size:13px;line-height:1.5;"><strong>Entreprenadavtal:</strong> ${escapeHtml(constructionFacts.underlyingContract)}</div>` : ''}
                   </td></tr>
                 </table>
                 ${
@@ -419,6 +465,7 @@ export function buildAssignmentConfirmationEmail(
     `- Datum: ${inspectionDate}\n` +
     `- Tid: ${inspectionTime}\n` +
     `- Kostnad: ${priceText}\n\n` +
+    `${constructionFacts ? `- Moms: ${constructionFacts.vatLabel}\n- Entreprenadavtal: ${constructionFacts.underlyingContract}\n\n` : ''}` +
     `${isTechnicalAssignment ? `Utredningens omfattning\n${scopeDescription}\n\n` : ''}` +
     `Öppna uppdragsbekräftelse: ${input.acceptUrl}\n` +
     `Länken är giltig till ${expiresDate}.\n` +
@@ -456,12 +503,15 @@ export function buildAssignmentOrderReceiptEmail(
   const roleLabelText = termsRoleToLabel(input.termsRole, 'text')
   const assignmentType = assignmentTypeToLabel(input.assignment.assignment_type)
   const isTechnicalAssignment = input.assignment.assignment_type === 'TU'
+  const constructionFacts = getConstructionEmailFacts(input.assignment, input.termsRole)
   const scopeDescription = toDisplayValue(input.assignment.scope_description)
   const assignmentHeadingHtml = isTechnicalAssignment
     ? 'Teknisk utredning'
-    : `Överlåtelsebesiktning för
+    : constructionFacts
+      ? roleLabelHtml
+      : `Överlåtelsebesiktning för
                   <span style="display:inline-block;margin-left:8px;padding:5px 12px;border-radius:999px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.45);">${roleLabelHtml}</span>`
-  const roleSuffixText = isTechnicalAssignment ? '' : ` (${roleLabelText})`
+  const roleSuffixText = isTechnicalAssignment || constructionFacts ? '' : ` (${roleLabelText})`
   const orgName = toDisplayValue(input.orgName, 'HusHub')
   const subject = `Beställningsbekräftelse - ${orgName}`
 
@@ -567,6 +617,8 @@ export function buildAssignmentOrderReceiptEmail(
                     <div style="font-size:13px;line-height:1.5;"><strong>Datum:</strong> ${escapeHtml(inspectionDate)}</div>
                     <div style="font-size:13px;line-height:1.5;"><strong>Tid:</strong> ${escapeHtml(inspectionTime)}</div>
                     <div style="font-size:13px;line-height:1.5;"><strong>Kostnad:</strong> ${escapeHtml(priceText)}</div>
+                    ${constructionFacts ? `<div style="font-size:13px;line-height:1.5;"><strong>Moms:</strong> ${escapeHtml(constructionFacts.vatLabel)}</div>
+                    <div style="font-size:13px;line-height:1.5;"><strong>Entreprenadavtal:</strong> ${escapeHtml(constructionFacts.underlyingContract)}</div>` : ''}
                   </td></tr>
                 </table>
                 ${
@@ -636,6 +688,7 @@ export function buildAssignmentOrderReceiptEmail(
     `- Datum: ${inspectionDate}\n` +
     `- Tid: ${inspectionTime}\n` +
     `- Kostnad: ${priceText}\n\n` +
+    `${constructionFacts ? `- Moms: ${constructionFacts.vatLabel}\n- Entreprenadavtal: ${constructionFacts.underlyingContract}\n\n` : ''}` +
     `${isTechnicalAssignment ? `Utredningens omfattning\n${scopeDescription}\n\n` : ''}` +
     `Valda tilläggsuppdrag\n` +
     `${addonRowsText}\n\n` +

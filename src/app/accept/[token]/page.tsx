@@ -89,6 +89,8 @@ type AcceptReadResponse = {
       apartment: TermsDocument
       technical: TermsDocument
       construction: TermsDocument
+      constructionBusiness: TermsDocument
+      constructionConsumer: TermsDocument
     }
   }
 }
@@ -116,6 +118,8 @@ type FormState = {
   priceAmount: string
   selectedAddonServiceIds: string[]
   termsAccepted: boolean
+  consumerWithdrawalAcknowledged: boolean
+  startDuringWithdrawalPeriod: boolean
 }
 
 const INSPECTOR_FALLBACK = {
@@ -191,7 +195,16 @@ function toFormState(
     priceAmount: assignment.price_amount !== null ? String(assignment.price_amount) : '',
     selectedAddonServiceIds: [...new Set(normalizedSelectedAddons)],
     termsAccepted: false,
+    consumerWithdrawalAcknowledged: false,
+    startDuringWithdrawalPeriod: false,
   }
+}
+
+function requiresConsumerEarlyStartConsent(preferredDate: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(preferredDate)) return false
+  const serviceDate = Date.parse(`${preferredDate}T23:59:59.999Z`)
+  if (!Number.isFinite(serviceDate)) return false
+  return serviceDate < Date.now() + 14 * 24 * 60 * 60 * 1000
 }
 
 function roleToLabel(role: OrdererRole) {
@@ -271,6 +284,20 @@ export default function AssignmentAcceptPage() {
 
   const isTechnicalAssignment = data?.assignment.assignment_type === 'TU'
   const isEbAssignment = data?.assignment.assignment_type === 'EB'
+  const ebDetails = useMemo(() => {
+    if (!isEbAssignment || !data?.assignment.assignment_details) return null
+    return data.assignment.assignment_details
+  }, [data, isEbAssignment])
+  const isConsumerEbAssignment = isEbAssignment && ebDetails?.customerType === 'consumer'
+  const consumerEarlyStartConsentRequired = Boolean(
+    isConsumerEbAssignment && form && requiresConsumerEarlyStartConsent(form.preferredDate)
+  )
+  const consumerRequirementsMet =
+    !isConsumerEbAssignment ||
+    Boolean(
+      form?.consumerWithdrawalAcknowledged &&
+        (!consumerEarlyStartConsentRequired || form?.startDuringWithdrawalPeriod)
+    )
   const usesApartmentObject =
     lockedOrdererRole === 'apartment' ||
     (isTechnicalAssignment && Boolean(form?.brfName.trim() || form?.apartmentNumber.trim()))
@@ -278,17 +305,16 @@ export default function AssignmentAcceptPage() {
   const activeTerms = useMemo(() => {
     if (!data) return null
     if (isTechnicalAssignment) return data.terms.documents.technical
-    if (isEbAssignment) return data.terms.documents.construction
+    if (isEbAssignment) {
+      if (ebDetails?.customerType === 'consumer') return data.terms.documents.constructionConsumer
+      if (ebDetails?.customerType === 'business') return data.terms.documents.constructionBusiness
+      return data.terms.documents.construction
+    }
     if (lockedOrdererRole === 'buyer') return data.terms.documents.buyer
     if (lockedOrdererRole === 'apartment') return data.terms.documents.apartment
     if (lockedOrdererRole === 'seller') return data.terms.documents.seller
     return null
-  }, [data, isEbAssignment, isTechnicalAssignment, lockedOrdererRole])
-
-  const ebDetails = useMemo(() => {
-    if (!isEbAssignment || !data?.assignment.assignment_details) return null
-    return data.assignment.assignment_details
-  }, [data, isEbAssignment])
+  }, [data, ebDetails?.customerType, isEbAssignment, isTechnicalAssignment, lockedOrdererRole])
 
   const inspectorName = data?.inspector?.full_name || INSPECTOR_FALLBACK.name
   const inspectorSbrLine1 = data?.inspector?.sbr_group || INSPECTOR_FALLBACK.sbrLine1
@@ -354,6 +380,17 @@ export default function AssignmentAcceptPage() {
 
     if (!form.termsAccepted) {
       setError(`Du måste acceptera villkoren (version ${data.terms.version}) för att fortsätta.`)
+      return
+    }
+
+    if (isConsumerEbAssignment && !form.consumerWithdrawalAcknowledged) {
+      setError('Bekräfta att du har tagit del av informationen om ångerrätt.')
+      return
+    }
+    if (consumerEarlyStartConsentRequired && !form.startDuringWithdrawalPeriod) {
+      setError(
+        'Besiktningen infaller under ångerfristen. Begär att uppdraget får påbörjas under denna tid för att fortsätta.'
+      )
       return
     }
 
@@ -428,6 +465,8 @@ export default function AssignmentAcceptPage() {
           preferredTime: form.preferredTime,
           selectedAddonServiceIds: form.selectedAddonServiceIds,
           termsAccepted: form.termsAccepted,
+          consumerWithdrawalAcknowledged: form.consumerWithdrawalAcknowledged,
+          startDuringWithdrawalPeriod: form.startDuringWithdrawalPeriod,
           termsVersion: data.terms.version,
           termsDocumentHash: activeTerms.hash,
         }),
@@ -731,6 +770,14 @@ export default function AssignmentAcceptPage() {
               {isEbAssignment && ebDetails ? (
                 <SectionCard title="Uppdragets särskilda villkor">
                   <div className="grid gap-2 text-sm text-gray-700 md:grid-cols-2">
+                    <AssignmentFact
+                      label="Beställartyp"
+                      value={isConsumerEbAssignment ? 'Privat konsument' : 'Företag/organisation'}
+                    />
+                    <AssignmentFact
+                      label="Entreprenadens standardavtal"
+                      value={String(ebDetails.underlyingContract ?? 'Ej angivet')}
+                    />
                     <AssignmentFact label="Avtalsvillkor" value={String(ebDetails.contractTerms ?? 'ABK 09')} />
                     <AssignmentFact
                       label="Moms"
@@ -870,7 +917,9 @@ export default function AssignmentAcceptPage() {
                   {isTechnicalAssignment
                     ? 'Villkor för teknisk utredning'
                     : isEbAssignment
-                      ? 'Villkor för entreprenadbesiktning'
+                      ? isConsumerEbAssignment
+                        ? 'Villkor för entreprenadbesiktning – privat konsument'
+                        : 'Villkor för entreprenadbesiktning – företag'
                       : 'Villkor för besiktning'}
                 </h2>
                 <span className="text-xs font-medium text-gray-500">Version {data.terms.version}</span>
@@ -887,10 +936,60 @@ export default function AssignmentAcceptPage() {
                 <span>Jag har läst och godkänner villkoren nedan (version {data.terms.version}). *</span>
               </label>
 
+              {isConsumerEbAssignment ? (
+                <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                  <p>
+                    Eftersom avtalet ingås digitalt har du normalt 14 dagars ångerrätt. Du kan
+                    använda ångerrätten genom att lämna ett tydligt meddelande till
+                    besiktningsföretaget. Mer information och standardblankett finns hos
+                    {' '}
+                    <a
+                      href="https://www.konsumentverket.se/lagar/lagen-om-distansavtal-och-avtal-utanfor-affarslokaler/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-semibold underline underline-offset-2"
+                    >
+                      Konsumentverket
+                    </a>
+                    .
+                  </p>
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form.consumerWithdrawalAcknowledged}
+                      onChange={(event) =>
+                        updateField('consumerWithdrawalAcknowledged', event.target.checked)
+                      }
+                      disabled={!canSubmit}
+                      className="mt-0.5 h-4 w-4 rounded border-amber-400"
+                    />
+                    <span>Jag har tagit del av informationen om ångerrätt. *</span>
+                  </label>
+                  {consumerEarlyStartConsentRequired ? (
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={form.startDuringWithdrawalPeriod}
+                        onChange={(event) =>
+                          updateField('startDuringWithdrawalPeriod', event.target.checked)
+                        }
+                        disabled={!canSubmit}
+                        className="mt-0.5 h-4 w-4 rounded border-amber-400"
+                      />
+                      <span>
+                        Jag begär uttryckligen att uppdraget får påbörjas under ångerfristen och
+                        förstår att jag kan behöva betala för arbete som redan har utförts om jag
+                        därefter ångrar avtalet. *
+                      </span>
+                    </label>
+                  ) : null}
+                </div>
+              ) : null}
+
               <button
                 type="button"
                 onClick={() => void handleSubmit()}
-                disabled={!canSubmit || saving || !form.termsAccepted}
+                disabled={!canSubmit || saving || !form.termsAccepted || !consumerRequirementsMet}
                 className="inline-flex h-10 items-center justify-center rounded-lg bg-indigo-600 px-5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
               >
                 {saving

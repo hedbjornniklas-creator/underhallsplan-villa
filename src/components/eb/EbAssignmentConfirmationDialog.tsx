@@ -27,6 +27,9 @@ type ApiResponse = {
 const inputClass =
   'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600'
 
+const BUSINESS_CONTRACTS = ['AB 04', 'ABT 06']
+const CONSUMER_CONTRACTS = ['ABS 18', 'Hantverkarformuläret 17']
+
 function statusLabel(status: EbAssignmentConfirmationForm['status']) {
   if (status === 'not_created') return 'Inte skapad'
   if (status === 'draft') return 'Utkast'
@@ -137,6 +140,8 @@ export default function EbAssignmentConfirmationDialog({
       ['Entreprenad', project.contractName || project.title],
       ['Objekt', [form.propertyDesignation, form.propertyAddress].filter(Boolean).join(' – ')],
       ['Uppdragsgivare', form.customerName],
+      ['Beställartyp', form.details.customerType === 'consumer' ? 'Privatperson/konsument' : 'Företag/organisation'],
+      ['Entreprenadavtal', form.details.underlyingContract],
       ['Tid', [form.preferredDate, form.preferredTime].filter(Boolean).join(' ')],
       [priceLabel, money(form.priceAmount, form.currency)],
       ['Moms', form.details.vatIncluded ? 'Ingår' : 'Tillkommer'],
@@ -155,6 +160,31 @@ export default function EbAssignmentConfirmationDialog({
     key: K,
     value: EbAssignmentDetails[K]
   ) => setForm((current) => (current ? { ...current, details: { ...current.details, [key]: value } } : current))
+
+  const updateCustomerType = (value: string) => {
+    const nextType = value === 'consumer' ? 'consumer' : 'business'
+    setForm((current) => {
+      if (!current) return current
+      const knownContracts = [...BUSINESS_CONTRACTS, ...CONSUMER_CONTRACTS]
+      const currentContract = current.details.underlyingContract
+      const shouldReplaceContract = !currentContract || knownContracts.includes(currentContract)
+      return {
+        ...current,
+        details: {
+          ...current.details,
+          customerType: nextType,
+          vatIncluded: nextType === 'consumer',
+          contractTerms:
+            nextType === 'consumer' ? 'ABK 09 med konsumentanpassningar' : 'ABK 09',
+          underlyingContract: shouldReplaceContract
+            ? nextType === 'consumer'
+              ? 'ABS 18'
+              : 'AB 04'
+            : currentContract,
+        },
+      }
+    })
+  }
 
   const request = async (mode: 'save' | 'send') => {
     if (!form || operationRef.current) return
@@ -255,6 +285,37 @@ export default function EbAssignmentConfirmationDialog({
                 <div className="space-y-4">
                   <Panel title="Uppdrag och mottagare">
                     <div className="grid gap-3 md:grid-cols-2">
+                      <SelectField
+                        label="Beställartyp *"
+                        value={form.details.customerType}
+                        disabled={!editable}
+                        onChange={updateCustomerType}
+                      >
+                        <option value="business">Företag/organisation</option>
+                        <option value="consumer">Privatperson/konsument</option>
+                      </SelectField>
+                      <SelectField
+                        label="Entreprenadens standardavtal *"
+                        value={form.details.underlyingContract}
+                        disabled={!editable}
+                        onChange={(value) => updateDetails('underlyingContract', value)}
+                      >
+                        <option value="">Välj standardavtal</option>
+                        {(form.details.customerType === 'consumer'
+                          ? CONSUMER_CONTRACTS
+                          : BUSINESS_CONTRACTS
+                        ).map((contract) => (
+                          <option key={contract} value={contract}>{contract}</option>
+                        ))}
+                        {form.details.underlyingContract &&
+                        ![...BUSINESS_CONTRACTS, ...CONSUMER_CONTRACTS].includes(
+                          form.details.underlyingContract
+                        ) ? (
+                          <option value={form.details.underlyingContract}>
+                            {form.details.underlyingContract}
+                          </option>
+                        ) : null}
+                      </SelectField>
                       <Field label="Uppdragsgivare" value={form.customerName} disabled={!editable} onChange={(value) => update('customerName', value)} />
                       <Field label="E-post för godkännande *" type="email" value={form.customerEmail} disabled={!editable} onChange={(value) => update('customerEmail', value)} />
                       <Field label="Telefon" value={form.customerPhone} disabled={!editable} onChange={(value) => update('customerPhone', value)} />
@@ -282,7 +343,16 @@ export default function EbAssignmentConfirmationDialog({
                     </div>
                     <div className="grid gap-3 md:grid-cols-2">
                       <Checkbox label="Resa ingår i priset" checked={form.details.travelIncluded} disabled={!editable} onChange={(checked) => updateDetails('travelIncluded', checked)} />
-                      <Checkbox label="Angivna priser inkluderar moms" checked={form.details.vatIncluded} disabled={!editable} onChange={(checked) => updateDetails('vatIncluded', checked)} />
+                      <Checkbox
+                        label={
+                          form.details.customerType === 'consumer'
+                            ? 'Priser visas inklusive moms för konsument'
+                            : 'Moms tillkommer för företag/organisation'
+                        }
+                        checked={form.details.vatIncluded}
+                        disabled
+                        onChange={() => undefined}
+                      />
                     </div>
                     {!form.details.travelIncluded ? <Field label="Reseersättning" value={form.details.travelTerms} disabled={!editable} onChange={(value) => updateDetails('travelTerms', value)} /> : null}
                     <TextArea label="Avbokningsvillkor" value={form.details.cancellationTerms} disabled={!editable} onChange={(value) => updateDetails('cancellationTerms', value)} />
@@ -321,7 +391,11 @@ export default function EbAssignmentConfirmationDialog({
                   </div>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Villkorsbilaga</p>
-                    <p className="mt-1 text-sm text-gray-800">Entreprenadbesiktning · ABK 09 · version 2026-08-22.eb.v1</p>
+                    <p className="mt-1 text-sm text-gray-800">
+                      {form.details.customerType === 'consumer'
+                        ? 'Entreprenadbesiktning för konsument · ABK 09 med konsumentanpassningar · version 2026-08-22.eb-consumer.v1'
+                        : 'Entreprenadbesiktning för företag/organisation · ABK 09 · version 2026-08-22.eb-business.v1'}
+                    </p>
                   </div>
                 </aside>
               </div>

@@ -1,12 +1,15 @@
 import type { AssignmentStatus } from '@/lib/assignments/server'
 
 export type EbAssignmentPricingModel = 'fixed' | 'hourly'
+export type EbAssignmentCustomerType = 'business' | 'consumer'
 
 export type EbAssignmentDetails = {
   schema: 'eb-v1'
+  customerType: EbAssignmentCustomerType
   pricingModel: EbAssignmentPricingModel
   vatIncluded: boolean
   contractTerms: string
+  underlyingContract: string
   paymentTerms: string
   travelIncluded: boolean
   travelTerms: string

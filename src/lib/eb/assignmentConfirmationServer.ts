@@ -14,6 +14,7 @@ import {
 import {
   type EbAssignmentConfirmationForm,
   type EbAssignmentConfirmationSummary,
+  type EbAssignmentCustomerType,
   type EbAssignmentDetails,
   type EbAssignmentPricingModel,
 } from '@/lib/eb/assignmentConfirmationTypes'
@@ -88,6 +89,10 @@ function pricingModel(value: unknown): EbAssignmentPricingModel {
   return value === 'hourly' ? 'hourly' : 'fixed'
 }
 
+function customerType(value: unknown): EbAssignmentCustomerType {
+  return value === 'consumer' ? 'consumer' : 'business'
+}
+
 function normalizeDetails(
   value: Partial<EbAssignmentDetails> | Record<string, unknown> | null | undefined,
   defaults?: EbAssignmentDetails
@@ -95,9 +100,11 @@ function normalizeDetails(
   const source = value ?? {}
   const fallback = defaults ?? {
     schema: 'eb-v1' as const,
+    customerType: 'business' as const,
     pricingModel: 'fixed' as const,
     vatIncluded: false,
     contractTerms: 'ABK 09',
+    underlyingContract: '',
     paymentTerms: '10 dagar från fakturadatum',
     travelIncluded: true,
     travelTerms: '',
@@ -115,12 +122,16 @@ function normalizeDetails(
     invoiceCity: '',
   }
 
+  const resolvedCustomerType = customerType(source.customerType ?? fallback.customerType)
+
   return {
     schema: 'eb-v1',
+    customerType: resolvedCustomerType,
     pricingModel: pricingModel(source.pricingModel ?? fallback.pricingModel),
-    vatIncluded:
-      typeof source.vatIncluded === 'boolean' ? source.vatIncluded : fallback.vatIncluded,
-    contractTerms: text(source.contractTerms) || fallback.contractTerms,
+    vatIncluded: resolvedCustomerType === 'consumer',
+    contractTerms:
+      resolvedCustomerType === 'consumer' ? 'ABK 09 med konsumentanpassningar' : 'ABK 09',
+    underlyingContract: text(source.underlyingContract) || fallback.underlyingContract,
     paymentTerms: text(source.paymentTerms) || fallback.paymentTerms,
     travelIncluded:
       typeof source.travelIncluded === 'boolean'
@@ -151,6 +162,17 @@ function defaultBasis(project: EbProjectListItem) {
   ]
     .filter(Boolean)
     .join('\n')
+}
+
+function defaultUnderlyingContract(project: EbProjectListItem, type: EbAssignmentCustomerType) {
+  const value = text(project.standardAgreement)
+  const normalized = value.toLowerCase().replace(/\s+/g, '')
+  if (type === 'consumer') {
+    return normalized.includes('abs18') || normalized.includes('hantverkar') || normalized.includes('hf17')
+      ? value
+      : ''
+  }
+  return normalized.includes('ab04') || normalized.includes('abt06') ? value : ''
 }
 
 function defaultScope(project: EbProjectListItem, inspection: EbInspectionSummary) {
@@ -198,7 +220,12 @@ function buildDefaultForm(
     project.invoiceCity
   )
   const details = normalizeDetails({
+    customerType: project.clientOrgNo ? 'business' : 'consumer',
     vatIncluded: !project.clientOrgNo,
+    underlyingContract: defaultUnderlyingContract(
+      project,
+      project.clientOrgNo ? 'business' : 'consumer'
+    ),
     basisDocuments: defaultBasis(project),
     invoiceReference: project.invoiceReference ?? '',
     invoicePostalCode: project.invoicePostalCode ?? '',
@@ -377,7 +404,10 @@ async function createDraft(
     propertyOwnerName: input.propertyOwnerName,
     cadastralId: input.propertyDesignation,
     scopeDescription: input.scopeDescription,
-    ordererRole: 'Entreprenadbesiktning',
+    ordererRole:
+      details.customerType === 'consumer'
+        ? 'Entreprenadbesiktning - Konsument'
+        : 'Entreprenadbesiktning - Företag',
     preferredDate: input.preferredDate,
     preferredTime: input.preferredTime,
     priceAmount: input.priceAmount,
@@ -434,6 +464,10 @@ export async function saveEbAssignmentConfirmation(input: SaveEbAssignmentConfir
         property_municipality: input.propertyMunicipality,
         property_owner_name: input.propertyOwnerName,
         cadastral_id: input.propertyDesignation,
+        orderer_role:
+          customerType(input.details.customerType) === 'consumer'
+            ? 'Entreprenadbesiktning - Konsument'
+            : 'Entreprenadbesiktning - Företag',
         scope_description: input.scopeDescription,
         preferred_date: input.preferredDate,
         preferred_time: input.preferredTime,
@@ -463,6 +497,7 @@ export async function sendEbAssignmentConfirmation(input: SaveEbAssignmentConfir
   if (!form.preferredDate || !form.preferredTime) throw new Error('INSPECTION_SCHEDULE_REQUIRED')
   if (!form.scopeDescription) throw new Error('SCOPE_REQUIRED')
   if (form.priceAmount === null) throw new Error('PRICE_REQUIRED')
+  if (!form.details.underlyingContract) throw new Error('UNDERLYING_CONTRACT_REQUIRED')
 
   const assignment = await getAssignmentById(input.orgId, form.assignmentId)
   if (!assignment) throw new Error('EB_ASSIGNMENT_NOT_FOUND')

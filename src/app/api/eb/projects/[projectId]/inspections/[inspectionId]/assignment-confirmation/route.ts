@@ -101,6 +101,9 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'INSPECTION_SCHEDULE_REQUIRED') return jsonError('Ange datum och tid för besiktningen.', 400)
   if (message === 'SCOPE_REQUIRED') return jsonError('Beskriv uppdragets omfattning.', 400)
   if (message === 'PRICE_REQUIRED') return jsonError('Ange pris eller timpris.', 400)
+  if (message === 'UNDERLYING_CONTRACT_REQUIRED') {
+    return jsonError('Välj vilket standardavtal som gäller för entreprenaden.', 400)
+  }
   if (error instanceof AssignmentEmailSendError) {
     return jsonError('Uppdragsbekräftelsen sparades men mejlet kunde inte skickas.', 502, {
       acceptUrl: error.acceptUrl,
