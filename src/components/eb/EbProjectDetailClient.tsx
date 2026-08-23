@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import {
+  AlertTriangle,
   ArrowLeft,
   CalendarDays,
   ClipboardCheck,
@@ -222,6 +223,31 @@ function getStatusLabel(status: string | null) {
   if (normalized === 'completed') return 'Klar'
   if (normalized === 'archived') return 'Arkiverad'
   return status ?? 'Pågående'
+}
+
+function inspectionScheduleHasPassed(
+  inspectionDate: string | null,
+  inspectionTime: string | null,
+  now = new Date()
+) {
+  const date = inspectionDate?.slice(0, 10) ?? ''
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false
+
+  const today = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-')
+
+  if (date < today) return true
+  if (date > today) return false
+
+  const time = inspectionTime?.slice(0, 5) ?? ''
+  if (!/^\d{2}:\d{2}$/.test(time)) return false
+
+  const [hours, minutes] = time.split(':').map(Number)
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return false
+  return hours * 60 + minutes < now.getHours() * 60 + now.getMinutes()
 }
 
 function getPdfStatusLabel(inspection: EbInspectionSummary) {
@@ -1736,6 +1762,7 @@ function InvitationDialog({
   inspection,
   assignmentConfirmation,
   onClose,
+  onEditSchedule,
   onSent,
 }: {
   open: boolean
@@ -1743,12 +1770,14 @@ function InvitationDialog({
   inspection: EbInspectionSummary | null
   assignmentConfirmation: EbAssignmentConfirmationSummary | null
   onClose: () => void
+  onEditSchedule: () => void
   onSent: (project: EbProjectListItem) => void
 }) {
   const { showError } = useEbToast()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
+  const [pastScheduleWarningOpen, setPastScheduleWarningOpen] = useState(false)
   const invitationOperationRef = useRef(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [subject, setSubject] = useState('')
@@ -1759,6 +1788,7 @@ function InvitationDialog({
     if (!open || !inspection) return
 
     let cancelled = false
+    setPastScheduleWarningOpen(false)
 
     const loadInvitation = async () => {
       try {
@@ -1821,7 +1851,7 @@ function InvitationDialog({
   }
 
   const handleSave = async () => {
-    if (invitationOperationRef.current) return
+    if (invitationOperationRef.current) return false
 
     try {
       invitationOperationRef.current = true
@@ -1849,16 +1879,33 @@ function InvitationDialog({
       setBody(payload.body ?? body)
       setParticipants((payload.participants ?? []).map(toLocalParticipant))
       setStatusMessage('Kallelsen och deltagarna är sparade.')
+      return true
     } catch (saveError) {
       showError(saveError, 'Kunde inte spara kallelse och deltagare.')
+      return false
     } finally {
       invitationOperationRef.current = false
       setSaving(false)
     }
   }
 
-  const handleSend = async () => {
+  const handleEditSchedule = async () => {
+    const saved = await handleSave()
+    if (saved) onEditSchedule()
+  }
+
+  const handleSend = async (allowPastSchedule = false) => {
     if (invitationOperationRef.current) return
+
+    if (
+      !allowPastSchedule &&
+      inspectionScheduleHasPassed(inspection.date, inspection.inspectionTime)
+    ) {
+      setPastScheduleWarningOpen(true)
+      return
+    }
+
+    setPastScheduleWarningOpen(false)
 
     const hasAcceptedAssignment = Boolean(assignmentConfirmation?.acceptedAt)
     if (
@@ -1971,34 +2018,77 @@ function InvitationDialog({
             </p>
           ) : null}
 
-          <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={loading || saving || sending}
-              className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          {pastScheduleWarningOpen ? (
+            <section
+              className="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-4"
+              role="alert"
+              aria-live="assertive"
             >
-              Avbryt
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleSave()}
-              disabled={loading || saving || sending}
-              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {saving ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={16} />}
-              {saving ? 'Sparar...' : 'Spara'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleSend()}
-              disabled={loading || saving || sending}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-            >
-              {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-              {sending ? 'Skickar...' : 'Skicka kallelse'}
-            </button>
-          </div>
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 shrink-0 text-amber-700" size={21} />
+                <div>
+                  <h3 className="font-semibold text-amber-950">Besiktningstiden har passerat</h3>
+                  <p className="mt-1 text-sm leading-6 text-amber-900">
+                    Du är på väg att skicka en kallelse till en besiktning som är angiven till{' '}
+                    <strong>
+                      {formatDate(inspection.date)}
+                      {inspection.inspectionTime ? ` kl. ${formatTime(inspection.inspectionTime)}` : ''}
+                    </strong>
+                    . Kontrollera datum och tid innan du fortsätter.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => void handleEditSchedule()}
+                  disabled={saving}
+                  className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-400 bg-white px-4 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
+                >
+                  {saving ? <Loader2 size={16} className="animate-spin" /> : <CalendarDays size={16} />}
+                  {saving ? 'Sparar kallelsen...' : 'Ändra datum och tid'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSend(true)}
+                  disabled={saving}
+                  className="inline-flex items-center justify-center gap-2 rounded-md bg-amber-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-800"
+                >
+                  <Send size={16} />
+                  Skicka ändå
+                </button>
+              </div>
+            </section>
+          ) : (
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={loading || saving || sending}
+                className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Avbryt
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={loading || saving || sending}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={16} />}
+                {saving ? 'Sparar...' : 'Spara'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSend()}
+                disabled={loading || saving || sending}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+              >
+                {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                {sending ? 'Skickar...' : 'Skicka kallelse'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -2613,6 +2703,11 @@ export default function EbProjectDetailClient({
               : null
           }
           onClose={() => setInvitationInspection(null)}
+          onEditSchedule={() => {
+            const inspectionToEdit = invitationInspection
+            setInvitationInspection(null)
+            setDetailsInspection(inspectionToEdit)
+          }}
           onSent={handleCreated}
         />
         <EbAssignmentConfirmationDialog
