@@ -118,6 +118,16 @@ export async function PATCH(
       defectNoErrorPartsPolicy: (toText(body.defectNoErrorPartsPolicy) || null) as
         | EbDefectNoErrorPartsPolicy
         | null,
+      invoiceRecipientMatchesClient: body.invoiceRecipientMatchesClient !== false,
+      invoiceName: toText(body.invoiceName) || null,
+      invoiceOrgNo: toText(body.invoiceOrgNo) || null,
+      invoiceReference: toText(body.invoiceReference) || null,
+      invoiceEmailMatchesClient: body.invoiceEmailMatchesClient !== false,
+      invoiceEmail: toText(body.invoiceEmail) || null,
+      invoiceAddressMatchesClient: body.invoiceAddressMatchesClient !== false,
+      invoiceAddress: toText(body.invoiceAddress) || null,
+      invoicePostalCode: toText(body.invoicePostalCode) || null,
+      invoiceCity: toText(body.invoiceCity) || null,
     })
 
     return NextResponse.json({ project })

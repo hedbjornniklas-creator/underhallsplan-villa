@@ -148,9 +148,26 @@ type InspectionDetailsFormState = {
   previousInspections: EbPreviousInspectionItem[]
   defectNumberingExplanation: string
   defectNoErrorPartsPolicy: string
+  invoiceRecipientMatchesClient: boolean
+  invoiceName: string
+  invoiceOrgNo: string
+  invoiceReference: string
+  invoiceEmailMatchesClient: boolean
+  invoiceEmail: string
+  invoiceAddressMatchesClient: boolean
+  invoiceAddress: string
+  invoicePostalCode: string
+  invoiceCity: string
 }
 
-type InspectionDetailsTabKey = 'time' | 'previous' | 'documents' | 'defect_explanations' | 'report' | 'participants'
+type InspectionDetailsTabKey =
+  | 'time'
+  | 'previous'
+  | 'documents'
+  | 'defect_explanations'
+  | 'report'
+  | 'participants'
+  | 'billing'
 
 const INSPECTION_DETAILS_TABS: Array<{
   key: InspectionDetailsTabKey
@@ -163,6 +180,7 @@ const INSPECTION_DETAILS_TABS: Array<{
   { key: 'defect_explanations', label: 'Förklaringar', icon: FileText },
   { key: 'report', label: 'Utlåtande', icon: Pencil },
   { key: 'participants', label: 'Närvarande', icon: UserPlus },
+  { key: 'billing', label: 'Fakturering', icon: FileCheck2 },
 ]
 
 const VARIANT_OPTIONS: Array<{ value: EbInspectionVariant; label: string }> = [
@@ -798,6 +816,16 @@ function buildInspectionDetailsForm(inspection: EbInspectionSummary): Inspection
     defectNumberingExplanation:
       inspection.defectNumberingExplanation ?? DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION,
     defectNoErrorPartsPolicy: inspection.defectNoErrorPartsPolicy ?? 'not_listed',
+    invoiceRecipientMatchesClient: inspection.invoiceRecipientMatchesClient,
+    invoiceName: inspection.invoiceName ?? '',
+    invoiceOrgNo: inspection.invoiceOrgNo ?? '',
+    invoiceReference: inspection.invoiceReference ?? '',
+    invoiceEmailMatchesClient: inspection.invoiceEmailMatchesClient,
+    invoiceEmail: inspection.invoiceEmail ?? '',
+    invoiceAddressMatchesClient: inspection.invoiceAddressMatchesClient,
+    invoiceAddress: inspection.invoiceAddress ?? '',
+    invoicePostalCode: inspection.invoicePostalCode ?? '',
+    invoiceCity: inspection.invoiceCity ?? '',
   }
 }
 
@@ -1001,6 +1029,13 @@ function InspectionDetailsDialog({
   onUpdated: (project: EbProjectListItem) => void
 }) {
   const { showError } = useEbToast()
+  const partyVocabulary = resolveEbAgreementVocabulary(project.standardAgreement)
+  const clientAddressLine = [
+    project.clientAddress,
+    [project.clientPostalCode, project.clientCity].filter(Boolean).join(' '),
+  ]
+    .filter(Boolean)
+    .join(', ')
   const [form, setForm] = useState<InspectionDetailsFormState | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [participantsLoading, setParticipantsLoading] = useState(false)
@@ -1630,6 +1665,142 @@ function InspectionDetailsDialog({
                 )}
               </div>
             ) : null}
+
+            {activeTab === 'billing' ? (
+              <section
+                id="inspection-details-billing"
+                role="tabpanel"
+                aria-labelledby="inspection-details-tab-billing"
+                className="space-y-5"
+              >
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-950">Fakturering för besiktningen</h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Uppgifterna gäller endast {inspectionTitle(inspection)} och används som förval i
+                    besiktningens uppdragsbekräftelse.
+                  </p>
+                </div>
+
+                <div className="space-y-3 rounded-lg border border-emerald-100 bg-emerald-50/40 p-4">
+                  <label className="flex items-start gap-2 text-sm font-medium text-gray-800">
+                    <input
+                      type="checkbox"
+                      checked={form.invoiceRecipientMatchesClient}
+                      onChange={(event) =>
+                        updateField('invoiceRecipientMatchesClient', event.target.checked)
+                      }
+                      className="mt-0.5 h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                    />
+                    Fakturamottagaren är samma som {partyVocabulary.clientShortLabel.toLowerCase()}
+                  </label>
+                  {form.invoiceRecipientMatchesClient ? (
+                    <p className="text-sm text-gray-700">
+                      <strong>{project.clientName || 'Beställare ej satt'}</strong>
+                      {project.clientOrgNo ? ` · ${project.clientOrgNo}` : ''}
+                    </p>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {fieldLabel(
+                        'Fakturamottagare',
+                        <input
+                          value={form.invoiceName}
+                          onChange={(event) => updateField('invoiceName', event.target.value)}
+                          className={inputClassName()}
+                        />
+                      )}
+                      {fieldLabel(
+                        'Org.nr/personnummer',
+                        <input
+                          value={form.invoiceOrgNo}
+                          onChange={(event) => updateField('invoiceOrgNo', event.target.value)}
+                          className={inputClassName()}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+                  <label className="flex items-start gap-2 text-sm font-medium text-gray-800">
+                    <input
+                      type="checkbox"
+                      checked={form.invoiceEmailMatchesClient}
+                      onChange={(event) => updateField('invoiceEmailMatchesClient', event.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                    />
+                    Faktura-e-post är samma som beställarens e-post
+                  </label>
+                  {form.invoiceEmailMatchesClient ? (
+                    <p className="text-sm text-gray-700">{project.clientEmail || 'E-post ej satt'}</p>
+                  ) : (
+                    fieldLabel(
+                      'Faktura-e-post',
+                      <input
+                        type="email"
+                        value={form.invoiceEmail}
+                        onChange={(event) => updateField('invoiceEmail', event.target.value)}
+                        className={inputClassName()}
+                      />
+                    )
+                  )}
+                </div>
+
+                <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+                  <label className="flex items-start gap-2 text-sm font-medium text-gray-800">
+                    <input
+                      type="checkbox"
+                      checked={form.invoiceAddressMatchesClient}
+                      onChange={(event) =>
+                        updateField('invoiceAddressMatchesClient', event.target.checked)
+                      }
+                      className="mt-0.5 h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                    />
+                    Fakturaadressen är samma som beställarens adress
+                  </label>
+                  {form.invoiceAddressMatchesClient ? (
+                    <p className="text-sm text-gray-700">{clientAddressLine || 'Adress ej satt'}</p>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="sm:col-span-2">
+                        {fieldLabel(
+                          'Fakturaadress',
+                          <input
+                            value={form.invoiceAddress}
+                            onChange={(event) => updateField('invoiceAddress', event.target.value)}
+                            className={inputClassName()}
+                          />
+                        )}
+                      </div>
+                      {fieldLabel(
+                        'Postnummer',
+                        <input
+                          value={form.invoicePostalCode}
+                          onChange={(event) => updateField('invoicePostalCode', event.target.value)}
+                          className={inputClassName()}
+                        />
+                      )}
+                      {fieldLabel(
+                        'Ort',
+                        <input
+                          value={form.invoiceCity}
+                          onChange={(event) => updateField('invoiceCity', event.target.value)}
+                          className={inputClassName()}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {fieldLabel(
+                  'Referens/märkning',
+                  <input
+                    value={form.invoiceReference}
+                    onChange={(event) => updateField('invoiceReference', event.target.value)}
+                    className={inputClassName()}
+                  />
+                )}
+              </section>
+            ) : null}
           </div>
 
           <div className="mt-5 flex flex-col-reverse gap-2 border-t border-emerald-100 pt-4 sm:flex-row sm:justify-end">
@@ -2171,13 +2342,8 @@ export default function EbProjectDetailClient({
   const contractorAddressLine = [currentProject.contractorAddress, [currentProject.contractorPostalCode, currentProject.contractorCity].filter(Boolean).join(' ')]
     .filter(Boolean)
     .join(', ')
-  const invoiceAddressLine = [currentProject.invoiceAddress, [currentProject.invoicePostalCode, currentProject.invoiceCity].filter(Boolean).join(' ')]
-    .filter(Boolean)
-    .join(', ')
   const backNavigationKey = 'eb'
-  const remediationNavigationKey = `remediation:${currentProject.id}`
   const isBackNavigating = pendingNavigationKey === backNavigationKey
-  const isRemediationNavigating = pendingNavigationKey === remediationNavigationKey
   const navigationInProgress = Boolean(pendingNavigationKey)
 
   const handleCreated = (updatedProject: EbProjectListItem) => {
@@ -2338,16 +2504,6 @@ export default function EbProjectDetailClient({
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Link
-                  href={`/eb/projects/${currentProject.id}/remediation`}
-                  onClick={(event) => handleInspectionNavigation(event, remediationNavigationKey)}
-                  aria-disabled={navigationInProgress}
-                  aria-busy={isRemediationNavigating}
-                  className={inspectionNavigationClassName(false, navigationInProgress)}
-                >
-                  {isRemediationNavigating ? <Loader2 size={16} className="animate-spin" /> : <ListChecks size={16} />}
-                  Åtgärdsportal
-                </Link>
                 <button
                   type="button"
                   onClick={() => setEditDialogOpen(true)}
@@ -2367,7 +2523,56 @@ export default function EbProjectDetailClient({
               </div>
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="mt-5 grid gap-4 border-t border-emerald-100 pt-4 sm:grid-cols-2 xl:grid-cols-4">
+              <dl>
+                <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                  {partyVocabulary.clientShortLabel}
+                </dt>
+                <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.clientName ?? 'Ej satt'}</dd>
+                {currentProject.clientOrgNo ? <dd className="text-xs text-gray-600">{currentProject.clientOrgNo}</dd> : null}
+                {clientAddressLine ? <dd className="text-xs text-gray-600">{clientAddressLine}</dd> : null}
+                {currentProject.clientEmail ? <dd className="text-xs text-gray-600">{currentProject.clientEmail}</dd> : null}
+                {currentProject.clientPhone ? <dd className="text-xs text-gray-600">{currentProject.clientPhone}</dd> : null}
+                {!currentProject.clientIsPropertyOwner ? (
+                  <dd className="mt-1 text-xs text-gray-600">Fastighetsägare: {currentProject.propertyOwnerName ?? 'Ej satt'}</dd>
+                ) : null}
+              </dl>
+              <dl>
+                <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                  {partyVocabulary.contractorShortLabel}
+                </dt>
+                <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.contractorName ?? 'Ej satt'}</dd>
+                {currentProject.contractorOrgNo ? <dd className="text-xs text-gray-600">{currentProject.contractorOrgNo}</dd> : null}
+                {contractorAddressLine ? <dd className="text-xs text-gray-600">{contractorAddressLine}</dd> : null}
+                {currentProject.contractorEmail ? <dd className="text-xs text-gray-600">{currentProject.contractorEmail}</dd> : null}
+                {currentProject.contractorPhone ? <dd className="text-xs text-gray-600">{currentProject.contractorPhone}</dd> : null}
+              </dl>
+              <dl>
+                <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Kontrakt</dt>
+                <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.contractName ?? currentProject.title}</dd>
+                <dd className="text-xs text-gray-600">{agreementLine || 'Avtal ej satt'}</dd>
+                <dd className="text-xs text-gray-600">
+                  {currentProject.procurementForm ? `Upphandling: ${currentProject.procurementForm}` : 'Upphandling ej satt'}
+                </dd>
+              </dl>
+              <dl>
+                <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Objekt</dt>
+                <dd className="mt-1 text-sm font-semibold text-gray-950">{objectIdentifier || addressLine || 'Ej satt'}</dd>
+                {propertyLine && currentProject.brfApartmentNumber ? (
+                  <dd className="text-xs text-gray-600">{currentProject.brfApartmentNumber}</dd>
+                ) : null}
+                <dd className="text-xs text-gray-600">{addressLine || 'Adress ej satt'}</dd>
+              </dl>
+            </div>
+
+            {currentProject.objectDescription ? (
+              <div className="mt-4 border-t border-emerald-100 pt-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Beskrivning av entreprenaden</p>
+                <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-gray-700">{currentProject.objectDescription}</p>
+              </div>
+            ) : null}
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-md border border-emerald-100 bg-emerald-50/45 px-3 py-2">
                 <p className="text-xs font-medium text-gray-500">Besiktningar</p>
                 <p className="mt-1 text-lg font-semibold text-gray-950">{currentProject.inspections.length} st</p>
@@ -2376,14 +2581,10 @@ export default function EbProjectDetailClient({
                 <p className="text-xs font-medium text-gray-500">Noteringsserie</p>
                 <p className="mt-1 text-lg font-semibold text-gray-950">{currentProject.notePrefix}</p>
               </div>
-              <div className="rounded-md border border-emerald-100 bg-white px-3 py-2">
-                <p className="text-xs font-medium text-gray-500">Avtal</p>
-                <p className="mt-1 truncate text-sm font-semibold text-gray-950">{agreementLine || 'Ej satt'}</p>
-              </div>
             </div>
           </header>
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="mt-4">
             <section className="min-w-0 rounded-lg border border-emerald-100 bg-white/90 shadow-sm">
               <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
                 <div>
@@ -2408,13 +2609,21 @@ export default function EbProjectDetailClient({
                     const roundNavigationKey = `${inspection.inspectionId}:round`
                     const reviewNavigationKey = `${inspection.inspectionId}:perform`
                     const reportNavigationKey = `${inspection.inspectionId}:report`
+                    const remediationNavigationKey = `${inspection.inspectionId}:remediation`
                     const isRoundNavigating = pendingNavigationKey === roundNavigationKey
                     const isReviewNavigating = pendingNavigationKey === reviewNavigationKey
                     const isReportNavigating = pendingNavigationKey === reportNavigationKey
+                    const isRemediationNavigating = pendingNavigationKey === remediationNavigationKey
                     const navigationInProgress = Boolean(pendingNavigationKey)
                     const assignmentConfirmation =
                       assignmentConfirmationByInspection[inspection.inspectionId] ?? null
                     const assignmentAccepted = Boolean(assignmentConfirmation?.acceptedAt)
+                    const inspectionInvoiceAddressLine = [
+                      inspection.invoiceAddress,
+                      [inspection.invoicePostalCode, inspection.invoiceCity].filter(Boolean).join(' '),
+                    ]
+                      .filter(Boolean)
+                      .join(', ')
 
                     return (
                       <article key={inspection.inspectionId} className="p-4">
@@ -2479,6 +2688,13 @@ export default function EbProjectDetailClient({
                                   Kallelse: {inspection.invitationSentAt ? formatDate(inspection.invitationSentAt) : 'Ej skickad'}
                                 </span>
                               </div>
+                              <div className="mt-2 rounded-md border border-gray-100 bg-gray-50/70 px-2.5 py-2 text-xs text-gray-600">
+                                <span className="font-semibold text-gray-800">Fakturering:</span>{' '}
+                                {inspection.invoiceName || 'Mottagare ej satt'}
+                                {inspection.invoiceReference ? ` · Ref. ${inspection.invoiceReference}` : ''}
+                                {inspection.invoiceEmail ? ` · ${inspection.invoiceEmail}` : ''}
+                                {inspectionInvoiceAddressLine ? ` · ${inspectionInvoiceAddressLine}` : ''}
+                              </div>
                               {inspection.reportPdfStatus === 'failed' ? (
                                 <p className="mt-2 text-xs font-medium text-rose-700">
                                   Den sparade PDF-filen kunde inte skapas.
@@ -2517,6 +2733,25 @@ export default function EbProjectDetailClient({
                             >
                               {isReportNavigating ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
                               {isReportNavigating ? 'Öppnar utlåtande...' : 'Utlåtande'}
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => setDetailsInspection(inspection)}
+                              disabled={navigationInProgress}
+                              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <Pencil size={16} />
+                              Besiktningsuppgifter
+                            </button>
+                            <Link
+                              href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/remediation`}
+                              onClick={(event) => handleInspectionNavigation(event, remediationNavigationKey)}
+                              aria-disabled={navigationInProgress}
+                              aria-busy={isRemediationNavigating}
+                              className={inspectionNavigationClassName(false, navigationInProgress)}
+                            >
+                              {isRemediationNavigating ? <Loader2 size={16} className="animate-spin" /> : <ListChecks size={16} />}
+                              {isRemediationNavigating ? 'Öppnar portal...' : 'Åtgärdsportal'}
                             </Link>
                             <button
                               type="button"
@@ -2592,81 +2827,6 @@ export default function EbProjectDetailClient({
                 </div>
               )}
             </section>
-
-            <aside className="space-y-4">
-              <section className="rounded-lg border border-emerald-100 bg-white/90 p-4 shadow-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-base font-semibold text-gray-950">Projektfakta</h2>
-                  <button
-                    type="button"
-                    onClick={() => setEditDialogOpen(true)}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-50"
-                  >
-                    <Pencil size={14} />
-                    Redigera entreprenad
-                  </button>
-                </div>
-                <dl className="mt-4 space-y-4">
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
-                      {partyVocabulary.clientShortLabel}
-                    </dt>
-                    <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.clientName ?? 'Ej satt'}</dd>
-                    {currentProject.clientOrgNo ? <dd className="text-xs text-gray-600">{currentProject.clientOrgNo}</dd> : null}
-                    {clientAddressLine ? <dd className="text-xs text-gray-600">{clientAddressLine}</dd> : null}
-                    {currentProject.clientEmail ? <dd className="text-xs text-gray-600">{currentProject.clientEmail}</dd> : null}
-                    {currentProject.clientPhone ? <dd className="text-xs text-gray-600">{currentProject.clientPhone}</dd> : null}
-                    {!currentProject.clientIsPropertyOwner ? (
-                      <dd className="mt-1 text-xs text-gray-600">Fastighetsägare: {currentProject.propertyOwnerName ?? 'Ej satt'}</dd>
-                    ) : null}
-                  </div>
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
-                      {partyVocabulary.contractorShortLabel}
-                    </dt>
-                    <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.contractorName ?? 'Ej satt'}</dd>
-                    {currentProject.contractorOrgNo ? <dd className="text-xs text-gray-600">{currentProject.contractorOrgNo}</dd> : null}
-                    {contractorAddressLine ? <dd className="text-xs text-gray-600">{contractorAddressLine}</dd> : null}
-                    {currentProject.contractorEmail ? <dd className="text-xs text-gray-600">{currentProject.contractorEmail}</dd> : null}
-                    {currentProject.contractorPhone ? <dd className="text-xs text-gray-600">{currentProject.contractorPhone}</dd> : null}
-                  </div>
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Kontrakt</dt>
-                    <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.contractName ?? currentProject.title}</dd>
-                    <dd className="text-xs text-gray-600">
-                      {currentProject.procurementForm ? `Upphandling: ${currentProject.procurementForm}` : 'Upphandling ej satt'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Objekt</dt>
-                    <dd className="mt-1 text-sm font-semibold text-gray-950">
-                      {objectIdentifier || addressLine || 'Ej satt'}
-                    </dd>
-                    {propertyLine && currentProject.brfApartmentNumber ? (
-                      <dd className="text-xs text-gray-600">{currentProject.brfApartmentNumber}</dd>
-                    ) : null}
-                    <dd className="text-xs text-gray-600">{addressLine || 'Adress ej satt'}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Fakturering av besiktningar</dt>
-                    <dd className="mt-1 text-sm font-semibold text-gray-950">{currentProject.invoiceName ?? 'Ej satt'}</dd>
-                    {currentProject.invoiceOrgNo ? <dd className="text-xs text-gray-600">{currentProject.invoiceOrgNo}</dd> : null}
-                    {currentProject.invoiceReference ? <dd className="text-xs text-gray-600">Referens: {currentProject.invoiceReference}</dd> : null}
-                    {currentProject.invoiceEmail ? <dd className="text-xs text-gray-600">{currentProject.invoiceEmail}</dd> : null}
-                    {invoiceAddressLine ? <dd className="text-xs text-gray-600">{invoiceAddressLine}</dd> : null}
-                  </div>
-                </dl>
-              </section>
-
-              {currentProject.objectDescription ? (
-                <section className="rounded-lg border border-emerald-100 bg-white/90 p-4 shadow-sm">
-                  <h2 className="text-base font-semibold text-gray-950">Beskrivning av entreprenaden</h2>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-700">
-                    {currentProject.objectDescription}
-                  </p>
-                </section>
-              ) : null}
-            </aside>
           </div>
 
           <section className="mt-4 rounded-lg border border-emerald-100 bg-white/90 p-4 shadow-sm">

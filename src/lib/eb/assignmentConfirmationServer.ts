@@ -215,9 +215,9 @@ function buildDefaultForm(
   inspection: EbInspectionSummary
 ): EbAssignmentConfirmationForm {
   const invoiceAddress = joinAddress(
-    project.invoiceAddress,
-    project.invoicePostalCode,
-    project.invoiceCity
+    inspection.invoiceAddress,
+    inspection.invoicePostalCode,
+    inspection.invoiceCity
   )
   const details = normalizeDetails({
     customerType: project.clientOrgNo ? 'business' : 'consumer',
@@ -227,9 +227,9 @@ function buildDefaultForm(
       project.clientOrgNo ? 'business' : 'consumer'
     ),
     basisDocuments: defaultBasis(project),
-    invoiceReference: project.invoiceReference ?? '',
-    invoicePostalCode: project.invoicePostalCode ?? '',
-    invoiceCity: project.invoiceCity ?? '',
+    invoiceReference: inspection.invoiceReference ?? '',
+    invoicePostalCode: inspection.invoicePostalCode ?? '',
+    invoiceCity: inspection.invoiceCity ?? '',
   })
 
   return {
@@ -255,9 +255,9 @@ function buildDefaultForm(
     preferredTime: inspection.inspectionTime?.slice(0, 5) ?? '',
     priceAmount: null,
     currency: 'SEK',
-    invoiceName: project.invoiceName ?? project.clientName ?? '',
-    invoiceOrgNo: project.invoiceOrgNo ?? project.clientOrgNo ?? '',
-    invoiceEmail: project.invoiceEmail ?? project.clientEmail ?? '',
+    invoiceName: inspection.invoiceName ?? project.clientName ?? '',
+    invoiceOrgNo: inspection.invoiceOrgNo ?? project.clientOrgNo ?? '',
+    invoiceEmail: inspection.invoiceEmail ?? project.clientEmail ?? '',
     invoiceAddress,
     details,
   }

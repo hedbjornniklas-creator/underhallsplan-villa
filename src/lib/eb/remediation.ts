@@ -87,6 +87,7 @@ export type EbRemediationImage = {
 
 export type EbRemediationAccessLink = {
   id: string
+  inspectionId: string | null
   assigneeId: string | null
   role: EbRemediationAccessRole
   displayName: string | null
@@ -108,6 +109,13 @@ export type EbRemediationWorkspace = {
     contractorName: string | null
     contractorEmail: string | null
   }
+  inspection: {
+    id: string
+    variant: string
+    variantLabel: string
+    sequenceNo: number
+    date: string | null
+  } | null
   access: {
     id: string | null
     role: EbRemediationAccessRole | 'internal'
@@ -134,6 +142,7 @@ type RemediationAccessRow = {
   id: string
   org_id: string
   eb_project_id: string
+  inspection_id: string | null
   remediation_assignee_id: string | null
   role: EbRemediationAccessRole
   display_name: string | null
@@ -267,6 +276,7 @@ function mapTask(row: RemediationTaskRow): EbRemediationTask {
 function mapAccessLink(row: RemediationAccessRow): EbRemediationAccessLink {
   return {
     id: row.id,
+    inspectionId: row.inspection_id ?? null,
     assigneeId: row.remediation_assignee_id ?? null,
     role: row.role,
     displayName: row.display_name ?? null,
@@ -473,12 +483,27 @@ async function syncRemediationTasks(project: EbProjectListItem) {
 
 async function loadWorkspace(input: {
   project: EbProjectListItem
+  inspectionId?: string | null
   access?: RemediationAccessRow | null
   state?: 'open' | 'expired' | 'revoked'
 }): Promise<EbRemediationWorkspace> {
   const { project } = input
   const access = input.access ?? null
   const state = input.state ?? 'open'
+  const inspectionId = access?.inspection_id ?? normalizeText(input.inspectionId)
+  const inspection = inspectionId
+    ? project.inspections.find((item) => item.inspectionId === inspectionId) ?? null
+    : null
+  if (inspectionId && !inspection) throw new Error('EB_INSPECTION_NOT_FOUND')
+  const inspectionSummary = inspection
+    ? {
+        id: inspection.inspectionId,
+        variant: inspection.variant,
+        variantLabel: inspection.variantLabel,
+        sequenceNo: inspection.sequenceNo,
+        date: inspection.date,
+      }
+    : null
   if (access && state !== 'open') {
     return {
       state,
@@ -490,6 +515,7 @@ async function loadWorkspace(input: {
         contractorName: project.contractorName,
         contractorEmail: project.contractorEmail,
       },
+      inspection: inspectionSummary,
       access: {
         id: access.id,
         role: access.role,
@@ -508,6 +534,27 @@ async function loadWorkspace(input: {
   if (!access || state === 'open') await syncRemediationTasks(project)
 
   const admin = createSupabaseAdminClient()
+  let tasksQuery = admin
+    .from('eb_remediation_tasks')
+    .select(
+      'id,inspection_id,eb_note_id,remediation_assignee_id,assignment_managed_by,status,due_date,included,note_snapshot,reported_remedied_at,created_at,updated_at'
+    )
+    .eq('org_id', project.orgId)
+    .eq('eb_project_id', project.id)
+    .eq('included', true)
+    .order('created_at', { ascending: true })
+  let linksQuery = admin
+    .from('eb_remediation_access_links')
+    .select(
+      'id,org_id,eb_project_id,inspection_id,remediation_assignee_id,role,display_name,email,expires_at,revoked_at,last_used_at,sent_at,created_at'
+    )
+    .eq('org_id', project.orgId)
+    .eq('eb_project_id', project.id)
+    .order('created_at', { ascending: false })
+  if (inspectionId) {
+    tasksQuery = tasksQuery.eq('inspection_id', inspectionId)
+    linksQuery = linksQuery.eq('inspection_id', inspectionId)
+  }
   const [assigneesResult, tasksResult, linksResult] = await Promise.all([
     admin
       .from('eb_remediation_assignees')
@@ -516,23 +563,8 @@ async function loadWorkspace(input: {
       .eq('eb_project_id', project.id)
       .order('is_active', { ascending: false })
       .order('name', { ascending: true }),
-    admin
-      .from('eb_remediation_tasks')
-      .select(
-        'id,inspection_id,eb_note_id,remediation_assignee_id,assignment_managed_by,status,due_date,included,note_snapshot,reported_remedied_at,created_at,updated_at'
-      )
-      .eq('org_id', project.orgId)
-      .eq('eb_project_id', project.id)
-      .eq('included', true)
-      .order('created_at', { ascending: true }),
-    admin
-      .from('eb_remediation_access_links')
-      .select(
-        'id,org_id,eb_project_id,remediation_assignee_id,role,display_name,email,expires_at,revoked_at,last_used_at,sent_at,created_at'
-      )
-      .eq('org_id', project.orgId)
-      .eq('eb_project_id', project.id)
-      .order('created_at', { ascending: false }),
+    tasksQuery,
+    linksQuery,
   ])
 
   if (assigneesResult.error) {
@@ -654,6 +686,7 @@ async function loadWorkspace(input: {
       contractorName: project.contractorName,
       contractorEmail: project.contractorEmail,
     },
+    inspection: inspectionSummary,
     access: {
       id: access?.id ?? null,
       role: access?.role ?? 'internal',
@@ -695,9 +728,10 @@ async function loadWorkspace(input: {
 export async function getEbRemediationWorkspace(input: {
   orgId: string
   projectId: string
+  inspectionId?: string | null
 }): Promise<EbRemediationWorkspace> {
   const project = await requireProject(input.orgId, input.projectId)
-  return loadWorkspace({ project })
+  return loadWorkspace({ project, inspectionId: input.inspectionId })
 }
 
 async function resolveAccessToken(token: string) {
@@ -706,7 +740,7 @@ async function resolveAccessToken(token: string) {
   const { data, error } = await admin
     .from('eb_remediation_access_links')
     .select(
-      'id,org_id,eb_project_id,remediation_assignee_id,role,display_name,email,expires_at,revoked_at,last_used_at,sent_at,created_at'
+      'id,org_id,eb_project_id,inspection_id,remediation_assignee_id,role,display_name,email,expires_at,revoked_at,last_used_at,sent_at,created_at'
     )
     .eq('token_hash', hashAssignmentToken(token))
     .maybeSingle()
@@ -733,7 +767,7 @@ export async function getEbRemediationWorkspaceByToken(
     await admin.from('eb_remediation_access_links').update({ last_used_at: usedAt }).eq('id', access.id)
     access.last_used_at = usedAt
   }
-  return loadWorkspace({ project, access, state })
+  return loadWorkspace({ project, access, state, inspectionId: access.inspection_id })
 }
 
 export async function createEbRemediationAssignee(input: {
@@ -884,6 +918,7 @@ async function requireTask(input: { orgId: string; projectId: string; taskId: st
 export async function assignEbRemediationTasks(input: {
   orgId: string
   projectId: string
+  inspectionId?: string | null
   taskIds: string[]
   assigneeId: string | null
   dueDate?: string | null
@@ -905,12 +940,14 @@ export async function assignEbRemediationTasks(input: {
     if (error || !assignee) throw new Error('EB_REMEDIATION_ASSIGNEE_NOT_FOUND')
   }
 
-  const { data: currentRows, error: currentError } = await admin
+  let currentRowsQuery = admin
     .from('eb_remediation_tasks')
-    .select('id,status,remediation_assignee_id,assignment_managed_by,due_date,updated_at')
+    .select('id,inspection_id,status,remediation_assignee_id,assignment_managed_by,due_date,updated_at')
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
     .in('id', taskIds)
+  if (input.inspectionId) currentRowsQuery = currentRowsQuery.eq('inspection_id', input.inspectionId)
+  const { data: currentRows, error: currentError } = await currentRowsQuery
   if (currentError) throw new Error(currentError.message ?? 'Kunde inte läsa valda åtgärdsuppgifter.')
   if ((currentRows ?? []).length !== taskIds.length) throw new Error('EB_REMEDIATION_TASK_NOT_FOUND')
   const normalizedDueDate = input.dueDate === undefined ? undefined : normalizeText(input.dueDate)
@@ -1045,6 +1082,7 @@ function escapeHtml(value: string) {
 export async function issueEbRemediationAccessLink(input: {
   orgId: string
   projectId: string
+  inspectionId?: string | null
   profileId?: string | null
   role: EbRemediationAccessRole
   displayName?: string | null
@@ -1054,6 +1092,11 @@ export async function issueEbRemediationAccessLink(input: {
   sendEmail?: boolean
 }) {
   const project = await requireProject(input.orgId, input.projectId)
+  const inspectionId = normalizeText(input.inspectionId)
+  const inspection = inspectionId
+    ? project.inspections.find((item) => item.inspectionId === inspectionId) ?? null
+    : null
+  if (inspectionId && !inspection) throw new Error('EB_INSPECTION_NOT_FOUND')
   const email = normalizeEmail(input.email)
   if (!email) throw new Error('EB_REMEDIATION_EMAIL_INVALID')
   const assigneeId = input.role === 'assignee' ? normalizeText(input.assigneeId) : null
@@ -1080,6 +1123,9 @@ export async function issueEbRemediationAccessLink(input: {
     .eq('eb_project_id', input.projectId)
     .eq('role', input.role)
     .is('revoked_at', null)
+  activeQuery = inspectionId
+    ? activeQuery.eq('inspection_id', inspectionId)
+    : activeQuery.is('inspection_id', null)
   activeQuery = assigneeId
     ? activeQuery.eq('remediation_assignee_id', assigneeId)
     : activeQuery.eq('email', email)
@@ -1097,6 +1143,7 @@ export async function issueEbRemediationAccessLink(input: {
     .insert({
       org_id: input.orgId,
       eb_project_id: input.projectId,
+      inspection_id: inspectionId,
       remediation_assignee_id: assigneeId,
       role: input.role,
       display_name: displayName,
@@ -1106,7 +1153,7 @@ export async function issueEbRemediationAccessLink(input: {
       created_by: input.profileId ?? null,
     })
     .select(
-      'id,org_id,eb_project_id,remediation_assignee_id,role,display_name,email,expires_at,revoked_at,last_used_at,sent_at,created_at'
+      'id,org_id,eb_project_id,inspection_id,remediation_assignee_id,role,display_name,email,expires_at,revoked_at,last_used_at,sent_at,created_at'
     )
     .single()
   if (insertError || !link) throw new Error(insertError?.message ?? 'Kunde inte skapa åtkomstlänk.')
@@ -1115,15 +1162,21 @@ export async function issueEbRemediationAccessLink(input: {
   if (input.sendEmail !== false) {
     const recipient = displayName ?? 'Hej'
     const roleText = input.role === 'assignee' ? 'dina tilldelade anmärkningar' : 'projektets anmärkningar'
-    const subject = `Åtgärdslista – ${project.title}`
-    const text = `${recipient},\n\nDu har fått tillgång till ${roleText} för ${project.title}.\n\nÖppna åtgärdslistan: ${accessUrl}\n\nLänken är personlig och ska inte vidarebefordras.`
-    const html = `<p>${escapeHtml(recipient)},</p><p>Du har fått tillgång till ${escapeHtml(roleText)} för <strong>${escapeHtml(project.title)}</strong>.</p><p><a href="${escapeHtml(accessUrl)}">Öppna åtgärdslistan</a></p><p>Länken är personlig och ska inte vidarebefordras.</p>`
+    const scopeLabel = inspection
+      ? `${inspection.variantLabel} ${inspection.sequenceNo}`
+      : project.title
+    const subject = inspection
+      ? `Åtgärdslista – ${project.title} – ${scopeLabel}`
+      : `Åtgärdslista – ${project.title}`
+    const text = `${recipient},\n\nDu har fått tillgång till ${roleText} för ${scopeLabel}.\n\nÖppna åtgärdslistan: ${accessUrl}\n\nLänken är personlig och ska inte vidarebefordras.`
+    const html = `<p>${escapeHtml(recipient)},</p><p>Du har fått tillgång till ${escapeHtml(roleText)} för <strong>${escapeHtml(scopeLabel)}</strong>.</p><p><a href="${escapeHtml(accessUrl)}">Öppna åtgärdslistan</a></p><p>Länken är personlig och ska inte vidarebefordras.</p>`
 
     const { data: messageRow, error: messageError } = await admin
       .from('outbound_messages')
       .insert({
         org_id: input.orgId,
         eb_project_id: input.projectId,
+        inspection_id: inspectionId,
         channel: 'email',
         recipient_email: email,
         subject,
@@ -1197,16 +1250,18 @@ export async function issueEbRemediationAccessLink(input: {
 export async function revokeEbRemediationAccessLink(input: {
   orgId: string
   projectId: string
+  inspectionId?: string | null
   linkId: string
 }) {
   const admin = createSupabaseAdminClient()
-  const { data, error } = await admin
+  let revokeQuery = admin
     .from('eb_remediation_access_links')
     .update({ revoked_at: new Date().toISOString() })
     .eq('id', input.linkId)
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
-    .select('id')
+  if (input.inspectionId) revokeQuery = revokeQuery.eq('inspection_id', input.inspectionId)
+  const { data, error } = await revokeQuery.select('id')
     .maybeSingle()
   if (error) throw new Error(error.message ?? 'Kunde inte återkalla länken.')
   if (!data) throw new Error('EB_REMEDIATION_ACCESS_NOT_FOUND')
@@ -1226,6 +1281,9 @@ function assertOpenAccess(access: RemediationAccessRow) {
 }
 
 function assertTaskVisibleToAccess(task: RemediationTaskRow, access: RemediationAccessRow) {
+  if (access.inspection_id && task.inspection_id !== access.inspection_id) {
+    throw new Error('EB_REMEDIATION_TASK_NOT_FOUND')
+  }
   if (access.role === 'assignee' && task.remediation_assignee_id !== access.remediation_assignee_id) {
     throw new Error('EB_REMEDIATION_TASK_NOT_FOUND')
   }
@@ -1298,6 +1356,7 @@ export async function performEbRemediationTokenAction(input: {
     await assignEbRemediationTasks({
       orgId: access.org_id,
       projectId: access.eb_project_id,
+      inspectionId: access.inspection_id,
       taskIds,
       assigneeId: nullableString(input.payload.assigneeId),
       dueDate: nullableString(input.payload.dueDate),
@@ -1342,6 +1401,7 @@ export async function performEbRemediationTokenAction(input: {
     await issueEbRemediationAccessLink({
       orgId: access.org_id,
       projectId: access.eb_project_id,
+      inspectionId: access.inspection_id,
       role: 'assignee',
       assigneeId,
       displayName: assignee.contact_name ?? assignee.name,
@@ -1354,6 +1414,7 @@ export async function performEbRemediationTokenAction(input: {
     await revokeEbRemediationAccessLink({
       orgId: access.org_id,
       projectId: access.eb_project_id,
+      inspectionId: access.inspection_id,
       linkId: stringValue(input.payload.linkId),
     })
   } else {
@@ -1366,6 +1427,7 @@ export async function performEbRemediationTokenAction(input: {
 export async function performEbRemediationInternalAction(input: {
   orgId: string
   projectId: string
+  inspectionId?: string | null
   profileId: string
   action: string
   payload: Record<string, unknown>
@@ -1403,24 +1465,35 @@ export async function performEbRemediationInternalAction(input: {
     await assignEbRemediationTasks({
       orgId: input.orgId,
       projectId: input.projectId,
+      inspectionId: input.inspectionId,
       taskIds,
       assigneeId: nullableString(input.payload.assigneeId),
       dueDate: nullableString(input.payload.dueDate),
       actor,
     })
   } else if (input.action === 'status') {
+    const taskId = stringValue(input.payload.taskId)
+    const task = await requireTask({ orgId: input.orgId, projectId: input.projectId, taskId })
+    if (input.inspectionId && task.inspection_id !== input.inspectionId) {
+      throw new Error('EB_REMEDIATION_TASK_NOT_FOUND')
+    }
     await changeEbRemediationTaskStatus({
       orgId: input.orgId,
       projectId: input.projectId,
-      taskId: stringValue(input.payload.taskId),
+      taskId,
       status: stringValue(input.payload.status) as EbRemediationStatus,
       actor,
     })
   } else if (input.action === 'comment') {
+    const taskId = stringValue(input.payload.taskId)
+    const task = await requireTask({ orgId: input.orgId, projectId: input.projectId, taskId })
+    if (input.inspectionId && task.inspection_id !== input.inspectionId) {
+      throw new Error('EB_REMEDIATION_TASK_NOT_FOUND')
+    }
     await addEbRemediationComment({
       orgId: input.orgId,
       projectId: input.projectId,
-      taskId: stringValue(input.payload.taskId),
+      taskId,
       message: stringValue(input.payload.message),
       actor,
     })
@@ -1428,6 +1501,7 @@ export async function performEbRemediationInternalAction(input: {
     await issueEbRemediationAccessLink({
       orgId: input.orgId,
       projectId: input.projectId,
+      inspectionId: input.inspectionId,
       profileId: input.profileId,
       role: input.action === 'send_admin_link' ? 'contractor_admin' : 'contractor_viewer',
       displayName: nullableString(input.payload.displayName),
@@ -1449,6 +1523,7 @@ export async function performEbRemediationInternalAction(input: {
     await issueEbRemediationAccessLink({
       orgId: input.orgId,
       projectId: input.projectId,
+      inspectionId: input.inspectionId,
       profileId: input.profileId,
       role: 'assignee',
       assigneeId,
@@ -1461,12 +1536,17 @@ export async function performEbRemediationInternalAction(input: {
     await revokeEbRemediationAccessLink({
       orgId: input.orgId,
       projectId: input.projectId,
+      inspectionId: input.inspectionId,
       linkId: stringValue(input.payload.linkId),
     })
   } else {
     throw new Error('EB_REMEDIATION_ACTION_UNKNOWN')
   }
-  return getEbRemediationWorkspace({ orgId: input.orgId, projectId: input.projectId })
+  return getEbRemediationWorkspace({
+    orgId: input.orgId,
+    projectId: input.projectId,
+    inspectionId: input.inspectionId,
+  })
 }
 
 function imageExtension(file: File) {

@@ -39,6 +39,7 @@ import type {
 type Props = {
   initialWorkspace: EbRemediationWorkspace
   endpoint: string
+  inspectionId?: string | null
   internal?: boolean
   backHref?: string | null
 }
@@ -127,9 +128,16 @@ function inputClassName() {
 export default function EbRemediationPortalClient({
   initialWorkspace,
   endpoint,
+  inspectionId = null,
   internal = false,
   backHref = null,
 }: Props) {
+  const scopedEndpoint = inspectionId
+    ? `${endpoint}?inspectionId=${encodeURIComponent(inspectionId)}`
+    : endpoint
+  const scopedImagesEndpoint = inspectionId
+    ? `${endpoint}/images?inspectionId=${encodeURIComponent(inspectionId)}`
+    : `${endpoint}/images`
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const busyKeyRef = useRef<string | null>(null)
@@ -184,7 +192,7 @@ export default function EbRemediationPortalClient({
     busyKeyRef.current = key
     setBusyKey(key)
     try {
-      const response = await fetch(endpoint, {
+      const response = await fetch(scopedEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, payload }),
@@ -214,7 +222,7 @@ export default function EbRemediationPortalClient({
     busyKeyRef.current = 'reload'
     setBusyKey('reload')
     try {
-      const response = await fetch(endpoint, { cache: 'no-store' })
+      const response = await fetch(scopedEndpoint, { cache: 'no-store' })
       const data = (await response.json().catch(() => ({}))) as ApiResponse
       if (!response.ok || !data.workspace) throw new Error(data.error ?? 'Kunde inte uppdatera sidan.')
       setWorkspace(data.workspace)
@@ -318,7 +326,7 @@ export default function EbRemediationPortalClient({
           const body = new FormData()
           body.append('taskId', taskId)
           body.append('file', file)
-          const response = await fetch(`${endpoint}/images`, { method: 'POST', body })
+          const response = await fetch(scopedImagesEndpoint, { method: 'POST', body })
           const data = (await response.json().catch(() => ({}))) as ApiResponse
           if (!response.ok) throw new Error(data.error ?? `Kunde inte ladda upp ${file.name}.`)
           return data.workspace
@@ -397,6 +405,12 @@ export default function EbRemediationPortalClient({
               <p className="mt-1 text-sm text-gray-600">
                 {workspace.project.objectLabel}{workspace.project.address ? ` · ${workspace.project.address}` : ''}
               </p>
+              {workspace.inspection ? (
+                <p className="mt-1 text-sm font-semibold text-emerald-800">
+                  {workspace.inspection.variantLabel} {workspace.inspection.sequenceNo}
+                  {workspace.inspection.date ? ` · ${formatDate(workspace.inspection.date)}` : ''}
+                </p>
+              ) : null}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 print:hidden">

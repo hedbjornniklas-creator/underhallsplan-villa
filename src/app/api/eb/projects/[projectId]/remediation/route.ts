@@ -28,6 +28,7 @@ function errorResponse(error: unknown) {
     return jsonError('Du saknar behörighet till EB.', 403)
   }
   if (message === 'EB_PROJECT_NOT_FOUND') return jsonError('Entreprenaden hittades inte.', 404)
+  if (message === 'EB_INSPECTION_NOT_FOUND') return jsonError('Besiktningen hittades inte.', 404)
   if (message === 'EB_REMEDIATION_TASK_NOT_FOUND') return jsonError('Åtgärdsuppgiften hittades inte.', 404)
   if (message === 'EB_REMEDIATION_ASSIGNEE_NOT_FOUND') return jsonError('Mottagaren hittades inte.', 404)
   if (message === 'EB_REMEDIATION_ACCESS_NOT_FOUND') return jsonError('Åtkomstlänken hittades inte.', 404)
@@ -41,13 +42,14 @@ function errorResponse(error: unknown) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ projectId: string }> }
 ) {
   try {
     const { projectId } = await context.params
     const org = await requireEbContext()
-    const workspace = await getEbRemediationWorkspace({ orgId: org.orgId, projectId })
+    const inspectionId = new URL(request.url).searchParams.get('inspectionId')
+    const workspace = await getEbRemediationWorkspace({ orgId: org.orgId, projectId, inspectionId })
     return NextResponse.json({ workspace })
   } catch (error) {
     return errorResponse(error)
@@ -61,6 +63,7 @@ export async function POST(
   try {
     const { projectId } = await context.params
     const org = await requireEbContext()
+    const inspectionId = new URL(request.url).searchParams.get('inspectionId')
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const action = typeof body.action === 'string' ? body.action : ''
     const payload = body.payload && typeof body.payload === 'object'
@@ -69,6 +72,7 @@ export async function POST(
     const workspace = await performEbRemediationInternalAction({
       orgId: org.orgId,
       projectId,
+      inspectionId,
       profileId: org.userId,
       action,
       payload,

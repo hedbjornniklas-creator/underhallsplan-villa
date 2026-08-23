@@ -663,11 +663,11 @@ export default function EbProjectForm({
           </div>
           <details className="mt-5 rounded-lg border border-emerald-100 bg-white">
             <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-950">
-              Fakturering av besiktningar
+              Standardvärden för fakturering
             </summary>
             <div className="border-t border-emerald-100 p-4">
               <p className="mb-4 text-xs text-gray-600">
-                Administrativa förval för besiktningsmannens fakturering. Uppgifterna visas inte i utlåtandet.
+                Kopieras till nya besiktningar. Fakturauppgifterna kan därefter ändras separat för varje besiktning och visas inte i utlåtandet.
               </p>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">

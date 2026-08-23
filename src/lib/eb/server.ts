@@ -101,6 +101,16 @@ export type EbInspectionSummary = {
   previousInspections: EbPreviousInspectionItem[]
   defectNumberingExplanation: string | null
   defectNoErrorPartsPolicy: EbDefectNoErrorPartsPolicy | null
+  invoiceRecipientMatchesClient: boolean
+  invoiceName: string | null
+  invoiceOrgNo: string | null
+  invoiceReference: string | null
+  invoiceEmailMatchesClient: boolean
+  invoiceEmail: string | null
+  invoiceAddressMatchesClient: boolean
+  invoiceAddress: string | null
+  invoicePostalCode: string | null
+  invoiceCity: string | null
   reportLockedAt: string | null
   reportLockedBy: string | null
   reportPdfStatus: EbReportPdfStatus | null
@@ -688,6 +698,16 @@ type EbInspectionDetailRow = {
   previous_inspections?: unknown
   defect_numbering_explanation?: string | null
   defect_no_error_parts_policy?: string | null
+  invoice_recipient_matches_client?: boolean | null
+  invoice_name?: string | null
+  invoice_org_no?: string | null
+  invoice_reference?: string | null
+  invoice_email_matches_client?: boolean | null
+  invoice_email?: string | null
+  invoice_address_matches_client?: boolean | null
+  invoice_address?: string | null
+  invoice_postal_code?: string | null
+  invoice_city?: string | null
   invitation_subject?: string | null
   invitation_body?: string | null
   report_locked_at: string | null
@@ -1032,6 +1052,16 @@ export type UpdateEbInspectionInput = {
   previousInspections?: EbPreviousInspectionItem[] | null
   defectNumberingExplanation?: string | null
   defectNoErrorPartsPolicy?: EbDefectNoErrorPartsPolicy | null
+  invoiceRecipientMatchesClient?: boolean
+  invoiceName?: string | null
+  invoiceOrgNo?: string | null
+  invoiceReference?: string | null
+  invoiceEmailMatchesClient?: boolean
+  invoiceEmail?: string | null
+  invoiceAddressMatchesClient?: boolean
+  invoiceAddress?: string | null
+  invoicePostalCode?: string | null
+  invoiceCity?: string | null
 }
 
 export type SaveEbNoteInput = {
@@ -1580,6 +1610,7 @@ function getEbReportPdfDownloadUrl(inspectionId: string, link: EbReportLinkRow |
 function mapInspectionSummary(
   detail: EbInspectionDetailRow,
   inspection: InspectionRow | undefined,
+  project: EbProjectRow,
   reportLink?: EbReportLinkRow
 ): EbInspectionSummary {
   const variant = toVariant(detail.inspection_variant)
@@ -1622,6 +1653,20 @@ function mapInspectionSummary(
     previousInspections: normalizePreviousInspections(detail.previous_inspections),
     defectNumberingExplanation: detail.defect_numbering_explanation ?? null,
     defectNoErrorPartsPolicy: normalizeDefectNoErrorPartsPolicy(detail.defect_no_error_parts_policy),
+    invoiceRecipientMatchesClient:
+      detail.invoice_recipient_matches_client ?? project.invoice_recipient_matches_client !== false,
+    invoiceName: detail.invoice_name ?? project.invoice_name ?? project.client_name ?? null,
+    invoiceOrgNo: detail.invoice_org_no ?? project.invoice_org_no ?? project.client_org_no ?? null,
+    invoiceReference: detail.invoice_reference ?? project.invoice_reference ?? null,
+    invoiceEmailMatchesClient:
+      detail.invoice_email_matches_client ?? project.invoice_email_matches_client !== false,
+    invoiceEmail: detail.invoice_email ?? project.invoice_email ?? project.client_email ?? null,
+    invoiceAddressMatchesClient:
+      detail.invoice_address_matches_client ?? project.invoice_address_matches_client !== false,
+    invoiceAddress: detail.invoice_address ?? project.invoice_address ?? project.client_address ?? null,
+    invoicePostalCode:
+      detail.invoice_postal_code ?? project.invoice_postal_code ?? project.client_postal_code ?? null,
+    invoiceCity: detail.invoice_city ?? project.invoice_city ?? project.client_city ?? null,
     reportLockedAt: detail.report_locked_at ?? null,
     reportLockedBy: detail.report_locked_by ?? null,
     reportPdfStatus,
@@ -1643,6 +1688,7 @@ function mapProject(
       mapInspectionSummary(
         detail,
         inspectionsById.get(detail.inspection_id),
+        project,
         reportLinksByInspectionId.get(detail.inspection_id)
       )
     )
@@ -1804,9 +1850,10 @@ async function fetchDetailsForProjects(orgId: string, projectIds: string[]) {
     'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,report_locked_at,created_at'
   const withStructuredReportSelect =
     'inspection_id,org_id,eb_project_id,parent_inspection_id,inspection_variant,sequence_no,meeting_place,start_meeting_time,final_meeting_time,invitation_sent_at,inspector_appointed_by,invitation_method,invitation_date,approval_status,approval_note,requires_continued_final_inspection,continued_final_inspection_date,continued_final_inspection_time,warranty_period_years,warranty_end_date,warranty_scope,default_remedy_deadline,after_inspection_requested,after_inspection_requested_by,after_inspection_due_date,after_inspection_notice_in_report,inspection_cost_distribution,report_distribution_date,previous_inspections,defect_numbering_explanation,defect_no_error_parts_policy,report_locked_at,report_locked_by,created_at'
+  const withInspectionBillingSelect = `${withStructuredReportSelect},invoice_recipient_matches_client,invoice_name,invoice_org_no,invoice_reference,invoice_email_matches_client,invoice_email,invoice_address_matches_client,invoice_address,invoice_postal_code,invoice_city`
   const { data, error } = await admin
     .from('eb_inspection_details')
-    .select(withStructuredReportSelect)
+    .select(withInspectionBillingSelect)
     .eq('org_id', orgId)
     .in('eb_project_id', projectIds)
     .order('sequence_no', { ascending: true })
@@ -1814,7 +1861,22 @@ async function fetchDetailsForProjects(orgId: string, projectIds: string[]) {
 
   if (error) {
     if (isMissingColumnError(error)) {
-      const fallback = await admin
+      const structuredFallback = await admin
+        .from('eb_inspection_details')
+        .select(withStructuredReportSelect)
+        .eq('org_id', orgId)
+        .in('eb_project_id', projectIds)
+        .order('sequence_no', { ascending: true })
+        .order('created_at', { ascending: true })
+
+      if (!structuredFallback.error) {
+        return (structuredFallback.data ?? []) as EbInspectionDetailRow[]
+      }
+      if (!isMissingColumnError(structuredFallback.error)) {
+        throw new Error(structuredFallback.error.message ?? 'Kunde inte hämta EB-besiktningar.')
+      }
+
+      const baseFallback = await admin
         .from('eb_inspection_details')
         .select(baseSelect)
         .eq('org_id', orgId)
@@ -1822,10 +1884,10 @@ async function fetchDetailsForProjects(orgId: string, projectIds: string[]) {
         .order('sequence_no', { ascending: true })
         .order('created_at', { ascending: true })
 
-      if (fallback.error) {
-        throw new Error(fallback.error.message ?? 'Kunde inte hämta EB-besiktningar.')
+      if (baseFallback.error) {
+        throw new Error(baseFallback.error.message ?? 'Kunde inte hämta EB-besiktningar.')
       }
-      return (fallback.data ?? []) as EbInspectionDetailRow[]
+      return (baseFallback.data ?? []) as EbInspectionDetailRow[]
     }
     throw new Error(error.message ?? 'Kunde inte hämta EB-besiktningar.')
   }
@@ -3965,6 +4027,16 @@ export async function createEbInspectionForProject(
       meeting_place: normalizeText(input.meetingPlace),
       start_meeting_time: normalizeTime(input.startMeetingTime),
       final_meeting_time: normalizeTime(input.finalMeetingTime),
+      invoice_recipient_matches_client: project.invoiceRecipientMatchesClient,
+      invoice_name: project.invoiceName,
+      invoice_org_no: project.invoiceOrgNo,
+      invoice_reference: project.invoiceReference,
+      invoice_email_matches_client: project.invoiceEmailMatchesClient,
+      invoice_email: project.invoiceEmail,
+      invoice_address_matches_client: project.invoiceAddressMatchesClient,
+      invoice_address: project.invoiceAddress,
+      invoice_postal_code: project.invoicePostalCode,
+      invoice_city: project.invoiceCity,
       report_title: `Utlåtande ${variantLabel}`,
     })
 
@@ -4102,6 +4174,55 @@ export async function updateEbInspection(input: UpdateEbInspectionInput): Promis
     throw new Error(inspectionError.message ?? 'Kunde inte uppdatera besiktningen.')
   }
 
+  const invoiceRecipientMatchesClient =
+    typeof input.invoiceRecipientMatchesClient === 'boolean'
+      ? input.invoiceRecipientMatchesClient
+      : inspection.invoiceRecipientMatchesClient
+  const invoiceEmailMatchesClient =
+    typeof input.invoiceEmailMatchesClient === 'boolean'
+      ? input.invoiceEmailMatchesClient
+      : inspection.invoiceEmailMatchesClient
+  const invoiceAddressMatchesClient =
+    typeof input.invoiceAddressMatchesClient === 'boolean'
+      ? input.invoiceAddressMatchesClient
+      : inspection.invoiceAddressMatchesClient
+  const invoiceName =
+    typeof input.invoiceName !== 'undefined' || typeof input.invoiceRecipientMatchesClient === 'boolean'
+      ? invoiceRecipientMatchesClient
+        ? project.clientName
+        : normalizeText(input.invoiceName)
+      : inspection.invoiceName
+  const invoiceOrgNo =
+    typeof input.invoiceOrgNo !== 'undefined' || typeof input.invoiceRecipientMatchesClient === 'boolean'
+      ? invoiceRecipientMatchesClient
+        ? project.clientOrgNo
+        : normalizeText(input.invoiceOrgNo)
+      : inspection.invoiceOrgNo
+  const invoiceEmail =
+    typeof input.invoiceEmail !== 'undefined' || typeof input.invoiceEmailMatchesClient === 'boolean'
+      ? invoiceEmailMatchesClient
+        ? project.clientEmail
+        : normalizeText(input.invoiceEmail)
+      : inspection.invoiceEmail
+  const invoiceAddress =
+    typeof input.invoiceAddress !== 'undefined' || typeof input.invoiceAddressMatchesClient === 'boolean'
+      ? invoiceAddressMatchesClient
+        ? project.clientAddress
+        : normalizeText(input.invoiceAddress)
+      : inspection.invoiceAddress
+  const invoicePostalCode =
+    typeof input.invoicePostalCode !== 'undefined' || typeof input.invoiceAddressMatchesClient === 'boolean'
+      ? invoiceAddressMatchesClient
+        ? project.clientPostalCode
+        : normalizeText(input.invoicePostalCode)
+      : inspection.invoicePostalCode
+  const invoiceCity =
+    typeof input.invoiceCity !== 'undefined' || typeof input.invoiceAddressMatchesClient === 'boolean'
+      ? invoiceAddressMatchesClient
+        ? project.clientCity
+        : normalizeText(input.invoiceCity)
+      : inspection.invoiceCity
+
   const { error: detailError } = await admin
     .from('eb_inspection_details')
     .update({
@@ -4129,6 +4250,19 @@ export async function updateEbInspection(input: UpdateEbInspectionInput): Promis
       previous_inspections: normalizePreviousInspections(input.previousInspections),
       defect_numbering_explanation: normalizeText(input.defectNumberingExplanation),
       defect_no_error_parts_policy: normalizeDefectNoErrorPartsPolicy(input.defectNoErrorPartsPolicy),
+      invoice_recipient_matches_client: invoiceRecipientMatchesClient,
+      invoice_name: invoiceName,
+      invoice_org_no: invoiceOrgNo,
+      invoice_reference:
+        typeof input.invoiceReference === 'undefined'
+          ? inspection.invoiceReference
+          : normalizeText(input.invoiceReference),
+      invoice_email_matches_client: invoiceEmailMatchesClient,
+      invoice_email: invoiceEmail,
+      invoice_address_matches_client: invoiceAddressMatchesClient,
+      invoice_address: invoiceAddress,
+      invoice_postal_code: invoicePostalCode,
+      invoice_city: invoiceCity,
     })
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
