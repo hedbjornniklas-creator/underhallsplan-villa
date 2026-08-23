@@ -14,6 +14,7 @@ import {
   ListChecks,
   Lock,
   Loader2,
+  MoreHorizontal,
   Pencil,
   Plus,
   Send,
@@ -307,6 +308,16 @@ function inspectionNavigationIconClassName(busy: boolean) {
   const base =
     'mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600'
   return busy ? `${base} pointer-events-none cursor-wait opacity-70` : base
+}
+
+function inspectionMenuItemClassName(options?: { danger?: boolean; disabled?: boolean }) {
+  const color = options?.danger
+    ? 'text-rose-700 hover:bg-rose-50'
+    : 'text-gray-800 hover:bg-emerald-50 hover:text-emerald-900'
+  const disabled = options?.disabled
+    ? 'cursor-not-allowed bg-gray-50 text-gray-400 hover:bg-gray-50 hover:text-gray-400'
+    : color
+  return `flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold transition ${disabled}`
 }
 
 function fieldLabel(label: string, children: ReactNode) {
@@ -2703,122 +2714,150 @@ export default function EbProjectDetailClient({
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-                            <Link
-                              href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/round`}
-                              onClick={(event) => handleInspectionNavigation(event, roundNavigationKey)}
-                              aria-disabled={navigationInProgress}
-                              aria-busy={isRoundNavigating}
-                              className={inspectionNavigationClassName(true, navigationInProgress)}
-                            >
-                              {isRoundNavigating ? <Loader2 size={16} className="animate-spin" /> : <Smartphone size={16} />}
-                              {isRoundNavigating ? 'Öppnar runda...' : 'Runda'}
-                            </Link>
-                            <Link
-                              href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/perform`}
-                              onClick={(event) => handleInspectionNavigation(event, reviewNavigationKey)}
-                              aria-disabled={navigationInProgress}
-                              aria-busy={isReviewNavigating}
-                              className={inspectionNavigationClassName(false, navigationInProgress)}
-                            >
-                              {isReviewNavigating ? <Loader2 size={16} className="animate-spin" /> : <ClipboardCheck size={16} />}
-                              {isReviewNavigating ? 'Öppnar granska...' : 'Granska'}
-                            </Link>
-                            <Link
-                              href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/report`}
-                              onClick={(event) => handleInspectionNavigation(event, reportNavigationKey)}
-                              aria-disabled={navigationInProgress}
-                              aria-busy={isReportNavigating}
-                              className={inspectionNavigationClassName(false, navigationInProgress)}
-                            >
-                              {isReportNavigating ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
-                              {isReportNavigating ? 'Öppnar utlåtande...' : 'Utlåtande'}
-                            </Link>
-                            <button
-                              type="button"
-                              onClick={() => setDetailsInspection(inspection)}
-                              disabled={navigationInProgress}
-                              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              <Pencil size={16} />
-                              Besiktningsuppgifter
-                            </button>
-                            <Link
-                              href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/remediation`}
-                              onClick={(event) => handleInspectionNavigation(event, remediationNavigationKey)}
-                              aria-disabled={navigationInProgress}
-                              aria-busy={isRemediationNavigating}
-                              className={inspectionNavigationClassName(false, navigationInProgress)}
-                            >
-                              {isRemediationNavigating ? <Loader2 size={16} className="animate-spin" /> : <ListChecks size={16} />}
-                              {isRemediationNavigating ? 'Öppnar portal...' : 'Åtgärdsportal'}
-                            </Link>
-                            <button
-                              type="button"
-                              onClick={() => setAssignmentInspection(inspection)}
-                              disabled={navigationInProgress}
-                              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              <FileCheck2 size={16} />
-                              Uppdragsbekräftelse
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setInvitationInspection(inspection)}
-                              disabled={navigationInProgress}
-                              className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              <Send size={16} />
-                              Kallelse
-                            </button>
-                            {inspection.reportPdfDownloadUrl ? (
-                              <Link
-                                href={inspection.reportPdfDownloadUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-                              >
-                                <Download size={16} />
-                                PDF
-                              </Link>
-                            ) : (
-                              <span className="inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-400">
-                                <Download size={16} />
-                                PDF
-                              </span>
-                            )}
-                            {isLocked ? (
+                          <div className="w-full space-y-3 xl:max-w-[52rem]">
+                            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                              Arbetsflöde
+                            </p>
+                            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
                               <button
                                 type="button"
-                                onClick={() => void handleUnlockInspection(inspection)}
-                                disabled={actionInProgress}
-                                className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {isWorking ? <Loader2 size={16} className="animate-spin" /> : <Unlock size={16} />}
-                                Lås upp
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => void handleLockInspection(inspection)}
-                                disabled={actionInProgress}
+                                onClick={() => setAssignmentInspection(inspection)}
+                                disabled={navigationInProgress}
                                 className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
                               >
-                                {isWorking ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}
-                                Lås och spara PDF
+                                <FileCheck2 size={16} />
+                                Uppdragsbekräftelse
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => void handleDeleteInspection(inspection)}
-                              disabled={isLocked || actionInProgress}
-                              title={isLocked ? 'Låsta besiktningar kan inte raderas' : 'Radera besiktning'}
-                              aria-label={isLocked ? 'Låsta besiktningar kan inte raderas' : 'Radera besiktning'}
-                              className="inline-flex items-center justify-center gap-2 rounded-md border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-400 disabled:opacity-70"
-                            >
-                              {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-                              Radera
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => setInvitationInspection(inspection)}
+                                disabled={navigationInProgress}
+                                className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                <Send size={16} />
+                                Kallelse
+                              </button>
+                              <Link
+                                href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/round`}
+                                onClick={(event) => handleInspectionNavigation(event, roundNavigationKey)}
+                                aria-disabled={navigationInProgress}
+                                aria-busy={isRoundNavigating}
+                                className={inspectionNavigationClassName(true, navigationInProgress)}
+                              >
+                                {isRoundNavigating ? <Loader2 size={16} className="animate-spin" /> : <Smartphone size={16} />}
+                                {isRoundNavigating ? 'Öppnar runda...' : 'Runda'}
+                              </Link>
+                              <Link
+                                href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/perform`}
+                                onClick={(event) => handleInspectionNavigation(event, reviewNavigationKey)}
+                                aria-disabled={navigationInProgress}
+                                aria-busy={isReviewNavigating}
+                                className={inspectionNavigationClassName(false, navigationInProgress)}
+                              >
+                                {isReviewNavigating ? <Loader2 size={16} className="animate-spin" /> : <ClipboardCheck size={16} />}
+                                {isReviewNavigating ? 'Öppnar granska...' : 'Granska'}
+                              </Link>
+                              <Link
+                                href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/report`}
+                                onClick={(event) => handleInspectionNavigation(event, reportNavigationKey)}
+                                aria-disabled={navigationInProgress}
+                                aria-busy={isReportNavigating}
+                                className={inspectionNavigationClassName(false, navigationInProgress)}
+                              >
+                                {isReportNavigating ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
+                                {isReportNavigating ? 'Öppnar utlåtande...' : 'Utlåtande'}
+                              </Link>
+                            </div>
+
+                            <div className="flex justify-end">
+                              <details className="group relative">
+                                <summary className="inline-flex cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 [&::-webkit-details-marker]:hidden">
+                                  <MoreHorizontal size={17} />
+                                  Hantera
+                                </summary>
+                                <div className="absolute right-0 z-30 mt-2 w-72 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-xl">
+                                  <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">
+                                    Besiktning
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDetailsInspection(inspection)}
+                                    disabled={navigationInProgress}
+                                    className={inspectionMenuItemClassName({ disabled: navigationInProgress })}
+                                  >
+                                    <Pencil size={16} />
+                                    Besiktningsuppgifter och fakturering
+                                  </button>
+                                  <Link
+                                    href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/remediation`}
+                                    onClick={(event) => handleInspectionNavigation(event, remediationNavigationKey)}
+                                    aria-disabled={navigationInProgress}
+                                    aria-busy={isRemediationNavigating}
+                                    className={inspectionMenuItemClassName({ disabled: navigationInProgress })}
+                                  >
+                                    {isRemediationNavigating ? <Loader2 size={16} className="animate-spin" /> : <ListChecks size={16} />}
+                                    {isRemediationNavigating ? 'Öppnar Åtgärdsportal...' : 'Åtgärdsportal'}
+                                  </Link>
+
+                                  <div className="my-1 border-t border-gray-100" />
+                                  <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">
+                                    Utlåtande
+                                  </p>
+                                  {inspection.reportPdfDownloadUrl ? (
+                                    <Link
+                                      href={inspection.reportPdfDownloadUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className={inspectionMenuItemClassName()}
+                                    >
+                                      <Download size={16} />
+                                      Öppna sparad PDF
+                                    </Link>
+                                  ) : (
+                                    <span className={inspectionMenuItemClassName({ disabled: true })}>
+                                      <Download size={16} />
+                                      Ingen sparad PDF
+                                    </span>
+                                  )}
+                                  {isLocked ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleUnlockInspection(inspection)}
+                                      disabled={actionInProgress}
+                                      className={inspectionMenuItemClassName({ disabled: actionInProgress })}
+                                    >
+                                      {isWorking ? <Loader2 size={16} className="animate-spin" /> : <Unlock size={16} />}
+                                      {isWorking ? 'Låser upp...' : 'Lås upp utlåtandet'}
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleLockInspection(inspection)}
+                                      disabled={actionInProgress}
+                                      className={inspectionMenuItemClassName({ disabled: actionInProgress })}
+                                    >
+                                      {isWorking ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}
+                                      {isWorking ? 'Låser och skapar PDF...' : 'Lås och spara PDF'}
+                                    </button>
+                                  )}
+
+                                  <div className="my-1 border-t border-gray-100" />
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDeleteInspection(inspection)}
+                                    disabled={isLocked || actionInProgress}
+                                    title={isLocked ? 'Låsta besiktningar kan inte raderas' : 'Radera besiktning'}
+                                    className={inspectionMenuItemClassName({
+                                      danger: true,
+                                      disabled: isLocked || actionInProgress,
+                                    })}
+                                  >
+                                    {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                                    {isDeleting ? 'Raderar...' : 'Radera besiktning'}
+                                  </button>
+                                </div>
+                              </details>
+                            </div>
                           </div>
                         </div>
                       </article>
