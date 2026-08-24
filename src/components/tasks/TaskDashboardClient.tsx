@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
+import { useToast } from '@/components/ui/AppToastProvider'
 import type {
   TaskActionResponse,
   TaskAiSuggestionView,
@@ -134,10 +135,10 @@ function TaskCard({ task, parentTitle, onClick }: { task: TaskView; parentTitle:
 }
 
 export default function TaskDashboardClient({ initialWorkspace, initialError }: Props) {
+  const { success: showSuccess, error: showError, warning: showWarning } = useToast()
   const deepLinkHandled = useRef(false)
   const [workspace, setWorkspace] = useState(initialWorkspace)
-  const [error, setError] = useState(initialError)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [workspaceError, setWorkspaceError] = useState(initialError)
   const [accessLink, setAccessLink] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [filter, setFilter] = useState<FilterKey>('all')
@@ -187,23 +188,27 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
 
   const refresh = async () => {
     setBusy(true)
-    setError(null)
+    setWorkspaceError(null)
     try {
       const response = await fetch('/api/tasks', { cache: 'no-store' })
       const body = (await response.json().catch(() => ({}))) as { workspace?: TaskWorkspace; error?: string }
       if (!response.ok || !body.workspace) throw new Error(body.error || 'Kunde inte hämta uppgifterna.')
       setWorkspace(body.workspace)
     } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : 'Kunde inte hämta uppgifterna.')
+      const message = refreshError instanceof Error ? refreshError.message : 'Kunde inte hämta uppgifterna.'
+      if (workspace) showError(message)
+      else setWorkspaceError(message)
     } finally {
       setBusy(false)
     }
   }
 
-  const runAction = async (action: string, payload: Record<string, unknown>): Promise<TaskActionResponse> => {
+  const runAction = async (
+    action: string,
+    payload: Record<string, unknown>,
+    options: { showResultToast?: boolean; showErrorToast?: boolean } = {}
+  ): Promise<TaskActionResponse> => {
     setBusy(true)
-    setError(null)
-    setNotice(null)
     try {
       const response = await fetch('/api/tasks', {
         method: 'POST',
@@ -220,7 +225,10 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
         createdTaskId: body.createdTaskId,
       }
       setWorkspace(result.workspace)
-      setNotice(result.warning ?? result.notice ?? 'Sparat.')
+      if (options.showResultToast !== false) {
+        if (result.warning) showWarning(result.warning)
+        else showSuccess(result.notice ?? 'Sparat.')
+      }
       if (result.accessUrl) {
         setAccessLink(result.accessUrl)
         try {
@@ -231,7 +239,9 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
       }
       return result
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : 'Åtgärden misslyckades.')
+      if (options.showErrorToast !== false) {
+        showError(actionError instanceof Error ? actionError.message : 'Åtgärden misslyckades.')
+      }
       throw actionError
     } finally {
       setBusy(false)
@@ -240,8 +250,6 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
 
   const uploadEvidence = async (taskId: string, formData: FormData, transcribe = false) => {
     setBusy(true)
-    setError(null)
-    setNotice(null)
     try {
       const endpoint = transcribe
         ? `/api/tasks/${taskId}/transcribe`
@@ -253,9 +261,10 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
       }
       if (!response.ok || !body.workspace) throw new Error(body.error || 'Kunde inte spara underlaget.')
       setWorkspace(body.workspace)
-      setNotice(body.notice ?? 'Underlaget sparades.')
+      if (body.warning) showWarning(body.warning)
+      else showSuccess(body.notice ?? 'Underlaget sparades.')
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : 'Kunde inte spara underlaget.')
+      showError(uploadError instanceof Error ? uploadError.message : 'Kunde inte spara underlaget.')
       throw uploadError
     } finally {
       setBusy(false)
@@ -265,7 +274,6 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
   const uploadInitialAttachments = async (taskId: string, files: File[]) => {
     if (files.length === 0) return { uploaded: 0, failed: [] as string[] }
     setBusy(true)
-    setError(null)
     const failed: string[] = []
     let uploaded = 0
     try {
@@ -329,15 +337,6 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
             </button>
           </header>
 
-          {notice ? (
-            <div className="mt-5 flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
-              <span className="flex items-center gap-2"><CheckCircle2 size={18} /> {notice}</span>
-              <button type="button" onClick={() => setNotice(null)} className="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-emerald-100" aria-label="Stäng">
-                <X size={17} />
-              </button>
-            </div>
-          ) : null}
-
           {accessLink ? (
             <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
               <div className="flex items-start gap-3">
@@ -355,19 +354,15 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
             </div>
           ) : null}
 
-          {error ? (
-            <div className="mt-5 flex items-start justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
-              <span className="flex items-start gap-2"><AlertTriangle className="mt-0.5 shrink-0" size={18} /> {error}</span>
-              <button type="button" onClick={() => setError(null)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full hover:bg-rose-100" aria-label="Stäng">
-                <X size={17} />
-              </button>
-            </div>
-          ) : null}
-
           {!workspace ? (
             <section className="mt-8 rounded-3xl border border-slate-200 bg-white p-7 text-center shadow-sm sm:p-10">
               <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-800"><AlertTriangle size={23} /></span>
               <h2 className="mt-4 text-xl font-semibold text-slate-950">Uppdrag är inte redo i databasen</h2>
+              {workspaceError ? (
+                <p role="alert" className="mx-auto mt-2 max-w-xl text-sm font-medium leading-6 text-rose-700">
+                  {workspaceError}
+                </p>
+              ) : null}
               <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
                 Kör Uppdrag-migrationen och försök sedan igen. Inga befintliga EB-, TU- eller ÖB-data ändras av migrationen.
               </p>
@@ -492,10 +487,15 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                     {
                       ...taskPayload,
                       sendAssignment: !deferAssignment,
-                    }
+                    },
+                    { showResultToast: !deferAssignment }
                   )
                   const createdTaskId = created.createdTaskId
-                  if (!createdTaskId) throw new Error('Uppgiften skapades men kunde inte öppnas för bilagor.')
+                  if (!createdTaskId) {
+                    const message = 'Uppgiften skapades men kunde inte öppnas för bilagor.'
+                    showError(message)
+                    throw new Error(message)
+                  }
                   setComposerOpen(false)
                   setComposerParentId(null)
                   setComposerSuggestion(null)
@@ -505,15 +505,20 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                     let recipientNotice = ''
                     if (deferAssignment && !isExternalRecipient) {
                       try {
-                        const dispatched = await runAction('dispatch_assignment', { taskId: createdTaskId })
+                        const dispatched = await runAction(
+                          'dispatch_assignment',
+                          { taskId: createdTaskId },
+                          { showResultToast: false, showErrorToast: false }
+                        )
                         recipientNotice = ` ${dispatched.notice ?? 'Signe meddelar mottagaren.'}`
                       } catch {
                         recipientNotice = ' Mottagaren kunde inte meddelas automatiskt.'
                       }
                     }
-                    setNotice(`Uppgiften skapades och finns kvar i översikten.${recipientNotice}`)
-                    setError(
-                      `Uppgiften skapades, men ${uploadResult.failed.length} ${
+                    showWarning(
+                      `Uppgiften skapades och finns kvar i översikten.${recipientNotice} ${
+                        uploadResult.failed.length
+                      } ${
                         uploadResult.failed.length === 1 ? 'fil kunde' : 'filer kunde'
                       } inte laddas upp: ${uploadResult.failed.join(', ')}. Lägg till dem från uppdraget.${
                         deferAssignment && isExternalRecipient ? ' Mottagaren har därför inte meddelats ännu.' : ''
@@ -527,11 +532,19 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                   if (deferAssignment) {
                     try {
                       dispatchResult = isExternalRecipient
-                        ? await runAction('issue_access_link', {
-                            taskId: createdTaskId,
-                            sendEmail: true,
-                          })
-                        : await runAction('dispatch_assignment', { taskId: createdTaskId })
+                        ? await runAction(
+                            'issue_access_link',
+                            {
+                              taskId: createdTaskId,
+                              sendEmail: true,
+                            },
+                            { showResultToast: false }
+                          )
+                        : await runAction(
+                            'dispatch_assignment',
+                            { taskId: createdTaskId },
+                            { showResultToast: false }
+                          )
                     } catch {
                       setSelectedTaskId(createdTaskId)
                       return
@@ -539,11 +552,11 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                   }
 
                   if (uploadResult.uploaded > 0) {
-                    setNotice(
-                      `${dispatchResult.warning ?? dispatchResult.notice ?? 'Uppgiften skapades.'} ${
-                        uploadResult.uploaded
-                      } ${uploadResult.uploaded === 1 ? 'bilaga sparades' : 'bilagor sparades'}.`
-                    )
+                    const message = `${dispatchResult.warning ?? dispatchResult.notice ?? 'Uppgiften skapades.'} ${
+                      uploadResult.uploaded
+                    } ${uploadResult.uploaded === 1 ? 'bilaga sparades' : 'bilagor sparades'}.`
+                    if (dispatchResult.warning) showWarning(message)
+                    else showSuccess(message)
                   }
                 }}
               />

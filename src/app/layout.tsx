@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { AppToastProvider } from '@/components/ui/AppToastProvider'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -42,7 +43,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="sv">
-      <body className="bg-gray-50 text-gray-900">{children}</body>
+      <body className="bg-gray-50 text-gray-900">
+        <AppToastProvider>{children}</AppToastProvider>
+      </body>
     </html>
   )
 }

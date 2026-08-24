@@ -38,6 +38,7 @@ Open `http://localhost:3000`.
 ## Key Docs
 - `docs/CHANGELOG.md`
 - `docs/TECH_OVERVIEW.md`
+- `docs/UI_FEEDBACK_STANDARD.md`
 - `docs/SUPABASE_SCHEMA.md`
 
 ## Uppdrag v1 deployment

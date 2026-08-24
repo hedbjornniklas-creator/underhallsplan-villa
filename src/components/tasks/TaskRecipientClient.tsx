@@ -28,6 +28,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
+import { useToast } from '@/components/ui/AppToastProvider'
 import type { TaskChannel, TaskEvidenceRequirement } from '@/lib/tasks/contracts'
 import type { ExternalTaskWorkspace } from '@/lib/tasks/external'
 import TaskAttachmentDropZone from './TaskAttachmentDropZone'
@@ -51,11 +52,6 @@ type ApiResponse = {
 }
 
 type ActionPanel = 'waiting' | 'deadline' | 'delegate' | null
-
-type Toast = {
-  tone: 'success' | 'error'
-  message: string
-}
 
 const inputClassName =
   'min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-100 disabled:bg-slate-100 disabled:text-slate-500'
@@ -153,9 +149,13 @@ export default function TaskRecipientClient({
   backHref,
   backLabel = 'Mina uppdrag',
 }: Props) {
+  const {
+    success: showSuccessToast,
+    error: showErrorToast,
+    warning: showWarningToast,
+  } = useToast()
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [busyAction, setBusyAction] = useState<string | null>(null)
-  const [toast, setToast] = useState<Toast | null>(null)
   const [comment, setComment] = useState('')
   const [panel, setPanel] = useState<ActionPanel>(null)
   const [waitingReason, setWaitingReason] = useState('')
@@ -203,12 +203,6 @@ export default function TaskRecipientClient({
   const isBusy = busyAction !== null
 
   useEffect(() => {
-    if (!toast) return
-    const timer = window.setTimeout(() => setToast(null), 5000)
-    return () => window.clearTimeout(timer)
-  }, [toast])
-
-  useEffect(() => {
     if (!panel) return
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !isBusy) setPanel(null)
@@ -238,8 +232,6 @@ export default function TaskRecipientClient({
     }
   }, [])
 
-  const showToast = (message: string, tone: Toast['tone']) => setToast({ message, tone })
-
   const runAction = async (
     action: 'start' | 'waiting' | 'ready_for_review' | 'comment' | 'request_deadline_change' | 'create_subtask',
     payload: Record<string, unknown>,
@@ -264,10 +256,11 @@ export default function TaskRecipientClient({
           // Länken visas i sidan om webbläsaren inte ger urklippsåtkomst.
         }
       }
-      showToast(body.warning || body.notice || successMessage, 'success')
+      if (body.warning) showWarningToast(body.warning)
+      else showSuccessToast(body.notice || successMessage)
       return true
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Kunde inte uppdatera uppgiften.', 'error')
+      showErrorToast(error instanceof Error ? error.message : 'Kunde inte uppdatera uppgiften.')
       return false
     } finally {
       setBusyAction(null)
@@ -287,10 +280,10 @@ export default function TaskRecipientClient({
       const body = (await response.json().catch(() => ({}))) as ApiResponse
       if (!response.ok) throw new Error(body.error || 'Kunde inte spara underlaget.')
       if (body.workspace) setWorkspace(body.workspace)
-      showToast(body.notice || successMessage, 'success')
+      showSuccessToast(body.notice || successMessage)
       return true
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Kunde inte spara underlaget.', 'error')
+      showErrorToast(error instanceof Error ? error.message : 'Kunde inte spara underlaget.')
       return false
     } finally {
       setBusyAction(null)
@@ -313,7 +306,7 @@ export default function TaskRecipientClient({
 
   const uploadFileEvidence = async (file: File) => {
     if (file.size > maxAttachmentBytes) {
-      showToast('Filen är för stor. Maximal storlek är 25 MB.', 'error')
+      showErrorToast('Filen är för stor. Maximal storlek är 25 MB.')
       return false
     }
     const formData = new FormData()
@@ -350,7 +343,7 @@ export default function TaskRecipientClient({
   const startRecording = async () => {
     if (isBusy || isRecording) return
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      showToast('Röstinspelning stöds inte i den här webbläsaren.', 'error')
+      showErrorToast('Röstinspelning stöds inte i den här webbläsaren.')
       return
     }
 
@@ -379,7 +372,7 @@ export default function TaskRecipientClient({
         mediaRecorderRef.current = null
         setIsRecording(false)
         setBusyAction(null)
-        showToast('Inspelningen avbröts. Försök igen.', 'error')
+        showErrorToast('Inspelningen avbröts. Försök igen.')
       }
       recorder.onstop = () => {
         const durationSeconds = Math.max(
@@ -396,11 +389,11 @@ export default function TaskRecipientClient({
         setIsRecording(false)
 
         if (audio.size <= 0) {
-          showToast('Inspelningen blev tom. Försök igen.', 'error')
+          showErrorToast('Inspelningen blev tom. Försök igen.')
           return
         }
         if (audio.size > maxAttachmentBytes) {
-          showToast('Inspelningen är för stor. Spela in ett kortare meddelande.', 'error')
+          showErrorToast('Inspelningen är för stor. Spela in ett kortare meddelande.')
           return
         }
 
@@ -431,11 +424,10 @@ export default function TaskRecipientClient({
       mediaRecorderRef.current = null
       setBusyAction(null)
       const permissionDenied = error instanceof DOMException && ['NotAllowedError', 'SecurityError'].includes(error.name)
-      showToast(
+      showErrorToast(
         permissionDenied
           ? 'Tillåt mikrofonen i webbläsaren för att spela in ett röstmeddelande.'
-          : 'Kunde inte starta mikrofonen.',
-        'error'
+          : 'Kunde inte starta mikrofonen.'
       )
     }
   }
@@ -518,27 +510,27 @@ export default function TaskRecipientClient({
     const phone = delegatePhone.trim()
     if (!title || !name || !delegateDueDate || !delegateFollowupDate) return
     if (!email) {
-      showToast('E-post krävs för mottagarens Mina uppdrag-konto.', 'error')
+      showErrorToast('E-post krävs för mottagarens Mina uppdrag-konto.')
       return
     }
     if (delegatePrimaryChannel === 'email' && !email) {
-      showToast('E-post krävs när huvudkanalen är e-post.', 'error')
+      showErrorToast('E-post krävs när huvudkanalen är e-post.')
       return
     }
     if (delegatePrimaryChannel === 'whatsapp' && !phone) {
-      showToast('Telefonnummer krävs när huvudkanalen är WhatsApp.', 'error')
+      showErrorToast('Telefonnummer krävs när huvudkanalen är WhatsApp.')
       return
     }
     if (delegateFallbackChannel === delegatePrimaryChannel) {
-      showToast('Reservkanalen måste skilja sig från huvudkanalen.', 'error')
+      showErrorToast('Reservkanalen måste skilja sig från huvudkanalen.')
       return
     }
     if (delegateFallbackChannel === 'email' && !email) {
-      showToast('E-post krävs för att använda e-post som reservkanal.', 'error')
+      showErrorToast('E-post krävs för att använda e-post som reservkanal.')
       return
     }
     if (delegateFallbackChannel === 'whatsapp' && !phone) {
-      showToast('Telefonnummer krävs för att använda WhatsApp som reservkanal.', 'error')
+      showErrorToast('Telefonnummer krävs för att använda WhatsApp som reservkanal.')
       return
     }
 
@@ -549,7 +541,7 @@ export default function TaskRecipientClient({
       delegateFollowupDate < todayInput ||
       delegateFollowupDate > delegateDueDate
     ) {
-      showToast('Datumen måste ligga från idag till och med föräldrauppgiftens slutdatum.', 'error')
+      showErrorToast('Datumen måste ligga från idag till och med föräldrauppgiftens slutdatum.')
       return
     }
 
@@ -632,22 +624,6 @@ export default function TaskRecipientClient({
 
   return (
     <main className={`min-h-dvh bg-[#f6f4ef] text-slate-950 ${showActionBar ? 'pb-[calc(6.5rem+env(safe-area-inset-bottom))]' : 'pb-8'}`}>
-      {toast ? (
-        <div
-          className={`fixed inset-x-4 top-4 z-[80] mx-auto flex max-w-md items-start gap-3 rounded-2xl px-4 py-3 text-sm font-semibold shadow-2xl ${
-            toast.tone === 'success' ? 'bg-emerald-800 text-white' : 'bg-rose-700 text-white'
-          }`}
-          role={toast.tone === 'error' ? 'alert' : 'status'}
-          aria-live={toast.tone === 'error' ? 'assertive' : 'polite'}
-        >
-          {toast.tone === 'success' ? <CheckCircle2 className="mt-0.5 shrink-0" size={18} /> : <AlertTriangle className="mt-0.5 shrink-0" size={18} />}
-          <span className="min-w-0 flex-1">{toast.message}</span>
-          <button type="button" onClick={() => setToast(null)} className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white/80 hover:bg-white/10" aria-label="Stäng meddelande">
-            <X size={15} aria-hidden="true" />
-          </button>
-        </div>
-      ) : null}
-
       <header className="border-b border-amber-200/70 bg-white/90 backdrop-blur">
         <div className="mx-auto flex w-full max-w-xl items-center gap-3 px-4 py-4 sm:px-6">
           {backHref ? (
@@ -808,9 +784,9 @@ export default function TaskRecipientClient({
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(delegatedAccessUrl)
-                    showToast('Länken kopierades.', 'success')
+                    showSuccessToast('Länken kopierades.')
                   } catch {
-                    showToast('Markera och kopiera länken manuellt.', 'error')
+                    showErrorToast('Markera och kopiera länken manuellt.')
                   }
                 }}
                 className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-semibold text-white"
