@@ -47,7 +47,8 @@ Open `http://localhost:3000`.
    before the main migration starts.
 2. Apply `docs/db/2026-08-20_01_operational_tasks_foundation.sql` to Supabase.
 3. Apply `docs/db/2026-08-20_02_operational_task_initial_attachments.sql`,
-   followed by `docs/db/2026-08-22_01_task_recipient_portal_identity.sql`.
+   followed by `docs/db/2026-08-22_01_task_recipient_portal_identity.sql` and
+   `docs/db/2026-08-24_01_operational_task_archiving.sql`.
 4. In Supabase Authentication > URL Configuration, set the production Site URL
    to `https://hushub.se` and add the exact Redirect URL
    `https://hushub.se/mina-uppdrag/logga-in` for password recovery. Add the

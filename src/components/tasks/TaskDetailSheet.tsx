@@ -20,6 +20,7 @@ import {
   Send,
   ShieldCheck,
   Square,
+  Trash2,
   UserRound,
   X,
   XCircle,
@@ -102,21 +103,71 @@ export default function TaskDetailSheet({
   const [rejectingSuggestionId, setRejectingSuggestionId] = useState<string | null>(null)
   const [suggestionRejectReason, setSuggestionRejectReason] = useState('')
   const [suggestionFormError, setSuggestionFormError] = useState<string | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const recordingStartedAtRef = useRef<number | null>(null)
   const evidenceSectionRef = useRef<HTMLElement>(null)
   const documentInputRef = useRef<HTMLInputElement>(null)
+  const deleteDialogRef = useRef<HTMLElement>(null)
+  const deleteCancelButtonRef = useRef<HTMLButtonElement>(null)
+  const deleteTriggerButtonRef = useRef<HTMLButtonElement>(null)
+  const deleteBusy = busy || deleteSubmitting
 
   useEffect(() => {
     if (!task) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) onClose()
+      if (deleteDialogOpen && event.key === 'Tab') {
+        const focusableElements = deleteDialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+        )
+        if (!focusableElements?.length) {
+          event.preventDefault()
+          deleteDialogRef.current?.focus()
+          return
+        }
+
+        const first = focusableElements[0]
+        const last = focusableElements[focusableElements.length - 1]
+        const active = document.activeElement
+        if (!deleteDialogRef.current?.contains(active)) {
+          event.preventDefault()
+          const focusTarget = event.shiftKey ? last : first
+          focusTarget.focus()
+        } else if (event.shiftKey && active === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && active === last) {
+          event.preventDefault()
+          first.focus()
+        }
+        return
+      }
+
+      if (event.key !== 'Escape') return
+      if (deleteDialogOpen) {
+        event.preventDefault()
+        if (!deleteBusy) setDeleteDialogOpen(false)
+        return
+      }
+      if (!busy) onClose()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [busy, onClose, task])
+  }, [busy, deleteBusy, deleteDialogOpen, onClose, task])
+
+  useEffect(() => {
+    if (!deleteDialogOpen) return
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    const timer = window.setTimeout(() => deleteCancelButtonRef.current?.focus(), 20)
+    return () => {
+      window.clearTimeout(timer)
+      if (previouslyFocused && document.body.contains(previouslyFocused)) previouslyFocused.focus()
+    }
+  }, [deleteDialogOpen])
 
   useEffect(() => {
     return () => {
@@ -190,6 +241,20 @@ export default function TaskDetailSheet({
     })
     setRejectingSuggestionId(null)
     setSuggestionRejectReason('')
+  }
+
+  const archiveTask = async () => {
+    if (deleteBusy || task.childCount > 0) return
+    setDeleteError(null)
+    setDeleteSubmitting(true)
+    try {
+      await onAction('archive_task', { taskId: task.id, version: task.version })
+      setDeleteDialogOpen(false)
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Kunde inte radera uppdraget. Försök igen.')
+    } finally {
+      setDeleteSubmitting(false)
+    }
   }
 
   const uploadFile = async (
@@ -928,6 +993,37 @@ export default function TaskDetailSheet({
               )}
             </div>
           </section>
+
+          {task.canDelete ? (
+            <section className="mt-8 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:p-5" aria-labelledby="task-delete-heading">
+              <div className="flex items-start gap-3">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-rose-700 ring-1 ring-rose-200">
+                  <Trash2 size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 id="task-delete-heading" className="text-sm font-semibold text-rose-950">Radera uppdrag</h3>
+                  <p className="mt-1 text-xs leading-5 text-rose-900">
+                    {task.childCount > 0
+                      ? 'Underuppgifterna måste raderas först. Därefter kan du radera detta uppdrag.'
+                      : 'Uppdraget tas bort från arbetsvyerna. Historik och bilagor sparas för spårbarhet.'}
+                  </p>
+                </div>
+              </div>
+              <button
+                ref={deleteTriggerButtonRef}
+                type="button"
+                disabled={deleteBusy || task.childCount > 0}
+                onClick={() => {
+                  setDeleteError(null)
+                  setDeleteDialogOpen(true)
+                }}
+                title={task.childCount > 0 ? 'Radera underuppgifterna först.' : 'Radera uppdrag'}
+                className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-rose-300 bg-white px-4 text-sm font-semibold text-rose-800 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Trash2 size={18} /> Radera uppdrag
+              </button>
+            </section>
+          ) : null}
         </div>
 
         {!['approved', 'cancelled'].includes(task.status) ? (
@@ -1072,6 +1168,65 @@ export default function TaskDetailSheet({
           </footer>
         ) : null}
       </section>
+
+      {deleteDialogOpen ? (
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center sm:justify-center sm:p-6">
+          <button
+            type="button"
+            aria-label="Stäng bekräftelsen"
+            disabled={deleteBusy}
+            onClick={() => setDeleteDialogOpen(false)}
+            className="absolute inset-0 cursor-default bg-slate-950/60 backdrop-blur-[2px] disabled:cursor-wait"
+          />
+          <section
+            ref={deleteDialogRef}
+            role="alertdialog"
+            aria-modal="true"
+            aria-busy={deleteBusy}
+            aria-labelledby="task-delete-dialog-title"
+            aria-describedby="task-delete-dialog-description"
+            tabIndex={-1}
+            className="relative w-full overflow-hidden rounded-t-3xl bg-white px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 shadow-2xl sm:max-w-md sm:rounded-3xl sm:p-6"
+          >
+            <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-100 text-rose-700">
+              <Trash2 size={21} />
+            </span>
+            <h2 id="task-delete-dialog-title" className="mt-4 text-xl font-semibold tracking-tight text-slate-950">
+              Radera uppdraget?
+            </h2>
+            <p className="mt-2 break-words text-sm font-semibold text-slate-800">{task.title}</p>
+            <p id="task-delete-dialog-description" className="mt-2 text-sm leading-6 text-slate-600">
+              Uppdraget försvinner från arbetsvyerna. Signe slutar påminna och mottagaren förlorar åtkomsten. Historik och bilagor sparas för spårbarhet.
+            </p>
+
+            {deleteError ? (
+              <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800">
+                {deleteError}
+              </p>
+            ) : null}
+
+            <div className="mt-6 grid gap-2 sm:grid-cols-2">
+              <button
+                ref={deleteCancelButtonRef}
+                type="button"
+                disabled={deleteBusy}
+                onClick={() => setDeleteDialogOpen(false)}
+                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Behåll uppdraget
+              </button>
+              <button
+                type="button"
+                disabled={deleteBusy}
+                onClick={() => void archiveTask()}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-rose-700 px-4 text-sm font-semibold text-white transition hover:bg-rose-800 disabled:cursor-wait disabled:opacity-60"
+              >
+                <Trash2 size={18} /> {deleteSubmitting ? 'Raderar…' : 'Radera uppdrag'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   )
 }

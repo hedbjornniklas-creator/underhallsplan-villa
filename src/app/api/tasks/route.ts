@@ -105,6 +105,7 @@ function taskErrorResponse(error: unknown) {
     'TASK_EXTENSION_DECIDE_FORBIDDEN',
     'TASK_ACCESS_ISSUE_FORBIDDEN',
     'TASK_DISPATCH_FORBIDDEN',
+    'TASK_ARCHIVE_FORBIDDEN',
     'TASK_REVIEW_ACTION_FORBIDDEN',
     'TASK_ACTOR_NOT_IN_ORG',
     'TASK_CREATE_FORBIDDEN',
@@ -145,6 +146,9 @@ function taskErrorResponse(error: unknown) {
   if (code === 'SIGNE_ALREADY_RUNNING') {
     return jsonError('Signe analyserar redan uppgiften. Vänta en kort stund och försök igen.', 409, code)
   }
+  if (code === 'TASK_ARCHIVE_CHILDREN_EXIST') {
+    return jsonError('Uppdraget har underuppgifter och kan inte raderas. Radera underuppgifterna först.', 409, code)
+  }
   if (code === 'SIGNE_SUGGESTION_NOT_PENDING' || code === 'TASK_AI_SUGGESTION_NOT_PENDING') {
     return jsonError('Förslaget har redan behandlats. Ladda om uppgiften.', 409, code)
   }
@@ -159,6 +163,7 @@ function taskErrorResponse(error: unknown) {
     code === 'TASK_RECIPIENT_IDENTITY_ENSURE_FAILED' ||
     code === 'TASK_RECIPIENT_PORTAL_GRANT_FAILED' ||
     code === 'TASK_RECIPIENT_ACTIVATION_CREATE_FAILED' ||
+    code === 'TASK_ARCHIVE_FAILED' ||
     code === 'TASK_AI_SUGGESTIONS_READ_FAILED' ||
     code === 'SIGNE_SCHEMA_REQUIRED'
   ) {

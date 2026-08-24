@@ -58,6 +58,7 @@ type OperationalTaskRow = {
   submitted_for_review_at: string | null
   approved_at: string | null
   approved_by_profile_id: string | null
+  created_by_profile_id: string | null
   archived_at: string | null
   created_at: string
   updated_at: string
@@ -278,7 +279,7 @@ async function loadRows(orgId: string) {
     admin
       .from('operational_tasks')
       .select(
-        'id,org_id,parent_task_id,root_task_id,depth,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,task_kind,status,due_at,next_followup_at,primary_channel,fallback_channel,evidence_requirement,review_round,version,created_source,submitted_for_review_at,approved_at,approved_by_profile_id,archived_at,created_at,updated_at'
+        'id,org_id,parent_task_id,root_task_id,depth,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,task_kind,status,due_at,next_followup_at,primary_channel,fallback_channel,evidence_requirement,review_round,version,created_source,submitted_for_review_at,approved_at,approved_by_profile_id,created_by_profile_id,archived_at,created_at,updated_at'
       )
       .eq('org_id', orgId)
       .is('archived_at', null)
@@ -568,6 +569,7 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       initialDispatchPending,
       issuerId: task.issuer_profile_id,
       issuerName: issuer?.full_name?.trim() || issuer?.email?.trim() || 'Uppdragsansvarig',
+      canDelete: task.created_by_profile_id === input.userId,
       assignee,
       reviewRound: task.review_round,
       version: task.version,
@@ -621,7 +623,7 @@ async function requireTask(orgId: string, taskId: string) {
   const { data, error } = await admin
     .from('operational_tasks')
     .select(
-      'id,org_id,parent_task_id,root_task_id,depth,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,task_kind,status,due_at,next_followup_at,primary_channel,fallback_channel,evidence_requirement,review_round,version,created_source,submitted_for_review_at,approved_at,approved_by_profile_id,archived_at,created_at,updated_at'
+      'id,org_id,parent_task_id,root_task_id,depth,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,task_kind,status,due_at,next_followup_at,primary_channel,fallback_channel,evidence_requirement,review_round,version,created_source,submitted_for_review_at,approved_at,approved_by_profile_id,created_by_profile_id,archived_at,created_at,updated_at'
     )
     .eq('id', taskId)
     .eq('org_id', orgId)
@@ -860,6 +862,27 @@ async function dispatchTaskAssignment(input: TaskActionInput) {
   return 'Uppdraget och bilagorna är klara. Signe skickar uppdraget till mottagaren.'
 }
 
+async function archiveTask(input: TaskActionInput) {
+  const taskId = asText(input.payload.taskId)
+  if (!taskId) throw new Error('TASK_NOT_FOUND')
+  const expectedVersion = requireExpectedVersion(input.payload.version)
+  const task = await requireTask(input.orgId, taskId)
+  if (task.created_by_profile_id !== input.userId) {
+    throw new Error('TASK_ARCHIVE_FORBIDDEN')
+  }
+
+  const admin = createSupabaseAdminClient()
+  const { error } = await admin.rpc('archive_operational_task', {
+    p_org_id: input.orgId,
+    p_task_id: task.id,
+    p_expected_version: expectedVersion,
+    p_actor_profile_id: input.userId,
+  })
+  if (error) throw taskDatabaseError(error, 'TASK_ARCHIVE_FAILED')
+
+  return 'Uppdraget har raderats från översikten.'
+}
+
 async function transitionTask(input: TaskActionInput) {
   const taskId = asText(input.payload.taskId)
   const toStatus = input.payload.status
@@ -1026,6 +1049,8 @@ export async function performTaskInternalAction(input: TaskActionInput): Promise
     } else if (input.payload.sendAssignment === false) {
       notice = `${notice} Utskicket till mottagaren väntar tills underlagen har sparats.`
     }
+  } else if (input.action === 'archive_task') {
+    notice = await archiveTask(input)
   } else if (input.action === 'transition') {
     notice = await transitionTask(input)
   } else if (input.action === 'comment') {

@@ -108,6 +108,7 @@ export type TaskView = {
   initialDispatchPending: boolean
   issuerId: string
   issuerName: string
+  canDelete: boolean
   assignee: TaskPerson
   reviewRound: number
   version: number
