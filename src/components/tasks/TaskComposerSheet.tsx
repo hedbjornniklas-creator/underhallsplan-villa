@@ -304,6 +304,7 @@ export default function TaskComposerSheet({
                     className={`${inputClass} appearance-none pr-10`}
                   >
                     <option value="simple">Enkel uppgift</option>
+                    <option value="general">Inget speciellt</option>
                     <option value="paid_external">Betalt externt arbete</option>
                     <option value="warranty">Garantiåtgärd</option>
                   </select>
@@ -339,7 +340,7 @@ export default function TaskComposerSheet({
                       .filter((person) => person.kind === 'profile' && person.isActive)
                       .map((person) => (
                         <option key={`profile:${person.id}`} value={`profile:${person.id}`}>
-                          {person.name}
+                          {person.id === currentUserId ? `(Jag) ${person.name}` : person.name}
                         </option>
                       ))}
                   </optgroup>

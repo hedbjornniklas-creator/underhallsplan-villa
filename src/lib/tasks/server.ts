@@ -184,7 +184,7 @@ function taskDatabaseError(error: { message?: string | null } | null, fallback: 
 }
 
 function isTaskKind(value: unknown): value is TaskKind {
-  return value === 'simple' || value === 'paid_external' || value === 'warranty'
+  return value === 'simple' || value === 'paid_external' || value === 'warranty' || value === 'general'
 }
 
 function isTaskChannel(value: unknown): value is TaskChannel {

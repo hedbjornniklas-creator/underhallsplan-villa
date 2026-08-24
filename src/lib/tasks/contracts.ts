@@ -8,7 +8,7 @@ export type TaskStatus =
   | 'approved'
   | 'cancelled'
 
-export type TaskKind = 'simple' | 'paid_external' | 'warranty'
+export type TaskKind = 'simple' | 'paid_external' | 'warranty' | 'general'
 
 export type TaskChannel = 'email' | 'whatsapp'
 
