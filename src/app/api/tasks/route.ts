@@ -32,6 +32,7 @@ function taskErrorResponse(error: unknown) {
     TASK_TITLE_REQUIRED: 'Ange vad som ska göras.',
     TASK_CREATE_INPUT_INVALID: 'Kontrollera titel, mottagare, datum och kanaler.',
     TASK_REQUIREMENTS_INPUT_INVALID: 'Kontrollpunkterna är ogiltiga.',
+    TASK_EVIDENCE_CHECKLIST_INVALID: 'Kontrollera valen för färdigbevis.',
     TASK_DUE_REQUIRED: 'Ange ett giltigt slutdatum.',
     TASK_FOLLOWUP_REQUIRED: 'Ange när Signe ska följa upp nästa gång.',
     TASK_FOLLOWUP_AFTER_DUE: 'Nästa uppföljning måste ligga senast på slutdatumet.',

@@ -8,12 +8,10 @@ import {
   CircleDot,
   Clock3,
   ListFilter,
-  Link2,
   Plus,
   RefreshCw,
   Search,
   UserRoundCheck,
-  X,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { useToast } from '@/components/ui/AppToastProvider'
@@ -139,7 +137,6 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
   const deepLinkHandled = useRef(false)
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [workspaceError, setWorkspaceError] = useState(initialError)
-  const [accessLink, setAccessLink] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [filter, setFilter] = useState<FilterKey>('all')
   const [search, setSearch] = useState('')
@@ -228,14 +225,6 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
       if (options.showResultToast !== false) {
         if (result.warning) showWarning(result.warning)
         else showSuccess(result.notice ?? 'Sparat.')
-      }
-      if (result.accessUrl) {
-        setAccessLink(result.accessUrl)
-        try {
-          await navigator.clipboard.writeText(result.accessUrl)
-        } catch {
-          // Länken visas nedan om webbläsaren inte tillåter urklipp.
-        }
       }
       return result
     } catch (actionError) {
@@ -336,23 +325,6 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
               <Plus size={18} /> Nytt uppdrag
             </button>
           </header>
-
-          {accessLink ? (
-            <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
-              <div className="flex items-start gap-3">
-                <Link2 className="mt-0.5 shrink-0" size={18} />
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold">Mottagarens uppdragslänk</p>
-                  <a href={accessLink} target="_blank" rel="noreferrer" className="mt-1 block truncate text-xs underline underline-offset-2">
-                    {accessLink}
-                  </a>
-                </div>
-                <button type="button" onClick={() => setAccessLink(null)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full hover:bg-blue-100" aria-label="Stäng">
-                  <X size={17} />
-                </button>
-              </div>
-            </div>
-          ) : null}
 
           {!workspace ? (
             <section className="mt-8 rounded-3xl border border-slate-200 bg-white p-7 text-center shadow-sm sm:p-10">

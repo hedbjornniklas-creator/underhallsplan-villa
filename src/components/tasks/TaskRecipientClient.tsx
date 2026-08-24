@@ -29,7 +29,7 @@ import {
   X,
 } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
-import type { TaskChannel, TaskEvidenceRequirement } from '@/lib/tasks/contracts'
+import type { TaskChannel, TaskCompletionEvidenceType } from '@/lib/tasks/contracts'
 import type { ExternalTaskWorkspace } from '@/lib/tasks/external'
 import TaskAttachmentDropZone from './TaskAttachmentDropZone'
 import { SigneMark } from './SigneMark'
@@ -69,6 +69,26 @@ function attachmentTypeLabel(type: ExternalTaskWorkspace['task']['attachments'][
   if (type === 'document') return 'Dokument'
   if (type === 'audio') return 'Röstmeddelande'
   return 'Textunderlag'
+}
+
+function completionEvidenceSatisfied(
+  type: TaskCompletionEvidenceType,
+  attachments: ExternalTaskWorkspace['task']['attachments']
+) {
+  return attachments.some(
+    (attachment) =>
+      attachment.isCompletionEvidence &&
+      (attachment.type === type ||
+        (type === 'text' && attachment.type === 'audio' && Boolean(attachment.transcriptText?.trim())))
+  )
+}
+
+function matchesCompletionEvidenceRequirement(
+  task: ExternalTaskWorkspace['task'],
+  type: TaskCompletionEvidenceType
+) {
+  if (task.evidenceRequirements.length > 0) return task.evidenceRequirements.includes(type)
+  return task.evidenceRequirement === 'any' || task.evidenceRequirement === type
 }
 
 function recordingExtension(contentType: string) {
@@ -171,7 +191,7 @@ export default function TaskRecipientClient({
   const [delegateFollowupDate, setDelegateFollowupDate] = useState('')
   const [delegatePrimaryChannel, setDelegatePrimaryChannel] = useState<TaskChannel>('email')
   const [delegateFallbackChannel, setDelegateFallbackChannel] = useState<TaskChannel | ''>('whatsapp')
-  const [delegateEvidenceRequirement, setDelegateEvidenceRequirement] = useState<TaskEvidenceRequirement>('optional')
+  const [delegateEvidenceRequirements, setDelegateEvidenceRequirements] = useState<TaskCompletionEvidenceType[]>([])
   const [evidenceText, setEvidenceText] = useState('')
   const [delegatedAccessUrl, setDelegatedAccessUrl] = useState<string | null>(null)
   const [isRecording, setIsRecording] = useState(false)
@@ -192,6 +212,10 @@ export default function TaskRecipientClient({
   const dueDateInput = Number.isNaN(dueDate.getTime()) ? '' : toDateInput(dueDate)
   const waitingWindowOpen = !Number.isNaN(dueDate.getTime()) && dueDate.getTime() >= today.getTime()
   const pendingDeadlineRequest = task.deadlineRequests.find((request) => request.status === 'pending') ?? null
+  const evidenceChecklist = task.evidenceRequirements.map((type) => ({
+    type,
+    complete: completionEvidenceSatisfied(type, task.attachments),
+  }))
   const requirementsComplete = task.requirements.every((requirement) => requirementState(requirement.status, requirement.key).done)
   const prestartBlocked = task.requirements.some(
     (requirement) =>
@@ -298,7 +322,7 @@ export default function TaskRecipientClient({
     formData.append('text', text)
     formData.append(
       'completionEvidence',
-      String(['optional', 'any', 'text'].includes(task.evidenceRequirement))
+      String(matchesCompletionEvidenceRequirement(task, 'text'))
     )
     const ok = await uploadEvidence('attachment', `${endpoint}/attachments`, formData, 'Textunderlaget sparades.')
     if (ok) setEvidenceText('')
@@ -315,8 +339,7 @@ export default function TaskRecipientClient({
     formData.append(
       'completionEvidence',
       String(
-        ['optional', 'any'].includes(task.evidenceRequirement) ||
-          task.evidenceRequirement === evidenceType
+        matchesCompletionEvidenceRequirement(task, evidenceType)
       )
     )
     return uploadEvidence('attachment', `${endpoint}/attachments`, formData, 'Underlaget sparades.')
@@ -405,7 +428,7 @@ export default function TaskRecipientClient({
         formData.append('durationSeconds', String(durationSeconds))
         formData.append(
           'completionEvidence',
-          String(['optional', 'any', 'text'].includes(task.evidenceRequirement))
+          String(matchesCompletionEvidenceRequirement(task, 'text'))
         )
         void uploadEvidence(
           'transcribe',
@@ -458,7 +481,7 @@ export default function TaskRecipientClient({
       setDelegateFollowupDate(toDateInput(boundedFollowupDate))
       setDelegatePrimaryChannel('email')
       setDelegateFallbackChannel('whatsapp')
-      setDelegateEvidenceRequirement('optional')
+      setDelegateEvidenceRequirements([])
     }
     setPanel(nextPanel)
   }
@@ -560,7 +583,7 @@ export default function TaskRecipientClient({
         nextFollowupAt: toIso(delegateFollowupDate),
         primaryChannel: delegatePrimaryChannel,
         fallbackChannel: delegateFallbackChannel || null,
-        evidenceRequirement: delegateEvidenceRequirement,
+        evidenceRequirements: delegateEvidenceRequirements,
         version: task.version,
       },
       'Underuppgiften skapades och tilldelades.'
@@ -833,6 +856,27 @@ export default function TaskRecipientClient({
               Här finns bilder och dokument från uppdragsansvarig. Du kan också lägga till underlag som visar vad som har gjorts.
             </p>
           </div>
+
+          {evidenceChecklist.length > 0 ? (
+            <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Färdigbevis som krävs</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                {evidenceChecklist.map(({ type, complete }) => (
+                  <div key={type} className="flex min-h-11 items-center gap-2 rounded-xl bg-white px-3 text-sm font-semibold text-slate-800">
+                    {complete ? (
+                      <CheckCircle2 className="shrink-0 text-emerald-600" size={19} />
+                    ) : (
+                      <CircleDashed className="shrink-0 text-amber-500" size={19} />
+                    )}
+                    <span>
+                      {type === 'photo' ? 'Foto' : type === 'document' ? 'Dokument' : 'Textredovisning'}
+                      <span className="ml-1 text-xs font-medium text-slate-500">{complete ? 'klart' : 'saknas'}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {activeForAssignee ? (
             <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
@@ -1356,20 +1400,45 @@ export default function TaskRecipientClient({
                   </label>
                 </div>
 
-                <label className="block text-sm font-semibold text-slate-700">
-                  Krav på färdigbevis
-                  <select
-                    value={delegateEvidenceRequirement}
-                    onChange={(event) => setDelegateEvidenceRequirement(event.target.value as TaskEvidenceRequirement)}
-                    className={`${inputClassName} mt-2`}
-                  >
-                    <option value="optional">Frivilligt</option>
-                    <option value="photo">Foto</option>
-                    <option value="document">Dokument</option>
-                    <option value="text">Textredovisning</option>
-                    <option value="any">Valfritt bevis krävs</option>
-                  </select>
-                </label>
+                <fieldset className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <legend className="px-1 text-sm font-semibold text-slate-700">Krav på färdigbevis</legend>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Markera allt som den nya mottagaren måste lämna. Tomt innebär frivilligt.
+                  </p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    {([
+                      ['photo', 'Foto'],
+                      ['document', 'Dokument'],
+                      ['text', 'Textredovisning'],
+                    ] as const).map(([value, label]) => {
+                      const checked = delegateEvidenceRequirements.includes(value)
+                      return (
+                        <label
+                          key={value}
+                          className={`flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${
+                            checked
+                              ? 'border-amber-400 bg-amber-50 text-amber-950'
+                              : 'border-slate-200 bg-slate-50 text-slate-700'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setDelegateEvidenceRequirements((current) =>
+                                current.includes(value)
+                                  ? current.filter((item) => item !== value)
+                                  : [...current, value]
+                              )
+                            }
+                            className="h-5 w-5 rounded border-slate-300 accent-amber-600"
+                          />
+                          {label}
+                        </label>
+                      )
+                    })}
+                  </div>
+                </fieldset>
 
                 {!delegateChannelsCovered && delegateHasContact ? (
                   <p className="text-sm leading-5 text-rose-700">Kontaktuppgifterna måste stödja valda kommunikationskanaler.</p>

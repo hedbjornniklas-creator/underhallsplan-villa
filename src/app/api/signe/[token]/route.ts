@@ -16,6 +16,7 @@ function errorResponse(error: unknown) {
     TASK_TITLE_REQUIRED: 'Ange vad som ska göras i underuppgiften.',
     TASK_DUE_REQUIRED: 'Ange ett giltigt slutdatum.',
     TASK_CREATE_INPUT_INVALID: 'Kontrollera mottagare, datum och kanaler.',
+    TASK_EVIDENCE_CHECKLIST_INVALID: 'Kontrollera valen för färdigbevis.',
     TASK_CONTACT_NAME_REQUIRED: 'Ange namn på den nya mottagaren.',
     TASK_CONTACT_METHOD_REQUIRED: 'Ange e-post eller telefon till den nya mottagaren.',
     TASK_CONTACT_EMAIL_REQUIRED: 'En extern mottagare måste ha e-post för Mina uppdrag.',

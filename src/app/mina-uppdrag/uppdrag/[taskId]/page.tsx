@@ -1,5 +1,6 @@
-import { notFound, redirect } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import TaskRecipientClient from '@/components/tasks/TaskRecipientClient'
+import RecipientTaskAccessDenied from '@/components/tasks/RecipientTaskAccessDenied'
 import { recipientLoginUrl, recipientTaskPath } from '@/lib/tasks/recipientAuthPaths'
 import {
   getRecipientPortalTaskWorkspace,
@@ -24,7 +25,9 @@ export default async function RecipientPortalTaskPage({
     throw error
   }
   const workspace = await getRecipientPortalTaskWorkspace(session, taskId)
-  if (!workspace) notFound()
+  if (!workspace) {
+    return <RecipientTaskAccessDenied taskId={taskId} signedInEmail={session.email} />
+  }
 
   return (
     <TaskRecipientClient

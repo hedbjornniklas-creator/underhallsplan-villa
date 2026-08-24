@@ -14,6 +14,25 @@ export type TaskChannel = 'email' | 'whatsapp'
 
 export type TaskEvidenceRequirement = 'optional' | 'text' | 'photo' | 'document' | 'any'
 
+export const TASK_COMPLETION_EVIDENCE_TYPES = ['photo', 'document', 'text'] as const
+export type TaskCompletionEvidenceType = (typeof TASK_COMPLETION_EVIDENCE_TYPES)[number]
+
+export function evidenceTypesFromLegacyRequirement(
+  requirement: TaskEvidenceRequirement
+): TaskCompletionEvidenceType[] {
+  return requirement === 'text' || requirement === 'photo' || requirement === 'document'
+    ? [requirement]
+    : []
+}
+
+export function legacyRequirementFromEvidenceTypes(
+  requirements: readonly TaskCompletionEvidenceType[]
+): TaskEvidenceRequirement {
+  if (requirements.length === 0) return 'optional'
+  if (requirements.length === 1) return requirements[0]
+  return 'any'
+}
+
 export type TaskRequirementStatus =
   | 'pending'
   | 'evidence_detected'
@@ -105,6 +124,7 @@ export type TaskView = {
   primaryChannel: TaskChannel
   fallbackChannel: TaskChannel | null
   evidenceRequirement: TaskEvidenceRequirement
+  evidenceRequirements: TaskCompletionEvidenceType[]
   initialDispatchPending: boolean
   issuerId: string
   issuerName: string

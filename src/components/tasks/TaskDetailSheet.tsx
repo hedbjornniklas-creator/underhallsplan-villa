@@ -81,6 +81,26 @@ function isImageAttachmentFile(file: File) {
   return file.type.toLowerCase().startsWith('image/') || /\.(jpe?g|png|webp|hei[cf])$/i.test(file.name)
 }
 
+function completionEvidenceSatisfied(
+  type: TaskView['evidenceRequirements'][number],
+  task: TaskView
+) {
+  return task.attachments.some(
+    (attachment) =>
+      attachment.isCompletionEvidence &&
+      (attachment.type === type ||
+        (type === 'text' && attachment.type === 'audio' && Boolean(attachment.transcriptText?.trim())))
+  )
+}
+
+function matchesCompletionEvidenceRequirement(
+  task: TaskView,
+  type: TaskView['evidenceRequirements'][number]
+) {
+  if (task.evidenceRequirements.length > 0) return task.evidenceRequirements.includes(type)
+  return task.evidenceRequirement === 'any' || task.evidenceRequirement === type
+}
+
 export default function TaskDetailSheet({
   task,
   workspace,
@@ -185,6 +205,10 @@ export default function TaskDetailSheet({
 
   const currentId = workspace.currentUser.id
   const isTaskIssuer = task.issuerId === currentId
+  const evidenceChecklist = task.evidenceRequirements.map((type) => ({
+    type,
+    complete: completionEvidenceSatisfied(type, task),
+  }))
   const canActAsAssignee =
     workspace.currentUser.isOrgAdmin ||
     (task.assignee.kind === 'profile' && task.assignee.id === currentId)
@@ -271,8 +295,7 @@ export default function TaskDetailSheet({
       'completionEvidence',
       String(
         completionEvidenceOverride ??
-          (['optional', 'any'].includes(task.evidenceRequirement) ||
-            task.evidenceRequirement === evidenceType)
+          matchesCompletionEvidenceRequirement(task, evidenceType)
       )
     )
     await onUpload(task.id, form)
@@ -287,8 +310,7 @@ export default function TaskDetailSheet({
         const evidenceType = isImageAttachmentFile(file) ? 'photo' : 'document'
         const completionEvidence = isTaskIssuer
           ? false
-          : ['optional', 'any'].includes(task.evidenceRequirement) ||
-            task.evidenceRequirement === evidenceType
+          : matchesCompletionEvidenceRequirement(task, evidenceType)
         form.append('completionEvidence', String(completionEvidence))
         await onUpload(task.id, form)
       }
@@ -303,7 +325,7 @@ export default function TaskDetailSheet({
     form.append('text', evidenceText.trim())
     form.append(
       'completionEvidence',
-      String(['optional', 'any', 'text'].includes(task.evidenceRequirement))
+      String(matchesCompletionEvidenceRequirement(task, 'text'))
     )
     await onUpload(task.id, form)
     setEvidenceText('')
@@ -349,7 +371,7 @@ export default function TaskDetailSheet({
         form.append('durationSeconds', String(durationSeconds))
         form.append(
           'completionEvidence',
-          String(['optional', 'any', 'text'].includes(task.evidenceRequirement))
+          String(matchesCompletionEvidenceRequirement(task, 'text'))
         )
         void onUpload(task.id, form, true).catch(() => undefined)
       }
@@ -802,6 +824,24 @@ export default function TaskDetailSheet({
               <h3 className="text-sm font-semibold text-slate-950">Underlag och färdigbevis</h3>
               <span className="text-xs text-slate-500">{task.attachments.length} bilagor</span>
             </div>
+            {evidenceChecklist.length > 0 ? (
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Färdigbevis som krävs</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  {evidenceChecklist.map(({ type, complete }) => (
+                    <div key={type} className="flex min-h-10 items-center gap-2 rounded-xl bg-white px-3 text-xs font-semibold text-slate-800">
+                      {complete ? (
+                        <CheckCircle2 className="shrink-0 text-emerald-600" size={17} />
+                      ) : (
+                        <CircleDashed className="shrink-0 text-amber-500" size={17} />
+                      )}
+                      {type === 'photo' ? 'Foto' : type === 'document' ? 'Dokument' : 'Textredovisning'}
+                      <span className="text-slate-500">{complete ? 'klart' : 'saknas'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="mt-2">
               <TaskAttachmentDropZone
                 accept={TASK_ATTACHMENT_ACCEPT}

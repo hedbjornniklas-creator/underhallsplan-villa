@@ -23,6 +23,7 @@ const BAD_REQUEST_MESSAGES: Record<string, string> = {
   TASK_EVIDENCE_TEXT_REQUIRED: 'Skriv underlaget som ska sparas.',
   TASK_ATTACHMENT_EMPTY: 'Välj en fil med innehåll.',
   TASK_ATTACHMENT_TYPE_INVALID: 'Filtypen stöds inte.',
+  TASK_COMPLETION_EVIDENCE_TYPE_INVALID: 'Filtypen motsvarar inte något valt krav på färdigbevis.',
   TASK_ATTACHMENT_TOO_LARGE: 'Filen är för stor. Maximal storlek är 25 MB.',
 }
 

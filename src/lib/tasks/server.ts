@@ -6,6 +6,7 @@ import type {
   TaskAiSuggestionView,
   TaskAttachmentView,
   TaskChannel,
+  TaskCompletionEvidenceType,
   TaskDeadlineRequestView,
   TaskEventView,
   TaskEvidenceRequirement,
@@ -16,6 +17,11 @@ import type {
   TaskStatus,
   TaskView,
   TaskWorkspace,
+} from './contracts'
+import {
+  TASK_COMPLETION_EVIDENCE_TYPES,
+  evidenceTypesFromLegacyRequirement,
+  legacyRequirementFromEvidenceTypes,
 } from './contracts'
 import {
   DEFAULT_TASK_AUTOMATION_LIMITS,
@@ -90,6 +96,11 @@ type RequirementRow = {
   is_required: boolean
   verified_by_profile_id: string | null
   verified_at: string | null
+}
+
+type CompletionEvidenceRequirementRow = {
+  task_id: string
+  evidence_type: TaskCompletionEvidenceType
 }
 
 type EventRow = {
@@ -195,6 +206,15 @@ function isEvidenceRequirement(value: unknown): value is TaskEvidenceRequirement
   return value === 'optional' || value === 'text' || value === 'photo' || value === 'document' || value === 'any'
 }
 
+function parseEvidenceRequirements(value: unknown): TaskCompletionEvidenceType[] {
+  if (!Array.isArray(value)) return []
+  const allowed = new Set<string>(TASK_COMPLETION_EVIDENCE_TYPES)
+  if (value.some((item) => typeof item !== 'string' || !allowed.has(item))) {
+    throw new Error('TASK_EVIDENCE_CHECKLIST_INVALID')
+  }
+  return Array.from(new Set(value as TaskCompletionEvidenceType[]))
+}
+
 function actorCanSeeTaskTree(rows: OperationalTaskRow[], userId: string, isOrgAdmin: boolean) {
   if (isOrgAdmin) return new Set(rows.map((row) => row.id))
 
@@ -235,7 +255,7 @@ function actorCanSeeTaskTree(rows: OperationalTaskRow[], userId: string, isOrgAd
   return visible
 }
 
-function requirementTemplates(kind: TaskKind, evidence: TaskEvidenceRequirement) {
+function requirementTemplates(kind: TaskKind, evidence: readonly TaskCompletionEvidenceType[]) {
   const requirements: Array<{ requirement_key: string; label: string; is_required: boolean; status: TaskRequirementStatus }> = []
   if (kind === 'paid_external') {
     requirements.push(
@@ -256,16 +276,16 @@ function requirementTemplates(kind: TaskKind, evidence: TaskEvidenceRequirement)
       status: 'pending',
     })
   }
-  if (evidence !== 'optional') {
-    const evidenceLabels: Record<Exclude<TaskEvidenceRequirement, 'optional'>, string> = {
-      text: 'Textredovisning finns',
-      photo: 'Fotobevis finns',
-      document: 'Dokumentation finns',
-      any: 'Överenskommet färdigbevis finns',
+  if (evidence.length > 0) {
+    const labels: Record<TaskCompletionEvidenceType, string> = {
+      text: 'textredovisning',
+      photo: 'foto',
+      document: 'dokument',
     }
+    const evidenceLabel = evidence.map((type) => labels[type]).join(', ')
     requirements.push({
       requirement_key: 'completion_evidence',
-      label: evidenceLabels[evidence],
+      label: `Färdigbevis finns: ${evidenceLabel}`,
       is_required: true,
       status: 'pending',
     })
@@ -321,8 +341,9 @@ async function loadRows(orgId: string) {
   let attachments: AttachmentRow[] = []
   let aiSuggestions: AiSuggestionRow[] = []
   let followupRules: FollowupRuleRow[] = []
+  let completionEvidenceRequirements: CompletionEvidenceRequirementRow[] = []
   if (taskIds.length > 0) {
-    const [requirementsResult, eventsResult, deadlineResult, attachmentsResult, suggestionsResult, followupResult] = await Promise.all([
+    const [requirementsResult, eventsResult, deadlineResult, attachmentsResult, suggestionsResult, followupResult, completionEvidenceResult] = await Promise.all([
       admin
         .from('task_requirements')
         .select('id,task_id,requirement_key,label,status,is_required,verified_by_profile_id,verified_at')
@@ -354,6 +375,10 @@ async function loadRows(orgId: string) {
         .from('task_followup_rules')
         .select('task_id,initial_dispatch_pending')
         .in('task_id', taskIds),
+      admin
+        .from('task_completion_evidence_requirements')
+        .select('task_id,evidence_type')
+        .in('task_id', taskIds),
     ])
     if (requirementsResult.error) throw new Error('TASK_REQUIREMENTS_READ_FAILED')
     if (eventsResult.error) throw new Error('TASK_EVENTS_READ_FAILED')
@@ -361,15 +386,17 @@ async function loadRows(orgId: string) {
     if (attachmentsResult.error) throw new Error('TASK_ATTACHMENTS_READ_FAILED')
     if (suggestionsResult.error) throw new Error('TASK_AI_SUGGESTIONS_READ_FAILED')
     if (followupResult.error) throw new Error('TASKS_SCHEMA_REQUIRED')
+    if (completionEvidenceResult.error) throw new Error('TASKS_SCHEMA_REQUIRED')
     requirements = (requirementsResult.data ?? []) as RequirementRow[]
     events = (eventsResult.data ?? []) as EventRow[]
     deadlineRequests = (deadlineResult.data ?? []) as DeadlineRequestRow[]
     attachments = (attachmentsResult.data ?? []) as AttachmentRow[]
     aiSuggestions = (suggestionsResult.data ?? []) as AiSuggestionRow[]
     followupRules = (followupResult.data ?? []) as FollowupRuleRow[]
+    completionEvidenceRequirements = (completionEvidenceResult.data ?? []) as CompletionEvidenceRequirementRow[]
   }
 
-  return { tasks, contacts, profiles, requirements, events, deadlineRequests, attachments, aiSuggestions, followupRules }
+  return { tasks, contacts, profiles, requirements, events, deadlineRequests, attachments, aiSuggestions, followupRules, completionEvidenceRequirements }
 }
 
 export async function getTaskWorkspace(input: InternalTaskContext): Promise<TaskWorkspace> {
@@ -436,6 +463,12 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
   const initialDispatchByTask = new Map(
     rows.followupRules.map((rule) => [rule.task_id, rule.initial_dispatch_pending])
   )
+  const evidenceRequirementsByTask = new Map<string, TaskCompletionEvidenceType[]>()
+  for (const requirement of rows.completionEvidenceRequirements) {
+    const list = evidenceRequirementsByTask.get(requirement.task_id) ?? []
+    list.push(requirement.evidence_type)
+    evidenceRequirementsByTask.set(requirement.task_id, list)
+  }
 
   const childCounts = new Map<string, { total: number; open: number }>()
   for (const task of visibleTasks) {
@@ -566,6 +599,9 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       primaryChannel: task.primary_channel,
       fallbackChannel: task.fallback_channel,
       evidenceRequirement: task.evidence_requirement,
+      evidenceRequirements:
+        evidenceRequirementsByTask.get(task.id) ??
+        evidenceTypesFromLegacyRequirement(task.evidence_requirement),
       initialDispatchPending,
       issuerId: task.issuer_profile_id,
       issuerName: issuer?.full_name?.trim() || issuer?.email?.trim() || 'Uppdragsansvarig',
@@ -757,9 +793,12 @@ async function createTask(input: TaskActionInput) {
       ? null
       : input.payload.fallbackChannel
     : null
-  const evidenceRequirement: TaskEvidenceRequirement = isEvidenceRequirement(input.payload.evidenceRequirement)
-    ? input.payload.evidenceRequirement
-    : 'optional'
+  const evidenceRequirements = Array.isArray(input.payload.evidenceRequirements)
+    ? parseEvidenceRequirements(input.payload.evidenceRequirements)
+    : isEvidenceRequirement(input.payload.evidenceRequirement)
+      ? evidenceTypesFromLegacyRequirement(input.payload.evidenceRequirement)
+      : []
+  const evidenceRequirement = legacyRequirementFromEvidenceTypes(evidenceRequirements)
   const parentTaskId = optionalText(input.payload.parentTaskId)
   const sourceAiSuggestionId = optionalText(input.payload.sourceAiSuggestionId)
   let parent: OperationalTaskRow | null = null
@@ -800,7 +839,7 @@ async function createTask(input: TaskActionInput) {
       throw new Error('TASK_CONTACT_WHATSAPP_REQUIRED')
     }
   }
-  const templates = requirementTemplates(taskKind, evidenceRequirement)
+  const templates = requirementTemplates(taskKind, evidenceRequirements)
   const admin = createSupabaseAdminClient()
   const expectedParentVersion = parent
     ? requireExpectedVersion(input.payload.parentVersion)
@@ -813,6 +852,7 @@ async function createTask(input: TaskActionInput) {
     p_primary_channel: primaryChannel,
     p_task_kind: taskKind,
     p_evidence_requirement: evidenceRequirement,
+    p_evidence_requirements: evidenceRequirements,
     p_assignee_profile_id: assignee.assignee_profile_id,
     p_assignee_contact_id: assignee.assignee_contact_id,
     p_parent_task_id: parent?.id ?? null,

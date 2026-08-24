@@ -11,9 +11,15 @@ import { buildTaskEmailHtml } from './emailTemplates'
 import { isTaskStatus } from './domain'
 import type {
   TaskChannel,
+  TaskCompletionEvidenceType,
   TaskEvidenceRequirement,
   TaskRequirementStatus,
   TaskStatus,
+} from './contracts'
+import {
+  TASK_COMPLETION_EVIDENCE_TYPES,
+  evidenceTypesFromLegacyRequirement,
+  legacyRequirementFromEvidenceTypes,
 } from './contracts'
 import type { TaskAttachmentActor } from './attachments'
 import { ensureRecipientTaskEntryLink } from './recipientAuth'
@@ -31,6 +37,7 @@ export type ExternalTaskWorkspace = {
     dueAt: string
     nextFollowupAt: string
     evidenceRequirement: TaskEvidenceRequirement
+    evidenceRequirements: TaskCompletionEvidenceType[]
     issuerName: string
     assigneeName: string
     requirements: Array<{
@@ -136,18 +143,26 @@ function isEvidenceRequirement(value: unknown): value is TaskEvidenceRequirement
   return value === 'optional' || value === 'text' || value === 'photo' || value === 'document' || value === 'any'
 }
 
-function completionRequirement(evidence: TaskEvidenceRequirement) {
-  if (evidence === 'optional') return []
-  const labels: Record<Exclude<TaskEvidenceRequirement, 'optional'>, string> = {
-    text: 'Textredovisning finns',
-    photo: 'Fotobevis finns',
-    document: 'Dokumentation finns',
-    any: 'Överenskommet färdigbevis finns',
+function parseEvidenceRequirements(value: unknown): TaskCompletionEvidenceType[] {
+  if (!Array.isArray(value)) return []
+  const allowed = new Set<string>(TASK_COMPLETION_EVIDENCE_TYPES)
+  if (value.some((item) => typeof item !== 'string' || !allowed.has(item))) {
+    throw new Error('TASK_EVIDENCE_CHECKLIST_INVALID')
+  }
+  return Array.from(new Set(value as TaskCompletionEvidenceType[]))
+}
+
+function completionRequirement(evidence: readonly TaskCompletionEvidenceType[]) {
+  if (evidence.length === 0) return []
+  const labels: Record<TaskCompletionEvidenceType, string> = {
+    text: 'textredovisning',
+    photo: 'foto',
+    document: 'dokument',
   }
   return [
     {
       requirement_key: 'completion_evidence',
-      label: labels[evidence],
+      label: `Färdigbevis finns: ${evidence.map((type) => labels[type]).join(', ')}`,
       status: 'pending',
       is_required: true,
       sort_order: 100,
@@ -264,6 +279,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
         dueAt: hiddenDate,
         nextFollowupAt: hiddenDate,
         evidenceRequirement: 'optional',
+        evidenceRequirements: [],
         issuerName: '',
         assigneeName: '',
         requirements: [],
@@ -278,7 +294,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
   const task = await requireExternalTask(access)
   const admin = createSupabaseAdminClient()
 
-  const [contactResult, issuerResult, requirementsResult, eventsResult, deadlinesResult, attachmentsResult, childrenResult] =
+  const [contactResult, issuerResult, requirementsResult, completionEvidenceResult, eventsResult, deadlinesResult, attachmentsResult, childrenResult] =
     await Promise.all([
       admin
         .from('organization_contacts')
@@ -293,6 +309,10 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
         .select('id,requirement_key,label,status')
         .eq('task_id', task.id)
         .order('sort_order', { ascending: true }),
+      admin
+        .from('task_completion_evidence_requirements')
+        .select('evidence_type')
+        .eq('task_id', task.id),
       admin
         .from('task_events')
         .select('id,event_type,actor_type,actor_name,actor_contact_id,message,from_status,to_status,created_at')
@@ -326,6 +346,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
     contactResult.error,
     issuerResult.error,
     requirementsResult.error,
+    completionEvidenceResult.error,
     eventsResult.error,
     deadlinesResult.error,
     attachmentsResult.error,
@@ -370,6 +391,14 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
       dueAt: task.due_at,
       nextFollowupAt: task.next_followup_at,
       evidenceRequirement: task.evidence_requirement,
+      evidenceRequirements:
+        (completionEvidenceResult.data ?? []).map(
+          (requirement) => requirement.evidence_type as TaskCompletionEvidenceType
+        ).length > 0
+          ? (completionEvidenceResult.data ?? []).map(
+              (requirement) => requirement.evidence_type as TaskCompletionEvidenceType
+            )
+          : evidenceTypesFromLegacyRequirement(task.evidence_requirement),
       issuerName,
       assigneeName: recipientName,
       requirements: (requirementsResult.data ?? []).map((requirement) => ({
@@ -491,9 +520,12 @@ async function createExternalSubtask(input: {
     ? input.payload.fallbackChannel
     : null
   if (fallbackChannel === primaryChannel) throw new Error('TASK_CHANNELS_MUST_DIFFER')
-  const evidenceRequirement = isEvidenceRequirement(input.payload.evidenceRequirement)
-    ? input.payload.evidenceRequirement
-    : 'optional'
+  const evidenceRequirements = Array.isArray(input.payload.evidenceRequirements)
+    ? parseEvidenceRequirements(input.payload.evidenceRequirements)
+    : isEvidenceRequirement(input.payload.evidenceRequirement)
+      ? evidenceTypesFromLegacyRequirement(input.payload.evidenceRequirement)
+      : []
+  const evidenceRequirement = legacyRequirementFromEvidenceTypes(evidenceRequirements)
   const assignee =
     input.payload.assignee && typeof input.payload.assignee === 'object'
       ? (input.payload.assignee as Record<string, unknown>)
@@ -541,7 +573,7 @@ async function createExternalSubtask(input: {
     contact = { id: String(data.id) }
   }
 
-  const { data: createdData, error } = await admin.rpc('create_operational_task', {
+  const { data: createdData, error } = await admin.rpc('create_operational_task_with_dispatch_control', {
     p_org_id: input.access.org_id,
     p_title: title,
     p_due_at: dueAt,
@@ -549,6 +581,8 @@ async function createExternalSubtask(input: {
     p_primary_channel: primaryChannel,
     p_task_kind: 'simple',
     p_evidence_requirement: evidenceRequirement,
+    p_evidence_requirements: evidenceRequirements,
+    p_defer_initial_dispatch: false,
     p_assignee_profile_id: null,
     p_assignee_contact_id: contact.id,
     p_parent_task_id: input.parent.id,
@@ -556,10 +590,11 @@ async function createExternalSubtask(input: {
     p_description: description,
     p_context_label: input.parent.context_label,
     p_fallback_channel: fallbackChannel,
-    p_requirements: completionRequirement(evidenceRequirement),
+    p_requirements: completionRequirement(evidenceRequirements),
     p_actor_profile_id: null,
     p_actor_contact_id: input.access.contact_id,
     p_actor_access_link_id: input.access.id,
+    p_source_ai_suggestion_id: null,
   })
   if (error) throw taskDatabaseError(error, 'TASK_CREATE_FAILED')
   const created = Array.isArray(createdData) ? createdData[0] : createdData

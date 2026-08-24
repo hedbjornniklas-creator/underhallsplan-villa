@@ -5,7 +5,7 @@ import { CalendarClock, Camera, ChevronDown, FileText, Image as ImageIcon, Paper
 import type {
   TaskChannel,
   TaskAiSuggestionView,
-  TaskEvidenceRequirement,
+  TaskCompletionEvidenceType,
   TaskKind,
   TaskPerson,
   TaskView,
@@ -31,7 +31,7 @@ type CreatePayload = {
   nextFollowupAt: string
   primaryChannel: TaskChannel
   fallbackChannel: TaskChannel | ''
-  evidenceRequirement: TaskEvidenceRequirement
+  evidenceRequirements: TaskCompletionEvidenceType[]
   attachments: File[]
 }
 
@@ -130,7 +130,7 @@ export default function TaskComposerSheet({
   const [followupDate, setFollowupDate] = useState(initialFollowupDate)
   const [primaryChannel, setPrimaryChannel] = useState<TaskChannel>('email')
   const [fallbackChannel, setFallbackChannel] = useState<TaskChannel | ''>('whatsapp')
-  const [evidenceRequirement, setEvidenceRequirement] = useState<TaskEvidenceRequirement>('optional')
+  const [evidenceRequirements, setEvidenceRequirements] = useState<TaskCompletionEvidenceType[]>([])
   const [attachments, setAttachments] = useState<File[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
 
@@ -227,7 +227,7 @@ export default function TaskComposerSheet({
       nextFollowupAt: fromDateInput(followupDate),
       primaryChannel,
       fallbackChannel,
-      evidenceRequirement,
+      evidenceRequirements,
       attachments,
     })
   }
@@ -454,20 +454,45 @@ export default function TaskComposerSheet({
               </p>
             ) : null}
 
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-semibold text-slate-800">Krav på färdigbevis</span>
-              <select
-                value={evidenceRequirement}
-                onChange={(event) => setEvidenceRequirement(event.target.value as TaskEvidenceRequirement)}
-                className={inputClass}
-              >
-                <option value="optional">Frivilligt</option>
-                <option value="photo">Foto</option>
-                <option value="document">Dokument</option>
-                <option value="text">Textredovisning</option>
-                <option value="any">Valfritt bevis krävs</option>
-              </select>
-            </label>
+            <fieldset className="rounded-2xl border border-slate-200 bg-white p-4">
+              <legend className="px-1 text-sm font-semibold text-slate-800">Krav på färdigbevis</legend>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Markera allt som mottagaren måste lämna. Om inget markeras är färdigbevis frivilligt.
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                {([
+                  ['photo', 'Foto'],
+                  ['document', 'Dokument'],
+                  ['text', 'Textredovisning'],
+                ] as const).map(([value, label]) => {
+                  const checked = evidenceRequirements.includes(value)
+                  return (
+                    <label
+                      key={value}
+                      className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-2.5 text-sm font-semibold transition ${
+                        checked
+                          ? 'border-amber-400 bg-amber-50 text-amber-950 ring-2 ring-amber-100'
+                          : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-amber-300'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setEvidenceRequirements((current) =>
+                            current.includes(value)
+                              ? current.filter((item) => item !== value)
+                              : [...current, value]
+                          )
+                        }
+                        className="h-5 w-5 rounded border-slate-300 accent-amber-600"
+                      />
+                      {label}
+                    </label>
+                  )
+                })}
+              </div>
+            </fieldset>
 
             <fieldset className="rounded-2xl border border-slate-200 bg-white p-4">
               <legend className="px-1 text-sm font-semibold text-slate-800">Bilder och dokument</legend>

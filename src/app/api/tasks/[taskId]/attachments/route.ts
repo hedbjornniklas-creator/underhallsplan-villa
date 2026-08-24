@@ -21,6 +21,7 @@ function errorResponse(error: unknown) {
     TASK_ATTACHMENT_EMPTY: ['Filen är tom.', 400],
     TASK_ATTACHMENT_TOO_LARGE: ['Filen är för stor. Maximal storlek är 25 MB.', 400],
     TASK_ATTACHMENT_TYPE_INVALID: ['Filtypen stöds inte.', 400],
+    TASK_COMPLETION_EVIDENCE_TYPE_INVALID: ['Filtypen motsvarar inte något valt krav på färdigbevis.', 400],
   }
   const mapped = errors[code]
   return NextResponse.json(

@@ -5,11 +5,13 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { evaluateTaskRisk, isTaskStatus } from './domain'
 import type { TaskAttachmentActor } from './attachments'
 import type {
+  TaskCompletionEvidenceType,
   TaskEvidenceRequirement,
   TaskRequirementStatus,
   TaskRisk,
   TaskStatus,
 } from './contracts'
+import { evidenceTypesFromLegacyRequirement } from './contracts'
 import type { ExternalTaskWorkspace } from './external'
 
 export type RecipientPortalSession = {
@@ -420,7 +422,7 @@ export async function getRecipientPortalTaskWorkspace(
   const task = await loadPortalTask(scope)
   const admin = createSupabaseAdminClient()
 
-  const [contactResult, issuerResult, requirementsResult, eventsResult, deadlinesResult, attachmentsResult] =
+  const [contactResult, issuerResult, requirementsResult, completionEvidenceResult, eventsResult, deadlinesResult, attachmentsResult] =
     await Promise.all([
       admin
         .from('organization_contacts')
@@ -440,6 +442,11 @@ export async function getRecipientPortalTaskWorkspace(
         .eq('task_id', task.id)
         .eq('org_id', task.org_id)
         .order('sort_order', { ascending: true }),
+      admin
+        .from('task_completion_evidence_requirements')
+        .select('evidence_type')
+        .eq('task_id', task.id)
+        .eq('org_id', task.org_id),
       admin
         .from('task_events')
         .select('id,event_type,actor_type,actor_name,actor_contact_id,message,from_status,to_status,created_at')
@@ -468,6 +475,7 @@ export async function getRecipientPortalTaskWorkspace(
     contactResult.error,
     issuerResult.error,
     requirementsResult.error,
+    completionEvidenceResult.error,
     eventsResult.error,
     deadlinesResult.error,
     attachmentsResult.error,
@@ -513,6 +521,12 @@ export async function getRecipientPortalTaskWorkspace(
       dueAt: task.due_at,
       nextFollowupAt: task.next_followup_at,
       evidenceRequirement: task.evidence_requirement,
+      evidenceRequirements:
+        completionEvidenceResult.data && completionEvidenceResult.data.length > 0
+          ? completionEvidenceResult.data.map(
+              (requirement) => requirement.evidence_type as TaskCompletionEvidenceType
+            )
+          : evidenceTypesFromLegacyRequirement(task.evidence_requirement),
       issuerName: profileName(issuerResult.data),
       assigneeName: recipientName,
       requirements: (requirementsResult.data ?? []).flatMap((requirement) => {
