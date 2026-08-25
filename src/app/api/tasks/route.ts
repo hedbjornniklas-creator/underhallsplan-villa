@@ -105,6 +105,8 @@ function taskErrorResponse(error: unknown) {
     'TASK_EXTENSION_REQUEST_FORBIDDEN',
     'TASK_EXTENSION_DECIDE_FORBIDDEN',
     'TASK_ACCESS_ISSUE_FORBIDDEN',
+    'TASK_ACCESS_BEARER_ISSUE_FORBIDDEN',
+    'TASK_ACCESS_ROTATION_CREATOR_FORBIDDEN',
     'TASK_DISPATCH_FORBIDDEN',
     'TASK_ARCHIVE_FORBIDDEN',
     'TASK_REVIEW_ACTION_FORBIDDEN',
@@ -155,6 +157,9 @@ function taskErrorResponse(error: unknown) {
   }
   if (code === 'TASK_VERSION_CONFLICT' || code === 'TASK_PARENT_VERSION_CONFLICT') {
     return jsonError('Uppgiften ändrades av någon annan. Ladda om och försök igen.', 409, code)
+  }
+  if (code === 'TASK_ACCESS_LINK_ASSIGNEE_INVALID') {
+    return jsonError('Uppdragets mottagare har ändrats. Ladda om och försök igen.', 409, code)
   }
   if (badRequest[code]) return jsonError(badRequest[code], 400, code)
   if (

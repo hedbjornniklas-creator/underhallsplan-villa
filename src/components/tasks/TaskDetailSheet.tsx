@@ -551,7 +551,7 @@ export default function TaskDetailSheet({
               <div>
                 <p className="text-sm font-semibold text-blue-950">Extern mottagare</p>
                 <p className="mt-0.5 text-xs leading-5 text-blue-800">
-                  Skicka en ny kontoaktivering eller en direktlänk till mottagarens portal.
+                  Skicka en ny personlig länk som öppnar just det här uppdraget utan inloggning.
                 </p>
               </div>
               <button

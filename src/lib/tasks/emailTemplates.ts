@@ -12,6 +12,8 @@ type TaskEmailTemplateInput = {
   instruction?: string | null
   actionUrl?: string | null
   actionLabel?: string
+  secondaryActionUrl?: string | null
+  secondaryActionLabel?: string
   notice?: string | null
 }
 
@@ -69,6 +71,12 @@ export function buildTaskEmailHtml(input: TaskEmailTemplateInput) {
           <td>${bulletproofButton(input.actionUrl, input.actionLabel ?? 'Öppna uppdraget')}</td>
         </tr>
       </table>`
+    : ''
+  const secondaryAction = input.secondaryActionUrl
+    ? `
+      <p style="margin:16px 0 0;font-family:Arial,sans-serif;font-size:14px;line-height:21px;color:#57534e;">
+        <a href="${escapeHtml(input.secondaryActionUrl)}" target="_blank" rel="noreferrer" style="font-weight:700;color:#92400e;text-decoration:underline;">${escapeHtml(input.secondaryActionLabel ?? 'Mina uppdrag')}</a>
+      </p>`
     : ''
   const notice = input.notice
     ? `
@@ -129,6 +137,7 @@ export function buildTaskEmailHtml(input: TaskEmailTemplateInput) {
 
                 ${instruction}
                 ${action}
+                ${secondaryAction}
                 ${notice}
 
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:28px 0 0;">

@@ -6,6 +6,7 @@ import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/
 import { recipientTaskPath } from './recipientAuthPaths'
 
 const ACTIVATION_LIFETIME_MS = 14 * 24 * 60 * 60 * 1000
+const DIRECT_TASK_ACCESS_LIFETIME_MS = 180 * 24 * 60 * 60 * 1000
 const MIN_PASSWORD_LENGTH = 8
 const MAX_PASSWORD_LENGTH = 128
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -47,6 +48,10 @@ type ActivationTokenRow = {
 type RecipientPortalGrantRow = {
   id: string
   recipient_identity_id: string
+}
+
+type DirectTaskAccessLinkRow = {
+  id: string
 }
 
 export type RecipientActivationPreview = {
@@ -146,6 +151,74 @@ function absolutePortalUrl(baseUrl: string, path: string) {
   return new URL(path, `${base.origin}/`).toString()
 }
 
+/**
+ * Issues a new exact-task bearer credential without exposing its plaintext to
+ * Postgres. The caller may pass the returned URL only to the delivery provider;
+ * it must never be persisted, logged or returned through an internal API.
+ */
+export async function issueDirectTaskAccessLink(input: {
+  taskId: string
+  contactId: string
+  createdByProfileId: string
+  baseUrl: string
+  issuedBySystem?: boolean
+}) {
+  assertUuid(input.taskId, 'TASK_RECIPIENT_TASK_INVALID')
+  assertUuid(input.contactId, 'TASK_RECIPIENT_CONTACT_INVALID')
+  assertUuid(input.createdByProfileId, 'TASK_ACCESS_CREATOR_INVALID')
+
+  const token = generateAssignmentToken()
+  const expiresAt = new Date(Date.now() + DIRECT_TASK_ACCESS_LIFETIME_MS).toISOString()
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin.rpc('issue_task_bearer_access_link', {
+    p_task_id: input.taskId,
+    p_contact_id: input.contactId,
+    p_token_hash: hashAssignmentToken(token),
+    p_expires_at: expiresAt,
+    p_created_by_profile_id: input.createdByProfileId,
+    p_issued_by_system: input.issuedBySystem === true,
+  })
+  if (error) {
+    if (
+      error.code === 'PGRST202' ||
+      error.message?.includes('issue_task_bearer_access_link')
+    ) {
+      throw new Error('TASKS_SCHEMA_REQUIRED')
+    }
+    const databaseCode = error.message?.match(/TASK_[A-Z0-9_]+/)?.[0]
+    throw new Error(databaseCode ?? 'TASK_ACCESS_CREATE_FAILED')
+  }
+
+  const link = oneRpcRow<DirectTaskAccessLinkRow>(data)
+  if (!link?.id) throw new Error('TASK_ACCESS_CREATE_FAILED')
+
+  const { data: currentContact, error: contactError } = await admin
+    .from('organization_contacts')
+    .select('email,phone,whatsapp_number,recipient_identity_id')
+    .eq('id', input.contactId)
+    .eq('is_active', true)
+    .maybeSingle()
+  if (contactError || !currentContact) throw new Error('TASK_CONTACT_NOT_FOUND')
+
+  const recipientEmail = normalizeEmail(currentContact.email) || null
+  const recipientWhatsappNumber =
+    (typeof currentContact.whatsapp_number === 'string' && currentContact.whatsapp_number.trim()) ||
+    (typeof currentContact.phone === 'string' && currentContact.phone.trim()) ||
+    null
+
+  return {
+    accessLinkId: link.id,
+    url: absolutePortalUrl(input.baseUrl, `/signe/${encodeURIComponent(token)}`),
+    deliveryKey: `bearer:${link.id}`,
+    recipientEmail,
+    recipientWhatsappNumber,
+    recipientIdentityId:
+      typeof currentContact.recipient_identity_id === 'string'
+        ? currentContact.recipient_identity_id
+        : null,
+  }
+}
+
 async function ensureIdentityForContact(contactId: string) {
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin.rpc('ensure_task_recipient_identity_for_contact', {
@@ -175,9 +248,10 @@ async function requireRecipientIdentity(identityId: string) {
 }
 
 /**
- * Chooses the link used in a task notification. Active recipients get a stable
- * authenticated portal URL. Everyone else gets a newly rotated, hash-only
- * activation link; the plain token only exists in this process and the URL.
+ * Chooses the optional account link shown beside a direct task link. Active
+ * recipients get an authenticated portal URL. Everyone else gets a newly
+ * rotated, hash-only activation link; its plaintext only exists in this
+ * process and the provider-bound notification URL.
  */
 export function ensureRecipientTaskEntryLink(
   input: EnsureRecipientTaskEntryLinkInput & { allowActivation: false }

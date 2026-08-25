@@ -13,5 +13,11 @@ export default async function SigneTaskPage({
   const workspace = await getExternalTaskWorkspace(token)
   if (!workspace) notFound()
 
-  return <TaskRecipientClient initialWorkspace={workspace} endpoint={`/api/signe/${token}`} />
+  return (
+    <TaskRecipientClient
+      initialWorkspace={workspace}
+      endpoint={`/api/signe/${token}`}
+      showMyTasksLink
+    />
+  )
 }

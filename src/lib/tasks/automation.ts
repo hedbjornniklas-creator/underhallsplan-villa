@@ -12,7 +12,7 @@ import {
 } from '@/lib/tasks/domain'
 import type { TaskStatus } from '@/lib/tasks/contracts'
 import { buildTaskEmailHtml } from '@/lib/tasks/emailTemplates'
-import { ensureRecipientTaskEntryLink } from '@/lib/tasks/recipientAuth'
+import { issueDirectTaskAccessLink } from '@/lib/tasks/recipientAuth'
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 
@@ -677,9 +677,12 @@ function buildReminderContent(input: {
     ? `${appBaseUrl()}/uppdrag?task=${encodeURIComponent(input.task.id)}`
     : null
   const actionUrl = internalUrl ?? input.recipientActionUrl ?? null
+  const myTasksUrl = input.recipient.kind === 'contact'
+    ? `${appBaseUrl()}/mina-uppdrag`
+    : null
   const externalLinkNote = input.recipient.kind === 'contact'
     ? actionUrl
-      ? 'Logga in med e-post och lösenord. Från Mina uppdrag når du även dina övriga uppgifter.'
+      ? 'Den direkta länken är personlig och öppnar bara detta uppdrag. Vidarebefordra den inte.'
       : 'Öppna uppdraget via den personliga länken i det första utskicket.'
     : null
   const contextText = input.task.context_label ? `Projekt: ${input.task.context_label}` : null
@@ -692,6 +695,7 @@ function buildReminderContent(input: {
     '',
     instruction,
     actionUrl ? `Öppna uppdraget: ${actionUrl}` : externalLinkNote,
+    myTasksUrl ? `Mina uppdrag (inloggning krävs): ${myTasksUrl}` : null,
     '',
     'Hälsningar, Signe',
   ].filter((line): line is string => line !== null).join('\n')
@@ -707,6 +711,8 @@ function buildReminderContent(input: {
     instruction,
     actionUrl,
     actionLabel: 'Öppna uppdraget',
+    secondaryActionUrl: myTasksUrl,
+    secondaryActionLabel: myTasksUrl ? 'Mina uppdrag' : undefined,
     notice: externalLinkNote,
   })
   const auditText = [
@@ -937,6 +943,7 @@ async function ensureDelivery(input: {
   idempotencyKey: string
   isFallback: boolean
   recipientAddress: string | null
+  accessLinkId?: string | null
   content: { subject: string; text: string; html: string; auditText: string; actionUrl: string | null }
 }) {
   const { data: existingData, error: existingError } = await input.admin
@@ -969,6 +976,8 @@ async function ensureDelivery(input: {
         policyActionIdempotencyKey: input.action.idempotencyKey,
         jobId: input.job.id,
         isFallback: input.isFallback,
+        ...(input.accessLinkId ? { accessLinkId: input.accessLinkId } : {}),
+        tokenPersisted: false,
       },
     })
     .select('id')
@@ -993,6 +1002,8 @@ async function ensureDelivery(input: {
         subject: input.content.subject,
         actionKind: input.action.kind,
         reason: input.action.reason,
+        ...(input.accessLinkId ? { accessLinkId: input.accessLinkId } : {}),
+        tokenPersisted: false,
       },
     })
     .select('id,message_id,channel,status,attempt_count,max_attempts,idempotency_key,created_at')
@@ -1128,23 +1139,28 @@ async function deliverViaChannel(input: {
   }
 
   let recipientActionUrl: string | null = null
-  let recipientEntryMode: 'activation' | 'activation_required' | 'portal' | null = null
-  let recipientEntryDeliveryKey: string | null = null
+  let recipientAccessLinkId: string | null = null
+  let recipientAccessDeliveryKey: string | null = null
   let canonicalRecipientEmail: string | null = null
-  if (input.recipient.kind === 'contact' && input.recipient.email) {
-    const entry = await ensureRecipientTaskEntryLink({
+  let canonicalRecipientWhatsappNumber: string | null = null
+  if (input.recipient.kind === 'contact') {
+    const directLink = await issueDirectTaskAccessLink({
       contactId: input.recipient.id,
       taskId: input.task.id,
+      createdByProfileId: input.issuer.id,
       baseUrl: appBaseUrl(),
-      allowActivation: input.channel === 'email',
+      issuedBySystem: true,
     })
-    recipientActionUrl = entry.url
-    recipientEntryMode = entry.mode
-    recipientEntryDeliveryKey = entry.deliveryKey
-    canonicalRecipientEmail = entry.recipientEmail
+    recipientActionUrl = directLink.url
+    recipientAccessLinkId = directLink.accessLinkId
+    recipientAccessDeliveryKey = directLink.deliveryKey
+    canonicalRecipientEmail = directLink.recipientEmail
+    canonicalRecipientWhatsappNumber = directLink.recipientWhatsappNumber
   }
-  const recipientAddress = input.channel === 'email' && input.recipient.kind === 'contact'
-    ? canonicalRecipientEmail
+  const recipientAddress = input.recipient.kind === 'contact'
+    ? input.channel === 'email'
+      ? canonicalRecipientEmail
+      : normalizedWhatsAppNumber(canonicalRecipientWhatsappNumber)
     : deliveryAddress(input.recipient, input.channel)
   const content = buildReminderContent({
     action: input.action,
@@ -1152,7 +1168,12 @@ async function deliverViaChannel(input: {
     recipient: input.recipient,
     recipientActionUrl,
   })
-  const delivery = await ensureDelivery({ ...input, content, recipientAddress })
+  const delivery = await ensureDelivery({
+    ...input,
+    content,
+    recipientAddress,
+    accessLinkId: recipientAccessLinkId,
+  })
   if (delivery.channel !== input.channel) {
     throw automationError('TASK_DELIVERY_CHANNEL_CONFLICT')
   }
@@ -1183,15 +1204,6 @@ async function deliverViaChannel(input: {
       errorCode: 'TASK_DELIVERY_ATTEMPTS_EXHAUSTED',
     }
   }
-  if (recipientEntryMode === 'activation_required') {
-    await updateDeliveryFailure(input.admin, delivery.id, 'TASK_RECIPIENT_ACTIVATION_EMAIL_REQUIRED')
-    return {
-      delivered: false,
-      deliveryId: delivery.id,
-      messageId: delivery.message_id,
-      errorCode: 'TASK_RECIPIENT_ACTIVATION_EMAIL_REQUIRED',
-    }
-  }
   if (delivery.status === 'sending' && input.channel === 'whatsapp') {
     await updateDeliveryFailure(input.admin, delivery.id, 'TASK_WHATSAPP_DELIVERY_AMBIGUOUS')
     return {
@@ -1216,10 +1228,18 @@ async function deliverViaChannel(input: {
     .from('task_message_deliveries')
     .update({
       status: 'sending',
+      recipient_address: address,
       attempt_count: delivery.attempt_count + 1,
       failed_at: null,
       next_attempt_at: null,
       error_message: null,
+      provider_payload: {
+        subject: content.subject,
+        actionKind: input.action.kind,
+        reason: input.action.reason,
+        ...(recipientAccessLinkId ? { accessLinkId: recipientAccessLinkId } : {}),
+        tokenPersisted: false,
+      },
     })
     .eq('id', delivery.id)
     .eq('status', delivery.status)
@@ -1229,12 +1249,42 @@ async function deliverViaChannel(input: {
   if (sendingError) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
   if (!sendingData) throw automationError('TASK_DELIVERY_CONCURRENT_ATTEMPT')
 
+  const { error: messageMetadataError } = await input.admin
+    .from('task_messages')
+    .update({
+      metadata: {
+        target: input.action.target,
+        recipientKind: input.recipient.kind,
+        recipientId: input.recipient.id,
+        actionKind: input.action.kind,
+        reason: input.action.reason,
+        actionIdempotencyKey: input.idempotencyKey,
+        policyActionIdempotencyKey: input.action.idempotencyKey,
+        jobId: input.job.id,
+        isFallback: input.isFallback,
+        ...(recipientAccessLinkId ? { accessLinkId: recipientAccessLinkId } : {}),
+        tokenPersisted: false,
+      },
+    })
+    .eq('id', delivery.message_id)
+    .eq('task_id', input.task.id)
+  if (messageMetadataError) {
+    await updateDeliveryFailure(input.admin, delivery.id, 'TASK_MESSAGE_UPDATE_FAILED')
+    return {
+      delivered: false,
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      errorCode: 'TASK_MESSAGE_UPDATE_FAILED',
+    }
+  }
+
   let providerMessageId: string | null
   try {
-    // Each activation retry rotates the secret. Bind provider deduplication to
-    // that token row so Resend cannot return an older email with a revoked URL.
-    const providerIdempotencyKey = recipientEntryMode === 'activation' && recipientEntryDeliveryKey
-      ? `${input.idempotencyKey}:${recipientEntryDeliveryKey}`
+    // Each retry gets a fresh hash-only bearer link. Bind provider
+    // deduplication to that link so a provider cannot substitute an older
+    // message while the audit trail points at the newly issued credential.
+    const providerIdempotencyKey = recipientAccessDeliveryKey
+      ? `${input.idempotencyKey}:${recipientAccessDeliveryKey}`
       : input.idempotencyKey
     providerMessageId = input.channel === 'email'
       ? await sendResendEmail({
@@ -1262,7 +1312,7 @@ async function deliverViaChannel(input: {
                 input.task.title.slice(0, 1024),
                 dueDateLabel(input.task.due_at),
               ],
-          idempotencyKey: input.idempotencyKey,
+          idempotencyKey: providerIdempotencyKey,
         })
   } catch (error) {
     const errorCode = safeErrorCode(error)
@@ -1286,6 +1336,13 @@ async function deliverViaChannel(input: {
     })
     .eq('id', delivery.id)
   if (sentError) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+  if (recipientAccessLinkId) {
+    await input.admin
+      .from('task_access_links')
+      .update({ sent_at: sentAt })
+      .eq('id', recipientAccessLinkId)
+      .is('revoked_at', null)
+  }
   await recordDeliveryEvent({
     admin: input.admin,
     job: input.job,
