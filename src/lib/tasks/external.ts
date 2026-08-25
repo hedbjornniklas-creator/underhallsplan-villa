@@ -36,6 +36,7 @@ export type ExternalTaskWorkspace = {
     status: TaskStatus
     dueAt: string
     nextFollowupAt: string
+    createdAt: string
     evidenceRequirement: TaskEvidenceRequirement
     evidenceRequirements: TaskCompletionEvidenceType[]
     issuerName: string
@@ -108,6 +109,7 @@ type ExternalTaskRow = {
   status: TaskStatus
   due_at: string
   next_followup_at: string
+  created_at: string
   evidence_requirement: TaskEvidenceRequirement
   submitted_for_review_at: string | null
   version: number
@@ -211,7 +213,7 @@ async function requireExternalTask(access: AccessRow) {
   const { data, error } = await admin
     .from('operational_tasks')
     .select(
-      'id,org_id,parent_task_id,root_task_id,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,status,due_at,next_followup_at,evidence_requirement,submitted_for_review_at,version'
+      'id,org_id,parent_task_id,root_task_id,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,status,due_at,next_followup_at,evidence_requirement,submitted_for_review_at,version,created_at'
     )
     .eq('id', access.task_id)
     .eq('org_id', access.org_id)
@@ -278,6 +280,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
         status: 'cancelled',
         dueAt: hiddenDate,
         nextFollowupAt: hiddenDate,
+        createdAt: hiddenDate,
         evidenceRequirement: 'optional',
         evidenceRequirements: [],
         issuerName: '',
@@ -390,6 +393,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
       status: task.status,
       dueAt: task.due_at,
       nextFollowupAt: task.next_followup_at,
+      createdAt: task.created_at,
       evidenceRequirement: task.evidence_requirement,
       evidenceRequirements:
         (completionEvidenceResult.data ?? []).map(

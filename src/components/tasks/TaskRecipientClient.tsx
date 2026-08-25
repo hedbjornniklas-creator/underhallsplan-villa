@@ -25,13 +25,13 @@ import {
   Send,
   Square,
   UserPlus,
-  UserRound,
   X,
 } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
 import type { TaskChannel, TaskCompletionEvidenceType } from '@/lib/tasks/contracts'
 import type { ExternalTaskWorkspace } from '@/lib/tasks/external'
 import TaskAttachmentDropZone from './TaskAttachmentDropZone'
+import TaskTimeProgress from './TaskTimeProgress'
 import { SigneMark } from './SigneMark'
 import { TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
 
@@ -680,10 +680,6 @@ export default function TaskRecipientClient({
 
           <dl className="grid grid-cols-2 gap-px bg-slate-200">
             <div className="min-w-0 bg-white p-4">
-              <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500"><UserRound size={14} /> Mottagare</dt>
-              <dd className="mt-2 break-words text-sm font-semibold text-slate-900">{task.assigneeName}</dd>
-            </div>
-            <div className="min-w-0 bg-white p-4">
               <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500"><CalendarClock size={14} /> Deadline</dt>
               <dd className="mt-2 text-sm font-semibold text-slate-900">{formatDate(task.dueAt)}</dd>
             </div>
@@ -691,12 +687,10 @@ export default function TaskRecipientClient({
               <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Uppdragsansvarig</dt>
               <dd className="mt-2 break-words text-sm font-semibold text-slate-900">{task.issuerName}</dd>
             </div>
-            <div className="min-w-0 bg-white p-4">
-              <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500"><Clock3 size={14} /> Nästa uppföljning</dt>
-              <dd className="mt-2 text-sm font-semibold text-slate-900">{formatDate(task.nextFollowupAt)}</dd>
-            </div>
           </dl>
         </section>
+
+        <TaskTimeProgress startedAt={task.createdAt} dueAt={task.dueAt} />
 
         <section className="mt-4 rounded-3xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm" aria-labelledby="recipient-next-step-heading">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-700">Ditt nästa steg</p>

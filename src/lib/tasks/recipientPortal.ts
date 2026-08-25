@@ -74,6 +74,7 @@ type PortalTaskRow = {
   status: TaskStatus
   due_at: string
   next_followup_at: string
+  created_at: string
   evidence_requirement: TaskEvidenceRequirement
   submitted_for_review_at: string | null
   version: number
@@ -113,6 +114,7 @@ const TASK_SELECT = [
   'status',
   'due_at',
   'next_followup_at',
+  'created_at',
   'evidence_requirement',
   'submitted_for_review_at',
   'version',
@@ -198,6 +200,7 @@ function parseTask(value: unknown): PortalTaskRow | null {
     typeof row.title !== 'string' ||
     typeof row.due_at !== 'string' ||
     typeof row.next_followup_at !== 'string' ||
+    typeof row.created_at !== 'string' ||
     !isTaskStatus(row.status) ||
     !isEvidenceRequirement(row.evidence_requirement) ||
     !Number.isInteger(Number(row.version))
@@ -217,6 +220,7 @@ function parseTask(value: unknown): PortalTaskRow | null {
     status: row.status,
     due_at: row.due_at,
     next_followup_at: row.next_followup_at,
+    created_at: row.created_at,
     evidence_requirement: row.evidence_requirement,
     submitted_for_review_at: typeof row.submitted_for_review_at === 'string'
       ? row.submitted_for_review_at
@@ -520,6 +524,7 @@ export async function getRecipientPortalTaskWorkspace(
       status: task.status,
       dueAt: task.due_at,
       nextFollowupAt: task.next_followup_at,
+      createdAt: task.created_at,
       evidenceRequirement: task.evidence_requirement,
       evidenceRequirements:
         completionEvidenceResult.data && completionEvidenceResult.data.length > 0
