@@ -129,9 +129,9 @@ function actorsForTransition(from: TaskStatus, to: TaskStatus): readonly TaskTra
   if (from === 'draft' && to === 'assigned') return ['creator', 'administrator']
   if (from === 'ready_for_review' && to === 'approved') return ['creator', 'administrator']
   if (from === 'ready_for_review' && to === 'returned') return ['creator', 'administrator']
-  if (to === 'in_progress') return ['assignee', 'signe', 'system', 'administrator']
-  if (to === 'waiting') return ['assignee', 'signe', 'administrator']
-  if (to === 'ready_for_review') return ['assignee', 'signe', 'system', 'administrator']
+  if (to === 'in_progress') return ['assignee', 'signe', 'system']
+  if (to === 'waiting') return ['assignee', 'signe']
+  if (to === 'ready_for_review') return ['assignee', 'signe', 'system']
   return []
 }
 

@@ -930,6 +930,12 @@ async function transitionTask(input: TaskActionInput) {
   const task = await requireTask(input.orgId, taskId)
   const message = optionalText(input.payload.message)
   const expectedVersion = requireExpectedVersion(input.payload.version)
+  if (
+    ['in_progress', 'waiting', 'ready_for_review'].includes(toStatus) &&
+    task.assignee_profile_id !== input.userId
+  ) {
+    throw new Error('TASK_ASSIGNEE_ACTION_FORBIDDEN')
+  }
   const nextFollowupAt =
     toStatus === 'waiting'
       ? parseIsoTimestamp(input.payload.nextFollowupAt, 'TASK_FOLLOWUP_REQUIRED')
@@ -1003,7 +1009,7 @@ async function requestDeadlineChange(input: TaskActionInput) {
   if (!taskId) throw new Error('TASK_NOT_FOUND')
   if (!reason) throw new Error('TASK_EXTENSION_REASON_REQUIRED')
   const task = await requireTask(input.orgId, taskId)
-  if (task.assignee_profile_id !== input.userId && !input.isOrgAdmin) {
+  if (task.assignee_profile_id !== input.userId) {
     throw new Error('TASK_EXTENSION_REQUEST_FORBIDDEN')
   }
   if (new Date(requestedDueAt).getTime() <= new Date(task.due_at).getTime()) {

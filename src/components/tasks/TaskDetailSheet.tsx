@@ -209,9 +209,7 @@ export default function TaskDetailSheet({
     type,
     complete: completionEvidenceSatisfied(type, task),
   }))
-  const canActAsAssignee =
-    workspace.currentUser.isOrgAdmin ||
-    (task.assignee.kind === 'profile' && task.assignee.id === currentId)
+  const canActAsAssignee = task.assignee.kind === 'profile' && task.assignee.id === currentId
   const canActAsIssuer = workspace.currentUser.isOrgAdmin || isTaskIssuer
   const canCreateChild =
     !['approved', 'cancelled'].includes(task.status) &&
