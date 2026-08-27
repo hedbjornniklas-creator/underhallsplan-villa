@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
+import PendingLink from '@/components/ui/PendingLink'
 import EbProjectAttachmentsPanel from '@/components/eb/EbProjectAttachmentsPanel'
 import EbAssignmentConfirmationDialog from '@/components/eb/EbAssignmentConfirmationDialog'
 import { useEbToast } from '@/components/eb/EbToastProvider'
@@ -2737,36 +2738,39 @@ export default function EbProjectDetailClient({
                                 <Send size={16} />
                                 Kallelse
                               </button>
-                              <Link
+                              <PendingLink
                                 href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/round`}
                                 onClick={(event) => handleInspectionNavigation(event, roundNavigationKey)}
-                                aria-disabled={navigationInProgress}
-                                aria-busy={isRoundNavigating}
+                                disabled={navigationInProgress}
+                                pending={isRoundNavigating}
+                                pendingLabel="Öppnar runda …"
+                                icon={<Smartphone size={16} aria-hidden="true" />}
                                 className={inspectionNavigationClassName(true, navigationInProgress)}
                               >
-                                {isRoundNavigating ? <Loader2 size={16} className="animate-spin" /> : <Smartphone size={16} />}
-                                {isRoundNavigating ? 'Öppnar runda...' : 'Runda'}
-                              </Link>
-                              <Link
+                                Runda
+                              </PendingLink>
+                              <PendingLink
                                 href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/perform`}
                                 onClick={(event) => handleInspectionNavigation(event, reviewNavigationKey)}
-                                aria-disabled={navigationInProgress}
-                                aria-busy={isReviewNavigating}
+                                disabled={navigationInProgress}
+                                pending={isReviewNavigating}
+                                pendingLabel="Öppnar granska …"
+                                icon={<ClipboardCheck size={16} aria-hidden="true" />}
                                 className={inspectionNavigationClassName(false, navigationInProgress)}
                               >
-                                {isReviewNavigating ? <Loader2 size={16} className="animate-spin" /> : <ClipboardCheck size={16} />}
-                                {isReviewNavigating ? 'Öppnar granska...' : 'Granska'}
-                              </Link>
-                              <Link
+                                Granska
+                              </PendingLink>
+                              <PendingLink
                                 href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/report`}
                                 onClick={(event) => handleInspectionNavigation(event, reportNavigationKey)}
-                                aria-disabled={navigationInProgress}
-                                aria-busy={isReportNavigating}
+                                disabled={navigationInProgress}
+                                pending={isReportNavigating}
+                                pendingLabel="Öppnar utlåtande …"
+                                icon={<FileText size={16} aria-hidden="true" />}
                                 className={inspectionNavigationClassName(false, navigationInProgress)}
                               >
-                                {isReportNavigating ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
-                                {isReportNavigating ? 'Öppnar utlåtande...' : 'Utlåtande'}
-                              </Link>
+                                Utlåtande
+                              </PendingLink>
                             </div>
 
                             <div className="flex justify-end">
@@ -2788,16 +2792,17 @@ export default function EbProjectDetailClient({
                                     <Pencil size={16} />
                                     Besiktningsuppgifter och fakturering
                                   </button>
-                                  <Link
+                                  <PendingLink
                                     href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/remediation`}
                                     onClick={(event) => handleInspectionNavigation(event, remediationNavigationKey)}
-                                    aria-disabled={navigationInProgress}
-                                    aria-busy={isRemediationNavigating}
+                                    disabled={navigationInProgress}
+                                    pending={isRemediationNavigating}
+                                    pendingLabel="Öppnar Åtgärdsportal …"
+                                    icon={<ListChecks size={16} aria-hidden="true" />}
                                     className={inspectionMenuItemClassName({ disabled: navigationInProgress })}
                                   >
-                                    {isRemediationNavigating ? <Loader2 size={16} className="animate-spin" /> : <ListChecks size={16} />}
-                                    {isRemediationNavigating ? 'Öppnar Åtgärdsportal...' : 'Åtgärdsportal'}
-                                  </Link>
+                                    Åtgärdsportal
+                                  </PendingLink>
 
                                   <div className="my-1 border-t border-gray-100" />
                                   <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">

@@ -32,6 +32,16 @@ import {
 } from './domain'
 import { issueTaskAccessLink, resolveTaskPublicBaseUrl } from './external'
 import { rejectSigneSuggestion, requestSigneSuggestions } from './signe'
+import {
+  getInternalTaskModuleAccessProfileIds,
+  hasInternalTaskModuleAccess,
+} from './internalAccess'
+import {
+  loadTaskConversationSnapshots,
+  markTaskConversationRead,
+  notifyTaskComment,
+  taskEventAuthorSide,
+} from './conversation'
 
 export const TASK_LIMITS = {
   maxDepth: DEFAULT_TASK_AUTOMATION_LIMITS.maxAiDepth,
@@ -107,8 +117,10 @@ type EventRow = {
   id: string
   task_id: string
   event_type: string
+  actor_type: string
   actor_name: string | null
   actor_profile_id: string | null
+  actor_contact_id: string | null
   message: string | null
   from_status: TaskStatus | null
   to_status: TaskStatus | null
@@ -319,6 +331,10 @@ async function loadRows(orgId: string) {
   const tasks = (taskResult.data ?? []) as OperationalTaskRow[]
   const contacts = (contactResult.data ?? []) as ContactRow[]
   const memberProfileIds = (memberResult.data ?? []).map((row) => String(row.profile_id))
+  const taskModuleProfileIdsPromise = getInternalTaskModuleAccessProfileIds({
+    orgId,
+    profileIds: memberProfileIds,
+  })
   const profileIds = Array.from(
     new Set([
       ...memberProfileIds,
@@ -333,6 +349,7 @@ async function loadRows(orgId: string) {
     if (profileResult.error) throw new Error('TASK_PROFILES_READ_FAILED')
     profiles = (profileResult.data ?? []) as ProfileRow[]
   }
+  const taskModuleProfileIds = await taskModuleProfileIdsPromise
 
   const taskIds = tasks.map((task) => task.id)
   let requirements: RequirementRow[] = []
@@ -351,7 +368,7 @@ async function loadRows(orgId: string) {
         .order('created_at', { ascending: true }),
       admin
         .from('task_events')
-        .select('id,task_id,event_type,actor_name,actor_profile_id,message,from_status,to_status,created_at')
+        .select('id,task_id,event_type,actor_type,actor_name,actor_profile_id,actor_contact_id,message,from_status,to_status,created_at')
         .in('task_id', taskIds)
         .order('created_at', { ascending: false }),
       admin
@@ -396,7 +413,19 @@ async function loadRows(orgId: string) {
     completionEvidenceRequirements = (completionEvidenceResult.data ?? []) as CompletionEvidenceRequirementRow[]
   }
 
-  return { tasks, contacts, profiles, requirements, events, deadlineRequests, attachments, aiSuggestions, followupRules, completionEvidenceRequirements }
+  return {
+    tasks,
+    contacts,
+    profiles,
+    taskModuleProfileIds,
+    requirements,
+    events,
+    deadlineRequests,
+    attachments,
+    aiSuggestions,
+    followupRules,
+    completionEvidenceRequirements,
+  }
 }
 
 export async function getTaskWorkspace(input: InternalTaskContext): Promise<TaskWorkspace> {
@@ -406,9 +435,22 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
   const profilesById = new Map(rows.profiles.map((profile) => [profile.id, profile]))
   const contactsById = new Map(rows.contacts.map((contact) => [contact.id, contact]))
   const currentProfile = profilesById.get(input.userId)
+  const unreadTaskIds = new Set(
+    visibleTasks
+      .filter(
+        (task) =>
+          task.issuer_profile_id === input.userId || task.assignee_profile_id === input.userId
+      )
+      .map((task) => task.id)
+  )
+  const conversationByTask = await loadTaskConversationSnapshots({
+    taskIds: visibleTasks.map((task) => task.id),
+    viewer: { kind: 'profile', profileId: input.userId },
+    unreadTaskIds,
+  })
 
   const people: TaskPerson[] = [
-    ...rows.profiles.map((profile) => ({
+    ...rows.profiles.filter((profile) => rows.taskModuleProfileIds.has(profile.id)).map((profile) => ({
       id: profile.id,
       kind: 'profile' as const,
       name: profile.full_name?.trim() || profile.email?.trim() || 'Intern användare',
@@ -438,6 +480,7 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
   }
   const eventsByTask = new Map<string, EventRow[]>()
   for (const event of rows.events) {
+    if (event.event_type === 'comment') continue
     const list = eventsByTask.get(event.task_id) ?? []
     if (list.length < 20) list.push(event)
     eventsByTask.set(event.task_id, list)
@@ -494,18 +537,33 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
         ? profilesById.get(requirement.verified_by_profile_id)?.full_name ?? null
         : null,
     }))
-    const eventViews: TaskEventView[] = (eventsByTask.get(task.id) ?? []).map((event) => ({
-      id: event.id,
-      type: event.event_type,
-      actorName:
-        event.actor_name?.trim() ||
-        (event.actor_profile_id ? profilesById.get(event.actor_profile_id)?.full_name?.trim() : null) ||
-        'Signe',
-      message: event.message,
-      fromStatus: event.from_status,
-      toStatus: event.to_status,
-      createdAt: event.created_at,
-    }))
+    const conversation = conversationByTask.get(task.id) ?? {
+      comments: [],
+      unreadMessageCount: 0,
+      latestMessage: null,
+      latestIncomingMessageEventId: null,
+    }
+    const eventViews: TaskEventView[] = [
+      ...conversation.comments,
+      ...(eventsByTask.get(task.id) ?? [])
+        .filter((event) => event.event_type !== 'comment')
+        .map((event) => ({
+          id: event.id,
+          type: event.event_type,
+          actorName:
+            event.actor_name?.trim() ||
+            (event.actor_profile_id ? profilesById.get(event.actor_profile_id)?.full_name?.trim() : null) ||
+            'Signe',
+          message: event.message,
+          fromStatus: event.from_status,
+          toStatus: event.to_status,
+          createdAt: event.created_at,
+          authorSide: taskEventAuthorSide(event, { kind: 'profile', profileId: input.userId }),
+        })),
+    ].sort((left, right) => {
+      const createdComparison = right.createdAt.localeCompare(left.createdAt)
+      return createdComparison !== 0 ? createdComparison : right.id.localeCompare(left.id)
+    })
     const deadlineViews: TaskDeadlineRequestView[] = (deadlinesByTask.get(task.id) ?? []).map((request) => ({
       id: request.id,
       requestedDueAt: request.requested_due_at,
@@ -616,6 +674,9 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       deadlineRequests: deadlineViews,
       attachments: attachmentViews,
       aiSuggestions: aiSuggestionViews,
+      unreadMessageCount: conversation.unreadMessageCount,
+      latestMessage: conversation.latestMessage,
+      latestIncomingMessageEventId: conversation.latestIncomingMessageEventId,
       createdAt: task.created_at,
       updatedAt: task.updated_at,
     }
@@ -649,6 +710,7 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       green: activeTasks.filter((task) => task.risk === 'green').length,
       yellow: activeTasks.filter((task) => task.risk === 'yellow').length,
       red: activeTasks.filter((task) => task.risk === 'red').length,
+      unreadMessages: taskViews.reduce((total, task) => total + task.unreadMessageCount, 0),
     },
     limits: TASK_LIMITS,
   }
@@ -688,19 +750,24 @@ async function recordEvent(input: {
 }) {
   const admin = createSupabaseAdminClient()
   const actorName = await currentActorName(input.userId)
-  const { error } = await admin.from('task_events').insert({
-    org_id: input.orgId,
-    task_id: input.taskId,
-    event_type: input.type,
-    actor_type: 'profile',
-    actor_profile_id: input.userId,
-    actor_name: actorName,
-    message: input.message ?? null,
-    from_status: input.fromStatus ?? null,
-    to_status: input.toStatus ?? null,
-    metadata: input.metadata ?? {},
-  })
-  if (error) throw new Error('TASK_EVENT_CREATE_FAILED')
+  const { data, error } = await admin
+    .from('task_events')
+    .insert({
+      org_id: input.orgId,
+      task_id: input.taskId,
+      event_type: input.type,
+      actor_type: 'profile',
+      actor_profile_id: input.userId,
+      actor_name: actorName,
+      message: input.message ?? null,
+      from_status: input.fromStatus ?? null,
+      to_status: input.toStatus ?? null,
+      metadata: input.metadata ?? {},
+    })
+    .select('id')
+    .single()
+  if (error || !data) throw new Error('TASK_EVENT_CREATE_FAILED')
+  return { id: String(data.id), actorName }
 }
 
 async function resolveAssignee(input: {
@@ -719,6 +786,9 @@ async function resolveAssignee(input: {
       .eq('is_active', true)
       .maybeSingle()
     if (error || !data) throw new Error('TASK_ASSIGNEE_NOT_IN_ORG')
+    if (!(await hasInternalTaskModuleAccess({ orgId: input.orgId, profileId }))) {
+      throw new Error('TASK_ASSIGNEE_TASK_ACCESS_REQUIRED')
+    }
     return {
       assignee_profile_id: profileId,
       assignee_contact_id: null,
@@ -973,8 +1043,51 @@ async function addComment(input: TaskActionInput) {
   ) {
     throw new Error('TASK_COMMENT_FORBIDDEN')
   }
-  await recordEvent({ orgId: input.orgId, taskId, userId: input.userId, type: 'comment', message })
-  return 'Kommentaren sparades.'
+  const event = await recordEvent({
+    orgId: input.orgId,
+    taskId,
+    userId: input.userId,
+    type: 'comment',
+    message,
+  })
+  const notification = await notifyTaskComment({
+    orgId: input.orgId,
+    taskId,
+    eventId: event.id,
+    message,
+    actor: {
+      kind: 'profile',
+      profileId: input.userId,
+      name: event.actorName,
+    },
+    requestOrigin: input.requestOrigin,
+  })
+  return {
+    notice: notification.warning
+      ? 'Meddelandet finns sparat.'
+      : 'Meddelandet har skickats och mottagaren har notifierats via e-post.',
+    warning: notification.warning,
+  }
+}
+
+async function markMessagesRead(input: TaskActionInput) {
+  const taskId = asText(input.payload.taskId)
+  const throughEventId = asText(input.payload.throughEventId)
+  if (!taskId) throw new Error('TASK_NOT_FOUND')
+  if (!throughEventId) throw new Error('TASK_CONVERSATION_CURSOR_REQUIRED')
+  const task = await requireTask(input.orgId, taskId)
+  if (
+    task.issuer_profile_id !== input.userId &&
+    task.assignee_profile_id !== input.userId
+  ) {
+    throw new Error('TASK_COMMENT_FORBIDDEN')
+  }
+  await markTaskConversationRead({
+    taskId,
+    throughEventId,
+    reader: { kind: 'profile', profileId: input.userId },
+  })
+  return 'Meddelandena markerades som lästa.'
 }
 
 async function verifyRequirement(input: TaskActionInput) {
@@ -1100,7 +1213,11 @@ export async function performTaskInternalAction(input: TaskActionInput): Promise
   } else if (input.action === 'transition') {
     notice = await transitionTask(input)
   } else if (input.action === 'comment') {
-    notice = await addComment(input)
+    const commented = await addComment(input)
+    notice = commented.notice
+    warning = commented.warning ?? undefined
+  } else if (input.action === 'mark_messages_read') {
+    notice = await markMessagesRead(input)
   } else if (input.action === 'verify_requirement') {
     notice = await verifyRequirement(input)
   } else if (input.action === 'request_deadline_change') {

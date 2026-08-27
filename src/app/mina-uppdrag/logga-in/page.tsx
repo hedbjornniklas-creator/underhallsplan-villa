@@ -6,6 +6,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, KeyRound, ListChecks, LoaderCircle, Mail } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import ActionButton from '@/components/ui/ActionButton'
 import {
   RECIPIENT_PORTAL_HOME,
   safeRecipientReturnTo,
@@ -300,7 +301,16 @@ export default function RecipientLoginPage() {
                       value={password}
                       onChange={setPassword}
                     />
-                    <PrimaryButton busy={busy} idleLabel="Logga in" busyLabel="Loggar in …" />
+                    <ActionButton
+                      type="submit"
+                      busy={busy}
+                      busyLabel="Loggar in …"
+                      icon={<KeyRound size={17} aria-hidden="true" />}
+                      tone="amber"
+                      className="min-h-12 w-full rounded-2xl px-5 text-sm font-semibold"
+                    >
+                      Logga in
+                    </ActionButton>
                     <button
                       type="button"
                       onClick={() => {
@@ -323,7 +333,16 @@ export default function RecipientLoginPage() {
                       value={email}
                       onChange={setEmail}
                     />
-                    <PrimaryButton busy={busy} idleLabel="Skicka återställningslänk" busyLabel="Skickar …" />
+                    <ActionButton
+                      type="submit"
+                      busy={busy}
+                      busyLabel="Skickar …"
+                      icon={<Mail size={17} aria-hidden="true" />}
+                      tone="amber"
+                      className="min-h-12 w-full rounded-2xl px-5 text-sm font-semibold"
+                    >
+                      Skicka återställningslänk
+                    </ActionButton>
                     <button
                       type="button"
                       onClick={() => {
@@ -355,7 +374,16 @@ export default function RecipientLoginPage() {
                       value={confirmPassword}
                       onChange={setConfirmPassword}
                     />
-                    <PrimaryButton busy={busy} idleLabel="Spara och fortsätt" busyLabel="Sparar …" />
+                    <ActionButton
+                      type="submit"
+                      busy={busy}
+                      busyLabel="Sparar …"
+                      icon={<KeyRound size={17} aria-hidden="true" />}
+                      tone="amber"
+                      className="min-h-12 w-full rounded-2xl px-5 text-sm font-semibold"
+                    >
+                      Spara och fortsätt
+                    </ActionButton>
                   </form>
                 )}
 
@@ -395,18 +423,5 @@ function AuthInput(props: {
         className="h-12 w-full rounded-2xl border border-stone-300 bg-white px-4 text-sm text-stone-950 outline-none transition placeholder:text-stone-400 focus:border-amber-700 focus:ring-2 focus:ring-amber-700/20"
       />
     </label>
-  )
-}
-
-function PrimaryButton(props: { busy: boolean; idleLabel: string; busyLabel: string }) {
-  return (
-    <button
-      type="submit"
-      disabled={props.busy}
-      className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-amber-700 px-5 text-sm font-semibold text-white transition hover:bg-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
-    >
-      {props.busy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <KeyRound size={17} aria-hidden="true" />}
-      {props.busy ? props.busyLabel : props.idleLabel}
-    </button>
   )
 }

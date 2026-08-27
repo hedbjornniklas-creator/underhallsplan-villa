@@ -104,15 +104,17 @@ export async function POST(
       payload,
       requestOrigin: new URL(request.url).origin,
     })
-    after(async () => {
-      try {
-        await runTaskFollowupBatch({ limit: 5 })
-      } catch {
-        console.error('[tasks.signe] opportunistic follow-up failed', {
-          code: 'TASK_AUTOMATION_BATCH_FAILED',
-        })
-      }
-    })
+    if (action !== 'mark_messages_read') {
+      after(async () => {
+        try {
+          await runTaskFollowupBatch({ limit: 5 })
+        } catch {
+          console.error('[tasks.signe] opportunistic follow-up failed', {
+            code: 'TASK_AUTOMATION_BATCH_FAILED',
+          })
+        }
+      })
+    }
     return NextResponse.json(result)
   } catch (error) {
     return errorResponse(error)

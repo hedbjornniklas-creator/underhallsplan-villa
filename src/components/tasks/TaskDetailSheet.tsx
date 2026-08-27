@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import {
   ArrowRight,
   Camera,
@@ -32,6 +32,8 @@ import type {
   TaskWorkspace,
 } from '@/lib/tasks/contracts'
 import TaskAttachmentDropZone from './TaskAttachmentDropZone'
+import TaskConversationCard from './TaskConversationCard'
+import TaskHistoryDisclosure from './TaskHistoryDisclosure'
 import { SigneCheckIcon } from './SigneMark'
 import { TaskRiskDot, TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
 
@@ -136,6 +138,12 @@ export default function TaskDetailSheet({
   const deleteCancelButtonRef = useRef<HTMLButtonElement>(null)
   const deleteTriggerButtonRef = useRef<HTMLButtonElement>(null)
   const deleteBusy = busy || deleteSubmitting
+  const taskId = task?.id ?? null
+
+  const markMessagesRead = useCallback(async (throughEventId: string) => {
+    if (!taskId) return
+    await onAction('mark_messages_read', { taskId, throughEventId })
+  }, [onAction, taskId])
 
   useEffect(() => {
     if (!task) return
@@ -211,6 +219,7 @@ export default function TaskDetailSheet({
   }))
   const canActAsAssignee = task.assignee.kind === 'profile' && task.assignee.id === currentId
   const canActAsIssuer = workspace.currentUser.isOrgAdmin || isTaskIssuer
+  const conversationPartnerName = canActAsAssignee ? task.issuerName : task.assignee.name
   const canCreateChild =
     !['approved', 'cancelled'].includes(task.status) &&
     task.depth < workspace.limits.maxDepth &&
@@ -596,6 +605,22 @@ export default function TaskDetailSheet({
               ))}
             </section>
           ) : null}
+
+          <div className="mt-6">
+            <TaskConversationCard
+              headingId={`task-conversation-${task.id}`}
+              messages={task.events}
+              value={comment}
+              onChange={setComment}
+              onSubmit={submitComment}
+              submitting={busy}
+              recipientLabel={conversationPartnerName}
+              placeholder={`Skriv till ${conversationPartnerName}…`}
+              unreadCount={task.unreadMessageCount}
+              latestIncomingMessageEventId={task.latestIncomingMessageEventId}
+              onMarkRead={markMessagesRead}
+            />
+          </div>
 
           {task.requirements.length > 0 ? (
             <section className="mt-6">
@@ -989,48 +1014,9 @@ export default function TaskDetailSheet({
             )}
           </section>
 
-          <section className="mt-6">
-            <h3 className="text-sm font-semibold text-slate-950">Historik och kommunikation</h3>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              Kommentarer delas med både uppdragsansvarig och mottagare.
-            </p>
-            <form onSubmit={submitComment} className="mt-2 flex gap-2">
-              <input
-                value={comment}
-                onChange={(event) => setComment(event.target.value)}
-                placeholder={`Skriv till ${canActAsIssuer ? task.assignee.name : task.issuerName}…`}
-                className={smallInput}
-              />
-              <button
-                type="submit"
-                disabled={busy || !comment.trim()}
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
-                aria-label="Skicka kommentar"
-              >
-                <Send size={17} />
-              </button>
-            </form>
-            <div className="mt-4 space-y-4">
-              {task.events.length > 0 ? (
-                task.events.map((event) => (
-                  <article key={event.id} className="relative pl-7">
-                    <span className="absolute left-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-slate-300 ring-4 ring-slate-100" />
-                    <p className="text-xs font-semibold text-slate-700">
-                      {event.actorName} · {formatDate(event.createdAt, true)}
-                    </p>
-                    {event.fromStatus && event.toStatus ? (
-                      <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
-                        {taskStatusLabel(event.fromStatus)} <ArrowRight size={12} /> {taskStatusLabel(event.toStatus)}
-                      </p>
-                    ) : null}
-                    {event.message ? <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{event.message}</p> : null}
-                  </article>
-                ))
-              ) : (
-                <p className="text-sm text-slate-500">Ingen historik ännu.</p>
-              )}
-            </div>
-          </section>
+          <div className="mt-4">
+            <TaskHistoryDisclosure events={task.events} />
+          </div>
 
           {task.canDelete ? (
             <section className="mt-8 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:p-5" aria-labelledby="task-delete-heading">

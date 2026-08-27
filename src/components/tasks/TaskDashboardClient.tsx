@@ -3,11 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  ChevronLeft,
   CheckCircle2,
   ChevronRight,
+  ChevronsUpDown,
   CircleDot,
   Clock3,
   ListFilter,
+  MessageCircle,
   Plus,
   RefreshCw,
   Search,
@@ -26,7 +29,13 @@ import TaskDetailSheet from './TaskDetailSheet'
 import { SigneCheckIcon } from './SigneMark'
 import { TaskRiskDot, TaskStatusBadge } from './TaskStatusBadge'
 
-type FilterKey = 'all' | 'my_ball' | 'review' | 'overdue'
+type FilterKey = 'all' | 'my_ball' | 'review' | 'overdue' | 'unread'
+type SortField = 'title' | 'status' | 'assignee' | 'due' | 'updated'
+type SortDirection = 'asc' | 'desc'
+
+const TASK_LIST_STORAGE_KEY = 'hushub:tasks:list-view:v1'
+const TASK_PAGE_SIZE_OPTIONS = [10, 25, 50] as const
+const TASK_COLLATOR = new Intl.Collator('sv', { sensitivity: 'base', numeric: true })
 
 type Props = {
   initialWorkspace: TaskWorkspace | null
@@ -38,6 +47,7 @@ function formatDate(value: string) {
 }
 
 function taskMatchesFilter(task: TaskView, filter: FilterKey, userId: string) {
+  if (filter === 'unread') return task.unreadMessageCount > 0
   if (filter === 'overdue') return task.risk === 'red' && !['approved', 'cancelled'].includes(task.status)
   if (filter === 'review') {
     return (
@@ -51,6 +61,59 @@ function taskMatchesFilter(task: TaskView, filter: FilterKey, userId: string) {
     return task.ballHolder === 'assignee' && task.assignee.kind === 'profile' && task.assignee.id === userId
   }
   return true
+}
+
+function ballText(task: TaskView) {
+  return task.ballHolder === 'issuer'
+    ? task.issuerName
+    : task.ballHolder === 'assignee'
+      ? task.assignee.name
+      : 'Avslutad'
+}
+
+function statusSortRank(status: TaskView['status']) {
+  return {
+    ready_for_review: 0,
+    returned: 1,
+    waiting: 2,
+    in_progress: 3,
+    assigned: 4,
+    draft: 5,
+    approved: 6,
+    cancelled: 7,
+  }[status]
+}
+
+function latestMessageLabel(task: TaskView) {
+  if (!task.latestMessage) return 'Inga meddelanden'
+  return `${task.latestMessage.actorName}: ${task.latestMessage.message}`
+}
+
+function SortButton({
+  field,
+  label,
+  activeField,
+  direction,
+  onChange,
+}: {
+  field: SortField
+  label: string
+  activeField: SortField
+  direction: SortDirection
+  onChange: (field: SortField) => void
+}) {
+  const active = field === activeField
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(field)}
+      className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-950"
+    >
+      {label}
+      <ChevronsUpDown size={13} className={active ? 'text-slate-900' : 'text-slate-300'} />
+      <span className="sr-only">{active ? `Sorterat ${direction === 'asc' ? 'stigande' : 'fallande'}` : 'Sortera'}</span>
+    </button>
+  )
 }
 
 function SummaryCard({
@@ -80,13 +143,17 @@ function SummaryCard({
 }
 
 function TaskCard({ task, parentTitle, onClick }: { task: TaskView; parentTitle: string | null; onClick: () => void }) {
-  const ballText = task.ballHolder === 'issuer' ? task.issuerName : task.ballHolder === 'assignee' ? task.assignee.name : 'Avslutad'
+  const holder = ballText(task)
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`group w-full rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md sm:p-5 ${
-        task.depth > 0 ? 'border-l-4 border-l-slate-300' : 'border-slate-200'
+      className={`group w-full rounded-2xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+        task.unreadMessageCount > 0
+          ? 'border-blue-300 bg-blue-50/80 ring-1 ring-blue-100'
+          : task.depth > 0
+            ? 'border-slate-200 border-l-4 border-l-slate-300 bg-white'
+            : 'border-slate-200 bg-white'
       }`}
     >
       {parentTitle ? (
@@ -99,20 +166,31 @@ function TaskCard({ task, parentTitle, onClick }: { task: TaskView; parentTitle:
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <TaskStatusBadge status={task.status} />
+            {task.unreadMessageCount > 0 ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white">
+                <MessageCircle size={12} /> {task.unreadMessageCount} nya
+              </span>
+            ) : null}
             {task.contextLabel ? <span className="truncate text-xs font-medium text-slate-500">{task.contextLabel}</span> : null}
           </div>
-          <h2 className="mt-2 text-base font-semibold leading-snug text-slate-950 sm:text-lg">{task.title}</h2>
+          <h2 className={`mt-2 text-base leading-snug text-slate-950 ${task.unreadMessageCount > 0 ? 'font-bold' : 'font-semibold'}`}>{task.title}</h2>
           {task.description ? <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{task.description}</p> : null}
           <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-2">
             <span className="flex min-w-0 items-center gap-1.5">
               <UserRoundCheck size={14} className="shrink-0" />
-              <span className="truncate">Bollen hos: <strong className="font-semibold text-slate-700">{ballText}</strong></span>
+              <span className="truncate">Bollen hos: <strong className="font-semibold text-slate-700">{holder}</strong></span>
             </span>
             <span className="flex items-center gap-1.5">
               <Clock3 size={14} className="shrink-0" />
               Klart {formatDate(task.dueAt)}
             </span>
           </div>
+          {task.latestMessage ? (
+            <p className="mt-3 line-clamp-2 rounded-xl border border-blue-100 bg-white/80 px-3 py-2 text-xs leading-5 text-slate-600">
+              <span className="font-semibold text-slate-800">{task.latestMessage.actorName}:</span>{' '}
+              {task.latestMessage.message}
+            </p>
+          ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {task.childCount > 0 ? (
               <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
@@ -140,6 +218,11 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
   const [busy, setBusy] = useState(false)
   const [filter, setFilter] = useState<FilterKey>('all')
   const [search, setSearch] = useState('')
+  const [sortField, setSortField] = useState<SortField>('due')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [pageSize, setPageSize] = useState<number>(25)
+  const [page, setPage] = useState(1)
+  const [listPreferencesLoaded, setListPreferencesLoaded] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [composerOpen, setComposerOpen] = useState(false)
   const [composerParentId, setComposerParentId] = useState<string | null>(null)
@@ -158,6 +241,50 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
     }
   }, [workspace])
 
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(TASK_LIST_STORAGE_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored) as Partial<{
+          filter: FilterKey
+          search: string
+          sortField: SortField
+          sortDirection: SortDirection
+          pageSize: number
+        }>
+        if (['all', 'my_ball', 'review', 'overdue', 'unread'].includes(parsed.filter ?? '')) {
+          setFilter(parsed.filter as FilterKey)
+        }
+        if (typeof parsed.search === 'string') setSearch(parsed.search)
+        if (['title', 'status', 'assignee', 'due', 'updated'].includes(parsed.sortField ?? '')) {
+          setSortField(parsed.sortField as SortField)
+        }
+        if (parsed.sortDirection === 'asc' || parsed.sortDirection === 'desc') {
+          setSortDirection(parsed.sortDirection)
+        }
+        if (TASK_PAGE_SIZE_OPTIONS.includes(parsed.pageSize as 10 | 25 | 50)) {
+          setPageSize(parsed.pageSize as number)
+        }
+      }
+    } catch {
+      // A corrupt local preference must never block the task list.
+    } finally {
+      setListPreferencesLoaded(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!listPreferencesLoaded) return
+    window.localStorage.setItem(
+      TASK_LIST_STORAGE_KEY,
+      JSON.stringify({ filter, search, sortField, sortDirection, pageSize })
+    )
+  }, [filter, listPreferencesLoaded, pageSize, search, sortDirection, sortField])
+
+  useEffect(() => {
+    setPage(1)
+  }, [filter, pageSize, search, sortDirection, sortField])
+
   const visibleTasks = useMemo(() => {
     if (!workspace) return []
     const term = search.trim().toLocaleLowerCase('sv-SE')
@@ -171,17 +298,43 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
           .some((value) => String(value).toLocaleLowerCase('sv-SE').includes(term))
       })
       .sort((a, b) => {
-        if (a.risk !== b.risk) {
-          const order = { red: 0, yellow: 1, green: 2 }
-          return order[a.risk] - order[b.risk]
+        let comparison = 0
+        if (sortField === 'title') comparison = TASK_COLLATOR.compare(a.title, b.title)
+        if (sortField === 'status') comparison = statusSortRank(a.status) - statusSortRank(b.status)
+        if (sortField === 'assignee') comparison = TASK_COLLATOR.compare(a.assignee.name, b.assignee.name)
+        if (sortField === 'due') comparison = new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
+        if (sortField === 'updated') {
+          comparison = new Date(a.latestMessage?.createdAt ?? a.updatedAt).getTime() - new Date(b.latestMessage?.createdAt ?? b.updatedAt).getTime()
         }
-        const rootCompare = a.rootTaskId.localeCompare(b.rootTaskId)
-        if (rootCompare !== 0) return rootCompare
-        if (a.depth !== b.depth) return a.depth - b.depth
-        return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
+        if (comparison === 0) comparison = TASK_COLLATOR.compare(a.title, b.title)
+        return sortDirection === 'asc' ? comparison : -comparison
       })
       .map((task) => ({ task, parentTitle: task.parentTaskId ? byId.get(task.parentTaskId)?.title ?? null : null }))
-  }, [filter, search, workspace])
+  }, [filter, search, sortDirection, sortField, workspace])
+
+  const filterCounts = useMemo(() => {
+    if (!workspace) return { all: 0, my_ball: 0, review: 0, overdue: 0, unread: 0 }
+    return {
+      all: workspace.tasks.length,
+      my_ball: workspace.tasks.filter((task) => taskMatchesFilter(task, 'my_ball', workspace.currentUser.id)).length,
+      review: workspace.tasks.filter((task) => taskMatchesFilter(task, 'review', workspace.currentUser.id)).length,
+      overdue: workspace.tasks.filter((task) => taskMatchesFilter(task, 'overdue', workspace.currentUser.id)).length,
+      unread: workspace.tasks.filter((task) => task.unreadMessageCount > 0).length,
+    }
+  }, [workspace])
+
+  const totalPages = Math.max(1, Math.ceil(visibleTasks.length / pageSize))
+  const currentPage = Math.min(page, totalPages)
+  const pagedTasks = visibleTasks.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
+  const changeSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+    setSortField(field)
+    setSortDirection(field === 'updated' ? 'desc' : 'asc')
+  }
 
   const refresh = async () => {
     setBusy(true)
@@ -305,7 +458,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
     <Protected>
       <main className="relative min-h-full bg-slate-50">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-gradient-to-br from-amber-100 via-orange-50 to-transparent" />
-        <div className="relative mx-auto w-full max-w-6xl px-4 pb-28 pt-6 sm:px-6 sm:pb-12 sm:pt-9">
+        <div className="relative mx-auto w-full max-w-7xl px-4 pb-28 pt-6 sm:px-6 sm:pb-12 sm:pt-9">
           <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-amber-800">
@@ -349,9 +502,10 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
             </section>
           ) : (
             <>
-              <section className="mt-7 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <section className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
                 <SummaryCard label="Din åtgärd" value={workspace.summary.userHasBall} icon={<UserRoundCheck size={19} />} tone="bg-indigo-100 text-indigo-700" onClick={() => setFilter('my_ball')} />
                 <SummaryCard label="Väntar på kontroll" value={workspace.summary.awaitingReview} icon={<CheckCircle2 size={19} />} tone="bg-violet-100 text-violet-700" onClick={() => setFilter('review')} />
+                <SummaryCard label="Nya meddelanden" value={workspace.summary.unreadMessages} icon={<MessageCircle size={19} />} tone="bg-blue-100 text-blue-700" onClick={() => setFilter('unread')} />
                 <SummaryCard label="Försenade" value={workspace.summary.overdue} icon={<AlertTriangle size={19} />} tone="bg-rose-100 text-rose-700" onClick={() => setFilter('overdue')} />
                 <SummaryCard label="Aktiva totalt" value={workspace.summary.totalActive} icon={<CircleDot size={19} />} tone="bg-amber-100 text-amber-800" onClick={() => setFilter('all')} />
               </section>
@@ -363,6 +517,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                       ['all', 'Alla'],
                       ['my_ball', 'Din åtgärd'],
                       ['review', 'Att kontrollera'],
+                      ['unread', 'Olästa'],
                       ['overdue', 'Försenade'],
                     ] as Array<[FilterKey, string]>).map(([key, label]) => (
                       <button
@@ -372,6 +527,9 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                         className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-semibold transition ${filter === key ? 'bg-slate-950 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
                       >
                         {label}
+                        <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[11px] ${filter === key ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                          {filterCounts[key]}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -386,16 +544,105 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                   </label>
                 </div>
 
-                <div className="mt-4 flex items-center gap-2 text-xs font-medium text-slate-500">
-                  <ListFilter size={15} /> {visibleTasks.length} uppgifter visas
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs font-medium text-slate-500">
+                  <span className="inline-flex items-center gap-2"><ListFilter size={15} /> {visibleTasks.length} uppgifter visas</span>
+                  <label className="inline-flex items-center gap-2">
+                    Rader per sida
+                    <select
+                      value={pageSize}
+                      onChange={(event) => setPageSize(Number(event.target.value))}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700"
+                    >
+                      {TASK_PAGE_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{size}</option>)}
+                    </select>
+                  </label>
                 </div>
 
                 {visibleTasks.length > 0 ? (
-                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                    {visibleTasks.map(({ task, parentTitle }) => (
-                      <TaskCard key={task.id} task={task} parentTitle={parentTitle} onClick={() => setSelectedTaskId(task.id)} />
-                    ))}
-                  </div>
+                  <>
+                    <div className="mt-3 space-y-3 md:hidden">
+                      {pagedTasks.map(({ task, parentTitle }) => (
+                        <TaskCard key={task.id} task={task} parentTitle={parentTitle} onClick={() => setSelectedTaskId(task.id)} />
+                      ))}
+                    </div>
+
+                    <div className="mt-3 hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm md:block">
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full table-fixed text-left text-sm text-slate-800">
+                          <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide">
+                            <tr>
+                              <th className="w-10 px-3 py-3"><span className="sr-only">Risk</span></th>
+                              <th className="w-[30%] px-3 py-3"><SortButton field="title" label="Uppdrag" activeField={sortField} direction={sortDirection} onChange={changeSort} /></th>
+                              <th className="w-[15%] px-3 py-3"><SortButton field="status" label="Status" activeField={sortField} direction={sortDirection} onChange={changeSort} /></th>
+                              <th className="w-[19%] px-3 py-3"><SortButton field="assignee" label="Mottagare / boll" activeField={sortField} direction={sortDirection} onChange={changeSort} /></th>
+                              <th className="w-[12%] px-3 py-3"><SortButton field="due" label="Slutdatum" activeField={sortField} direction={sortDirection} onChange={changeSort} /></th>
+                              <th className="w-[24%] px-3 py-3"><SortButton field="updated" label="Senaste meddelande" activeField={sortField} direction={sortDirection} onChange={changeSort} /></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pagedTasks.map(({ task, parentTitle }) => (
+                              <tr
+                                key={task.id}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => setSelectedTaskId(task.id)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault()
+                                    setSelectedTaskId(task.id)
+                                  }
+                                }}
+                                aria-label={`Öppna uppdraget ${task.title}${task.unreadMessageCount > 0 ? `, ${task.unreadMessageCount} olästa meddelanden` : ''}`}
+                                className={`cursor-pointer border-b border-slate-100 outline-none transition last:border-b-0 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400 ${task.unreadMessageCount > 0 ? 'bg-blue-50/70 hover:bg-blue-50' : 'bg-white'}`}
+                              >
+                                <td className="px-3 py-3 align-middle"><TaskRiskDot risk={task.risk} /></td>
+                                <td className="px-3 py-3 align-middle">
+                                  <p className={`truncate text-slate-950 ${task.unreadMessageCount > 0 ? 'font-bold' : 'font-semibold'}`}>{task.title}</p>
+                                  <p className="mt-0.5 truncate text-xs text-slate-500">{parentTitle ? `↳ ${parentTitle}` : task.contextLabel || 'Inget projekt angivet'}</p>
+                                </td>
+                                <td className="px-3 py-3 align-middle"><TaskStatusBadge status={task.status} /></td>
+                                <td className="px-3 py-3 align-middle">
+                                  <p className="truncate font-medium text-slate-800">{task.assignee.name}</p>
+                                  <p className="mt-0.5 truncate text-xs text-slate-500">Bollen hos {ballText(task)}</p>
+                                </td>
+                                <td className="whitespace-nowrap px-3 py-3 align-middle font-medium">{formatDate(task.dueAt)}</td>
+                                <td className="px-3 py-3 align-middle">
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    {task.unreadMessageCount > 0 ? (
+                                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white">
+                                        <MessageCircle size={11} /> {task.unreadMessageCount}
+                                      </span>
+                                    ) : <MessageCircle size={15} className="shrink-0 text-slate-300" />}
+                                    <p className="truncate text-xs text-slate-600" title={latestMessageLabel(task)}>{latestMessageLabel(task)}</p>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {totalPages > 1 ? (
+                      <nav className="mt-4 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2" aria-label="Sidindelning">
+                        <p className="text-xs text-slate-500">Sida {currentPage} av {totalPages}</p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={currentPage <= 1}
+                            onClick={() => setPage(Math.max(1, currentPage - 1))}
+                            className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                          ><ChevronLeft size={15} /> Föregående</button>
+                          <button
+                            type="button"
+                            disabled={currentPage >= totalPages}
+                            onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
+                            className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                          >Nästa <ChevronRight size={15} /></button>
+                        </div>
+                      </nav>
+                    ) : null}
+                  </>
                 ) : (
                   <div className="mt-4 rounded-3xl border border-dashed border-slate-300 bg-white/70 px-6 py-12 text-center">
                     <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500"><CheckCircle2 size={22} /></span>
@@ -427,7 +674,10 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                 busy={busy}
                 onClose={() => setSelectedTaskId(null)}
                 onAction={async (action, payload) => {
-                  await runAction(action, payload)
+                  await runAction(action, payload, {
+                    showResultToast: action !== 'mark_messages_read',
+                    showErrorToast: action !== 'mark_messages_read',
+                  })
                 }}
                 onUpload={uploadEvidence}
                 onCreateSubtask={(task, suggestion) => {

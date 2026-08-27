@@ -47,15 +47,17 @@ export async function POST(
       ? (body.payload as Record<string, unknown>)
       : {}
     const result = await performRecipientPortalTaskAction({ session, taskId, action, payload })
-    after(async () => {
-      try {
-        await runTaskFollowupBatch({ limit: 5 })
-      } catch {
-        console.error('[tasks.recipient-portal] opportunistic follow-up failed', {
-          code: 'TASK_AUTOMATION_BATCH_FAILED',
-        })
-      }
-    })
+    if (action !== 'mark_messages_read') {
+      after(async () => {
+        try {
+          await runTaskFollowupBatch({ limit: 5 })
+        } catch {
+          console.error('[tasks.recipient-portal] opportunistic follow-up failed', {
+            code: 'TASK_AUTOMATION_BATCH_FAILED',
+          })
+        }
+      })
+    }
     return NextResponse.json(result, { headers: noStoreHeaders })
   } catch (error) {
     return recipientPortalErrorResponse(error)

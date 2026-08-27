@@ -13,6 +13,13 @@ import type {
 } from './contracts'
 import { evidenceTypesFromLegacyRequirement } from './contracts'
 import type { ExternalTaskWorkspace } from './external'
+import {
+  loadTaskConversationSnapshots,
+  markTaskConversationRead,
+  notifyTaskComment,
+  taskEventAuthorSide,
+  type TaskConversationSnapshot,
+} from './conversation'
 
 export type RecipientPortalSession = {
   authUserId: string
@@ -30,6 +37,7 @@ export type RecipientPortalTaskSummary = {
   dueAt: string
   nextFollowupAt: string
   issuerName: string
+  unreadMessageCount: number
 }
 
 export type RecipientPortalOverview = {
@@ -41,6 +49,7 @@ export type RecipientPortalOverview = {
     needsAction: number
     overdue: number
     completed: number
+    unreadMessages: number
   }
 }
 
@@ -327,7 +336,7 @@ export async function getRecipientPortalOverview(
       recipientName: session.fallbackName,
       email: session.email,
       tasks: [],
-      summary: { active: 0, needsAction: 0, overdue: 0, completed: 0 },
+      summary: { active: 0, needsAction: 0, overdue: 0, completed: 0, unreadMessages: 0 },
     }
   }
 
@@ -379,6 +388,24 @@ export async function getRecipientPortalOverview(
   const contacts = contactsResult.data ?? []
   const primaryContact = contacts.find((contact) => asText(contact.name))
   const now = new Date()
+  const conversationByTask = new Map<string, TaskConversationSnapshot>()
+  const taskIdsByContact = new Map<string, string[]>()
+  for (const task of taskRows) {
+    const scope = scopesByTask.get(task.id)
+    if (!scope) continue
+    const ids = taskIdsByContact.get(scope.contact_id) ?? []
+    ids.push(task.id)
+    taskIdsByContact.set(scope.contact_id, ids)
+  }
+  await Promise.all(
+    [...taskIdsByContact.entries()].map(async ([contactId, scopedTaskIds]) => {
+      const snapshots = await loadTaskConversationSnapshots({
+        taskIds: scopedTaskIds,
+        viewer: { kind: 'contact', contactId },
+      })
+      for (const [taskId, snapshot] of snapshots) conversationByTask.set(taskId, snapshot)
+    })
+  )
   const tasks: RecipientPortalTaskSummary[] = taskRows.map((task) => ({
     id: task.id,
     organizationName: organizations.get(task.org_id) ?? 'Organisation',
@@ -395,6 +422,7 @@ export async function getRecipientPortalOverview(
     dueAt: task.due_at,
     nextFollowupAt: task.next_followup_at,
     issuerName: issuerNames.get(task.issuer_profile_id) ?? 'Uppdragsansvarig',
+    unreadMessageCount: conversationByTask.get(task.id)?.unreadMessageCount ?? 0,
   }))
   tasks.sort((left, right) => {
     const terminalOrder = Number(TERMINAL_STATUSES.has(left.status)) - Number(TERMINAL_STATUSES.has(right.status))
@@ -412,6 +440,7 @@ export async function getRecipientPortalOverview(
       needsAction: activeTasks.filter((task) => ['assigned', 'returned', 'waiting'].includes(task.status)).length,
       overdue: activeTasks.filter((task) => task.risk === 'red').length,
       completed: tasks.filter((task) => task.status === 'approved').length,
+      unreadMessages: tasks.reduce((total, task) => total + task.unreadMessageCount, 0),
     },
   }
 }
@@ -453,9 +482,10 @@ export async function getRecipientPortalTaskWorkspace(
         .eq('org_id', task.org_id),
       admin
         .from('task_events')
-        .select('id,event_type,actor_type,actor_name,actor_contact_id,message,from_status,to_status,created_at')
+        .select('id,event_type,actor_type,actor_name,actor_profile_id,actor_contact_id,message,from_status,to_status,created_at')
         .eq('task_id', task.id)
         .eq('org_id', task.org_id)
+        .neq('event_type', 'comment')
         .order('created_at', { ascending: false })
         .limit(30),
       admin
@@ -488,19 +518,30 @@ export async function getRecipientPortalTaskWorkspace(
   if (!contactResult.data) return null
 
   const recipientName = asText(contactResult.data.name) || session.fallbackName
-  const events = (eventsResult.data ?? [])
+  const conversation = (await loadTaskConversationSnapshots({
+    taskIds: [task.id],
+    viewer: { kind: 'contact', contactId: scope.contact_id },
+  })).get(task.id) ?? {
+    comments: [],
+    unreadMessageCount: 0,
+    latestMessage: null,
+    latestIncomingMessageEventId: null,
+  }
+  const historyEvents: ExternalTaskWorkspace['task']['events'] = (eventsResult.data ?? [])
     .filter(
       (event) =>
-        event.actor_contact_id === scope.contact_id ||
-        (event.actor_type === 'profile' && event.event_type === 'comment') ||
-        [
-          'task_created',
-          'status_changed',
-          'deadline_change_requested',
-          'deadline_change_approved',
-          'deadline_change_rejected',
-          'requirement_updated',
-        ].includes(String(event.event_type))
+        event.event_type !== 'comment' &&
+        (
+          event.actor_contact_id === scope.contact_id ||
+          [
+            'task_created',
+            'status_changed',
+            'deadline_change_requested',
+            'deadline_change_approved',
+            'deadline_change_rejected',
+            'requirement_updated',
+          ].includes(String(event.event_type))
+        )
     )
     .map((event) => ({
       id: String(event.id),
@@ -510,7 +551,15 @@ export async function getRecipientPortalTaskWorkspace(
       fromStatus: isTaskStatus(event.from_status) ? event.from_status : null,
       toStatus: isTaskStatus(event.to_status) ? event.to_status : null,
       createdAt: String(event.created_at),
+      authorSide: taskEventAuthorSide(event, {
+        kind: 'contact',
+        contactId: scope.contact_id,
+      }),
     }))
+  const events = [...conversation.comments, ...historyEvents].sort((left, right) => {
+    const createdComparison = right.createdAt.localeCompare(left.createdAt)
+    return createdComparison !== 0 ? createdComparison : right.id.localeCompare(left.id)
+  })
 
   return {
     accessState: 'open',
@@ -568,6 +617,9 @@ export async function getRecipientPortalTaskWorkspace(
           createdAt: String(attachment.created_at),
         }]
       }),
+      unreadMessageCount: conversation.unreadMessageCount,
+      latestMessage: conversation.latestMessage,
+      latestIncomingMessageEventId: conversation.latestIncomingMessageEventId,
       version: task.version,
     },
     children: [],
@@ -652,28 +704,68 @@ export async function performRecipientPortalTaskAction(input: {
     taskId: input.taskId,
     allowLocked: true,
   })
-  if (TERMINAL_STATUSES.has(context.task.status)) throw new Error('TASK_TERMINAL')
   const payloadTaskId = asText(input.payload.taskId)
   if (payloadTaskId && payloadTaskId !== input.taskId) throw new Error('TASK_NOT_FOUND')
+  if (input.action === 'mark_messages_read') {
+    const throughEventId = asText(input.payload.throughEventId)
+    if (!throughEventId) throw new Error('TASK_CONVERSATION_CURSOR_REQUIRED')
+    await markTaskConversationRead({
+      taskId: context.task.id,
+      throughEventId,
+      reader: {
+        kind: 'contact',
+        contactId: context.contactId,
+        accessLinkId: context.accessLinkId,
+      },
+    })
+    const workspace = await getRecipientPortalTaskWorkspace(input.session, input.taskId)
+    if (!workspace) throw new Error('TASK_NOT_FOUND')
+    return {
+      workspace,
+      notice: 'Meddelandena markerades som lästa.',
+      warning: null,
+    }
+  }
+  if (TERMINAL_STATUSES.has(context.task.status)) throw new Error('TASK_TERMINAL')
   const admin = createSupabaseAdminClient()
   let notice = 'Uppgiften uppdaterades.'
+  let warning: string | null = null
 
   if (input.action === 'comment') {
     const message = asText(input.payload.message)
     if (!message) throw new Error('TASK_COMMENT_REQUIRED')
-    const { error } = await admin.from('task_events').insert({
-      org_id: context.orgId,
-      task_id: context.task.id,
-      event_type: 'comment',
-      actor_type: 'contact',
-      actor_contact_id: context.contactId,
-      actor_access_link_id: context.accessLinkId,
-      actor_name: context.contactName,
+    const { data: event, error } = await admin
+      .from('task_events')
+      .insert({
+        org_id: context.orgId,
+        task_id: context.task.id,
+        event_type: 'comment',
+        actor_type: 'contact',
+        actor_contact_id: context.contactId,
+        actor_access_link_id: context.accessLinkId,
+        actor_name: context.contactName,
+        message,
+        metadata: { recipientIdentityId: context.identityId },
+      })
+      .select('id')
+      .single()
+    if (error || !event) throw new Error('TASK_EVENT_CREATE_FAILED')
+    const notification = await notifyTaskComment({
+      orgId: context.orgId,
+      taskId: context.task.id,
+      eventId: String(event.id),
       message,
-      metadata: { recipientIdentityId: context.identityId },
+      actor: {
+        kind: 'contact',
+        contactId: context.contactId,
+        accessLinkId: context.accessLinkId,
+        name: context.contactName,
+      },
     })
-    if (error) throw new Error('TASK_EVENT_CREATE_FAILED')
-    notice = 'Kommentaren har skickats.'
+    warning = notification.warning
+    notice = notification.warning
+      ? 'Meddelandet finns sparat.'
+      : 'Meddelandet har skickats och mottagaren har notifierats via e-post.'
   } else if (input.action === 'request_deadline_change') {
     const reason = asText(input.payload.reason)
     const requestedDueAt = parseIso(input.payload.requestedDueAt, 'TASK_EXTENSION_DATE_REQUIRED')
@@ -730,5 +822,5 @@ export async function performRecipientPortalTaskAction(input: {
 
   const workspace = await getRecipientPortalTaskWorkspace(input.session, input.taskId)
   if (!workspace) throw new Error('TASK_NOT_FOUND')
-  return { workspace, notice }
+  return { workspace, notice, warning }
 }

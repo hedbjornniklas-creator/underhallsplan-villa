@@ -38,6 +38,7 @@ function taskErrorResponse(error: unknown) {
     TASK_FOLLOWUP_AFTER_DUE: 'Nästa uppföljning måste ligga senast på slutdatumet.',
     TASK_ASSIGNEE_REQUIRED: 'Välj en mottagare.',
     TASK_ASSIGNEE_NOT_IN_ORG: 'Den interna mottagaren tillhör inte organisationen.',
+    TASK_ASSIGNEE_TASK_ACCESS_REQUIRED: 'Den interna mottagaren saknar behörighet till Uppdrag. Ge personen åtkomst innan uppgiften tilldelas.',
     TASK_CONTACT_NOT_FOUND: 'Den externa kontakten kunde inte hittas.',
     TASK_CONTACT_NAME_REQUIRED: 'Ange namn på den externa mottagaren.',
     TASK_CONTACT_METHOD_REQUIRED: 'Ange e-post eller telefonnummer till mottagaren.',
@@ -131,6 +132,9 @@ function taskErrorResponse(error: unknown) {
   if (code === 'MISSING_ENV:OPENAI_API_KEY') {
     return jsonError('Signe är inte konfigurerad på servern ännu.', 503, code)
   }
+  if (code === 'TASK_ACCESS_READ_FAILED') {
+    return jsonError('Behörigheterna kunde inte kontrolleras just nu. Försök igen om en stund.', 503, code)
+  }
   if (code === 'SIGNE_PROVIDER_UNAVAILABLE' || code === 'SIGNE_RESPONSE_INVALID') {
     return jsonError('Signe kunde inte svara just nu. Försök igen om en stund.', 502, code)
   }
@@ -209,7 +213,7 @@ export async function POST(request: Request) {
     })
     const assignmentDeferred =
       (action === 'create_task' || action === 'create_subtask') && payload.sendAssignment === false
-    if (!assignmentDeferred) {
+    if (!assignmentDeferred && action !== 'mark_messages_read') {
       after(async () => {
         try {
           await runTaskFollowupBatch({ limit: 5 })

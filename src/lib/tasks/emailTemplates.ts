@@ -15,6 +15,10 @@ type TaskEmailTemplateInput = {
   secondaryActionUrl?: string | null
   secondaryActionLabel?: string
   notice?: string | null
+  message?: {
+    authorName: string
+    text: string
+  } | null
 }
 
 function escapeHtml(value: string) {
@@ -86,6 +90,17 @@ export function buildTaskEmailHtml(input: TaskEmailTemplateInput) {
         </tr>
       </table>`
     : ''
+  const message = input.message
+    ? `
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:22px 0 0;background:#fff7ed;border:1px solid #fed7aa;border-radius:14px;">
+        <tr>
+          <td style="padding:16px 18px;">
+            <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;font-weight:800;line-height:18px;letter-spacing:.08em;text-transform:uppercase;color:#9a3412;">Meddelande från ${escapeHtml(input.message.authorName)}</p>
+            <p style="margin:8px 0 0;white-space:pre-wrap;font-family:Arial,sans-serif;font-size:15px;font-weight:600;line-height:24px;color:#292524;">${escapeHtml(input.message.text)}</p>
+          </td>
+        </tr>
+      </table>`
+    : ''
 
   return `<!doctype html>
 <html lang="sv">
@@ -136,6 +151,7 @@ export function buildTaskEmailHtml(input: TaskEmailTemplateInput) {
                 </table>
 
                 ${instruction}
+                ${message}
                 ${action}
                 ${secondaryAction}
                 ${notice}

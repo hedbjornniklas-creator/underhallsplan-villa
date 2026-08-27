@@ -44,6 +44,8 @@ export type TaskRisk = 'green' | 'yellow' | 'red'
 
 export type TaskBallHolder = 'issuer' | 'assignee' | 'nobody'
 
+export type TaskEventAuthorSide = 'self' | 'other' | 'system'
+
 export type TaskPerson = {
   id: string
   kind: 'profile' | 'contact'
@@ -73,6 +75,15 @@ export type TaskEventView = {
   fromStatus: TaskStatus | null
   toStatus: TaskStatus | null
   createdAt: string
+  authorSide: TaskEventAuthorSide
+}
+
+export type TaskLatestMessageView = {
+  id: string
+  actorName: string
+  message: string
+  createdAt: string
+  authorSide: TaskEventAuthorSide
 }
 
 export type TaskDeadlineRequestView = {
@@ -139,6 +150,9 @@ export type TaskView = {
   deadlineRequests: TaskDeadlineRequestView[]
   attachments: TaskAttachmentView[]
   aiSuggestions: TaskAiSuggestionView[]
+  unreadMessageCount: number
+  latestMessage: TaskLatestMessageView | null
+  latestIncomingMessageEventId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -151,6 +165,7 @@ export type TaskWorkspaceSummary = {
   green: number
   yellow: number
   red: number
+  unreadMessages: number
 }
 
 export type TaskWorkspace = {

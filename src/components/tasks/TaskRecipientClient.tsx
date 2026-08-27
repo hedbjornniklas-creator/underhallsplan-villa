@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
@@ -15,7 +15,6 @@ import {
   Clock3,
   Copy,
   FileText,
-  History,
   Image as ImageIcon,
   Link2Off,
   Loader2,
@@ -31,9 +30,11 @@ import { useToast } from '@/components/ui/AppToastProvider'
 import type { TaskChannel, TaskCompletionEvidenceType } from '@/lib/tasks/contracts'
 import type { ExternalTaskWorkspace } from '@/lib/tasks/external'
 import TaskAttachmentDropZone from './TaskAttachmentDropZone'
+import TaskConversationCard from './TaskConversationCard'
+import TaskHistoryDisclosure from './TaskHistoryDisclosure'
 import TaskTimeProgress from './TaskTimeProgress'
 import { SigneMark } from './SigneMark'
-import { TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
+import { TaskStatusBadge } from './TaskStatusBadge'
 
 type Props = {
   initialWorkspace: ExternalTaskWorkspace
@@ -208,6 +209,17 @@ export default function TaskRecipientClient({
   const recordingStartedAtRef = useRef<number | null>(null)
 
   const task = workspace.task
+  const markMessagesRead = useCallback(async (throughEventId: string) => {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'mark_messages_read',
+        payload: { throughEventId },
+      }),
+    })
+    if (!response.ok) throw new Error('TASK_MESSAGES_READ_FAILED')
+  }, [endpoint])
   const today = useMemo(() => startOfToday(), [])
   const todayInput = toDateInput(today)
   const dueDate = useMemo(() => new Date(task.dueAt), [task.dueAt])
@@ -227,6 +239,8 @@ export default function TaskRecipientClient({
   const childrenComplete = workspace.children.every((child) => ['approved', 'cancelled'].includes(child.status))
   const readyForReviewBlocked = !requirementsComplete || !childrenComplete
   const isBusy = busyAction !== null
+  const conversationCanSend =
+    workspace.accessState === 'open' && !['approved', 'cancelled'].includes(task.status)
 
   useEffect(() => {
     if (!panel) return
@@ -825,6 +839,29 @@ export default function TaskRecipientClient({
           </section>
         ) : null}
 
+        <div className="mt-6">
+          <TaskConversationCard
+            headingId={`recipient-conversation-${task.id}`}
+            messages={task.events}
+            value={comment}
+            onChange={setComment}
+            onSubmit={submitComment}
+            submitting={busyAction === 'comment'}
+            canSend={conversationCanSend && !isBusy}
+            disabledReason={
+              conversationCanSend
+                ? null
+                : 'Uppdraget är avslutat och kan inte ta emot fler meddelanden.'
+            }
+            recipientLabel={task.issuerName}
+            placeholder="Skriv en status eller fråga…"
+            unreadCount={task.unreadMessageCount}
+            latestIncomingMessageEventId={task.latestIncomingMessageEventId}
+            onMarkRead={markMessagesRead}
+            composerRef={commentInputRef}
+          />
+        </div>
+
         {task.requirements.length > 0 ? (
           <section className="mt-6" aria-labelledby="recipient-requirements-heading">
             <div className="flex items-end justify-between gap-3">
@@ -1082,54 +1119,9 @@ export default function TaskRecipientClient({
           </section>
         ) : null}
 
-        <section className="mt-6" aria-labelledby="recipient-history-heading">
-          <div className="flex items-center gap-2">
-            <History className="text-amber-700" size={19} />
-            <h2 id="recipient-history-heading" className="text-lg font-semibold">Historik och kommunikation</h2>
-          </div>
-
-          <form onSubmit={submitComment} className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-            <label htmlFor="recipient-comment" className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
-              <MessageSquareText size={15} /> Skriv till uppdragsansvarig
-            </label>
-            <textarea
-              ref={commentInputRef}
-              id="recipient-comment"
-              value={comment}
-              onChange={(event) => setComment(event.target.value)}
-              rows={3}
-              placeholder="Skriv en status eller fråga…"
-              className={`${inputClassName} mt-2 resize-y`}
-            />
-            <button
-              type="submit"
-              disabled={isBusy || !comment.trim()}
-              className="mt-2 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {busyAction === 'comment' ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
-              Skicka kommentar
-            </button>
-          </form>
-
-          <div className="mt-5 space-y-5">
-            {task.events.length > 0 ? (
-              task.events.map((event) => (
-                <article key={event.id} className="relative pl-7">
-                  <span className="absolute left-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-amber-400 ring-4 ring-amber-100" />
-                  <p className="text-xs font-semibold text-slate-700">{event.actorName} · {formatDate(event.createdAt, true)}</p>
-                  {event.fromStatus && event.toStatus ? (
-                    <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
-                      {taskStatusLabel(event.fromStatus)} <ArrowRight size={12} /> {taskStatusLabel(event.toStatus)}
-                    </p>
-                  ) : null}
-                  {event.message ? <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{event.message}</p> : null}
-                </article>
-              ))
-            ) : (
-              <p className="rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-6 text-center text-sm text-slate-500">Ingen historik ännu.</p>
-            )}
-          </div>
-        </section>
+        <div className="mt-4">
+          <TaskHistoryDisclosure events={task.events} />
+        </div>
 
         {task.deadlineRequests.some((request) => request.status !== 'pending') ? (
           <details className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-3">

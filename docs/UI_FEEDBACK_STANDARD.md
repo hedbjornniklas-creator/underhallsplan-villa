@@ -34,3 +34,21 @@ not one toast per internal step.
 
 The legacy EB `EbToastProvider` and `useEbToast()` are compatibility adapters to
 the same global queue. New code must use `useToast()` directly.
+
+## Immediate action feedback
+
+Use `ActionButton` from `src/components/ui/ActionButton.tsx` for buttons that
+start an asynchronous operation. Use `PendingLink` from
+`src/components/ui/PendingLink.tsx` for navigation where the destination can
+take time to open.
+
+Every asynchronous action must provide three distinct states:
+
+- pressed: immediate scale/brightness feedback independent of network speed;
+- pending: spinner, specific progress label, disabled interaction and
+  `aria-busy`;
+- completed: a toast or a persistent result according to the rules above.
+
+Pending labels describe the operation, for example `Loggar in …`, `Sparar …`
+or `Öppnar utlåtande …`. Keep the button in place while its label changes and
+prevent duplicate submissions until the operation finishes.

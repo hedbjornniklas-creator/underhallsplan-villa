@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Auth } from '@supabase/auth-ui-react'
 import { ThemeSupa } from '@supabase/auth-ui-shared'
 import { ArrowLeft, KeyRound } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import ActionButton from '@/components/ui/ActionButton'
 
 type PasswordAuthPanelProps = {
   redirectTo?: string
@@ -40,6 +41,10 @@ const localization = {
 
 export default function PasswordAuthPanel({ redirectTo, accent = 'blue' }: PasswordAuthPanelProps) {
   const [showPasswordReset, setShowPasswordReset] = useState(false)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [signingIn, setSigningIn] = useState(false)
+  const [signInError, setSignInError] = useState<string | null>(null)
   const isEmerald = accent === 'emerald'
   const brand = isEmerald ? '#047857' : '#1d4ed8'
   const brandAccent = isEmerald ? '#065f46' : '#1e40af'
@@ -95,6 +100,38 @@ export default function PasswordAuthPanel({ redirectTo, accent = 'blue' }: Passw
     },
   } as const
 
+  const handleSignIn = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSigningIn(true)
+    setSignInError(null)
+
+    const normalizedEmail = email.trim().toLocaleLowerCase('sv-SE')
+    if (!normalizedEmail || !password) {
+      setSignInError('Ange e-post och lösenord.')
+      setSigningIn(false)
+      return
+    }
+
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      })
+      if (error) throw error
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      const normalizedMessage = message.toLocaleLowerCase('sv-SE')
+      setSignInError(
+        normalizedMessage.includes('invalid login credentials')
+          ? 'E-postadressen eller lösenordet är fel.'
+          : normalizedMessage.includes('email not confirmed')
+            ? 'E-postadressen är ännu inte verifierad.'
+            : message || 'Kunde inte logga in.',
+      )
+      setSigningIn(false)
+    }
+  }
+
   return (
     <div>
       {showPasswordReset ? (
@@ -134,20 +171,67 @@ export default function PasswordAuthPanel({ redirectTo, accent = 'blue' }: Passw
         </div>
       ) : (
         <div>
-          <Auth
-            supabaseClient={supabase}
-            appearance={appearance}
-            providers={[]}
-            redirectTo={redirectTo}
-            view="sign_in"
-            showLinks={false}
-            localization={localization}
-          />
+          <form onSubmit={handleSignIn} className="space-y-5" aria-busy={signingIn || undefined}>
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold text-stone-800">E-post</span>
+              <input
+                type="email"
+                autoComplete="email"
+                autoFocus
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                disabled={signingIn}
+                placeholder="namn@foretag.se"
+                className={`h-12 w-full rounded-[14px] border border-stone-300 bg-white px-4 text-[15px] text-stone-950 outline-none transition placeholder:text-stone-400 focus:ring-2 disabled:cursor-wait disabled:bg-stone-50 ${
+                  isEmerald
+                    ? 'focus:border-emerald-700 focus:ring-emerald-700/20'
+                    : 'focus:border-blue-700 focus:ring-blue-700/20'
+                }`}
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold text-stone-800">Lösenord</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                disabled={signingIn}
+                placeholder="Ditt lösenord"
+                className={`h-12 w-full rounded-[14px] border border-stone-300 bg-white px-4 text-[15px] text-stone-950 outline-none transition placeholder:text-stone-400 focus:ring-2 disabled:cursor-wait disabled:bg-stone-50 ${
+                  isEmerald
+                    ? 'focus:border-emerald-700 focus:ring-emerald-700/20'
+                    : 'focus:border-blue-700 focus:ring-blue-700/20'
+                }`}
+              />
+            </label>
+
+            {signInError ? (
+              <p role="alert" className="rounded-[14px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-800">
+                {signInError}
+              </p>
+            ) : null}
+
+            <ActionButton
+              type="submit"
+              busy={signingIn}
+              busyLabel="Loggar in …"
+              icon={<KeyRound size={17} aria-hidden="true" />}
+              tone={isEmerald ? 'emerald' : 'blue'}
+              className="min-h-12 w-full rounded-[14px] px-4 text-[15px] font-bold"
+            >
+              Logga in
+            </ActionButton>
+          </form>
 
           <button
             type="button"
+            disabled={signingIn}
             onClick={() => setShowPasswordReset(true)}
-            className={`mt-4 text-sm font-semibold transition ${
+            className={`mt-4 text-sm font-semibold transition active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 ${
               isEmerald ? 'text-emerald-800 hover:text-emerald-950' : 'text-blue-800 hover:text-blue-950'
             }`}
           >

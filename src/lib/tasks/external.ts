@@ -12,6 +12,8 @@ import type {
   TaskChannel,
   TaskCompletionEvidenceType,
   TaskEvidenceRequirement,
+  TaskEventAuthorSide,
+  TaskLatestMessageView,
   TaskRequirementStatus,
   TaskStatus,
 } from './contracts'
@@ -22,6 +24,12 @@ import {
 } from './contracts'
 import type { TaskAttachmentActor } from './attachments'
 import { ensureRecipientTaskEntryLink, issueDirectTaskAccessLink } from './recipientAuth'
+import {
+  loadTaskConversationSnapshots,
+  markTaskConversationRead,
+  notifyTaskComment,
+  taskEventAuthorSide,
+} from './conversation'
 
 export type ExternalTaskWorkspace = {
   accessState: 'open' | 'expired' | 'revoked'
@@ -54,6 +62,7 @@ export type ExternalTaskWorkspace = {
       fromStatus: TaskStatus | null
       toStatus: TaskStatus | null
       createdAt: string
+      authorSide: TaskEventAuthorSide
     }>
     deadlineRequests: Array<{
       id: string
@@ -71,6 +80,9 @@ export type ExternalTaskWorkspace = {
       isCompletionEvidence: boolean
       createdAt: string
     }>
+    unreadMessageCount: number
+    latestMessage: TaskLatestMessageView | null
+    latestIncomingMessageEventId: string | null
     version: number
   }
   children: Array<{
@@ -288,6 +300,9 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
         events: [],
         deadlineRequests: [],
         attachments: [],
+        unreadMessageCount: 0,
+        latestMessage: null,
+        latestIncomingMessageEventId: null,
         version: 1,
       },
       children: [],
@@ -317,8 +332,9 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
         .eq('task_id', task.id),
       admin
         .from('task_events')
-        .select('id,event_type,actor_type,actor_name,actor_contact_id,message,from_status,to_status,created_at')
+        .select('id,event_type,actor_type,actor_name,actor_profile_id,actor_contact_id,message,from_status,to_status,created_at')
         .eq('task_id', task.id)
+        .neq('event_type', 'comment')
         .order('created_at', { ascending: false })
         .limit(30),
       admin
@@ -379,6 +395,49 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
 
   const issuerName = issuerResult.data?.full_name?.trim() || issuerResult.data?.email?.trim() || 'Uppdragsansvarig'
   const recipientName = String(contactResult.data.name)
+  const conversation = (await loadTaskConversationSnapshots({
+    taskIds: [task.id],
+    viewer: { kind: 'contact', contactId: access.contact_id, accessLinkId: access.id },
+  })).get(task.id) ?? {
+    comments: [],
+    unreadMessageCount: 0,
+    latestMessage: null,
+    latestIncomingMessageEventId: null,
+  }
+  const historyEvents: ExternalTaskWorkspace['task']['events'] = (eventsResult.data ?? [])
+    .filter(
+      (event) =>
+        event.event_type !== 'comment' &&
+        (
+          event.actor_contact_id === access.contact_id ||
+          [
+            'task_created',
+            'status_changed',
+            'deadline_change_requested',
+            'deadline_change_approved',
+            'deadline_change_rejected',
+            'requirement_updated',
+          ].includes(String(event.event_type))
+        )
+    )
+    .map((event) => ({
+      id: String(event.id),
+      type: String(event.event_type),
+      actorName: event.actor_name?.trim() || 'Signe',
+      message: event.message ?? null,
+      fromStatus: isTaskStatus(event.from_status) ? event.from_status : null,
+      toStatus: isTaskStatus(event.to_status) ? event.to_status : null,
+      createdAt: String(event.created_at),
+      authorSide: taskEventAuthorSide(event, {
+        kind: 'contact',
+        contactId: access.contact_id,
+        accessLinkId: access.id,
+      }),
+    }))
+  const visibleEvents = [...conversation.comments, ...historyEvents].sort((left, right) => {
+    const createdComparison = right.createdAt.localeCompare(left.createdAt)
+    return createdComparison !== 0 ? createdComparison : right.id.localeCompare(left.id)
+  })
 
   return {
     accessState: state,
@@ -410,29 +469,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
         label: String(requirement.label),
         status: String(requirement.status) as TaskRequirementStatus,
       })),
-      events: (eventsResult.data ?? [])
-        .filter(
-          (event) =>
-            event.actor_contact_id === access.contact_id ||
-            (event.actor_type === 'profile' && event.event_type === 'comment') ||
-            [
-              'task_created',
-              'status_changed',
-              'deadline_change_requested',
-              'deadline_change_approved',
-              'deadline_change_rejected',
-              'requirement_updated',
-            ].includes(String(event.event_type))
-        )
-        .map((event) => ({
-          id: String(event.id),
-          type: String(event.event_type),
-          actorName: event.actor_name?.trim() || 'Signe',
-          message: event.message ?? null,
-          fromStatus: isTaskStatus(event.from_status) ? event.from_status : null,
-          toStatus: isTaskStatus(event.to_status) ? event.to_status : null,
-          createdAt: String(event.created_at),
-        })),
+      events: visibleEvents,
       deadlineRequests: (deadlinesResult.data ?? []).map((request) => ({
         id: String(request.id),
         requestedDueAt: String(request.requested_due_at),
@@ -449,6 +486,9 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
         isCompletionEvidence: Boolean(attachment.is_completion_evidence),
         createdAt: String(attachment.created_at),
       })),
+      unreadMessageCount: conversation.unreadMessageCount,
+      latestMessage: conversation.latestMessage,
+      latestIncomingMessageEventId: conversation.latestIncomingMessageEventId,
       version: task.version,
     },
     children: childRows.map((child) => ({
@@ -477,20 +517,26 @@ async function externalEvent(input: {
     .select('name')
     .eq('id', input.access.contact_id)
     .maybeSingle()
-  const { error } = await admin.from('task_events').insert({
-    org_id: input.access.org_id,
-    task_id: input.access.task_id,
-    event_type: input.type,
-    actor_type: 'contact',
-    actor_contact_id: input.access.contact_id,
-    actor_access_link_id: input.access.id,
-    actor_name: contact?.name ?? 'Extern mottagare',
-    message: input.message ?? null,
-    from_status: input.fromStatus ?? null,
-    to_status: input.toStatus ?? null,
-    metadata: input.metadata ?? {},
-  })
-  if (error) throw new Error('TASK_EVENT_CREATE_FAILED')
+  const actorName = contact?.name ?? 'Extern mottagare'
+  const { data, error } = await admin
+    .from('task_events')
+    .insert({
+      org_id: input.access.org_id,
+      task_id: input.access.task_id,
+      event_type: input.type,
+      actor_type: 'contact',
+      actor_contact_id: input.access.contact_id,
+      actor_access_link_id: input.access.id,
+      actor_name: actorName,
+      message: input.message ?? null,
+      from_status: input.fromStatus ?? null,
+      to_status: input.toStatus ?? null,
+      metadata: input.metadata ?? {},
+    })
+    .select('id')
+    .single()
+  if (error || !data) throw new Error('TASK_EVENT_CREATE_FAILED')
+  return { id: String(data.id), actorName }
 }
 
 async function createExternalSubtask(input: {
@@ -627,9 +673,25 @@ export async function performExternalTaskAction(input: {
   const access = await resolveAccess(input.token)
   if (!access) throw new Error('TASK_ACCESS_NOT_FOUND')
   if (accessState(access) !== 'open') throw new Error('TASK_ACCESS_CLOSED')
+  const task = await requireExternalTask(access)
+  if (input.action === 'mark_messages_read') {
+    const throughEventId = asText(input.payload.throughEventId)
+    if (!throughEventId) throw new Error('TASK_CONVERSATION_CURSOR_REQUIRED')
+    await markTaskConversationRead({
+      taskId: task.id,
+      throughEventId,
+      reader: {
+        kind: 'contact',
+        contactId: access.contact_id,
+        accessLinkId: access.id,
+      },
+    })
+    const workspace = await getExternalTaskWorkspace(input.token)
+    if (!workspace) throw new Error('TASK_ACCESS_NOT_FOUND')
+    return { workspace, notice: 'Meddelandena markerades som lästa.', warning: null }
+  }
   if (access.role === 'viewer') throw new Error('TASK_EXTERNAL_ACTION_FORBIDDEN')
   await enforceExternalActionRateLimit(access)
-  const task = await requireExternalTask(access)
   const admin = createSupabaseAdminClient()
 
   let warning: string | null = null
@@ -638,7 +700,24 @@ export async function performExternalTaskAction(input: {
     if (['approved', 'cancelled'].includes(task.status)) throw new Error('TASK_TERMINAL')
     const message = asText(input.payload.message)
     if (!message) throw new Error('TASK_COMMENT_REQUIRED')
-    await externalEvent({ access, type: 'comment', message })
+    const event = await externalEvent({ access, type: 'comment', message })
+    const notification = await notifyTaskComment({
+      orgId: access.org_id,
+      taskId: task.id,
+      eventId: event.id,
+      message,
+      actor: {
+        kind: 'contact',
+        contactId: access.contact_id,
+        accessLinkId: access.id,
+        name: event.actorName,
+      },
+      requestOrigin: input.requestOrigin,
+    })
+    warning = notification.warning
+    notice = notification.warning
+      ? 'Meddelandet finns sparat.'
+      : 'Meddelandet har skickats och mottagaren har notifierats via e-post.'
   } else if (input.action === 'create_subtask') {
     const created = await createExternalSubtask({
       access,

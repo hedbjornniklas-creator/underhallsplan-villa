@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { EbToastProvider, useEbToast } from '@/components/eb/EbToastProvider'
+import ActionButton from '@/components/ui/ActionButton'
 import { supabase } from '@/lib/supabaseClient'
 
 type SettingRow = {
@@ -181,15 +182,18 @@ function EbSettingsPanelContent() {
               Första versionen delar BesiktApp-admin med ÖB och visar de val som SLB-flödet bygger på.
             </p>
           </div>
-          <button
+          <ActionButton
             type="button"
             onClick={() => void load()}
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+            busy={loading}
+            busyLabel="Laddar …"
+            icon={<RefreshCw size={15} aria-hidden="true" />}
+            busyIcon={<RefreshCw size={15} className="animate-spin" aria-hidden="true" />}
+            tone="emeraldSecondary"
+            className="rounded-lg px-3 py-2 text-sm font-semibold"
           >
-            <RefreshCw size={15} aria-hidden="true" />
-            {loading ? 'Laddar' : 'Ladda om'}
-          </button>
+            Ladda om
+          </ActionButton>
         </div>
         {error ? <p className="mt-3 text-sm font-medium text-rose-700">{error}</p> : null}
       </section>
