@@ -28,6 +28,15 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
 import type { TaskChannel, TaskCompletionEvidenceType } from '@/lib/tasks/contracts'
+import {
+  addTaskDateInputDays,
+  formatTaskDateTime,
+  normalizeTaskTimeZone,
+  taskDateTimeInputToIso,
+  taskIsoToDateTimeInput,
+  taskTimeZoneLabel,
+  taskTodayDateInput,
+} from '@/lib/tasks/dateTime'
 import type { ExternalTaskWorkspace } from '@/lib/tasks/external'
 import TaskAttachmentDropZone from './TaskAttachmentDropZone'
 import TaskConversationCard from './TaskConversationCard'
@@ -101,40 +110,6 @@ function recordingExtension(contentType: string) {
   return 'webm'
 }
 
-function formatDate(value: string, withTime = false) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('sv-SE', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
-  }).format(date)
-}
-
-function toDateInput(value: Date) {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, '0')
-  const day = String(value.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function startOfToday() {
-  const date = new Date()
-  date.setHours(0, 0, 0, 0)
-  return date
-}
-
-function addDays(value: Date, days: number) {
-  const next = new Date(value)
-  next.setDate(next.getDate() + days)
-  return next
-}
-
-function toIso(value: string) {
-  return new Date(`${value}T12:00:00`).toISOString()
-}
-
 function requirementState(status: string, key?: string) {
   if (status === 'verified') return { done: true, label: 'Verifierad' }
   if (status === 'not_required') return { done: true, label: 'Inte tillämplig' }
@@ -183,15 +158,19 @@ export default function TaskRecipientClient({
   const [panel, setPanel] = useState<ActionPanel>(null)
   const [waitingReason, setWaitingReason] = useState('')
   const [waitingDate, setWaitingDate] = useState('')
+  const [waitingTime, setWaitingTime] = useState('')
   const [deadlineReason, setDeadlineReason] = useState('')
   const [requestedDueDate, setRequestedDueDate] = useState('')
+  const [requestedDueTime, setRequestedDueTime] = useState('')
   const [delegateTitle, setDelegateTitle] = useState('')
   const [delegateDescription, setDelegateDescription] = useState('')
   const [delegateName, setDelegateName] = useState('')
   const [delegateEmail, setDelegateEmail] = useState('')
   const [delegatePhone, setDelegatePhone] = useState('')
   const [delegateDueDate, setDelegateDueDate] = useState('')
+  const [delegateDueTime, setDelegateDueTime] = useState('')
   const [delegateFollowupDate, setDelegateFollowupDate] = useState('')
+  const [delegateFollowupTime, setDelegateFollowupTime] = useState('')
   const [delegatePrimaryChannel, setDelegatePrimaryChannel] = useState<TaskChannel>('email')
   const [delegateFallbackChannel, setDelegateFallbackChannel] = useState<TaskChannel | ''>('whatsapp')
   const [delegateEvidenceRequirements, setDelegateEvidenceRequirements] = useState<TaskCompletionEvidenceType[]>([])
@@ -209,6 +188,8 @@ export default function TaskRecipientClient({
   const recordingStartedAtRef = useRef<number | null>(null)
 
   const task = workspace.task
+  const effectiveTimeZone = normalizeTaskTimeZone(task.dueTimeZone)
+  const creationTimeZone = normalizeTaskTimeZone(workspace.timeZone)
   const markMessagesRead = useCallback(async (throughEventId: string) => {
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -220,11 +201,25 @@ export default function TaskRecipientClient({
     })
     if (!response.ok) throw new Error('TASK_MESSAGES_READ_FAILED')
   }, [endpoint])
-  const today = useMemo(() => startOfToday(), [])
-  const todayInput = toDateInput(today)
-  const dueDate = useMemo(() => new Date(task.dueAt), [task.dueAt])
-  const dueDateInput = Number.isNaN(dueDate.getTime()) ? '' : toDateInput(dueDate)
-  const waitingWindowOpen = !Number.isNaN(dueDate.getTime()) && dueDate.getTime() >= today.getTime()
+  const todayInput = taskTodayDateInput(effectiveTimeZone)
+  const creationTodayInput = taskTodayDateInput(creationTimeZone)
+  const dueInput = useMemo(
+    () => taskIsoToDateTimeInput(task.dueAt, effectiveTimeZone),
+    [effectiveTimeZone, task.dueAt]
+  )
+  const parentDueInCreationZone = useMemo(
+    () => taskIsoToDateTimeInput(task.dueAt, creationTimeZone),
+    [creationTimeZone, task.dueAt]
+  )
+  const dueDateInput = dueInput?.date ?? ''
+  const waitingWindowOpen = Number.isFinite(Date.parse(task.dueAt)) && Date.parse(task.dueAt) >= Date.now()
+  const deadlineMinDate = dueInput?.date && dueInput.date > todayInput ? dueInput.date : todayInput
+  const waitingMaxTime = dueInput && waitingDate === dueInput.date ? dueInput.time : undefined
+  const requestedDueMinTime = dueInput && requestedDueDate === dueInput.date ? dueInput.time : undefined
+  const delegateDueMaxTime = parentDueInCreationZone && delegateDueDate === parentDueInCreationZone.date
+    ? parentDueInCreationZone.time
+    : undefined
+  const delegateFollowupMaxTime = delegateFollowupDate === delegateDueDate ? delegateDueTime : undefined
   const pendingDeadlineRequest = task.deadlineRequests.find((request) => request.status === 'pending') ?? null
   const evidenceChecklist = task.evidenceRequirements.map((type) => ({
     type,
@@ -473,28 +468,45 @@ export default function TaskRecipientClient({
 
   const openPanel = (nextPanel: Exclude<ActionPanel, null>) => {
     if (nextPanel === 'waiting') {
-      const suggested = addDays(today, 1)
-      const bounded = waitingWindowOpen && suggested.getTime() > dueDate.getTime() ? dueDate : suggested
-      setWaitingDate(toDateInput(bounded))
+      const suggestedDate = addTaskDateInputDays(todayInput, 1)
+      const suggestedTime = '09:00'
+      const suggestedAt = taskDateTimeInputToIso(suggestedDate, suggestedTime, effectiveTimeZone)
+      const boundedByDue = dueInput && suggestedAt && Date.parse(suggestedAt) > Date.parse(task.dueAt)
+      setWaitingDate(boundedByDue ? dueInput.date : suggestedDate)
+      setWaitingTime(boundedByDue ? dueInput.time : suggestedTime)
       setWaitingReason('')
     } else if (nextPanel === 'deadline') {
-      const firstAllowed = addDays(dueDate.getTime() > today.getTime() ? dueDate : today, 1)
-      setRequestedDueDate(toDateInput(firstAllowed))
+      const baseDate = dueInput?.date && dueInput.date > todayInput ? dueInput.date : todayInput
+      setRequestedDueDate(addTaskDateInputDays(baseDate, 1))
+      setRequestedDueTime(dueInput?.time ?? '16:00')
       setDeadlineReason('')
     } else {
-      const suggestedDueDate = addDays(today, 7)
-      const boundedDueDate = suggestedDueDate.getTime() > dueDate.getTime() ? dueDate : suggestedDueDate
-      const suggestedFollowupDate = addDays(today, 2)
-      const boundedFollowupDate = suggestedFollowupDate.getTime() > boundedDueDate.getTime()
-        ? boundedDueDate
-        : suggestedFollowupDate
+      const suggestedDueDate = addTaskDateInputDays(creationTodayInput, 7)
+      const suggestedDueTime = '16:00'
+      const suggestedDueAt = taskDateTimeInputToIso(suggestedDueDate, suggestedDueTime, creationTimeZone)
+      const boundedDue = parentDueInCreationZone && suggestedDueAt && Date.parse(suggestedDueAt) > Date.parse(task.dueAt)
+        ? parentDueInCreationZone
+        : { date: suggestedDueDate, time: suggestedDueTime }
+      const suggestedFollowupDate = addTaskDateInputDays(creationTodayInput, 2)
+      const suggestedFollowupTime = '09:00'
+      const suggestedFollowupAt = taskDateTimeInputToIso(
+        suggestedFollowupDate,
+        suggestedFollowupTime,
+        creationTimeZone
+      )
+      const boundedDueAt = taskDateTimeInputToIso(boundedDue.date, boundedDue.time, creationTimeZone)
+      const boundedFollowup = suggestedFollowupAt && boundedDueAt && Date.parse(suggestedFollowupAt) > Date.parse(boundedDueAt)
+        ? boundedDue
+        : { date: suggestedFollowupDate, time: suggestedFollowupTime }
       setDelegateTitle('')
       setDelegateDescription('')
       setDelegateName('')
       setDelegateEmail('')
       setDelegatePhone('')
-      setDelegateDueDate(toDateInput(boundedDueDate))
-      setDelegateFollowupDate(toDateInput(boundedFollowupDate))
+      setDelegateDueDate(boundedDue.date)
+      setDelegateDueTime(boundedDue.time)
+      setDelegateFollowupDate(boundedFollowup.date)
+      setDelegateFollowupTime(boundedFollowup.time)
       setDelegatePrimaryChannel('email')
       setDelegateFallbackChannel('whatsapp')
       setDelegateEvidenceRequirements([])
@@ -512,13 +524,22 @@ export default function TaskRecipientClient({
 
   const submitWaiting = async (event: FormEvent) => {
     event.preventDefault()
-    if (!waitingReason.trim() || !waitingDate || !waitingWindowOpen) return
+    if (!waitingReason.trim() || !waitingDate || !waitingTime || !waitingWindowOpen) return
+    const nextFollowupAt = taskDateTimeInputToIso(waitingDate, waitingTime, effectiveTimeZone)
+    if (!nextFollowupAt) {
+      showErrorToast('Kontrollera datum och klockslag. Den valda tiden måste finnas i angiven tidszon.')
+      return
+    }
+    if (Date.parse(nextFollowupAt) < Date.now() || Date.parse(nextFollowupAt) > Date.parse(task.dueAt)) {
+      showErrorToast('Uppföljningen måste ligga framåt i tiden och senast vid uppdragets sluttid.')
+      return
+    }
     const ok = await runAction(
       'waiting',
       {
         taskId: task.id,
         message: waitingReason.trim(),
-        nextFollowupAt: toIso(waitingDate),
+        nextFollowupAt,
         version: task.version,
       },
       'Uppgiften är markerad som väntande.'
@@ -528,13 +549,22 @@ export default function TaskRecipientClient({
 
   const submitDeadlineRequest = async (event: FormEvent) => {
     event.preventDefault()
-    if (!deadlineReason.trim() || !requestedDueDate) return
+    if (!deadlineReason.trim() || !requestedDueDate || !requestedDueTime) return
+    const requestedDueAt = taskDateTimeInputToIso(requestedDueDate, requestedDueTime, effectiveTimeZone)
+    if (!requestedDueAt) {
+      showErrorToast('Kontrollera datum och klockslag. Den valda tiden måste finnas i angiven tidszon.')
+      return
+    }
+    if (Date.parse(requestedDueAt) <= Math.max(Date.parse(task.dueAt), Date.now())) {
+      showErrorToast('Den önskade sluttiden måste ligga framåt i tiden och efter uppdragets nuvarande sluttid.')
+      return
+    }
     const ok = await runAction(
       'request_deadline_change',
       {
         taskId: task.id,
         reason: deadlineReason.trim(),
-        requestedDueAt: toIso(requestedDueDate),
+        requestedDueAt,
       },
       'Din begäran har skickats till uppdragsansvarig.'
     )
@@ -547,7 +577,14 @@ export default function TaskRecipientClient({
     const name = delegateName.trim()
     const email = delegateEmail.trim()
     const phone = delegatePhone.trim()
-    if (!title || !name || !delegateDueDate || !delegateFollowupDate) return
+    if (
+      !title
+      || !name
+      || !delegateDueDate
+      || !delegateDueTime
+      || !delegateFollowupDate
+      || !delegateFollowupTime
+    ) return
     if (!email) {
       showErrorToast('E-post krävs för mottagarens Mina uppdrag-konto.')
       return
@@ -573,14 +610,23 @@ export default function TaskRecipientClient({
       return
     }
 
+    const delegateDueAt = taskDateTimeInputToIso(delegateDueDate, delegateDueTime, creationTimeZone)
+    const delegateFollowupAt = taskDateTimeInputToIso(
+      delegateFollowupDate,
+      delegateFollowupTime,
+      creationTimeZone
+    )
+    if (!delegateDueAt || !delegateFollowupAt) {
+      showErrorToast('Kontrollera datum och klockslag. Den valda tiden måste finnas i angiven tidszon.')
+      return
+    }
     if (
-      delegateDueDate < todayInput ||
-      !dueDateInput ||
-      delegateDueDate > dueDateInput ||
-      delegateFollowupDate < todayInput ||
-      delegateFollowupDate > delegateDueDate
+      Date.parse(delegateDueAt) <= Date.now()
+      || Date.parse(delegateDueAt) > Date.parse(task.dueAt)
+      || Date.parse(delegateFollowupAt) < Date.now()
+      || Date.parse(delegateFollowupAt) > Date.parse(delegateDueAt)
     ) {
-      showErrorToast('Datumen måste ligga från idag till och med föräldrauppgiftens slutdatum.')
+      showErrorToast('Tiderna måste ligga framåt i tiden och senast vid föräldrauppgiftens sluttid.')
       return
     }
 
@@ -595,8 +641,8 @@ export default function TaskRecipientClient({
           ...(email ? { email } : {}),
           ...(phone ? { phone } : {}),
         },
-        dueAt: toIso(delegateDueDate),
-        nextFollowupAt: toIso(delegateFollowupDate),
+        dueAt: delegateDueAt,
+        nextFollowupAt: delegateFollowupAt,
         primaryChannel: delegatePrimaryChannel,
         fallbackChannel: delegateFallbackChannel || null,
         evidenceRequirements: delegateEvidenceRequirements,
@@ -635,14 +681,21 @@ export default function TaskRecipientClient({
     (delegateFallbackChannel !== 'email' || Boolean(delegateEmail.trim())) &&
     (delegateFallbackChannel !== 'whatsapp' || Boolean(delegatePhone.trim())) &&
     delegateFallbackChannel !== delegatePrimaryChannel
+  const delegateDueCandidate = taskDateTimeInputToIso(delegateDueDate, delegateDueTime, creationTimeZone)
+  const delegateFollowupCandidate = taskDateTimeInputToIso(
+    delegateFollowupDate,
+    delegateFollowupTime,
+    creationTimeZone
+  )
+  const delegateDueEpoch = delegateDueCandidate ? Date.parse(delegateDueCandidate) : Number.NaN
+  const delegateFollowupEpoch = delegateFollowupCandidate
+    ? Date.parse(delegateFollowupCandidate)
+    : Number.NaN
   const delegateDatesValid = Boolean(
-    delegateDueDate &&
-    delegateFollowupDate &&
-    dueDateInput &&
-    delegateDueDate >= todayInput &&
-    delegateDueDate <= dueDateInput &&
-    delegateFollowupDate >= todayInput &&
-    delegateFollowupDate <= delegateDueDate
+    delegateDueCandidate
+    && delegateFollowupCandidate
+    && delegateDueEpoch <= Date.parse(task.dueAt)
+    && delegateFollowupEpoch <= delegateDueEpoch
   )
   const canSubmitDelegation = Boolean(
     delegateTitle.trim() &&
@@ -693,7 +746,9 @@ export default function TaskRecipientClient({
       </header>
 
       <div className="mx-auto w-full max-w-xl px-4 py-5 sm:px-6 sm:py-7">
-        <section className="overflow-hidden rounded-3xl border border-amber-200/80 bg-white shadow-xl shadow-amber-950/5">
+        <TaskTimeProgress startedAt={task.createdAt} dueAt={task.dueAt} timeZone={effectiveTimeZone} />
+
+        <section className="mt-3 overflow-hidden rounded-3xl border border-amber-200/80 bg-white shadow-xl shadow-amber-950/5">
           <div className="bg-gradient-to-br from-amber-50 via-white to-orange-50 px-5 py-5 sm:px-6">
             <div className="flex flex-wrap items-center gap-2">
               <TaskStatusBadge status={task.status} />
@@ -705,8 +760,9 @@ export default function TaskRecipientClient({
 
           <dl className="grid grid-cols-2 gap-px bg-slate-200">
             <div className="min-w-0 bg-white p-4">
-              <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500"><CalendarClock size={14} /> Deadline</dt>
-              <dd className="mt-2 text-sm font-semibold text-slate-900">{formatDate(task.dueAt)}</dd>
+              <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500"><CalendarClock size={14} /> Ska vara klart</dt>
+              <dd className="mt-2 text-sm font-semibold leading-5 text-slate-900">{formatTaskDateTime(task.dueAt, effectiveTimeZone)}</dd>
+              <dd className="mt-1 text-xs text-slate-500">{taskTimeZoneLabel(effectiveTimeZone)}</dd>
             </div>
             <div className="min-w-0 bg-white p-4">
               <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Uppdragsansvarig</dt>
@@ -714,8 +770,6 @@ export default function TaskRecipientClient({
             </div>
           </dl>
         </section>
-
-        <TaskTimeProgress startedAt={task.createdAt} dueAt={task.dueAt} />
 
         <section className="mt-4 rounded-3xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm" aria-labelledby="recipient-next-step-heading">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-700">Ditt nästa steg</p>
@@ -802,7 +856,7 @@ export default function TaskRecipientClient({
             <div className="flex items-start gap-3">
               <CalendarClock className="mt-0.5 shrink-0 text-amber-700" size={20} />
               <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-amber-950">Förlängning begärd till {formatDate(pendingDeadlineRequest.requestedDueAt)}</h2>
+                <h2 className="text-sm font-semibold text-amber-950">Förlängning begärd till {formatTaskDateTime(pendingDeadlineRequest.requestedDueAt, effectiveTimeZone)}</h2>
                 <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-amber-900">{pendingDeadlineRequest.reason}</p>
                 <p className="mt-2 text-xs font-semibold text-amber-700">Väntar på beslut från uppdragsansvarig.</p>
               </div>
@@ -1037,7 +1091,7 @@ export default function TaskRecipientClient({
                         {attachment.title || attachment.fileName || attachmentTypeLabel(attachment.type)}
                       </span>
                       <span className="mt-1 block text-xs text-slate-500">
-                        {attachmentTypeLabel(attachment.type)} · {formatDate(attachment.createdAt, true)}
+                        {attachmentTypeLabel(attachment.type)} · {formatTaskDateTime(attachment.createdAt, effectiveTimeZone, 'compact')}
                       </span>
                       {attachment.isCompletionEvidence ? (
                         <span className="mt-1.5 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Färdigbevis</span>
@@ -1107,7 +1161,7 @@ export default function TaskRecipientClient({
                     <ChevronRight className="shrink-0 text-slate-400" size={18} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold text-slate-900">{child.title}</p>
-                      <p className="mt-1 truncate text-xs text-slate-500">{child.assigneeName} · {formatDate(child.dueAt)}</p>
+                      <p className="mt-1 truncate text-xs text-slate-500">{child.assigneeName} · {formatTaskDateTime(child.dueAt, child.dueTimeZone, 'compact')}</p>
                     </div>
                     <TaskStatusBadge status={child.status} />
                   </div>
@@ -1129,7 +1183,7 @@ export default function TaskRecipientClient({
             <div className="mt-3 space-y-3 border-t border-slate-100 pt-3">
               {task.deadlineRequests.filter((request) => request.status !== 'pending').map((request) => (
                 <div key={request.id} className="text-sm text-slate-600">
-                  <p><span className="font-semibold text-slate-800">{formatDate(request.requestedDueAt)}</span> · {deadlineRequestLabel(request.status)}</p>
+                  <p><span className="font-semibold text-slate-800">{formatTaskDateTime(request.requestedDueAt, effectiveTimeZone)}</span> · {deadlineRequestLabel(request.status)}</p>
                   <p className="mt-1">{request.reason}</p>
                 </div>
               ))}
@@ -1238,28 +1292,48 @@ export default function TaskRecipientClient({
                   Orsak
                   <textarea value={waitingReason} onChange={(event) => setWaitingReason(event.target.value)} rows={3} placeholder="Exempel: väntar på materialleverans" className={`${inputClassName} mt-2 resize-y`} />
                 </label>
-                <label className="block text-sm font-semibold text-slate-700">
-                  När ska Signe följa upp igen?
-                  <input type="date" min={todayInput} max={dueDateInput || undefined} value={waitingDate} onChange={(event) => setWaitingDate(event.target.value)} className={`${inputClassName} mt-2`} />
-                </label>
+                <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
+                  <legend className="px-1 text-sm font-semibold text-slate-700">När ska Signe följa upp igen?</legend>
+                  <div className="mt-1 grid gap-3 min-[420px]:grid-cols-[minmax(0,1fr)_9rem]">
+                    <label className="block min-w-0 text-sm font-semibold text-slate-700">
+                      Datum
+                      <input required type="date" min={todayInput} max={dueDateInput || undefined} value={waitingDate} onChange={(event) => setWaitingDate(event.target.value)} className={`${inputClassName} mt-2`} />
+                    </label>
+                    <label className="block min-w-0 text-sm font-semibold text-slate-700">
+                      Klockslag
+                      <input required type="time" step={60} max={waitingMaxTime} value={waitingTime} onChange={(event) => setWaitingTime(event.target.value)} className={`${inputClassName} mt-2`} />
+                    </label>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">{taskTimeZoneLabel(effectiveTimeZone)}</p>
+                </fieldset>
                 {!waitingWindowOpen ? <p className="text-sm text-rose-700">Slutdatumet har passerat. Begär ett nytt slutdatum först.</p> : null}
-                <button type="submit" disabled={isBusy || !waitingReason.trim() || !waitingDate || !waitingWindowOpen} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
+                <button type="submit" disabled={isBusy || !waitingReason.trim() || !waitingDate || !waitingTime || !waitingWindowOpen} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
                   {busyAction === 'waiting' ? <Loader2 className="animate-spin" size={18} /> : <Clock3 size={18} />}
                   Spara vänteläge
                 </button>
               </form>
             ) : panel === 'deadline' ? (
               <form onSubmit={submitDeadlineRequest} className="mt-5 space-y-4">
-                <label className="block text-sm font-semibold text-slate-700">
-                  Önskat nytt slutdatum
-                  <input type="date" min={toDateInput(addDays(dueDate.getTime() > today.getTime() ? dueDate : today, 1))} value={requestedDueDate} onChange={(event) => setRequestedDueDate(event.target.value)} className={`${inputClassName} mt-2`} />
-                </label>
+                <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
+                  <legend className="px-1 text-sm font-semibold text-slate-700">Önskad ny sluttid</legend>
+                  <div className="mt-1 grid gap-3 min-[420px]:grid-cols-[minmax(0,1fr)_9rem]">
+                    <label className="block min-w-0 text-sm font-semibold text-slate-700">
+                      Datum
+                      <input required type="date" min={deadlineMinDate} value={requestedDueDate} onChange={(event) => setRequestedDueDate(event.target.value)} className={`${inputClassName} mt-2`} />
+                    </label>
+                    <label className="block min-w-0 text-sm font-semibold text-slate-700">
+                      Klockslag
+                      <input required type="time" step={60} min={requestedDueMinTime} value={requestedDueTime} onChange={(event) => setRequestedDueTime(event.target.value)} className={`${inputClassName} mt-2`} />
+                    </label>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">{taskTimeZoneLabel(effectiveTimeZone)}</p>
+                </fieldset>
                 <label className="block text-sm font-semibold text-slate-700">
                   Varför behövs mer tid?
                   <textarea value={deadlineReason} onChange={(event) => setDeadlineReason(event.target.value)} rows={3} placeholder="Beskriv orsaken kort" className={`${inputClassName} mt-2 resize-y`} />
                 </label>
                 <p className="text-xs leading-5 text-slate-500">Slutdatumet ändras först när {task.issuerName} har godkänt begäran.</p>
-                <button type="submit" disabled={isBusy || !deadlineReason.trim() || !requestedDueDate} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
+                <button type="submit" disabled={isBusy || !deadlineReason.trim() || !requestedDueDate || !requestedDueTime} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
                   {busyAction === 'request_deadline_change' ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
                   Skicka begäran
                 </button>
@@ -1267,7 +1341,7 @@ export default function TaskRecipientClient({
             ) : (
               <form onSubmit={submitDelegation} className="mt-5 space-y-4">
                 <p className="rounded-xl bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
-                  Den nya mottagaren får en egen personlig länk. Du blir uppdragsansvarig för underuppgiften. Underuppgiftens datum kan aldrig gå förbi {formatDate(task.dueAt)}.
+                  Den nya mottagaren får en egen personlig länk. Du blir uppdragsansvarig för underuppgiften. Föräldrauppgiftens sluttid är {formatTaskDateTime(task.dueAt, effectiveTimeZone)} ({taskTimeZoneLabel(effectiveTimeZone)}); underuppgiften kan inte gå förbi samma tidpunkt.
                 </p>
 
                 <label className="block text-sm font-semibold text-slate-700">
@@ -1337,34 +1411,89 @@ export default function TaskRecipientClient({
                   </div>
                 </fieldset>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="block min-w-0 text-sm font-semibold text-slate-700">
-                    Slutdatum
-                    <input
-                      required
-                      type="date"
-                      min={todayInput}
-                      max={dueDateInput || undefined}
-                      value={delegateDueDate}
-                      onChange={(event) => {
-                        setDelegateDueDate(event.target.value)
-                        if (delegateFollowupDate > event.target.value) setDelegateFollowupDate(event.target.value)
-                      }}
-                      className={`${inputClassName} mt-2 px-3`}
-                    />
-                  </label>
-                  <label className="block min-w-0 text-sm font-semibold text-slate-700">
-                    Uppföljning
-                    <input
-                      required
-                      type="date"
-                      min={todayInput}
-                      max={delegateDueDate || dueDateInput || undefined}
-                      value={delegateFollowupDate}
-                      onChange={(event) => setDelegateFollowupDate(event.target.value)}
-                      className={`${inputClassName} mt-2 px-3`}
-                    />
-                  </label>
+                <div className="grid gap-3">
+                  <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
+                    <legend className="px-1 text-sm font-semibold text-slate-700">Underuppgiften ska vara klar</legend>
+                    <div className="mt-1 grid gap-3 min-[420px]:grid-cols-[minmax(0,1fr)_9rem]">
+                      <label className="block min-w-0 text-sm font-semibold text-slate-700">
+                        Datum
+                        <input
+                          required
+                          type="date"
+                          min={creationTodayInput}
+                          max={parentDueInCreationZone?.date}
+                          value={delegateDueDate}
+                          onChange={(event) => {
+                            const nextDate = event.target.value
+                            const nextTime = parentDueInCreationZone
+                              && nextDate === parentDueInCreationZone.date
+                              && delegateDueTime > parentDueInCreationZone.time
+                              ? parentDueInCreationZone.time
+                              : delegateDueTime
+                            setDelegateDueDate(nextDate)
+                            setDelegateDueTime(nextTime)
+                            if (
+                              delegateFollowupDate > nextDate
+                              || (delegateFollowupDate === nextDate && delegateFollowupTime > nextTime)
+                            ) {
+                              setDelegateFollowupDate(nextDate)
+                              setDelegateFollowupTime(nextTime)
+                            }
+                          }}
+                          className={`${inputClassName} mt-2 px-3`}
+                        />
+                      </label>
+                      <label className="block min-w-0 text-sm font-semibold text-slate-700">
+                        Klockslag
+                        <input
+                          required
+                          type="time"
+                          step={60}
+                          max={delegateDueMaxTime}
+                          value={delegateDueTime}
+                          onChange={(event) => {
+                            const nextTime = event.target.value
+                            setDelegateDueTime(nextTime)
+                            if (delegateFollowupDate === delegateDueDate && delegateFollowupTime > nextTime) {
+                              setDelegateFollowupTime(nextTime)
+                            }
+                          }}
+                          className={`${inputClassName} mt-2 px-3`}
+                        />
+                      </label>
+                    </div>
+                  </fieldset>
+
+                  <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
+                    <legend className="px-1 text-sm font-semibold text-slate-700">Signe följer upp underuppgiften</legend>
+                    <div className="mt-1 grid gap-3 min-[420px]:grid-cols-[minmax(0,1fr)_9rem]">
+                      <label className="block min-w-0 text-sm font-semibold text-slate-700">
+                        Datum
+                        <input
+                          required
+                          type="date"
+                          min={creationTodayInput}
+                          max={delegateDueDate || parentDueInCreationZone?.date}
+                          value={delegateFollowupDate}
+                          onChange={(event) => setDelegateFollowupDate(event.target.value)}
+                          className={`${inputClassName} mt-2 px-3`}
+                        />
+                      </label>
+                      <label className="block min-w-0 text-sm font-semibold text-slate-700">
+                        Klockslag
+                        <input
+                          required
+                          type="time"
+                          step={60}
+                          max={delegateFollowupMaxTime}
+                          value={delegateFollowupTime}
+                          onChange={(event) => setDelegateFollowupTime(event.target.value)}
+                          className={`${inputClassName} mt-2 px-3`}
+                        />
+                      </label>
+                    </div>
+                  </fieldset>
+                  <p className="text-xs text-slate-500">Underuppgiftens tider anges i {taskTimeZoneLabel(creationTimeZone)}.</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">

@@ -5,6 +5,13 @@ import type {
   TaskRisk,
   TaskStatus,
 } from './contracts'
+import {
+  DEFAULT_TASK_TIME_ZONE,
+  addTaskDateInputDays,
+  normalizeTaskTimeZone,
+  taskDateTimeInputToIso,
+  taskIsoToDateTimeInput,
+} from './dateTime'
 
 export type {
   TaskBallHolder,
@@ -352,45 +359,80 @@ const DAY_MS = 24 * 60 * 60 * 1000
 const HOUR_MS = 60 * 60 * 1000
 
 export type TaskCalendarPolicy = {
-  /** UTC weekday numbers, where Sunday is 0 and Saturday is 6. */
+  /** IANA zone used when deciding which local calendar date an instant belongs to. */
+  timeZone?: string
+  /** Local weekday numbers, where Sunday is 0 and Saturday is 6. */
   workingWeekdays: readonly number[]
-  /** UTC calendar dates in YYYY-MM-DD form. */
+  /** Local calendar dates in YYYY-MM-DD form. */
   excludedDateKeys: readonly string[]
 }
 
 export const DEFAULT_TASK_CALENDAR_POLICY: TaskCalendarPolicy = Object.freeze({
+  timeZone: DEFAULT_TASK_TIME_ZONE,
   workingWeekdays: Object.freeze([1, 2, 3, 4, 5]),
   excludedDateKeys: Object.freeze([]),
 })
 
+function isValidIanaTimeZone(value: unknown): value is string {
+  if (typeof value !== 'string' || !value.trim()) return false
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: value.trim() }).format(0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function isValidTaskTimeZone(value: unknown): value is string {
+  return isValidIanaTimeZone(value)
+}
+
+function isValidLocalDateKey(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = Date.parse(`${value}T00:00:00.000Z`)
+  return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === value
+}
+
+function calendarTimeZone(policy: TaskCalendarPolicy) {
+  return normalizeTaskTimeZone(policy.timeZone)
+}
+
 export function isValidTaskCalendarPolicy(policy: TaskCalendarPolicy) {
   const weekdays = [...new Set(policy.workingWeekdays)]
   return (
+    (policy.timeZone === undefined || isValidIanaTimeZone(policy.timeZone))
+    &&
     weekdays.length > 0
     && weekdays.every((weekday) => Number.isInteger(weekday) && weekday >= 0 && weekday <= 6)
     && policy.excludedDateKeys.every((dateKey) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return false
-      const parsed = Date.parse(`${dateKey}T00:00:00.000Z`)
-      return Number.isFinite(parsed) && utcDateKey(parsed) === dateKey
+      return isValidLocalDateKey(dateKey)
     })
   )
 }
 
-function utcDateKey(epoch: number) {
-  return new Date(epoch).toISOString().slice(0, 10)
+export function taskZonedDateKey(value: TaskTimeValue, timeZone = DEFAULT_TASK_TIME_ZONE) {
+  const epoch = taskTimeToEpoch(value)
+  if (epoch === null || !isValidIanaTimeZone(timeZone)) return null
+  return taskIsoToDateTimeInput(epoch, timeZone)?.date ?? null
 }
 
-function isWorkingDay(epoch: number, policy: TaskCalendarPolicy) {
-  const weekday = new Date(epoch).getUTCDay()
+function localDateWeekday(dateKey: string) {
+  return new Date(`${dateKey}T00:00:00.000Z`).getUTCDay()
+}
+
+function isWorkingDateKey(dateKey: string, policy: TaskCalendarPolicy) {
+  const weekday = localDateWeekday(dateKey)
   return (
     policy.workingWeekdays.includes(weekday)
-    && !policy.excludedDateKeys.includes(utcDateKey(epoch))
+    && !policy.excludedDateKeys.includes(dateKey)
   )
 }
 
 /**
- * Shifts an instant by whole UTC working days while preserving its UTC time.
- * Calendar-date due dates are therefore deterministic in every runtime.
+ * Shifts an instant by whole local working days while preserving its wall-clock
+ * time in the configured IANA zone. This keeps Friday-to-Monday calculations
+ * correct across both UTC midnight and daylight-saving transitions.
  */
 export function shiftTaskTimeByWorkingDays(
   value: TaskTimeValue,
@@ -408,12 +450,22 @@ export function shiftTaskTimeByWorkingDays(
 
   const direction = workingDays > 0 ? 1 : -1
   let remaining = Math.abs(workingDays)
-  let cursor = epoch
+  const timeZone = calendarTimeZone(policy)
+  const local = taskIsoToDateTimeInput(epoch, timeZone)
+  if (!local) return null
+  let cursorDateKey = local.date
   while (remaining > 0) {
-    cursor += direction * DAY_MS
-    if (isWorkingDay(cursor, policy)) remaining -= 1
+    cursorDateKey = addTaskDateInputDays(cursorDateKey, direction)
+    if (!cursorDateKey) return null
+    if (isWorkingDateKey(cursorDateKey, policy)) remaining -= 1
   }
-  return cursor
+  const seconds = new Date(epoch).getUTCSeconds()
+  const shifted = taskDateTimeInputToIso(
+    cursorDateKey,
+    `${local.time}:${String(seconds).padStart(2, '0')}`,
+    timeZone
+  )
+  return shifted ? Date.parse(shifted) : null
 }
 
 /** Counts working calendar dates after `start` up to and including `end`. */
@@ -431,11 +483,16 @@ export function countTaskWorkingDaysAfter(
     || !isValidTaskCalendarPolicy(policy)
   ) return 0
 
-  const startDay = Date.parse(`${utcDateKey(startEpoch)}T00:00:00.000Z`)
-  const endDay = Date.parse(`${utcDateKey(endEpoch)}T00:00:00.000Z`)
+  const timeZone = calendarTimeZone(policy)
+  const startDateKey = taskZonedDateKey(startEpoch, timeZone)
+  const endDateKey = taskZonedDateKey(endEpoch, timeZone)
+  if (!startDateKey || !endDateKey || startDateKey === endDateKey) return 0
   let count = 0
-  for (let cursor = startDay + DAY_MS; cursor <= endDay; cursor += DAY_MS) {
-    if (isWorkingDay(cursor, policy)) count += 1
+  let cursorDateKey = startDateKey
+  for (let guard = 0; cursorDateKey < endDateKey && guard < 3661; guard += 1) {
+    cursorDateKey = addTaskDateInputDays(cursorDateKey, 1)
+    if (!cursorDateKey) return 0
+    if (isWorkingDateKey(cursorDateKey, policy)) count += 1
   }
   return count
 }
@@ -602,6 +659,104 @@ export type TaskCommunicationChannel = TaskChannel
 
 export type TaskDeliveryState = 'unknown' | 'pending' | 'delivered' | 'failed'
 
+/**
+ * Organization-wide window for automatic messages to the task recipient.
+ * Weekdays use ISO numbering: Monday is 1 and Sunday is 7. The end minute is
+ * exclusive, so 07:00-20:00 permits 19:59 but not 20:00.
+ */
+export type TaskSendWindowPolicy = {
+  timeZone: string
+  startMinute: number
+  endMinute: number
+  isoWeekdays: readonly number[]
+}
+
+export const DEFAULT_TASK_SEND_WINDOW_POLICY: TaskSendWindowPolicy = Object.freeze({
+  timeZone: DEFAULT_TASK_TIME_ZONE,
+  startMinute: 7 * 60,
+  endMinute: 20 * 60,
+  isoWeekdays: Object.freeze([1, 2, 3, 4, 5, 6, 7]),
+})
+
+export function isValidTaskSendWindowPolicy(policy: TaskSendWindowPolicy) {
+  const weekdays = [...new Set(policy.isoWeekdays)]
+  return (
+    isValidIanaTimeZone(policy.timeZone)
+    && Number.isInteger(policy.startMinute)
+    && Number.isInteger(policy.endMinute)
+    && policy.startMinute >= 0
+    && policy.startMinute < 24 * 60
+    && policy.endMinute > policy.startMinute
+    && policy.endMinute <= 24 * 60
+    && weekdays.length > 0
+    && weekdays.every((weekday) => Number.isInteger(weekday) && weekday >= 1 && weekday <= 7)
+  )
+}
+
+function isoWeekdayForDateKey(dateKey: string) {
+  const jsWeekday = localDateWeekday(dateKey)
+  return jsWeekday === 0 ? 7 : jsWeekday
+}
+
+function zonedDateAndMinute(value: TaskTimeValue, timeZone: string) {
+  const epoch = taskTimeToEpoch(value)
+  if (epoch === null) return null
+  const local = taskIsoToDateTimeInput(epoch, timeZone)
+  if (!local) return null
+  const [hourText, minuteText] = local.time.split(':')
+  const minute = Number(hourText) * 60 + Number(minuteText)
+  return Number.isInteger(minute)
+    ? { epoch, dateKey: local.date, minute }
+    : null
+}
+
+export function isTaskSendTimeAllowed(
+  value: TaskTimeValue,
+  policy: TaskSendWindowPolicy = DEFAULT_TASK_SEND_WINDOW_POLICY
+) {
+  if (!isValidTaskSendWindowPolicy(policy)) return false
+  const local = zonedDateAndMinute(value, policy.timeZone)
+  return Boolean(
+    local
+    && policy.isoWeekdays.includes(isoWeekdayForDateKey(local.dateKey))
+    && local.minute >= policy.startMinute
+    && local.minute < policy.endMinute
+  )
+}
+
+/** Returns the candidate unchanged when allowed, otherwise the next window start. */
+export function nextTaskSendWindowAt(
+  value: TaskTimeValue,
+  policy: TaskSendWindowPolicy = DEFAULT_TASK_SEND_WINDOW_POLICY
+): number | null {
+  if (!isValidTaskSendWindowPolicy(policy)) return null
+  const local = zonedDateAndMinute(value, policy.timeZone)
+  if (!local) return null
+  if (isTaskSendTimeAllowed(local.epoch, policy)) return local.epoch
+
+  let dateKey = local.dateKey
+  for (let offset = 0; offset <= 14; offset += 1) {
+    if (offset > 0) {
+      dateKey = addTaskDateInputDays(dateKey, 1)
+      if (!dateKey) return null
+    }
+    if (!policy.isoWeekdays.includes(isoWeekdayForDateKey(dateKey))) continue
+    if (offset === 0 && local.minute >= policy.endMinute) continue
+
+    const hour = Math.floor(policy.startMinute / 60)
+    const minute = policy.startMinute % 60
+    const candidateIso = taskDateTimeInputToIso(
+      dateKey,
+      `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
+      policy.timeZone
+    )
+    if (!candidateIso) continue
+    const candidate = Date.parse(candidateIso)
+    if (candidate >= local.epoch && isTaskSendTimeAllowed(candidate, policy)) return candidate
+  }
+  return null
+}
+
 export type TaskReminderPolicy = {
   noActivityAfterHours: number
   dueReminderWorkingDaysBefore: readonly number[]
@@ -630,6 +785,7 @@ export const DEFAULT_TASK_REMINDER_POLICY: TaskReminderPolicy = Object.freeze({
 
 export type TaskReminderPolicyIssueCode =
   | 'invalid_calendar_policy'
+  | 'invalid_send_window_policy'
   | 'invalid_no_activity_interval'
   | 'invalid_due_reminder_offset'
   | 'invalid_overdue_interval'
@@ -642,10 +798,12 @@ export type TaskReminderPolicyIssueCode =
 
 export function validateTaskReminderPolicy(
   policy: TaskReminderPolicy,
-  calendar: TaskCalendarPolicy = DEFAULT_TASK_CALENDAR_POLICY
+  calendar: TaskCalendarPolicy = DEFAULT_TASK_CALENDAR_POLICY,
+  sendWindow: TaskSendWindowPolicy = DEFAULT_TASK_SEND_WINDOW_POLICY
 ): TaskReminderPolicyIssueCode[] {
   const issues: TaskReminderPolicyIssueCode[] = []
   if (!isValidTaskCalendarPolicy(calendar)) issues.push('invalid_calendar_policy')
+  if (!isValidTaskSendWindowPolicy(sendWindow)) issues.push('invalid_send_window_policy')
   if (!Number.isFinite(policy.noActivityAfterHours) || policy.noActivityAfterHours <= 0) {
     issues.push('invalid_no_activity_interval')
   }
@@ -762,12 +920,15 @@ export type TaskReminderEvaluationInput = {
   emittedIdempotencyKeys?: readonly string[]
   policy?: TaskReminderPolicy
   calendar?: TaskCalendarPolicy
+  sendWindow?: TaskSendWindowPolicy
 }
 
 export type TaskReminderEvaluation = {
   actions: TaskReminderAction[]
   selectedExternalChannel: TaskCommunicationChannel
   externalFollowUpPaused: boolean
+  /** Set only when recipient communication is held until the next allowed local time. */
+  externalFollowUpDeferredUntil: string | null
   policyIssues: TaskReminderPolicyIssueCode[]
 }
 
@@ -842,7 +1003,8 @@ function currentDueReminderOffset(input: {
   offsets: readonly number[]
   calendar: TaskCalendarPolicy
 }) {
-  if (utcDateKey(input.now) === utcDateKey(input.dueAt)) {
+  const timeZone = calendarTimeZone(input.calendar)
+  if (taskZonedDateKey(input.now, timeZone) === taskZonedDateKey(input.dueAt, timeZone)) {
     return input.offsets.includes(0) ? 0 : null
   }
   const offsets = [...new Set(input.offsets)]
@@ -864,7 +1026,8 @@ export function evaluateTaskReminders(
 ): TaskReminderEvaluation {
   const policy = input.policy ?? DEFAULT_TASK_REMINDER_POLICY
   const calendar = input.calendar ?? DEFAULT_TASK_CALENDAR_POLICY
-  const policyIssues = validateTaskReminderPolicy(policy, calendar)
+  const sendWindow = input.sendWindow ?? DEFAULT_TASK_SEND_WINDOW_POLICY
+  const policyIssues = validateTaskReminderPolicy(policy, calendar, sendWindow)
   const now = taskTimeToEpoch(input.now)
   const emitted = new Set(input.emittedIdempotencyKeys ?? [])
   const actions: TaskReminderAction[] = []
@@ -880,9 +1043,16 @@ export function evaluateTaskReminders(
   const externalFollowUpPaused =
     unansweredAttempts >= policy.pauseAfterUnansweredAttempts
     || overdueReminderCount >= policy.maxOverdueRemindersBeforePause
+  let externalFollowUpDeferredUntil: string | null = null
 
   if (policyIssues.length > 0) {
-    return { actions, selectedExternalChannel, externalFollowUpPaused: true, policyIssues }
+    return {
+      actions,
+      selectedExternalChannel,
+      externalFollowUpPaused: true,
+      externalFollowUpDeferredUntil,
+      policyIssues,
+    }
   }
 
   if (now === null || input.status === 'draft' || isTerminalTaskStatus(input.status)) {
@@ -890,6 +1060,7 @@ export function evaluateTaskReminders(
       actions,
       selectedExternalChannel,
       externalFollowUpPaused: false,
+      externalFollowUpDeferredUntil,
       policyIssues,
     }
   }
@@ -901,6 +1072,60 @@ export function evaluateTaskReminders(
       return true
     }
     return false
+  }
+  const idempotencyDateKey = taskZonedDateKey(now, calendarTimeZone(calendar))
+    ?? new Date(now).toISOString().slice(0, 10)
+  const dueAt = taskTimeToEpoch(input.dueAt)
+  const assignedAt = taskTimeToEpoch(input.assignedAt)
+  const nextFollowUpAt = taskTimeToEpoch(input.nextFollowUpAt)
+  const lastActivityAt = taskTimeToEpoch(input.lastActivityAt) ?? assignedAt
+  // Evaluate first, then defer only when a real automatic action is due. This
+  // avoids both night delivery and needlessly funneling every idle task into
+  // the first morning worker batch.
+  const finishEvaluation = (paused = externalFollowUpPaused): TaskReminderEvaluation => {
+    const hasAutomaticAction = actions.some((action) => action.kind !== 'assignment')
+    if (hasAutomaticAction && !isTaskSendTimeAllowed(now, sendWindow)) {
+      actions.length = 0
+      const nextAllowed = nextTaskSendWindowAt(now, sendWindow)
+      externalFollowUpDeferredUntil = nextAllowed === null
+        ? null
+        : new Date(nextAllowed).toISOString()
+    }
+    return {
+      actions,
+      selectedExternalChannel,
+      externalFollowUpPaused: paused,
+      externalFollowUpDeferredUntil,
+      policyIssues,
+    }
+  }
+
+  // Initial assignment is the direct result of the issuer pressing send and is
+  // therefore not treated as an automatic reminder. Any later policy-generated
+  // delivery_fallback action is automatic and passes through finishEvaluation.
+  const assignmentKey = assignedAt === null
+    ? null
+    : buildTaskPolicyIdempotencyKey(input.taskId, 'assignment', assignedAt)
+  if (
+    !input.pendingDeadlineRequestId
+    && input.status === 'assigned'
+    && assignedAt !== null
+    && now >= assignedAt
+    && (dueAt === null || now < dueAt)
+    && input.primaryDeliveryState !== 'failed'
+    && input.primaryDeliveryState !== 'pending'
+    && !emitted.has(assignmentKey as string)
+  ) {
+    addIfNew(makeReminderAction({
+      taskId: input.taskId,
+      now,
+      kind: 'assignment',
+      reason: 'initial_assignment',
+      target: 'assignee',
+      channel: selectedExternalChannel,
+      discriminator: assignedAt,
+    }))
+    return finishEvaluation()
   }
 
   if (input.pendingDeadlineRequestId) {
@@ -915,12 +1140,7 @@ export function evaluateTaskReminders(
         discriminator: input.pendingDeadlineRequestId,
       }))
     }
-    return {
-      actions,
-      selectedExternalChannel,
-      externalFollowUpPaused: false,
-      policyIssues,
-    }
+    return finishEvaluation(false)
   }
 
   if (input.status === 'ready_for_review') {
@@ -939,21 +1159,12 @@ export function evaluateTaskReminders(
         reason: reviewIsOverdue ? 'review_overdue' : 'review_due',
         target: 'creator',
         channel: null,
-        discriminator: utcDateKey(now),
+        discriminator: idempotencyDateKey,
       }))
     }
-    return {
-      actions,
-      selectedExternalChannel,
-      externalFollowUpPaused: false,
-      policyIssues,
-    }
+    return finishEvaluation(false)
   }
 
-  const dueAt = taskTimeToEpoch(input.dueAt)
-  const assignedAt = taskTimeToEpoch(input.assignedAt)
-  const nextFollowUpAt = taskTimeToEpoch(input.nextFollowUpAt)
-  const lastActivityAt = taskTimeToEpoch(input.lastActivityAt) ?? assignedAt
   const overdueWorkingDays = dueAt === null
     ? 0
     : countTaskWorkingDaysAfter(dueAt, now, calendar)
@@ -968,7 +1179,7 @@ export function evaluateTaskReminders(
     && !input.fallbackChannel
   ) {
     escalationReason = 'delivery_failed_without_fallback'
-    escalationDiscriminator = input.primaryDeliveryAttemptId ?? utcDateKey(now)
+    escalationDiscriminator = input.primaryDeliveryAttemptId ?? idempotencyDateKey
   } else if (unansweredAttempts >= policy.escalateAfterUnansweredAttempts) {
     escalationReason = 'unanswered_attempts'
     escalationDiscriminator = `unanswered:${assignedAt ?? 'unknown'}`
@@ -1011,10 +1222,10 @@ export function evaluateTaskReminders(
       discriminator: input.primaryDeliveryAttemptId,
     }))
     if (fallbackAdded) {
-      return { actions, selectedExternalChannel, externalFollowUpPaused, policyIssues }
+      return finishEvaluation()
     }
     if (taskTimeToEpoch(input.lastAssigneeReminderAt) === null) {
-      return { actions, selectedExternalChannel, externalFollowUpPaused, policyIssues }
+      return finishEvaluation()
     }
   }
 
@@ -1029,28 +1240,7 @@ export function evaluateTaskReminders(
       externalReminderInterval
     )
   ) {
-    return { actions, selectedExternalChannel, externalFollowUpPaused, policyIssues }
-  }
-
-  const assignmentKey = assignedAt === null
-    ? null
-    : buildTaskPolicyIdempotencyKey(input.taskId, 'assignment', assignedAt)
-  if (
-    input.status === 'assigned'
-    && assignedAt !== null
-    && now >= assignedAt
-    && !emitted.has(assignmentKey as string)
-  ) {
-    addIfNew(makeReminderAction({
-      taskId: input.taskId,
-      now,
-      kind: 'assignment',
-      reason: 'initial_assignment',
-      target: 'assignee',
-      channel: selectedExternalChannel,
-      discriminator: assignedAt,
-    }))
-    return { actions, selectedExternalChannel, externalFollowUpPaused, policyIssues }
+    return finishEvaluation()
   }
 
   if (dueAt !== null && now >= dueAt) {
@@ -1061,9 +1251,9 @@ export function evaluateTaskReminders(
       reason: 'deadline_overdue',
       target: 'assignee',
       channel: selectedExternalChannel,
-      discriminator: utcDateKey(now),
+      discriminator: idempotencyDateKey,
     }))
-    return { actions, selectedExternalChannel, externalFollowUpPaused, policyIssues }
+    return finishEvaluation()
   }
 
   if (dueAt !== null) {
@@ -1084,7 +1274,7 @@ export function evaluateTaskReminders(
         discriminator: `${offset}:${dueAt}`,
         workingDaysBeforeDue: offset,
       }))
-      return { actions, selectedExternalChannel, externalFollowUpPaused, policyIssues }
+      return finishEvaluation()
     }
   }
 
@@ -1101,11 +1291,11 @@ export function evaluateTaskReminders(
       reason: plannedFollowUpDue ? 'next_follow_up_due' : 'no_activity',
       target: 'assignee',
       channel: selectedExternalChannel,
-      discriminator: utcDateKey(now),
+      discriminator: idempotencyDateKey,
     }))
   }
 
-  return { actions, selectedExternalChannel, externalFollowUpPaused, policyIssues }
+  return finishEvaluation()
 }
 
 export type TaskAutomationLimits = {

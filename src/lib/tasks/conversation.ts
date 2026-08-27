@@ -1,8 +1,9 @@
 import 'server-only'
 
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { sendTaskAccessLinkEmail } from './automation'
+import { isAmbiguousTaskDeliveryError, sendTaskAccessLinkEmail } from './automation'
 import { buildTaskEmailHtml } from './emailTemplates'
+import { formatTaskDateTime } from './dateTime'
 import { hasInternalTaskModuleAccess } from './internalAccess'
 import { issueDirectTaskAccessLink } from './recipientAuth'
 import type {
@@ -91,14 +92,8 @@ function publicBaseUrl(requestOrigin?: string | null) {
   return url.origin
 }
 
-function dueDateLabel(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('sv-SE', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(date)
+function dueDateLabel(value: string, timeZone?: string | null) {
+  return formatTaskDateTime(value, timeZone, 'long')
 }
 
 function compareCursor(
@@ -302,9 +297,24 @@ async function updateDeliveryFailure(deliveryId: string, errorCode: string) {
     .update({
       status: 'failed',
       failed_at: new Date().toISOString(),
+      next_attempt_at: null,
       error_message: errorCode,
     })
     .eq('id', deliveryId)
+}
+
+async function updateDeliveryAmbiguous(deliveryId: string) {
+  const admin = createSupabaseAdminClient()
+  await admin
+    .from('task_message_deliveries')
+    .update({
+      status: 'ambiguous',
+      failed_at: null,
+      next_attempt_at: null,
+      error_message: 'TASK_DELIVERY_RECONCILIATION_REQUIRED',
+    })
+    .eq('id', deliveryId)
+    .eq('status', 'sending')
 }
 
 /**
@@ -321,11 +331,12 @@ export async function notifyTaskComment(input: {
   requestOrigin?: string | null
 }): Promise<{ warning: string | null }> {
   const genericWarning = 'Meddelandet finns sparat, men e-postnotifieringen kunde inte skickas.'
+  const ambiguousWarning = 'Meddelandet finns sparat, men e-postleveransen kunde inte bekräftas. Inget nytt utskick görs innan leveransen har kontrollerats.'
   try {
     const admin = createSupabaseAdminClient()
     const { data: task, error: taskError } = await admin
       .from('operational_tasks')
-      .select('id,title,context_label,due_at,issuer_profile_id,assignee_profile_id,assignee_contact_id')
+      .select('id,title,context_label,due_at,due_timezone,issuer_profile_id,assignee_profile_id,assignee_contact_id')
       .eq('id', input.taskId)
       .eq('org_id', input.orgId)
       .is('archived_at', null)
@@ -353,6 +364,10 @@ export async function notifyTaskComment(input: {
     ) {
       throw new Error('TASK_NOTIFICATION_RECIPIENT_ACCESS_DENIED')
     }
+    const notificationTarget = recipient.kind === 'profile'
+      && recipient.id === String(task.issuer_profile_id)
+      ? 'creator'
+      : 'assignee'
 
     const [{ data: recipientRow, error: recipientError }, { data: senderRow }] = await Promise.all([
       recipient.kind === 'profile'
@@ -387,7 +402,7 @@ export async function notifyTaskComment(input: {
       `Nytt meddelande från ${input.actor.name}`,
       `Uppdrag: ${task.title}`,
       task.context_label ? `Projekt: ${task.context_label}` : null,
-      `Slutdatum: ${dueDateLabel(String(task.due_at))}`,
+      `Slutdatum: ${dueDateLabel(String(task.due_at), String(task.due_timezone))}`,
       '',
       input.message,
       '',
@@ -413,6 +428,7 @@ export async function notifyTaskComment(input: {
         metadata: {
           eventId: input.eventId,
           notification: true,
+          target: notificationTarget,
           recipientKind: recipient.kind,
           recipientId: recipient.id,
           tokenPersisted: false,
@@ -474,7 +490,7 @@ export async function notifyTaskComment(input: {
       .single()
     if (deliveryError || !delivery) throw new Error('TASK_DELIVERY_CREATE_FAILED')
 
-    await admin
+    const { data: reservedDelivery, error: reservationError } = await admin
       .from('task_message_deliveries')
       .update({
         status: 'sending',
@@ -488,8 +504,24 @@ export async function notifyTaskComment(input: {
         },
       })
       .eq('id', delivery.id)
+      .eq('status', 'queued')
+      .select('id')
+      .maybeSingle()
+    if (reservationError || !reservedDelivery) {
+      await admin
+        .from('task_message_deliveries')
+        .update({
+          status: 'failed',
+          failed_at: new Date().toISOString(),
+          next_attempt_at: null,
+          error_message: 'TASK_NOTIFICATION_DELIVERY_RESERVATION_FAILED',
+        })
+        .eq('id', delivery.id)
+        .eq('status', 'queued')
+      return { warning: genericWarning }
+    }
 
-    const dueLabel = dueDateLabel(String(task.due_at))
+    const dueLabel = dueDateLabel(String(task.due_at), String(task.due_timezone))
     const subject = `Nytt meddelande från ${input.actor.name}: ${task.title}`
     const text = [
       `Hej ${recipientName},`,
@@ -529,23 +561,38 @@ export async function notifyTaskComment(input: {
         idempotencyKey: accessLinkId ? `${idempotencyKey}:bearer:${accessLinkId}` : idempotencyKey,
       })
       const sentAt = new Date().toISOString()
-      await Promise.all([
-        admin
-          .from('task_message_deliveries')
-          .update({
-            status: 'sent',
-            sent_at: sentAt,
-            provider_message_id: sent.providerMessageId,
-            error_message: null,
-          })
-          .eq('id', delivery.id),
-        admin
-          .from('task_messages')
-          .update({ provider_message_id: sent.providerMessageId })
-          .eq('id', notification.id),
-      ])
+      const { data: updatedMessage, error: messageAuditError } = await admin
+        .from('task_messages')
+        .update({ provider_message_id: sent.providerMessageId })
+        .eq('id', notification.id)
+        .select('id')
+        .maybeSingle()
+      if (messageAuditError || !updatedMessage) {
+        await updateDeliveryAmbiguous(delivery.id)
+        return { warning: ambiguousWarning }
+      }
+      const { data: updatedDelivery, error: deliveryAuditError } = await admin
+        .from('task_message_deliveries')
+        .update({
+          status: 'sent',
+          sent_at: sentAt,
+          provider_message_id: sent.providerMessageId,
+          error_message: null,
+        })
+        .eq('id', delivery.id)
+        .eq('status', 'sending')
+        .select('id')
+        .maybeSingle()
+      if (deliveryAuditError || !updatedDelivery) {
+        await updateDeliveryAmbiguous(delivery.id)
+        return { warning: ambiguousWarning }
+      }
       return { warning: null }
     } catch (error) {
+      if (isAmbiguousTaskDeliveryError(error)) {
+        await updateDeliveryAmbiguous(delivery.id)
+        return { warning: ambiguousWarning }
+      }
       await updateDeliveryFailure(delivery.id, asErrorCode(error, 'TASK_NOTIFICATION_EMAIL_FAILED'))
       return { warning: genericWarning }
     }

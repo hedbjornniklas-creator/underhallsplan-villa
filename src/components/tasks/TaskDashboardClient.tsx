@@ -24,6 +24,11 @@ import type {
   TaskView,
   TaskWorkspace,
 } from '@/lib/tasks/contracts'
+import {
+  formatTaskDateTime,
+  normalizeTaskTimeZone,
+  taskTimeZoneLabel,
+} from '@/lib/tasks/dateTime'
 import TaskComposerSheet from './TaskComposerSheet'
 import TaskDetailSheet from './TaskDetailSheet'
 import { SigneCheckIcon } from './SigneMark'
@@ -40,10 +45,6 @@ const TASK_COLLATOR = new Intl.Collator('sv', { sensitivity: 'base', numeric: tr
 type Props = {
   initialWorkspace: TaskWorkspace | null
   initialError: string | null
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short' }).format(new Date(value))
 }
 
 function taskMatchesFilter(task: TaskView, filter: FilterKey, userId: string) {
@@ -142,8 +143,17 @@ function SummaryCard({
   )
 }
 
-function TaskCard({ task, parentTitle, onClick }: { task: TaskView; parentTitle: string | null; onClick: () => void }) {
+function TaskCard({
+  task,
+  parentTitle,
+  onClick,
+}: {
+  task: TaskView
+  parentTitle: string | null
+  onClick: () => void
+}) {
   const holder = ballText(task)
+  const effectiveTimeZone = normalizeTaskTimeZone(task.dueTimeZone)
   return (
     <button
       type="button"
@@ -182,9 +192,10 @@ function TaskCard({ task, parentTitle, onClick }: { task: TaskView; parentTitle:
             </span>
             <span className="flex items-center gap-1.5">
               <Clock3 size={14} className="shrink-0" />
-              Klart {formatDate(task.dueAt)}
+              Klart {formatTaskDateTime(task.dueAt, effectiveTimeZone, 'compact')}
             </span>
           </div>
+          <p className="mt-1 text-xs text-slate-400">{taskTimeZoneLabel(effectiveTimeZone)}</p>
           {task.latestMessage ? (
             <p className="mt-3 line-clamp-2 rounded-xl border border-blue-100 bg-white/80 px-3 py-2 text-xs leading-5 text-slate-600">
               <span className="font-semibold text-slate-800">{task.latestMessage.actorName}:</span>{' '}
@@ -218,6 +229,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
   const [busy, setBusy] = useState(false)
   const [filter, setFilter] = useState<FilterKey>('all')
   const [search, setSearch] = useState('')
+  const workspaceTimeZone = normalizeTaskTimeZone(workspace?.timeZone)
   const [sortField, setSortField] = useState<SortField>('due')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [pageSize, setPageSize] = useState<number>(25)
@@ -605,7 +617,10 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                                   <p className="truncate font-medium text-slate-800">{task.assignee.name}</p>
                                   <p className="mt-0.5 truncate text-xs text-slate-500">Bollen hos {ballText(task)}</p>
                                 </td>
-                                <td className="whitespace-nowrap px-3 py-3 align-middle font-medium">{formatDate(task.dueAt)}</td>
+                                <td className="px-3 py-3 align-middle font-medium">
+                                  <span className="block whitespace-nowrap">{formatTaskDateTime(task.dueAt, task.dueTimeZone, 'compact')}</span>
+                                  <span className="mt-0.5 block text-[11px] font-normal text-slate-400">{taskTimeZoneLabel(task.dueTimeZone)}</span>
+                                </td>
                                 <td className="px-3 py-3 align-middle">
                                   <div className="flex min-w-0 items-center gap-2">
                                     {task.unreadMessageCount > 0 ? (
@@ -695,6 +710,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                 suggestion={composerSuggestion}
                 people={workspace.people}
                 currentUserId={workspace.currentUser.id}
+                timeZone={workspaceTimeZone}
                 busy={busy}
                 onClose={() => {
                   setComposerOpen(false)

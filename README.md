@@ -47,10 +47,15 @@ Open `http://localhost:3000`.
    Supabase. Run it separately so its short exclusive table lock is released
    before the main migration starts.
 2. Apply `docs/db/2026-08-20_01_operational_tasks_foundation.sql` to Supabase.
-3. Apply `docs/db/2026-08-20_02_operational_task_initial_attachments.sql`,
-   followed by `docs/db/2026-08-22_01_task_recipient_portal_identity.sql` and
-   `docs/db/2026-08-24_01_operational_task_archiving.sql`, then
-   `docs/db/2026-08-24_02_operational_task_evidence_checklist.sql`.
+3. Apply the remaining Uppdrag migrations in filename order:
+   `docs/db/2026-08-20_02_operational_task_initial_attachments.sql`,
+   `docs/db/2026-08-22_01_task_recipient_portal_identity.sql`,
+   `docs/db/2026-08-24_01_operational_task_archiving.sql`,
+   `docs/db/2026-08-24_02_operational_task_evidence_checklist.sql`,
+   `docs/db/2026-08-25_01_task_bearer_links_concurrency.sql`,
+   `docs/db/2026-08-26_01_task_recipient_action_roles.sql`,
+   `docs/db/2026-08-27_01_task_conversation_reads.sql` and
+   `docs/db/2026-08-27_02_task_reminder_schedule_and_supabase_cron.sql`.
 4. In Supabase Authentication > URL Configuration, set the production Site URL
    to `https://hushub.se` and add the exact Redirect URL
    `https://hushub.se/mina-uppdrag/logga-in` for password recovery. Add the
@@ -67,12 +72,17 @@ Open `http://localhost:3000`.
    fourth parameter containing the personal access or authenticated portal
    URL. All Meta templates must be approved before automated messages can be
    delivered.
-7. `vercel.json` runs the durable follow-up worker daily so Hobby deployments
-   remain valid. On Vercel Pro the schedule can be changed to `*/15 * * * *`
-   for fifteen-minute follow-up resolution.
+7. Add the production follow-up endpoint and the same `CRON_SECRET` to
+   Supabase Vault, then validate the central five-minute Supabase Cron job as
+   described in `docs/TASK_REMINDER_CRON_OPERATIONS.md`. Do this after the
+   production deployment so the app already understands the new timezone
+   columns.
 
 Task state changes also trigger a small opportunistic worker batch. The cron
 job is still required as the durable retry path when no user request occurs.
-New external recipients receive their first account activation by email. After
-activation, task links require the recipient's email/password session and all
-their exact task grants are collected under `/mina-uppdrag`.
+Automatic task communication is held outside each organization's configured
+local send window; the default is 07:00-20:00 in `Europe/Stockholm`.
+New external recipients receive their first account activation by email.
+Personal `/signe` links still open the exact linked task without login, while
+the collected `/mina-uppdrag` overview requires the recipient's email/password
+session after activation.

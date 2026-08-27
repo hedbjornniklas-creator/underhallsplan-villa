@@ -14,6 +14,11 @@ import {
   Search,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import {
+  formatTaskDateTime,
+  normalizeTaskTimeZone,
+  taskTimeZoneLabel,
+} from '@/lib/tasks/dateTime'
 import { recipientTaskPath } from '@/lib/tasks/recipientAuthPaths'
 import type {
   RecipientPortalOverview,
@@ -26,16 +31,6 @@ type FilterKey = 'active' | 'needs_action' | 'overdue' | 'completed' | 'all'
 
 const TERMINAL_STATUSES = new Set(['approved', 'cancelled'])
 
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('sv-SE', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(date)
-}
-
 function matchesFilter(task: RecipientPortalTaskSummary, filter: FilterKey) {
   const terminal = TERMINAL_STATUSES.has(task.status)
   if (filter === 'active') return !terminal
@@ -47,6 +42,7 @@ function matchesFilter(task: RecipientPortalTaskSummary, filter: FilterKey) {
 
 function TaskCard({ task }: { task: RecipientPortalTaskSummary }) {
   const terminal = TERMINAL_STATUSES.has(task.status)
+  const effectiveTimeZone = normalizeTaskTimeZone(task.dueTimeZone)
   return (
     <Link
       href={recipientTaskPath(task.id)}
@@ -69,11 +65,12 @@ function TaskCard({ task }: { task: RecipientPortalTaskSummary }) {
             <p className="flex min-w-0 items-center gap-2">
               <CalendarDays className="shrink-0 text-slate-400" size={16} aria-hidden="true" />
               <span className={task.risk === 'red' && !terminal ? 'font-semibold text-rose-700' : ''}>
-                Klart senast {formatDate(task.dueAt)}
+                Klart senast {formatTaskDateTime(task.dueAt, effectiveTimeZone, 'compact')}
               </span>
             </p>
             <p className="truncate sm:text-right">Från {task.issuerName}</p>
           </div>
+          <p className="mt-1 text-xs text-slate-400">{taskTimeZoneLabel(effectiveTimeZone)}</p>
         </div>
         <ChevronRight className="mt-1 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-amber-600" size={22} aria-hidden="true" />
       </div>

@@ -3,13 +3,15 @@ import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 
 import {
-  getTaskAutomationBatchLimit,
   runTaskFollowupBatch,
 } from '@/lib/tasks/automation'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
+
+const CRON_JOB_START_BUDGET_MS = 10_000
+const CRON_MAX_JOBS_PER_INVOCATION = 100
 
 function safeEqual(left: string, right: string) {
   const leftBuffer = Buffer.from(left)
@@ -33,8 +35,40 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: 'CRON_UNAVAILABLE' }, { status: 503 })
   }
   try {
-    const result = await runTaskFollowupBatch({ limit: getTaskAutomationBatchLimit() })
-    return NextResponse.json({ ok: true, ...result }, {
+    const startedAt = Date.now()
+    const totals = {
+      claimed: 0,
+      completed: 0,
+      stale: 0,
+      failed: 0,
+    }
+    let batches = 0
+    let mayHaveMore = false
+
+    // Claim exactly one job at a time and never start another after the short
+    // start budget. Cheap evaluations can drain quickly, while a provider call
+    // that uses its full timeout still has ample room inside maxDuration.
+    while (
+      batches < CRON_MAX_JOBS_PER_INVOCATION
+      && Date.now() - startedAt < CRON_JOB_START_BUDGET_MS
+    ) {
+      const result = await runTaskFollowupBatch({ limit: 1 })
+      batches += 1
+      totals.claimed += result.claimed
+      totals.completed += result.completed
+      totals.stale += result.stale
+      totals.failed += result.failed
+      mayHaveMore = result.claimed === 1
+      if (!mayHaveMore) break
+    }
+
+    return NextResponse.json({
+      ok: true,
+      ...totals,
+      batches,
+      mayHaveMore,
+      durationMs: Date.now() - startedAt,
+    }, {
       headers: { 'Cache-Control': 'no-store' },
     })
   } catch {

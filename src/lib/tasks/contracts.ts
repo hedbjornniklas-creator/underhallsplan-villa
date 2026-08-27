@@ -131,6 +131,7 @@ export type TaskView = {
   risk: TaskRisk
   ballHolder: TaskBallHolder
   dueAt: string
+  dueTimeZone: string
   nextFollowupAt: string
   primaryChannel: TaskChannel
   fallbackChannel: TaskChannel | null
@@ -169,6 +170,8 @@ export type TaskWorkspaceSummary = {
 }
 
 export type TaskWorkspace = {
+  /** Current organization zone; individual deadlines use task.dueTimeZone. */
+  timeZone: string
   currentUser: {
     id: string
     name: string

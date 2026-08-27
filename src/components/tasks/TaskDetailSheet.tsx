@@ -31,6 +31,15 @@ import type {
   TaskView,
   TaskWorkspace,
 } from '@/lib/tasks/contracts'
+import {
+  addTaskDateInputDays,
+  formatTaskDateTime,
+  normalizeTaskTimeZone,
+  taskDateTimeInputToIso,
+  taskIsoToDateTimeInput,
+  taskTimeZoneLabel,
+  taskTodayDateInput,
+} from '@/lib/tasks/dateTime'
 import TaskAttachmentDropZone from './TaskAttachmentDropZone'
 import TaskConversationCard from './TaskConversationCard'
 import TaskHistoryDisclosure from './TaskHistoryDisclosure'
@@ -46,32 +55,6 @@ type Props = {
   onUpload: (taskId: string, formData: FormData, transcribe?: boolean) => Promise<void>
   onCreateSubtask: (task: TaskView, suggestion?: TaskAiSuggestionView) => void
   onSelectTask: (taskId: string) => void
-}
-
-function formatDate(value: string, withTime = false) {
-  return new Intl.DateTimeFormat('sv-SE', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
-  }).format(new Date(value))
-}
-
-function toDateInput(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function addDays(days: number) {
-  const date = new Date()
-  date.setDate(date.getDate() + days)
-  return toDateInput(date)
-}
-
-function toIso(value: string) {
-  return new Date(`${value}T12:00:00`).toISOString()
 }
 
 const smallInput =
@@ -113,10 +96,14 @@ export default function TaskDetailSheet({
   onCreateSubtask,
   onSelectTask,
 }: Props) {
+  const effectiveTimeZone = normalizeTaskTimeZone(task ? task.dueTimeZone : workspace.timeZone)
+  const todayInput = taskTodayDateInput(effectiveTimeZone)
   const [panel, setPanel] = useState<'none' | 'waiting' | 'return' | 'extension' | 'cancel'>('none')
   const [message, setMessage] = useState('')
   const [comment, setComment] = useState('')
-  const [date, setDate] = useState(addDays(2))
+  const [date, setDate] = useState(addTaskDateInputDays(todayInput, 2))
+  const [time, setTime] = useState('09:00')
+  const [dateTimeError, setDateTimeError] = useState<string | null>(null)
   const [evidenceText, setEvidenceText] = useState('')
   const [evidencePanelOpen, setEvidencePanelOpen] = useState(false)
   const [dropUploadBusy, setDropUploadBusy] = useState(false)
@@ -244,9 +231,57 @@ export default function TaskDetailSheet({
       : task.ballHolder === 'assignee'
         ? task.assignee.name
         : 'Ingen – uppgiften är avslutad'
+  const dueInput = taskIsoToDateTimeInput(task.dueAt, effectiveTimeZone)
+  const waitingMaxTime = dueInput && date === dueInput.date ? dueInput.time : undefined
+  const extensionMinDate = dueInput?.date && dueInput.date > todayInput ? dueInput.date : todayInput
+  const extensionMinTime = dueInput && date === dueInput.date ? dueInput.time : undefined
+
+  const openPanel = (nextPanel: typeof panel) => {
+    setDateTimeError(null)
+    if (nextPanel === 'waiting') {
+      const suggestedDate = addTaskDateInputDays(todayInput, 2)
+      const nextDate = dueInput && suggestedDate > dueInput.date ? dueInput.date : suggestedDate
+      setDate(nextDate)
+      setTime(dueInput && nextDate === dueInput.date && '09:00' > dueInput.time ? dueInput.time : '09:00')
+    } else if (nextPanel === 'extension') {
+      setDate(addTaskDateInputDays(extensionMinDate, 1))
+      setTime(dueInput?.time ?? '16:00')
+    }
+    setPanel(nextPanel)
+  }
 
   const transition = async (status: TaskStatus, extra: Record<string, unknown> = {}) => {
     await onAction('transition', { taskId: task.id, status, version: task.version, ...extra })
+    setPanel('none')
+    setMessage('')
+  }
+
+  const submitTimedPanel = async () => {
+    if (panel !== 'waiting' && panel !== 'extension') return
+    const selectedAt = taskDateTimeInputToIso(date, time, effectiveTimeZone)
+    if (!selectedAt) {
+      setDateTimeError('Kontrollera datum och klockslag. Den valda tiden måste finnas i angiven tidszon.')
+      return
+    }
+    if (panel === 'waiting') {
+      if (Date.parse(selectedAt) < Date.now() || Date.parse(selectedAt) > Date.parse(task.dueAt)) {
+        setDateTimeError('Signe måste följa upp framåt i tiden och senast när uppdraget ska vara klart.')
+        return
+      }
+      setDateTimeError(null)
+      await transition('waiting', { message: message.trim(), nextFollowupAt: selectedAt })
+      return
+    }
+    if (Date.parse(selectedAt) <= Math.max(Date.parse(task.dueAt), Date.now())) {
+      setDateTimeError('Den önskade nya sluttiden måste ligga framåt i tiden och efter nuvarande sluttid.')
+      return
+    }
+    setDateTimeError(null)
+    await onAction('request_deadline_change', {
+      taskId: task.id,
+      reason: message.trim(),
+      requestedDueAt: selectedAt,
+    })
     setPanel('none')
     setMessage('')
   }
@@ -453,16 +488,23 @@ export default function TaskDetailSheet({
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
               <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <CalendarClock size={14} /> Slutdatum
+                <CalendarClock size={14} /> Ska vara klart
               </dt>
-              <dd className="mt-2 text-sm font-semibold text-slate-900">{formatDate(task.dueAt)}</dd>
+              <dd className="mt-2 text-sm font-semibold leading-5 text-slate-900">
+                {formatTaskDateTime(task.dueAt, effectiveTimeZone)}
+              </dd>
+              <dd className="mt-1 text-xs text-slate-500">{taskTimeZoneLabel(effectiveTimeZone)}</dd>
             </div>
-            <div className="col-span-2 rounded-2xl border border-slate-200 bg-white p-3.5">
-              <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <Clock3 size={14} /> Signe följer upp
-              </dt>
-              <dd className="mt-2 text-sm font-semibold text-slate-900">{formatDate(task.nextFollowupAt)}</dd>
-            </div>
+            {isTaskIssuer ? (
+              <div className="col-span-2 rounded-2xl border border-slate-200 bg-white p-3.5">
+                <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <Clock3 size={14} /> Signe följer upp internt
+                </dt>
+                <dd className="mt-2 text-sm font-semibold text-slate-900">
+                  {formatTaskDateTime(task.nextFollowupAt, effectiveTimeZone)}
+                </dd>
+              </div>
+            ) : null}
           </dl>
 
           {(canActAsAssignee || (canActAsIssuer && task.status === 'ready_for_review')) ? (
@@ -578,7 +620,7 @@ export default function TaskDetailSheet({
               {pendingDeadlineRequests.map((request) => (
                 <div key={request.id} className="mt-3 border-t border-amber-200 pt-3 first:mt-2 first:border-0 first:pt-0">
                   <p className="text-sm text-amber-950">
-                    Nytt önskat datum: <strong>{formatDate(request.requestedDueAt)}</strong>
+                    Ny önskad sluttid: <strong>{formatTaskDateTime(request.requestedDueAt, effectiveTimeZone)}</strong>
                   </p>
                   <p className="mt-1 text-sm text-amber-800">{request.reason}</p>
                   {canActAsIssuer ? (
@@ -983,7 +1025,7 @@ export default function TaskDetailSheet({
                           {attachment.title || attachment.fileName || (attachment.type === 'text' ? 'Textredovisning' : 'Bilaga')}
                         </p>
                         <p className="mt-0.5 text-xs text-slate-500">
-                          {formatDate(attachment.createdAt, true)} · {attachment.isCompletionEvidence ? 'Färdigbevis' : 'Underlag'}
+                          {formatTaskDateTime(attachment.createdAt, effectiveTimeZone, 'compact')} · {attachment.isCompletionEvidence ? 'Färdigbevis' : 'Underlag'}
                         </p>
                       </div>
                       {attachment.fileName ? (
@@ -1065,31 +1107,55 @@ export default function TaskDetailSheet({
                   <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={2} className={`${smallInput} mt-1.5`} />
                 </label>
                 {panel === 'waiting' || panel === 'extension' ? (
-                  <label className="mt-2 block text-xs font-semibold text-slate-700">
-                    {panel === 'waiting' ? 'Nästa uppföljning' : 'Önskat nytt slutdatum'}
-                    <input
-                      type="date"
-                      min={toDateInput(new Date())}
-                      value={date}
-                      onChange={(event) => setDate(event.target.value)}
-                      className={`${smallInput} mt-1.5`}
-                    />
-                  </label>
+                  <fieldset className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+                    <legend className="px-1 text-xs font-semibold text-slate-700">
+                      {panel === 'waiting' ? 'När ska Signe följa upp internt?' : 'Önskad ny sluttid'}
+                    </legend>
+                    <div className="mt-1 grid gap-2 min-[420px]:grid-cols-[minmax(0,1fr)_8.5rem]">
+                      <label className="block text-xs font-semibold text-slate-600">
+                        Datum
+                        <input
+                          required
+                          type="date"
+                          min={panel === 'extension' ? extensionMinDate : todayInput}
+                          max={panel === 'waiting' ? dueInput?.date : undefined}
+                          value={date}
+                          onChange={(event) => {
+                            setDate(event.target.value)
+                            setDateTimeError(null)
+                          }}
+                          className={`${smallInput} mt-1.5`}
+                        />
+                      </label>
+                      <label className="block text-xs font-semibold text-slate-600">
+                        Klockslag
+                        <input
+                          required
+                          type="time"
+                          step={60}
+                          min={panel === 'extension' ? extensionMinTime : undefined}
+                          max={panel === 'waiting' ? waitingMaxTime : undefined}
+                          value={time}
+                          onChange={(event) => {
+                            setTime(event.target.value)
+                            setDateTimeError(null)
+                          }}
+                          className={`${smallInput} mt-1.5`}
+                        />
+                      </label>
+                    </div>
+                    <p className="mt-2 text-[11px] font-medium text-slate-500">{taskTimeZoneLabel(effectiveTimeZone)}</p>
+                  </fieldset>
                 ) : null}
+                {dateTimeError ? <p role="alert" className="mt-2 text-xs font-medium text-rose-700">{dateTimeError}</p> : null}
                 <div className="mt-3 flex gap-2">
                   <button
                     type="button"
-                    disabled={busy || !message.trim()}
+                    disabled={busy || !message.trim() || ((panel === 'waiting' || panel === 'extension') && (!date || !time))}
                     onClick={() => {
-                      if (panel === 'waiting') void transition('waiting', { message: message.trim(), nextFollowupAt: toIso(date) })
+                      if (panel === 'waiting' || panel === 'extension') void submitTimedPanel()
                       if (panel === 'return') void transition('returned', { message: message.trim() })
                       if (panel === 'cancel') void transition('cancelled', { message: message.trim() })
-                      if (panel === 'extension') {
-                        void onAction('request_deadline_change', { taskId: task.id, reason: message.trim(), requestedDueAt: toIso(date) }).then(() => {
-                          setPanel('none')
-                          setMessage('')
-                        })
-                      }
                     }}
                     className="min-h-10 flex-1 rounded-xl bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
                   >
@@ -1132,7 +1198,7 @@ export default function TaskDetailSheet({
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => setPanel('waiting')}
+                    onClick={() => openPanel('waiting')}
                     className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                   >
                     <Clock3 size={17} /> Väntar
@@ -1140,7 +1206,7 @@ export default function TaskDetailSheet({
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => setPanel('extension')}
+                    onClick={() => openPanel('extension')}
                     className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                   >
                     <CalendarClock size={17} /> Begär mer tid
@@ -1160,7 +1226,7 @@ export default function TaskDetailSheet({
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => setPanel('return')}
+                    onClick={() => openPanel('return')}
                     className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 text-sm font-semibold text-orange-800 hover:bg-orange-100 disabled:opacity-50"
                   >
                     <RotateCcw size={17} /> Begär rättning
@@ -1181,7 +1247,7 @@ export default function TaskDetailSheet({
                 <button
                   type="button"
                   disabled={busy || task.openChildCount > 0}
-                  onClick={() => setPanel('cancel')}
+                  onClick={() => openPanel('cancel')}
                   title={task.openChildCount > 0 ? 'Avsluta eller godkänn underuppgifterna först.' : undefined}
                   className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 text-sm font-semibold text-rose-800 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
                 >

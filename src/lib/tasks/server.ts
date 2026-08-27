@@ -30,6 +30,7 @@ import {
   isTaskStatus,
   isTerminalTaskStatus,
 } from './domain'
+import { normalizeTaskTimeZone } from './dateTime'
 import { issueTaskAccessLink, resolveTaskPublicBaseUrl } from './external'
 import { rejectSigneSuggestion, requestSigneSuggestions } from './signe'
 import {
@@ -64,6 +65,7 @@ type OperationalTaskRow = {
   task_kind: TaskKind
   status: TaskStatus
   due_at: string
+  due_timezone: string
   next_followup_at: string
   primary_channel: TaskChannel
   fallback_channel: TaskChannel | null
@@ -307,11 +309,11 @@ function requirementTemplates(kind: TaskKind, evidence: readonly TaskCompletionE
 
 async function loadRows(orgId: string) {
   const admin = createSupabaseAdminClient()
-  const [taskResult, contactResult, memberResult] = await Promise.all([
+  const [taskResult, contactResult, memberResult, settingsResult] = await Promise.all([
     admin
       .from('operational_tasks')
       .select(
-        'id,org_id,parent_task_id,root_task_id,depth,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,task_kind,status,due_at,next_followup_at,primary_channel,fallback_channel,evidence_requirement,review_round,version,created_source,submitted_for_review_at,approved_at,approved_by_profile_id,created_by_profile_id,archived_at,created_at,updated_at'
+        'id,org_id,parent_task_id,root_task_id,depth,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,task_kind,status,due_at,due_timezone,next_followup_at,primary_channel,fallback_channel,evidence_requirement,review_round,version,created_source,submitted_for_review_at,approved_at,approved_by_profile_id,created_by_profile_id,archived_at,created_at,updated_at'
       )
       .eq('org_id', orgId)
       .is('archived_at', null)
@@ -322,11 +324,17 @@ async function loadRows(orgId: string) {
       .eq('org_id', orgId)
       .order('name', { ascending: true }),
     admin.from('org_members').select('profile_id').eq('org_id', orgId).eq('is_active', true),
+    admin
+      .from('task_organization_settings')
+      .select('timezone')
+      .eq('org_id', orgId)
+      .maybeSingle(),
   ])
 
   if (taskResult.error) throw new Error('TASKS_SCHEMA_REQUIRED')
   if (contactResult.error) throw new Error('TASK_CONTACTS_READ_FAILED')
   if (memberResult.error) throw new Error('TASK_MEMBERS_READ_FAILED')
+  if (settingsResult.error) throw new Error('TASKS_SCHEMA_REQUIRED')
 
   const tasks = (taskResult.data ?? []) as OperationalTaskRow[]
   const contacts = (contactResult.data ?? []) as ContactRow[]
@@ -414,6 +422,7 @@ async function loadRows(orgId: string) {
   }
 
   return {
+    timeZone: normalizeTaskTimeZone(settingsResult.data?.timezone),
     tasks,
     contacts,
     profiles,
@@ -647,12 +656,18 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
         now: Date.now(),
         dueAt: task.due_at,
         nextFollowUpAt: task.next_followup_at,
+        calendar: {
+          workingWeekdays: [1, 2, 3, 4, 5],
+          excludedDateKeys: [],
+          timeZone: task.due_timezone,
+        },
       }).level,
       ballHolder:
         initialDispatchPending || hasPendingDeadlineRequest
           ? 'issuer'
           : getTaskBallHolderKind(task.status),
       dueAt: task.due_at,
+      dueTimeZone: task.due_timezone,
       nextFollowupAt: task.next_followup_at,
       primaryChannel: task.primary_channel,
       fallbackChannel: task.fallback_channel,
@@ -690,6 +705,7 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
   }).length
 
   return {
+    timeZone: rows.timeZone,
     currentUser: {
       id: input.userId,
       name: currentProfile?.full_name?.trim() || currentProfile?.email?.trim() || 'Användare',
@@ -721,7 +737,7 @@ async function requireTask(orgId: string, taskId: string) {
   const { data, error } = await admin
     .from('operational_tasks')
     .select(
-      'id,org_id,parent_task_id,root_task_id,depth,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,task_kind,status,due_at,next_followup_at,primary_channel,fallback_channel,evidence_requirement,review_round,version,created_source,submitted_for_review_at,approved_at,approved_by_profile_id,created_by_profile_id,archived_at,created_at,updated_at'
+      'id,org_id,parent_task_id,root_task_id,depth,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,task_kind,status,due_at,due_timezone,next_followup_at,primary_channel,fallback_channel,evidence_requirement,review_round,version,created_source,submitted_for_review_at,approved_at,approved_by_profile_id,created_by_profile_id,archived_at,created_at,updated_at'
     )
     .eq('id', taskId)
     .eq('org_id', orgId)

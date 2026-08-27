@@ -3,14 +3,20 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
   buildTaskPolicyIdempotencyKey,
+  DEFAULT_TASK_CALENDAR_POLICY,
   DEFAULT_TASK_REMINDER_POLICY,
   evaluateTaskReminders,
+  isValidTaskSendWindowPolicy,
+  isValidTaskTimeZone,
+  type TaskCalendarPolicy,
   type TaskCommunicationChannel,
   type TaskDeliveryState,
   type TaskReminderAction,
   type TaskReminderPolicy,
+  type TaskSendWindowPolicy,
 } from '@/lib/tasks/domain'
 import type { TaskStatus } from '@/lib/tasks/contracts'
+import { formatTaskDateTime } from '@/lib/tasks/dateTime'
 import { buildTaskEmailHtml } from '@/lib/tasks/emailTemplates'
 import { issueDirectTaskAccessLink } from '@/lib/tasks/recipientAuth'
 
@@ -39,6 +45,7 @@ type OperationalTask = {
   context_label: string | null
   status: TaskStatus
   due_at: string
+  due_timezone: string
   next_followup_at: string
   primary_channel: TaskCommunicationChannel
   fallback_channel: TaskCommunicationChannel | null
@@ -57,6 +64,11 @@ type TaskFollowupRule = {
   fallback_after_hours: number
   max_reminders: number
   is_active: boolean
+}
+
+type TaskOrganizationSchedule = {
+  calendar: TaskCalendarPolicy
+  sendWindow: TaskSendWindowPolicy
 }
 
 type Profile = {
@@ -85,10 +97,12 @@ type StoredDelivery = {
   id: string
   message_id: string
   channel: 'email' | 'whatsapp' | 'in_app'
-  status: 'queued' | 'sending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed' | 'cancelled'
+  status: 'queued' | 'sending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed' | 'cancelled' | 'ambiguous'
+  is_fallback: boolean
   attempt_count: number
   max_attempts: number
   idempotency_key: string
+  sent_at: string | null
   created_at: string
 }
 
@@ -109,10 +123,13 @@ type TaskHistory = {
   primaryDeliveryState: TaskDeliveryState
   primaryDeliveryAttemptId: string | null
   totalAssigneeReminders: number
+  unresolvedDeliveryIds: string[]
+  exhaustedFallbackDeliveryId: string | null
 }
 
 type DeliveryResult = {
   delivered: boolean
+  ambiguous: boolean
   deliveryId: string
   messageId: string
   errorCode: string | null
@@ -142,14 +159,14 @@ const SUCCESSFUL_DELIVERY_STATUSES = new Set<StoredDelivery['status']>([
   'read',
   'replied',
 ])
-const DEFAULT_BATCH_LIMIT = 20
-const MAX_BATCH_LIMIT = 50
+const DEFAULT_BATCH_LIMIT = 4
+const MAX_BATCH_LIMIT = 4
 const DEFAULT_RECHECK_MINUTES = 60
 const MIN_RECHECK_MINUTES = 15
 const MAX_RECHECK_MINUTES = 24 * 60
-// vercel.json deliberately invokes v1 once per day so Hobby deployments remain
-// valid. A Vercel Pro deployment can change the expression to `*/15 * * * *`;
-// the database queue and this minimum recheck guard are already safe for it.
+// Supabase dispatches the durable queue every five minutes. Ordinary periodic
+// evaluations stay 15-60 minutes apart, while explicit due/follow-up instants
+// and the next permitted send-window start are queued at their exact timestamp.
 
 function automationError(code: string): TaskAutomationError {
   return new TaskAutomationError(code)
@@ -158,6 +175,27 @@ function automationError(code: string): TaskAutomationError {
 function safeErrorCode(error: unknown) {
   if (error instanceof TaskAutomationError) return error.code
   return 'TASK_AUTOMATION_INTERNAL_ERROR'
+}
+
+const AMBIGUOUS_TASK_DELIVERY_ERROR_CODES = new Set([
+  'TASK_EMAIL_PROVIDER_TIMEOUT',
+  'TASK_EMAIL_PROVIDER_UNAVAILABLE',
+  'TASK_EMAIL_PROVIDER_SERVER_ERROR',
+  'TASK_EMAIL_PROVIDER_INVALID_RESPONSE',
+  'TASK_EMAIL_PROVIDER_IDEMPOTENCY_CONFLICT',
+  'TASK_WHATSAPP_PROVIDER_TIMEOUT',
+  'TASK_WHATSAPP_PROVIDER_UNAVAILABLE',
+  'TASK_WHATSAPP_PROVIDER_SERVER_ERROR',
+  'TASK_WHATSAPP_PROVIDER_INVALID_RESPONSE',
+])
+
+export function isAmbiguousTaskDeliveryError(error: unknown) {
+  const code = error instanceof TaskAutomationError
+    ? error.code
+    : error instanceof Error
+      ? error.message
+      : ''
+  return AMBIGUOUS_TASK_DELIVERY_ERROR_CODES.has(code)
 }
 
 function normalizeInteger(value: unknown, fallback: number, min: number, max: number) {
@@ -236,6 +274,7 @@ function parseOperationalTask(value: unknown): OperationalTask | null {
     || typeof row.issuer_profile_id !== 'string'
     || typeof row.title !== 'string'
     || typeof row.due_at !== 'string'
+    || typeof row.due_timezone !== 'string'
     || typeof row.next_followup_at !== 'string'
     || typeof row.last_activity_at !== 'string'
     || typeof row.created_at !== 'string'
@@ -258,6 +297,7 @@ function parseOperationalTask(value: unknown): OperationalTask | null {
     context_label: typeof row.context_label === 'string' ? row.context_label : null,
     status: row.status,
     due_at: row.due_at,
+    due_timezone: row.due_timezone,
     next_followup_at: row.next_followup_at,
     primary_channel: row.primary_channel,
     fallback_channel: isCommunicationChannel(row.fallback_channel) ? row.fallback_channel : null,
@@ -275,7 +315,7 @@ async function loadTask(admin: AdminClient, job: AutomationJob) {
   const { data, error } = await admin
     .from('operational_tasks')
     .select(
-      'id,org_id,root_task_id,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,status,due_at,next_followup_at,primary_channel,fallback_channel,last_activity_at,submitted_for_review_at,created_at,version,archived_at'
+      'id,org_id,root_task_id,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,status,due_at,due_timezone,next_followup_at,primary_channel,fallback_channel,last_activity_at,submitted_for_review_at,created_at,version,archived_at'
     )
     .eq('id', job.task_id)
     .eq('org_id', job.org_id)
@@ -416,13 +456,32 @@ async function loadRecipients(admin: AdminClient, task: OperationalTask) {
   }
 }
 
-function messageTarget(message: StoredMessage | undefined) {
+function messageTarget(message: StoredMessage | undefined, task?: OperationalTask) {
   if (message?.metadata?.target === 'creator' || message?.metadata?.target === 'assignee') {
     return message.metadata.target
+  }
+  if (task) {
+    const recipientKind = message?.metadata?.recipientKind
+    const recipientId = message?.metadata?.recipientId
+    if (
+      (recipientKind === 'profile' && recipientId === task.assignee_profile_id)
+      || (recipientKind === 'contact' && recipientId === task.assignee_contact_id)
+    ) {
+      return 'assignee'
+    }
+    if (recipientKind === 'profile' && recipientId === task.issuer_profile_id) {
+      return 'creator'
+    }
   }
   // Access-link delivery predates the worker metadata but is still an assignee
   // contact. Counting it prevents an immediate duplicate assignment reminder.
   return message?.message_type === 'assignment' ? 'assignee' : null
+}
+
+function effectiveDeliveryAt(delivery: StoredDelivery) {
+  return delivery.sent_at && Number.isFinite(Date.parse(delivery.sent_at))
+    ? delivery.sent_at
+    : delivery.created_at
 }
 
 function latestIso(values: Array<string | null>) {
@@ -439,17 +498,212 @@ function latestIso(values: Array<string | null>) {
   return latest
 }
 
+function parseStoredDelivery(value: unknown): StoredDelivery | null {
+  const row = toObject(value)
+  const delivery = {
+    id: String(row.id ?? ''),
+    message_id: String(row.message_id ?? ''),
+    channel: String(row.channel ?? '') as StoredDelivery['channel'],
+    status: String(row.status ?? '') as StoredDelivery['status'],
+    is_fallback: row.is_fallback === true,
+    attempt_count: normalizeInteger(row.attempt_count, 0, 0, 20),
+    max_attempts: normalizeInteger(row.max_attempts, 5, 1, 20),
+    idempotency_key: String(row.idempotency_key ?? ''),
+    sent_at: typeof row.sent_at === 'string' ? row.sent_at : null,
+    created_at: String(row.created_at ?? ''),
+  } satisfies StoredDelivery
+  return delivery.id && delivery.message_id && delivery.idempotency_key && delivery.created_at
+    ? delivery
+    : null
+}
+
+async function loadLatestAssigneeFallbackDelivery(
+  admin: AdminClient,
+  task: OperationalTask,
+  deliverySelection: string
+) {
+  const pageSize = 100
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await admin
+      .from('task_message_deliveries')
+      .select(deliverySelection)
+      .eq('task_id', task.id)
+      .eq('org_id', task.org_id)
+      .eq('is_fallback', true)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(offset, offset + pageSize - 1)
+    if (error) throw automationError('TASK_AUTOMATION_HISTORY_READ_FAILED')
+    const deliveries = (data ?? [])
+      .map(parseStoredDelivery)
+      .filter((delivery): delivery is StoredDelivery => Boolean(delivery))
+    const messageIds = [...new Set(deliveries.map((delivery) => delivery.message_id))]
+    const { data: messageData, error: messageError } = messageIds.length > 0
+      ? await admin
+          .from('task_messages')
+          .select('id,created_at,message_type,metadata')
+          .eq('task_id', task.id)
+          .eq('org_id', task.org_id)
+          .in('id', messageIds)
+      : { data: [], error: null }
+    if (messageError) throw automationError('TASK_AUTOMATION_HISTORY_READ_FAILED')
+    const messages = new Map((messageData ?? []).map((value) => {
+      const row = toObject(value)
+      const message = {
+        id: String(row.id ?? ''),
+        created_at: String(row.created_at ?? ''),
+        message_type: String(row.message_type ?? ''),
+        metadata: toObject(row.metadata),
+      } satisfies StoredMessage
+      return [message.id, message] as const
+    }))
+    const fallback = deliveries.find((delivery) => {
+      const message = messages.get(delivery.message_id)
+      return message?.message_type !== 'comment'
+        && messageTarget(message, task) === 'assignee'
+    })
+    if (fallback) return fallback
+    if ((data ?? []).length < pageSize) return null
+  }
+}
+
+async function loadTaskDeliverySafetyState(
+  admin: AdminClient,
+  task: OperationalTask
+) {
+  const deliverySelection = 'id,message_id,channel,status,is_fallback,attempt_count,max_attempts,idempotency_key,sent_at,created_at'
+  const [unresolvedResult, fallback] = await Promise.all([
+    admin
+      .from('task_message_deliveries')
+      .select('id')
+      .eq('task_id', task.id)
+      .eq('org_id', task.org_id)
+      .in('status', ['sending', 'ambiguous']),
+    loadLatestAssigneeFallbackDelivery(admin, task, deliverySelection),
+  ])
+  if (unresolvedResult.error) {
+    throw automationError('TASK_AUTOMATION_HISTORY_READ_FAILED')
+  }
+
+  const unresolvedDeliveryIds = [...new Set(
+    (unresolvedResult.data ?? [])
+      .map((row) => typeof row.id === 'string' ? row.id : '')
+      .filter(Boolean)
+  )]
+  if (
+    !fallback
+    || fallback.status !== 'failed'
+    || fallback.attempt_count < fallback.max_attempts
+  ) {
+    return {
+      unresolvedDeliveryIds,
+      exhaustedFallbackDeliveryId: null,
+      emittedKeys: [] as string[],
+    }
+  }
+
+  // Only an outcome newer than the failed fallback can supersede its safety
+  // pause. Page directly over deliveries rather than depending on the bounded
+  // conversation history used for cadence/statistics.
+  const newerDeliveries: StoredDelivery[] = []
+  const pageSize = 500
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await admin
+      .from('task_message_deliveries')
+      .select(deliverySelection)
+      .eq('task_id', task.id)
+      .eq('org_id', task.org_id)
+      .or(`created_at.gt.${fallback.created_at},sent_at.gt.${fallback.created_at}`)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(offset, offset + pageSize - 1)
+    if (error) throw automationError('TASK_AUTOMATION_HISTORY_READ_FAILED')
+    const page = (data ?? [])
+      .map(parseStoredDelivery)
+      .filter((delivery): delivery is StoredDelivery => Boolean(delivery))
+    newerDeliveries.push(...page)
+    if ((data ?? []).length < pageSize) break
+  }
+
+  const messagesById = new Map<string, StoredMessage>()
+  const messageIds = [...new Set(newerDeliveries.map((delivery) => delivery.message_id))]
+  for (let offset = 0; offset < messageIds.length; offset += 100) {
+    const { data, error } = await admin
+      .from('task_messages')
+      .select('id,created_at,message_type,metadata')
+      .eq('task_id', task.id)
+      .eq('org_id', task.org_id)
+      .in('id', messageIds.slice(offset, offset + 100))
+    if (error) throw automationError('TASK_AUTOMATION_HISTORY_READ_FAILED')
+    for (const value of data ?? []) {
+      const row = toObject(value)
+      const message = {
+        id: String(row.id ?? ''),
+        created_at: String(row.created_at ?? ''),
+        message_type: String(row.message_type ?? ''),
+        metadata: toObject(row.metadata),
+      } satisfies StoredMessage
+      if (message.id) messagesById.set(message.id, message)
+    }
+  }
+
+  const fallbackEpoch = Date.parse(fallback.created_at)
+  const superseded = newerDeliveries.some((delivery) => {
+    const message = messagesById.get(delivery.message_id)
+    if (messageTarget(message, task) !== 'assignee') return false
+    const newerPrimaryAttempt = !delivery.is_fallback
+      && delivery.channel === task.primary_channel
+      && message?.message_type !== 'comment'
+      && Date.parse(delivery.created_at) > fallbackEpoch
+    const newerSuccessfulContact = SUCCESSFUL_DELIVERY_STATUSES.has(delivery.status)
+      && Date.parse(effectiveDeliveryAt(delivery)) > fallbackEpoch
+    return newerPrimaryAttempt || newerSuccessfulContact
+  })
+  if (superseded) {
+    return {
+      unresolvedDeliveryIds,
+      exhaustedFallbackDeliveryId: null,
+      emittedKeys: [] as string[],
+    }
+  }
+
+  const escalationKey = buildTaskPolicyIdempotencyKey(
+    task.id,
+    'fallback_exhausted',
+    fallback.id
+  )
+  const { data: emittedEscalation, error: escalationError } = await admin
+    .from('task_message_deliveries')
+    .select('id')
+    .eq('org_id', task.org_id)
+    .eq('idempotency_key', escalationKey)
+    .in('status', [...SUCCESSFUL_DELIVERY_STATUSES])
+    .limit(1)
+    .maybeSingle()
+  if (escalationError) throw automationError('TASK_AUTOMATION_HISTORY_READ_FAILED')
+
+  return {
+    unresolvedDeliveryIds,
+    exhaustedFallbackDeliveryId: fallback.id,
+    emittedKeys: emittedEscalation ? [escalationKey] : [],
+  }
+}
+
 async function loadTaskHistory(
   admin: AdminClient,
   task: OperationalTask
 ): Promise<TaskHistory> {
-  const { data: messageData, error: messageError } = await admin
-    .from('task_messages')
-    .select('id,created_at,message_type,metadata')
-    .eq('task_id', task.id)
-    .eq('org_id', task.org_id)
-    .order('created_at', { ascending: false })
-    .limit(300)
+  const [messageResult, safetyState] = await Promise.all([
+    admin
+      .from('task_messages')
+      .select('id,created_at,message_type,metadata')
+      .eq('task_id', task.id)
+      .eq('org_id', task.org_id)
+      .order('created_at', { ascending: false })
+      .limit(300),
+    loadTaskDeliverySafetyState(admin, task),
+  ])
+  const { data: messageData, error: messageError } = messageResult
   if (messageError) throw automationError('TASK_AUTOMATION_HISTORY_READ_FAILED')
 
   const messages = (messageData ?? []).map((value) => {
@@ -463,7 +717,7 @@ async function loadTaskHistory(
   }).filter((message) => message.id && message.created_at)
   if (messages.length === 0) {
     return {
-      emittedKeys: [],
+      emittedKeys: safetyState.emittedKeys,
       lastAssigneeReminderAt: null,
       lastCreatorReminderAt: null,
       unansweredAttempts: 0,
@@ -471,12 +725,14 @@ async function loadTaskHistory(
       primaryDeliveryState: 'unknown',
       primaryDeliveryAttemptId: null,
       totalAssigneeReminders: 0,
+      unresolvedDeliveryIds: safetyState.unresolvedDeliveryIds,
+      exhaustedFallbackDeliveryId: safetyState.exhaustedFallbackDeliveryId,
     }
   }
 
   const { data: deliveryData, error: deliveryError } = await admin
     .from('task_message_deliveries')
-    .select('id,message_id,channel,status,attempt_count,max_attempts,idempotency_key,created_at')
+    .select('id,message_id,channel,status,is_fallback,attempt_count,max_attempts,idempotency_key,sent_at,created_at')
     .eq('task_id', task.id)
     .eq('org_id', task.org_id)
     .in('message_id', messages.map((message) => message.id))
@@ -484,39 +740,37 @@ async function loadTaskHistory(
     .limit(500)
   if (deliveryError) throw automationError('TASK_AUTOMATION_HISTORY_READ_FAILED')
 
-  const deliveries = (deliveryData ?? []).map((value) => {
-    const row = toObject(value)
-    return {
-      id: String(row.id ?? ''),
-      message_id: String(row.message_id ?? ''),
-      channel: String(row.channel ?? '') as StoredDelivery['channel'],
-      status: String(row.status ?? '') as StoredDelivery['status'],
-      attempt_count: normalizeInteger(row.attempt_count, 0, 0, 20),
-      max_attempts: normalizeInteger(row.max_attempts, 5, 1, 20),
-      idempotency_key: String(row.idempotency_key ?? ''),
-      created_at: String(row.created_at ?? ''),
-    } satisfies StoredDelivery
-  }).filter((delivery) => delivery.id && delivery.message_id && delivery.idempotency_key)
+  const deliveries = (deliveryData ?? [])
+    .map(parseStoredDelivery)
+    .filter((delivery): delivery is StoredDelivery => Boolean(delivery))
   const messagesById = new Map(messages.map((message) => [message.id, message]))
   const successful = deliveries.filter((delivery) => SUCCESSFUL_DELIVERY_STATUSES.has(delivery.status))
   const assigneeSuccessful = successful.filter(
-    (delivery) => messageTarget(messagesById.get(delivery.message_id)) === 'assignee'
+    (delivery) => messageTarget(messagesById.get(delivery.message_id), task) === 'assignee'
+  )
+  const assigneeReminderSuccessful = assigneeSuccessful.filter(
+    (delivery) => messagesById.get(delivery.message_id)?.message_type !== 'comment'
   )
   const creatorSuccessful = successful.filter(
-    (delivery) => messageTarget(messagesById.get(delivery.message_id)) === 'creator'
+    (delivery) => messageTarget(messagesById.get(delivery.message_id), task) === 'creator'
   )
   const lastActivityMs = Date.parse(task.last_activity_at)
-  const unansweredAttempts = assigneeSuccessful.filter(
-    (delivery) => Date.parse(delivery.created_at) > lastActivityMs
+  const unansweredAttempts = assigneeReminderSuccessful.filter(
+    (delivery) => Date.parse(effectiveDeliveryAt(delivery)) > lastActivityMs
   ).length
-  const overdueReminderCount = assigneeSuccessful.filter((delivery) => {
+  const overdueReminderCount = assigneeReminderSuccessful.filter((delivery) => {
     const metadata = messagesById.get(delivery.message_id)?.metadata
     return metadata?.actionKind === 'overdue'
   }).length
   const latestPrimary = deliveries.find((delivery) => {
     const message = messagesById.get(delivery.message_id)
-    return delivery.channel === task.primary_channel && messageTarget(message) === 'assignee'
+    return delivery.channel === task.primary_channel
+      && message?.message_type !== 'comment'
+      && messageTarget(message, task) === 'assignee'
   })
+  const latestSuccessfulAssigneeAt = latestIso(
+    assigneeSuccessful.map(effectiveDeliveryAt)
+  )
   const primaryDeliveryState: TaskDeliveryState = !latestPrimary
     ? 'unknown'
     : latestPrimary.status === 'failed'
@@ -524,7 +778,7 @@ async function loadTaskHistory(
       : SUCCESSFUL_DELIVERY_STATUSES.has(latestPrimary.status)
         ? 'delivered'
         : 'pending'
-  const emittedKeys = new Set<string>()
+  const emittedKeys = new Set<string>(safetyState.emittedKeys)
   for (const delivery of successful) {
     emittedKeys.add(delivery.idempotency_key)
     const message = messagesById.get(delivery.message_id)
@@ -538,13 +792,15 @@ async function loadTaskHistory(
 
   return {
     emittedKeys: [...emittedKeys],
-    lastAssigneeReminderAt: latestIso(assigneeSuccessful.map((delivery) => delivery.created_at)),
-    lastCreatorReminderAt: latestIso(creatorSuccessful.map((delivery) => delivery.created_at)),
+    lastAssigneeReminderAt: latestSuccessfulAssigneeAt,
+    lastCreatorReminderAt: latestIso(creatorSuccessful.map(effectiveDeliveryAt)),
     unansweredAttempts,
     overdueReminderCount,
     primaryDeliveryState,
     primaryDeliveryAttemptId: latestPrimary?.id ?? null,
-    totalAssigneeReminders: assigneeSuccessful.length,
+    totalAssigneeReminders: assigneeReminderSuccessful.length,
+    unresolvedDeliveryIds: safetyState.unresolvedDeliveryIds,
+    exhaustedFallbackDeliveryId: safetyState.exhaustedFallbackDeliveryId,
   }
 }
 
@@ -606,6 +862,90 @@ async function loadFollowupPolicy(admin: AdminClient, task: OperationalTask) {
   }
 }
 
+function parseSendWindowMinute(value: unknown) {
+  if (typeof value !== 'string') return null
+  const match = /^(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(value.trim())
+  if (!match) return null
+  const hour = Number(match[1])
+  const minute = Number(match[2])
+  if (hour > 23 || minute > 59) return null
+  return hour * 60 + minute
+}
+
+function parseSendWeekdays(value: unknown) {
+  if (!Array.isArray(value)) return null
+  const weekdays = [...new Set(value.map(Number))]
+  return weekdays.length > 0
+    && weekdays.every((weekday) => Number.isInteger(weekday) && weekday >= 1 && weekday <= 7)
+    ? weekdays
+    : null
+}
+
+async function loadOrganizationSchedule(
+  admin: AdminClient,
+  task: OperationalTask
+): Promise<TaskOrganizationSchedule> {
+  const { data, error } = await admin
+    .from('task_organization_settings')
+    .select(
+      'timezone,reminder_send_window_start,reminder_send_window_end,reminder_send_weekdays'
+    )
+    .eq('org_id', task.org_id)
+    .maybeSingle()
+  if (error) throw automationError('TASK_AUTOMATION_SCHEDULE_READ_FAILED')
+
+  const row = toObject(data)
+  const timeZone = row.timezone
+  const startMinute = parseSendWindowMinute(row.reminder_send_window_start)
+  const endMinute = parseSendWindowMinute(row.reminder_send_window_end)
+  const isoWeekdays = parseSendWeekdays(row.reminder_send_weekdays)
+  if (
+    !isValidTaskTimeZone(task.due_timezone)
+    || !isValidTaskTimeZone(timeZone)
+    || startMinute === null
+    || endMinute === null
+    || !isoWeekdays
+  ) {
+    throw automationError('TASK_AUTOMATION_SCHEDULE_INVALID')
+  }
+
+  const sendWindow: TaskSendWindowPolicy = {
+    timeZone,
+    startMinute,
+    endMinute,
+    isoWeekdays,
+  }
+  if (!isValidTaskSendWindowPolicy(sendWindow)) {
+    throw automationError('TASK_AUTOMATION_SCHEDULE_INVALID')
+  }
+  return {
+    calendar: {
+      ...DEFAULT_TASK_CALENDAR_POLICY,
+      timeZone: task.due_timezone,
+    },
+    sendWindow,
+  }
+}
+
+async function authoritativeNextAllowedReminderAt(
+  admin: AdminClient,
+  orgId: string,
+  candidate: Date
+) {
+  const { data, error } = await admin.rpc('task_next_allowed_reminder_at', {
+    p_org_id: orgId,
+    p_candidate_at: candidate.toISOString(),
+  })
+  if (error || typeof data !== 'string') {
+    throw automationError('TASK_AUTOMATION_SCHEDULE_READ_FAILED')
+  }
+  const epoch = Date.parse(data)
+  if (!Number.isFinite(epoch) || epoch < candidate.getTime()) {
+    throw automationError('TASK_AUTOMATION_SCHEDULE_INVALID')
+  }
+  return new Date(epoch)
+}
+
 function appBaseUrl() {
   const configured = process.env.APP_BASE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim()
   if (!configured) throw automationError('TASK_AUTOMATION_APP_URL_MISSING')
@@ -622,12 +962,8 @@ function appBaseUrl() {
   return url.origin
 }
 
-function dueDateLabel(value: string) {
-  return new Intl.DateTimeFormat('sv-SE', {
-    dateStyle: 'long',
-    timeStyle: 'short',
-    timeZone: 'Europe/Stockholm',
-  }).format(new Date(value))
+function dueDateLabel(value: string, timeZone?: string | null) {
+  return formatTaskDateTime(value, timeZone, 'long')
 }
 
 function actionHeading(action: TaskReminderAction) {
@@ -672,7 +1008,7 @@ function buildReminderContent(input: {
 }) {
   const heading = actionHeading(input.action)
   const instruction = actionInstruction(input.action)
-  const dueLabel = dueDateLabel(input.task.due_at)
+  const dueLabel = dueDateLabel(input.task.due_at, input.task.due_timezone)
   const internalUrl = input.recipient.kind === 'profile'
     ? `${appBaseUrl()}/uppdrag?task=${encodeURIComponent(input.task.id)}`
     : null
@@ -757,10 +1093,11 @@ async function sendResendEmail(input: {
   const apiKey = process.env.RESEND_API_KEY?.trim()
   const from = process.env.ASSIGNMENTS_MAIL_FROM?.trim()
   if (!apiKey || !from) throw automationError('TASK_EMAIL_PROVIDER_NOT_CONFIGURED')
-  const timeoutMs = normalizeInteger(process.env.RESEND_REQUEST_TIMEOUT_MS, 15000, 1000, 30000)
+  const timeoutMs = normalizeInteger(process.env.RESEND_REQUEST_TIMEOUT_MS, 10000, 1000, 10000)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   let response: Response
+  let body: Record<string, unknown>
   try {
     response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -779,6 +1116,7 @@ async function sendResendEmail(input: {
       }),
       signal: controller.signal,
     })
+    body = toObject(await response.json().catch(() => ({})))
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       throw automationError('TASK_EMAIL_PROVIDER_TIMEOUT')
@@ -787,15 +1125,23 @@ async function sendResendEmail(input: {
   } finally {
     clearTimeout(timeout)
   }
-  const body = toObject(await response.json().catch(() => ({})))
   if (!response.ok) {
     console.error('[tasks.automation] Resend rejected reminder', {
       status: response.status,
       requestId: response.headers.get('x-request-id'),
     })
+    if (response.status === 409) {
+      throw automationError('TASK_EMAIL_PROVIDER_IDEMPOTENCY_CONFLICT')
+    }
+    if (response.status === 408 || response.status >= 500) {
+      throw automationError('TASK_EMAIL_PROVIDER_SERVER_ERROR')
+    }
     throw automationError('TASK_EMAIL_PROVIDER_REJECTED')
   }
-  return typeof body.id === 'string' ? body.id : null
+  if (typeof body.id !== 'string' || !body.id) {
+    throw automationError('TASK_EMAIL_PROVIDER_INVALID_RESPONSE')
+  }
+  return body.id
 }
 
 /** Sends assignment/access-link mail with provider-level idempotency. */
@@ -836,6 +1182,7 @@ async function sendWhatsAppTemplate(input: {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 15000)
   let response: Response
+  let body: Record<string, unknown>
   try {
     response = await fetch(
       `https://graph.facebook.com/${config.apiVersion}/${config.phoneNumberId}/messages`,
@@ -865,6 +1212,7 @@ async function sendWhatsAppTemplate(input: {
         signal: controller.signal,
       }
     )
+    body = toObject(await response.json().catch(() => ({})))
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       throw automationError('TASK_WHATSAPP_PROVIDER_TIMEOUT')
@@ -873,12 +1221,14 @@ async function sendWhatsAppTemplate(input: {
   } finally {
     clearTimeout(timeout)
   }
-  const body = toObject(await response.json().catch(() => ({})))
   if (!response.ok) {
     console.error('[tasks.automation] WhatsApp rejected reminder', {
       status: response.status,
       requestId: response.headers.get('x-fb-trace-id'),
     })
+    if (response.status === 408 || response.status >= 500) {
+      throw automationError('TASK_WHATSAPP_PROVIDER_SERVER_ERROR')
+    }
     throw automationError('TASK_WHATSAPP_PROVIDER_REJECTED')
   }
   const messages = Array.isArray(body.messages) ? body.messages : []
@@ -897,6 +1247,7 @@ export async function sendTaskWhatsAppAccessLink(input: {
   recipientName: string
   taskTitle: string
   dueAt: string
+  dueTimeZone?: string | null
   accessUrl: string
   idempotencyKey: string
 }) {
@@ -918,7 +1269,7 @@ export async function sendTaskWhatsAppAccessLink(input: {
     parameters: [
       input.recipientName.slice(0, 256),
       input.taskTitle.slice(0, 1024),
-      dueDateLabel(input.dueAt),
+      dueDateLabel(input.dueAt, input.dueTimeZone),
       accessUrl.toString(),
     ],
     idempotencyKey: input.idempotencyKey,
@@ -948,7 +1299,7 @@ async function ensureDelivery(input: {
 }) {
   const { data: existingData, error: existingError } = await input.admin
     .from('task_message_deliveries')
-    .select('id,message_id,channel,status,attempt_count,max_attempts,idempotency_key,created_at')
+    .select('id,message_id,channel,status,is_fallback,attempt_count,max_attempts,idempotency_key,sent_at,created_at')
     .eq('org_id', input.task.org_id)
     .eq('idempotency_key', input.idempotencyKey)
     .maybeSingle()
@@ -1006,12 +1357,12 @@ async function ensureDelivery(input: {
         tokenPersisted: false,
       },
     })
-    .select('id,message_id,channel,status,attempt_count,max_attempts,idempotency_key,created_at')
+    .select('id,message_id,channel,status,is_fallback,attempt_count,max_attempts,idempotency_key,sent_at,created_at')
     .single()
   if (deliveryError || !deliveryData) {
     const { data: racedDelivery } = await input.admin
       .from('task_message_deliveries')
-      .select('id,message_id,channel,status,attempt_count,max_attempts,idempotency_key,created_at')
+      .select('id,message_id,channel,status,is_fallback,attempt_count,max_attempts,idempotency_key,sent_at,created_at')
       .eq('org_id', input.task.org_id)
       .eq('idempotency_key', input.idempotencyKey)
       .maybeSingle()
@@ -1089,6 +1440,93 @@ async function updateDeliveryFailure(
   if (error) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
 }
 
+async function updateDeliveryAmbiguous(
+  admin: AdminClient,
+  deliveryId: string,
+  errorCode: string
+) {
+  const { error } = await admin
+    .from('task_message_deliveries')
+    .update({
+      status: 'ambiguous',
+      failed_at: null,
+      next_attempt_at: null,
+      error_message: errorCode,
+    })
+    .eq('id', deliveryId)
+    .in('status', ['sending', 'ambiguous'])
+  if (error) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+}
+
+async function markUnresolvedDeliveriesForReconciliation(
+  admin: AdminClient,
+  task: OperationalTask
+) {
+  const { error } = await admin
+    .from('task_message_deliveries')
+    .update({
+      status: 'ambiguous',
+      failed_at: null,
+      next_attempt_at: null,
+      error_message: 'TASK_DELIVERY_RECONCILIATION_REQUIRED',
+    })
+    .eq('task_id', task.id)
+    .eq('org_id', task.org_id)
+    .eq('status', 'sending')
+  if (error) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+}
+
+async function assertAutomaticDeliveryFence(
+  admin: AdminClient,
+  task: OperationalTask
+) {
+  const { data, error } = await admin
+    .from('operational_tasks')
+    .select('status,version,archived_at')
+    .eq('id', task.id)
+    .eq('org_id', task.org_id)
+    .maybeSingle()
+  if (error) throw automationError('TASK_AUTOMATION_TASK_FENCE_FAILED')
+
+  const status = data && isTaskStatus(data.status) ? data.status : null
+  if (
+    !data
+    || Number(data.version) !== task.version
+    || data.archived_at !== null
+    || status === null
+    || status === 'draft'
+    || TERMINAL_STATUSES.has(status)
+  ) {
+    throw automationError('TASK_AUTOMATION_TASK_STALE')
+  }
+}
+
+async function cancelPreparedStaleDelivery(input: {
+  admin: AdminClient
+  deliveryId: string
+  accessLinkId: string | null
+}) {
+  const cancelledAt = new Date().toISOString()
+  const { error } = await input.admin
+    .from('task_message_deliveries')
+    .update({
+      status: 'cancelled',
+      next_attempt_at: null,
+      error_message: 'TASK_AUTOMATION_TASK_STALE',
+    })
+    .eq('id', input.deliveryId)
+    .eq('status', 'sending')
+  if (error) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+  if (input.accessLinkId) {
+    const { error: linkError } = await input.admin
+      .from('task_access_links')
+      .update({ revoked_at: cancelledAt })
+      .eq('id', input.accessLinkId)
+      .is('revoked_at', null)
+    if (linkError) throw automationError('TASK_ACCESS_LINK_REVOKE_FAILED')
+  }
+}
+
 async function deliverViaChannel(input: {
   admin: AdminClient
   job: AutomationJob
@@ -1102,7 +1540,7 @@ async function deliverViaChannel(input: {
 }): Promise<DeliveryResult> {
   const { data: knownDelivery, error: knownDeliveryError } = await input.admin
     .from('task_message_deliveries')
-    .select('id,message_id,channel,status,attempt_count,max_attempts,idempotency_key,created_at')
+    .select('id,message_id,channel,status,is_fallback,attempt_count,max_attempts,idempotency_key,sent_at,created_at')
     .eq('org_id', input.task.org_id)
     .eq('idempotency_key', input.idempotencyKey)
     .maybeSingle()
@@ -1120,7 +1558,13 @@ async function deliverViaChannel(input: {
       messageId: delivery.message_id,
       isFallback: input.isFallback,
     })
-    return { delivered: true, deliveryId: delivery.id, messageId: delivery.message_id, errorCode: null }
+    return {
+      delivered: true,
+      ambiguous: false,
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      errorCode: null,
+    }
   }
 
   if (knownDelivery) {
@@ -1128,15 +1572,37 @@ async function deliverViaChannel(input: {
     if (delivery.channel !== input.channel) {
       throw automationError('TASK_DELIVERY_CHANNEL_CONFLICT')
     }
+    if (delivery.status === 'sending' || delivery.status === 'ambiguous') {
+      if (delivery.status === 'sending') {
+        await updateDeliveryAmbiguous(
+          input.admin,
+          delivery.id,
+          'TASK_DELIVERY_RECONCILIATION_REQUIRED'
+        )
+      }
+      return {
+        delivered: false,
+        ambiguous: true,
+        deliveryId: delivery.id,
+        messageId: delivery.message_id,
+        errorCode: 'TASK_DELIVERY_RECONCILIATION_REQUIRED',
+      }
+    }
     if (delivery.status === 'cancelled' || delivery.attempt_count >= delivery.max_attempts) {
       return {
         delivered: false,
+        ambiguous: false,
         deliveryId: delivery.id,
         messageId: delivery.message_id,
         errorCode: 'TASK_DELIVERY_ATTEMPTS_EXHAUSTED',
       }
     }
   }
+
+  // Re-read the authoritative task immediately before issuing a bearer link or
+  // reserving a provider delivery. A deadline/status change invalidates the
+  // claimed job and must never leak into a stale automatic notification.
+  await assertAutomaticDeliveryFence(input.admin, input.task)
 
   let recipientActionUrl: string | null = null
   let recipientAccessLinkId: string | null = null
@@ -1191,26 +1657,35 @@ async function deliverViaChannel(input: {
     })
     return {
       delivered: true,
+      ambiguous: false,
       deliveryId: delivery.id,
       messageId: delivery.message_id,
       errorCode: null,
     }
   }
+  if (delivery.status === 'sending' || delivery.status === 'ambiguous') {
+    if (delivery.status === 'sending') {
+      await updateDeliveryAmbiguous(
+        input.admin,
+        delivery.id,
+        'TASK_DELIVERY_RECONCILIATION_REQUIRED'
+      )
+    }
+    return {
+      delivered: false,
+      ambiguous: true,
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      errorCode: 'TASK_DELIVERY_RECONCILIATION_REQUIRED',
+    }
+  }
   if (delivery.status === 'cancelled' || delivery.attempt_count >= delivery.max_attempts) {
     return {
       delivered: false,
+      ambiguous: false,
       deliveryId: delivery.id,
       messageId: delivery.message_id,
       errorCode: 'TASK_DELIVERY_ATTEMPTS_EXHAUSTED',
-    }
-  }
-  if (delivery.status === 'sending' && input.channel === 'whatsapp') {
-    await updateDeliveryFailure(input.admin, delivery.id, 'TASK_WHATSAPP_DELIVERY_AMBIGUOUS')
-    return {
-      delivered: false,
-      deliveryId: delivery.id,
-      messageId: delivery.message_id,
-      errorCode: 'TASK_WHATSAPP_DELIVERY_AMBIGUOUS',
     }
   }
 
@@ -1219,6 +1694,7 @@ async function deliverViaChannel(input: {
     await updateDeliveryFailure(input.admin, delivery.id, 'TASK_DELIVERY_ADDRESS_MISSING')
     return {
       delivered: false,
+      ambiguous: false,
       deliveryId: delivery.id,
       messageId: delivery.message_id,
       errorCode: 'TASK_DELIVERY_ADDRESS_MISSING',
@@ -1272,17 +1748,32 @@ async function deliverViaChannel(input: {
     await updateDeliveryFailure(input.admin, delivery.id, 'TASK_MESSAGE_UPDATE_FAILED')
     return {
       delivered: false,
+      ambiguous: false,
       deliveryId: delivery.id,
       messageId: delivery.message_id,
       errorCode: 'TASK_MESSAGE_UPDATE_FAILED',
     }
   }
 
-  let providerMessageId: string | null
   try {
-    // Each retry gets a fresh hash-only bearer link. Bind provider
-    // deduplication to that link so a provider cannot substitute an older
-    // message while the audit trail points at the newly issued credential.
+    await assertAutomaticDeliveryFence(input.admin, input.task)
+  } catch (error) {
+    if (safeErrorCode(error) === 'TASK_AUTOMATION_TASK_STALE') {
+      await cancelPreparedStaleDelivery({
+        admin: input.admin,
+        deliveryId: delivery.id,
+        accessLinkId: recipientAccessLinkId,
+      })
+    }
+    throw error
+  }
+
+  let providerMessageId: string
+  try {
+    // Each definitive retry rotates the hash-only bearer and is therefore a
+    // new provider attempt with a different payload. Bind the provider key to
+    // that link. A timeout/unknown outcome never reaches this code again:
+    // sending/ambiguous state blocks replay until audited reconciliation.
     const providerIdempotencyKey = recipientAccessDeliveryKey
       ? `${input.idempotencyKey}:${recipientAccessDeliveryKey}`
       : input.idempotencyKey
@@ -1304,21 +1795,32 @@ async function deliverViaChannel(input: {
             ? [
                 input.recipient.name.slice(0, 256),
                 input.task.title.slice(0, 1024),
-                dueDateLabel(input.task.due_at),
+                dueDateLabel(input.task.due_at, input.task.due_timezone),
                 content.actionUrl,
               ]
             : [
                 input.recipient.name.slice(0, 256),
                 input.task.title.slice(0, 1024),
-                dueDateLabel(input.task.due_at),
+                dueDateLabel(input.task.due_at, input.task.due_timezone),
               ],
           idempotencyKey: providerIdempotencyKey,
         })
   } catch (error) {
     const errorCode = safeErrorCode(error)
+    if (isAmbiguousTaskDeliveryError(error)) {
+      await updateDeliveryAmbiguous(input.admin, delivery.id, errorCode)
+      return {
+        delivered: false,
+        ambiguous: true,
+        deliveryId: delivery.id,
+        messageId: delivery.message_id,
+        errorCode,
+      }
+    }
     await updateDeliveryFailure(input.admin, delivery.id, errorCode)
     return {
       delivered: false,
+      ambiguous: false,
       deliveryId: delivery.id,
       messageId: delivery.message_id,
       errorCode,
@@ -1356,6 +1858,7 @@ async function deliverViaChannel(input: {
   })
   return {
     delivered: true,
+    ambiguous: false,
     deliveryId: delivery.id,
     messageId: delivery.message_id,
     errorCode: null,
@@ -1381,10 +1884,14 @@ async function deliverAction(input: {
     issuer: input.recipients.issuer,
     channel: selectedChannel,
     idempotencyKey: input.action.idempotencyKey,
-    isFallback: input.action.kind === 'delivery_fallback'
-      || selectedChannel === input.task.fallback_channel,
+    isFallback: input.action.target === 'assignee'
+      && (
+        input.action.kind === 'delivery_fallback'
+        || selectedChannel === input.task.fallback_channel
+      ),
   })
-  if (primaryResult.delivered) return
+  if (primaryResult.delivered) return 'delivered' as const
+  if (primaryResult.ambiguous) return 'ambiguous' as const
 
   const activationEmailFallbackRequired = input.action.target === 'assignee'
     && input.action.kind !== 'delivery_fallback'
@@ -1420,12 +1927,23 @@ async function deliverAction(input: {
     idempotencyKey: fallbackKey,
     isFallback: true,
   })
+  if (fallbackResult.ambiguous) return 'ambiguous' as const
   if (!fallbackResult.delivered) {
     throw automationError(fallbackResult.errorCode ?? 'TASK_DELIVERY_FALLBACK_FAILED')
   }
+  return 'delivered' as const
 }
 
-function nextEvaluationAt(task: OperationalTask, policy: TaskReminderPolicy, now: Date) {
+function nextEvaluationAt(
+  task: OperationalTask,
+  policy: TaskReminderPolicy,
+  now: Date,
+  deferredUntil?: string | null
+) {
+  const deferredTimestamp = deferredUntil ? Date.parse(deferredUntil) : Number.NaN
+  if (Number.isFinite(deferredTimestamp) && deferredTimestamp > now.getTime()) {
+    return new Date(Math.ceil(deferredTimestamp / 60_000) * 60_000)
+  }
   const configuredMinutes = normalizeInteger(
     process.env.TASK_AUTOMATION_RECHECK_MINUTES,
     DEFAULT_RECHECK_MINUTES,
@@ -1439,13 +1957,12 @@ function nextEvaluationAt(task: OperationalTask, policy: TaskReminderPolicy, now
     MIN_RECHECK_MINUTES,
     Math.min(configuredMinutes, cadenceMinutes)
   )
-  const earliest = now.getTime() + MIN_RECHECK_MINUTES * 60_000
   const candidates = [now.getTime() + baseDelayMinutes * 60_000]
   for (const dateValue of [task.next_followup_at, task.due_at]) {
     const timestamp = Date.parse(dateValue)
-    if (Number.isFinite(timestamp) && timestamp >= earliest) candidates.push(timestamp)
+    if (Number.isFinite(timestamp) && timestamp > now.getTime()) candidates.push(timestamp)
   }
-  const selected = Math.max(earliest, Math.min(...candidates))
+  const selected = Math.min(...candidates)
   return new Date(Math.ceil(selected / 60_000) * 60_000)
 }
 
@@ -1454,8 +1971,14 @@ async function enqueueNextEvaluation(input: {
   task: OperationalTask
   policy: TaskReminderPolicy
   now: Date
+  deferredUntil?: string | null
 }) {
-  const availableAt = nextEvaluationAt(input.task, input.policy, input.now)
+  const availableAt = nextEvaluationAt(
+    input.task,
+    input.policy,
+    input.now,
+    input.deferredUntil
+  )
   const idempotencyKey = `task-followup-periodic:${input.task.id}:v${input.task.version}:at:${availableAt.toISOString()}`
   const { error } = await input.admin
     .from('task_automation_jobs')
@@ -1490,28 +2013,101 @@ async function evaluateFollowupJob(admin: AdminClient, job: AutomationJob) {
     return 'completed' as const
   }
 
-  const [{ active, maxReminders, policy }, recipients, history, pendingDeadlineRequestId] = await Promise.all([
+  const [
+    { active, maxReminders, policy },
+    schedule,
+    recipients,
+    history,
+    pendingDeadlineRequestId,
+  ] = await Promise.all([
     loadFollowupPolicy(admin, task),
+    loadOrganizationSchedule(admin, task),
     loadRecipients(admin, task),
     loadTaskHistory(admin, task),
     loadPendingDeadlineRequestId(admin, task),
   ])
   if (!active) return 'completed' as const
+  const evaluationNow = new Date()
+  if (history.unresolvedDeliveryIds.length > 0) {
+    await markUnresolvedDeliveriesForReconciliation(
+      admin,
+      task
+    )
+    // Resolution is deliberately operator-driven. The service-only resolution
+    // RPC writes the audit event and requeues the current task version.
+    return 'completed' as const
+  }
+  const exhaustedFallbackDeliveryId = history.exhaustedFallbackDeliveryId
+  if (exhaustedFallbackDeliveryId) {
+    const escalationKey = buildTaskPolicyIdempotencyKey(
+      task.id,
+      'fallback_exhausted',
+      exhaustedFallbackDeliveryId
+    )
+    if (!history.emittedKeys.includes(escalationKey)) {
+      const allowedAt = await authoritativeNextAllowedReminderAt(
+        admin,
+        task.org_id,
+        evaluationNow
+      )
+      if (allowedAt.getTime() > evaluationNow.getTime()) {
+        await enqueueNextEvaluation({
+          admin,
+          task,
+          policy,
+          now: evaluationNow,
+          deferredUntil: allowedAt.toISOString(),
+        })
+        return 'completed' as const
+      }
+      const action: TaskReminderAction = {
+        kind: 'escalation',
+        reason: 'delivery_failed_without_fallback',
+        target: 'creator',
+        channel: null,
+        scheduledFor: evaluationNow.toISOString(),
+        idempotencyKey: escalationKey,
+      }
+      await deliverAction({ admin, job, task, action, recipients })
+      // Successful escalation deliberately pauses this exhausted path until a
+      // human changes the task. Ambiguous delivery is resumed only by the
+      // reconciliation RPC.
+      return 'completed' as const
+    }
+    return 'completed' as const
+  }
   if (recipients.assigneeUnavailable) {
+    const allowedAt = await authoritativeNextAllowedReminderAt(
+      admin,
+      task.org_id,
+      evaluationNow
+    )
+    if (allowedAt.getTime() > evaluationNow.getTime()) {
+      await enqueueNextEvaluation({
+        admin,
+        task,
+        policy,
+        now: evaluationNow,
+        deferredUntil: allowedAt.toISOString(),
+      })
+      return 'completed' as const
+    }
     const action: TaskReminderAction = {
       kind: 'escalation',
       reason: 'assignee_unavailable',
       target: 'creator',
       channel: null,
-      scheduledFor: new Date().toISOString(),
+      scheduledFor: evaluationNow.toISOString(),
       idempotencyKey: buildTaskPolicyIdempotencyKey(
         task.id,
         'assignee_unavailable',
         task.version
       ),
     }
-    await deliverAction({ admin, job, task, action, recipients })
-    await enqueueNextEvaluation({ admin, task, policy, now: new Date() })
+    const deliveryOutcome = await deliverAction({ admin, job, task, action, recipients })
+    if (deliveryOutcome !== 'ambiguous') {
+      await enqueueNextEvaluation({ admin, task, policy, now: evaluationNow })
+    }
     return 'completed' as const
   }
   const cappedUnansweredAttempts = history.totalAssigneeReminders >= maxReminders
@@ -1520,7 +2116,7 @@ async function evaluateFollowupJob(admin: AdminClient, job: AutomationJob) {
   const evaluation = evaluateTaskReminders({
     taskId: task.id,
     status: task.status,
-    now: new Date(),
+    now: evaluationNow,
     assignedAt: task.created_at,
     dueAt: task.due_at,
     nextFollowUpAt: task.next_followup_at,
@@ -1532,20 +2128,53 @@ async function evaluateFollowupJob(admin: AdminClient, job: AutomationJob) {
     unansweredAttempts: cappedUnansweredAttempts,
     overdueReminderCount: history.overdueReminderCount,
     primaryChannel: task.primary_channel,
-    fallbackChannel: task.fallback_channel,
+    fallbackChannel: exhaustedFallbackDeliveryId ? null : task.fallback_channel,
     primaryDeliveryState: history.primaryDeliveryState,
     primaryDeliveryAttemptId: history.primaryDeliveryAttemptId,
     emittedIdempotencyKeys: history.emittedKeys,
     policy,
+    calendar: schedule.calendar,
+    sendWindow: schedule.sendWindow,
   })
   if (evaluation.policyIssues.length > 0) {
     throw automationError('TASK_AUTOMATION_POLICY_INVALID')
   }
+  let runtimeDeferredUntil = evaluation.externalFollowUpDeferredUntil
+  let deliveryBecameAmbiguous = false
   for (const action of evaluation.actions) {
-    await deliverAction({ admin, job, task, action, recipients })
+    if (action.kind !== 'assignment') {
+      const deliveryCandidate = new Date()
+      const allowedAt = await authoritativeNextAllowedReminderAt(
+        admin,
+        task.org_id,
+        deliveryCandidate
+      )
+      if (allowedAt.getTime() > deliveryCandidate.getTime()) {
+        runtimeDeferredUntil = allowedAt.toISOString()
+        break
+      }
+    }
+    const deliveryOutcome = await deliverAction({ admin, job, task, action, recipients })
+    if (deliveryOutcome === 'ambiguous') {
+      deliveryBecameAmbiguous = true
+      break
+    }
   }
-  if (!evaluation.externalFollowUpPaused || task.status === 'ready_for_review') {
-    await enqueueNextEvaluation({ admin, task, policy, now: new Date() })
+  if (
+    !deliveryBecameAmbiguous
+    && (
+      runtimeDeferredUntil
+      || !evaluation.externalFollowUpPaused
+      || task.status === 'ready_for_review'
+    )
+  ) {
+    await enqueueNextEvaluation({
+      admin,
+      task,
+      policy,
+      now: evaluationNow,
+      deferredUntil: runtimeDeferredUntil,
+    })
   }
   return 'completed' as const
 }
@@ -1581,6 +2210,10 @@ async function processJob(admin: AdminClient, job: AutomationJob, workerId: stri
     return outcome
   } catch (error) {
     const code = safeErrorCode(error)
+    if (code === 'TASK_AUTOMATION_TASK_STALE') {
+      await finishJob({ admin, job, workerId, succeeded: true })
+      return 'stale' as const
+    }
     console.error('[tasks.automation] job failed', {
       jobId: job.id,
       taskId: job.task_id,
@@ -1625,7 +2258,7 @@ export async function runTaskFollowupBatch(input?: {
     process.env.TASK_AUTOMATION_CONCURRENCY,
     4,
     1,
-    8
+    MAX_BATCH_LIMIT
   )
   for (let index = 0; index < jobs.length; index += concurrency) {
     const batch = jobs.slice(index, index + concurrency)

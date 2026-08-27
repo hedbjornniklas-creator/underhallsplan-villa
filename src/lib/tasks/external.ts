@@ -3,10 +3,12 @@ import 'server-only'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { hashAssignmentToken } from '@/lib/assignments/tokens'
 import {
+  isAmbiguousTaskDeliveryError,
   sendTaskAccessLinkEmail,
   sendTaskWhatsAppAccessLink,
 } from './automation'
 import { buildTaskEmailHtml } from './emailTemplates'
+import { formatTaskDateTime, normalizeTaskTimeZone } from './dateTime'
 import { isTaskStatus } from './domain'
 import type {
   TaskChannel,
@@ -33,6 +35,7 @@ import {
 
 export type ExternalTaskWorkspace = {
   accessState: 'open' | 'expired' | 'revoked'
+  timeZone: string
   recipientName: string
   canDelegate: boolean
   task: {
@@ -42,6 +45,7 @@ export type ExternalTaskWorkspace = {
     contextLabel: string | null
     status: TaskStatus
     dueAt: string
+    dueTimeZone: string
     nextFollowupAt: string
     createdAt: string
     evidenceRequirement: TaskEvidenceRequirement
@@ -90,6 +94,7 @@ export type ExternalTaskWorkspace = {
     title: string
     status: TaskStatus
     dueAt: string
+    dueTimeZone: string
     assigneeName: string
   }>
 }
@@ -119,6 +124,7 @@ type ExternalTaskRow = {
   context_label: string | null
   status: TaskStatus
   due_at: string
+  due_timezone: string
   next_followup_at: string
   created_at: string
   evidence_requirement: TaskEvidenceRequirement
@@ -224,7 +230,7 @@ async function requireExternalTask(access: AccessRow) {
   const { data, error } = await admin
     .from('operational_tasks')
     .select(
-      'id,org_id,parent_task_id,root_task_id,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,status,due_at,next_followup_at,evidence_requirement,submitted_for_review_at,version,created_at'
+      'id,org_id,parent_task_id,root_task_id,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,status,due_at,due_timezone,next_followup_at,evidence_requirement,submitted_for_review_at,version,created_at'
     )
     .eq('id', access.task_id)
     .eq('org_id', access.org_id)
@@ -281,6 +287,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
     const hiddenDate = new Date(0).toISOString()
     return {
       accessState: state,
+      timeZone: normalizeTaskTimeZone(),
       recipientName: '',
       canDelegate: false,
       task: {
@@ -290,6 +297,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
         contextLabel: null,
         status: 'cancelled',
         dueAt: hiddenDate,
+        dueTimeZone: normalizeTaskTimeZone(),
         nextFollowupAt: hiddenDate,
         createdAt: hiddenDate,
         evidenceRequirement: 'optional',
@@ -311,7 +319,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
   const task = await requireExternalTask(access)
   const admin = createSupabaseAdminClient()
 
-  const [contactResult, issuerResult, requirementsResult, completionEvidenceResult, eventsResult, deadlinesResult, attachmentsResult, childrenResult] =
+  const [contactResult, issuerResult, requirementsResult, completionEvidenceResult, eventsResult, deadlinesResult, attachmentsResult, childrenResult, settingsResult] =
     await Promise.all([
       admin
         .from('organization_contacts')
@@ -353,11 +361,16 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
       access.scope === 'branch'
         ? admin
             .from('operational_tasks')
-            .select('id,title,status,due_at,assignee_profile_id,assignee_contact_id')
+            .select('id,title,status,due_at,due_timezone,assignee_profile_id,assignee_contact_id')
             .eq('parent_task_id', task.id)
             .is('archived_at', null)
             .order('due_at', { ascending: true })
         : Promise.resolve({ data: [], error: null }),
+      admin
+        .from('task_organization_settings')
+        .select('timezone')
+        .eq('org_id', access.org_id)
+        .maybeSingle(),
     ])
 
   const firstError = [
@@ -369,6 +382,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
     deadlinesResult.error,
     attachmentsResult.error,
     childrenResult.error,
+    settingsResult.error,
   ].find(Boolean)
   if (firstError) throw new Error('TASK_EXTERNAL_WORKSPACE_FAILED')
   if (!contactResult.data) throw new Error('TASK_CONTACT_NOT_FOUND')
@@ -441,6 +455,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
 
   return {
     accessState: state,
+    timeZone: normalizeTaskTimeZone(settingsResult.data?.timezone),
     recipientName,
     canDelegate: access.role === 'delegator' && access.scope === 'branch',
     task: {
@@ -450,6 +465,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
       contextLabel: task.context_label,
       status: task.status,
       dueAt: task.due_at,
+      dueTimeZone: task.due_timezone,
       nextFollowupAt: task.next_followup_at,
       createdAt: task.created_at,
       evidenceRequirement: task.evidence_requirement,
@@ -496,6 +512,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
       title: String(child.title),
       status: child.status as TaskStatus,
       dueAt: String(child.due_at),
+      dueTimeZone: normalizeTaskTimeZone(child.due_timezone),
       assigneeName: child.assignee_profile_id
         ? childProfiles.get(String(child.assignee_profile_id)) ?? 'Intern mottagare'
         : childContacts.get(String(child.assignee_contact_id)) ?? 'Extern mottagare',
@@ -804,7 +821,7 @@ export async function issueTaskAccessLink(input: {
   const admin = createSupabaseAdminClient()
   const { data: task, error: taskError } = await admin
     .from('operational_tasks')
-    .select('id,title,description,due_at,primary_channel,fallback_channel,assignee_contact_id,issuer_profile_id')
+    .select('id,title,description,due_at,due_timezone,primary_channel,fallback_channel,assignee_contact_id,issuer_profile_id')
     .eq('id', input.taskId)
     .eq('org_id', input.orgId)
     .is('archived_at', null)
@@ -887,7 +904,7 @@ export async function issueTaskAccessLink(input: {
     .maybeSingle()
   const issuerName = issuer?.full_name?.trim() || 'Uppdragsansvarig'
   const subject = `Nytt uppdrag: ${task.title}`
-  const dueLabel = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' }).format(new Date(task.due_at))
+  const dueLabel = formatTaskDateTime(task.due_at, task.due_timezone, 'long')
   const bodyText = [
     `${contact.name},`,
     '',
@@ -1062,14 +1079,21 @@ export async function issueTaskAccessLink(input: {
       return null
     } catch (error) {
       const providerErrorCode = taskDeliveryErrorCode(error, 'email')
+      const deliveryAmbiguous = isAmbiguousTaskDeliveryError(error)
       await admin
         .from('task_message_deliveries')
         .update({
-          status: 'failed',
-          failed_at: new Date().toISOString(),
-          error_message: providerErrorCode,
+          status: deliveryAmbiguous ? 'ambiguous' : 'failed',
+          failed_at: deliveryAmbiguous ? null : new Date().toISOString(),
+          next_attempt_at: null,
+          error_message: deliveryAmbiguous
+            ? 'TASK_DELIVERY_RECONCILIATION_REQUIRED'
+            : providerErrorCode,
         })
         .eq('id', activationDelivery.id)
+      if (deliveryAmbiguous) {
+        return 'Uppdraget skickades via WhatsApp, men leveransstatusen för aktiveringsmejlet kunde inte bekräftas. Kontrollera leveransen manuellt innan ett nytt mejl skickas.'
+      }
       return 'Uppdraget skickades via WhatsApp, men aktiveringsmejlet för Mina uppdrag kunde inte skickas.'
     }
   }
@@ -1124,6 +1148,7 @@ export async function issueTaskAccessLink(input: {
             recipientName: contact.name,
             taskTitle: task.title,
             dueAt: task.due_at,
+            dueTimeZone: task.due_timezone,
             accessUrl,
             idempotencyKey,
           })
@@ -1170,14 +1195,24 @@ export async function issueTaskAccessLink(input: {
       return { accessUrl: undefined, warning: activationWarning }
     } catch (error) {
       const providerErrorCode = taskDeliveryErrorCode(error, channel)
+      const deliveryAmbiguous = isAmbiguousTaskDeliveryError(error)
       await admin
         .from('task_message_deliveries')
         .update({
-          status: 'failed',
-          failed_at: new Date().toISOString(),
-          error_message: providerErrorCode,
+          status: deliveryAmbiguous ? 'ambiguous' : 'failed',
+          failed_at: deliveryAmbiguous ? null : new Date().toISOString(),
+          next_attempt_at: null,
+          error_message: deliveryAmbiguous
+            ? 'TASK_DELIVERY_RECONCILIATION_REQUIRED'
+            : providerErrorCode,
         })
         .eq('id', delivery.id)
+      if (deliveryAmbiguous) {
+        return {
+          accessUrl: undefined,
+          warning: 'Leveransstatusen kunde inte bekräftas. Inget reservutskick gjordes, eftersom det kan skapa ett dubbelmeddelande. Kontrollera leveransen manuellt.',
+        }
+      }
     }
   }
 

@@ -12,6 +12,7 @@ import type {
   TaskStatus,
 } from './contracts'
 import { evidenceTypesFromLegacyRequirement } from './contracts'
+import { normalizeTaskTimeZone } from './dateTime'
 import type { ExternalTaskWorkspace } from './external'
 import {
   loadTaskConversationSnapshots,
@@ -35,6 +36,7 @@ export type RecipientPortalTaskSummary = {
   status: TaskStatus
   risk: TaskRisk
   dueAt: string
+  dueTimeZone: string
   nextFollowupAt: string
   issuerName: string
   unreadMessageCount: number
@@ -82,6 +84,7 @@ type PortalTaskRow = {
   context_label: string | null
   status: TaskStatus
   due_at: string
+  due_timezone: string
   next_followup_at: string
   created_at: string
   evidence_requirement: TaskEvidenceRequirement
@@ -122,6 +125,7 @@ const TASK_SELECT = [
   'context_label',
   'status',
   'due_at',
+  'due_timezone',
   'next_followup_at',
   'created_at',
   'evidence_requirement',
@@ -208,6 +212,7 @@ function parseTask(value: unknown): PortalTaskRow | null {
     typeof row.issuer_profile_id !== 'string' ||
     typeof row.title !== 'string' ||
     typeof row.due_at !== 'string' ||
+    typeof row.due_timezone !== 'string' ||
     typeof row.next_followup_at !== 'string' ||
     typeof row.created_at !== 'string' ||
     !isTaskStatus(row.status) ||
@@ -228,6 +233,7 @@ function parseTask(value: unknown): PortalTaskRow | null {
     context_label: typeof row.context_label === 'string' ? row.context_label : null,
     status: row.status,
     due_at: row.due_at,
+    due_timezone: row.due_timezone,
     next_followup_at: row.next_followup_at,
     created_at: row.created_at,
     evidence_requirement: row.evidence_requirement,
@@ -418,8 +424,14 @@ export async function getRecipientPortalOverview(
       dueAt: task.due_at,
       nextFollowUpAt: task.next_followup_at,
       reviewDueAt: task.next_followup_at,
+      calendar: {
+        workingWeekdays: [1, 2, 3, 4, 5],
+        excludedDateKeys: [],
+        timeZone: task.due_timezone,
+      },
     }).level,
     dueAt: task.due_at,
+    dueTimeZone: task.due_timezone,
     nextFollowupAt: task.next_followup_at,
     issuerName: issuerNames.get(task.issuer_profile_id) ?? 'Uppdragsansvarig',
     unreadMessageCount: conversationByTask.get(task.id)?.unreadMessageCount ?? 0,
@@ -455,7 +467,7 @@ export async function getRecipientPortalTaskWorkspace(
   const task = await loadPortalTask(scope)
   const admin = createSupabaseAdminClient()
 
-  const [contactResult, issuerResult, requirementsResult, completionEvidenceResult, eventsResult, deadlinesResult, attachmentsResult] =
+  const [contactResult, issuerResult, requirementsResult, completionEvidenceResult, eventsResult, deadlinesResult, attachmentsResult, settingsResult] =
     await Promise.all([
       admin
         .from('organization_contacts')
@@ -503,6 +515,11 @@ export async function getRecipientPortalTaskWorkspace(
           `uploaded_by_contact_id.eq.${scope.contact_id},and(is_completion_evidence.eq.false,uploaded_by_profile_id.eq.${task.issuer_profile_id})`
         )
         .order('created_at', { ascending: false }),
+      admin
+        .from('task_organization_settings')
+        .select('timezone')
+        .eq('org_id', task.org_id)
+        .maybeSingle(),
     ])
 
   const firstError = [
@@ -513,6 +530,7 @@ export async function getRecipientPortalTaskWorkspace(
     eventsResult.error,
     deadlinesResult.error,
     attachmentsResult.error,
+    settingsResult.error,
   ].find(Boolean)
   if (firstError) throw new Error('TASK_RECIPIENT_PORTAL_READ_FAILED')
   if (!contactResult.data) return null
@@ -563,6 +581,7 @@ export async function getRecipientPortalTaskWorkspace(
 
   return {
     accessState: 'open',
+    timeZone: normalizeTaskTimeZone(settingsResult.data?.timezone),
     recipientName,
     canDelegate: false,
     task: {
@@ -572,6 +591,7 @@ export async function getRecipientPortalTaskWorkspace(
       contextLabel: task.context_label,
       status: task.status,
       dueAt: task.due_at,
+      dueTimeZone: task.due_timezone,
       nextFollowupAt: task.next_followup_at,
       createdAt: task.created_at,
       evidenceRequirement: task.evidence_requirement,

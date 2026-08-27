@@ -10,6 +10,15 @@ import type {
   TaskPerson,
   TaskView,
 } from '@/lib/tasks/contracts'
+import {
+  addTaskDateInputDays,
+  formatTaskDateTime,
+  normalizeTaskTimeZone,
+  taskDateTimeInputToIso,
+  taskIsoToDateTimeInput,
+  taskTimeZoneLabel,
+  taskTodayDateInput,
+} from '@/lib/tasks/dateTime'
 import TaskAttachmentDropZone from './TaskAttachmentDropZone'
 
 type CreatePayload = {
@@ -41,26 +50,10 @@ type Props = {
   suggestion: TaskAiSuggestionView | null
   people: TaskPerson[]
   currentUserId: string
+  timeZone?: string | null
   busy: boolean
   onClose: () => void
   onCreate: (payload: CreatePayload) => Promise<void>
-}
-
-function toDateInput(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function fromDateInput(value: string) {
-  return new Date(`${value}T12:00:00`).toISOString()
-}
-
-function addDays(days: number) {
-  const date = new Date()
-  date.setDate(date.getDate() + days)
-  return toDateInput(date)
 }
 
 const inputClass =
@@ -104,17 +97,28 @@ export default function TaskComposerSheet({
   suggestion,
   people,
   currentUserId,
+  timeZone,
   busy,
   onClose,
   onCreate,
 }: Props) {
+  const effectiveTimeZone = normalizeTaskTimeZone(timeZone)
+  const todayInput = taskTodayDateInput(effectiveTimeZone)
+  const parentDueInCreationZone = parentTask
+    ? taskIsoToDateTimeInput(parentTask.dueAt, effectiveTimeZone)
+    : null
   const defaultAssignee = useMemo(() => {
     const current = people.find((person) => person.kind === 'profile' && person.id === currentUserId)
     const firstInternal = people.find((person) => person.kind === 'profile' && person.isActive)
     return current ?? firstInternal ?? people.find((person) => person.isActive) ?? null
   }, [currentUserId, people])
-  const initialDueDate = parentTask ? toDateInput(new Date(parentTask.dueAt)) : addDays(7)
-  const initialFollowupDate = addDays(2) > initialDueDate ? initialDueDate : addDays(2)
+  const initialDueDate = parentDueInCreationZone?.date || addTaskDateInputDays(todayInput, 7)
+  const initialDueTime = parentDueInCreationZone?.time || '16:00'
+  const suggestedFollowupDate = addTaskDateInputDays(todayInput, 2)
+  const initialFollowupDate = suggestedFollowupDate > initialDueDate ? initialDueDate : suggestedFollowupDate
+  const initialFollowupTime = initialFollowupDate === initialDueDate && '09:00' > initialDueTime
+    ? initialDueTime
+    : '09:00'
   const [title, setTitle] = useState(suggestion?.title ?? '')
   const [description, setDescription] = useState(suggestion?.description ?? '')
   const [contextLabel, setContextLabel] = useState(parentTask?.contextLabel ?? '')
@@ -127,12 +131,15 @@ export default function TaskComposerSheet({
   const [contactEmail, setContactEmail] = useState('')
   const [contactPhone, setContactPhone] = useState('')
   const [dueDate, setDueDate] = useState(initialDueDate)
+  const [dueTime, setDueTime] = useState(initialDueTime)
   const [followupDate, setFollowupDate] = useState(initialFollowupDate)
+  const [followupTime, setFollowupTime] = useState(initialFollowupTime)
   const [primaryChannel, setPrimaryChannel] = useState<TaskChannel>('email')
   const [fallbackChannel, setFallbackChannel] = useState<TaskChannel | ''>('whatsapp')
   const [evidenceRequirements, setEvidenceRequirements] = useState<TaskCompletionEvidenceType[]>([])
   const [attachments, setAttachments] = useState<File[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const [dateTimeError, setDateTimeError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -145,7 +152,9 @@ export default function TaskComposerSheet({
 
   if (!open) return null
 
-  const maxDueDate = parentTask ? toDateInput(new Date(parentTask.dueAt)) : undefined
+  const maxDueDate = parentDueInCreationZone?.date
+  const maxDueTime = maxDueDate && dueDate === maxDueDate ? parentDueInCreationZone?.time : undefined
+  const maxFollowupTime = followupDate === dueDate ? dueTime : undefined
   const isNewContact = assigneeRef === 'new_contact'
   const selectedExternal = assigneeRef.startsWith('contact:')
     ? people.find((person) => person.kind === 'contact' && `contact:${person.id}` === assigneeRef) ?? null
@@ -205,7 +214,33 @@ export default function TaskComposerSheet({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!title.trim() || !assigneeRef || !dueDate || !followupDate) return
+    const submittedAt = event.timeStamp > 1_000_000_000_000
+      ? event.timeStamp
+      : window.performance.timeOrigin + event.timeStamp
+    if (!title.trim() || !assigneeRef || !dueDate || !dueTime || !followupDate || !followupTime) return
+    const dueAt = taskDateTimeInputToIso(dueDate, dueTime, effectiveTimeZone)
+    const nextFollowupAt = taskDateTimeInputToIso(followupDate, followupTime, effectiveTimeZone)
+    if (!dueAt || !nextFollowupAt) {
+      setDateTimeError('Kontrollera datum och klockslag. Den valda tiden måste finnas i angiven tidszon.')
+      return
+    }
+    if (Date.parse(dueAt) <= submittedAt) {
+      setDateTimeError('Sluttiden måste ligga framåt i tiden.')
+      return
+    }
+    if (Date.parse(nextFollowupAt) < submittedAt) {
+      setDateTimeError('Nästa uppföljning måste ligga framåt i tiden.')
+      return
+    }
+    if (Date.parse(nextFollowupAt) > Date.parse(dueAt)) {
+      setDateTimeError('Nästa uppföljning måste ske senast när uppdraget ska vara klart.')
+      return
+    }
+    if (parentTask && Date.parse(dueAt) > Date.parse(parentTask.dueAt)) {
+      setDateTimeError('Underuppgiften måste vara klar senast vid huvuduppgiftens sluttid.')
+      return
+    }
+    setDateTimeError(null)
     await onCreate({
       parentTaskId: parentTask?.id ?? null,
       parentVersion: parentTask?.version ?? null,
@@ -223,8 +258,8 @@ export default function TaskComposerSheet({
             phone: contactPhone.trim(),
           }
         : null,
-      dueAt: fromDateInput(dueDate),
-      nextFollowupAt: fromDateInput(followupDate),
+      dueAt,
+      nextFollowupAt,
       primaryChannel,
       fallbackChannel,
       evidenceRequirements,
@@ -383,38 +418,109 @@ export default function TaskComposerSheet({
             </fieldset>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block">
-                <span className="mb-1.5 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                  <CalendarClock size={16} /> Slutdatum
-                </span>
-                <input
-                  required
-                  type="date"
-                  min={toDateInput(new Date())}
-                  max={maxDueDate}
-                  value={dueDate}
-                  onChange={(event) => {
-                    setDueDate(event.target.value)
-                    if (followupDate > event.target.value) setFollowupDate(event.target.value)
-                  }}
-                  className={inputClass}
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1.5 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                  <CalendarClock size={16} /> Nästa uppföljning
-                </span>
-                <input
-                  required
-                  type="date"
-                  min={toDateInput(new Date())}
-                  max={dueDate || maxDueDate}
-                  value={followupDate}
-                  onChange={(event) => setFollowupDate(event.target.value)}
-                  className={inputClass}
-                />
-              </label>
+              <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
+                <legend className="flex items-center gap-2 px-1 text-sm font-semibold text-slate-800">
+                  <CalendarClock size={16} /> Ska vara klart
+                </legend>
+                <div className="mt-1 grid gap-3 min-[420px]:grid-cols-[minmax(0,1fr)_9rem] sm:grid-cols-1 lg:grid-cols-[minmax(0,1fr)_9rem]">
+                  <label className="block min-w-0">
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">Datum</span>
+                    <input
+                      required
+                      type="date"
+                      min={todayInput}
+                      max={maxDueDate}
+                      value={dueDate}
+                      onChange={(event) => {
+                        const nextDate = event.target.value
+                        const nextTime = parentDueInCreationZone && nextDate === parentDueInCreationZone.date && dueTime > parentDueInCreationZone.time
+                          ? parentDueInCreationZone.time
+                          : dueTime
+                        setDueDate(nextDate)
+                        setDueTime(nextTime)
+                        setDateTimeError(null)
+                        if (
+                          followupDate > nextDate
+                          || (followupDate === nextDate && followupTime > nextTime)
+                        ) {
+                          setFollowupDate(nextDate)
+                          setFollowupTime(nextTime)
+                        }
+                      }}
+                      className={inputClass}
+                    />
+                  </label>
+                  <label className="block min-w-0">
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">Klockslag</span>
+                    <input
+                      required
+                      type="time"
+                      step={60}
+                      max={maxDueTime}
+                      value={dueTime}
+                      onChange={(event) => {
+                        const nextTime = event.target.value
+                        setDueTime(nextTime)
+                        setDateTimeError(null)
+                        if (followupDate === dueDate && followupTime > nextTime) setFollowupTime(nextTime)
+                      }}
+                      className={inputClass}
+                    />
+                  </label>
+                </div>
+              </fieldset>
+
+              <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
+                <legend className="flex items-center gap-2 px-1 text-sm font-semibold text-slate-800">
+                  <CalendarClock size={16} /> Signe följer upp
+                </legend>
+                <div className="mt-1 grid gap-3 min-[420px]:grid-cols-[minmax(0,1fr)_9rem] sm:grid-cols-1 lg:grid-cols-[minmax(0,1fr)_9rem]">
+                  <label className="block min-w-0">
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">Datum</span>
+                    <input
+                      required
+                      type="date"
+                      min={todayInput}
+                      max={dueDate || maxDueDate}
+                      value={followupDate}
+                      onChange={(event) => {
+                        setFollowupDate(event.target.value)
+                        setDateTimeError(null)
+                      }}
+                      className={inputClass}
+                    />
+                  </label>
+                  <label className="block min-w-0">
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">Klockslag</span>
+                    <input
+                      required
+                      type="time"
+                      step={60}
+                      max={maxFollowupTime}
+                      value={followupTime}
+                      onChange={(event) => {
+                        setFollowupTime(event.target.value)
+                        setDateTimeError(null)
+                      }}
+                      className={inputClass}
+                    />
+                  </label>
+                </div>
+              </fieldset>
             </div>
+            <div className="text-xs leading-5 text-slate-500">
+              <p>Alla nya tider anges i {taskTimeZoneLabel(effectiveTimeZone)}. Mottagaren ser sluttiden; Signes uppföljning är intern.</p>
+              {parentTask ? (
+                <p>
+                  Huvuduppgiftens sluttid är {formatTaskDateTime(parentTask.dueAt, parentTask.dueTimeZone)} ({taskTimeZoneLabel(parentTask.dueTimeZone)}). Underuppgiften kan inte gå förbi samma tidpunkt.
+                </p>
+              ) : null}
+            </div>
+            {dateTimeError ? (
+              <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800">
+                {dateTimeError}
+              </p>
+            ) : null}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block">
