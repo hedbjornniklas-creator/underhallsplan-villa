@@ -9,7 +9,6 @@ import {
   FileText,
   Image as ImageIcon,
   Loader2,
-  Mail,
   Paperclip,
   Plus,
   Repeat2,
@@ -37,19 +36,134 @@ import {
   taskTodayDateInput,
 } from '@/lib/tasks/dateTime'
 import {
+  TASK_EMAIL_PDF_ANALYSIS_MODES,
+  TASK_EMAIL_PDF_DOCUMENT_TYPE_HINTS,
   TASK_EMAIL_PDF_MAX_BYTES,
   TASK_EMAIL_PDF_MAX_MEGABYTES,
   TASK_EMAIL_PDF_MAX_SUBTASKS,
   type TaskEmailPdfAnalysis,
+  type TaskEmailPdfAnalysisMode,
+  type TaskEmailPdfDocumentType,
+  type TaskEmailPdfDocumentTypeHint,
+  type TaskEmailPdfSourceItem,
+  type TaskEmailPdfTaskBasis,
 } from '@/lib/tasks/emailPdfAnalysisContracts'
 import TaskAttachmentDropZone from './TaskAttachmentDropZone'
 
-type EmailPdfSubtaskDraft = TaskEmailPdfAnalysis['subtasks'][number] & {
+type EmailPdfSubtaskDraft = Omit<TaskEmailPdfAnalysis['subtasks'][number], 'basis'> & {
   id: string
   included: boolean
+  basis: TaskEmailPdfTaskBasis | 'manual'
 }
 
 type CreationMode = 'manual' | 'email_pdf'
+
+const DEFAULT_DOCUMENT_INSTRUCTION =
+  'Skapa en enkel och källtrogen lista över de uppgifter som dokumentet uttryckligen begär eller tilldelar. Behåll samtliga uttryckliga underpunkter, ansvariga, datum och platser. Lägg inte till egna analyser, lösningar eller arbetsmoment.'
+
+const DOCUMENT_TYPE_LABELS: Record<TaskEmailPdfDocumentType, string> = {
+  email: 'E-post eller meddelande',
+  meeting_minutes: 'Mötesprotokoll',
+  inspection_report: 'Besiktningsprotokoll',
+  other: 'Annat dokument',
+}
+
+const DOCUMENT_TYPE_HINT_LABELS: Record<TaskEmailPdfDocumentTypeHint, string> = {
+  auto: 'Identifiera automatiskt',
+  ...DOCUMENT_TYPE_LABELS,
+}
+
+const ANALYSIS_MODE_LABELS: Record<TaskEmailPdfAnalysisMode, string> = {
+  explicit: 'Endast uttryckliga uppgifter',
+  recommended: 'Även rekommenderade åtgärder',
+  exploratory: 'Föreslå möjliga nästa steg',
+}
+
+const ANALYSIS_MODE_HELP: Record<TaskEmailPdfAnalysisMode, string> = {
+  explicit: 'Standard. Gizmo tar bara med sådant som dokumentet uttryckligen säger ska göras.',
+  recommended: 'Tar även med åtgärder som uttryckligen rekommenderas i dokumentet.',
+  exploratory: 'Gizmo får dessutom föreslå nästa steg. AI-förslag väljs inte automatiskt.',
+}
+
+const TASK_BASIS_LABELS: Record<TaskEmailPdfTaskBasis | 'manual', string> = {
+  explicit: 'Uttrycklig uppgift',
+  recommendation: 'Rekommenderat i dokumentet',
+  ai_suggestion: 'Gizmos förslag',
+  manual: 'Tillagd manuellt',
+}
+
+const DOCUMENT_TYPE_CONFIDENCE_LABELS: Record<
+  TaskEmailPdfAnalysis['documentTypeConfidence'],
+  string
+> = {
+  high: 'hög säkerhet',
+  medium: 'medelhög säkerhet',
+  low: 'låg säkerhet',
+}
+
+function analysisRequestKey(
+  instruction: string,
+  documentType: TaskEmailPdfDocumentTypeHint,
+  analysisMode: TaskEmailPdfAnalysisMode
+) {
+  return JSON.stringify([instruction.trim(), documentType, analysisMode])
+}
+
+function taskDescriptionWithChecklist(
+  description: string,
+  checklist: string[],
+  responsibleParty: string,
+  dueText: string
+) {
+  const details = checklist.map((item) => item.trim()).filter(Boolean)
+  const sourceAssignment = [
+    responsibleParty.trim() ? `Angiven ansvarig i källan: ${responsibleParty.trim()}` : '',
+    dueText.trim() ? `Angiven tid i källan: ${dueText.trim()}` : '',
+  ].filter(Boolean)
+  return [
+    description.trim(),
+    details.length > 0 ? details.map((item) => `- ${item}`).join('\n') : '',
+    sourceAssignment.join('\n'),
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function sourceLabel(pages: number[]) {
+  if (pages.length === 0) return 'Källa i dokumentet, sida inte angiven'
+  return `Källa: ${pages.length === 1 ? 'sida' : 'sidor'} ${pages.join(', ')}`
+}
+
+function SourceItemSection({
+  title,
+  description,
+  items,
+}: {
+  title: string
+  description: string
+  items: TaskEmailPdfSourceItem[]
+}) {
+  if (items.length === 0) return null
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-3.5">
+      <h4 className="text-sm font-semibold text-slate-900">{title} ({items.length})</h4>
+      <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
+      <ul className="mt-3 space-y-3">
+        {items.map((item, index) => (
+          <li key={`${title}:${index}:${item.text}`} className="rounded-lg bg-slate-50 px-3 py-2.5">
+            <p className="text-sm leading-5 text-slate-800">{item.text}</p>
+            {item.sourceExcerpt ? (
+              <blockquote className="mt-2 border-l-2 border-slate-300 pl-2 text-xs italic leading-5 text-slate-600">
+                “{item.sourceExcerpt}”
+              </blockquote>
+            ) : null}
+            <p className="mt-1 text-[11px] text-slate-500">{sourceLabel(item.sourcePages)}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
 
 type MainTaskDraftSnapshot = {
   title: string
@@ -212,12 +326,16 @@ export default function TaskComposerSheet({
   const [dateTimeError, setDateTimeError] = useState<string | null>(null)
   const [creationMode, setCreationMode] = useState<CreationMode>('manual')
   const [emailPdf, setEmailPdf] = useState<File | null>(null)
-  const [emailPdfInstruction, setEmailPdfInstruction] = useState('')
+  const [emailPdfInstruction, setEmailPdfInstruction] = useState(DEFAULT_DOCUMENT_INSTRUCTION)
+  const [emailPdfDocumentType, setEmailPdfDocumentType] = useState<TaskEmailPdfDocumentTypeHint>('auto')
+  const [emailPdfAnalysisMode, setEmailPdfAnalysisMode] = useState<TaskEmailPdfAnalysisMode>('explicit')
+  const [attachSourceDocument, setAttachSourceDocument] = useState(false)
+  const [confirmedSharedAssignment, setConfirmedSharedAssignment] = useState(false)
   const [emailPdfAnalysis, setEmailPdfAnalysis] = useState<TaskEmailPdfAnalysis | null>(null)
   const [emailPdfSubtasks, setEmailPdfSubtasks] = useState<EmailPdfSubtaskDraft[]>([])
   const [emailPdfError, setEmailPdfError] = useState<string | null>(null)
   const [analyzingEmailPdf, setAnalyzingEmailPdf] = useState(false)
-  const [lastAnalyzedInstruction, setLastAnalyzedInstruction] = useState<string | null>(null)
+  const [lastAnalyzedRequestKey, setLastAnalyzedRequestKey] = useState<string | null>(null)
   const [mainTaskDraftSnapshot, setMainTaskDraftSnapshot] = useState<MainTaskDraftSnapshot | null>(null)
   const emailPdfAnalysisController = useRef<AbortController | null>(null)
 
@@ -225,7 +343,13 @@ export default function TaskComposerSheet({
     !parentTask
     && !suggestion
     && creationMode === 'email_pdf'
-    && (emailPdf || emailPdfInstruction.trim() || emailPdfAnalysis)
+    && (
+      emailPdf
+      || emailPdfInstruction.trim() !== DEFAULT_DOCUMENT_INSTRUCTION
+      || emailPdfDocumentType !== 'auto'
+      || emailPdfAnalysisMode !== 'explicit'
+      || emailPdfAnalysis
+    )
   )
   const hasUnsavedTaskDraft = Boolean(
     title !== initialDraft.title
@@ -292,17 +416,42 @@ export default function TaskComposerSheet({
     (subtask) => subtask.included && subtask.title.trim()
   )
   const initialAttachmentCount = attachments.length
-    + (creationMode === 'email_pdf' && emailPdf ? 1 : 0)
+    + (creationMode === 'email_pdf' && emailPdf && attachSourceDocument ? 1 : 0)
   const interactionBusy = busy || analyzingEmailPdf
-  const emailPdfInstructionIsCurrent =
+  const currentAnalysisRequestKey = analysisRequestKey(
+    emailPdfInstruction,
+    emailPdfDocumentType,
+    emailPdfAnalysisMode
+  )
+  const emailPdfAnalysisIsCurrent =
     Boolean(emailPdfAnalysis)
-    && lastAnalyzedInstruction === emailPdfInstruction.trim()
-  const emailPdfReviewReady =
-    creationMode !== 'email_pdf'
-    || Boolean(emailPdf && emailPdfAnalysis && emailPdfInstructionIsCurrent)
+    && lastAnalyzedRequestKey === currentAnalysisRequestKey
   const hasIncompleteIncludedSubtask = emailPdfSubtasks.some(
     (subtask) => subtask.included && !subtask.title.trim()
   )
+  const responsibleParties = includedEmailPdfSubtasks
+    .map((subtask) => subtask.responsibleParty.trim())
+    .filter(Boolean)
+  const dueTexts = includedEmailPdfSubtasks
+    .map((subtask) => subtask.dueText.trim())
+    .filter(Boolean)
+  const hasDifferentTaskAssignments =
+    new Set(responsibleParties).size > 1
+    || (responsibleParties.length > 0 && responsibleParties.length < includedEmailPdfSubtasks.length)
+    || new Set(dueTexts).size > 1
+    || (dueTexts.length > 0 && dueTexts.length < includedEmailPdfSubtasks.length)
+  const hasExtractedAssignmentDetails = responsibleParties.length > 0 || dueTexts.length > 0
+  const emailPdfReviewReady =
+    creationMode !== 'email_pdf'
+    || Boolean(
+      emailPdf
+      && emailPdfAnalysis
+      && emailPdfAnalysisIsCurrent
+      && !emailPdfAnalysis.hasMoreActions
+      && emailPdfAnalysis.subtasks.length > 0
+      && includedEmailPdfSubtasks.length > 0
+      && (!hasExtractedAssignmentDetails || confirmedSharedAssignment)
+    )
 
   const addAttachmentFiles = (selected: File[]) => {
     if (selected.length === 0) return
@@ -318,7 +467,7 @@ export default function TaskComposerSheet({
       ...(creationMode === 'email_pdf' && emailPdf ? [emailPdf] : []),
     ].map(fileKey))
     const unique = valid.filter((file) => !existing.has(fileKey(file)))
-    const reservedEmailPdf = creationMode === 'email_pdf' && emailPdf ? 1 : 0
+    const reservedEmailPdf = creationMode === 'email_pdf' && emailPdf && attachSourceDocument ? 1 : 0
     const available = Math.max(0, MAX_INITIAL_ATTACHMENTS - attachments.length - reservedEmailPdf)
     let totalBytes = attachments.reduce((sum, file) => sum + file.size, 0)
       + (reservedEmailPdf ? emailPdf?.size ?? 0 : 0)
@@ -361,8 +510,9 @@ export default function TaskComposerSheet({
     }
     setEmailPdfAnalysis(null)
     setEmailPdfSubtasks([])
-    setLastAnalyzedInstruction(null)
+    setLastAnalyzedRequestKey(null)
     setMainTaskDraftSnapshot(null)
+    setConfirmedSharedAssignment(false)
   }
 
   const switchToManualCreation = () => {
@@ -372,7 +522,10 @@ export default function TaskComposerSheet({
     ) return
     clearEmailPdfAnalysis(true)
     setEmailPdf(null)
-    setEmailPdfInstruction('')
+    setEmailPdfInstruction(DEFAULT_DOCUMENT_INSTRUCTION)
+    setEmailPdfDocumentType('auto')
+    setEmailPdfAnalysisMode('explicit')
+    setAttachSourceDocument(false)
     setEmailPdfError(null)
     setCreationMode('manual')
   }
@@ -385,7 +538,7 @@ export default function TaskComposerSheet({
       return
     }
     if (!isPdfFile(file)) {
-      setEmailPdfError('Mejlet måste vara utskrivet som en PDF-fil.')
+      setEmailPdfError('Dokumentet måste vara en PDF-fil.')
       return
     }
     if (file.size <= 0) {
@@ -402,7 +555,7 @@ export default function TaskComposerSheet({
     const remainingAttachments = attachments.filter(
       (attachment) => fileKey(attachment) !== selectedFileKey
     )
-    if (remainingAttachments.length >= MAX_INITIAL_ATTACHMENTS) {
+    if (attachSourceDocument && remainingAttachments.length >= MAX_INITIAL_ATTACHMENTS) {
       setEmailPdfError(`Du kan lägga till högst ${MAX_INITIAL_ATTACHMENTS} filer totalt.`)
       return
     }
@@ -410,7 +563,10 @@ export default function TaskComposerSheet({
       (sum, attachment) => sum + attachment.size,
       0
     )
-    if (attachmentBytes + file.size > MAX_INITIAL_ATTACHMENT_TOTAL_BYTES) {
+    if (
+      attachSourceDocument
+      && attachmentBytes + file.size > MAX_INITIAL_ATTACHMENT_TOTAL_BYTES
+    ) {
       setEmailPdfError('PDF-filen och övriga bilagor får tillsammans vara högst 100 MB.')
       return
     }
@@ -431,21 +587,47 @@ export default function TaskComposerSheet({
     ) return
     clearEmailPdfAnalysis(Boolean(emailPdfAnalysis))
     setEmailPdf(null)
+    setAttachSourceDocument(false)
+    setEmailPdfError(null)
+  }
+
+  const toggleAttachSourceDocument = (checked: boolean) => {
+    if (!checked) {
+      setAttachSourceDocument(false)
+      setEmailPdfError(null)
+      return
+    }
+    if (!emailPdf) return
+    if (attachments.length >= MAX_INITIAL_ATTACHMENTS) {
+      setEmailPdfError(`Du kan lägga till högst ${MAX_INITIAL_ATTACHMENTS} filer totalt.`)
+      return
+    }
+    const attachmentBytes = attachments.reduce((sum, attachment) => sum + attachment.size, 0)
+    if (attachmentBytes + emailPdf.size > MAX_INITIAL_ATTACHMENT_TOTAL_BYTES) {
+      setEmailPdfError('PDF-filen och övriga bilagor får tillsammans vara högst 100 MB.')
+      return
+    }
+    setAttachSourceDocument(true)
     setEmailPdfError(null)
   }
 
   const analyzeEmailPdf = async () => {
     const instruction = emailPdfInstruction.trim()
+    const requestKey = analysisRequestKey(
+      instruction,
+      emailPdfDocumentType,
+      emailPdfAnalysisMode
+    )
     if (!emailPdf) {
-      setEmailPdfError('Lägg till mejlet som PDF först.')
+      setEmailPdfError('Lägg till dokumentet som PDF först.')
       return
     }
     if (!instruction) {
-      setEmailPdfError('Beskriv kort vad Gizmo ska reda ut.')
+      setEmailPdfError('Beskriv kort vad Gizmo ska göra.')
       return
     }
     if (instruction.length < 5) {
-      setEmailPdfError('Beskriv med några ord vad Gizmo ska reda ut.')
+      setEmailPdfError('Beskriv med några ord vad Gizmo ska göra.')
       return
     }
     if (
@@ -456,13 +638,16 @@ export default function TaskComposerSheet({
     emailPdfAnalysisController.current?.abort()
     const controller = new AbortController()
     emailPdfAnalysisController.current = controller
-    if (emailPdfAnalysis) setLastAnalyzedInstruction(null)
+    if (emailPdfAnalysis) setLastAnalyzedRequestKey(null)
     setAnalyzingEmailPdf(true)
+    setConfirmedSharedAssignment(false)
     setEmailPdfError(null)
     try {
       const form = new FormData()
       form.append('file', emailPdf)
       form.append('instruction', instruction)
+      form.append('documentType', emailPdfDocumentType)
+      form.append('analysisMode', emailPdfAnalysisMode)
       const response = await fetch('/api/tasks/analyze-pdf', {
         method: 'POST',
         body: form,
@@ -487,17 +672,15 @@ export default function TaskComposerSheet({
         })
       }
       setEmailPdfAnalysis(analysis)
-      setLastAnalyzedInstruction(instruction)
+      setLastAnalyzedRequestKey(requestKey)
       setTitle(analysis.mainTask.title)
       setDescription(analysis.mainTask.description)
       setContextLabel(analysis.mainTask.contextLabel)
-      setTaskKind(analysis.mainTask.taskKind)
-      setEvidenceRequirements(analysis.mainTask.evidenceRequirements)
       setEmailPdfSubtasks(
         analysis.subtasks.map((subtask) => ({
           ...subtask,
           id: draftId(),
-          included: true,
+          included: subtask.basis !== 'ai_suggestion',
         }))
       )
     } catch (error) {
@@ -515,6 +698,7 @@ export default function TaskComposerSheet({
 
   const addEmailPdfSubtask = () => {
     if (emailPdfSubtasks.length >= TASK_EMAIL_PDF_MAX_SUBTASKS) return
+    setConfirmedSharedAssignment(false)
     setEmailPdfSubtasks((current) => [
       ...current,
       {
@@ -522,7 +706,11 @@ export default function TaskComposerSheet({
         included: true,
         title: '',
         description: '',
-        rationale: 'Tillagd manuellt i granskningen.',
+        checklist: [],
+        basis: 'manual',
+        responsibleParty: '',
+        dueText: '',
+        sourceExcerpt: '',
         sourcePages: [],
       },
     ])
@@ -545,7 +733,7 @@ export default function TaskComposerSheet({
       !followupTime
     ) return
     const submissionAttachments =
-      creationMode === 'email_pdf' && emailPdf
+      creationMode === 'email_pdf' && emailPdf && attachSourceDocument
         ? [emailPdf, ...attachments.filter((file) => fileKey(file) !== fileKey(emailPdf))]
         : attachments
     if (submissionAttachments.length > MAX_INITIAL_ATTACHMENTS) {
@@ -611,7 +799,12 @@ export default function TaskComposerSheet({
         creationMode === 'email_pdf'
           ? includedEmailPdfSubtasks.map((subtask) => ({
               title: subtask.title.trim(),
-              description: subtask.description.trim(),
+              description: taskDescriptionWithChecklist(
+                subtask.description,
+                subtask.checklist,
+                subtask.responsibleParty,
+                subtask.dueText
+              ),
             }))
           : [],
     })
@@ -629,9 +822,9 @@ export default function TaskComposerSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby="task-composer-title"
-        className="relative max-h-[94dvh] w-full overflow-hidden rounded-t-3xl bg-slate-50 shadow-2xl sm:max-w-2xl sm:rounded-3xl"
+        className="relative flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-slate-50 shadow-2xl sm:max-w-2xl sm:rounded-3xl"
       >
-        <header className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur sm:px-6">
+        <header className="z-10 flex shrink-0 items-start justify-between border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur sm:px-6">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">
               {parentTask ? 'Underuppgift' : 'Nytt uppdrag'}
@@ -651,8 +844,9 @@ export default function TaskComposerSheet({
           </button>
         </header>
 
-        <form onSubmit={submit} className="max-h-[calc(94dvh-77px)] overflow-y-auto px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 sm:px-6">
-          <fieldset disabled={interactionBusy} className="contents">
+        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-5 sm:px-6">
+            <fieldset disabled={interactionBusy} className="contents">
             <div className="space-y-5">
             {suggestion ? (
               <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm leading-6 text-violet-950">
@@ -694,7 +888,7 @@ export default function TaskComposerSheet({
                         : 'text-violet-800 hover:bg-violet-50'
                     }`}
                   >
-                    <Sparkles size={17} aria-hidden="true" /> Tolka mejl-PDF
+                    <Sparkles size={17} aria-hidden="true" /> Från dokument
                   </button>
                 </div>
 
@@ -705,14 +899,14 @@ export default function TaskComposerSheet({
                   >
                     <div className="flex items-start gap-3">
                       <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
-                        <Mail size={20} aria-hidden="true" />
+                        <FileText size={20} aria-hidden="true" />
                       </span>
                       <div>
                         <h3 id="email-pdf-analysis-title" className="font-semibold text-violet-950">
-                          Skapa utkast från ett mejl
+                          Skapa uppgifter från dokument
                         </h3>
                         <p className="mt-1 text-xs leading-5 text-violet-800">
-                          Dra in mejlet utskrivet som PDF och beskriv vad Gizmo ska reda ut. Inget skapas eller skickas innan du granskar formuläret.
+                          Lägg till ett dokument i PDF-format. Gizmo strukturerar innehållet till ett redigerbart utkast. Inget skapas eller skickas innan du har granskat det.
                         </p>
                       </div>
                     </div>
@@ -753,16 +947,91 @@ export default function TaskComposerSheet({
                       ) : (
                         <TaskAttachmentDropZone
                           accept=".pdf,application/pdf"
-                          title="Dra in mejlet som PDF"
+                          title="Dra in dokumentet som PDF"
                           activeTitle="Släpp PDF-filen för att lägga till den"
                           description={`Du kan även klicka och välja en PDF. Max ${TASK_EMAIL_PDF_MAX_MEGABYTES} MB.`}
                           disabled={interactionBusy}
                           multiple={false}
-                          icon={<Mail className="text-violet-700" size={24} aria-hidden="true" />}
+                          icon={<FileText className="text-violet-700" size={24} aria-hidden="true" />}
                           onFiles={chooseEmailPdf}
                         />
                       )}
                     </div>
+
+                    {emailPdf ? (
+                      <div className="mt-3 rounded-xl border border-violet-200 bg-white px-3.5 py-3">
+                        <label className="flex cursor-pointer items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={attachSourceDocument}
+                            onChange={(event) => toggleAttachSourceDocument(event.target.checked)}
+                            className="mt-0.5 h-5 w-5 shrink-0 rounded border-slate-300 accent-violet-700"
+                          />
+                          <span>
+                            <span className="block text-sm font-semibold text-slate-800">
+                              Bifoga även källdokumentet till uppdraget
+                            </span>
+                            <span className="mt-0.5 block text-xs leading-5 text-slate-500">
+                              Av som standard. Utan detta val används PDF-filen bara för analys och delas inte som bilaga med mottagaren.
+                            </span>
+                          </span>
+                        </label>
+                      </div>
+                    ) : null}
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <label className="block">
+                        <span className="mb-1.5 block text-sm font-semibold text-violet-950">
+                          Dokumenttyp
+                        </span>
+                        <span className="relative block">
+                          <select
+                            value={emailPdfDocumentType}
+                            onChange={(event) => {
+                              setEmailPdfDocumentType(event.target.value as TaskEmailPdfDocumentTypeHint)
+                              setConfirmedSharedAssignment(false)
+                              setEmailPdfError(null)
+                            }}
+                            className={`${inputClass} appearance-none pr-10`}
+                          >
+                            {TASK_EMAIL_PDF_DOCUMENT_TYPE_HINTS.map((value) => (
+                              <option key={value} value={value}>{DOCUMENT_TYPE_HINT_LABELS[value]}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-3 text-slate-400" size={18} aria-hidden="true" />
+                        </span>
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-1.5 block text-sm font-semibold text-violet-950">
+                          Analysnivå
+                        </span>
+                        <span className="relative block">
+                          <select
+                            value={emailPdfAnalysisMode}
+                            onChange={(event) => {
+                              setEmailPdfAnalysisMode(event.target.value as TaskEmailPdfAnalysisMode)
+                              setConfirmedSharedAssignment(false)
+                              setEmailPdfError(null)
+                            }}
+                            className={`${inputClass} appearance-none pr-10`}
+                          >
+                            {TASK_EMAIL_PDF_ANALYSIS_MODES.map((value) => (
+                              <option key={value} value={value}>{ANALYSIS_MODE_LABELS[value]}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-3 text-slate-400" size={18} aria-hidden="true" />
+                        </span>
+                      </label>
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-violet-800">
+                      {ANALYSIS_MODE_HELP[emailPdfAnalysisMode]}
+                    </p>
+
+                    <p className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-[11px] leading-5 text-violet-900">
+                      PDF-filen skickas till OpenAI API för analys. Undvik personnummer, portkoder,
+                      betaluppgifter och andra hemligheter som inte behövs för uppgiften.
+                    </p>
 
                     <label className="mt-4 block">
                       <span className="mb-1.5 block text-sm font-semibold text-violet-950">
@@ -772,12 +1041,13 @@ export default function TaskComposerSheet({
                         value={emailPdfInstruction}
                         onChange={(event) => {
                           setEmailPdfInstruction(event.target.value)
+                          setConfirmedSharedAssignment(false)
                           setEmailPdfError(null)
                         }}
                         rows={3}
                         maxLength={1200}
                         disabled={interactionBusy}
-                        placeholder="Exempel: Identifiera vad som behöver göras och dela upp arbetet i tydliga underuppgifter."
+                        placeholder={DEFAULT_DOCUMENT_INSTRUCTION}
                         className={inputClass}
                       />
                       <span className="mt-1 block text-right text-[11px] text-violet-700">
@@ -811,146 +1081,340 @@ export default function TaskComposerSheet({
 
                     <p className="sr-only" aria-live="polite" role="status">
                       {analyzingEmailPdf
-                        ? 'Gizmo läser PDF-filen och tar fram ett förslag.'
+                        ? 'Gizmo läser dokumentet och tar fram ett förslag.'
                         : emailPdfAnalysis
                           ? 'Gizmos förslag är klart för granskning.'
                           : ''}
                     </p>
-                    {emailPdfAnalysis && !emailPdfInstructionIsCurrent ? (
+                    {emailPdfAnalysis && !emailPdfAnalysisIsCurrent ? (
                       <p role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
-                        Det visade förslaget är inte den senaste analysen. Analysera igen innan uppdraget kan skapas.
+                        Instruktionen, dokumenttypen eller analysnivån har ändrats. Analysera igen innan uppgifterna kan skapas.
                       </p>
                     ) : null}
                     {emailPdfAnalysis ? (
-                        <div className="mt-4 space-y-3 border-t border-violet-200 pt-4">
-                          <div className="rounded-xl bg-white px-3.5 py-3">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Gizmos sammanfattning</p>
-                            <p className="mt-1 text-sm leading-6 text-slate-700">{emailPdfAnalysis.summary}</p>
-                            {emailPdfAnalysis.mainTask.sourcePages.length > 0 ? (
-                              <p className="mt-1 text-xs text-slate-500">
-                                AI-förslagets källa: sida {emailPdfAnalysis.mainTask.sourcePages.join(', ')}
-                              </p>
-                            ) : null}
+                      <div className="mt-4 space-y-3 border-t border-violet-200 pt-4">
+                        <div className="rounded-xl bg-white px-3.5 py-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
+                              Gizmos sammanfattning
+                            </p>
+                            <span className="rounded-full bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-800">
+                              Tolkat som: {DOCUMENT_TYPE_LABELS[emailPdfAnalysis.documentType]}
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              {DOCUMENT_TYPE_CONFIDENCE_LABELS[emailPdfAnalysis.documentTypeConfidence]}
+                            </span>
                           </div>
+                          <p className="mt-2 text-sm leading-6 text-slate-700">{emailPdfAnalysis.summary}</p>
+                          {emailPdfAnalysis.mainTask.sourceExcerpt ? (
+                            <blockquote className="mt-2 border-l-2 border-violet-200 pl-2 text-xs italic leading-5 text-slate-600">
+                              “{emailPdfAnalysis.mainTask.sourceExcerpt}”
+                            </blockquote>
+                          ) : null}
+                          {emailPdfAnalysis.mainTask.sourceExcerpt || emailPdfAnalysis.mainTask.sourcePages.length > 0 ? (
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              {sourceLabel(emailPdfAnalysis.mainTask.sourcePages)}
+                            </p>
+                          ) : null}
+                        </div>
 
-                          {[...emailPdfAnalysis.missingInformation, ...emailPdfAnalysis.warnings].length > 0 ? (
-                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3">
-                              <p className="flex items-center gap-2 text-sm font-semibold text-amber-950">
-                                <AlertTriangle size={16} aria-hidden="true" /> Kontrollera innan du skapar
+                        {emailPdfAnalysis.hasMoreActions ? (
+                          <div role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-3 text-rose-900">
+                            <p className="flex items-center gap-2 text-sm font-semibold">
+                              <AlertTriangle size={16} aria-hidden="true" /> Alla åtgärder fick inte plats
+                            </p>
+                            <p className="mt-1 text-xs leading-5">
+                              Uppgifter kan inte skapas från ett ofullständigt urval. Avgränsa instruktionen och analysera dokumentet igen.
+                            </p>
+                          </div>
+                        ) : null}
+
+                        {emailPdfAnalysis.subtasks.length === 0 ? (
+                          <div role="status" className="rounded-xl border border-slate-200 bg-white px-3.5 py-3">
+                            <p className="text-sm font-semibold text-slate-900">Inga skapbara uppgifter hittades</p>
+                            <p className="mt-1 text-xs leading-5 text-slate-600">
+                              Ändra instruktionen eller analysnivån och analysera igen.
+                            </p>
+                          </div>
+                        ) : null}
+
+                        {emailPdfAnalysis.missingInformation.length > 0 ? (
+                          <section className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3">
+                            <h4 className="flex items-center gap-2 text-sm font-semibold text-amber-950">
+                              <AlertTriangle size={16} aria-hidden="true" /> Saknade underlag eller uppgifter
+                            </h4>
+                            <p className="mt-1 text-xs leading-5 text-amber-900">
+                              Dessa skapas inte som uppgifter.
+                            </p>
+                            <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-amber-900">
+                              {emailPdfAnalysis.missingInformation.map((item, index) => (
+                                <li key={`${index}:${item}`}>{item}</li>
+                              ))}
+                            </ul>
+                          </section>
+                        ) : null}
+
+                        {emailPdfAnalysis.warnings.length > 0 ? (
+                          <section className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3">
+                            <h4 className="flex items-center gap-2 text-sm font-semibold text-amber-950">
+                              <AlertTriangle size={16} aria-hidden="true" /> Kontrollera tolkningen
+                            </h4>
+                            <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-amber-900">
+                              {emailPdfAnalysis.warnings.map((item, index) => (
+                                <li key={`${index}:${item}`}>{item}</li>
+                              ))}
+                            </ul>
+                          </section>
+                        ) : null}
+
+                        <SourceItemSection
+                          title="Beslut i dokumentet"
+                          description="Visas som information och skapas inte automatiskt som uppgifter."
+                          items={emailPdfAnalysis.decisions}
+                        />
+                        <SourceItemSection
+                          title="Observationer och bakgrund"
+                          description="Visas som information och skapas inte automatiskt som uppgifter."
+                          items={emailPdfAnalysis.observations}
+                        />
+
+                        <fieldset className="rounded-xl border border-violet-200 bg-white p-3.5">
+                          <legend className="px-1 text-sm font-semibold text-slate-900">
+                            Uppgifter att skapa ({includedEmailPdfSubtasks.length})
+                          </legend>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">
+                            De valda uppgifterna skapas som underuppgifter. I den här batchen får alla samma mottagare, projekt och sluttid som huvuduppdraget.
+                          </p>
+                          {hasExtractedAssignmentDetails ? (
+                            <div role="alert" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
+                              <p className="font-semibold">
+                                {hasDifferentTaskAssignments
+                                  ? 'Dokumentet anger olika ansvariga eller tider för de valda uppgifterna.'
+                                  : 'Dokumentet anger ansvarig eller tid för minst en vald uppgift.'}
                               </p>
-                              <ul className="mt-2 space-y-1 text-xs leading-5 text-amber-900">
-                                {[...emailPdfAnalysis.missingInformation, ...emailPdfAnalysis.warnings].map((item, index) => (
-                                  <li key={`${index}:${item}`}>• {item}</li>
-                                ))}
-                              </ul>
+                              <p className="mt-1">
+                                Alla valda underuppgifter får mottagaren och sluttiden som väljs längre ned. Källans ansvar och tid sparas bara i beskrivningen och måste kontrolleras.
+                              </p>
+                              <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-lg bg-white/70 px-2.5 py-2 font-semibold text-amber-950">
+                                <input
+                                  type="checkbox"
+                                  checked={confirmedSharedAssignment}
+                                  onChange={(event) => setConfirmedSharedAssignment(event.target.checked)}
+                                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-amber-400 accent-amber-700"
+                                />
+                                <span>Jag vill skapa uppgifterna med den gemensamma mottagare och sluttid som jag väljer i formuläret.</span>
+                              </label>
                             </div>
                           ) : null}
-
-                          <fieldset className="rounded-xl border border-violet-200 bg-white p-3.5">
-                            <legend className="px-1 text-sm font-semibold text-slate-900">
-                              Föreslagna underuppgifter ({includedEmailPdfSubtasks.length})
-                            </legend>
-                            <p className="mt-1 text-xs leading-5 text-slate-500">
-                              De valda underuppgifterna ärver mottagare, projekt och sluttid från huvuduppdraget. Du kan ändra dem efter skapandet.
-                            </p>
-                            <div className="mt-3 space-y-3">
-                              {emailPdfSubtasks.map((subtask, index) => (
-                                <div
-                                  key={subtask.id}
-                                  className={`rounded-xl border p-3 transition ${
-                                    subtask.included
-                                      ? 'border-violet-200 bg-violet-50/50'
-                                      : 'border-slate-200 bg-slate-50 opacity-70'
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-3">
-                                    <label className="inline-flex min-h-10 flex-1 cursor-pointer items-center gap-2 text-sm font-semibold text-slate-800">
-                                      <input
-                                        type="checkbox"
-                                        checked={subtask.included}
-                                        onChange={(event) => {
-                                          const included = event.target.checked
-                                          setEmailPdfSubtasks((current) => current.map((item) =>
-                                            item.id === subtask.id ? { ...item, included } : item
-                                          ))
-                                        }}
-                                        className="h-5 w-5 rounded border-slate-300 accent-violet-700"
-                                      />
-                                      Ta med underuppgift {index + 1}
-                                    </label>
-                                    <button
-                                      type="button"
-                                      onClick={() => setEmailPdfSubtasks((current) => current.filter((item) => item.id !== subtask.id))}
-                                      className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 hover:bg-rose-50 hover:text-rose-700"
-                                      aria-label={`Ta bort underuppgift ${index + 1}`}
-                                    >
-                                      <Trash2 size={16} />
-                                    </button>
-                                  </div>
-                                  <label className="mt-2 block">
-                                    <span className="sr-only">Titel för underuppgift {index + 1}</span>
+                          <div className="mt-3 space-y-3">
+                            {emailPdfSubtasks.map((subtask, index) => (
+                              <div
+                                key={subtask.id}
+                                className={`rounded-xl border p-3 transition ${
+                                  subtask.included
+                                    ? 'border-violet-200 bg-violet-50/50'
+                                    : 'border-slate-200 bg-slate-50 opacity-70'
+                                }`}
+                              >
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <label className="inline-flex min-h-10 flex-1 cursor-pointer items-center gap-2 text-sm font-semibold text-slate-800">
                                     <input
-                                      value={subtask.title}
-                                      maxLength={180}
-                                      disabled={!subtask.included}
+                                      type="checkbox"
+                                      checked={subtask.included}
                                       onChange={(event) => {
-                                        const title = event.target.value
+                                        const included = event.target.checked
+                                        setConfirmedSharedAssignment(false)
                                         setEmailPdfSubtasks((current) => current.map((item) =>
-                                          item.id === subtask.id
-                                            ? { ...item, title, rationale: '', sourcePages: [] }
-                                            : item
+                                          item.id === subtask.id ? { ...item, included } : item
                                         ))
                                       }}
-                                      className={inputClass}
-                                      placeholder="Vad ska bli gjort?"
+                                      className="h-5 w-5 rounded border-slate-300 accent-violet-700"
                                     />
+                                    Ta med uppgift {index + 1}
                                   </label>
-                                  <label className="mt-2 block">
-                                    <span className="sr-only">Beskrivning för underuppgift {index + 1}</span>
-                                    <textarea
-                                      value={subtask.description}
-                                      rows={2}
-                                      maxLength={1200}
-                                      disabled={!subtask.included}
-                                      onChange={(event) => {
-                                        const description = event.target.value
-                                        setEmailPdfSubtasks((current) => current.map((item) =>
-                                          item.id === subtask.id
-                                            ? { ...item, description, rationale: '', sourcePages: [] }
-                                            : item
-                                        ))
-                                      }}
-                                      className={inputClass}
-                                      placeholder="Beskriv önskat resultat."
-                                    />
-                                  </label>
-                                  {subtask.rationale || subtask.sourcePages.length > 0 ? (
-                                    <p className="mt-2 text-[11px] leading-5 text-slate-500">
-                                      {subtask.rationale}
-                                      {subtask.sourcePages.length > 0
-                                        ? ` Källa: sida ${subtask.sourcePages.join(', ')}.`
-                                        : ''}
-                                    </p>
-                                  ) : null}
+                                  <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-violet-800">
+                                    {TASK_BASIS_LABELS[subtask.basis]}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setConfirmedSharedAssignment(false)
+                                      setEmailPdfSubtasks((current) => current.filter((item) => item.id !== subtask.id))
+                                    }}
+                                    className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 hover:bg-rose-50 hover:text-rose-700"
+                                    aria-label={`Ta bort uppgift ${index + 1}`}
+                                  >
+                                    <Trash2 size={16} aria-hidden="true" />
+                                  </button>
                                 </div>
-                              ))}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={addEmailPdfSubtask}
-                              disabled={emailPdfSubtasks.length >= TASK_EMAIL_PDF_MAX_SUBTASKS}
-                              className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg border border-violet-200 px-3 text-xs font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <Plus size={15} aria-hidden="true" /> Lägg till underuppgift
-                            </button>
-                            {hasIncompleteIncludedSubtask ? (
-                              <p role="alert" className="mt-2 text-xs font-medium text-rose-700">
-                                Fyll i en titel eller välj bort den tomma underuppgiften.
-                              </p>
-                            ) : null}
-                            <p className="mt-2 text-[11px] text-slate-500">Högst {TASK_EMAIL_PDF_MAX_SUBTASKS} underuppgifter i version 1.</p>
-                          </fieldset>
-                        </div>
+                                <label className="mt-2 block">
+                                  <span className="sr-only">Titel för uppgift {index + 1}</span>
+                                  <input
+                                    value={subtask.title}
+                                    maxLength={180}
+                                    disabled={!subtask.included}
+                                    onChange={(event) => {
+                                      const nextTitle = event.target.value
+                                      setEmailPdfSubtasks((current) => current.map((item) =>
+                                        item.id === subtask.id
+                                          ? {
+                                              ...item,
+                                              title: nextTitle,
+                                              basis: 'manual',
+                                              sourceExcerpt: '',
+                                              sourcePages: [],
+                                            }
+                                          : item
+                                      ))
+                                    }}
+                                    className={inputClass}
+                                    placeholder="Vad ska bli gjort?"
+                                  />
+                                </label>
+                                <label className="mt-2 block">
+                                  <span className="sr-only">Beskrivning för uppgift {index + 1}</span>
+                                  <textarea
+                                    value={subtask.description}
+                                    rows={2}
+                                    maxLength={1200}
+                                    disabled={!subtask.included}
+                                    onChange={(event) => {
+                                      const nextDescription = event.target.value
+                                      setEmailPdfSubtasks((current) => current.map((item) =>
+                                        item.id === subtask.id
+                                          ? {
+                                              ...item,
+                                              description: nextDescription,
+                                              basis: 'manual',
+                                              sourceExcerpt: '',
+                                              sourcePages: [],
+                                            }
+                                          : item
+                                      ))
+                                    }}
+                                    className={inputClass}
+                                    placeholder="Beskriv önskat resultat."
+                                  />
+                                </label>
+
+                                <div className="mt-3">
+                                  <p className="text-xs font-semibold text-slate-700">Detaljer och checklista</p>
+                                  <div className="mt-2 space-y-2">
+                                    {subtask.checklist.map((checklistItem, checklistIndex) => (
+                                      <div key={`${subtask.id}:checklist:${checklistIndex}`} className="flex items-center gap-2">
+                                        <input
+                                          value={checklistItem}
+                                          maxLength={500}
+                                          disabled={!subtask.included}
+                                          onChange={(event) => {
+                                            const nextChecklistItem = event.target.value
+                                            setEmailPdfSubtasks((current) => current.map((item) =>
+                                              item.id === subtask.id
+                                                ? {
+                                                    ...item,
+                                                    checklist: item.checklist.map((value, itemIndex) =>
+                                                      itemIndex === checklistIndex ? nextChecklistItem : value
+                                                    ),
+                                                    basis: 'manual',
+                                                    sourceExcerpt: '',
+                                                    sourcePages: [],
+                                                  }
+                                                : item
+                                            ))
+                                          }}
+                                          className={inputClass}
+                                          aria-label={`Checklistpunkt ${checklistIndex + 1} för uppgift ${index + 1}`}
+                                        />
+                                        <button
+                                          type="button"
+                                          disabled={!subtask.included}
+                                          onClick={() => setEmailPdfSubtasks((current) => current.map((item) =>
+                                            item.id === subtask.id
+                                              ? {
+                                                  ...item,
+                                                  checklist: item.checklist.filter((_, itemIndex) => itemIndex !== checklistIndex),
+                                                  basis: 'manual',
+                                                  sourceExcerpt: '',
+                                                  sourcePages: [],
+                                                }
+                                              : item
+                                          ))}
+                                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
+                                          aria-label={`Ta bort checklistpunkt ${checklistIndex + 1} från uppgift ${index + 1}`}
+                                        >
+                                          <Trash2 size={15} aria-hidden="true" />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    disabled={!subtask.included}
+                                    onClick={() => setEmailPdfSubtasks((current) => current.map((item) =>
+                                      item.id === subtask.id
+                                        ? {
+                                            ...item,
+                                            checklist: [...item.checklist, ''],
+                                            basis: 'manual',
+                                            sourceExcerpt: '',
+                                            sourcePages: [],
+                                          }
+                                        : item
+                                    ))}
+                                    className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                  >
+                                    <Plus size={14} aria-hidden="true" /> Lägg till punkt
+                                  </button>
+                                </div>
+
+                                {subtask.responsibleParty || subtask.dueText ? (
+                                  <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                                    {subtask.responsibleParty ? (
+                                      <div className="rounded-lg bg-white px-2.5 py-2">
+                                        <dt className="font-semibold text-slate-500">Angiven ansvarig</dt>
+                                        <dd className="mt-0.5 text-slate-800">{subtask.responsibleParty}</dd>
+                                      </div>
+                                    ) : null}
+                                    {subtask.dueText ? (
+                                      <div className="rounded-lg bg-white px-2.5 py-2">
+                                        <dt className="font-semibold text-slate-500">Angiven tid</dt>
+                                        <dd className="mt-0.5 text-slate-800">{subtask.dueText}</dd>
+                                      </div>
+                                    ) : null}
+                                  </dl>
+                                ) : null}
+                                {subtask.sourceExcerpt ? (
+                                  <blockquote className="mt-3 border-l-2 border-violet-200 pl-2 text-xs italic leading-5 text-slate-600">
+                                    “{subtask.sourceExcerpt}”
+                                  </blockquote>
+                                ) : null}
+                                {subtask.sourceExcerpt || subtask.sourcePages.length > 0 ? (
+                                  <p className="mt-1 text-[11px] text-slate-500">{sourceLabel(subtask.sourcePages)}</p>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={addEmailPdfSubtask}
+                            disabled={emailPdfSubtasks.length >= TASK_EMAIL_PDF_MAX_SUBTASKS}
+                            className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg border border-violet-200 px-3 text-xs font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Plus size={15} aria-hidden="true" /> Lägg till uppgift
+                          </button>
+                          {hasIncompleteIncludedSubtask ? (
+                            <p role="alert" className="mt-2 text-xs font-medium text-rose-700">
+                              Fyll i en titel eller välj bort den tomma uppgiften.
+                            </p>
+                          ) : null}
+                          {emailPdfSubtasks.length > 0 && includedEmailPdfSubtasks.length === 0 ? (
+                            <p role="alert" className="mt-2 text-xs font-medium text-rose-700">
+                              Välj minst en uppgift att skapa.
+                            </p>
+                          ) : null}
+                          <p className="mt-2 text-[11px] text-slate-500">Högst {TASK_EMAIL_PDF_MAX_SUBTASKS} uppgifter kan skapas samtidigt.</p>
+                        </fieldset>
+                      </div>
                     ) : null}
                   </section>
                 ) : null}
@@ -1017,7 +1481,10 @@ export default function TaskComposerSheet({
                 <select
                   required
                   value={assigneeRef}
-                  onChange={(event) => setAssigneeRef(event.target.value)}
+                  onChange={(event) => {
+                    setAssigneeRef(event.target.value)
+                    setConfirmedSharedAssignment(false)
+                  }}
                   className={inputClass}
                 >
                   <optgroup label="Interna personer">
@@ -1046,19 +1513,31 @@ export default function TaskComposerSheet({
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <label className="block">
                     <span className="mb-1 block text-xs font-semibold text-slate-600">Namn</span>
-                    <input required value={contactName} onChange={(event) => setContactName(event.target.value)} className={inputClass} />
+                    <input required value={contactName} onChange={(event) => {
+                      setContactName(event.target.value)
+                      setConfirmedSharedAssignment(false)
+                    }} className={inputClass} />
                   </label>
                   <label className="block">
                     <span className="mb-1 block text-xs font-semibold text-slate-600">Företag</span>
-                    <input value={contactCompany} onChange={(event) => setContactCompany(event.target.value)} className={inputClass} />
+                    <input value={contactCompany} onChange={(event) => {
+                      setContactCompany(event.target.value)
+                      setConfirmedSharedAssignment(false)
+                    }} className={inputClass} />
                   </label>
                   <label className="block">
                     <span className="mb-1 block text-xs font-semibold text-slate-600">E-post för Mina uppdrag</span>
-                    <input type="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} className={inputClass} />
+                    <input type="email" value={contactEmail} onChange={(event) => {
+                      setContactEmail(event.target.value)
+                      setConfirmedSharedAssignment(false)
+                    }} className={inputClass} />
                   </label>
                   <label className="block">
                     <span className="mb-1 block text-xs font-semibold text-slate-600">Telefon / WhatsApp</span>
-                    <input type="tel" value={contactPhone} onChange={(event) => setContactPhone(event.target.value)} className={inputClass} />
+                    <input type="tel" value={contactPhone} onChange={(event) => {
+                      setContactPhone(event.target.value)
+                      setConfirmedSharedAssignment(false)
+                    }} className={inputClass} />
                   </label>
                   <p className="sm:col-span-2 text-xs leading-5 text-slate-500">
                     Med en personlig e-postadress kan mottagaren aktivera sitt konto och samla alla uppdrag på en sida. Delade adresser ger alla som kan läsa inkorgen samma portalåtkomst.
@@ -1088,6 +1567,7 @@ export default function TaskComposerSheet({
                           : dueTime
                         setDueDate(nextDate)
                         setDueTime(nextTime)
+                        setConfirmedSharedAssignment(false)
                         setDateTimeError(null)
                         if (
                           followupDate > nextDate
@@ -1111,6 +1591,7 @@ export default function TaskComposerSheet({
                       onChange={(event) => {
                         const nextTime = event.target.value
                         setDueTime(nextTime)
+                        setConfirmedSharedAssignment(false)
                         setDateTimeError(null)
                         if (followupDate === dueDate && followupTime > nextTime) setFollowupTime(nextTime)
                       }}
@@ -1352,9 +1833,22 @@ export default function TaskComposerSheet({
               ) : null}
             </fieldset>
             </div>
-          </fieldset>
+            </fieldset>
+          </div>
 
-          <div className="sticky bottom-0 -mx-5 mt-6 border-t border-slate-200 bg-white/95 px-5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:-mx-6 sm:px-6">
+          <div className="z-20 shrink-0 border-t border-slate-200 bg-white/95 px-5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:px-6">
+            {creationMode === 'email_pdf' && hasExtractedAssignmentDetails && !confirmedSharedAssignment ? (
+              <label className="mb-2 flex cursor-pointer items-start gap-2 rounded-lg bg-amber-50 px-2.5 py-2 text-xs font-semibold leading-5 text-amber-950">
+                <input
+                  type="checkbox"
+                  checked={confirmedSharedAssignment}
+                  disabled={interactionBusy}
+                  onChange={(event) => setConfirmedSharedAssignment(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-amber-400 accent-amber-700"
+                />
+                <span>Bekräfta att alla valda uppgifter ska få formulärets gemensamma mottagare och sluttid.</span>
+              </label>
+            ) : null}
             <button
               type="submit"
               disabled={
@@ -1373,7 +1867,7 @@ export default function TaskComposerSheet({
                 : parentTask
                   ? 'Skapa underuppgift'
                   : creationMode === 'email_pdf' && emailPdfAnalysis
-                    ? `Skapa huvuduppdrag${includedEmailPdfSubtasks.length > 0 ? ` + ${includedEmailPdfSubtasks.length} underuppgifter` : ''}`
+                    ? `Skapa huvuduppdrag${includedEmailPdfSubtasks.length > 0 ? ` + ${includedEmailPdfSubtasks.length} uppgifter` : ''}`
                     : 'Skapa och tilldela'}
             </button>
           </div>

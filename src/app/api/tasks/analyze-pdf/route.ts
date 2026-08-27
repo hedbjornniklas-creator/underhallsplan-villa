@@ -3,9 +3,13 @@ import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { analyzeTaskEmailPdf } from '@/lib/tasks/emailPdfAnalysis'
 import {
+  TASK_EMAIL_PDF_ANALYSIS_MODES,
+  TASK_EMAIL_PDF_DOCUMENT_TYPE_HINTS,
   TASK_EMAIL_PDF_INSTRUCTION_MAX_LENGTH,
   TASK_EMAIL_PDF_MAX_BYTES,
   TASK_EMAIL_PDF_MAX_MEGABYTES,
+  type TaskEmailPdfAnalysisMode,
+  type TaskEmailPdfDocumentTypeHint,
 } from '@/lib/tasks/emailPdfAnalysisContracts'
 
 export const runtime = 'nodejs'
@@ -25,8 +29,8 @@ function errorResponse(error: unknown) {
     PRODUCT_ACCESS_REQUIRED: ['Du saknar behörighet till Uppdrag.', 403],
     MODULE_ACCESS_REQUIRED: ['Du saknar behörighet till Uppdrag.', 403],
     TASK_EMAIL_PDF_REQUEST_INVALID: ['Begäran kunde inte läsas. Försök lägga till PDF-filen igen.', 400],
-    TASK_EMAIL_PDF_FILE_REQUIRED: ['Lägg till ett mejl i PDF-format.', 400],
-    TASK_EMAIL_PDF_MULTIPLE_FILES: ['Version 1 kan analysera en PDF-fil åt gången.', 400],
+    TASK_EMAIL_PDF_FILE_REQUIRED: ['Lägg till ett dokument i PDF-format.', 400],
+    TASK_EMAIL_PDF_MULTIPLE_FILES: ['Gizmo kan analysera en PDF-fil åt gången.', 400],
     TASK_EMAIL_PDF_EMPTY: ['PDF-filen är tom.', 400],
     TASK_EMAIL_PDF_TOO_LARGE: [
       `PDF-filen får vara högst ${TASK_EMAIL_PDF_MAX_MEGABYTES} MB.`,
@@ -39,10 +43,12 @@ function errorResponse(error: unknown) {
       `Beskrivningen får vara högst ${TASK_EMAIL_PDF_INSTRUCTION_MAX_LENGTH} tecken.`,
       400,
     ],
+    TASK_EMAIL_PDF_DOCUMENT_TYPE_INVALID: ['Välj en giltig dokumenttyp.', 400],
+    TASK_EMAIL_PDF_ANALYSIS_MODE_INVALID: ['Välj en giltig analysnivå.', 400],
     'MISSING_ENV:OPENAI_API_KEY': ['Gizmo är inte konfigurerad på servern ännu.', 503],
     TASK_EMAIL_PDF_PROVIDER_TIMEOUT: ['Analysen tog för lång tid. Försök igen om en stund.', 504],
     TASK_EMAIL_PDF_RATE_LIMITED: [
-      'Du har gjort många PDF-analyser på kort tid. Vänta en stund och försök igen.',
+      'Du har gjort många dokumentanalyser på kort tid. Vänta en stund och försök igen.',
       429,
     ],
     TASK_EMAIL_PDF_RATE_LIMIT_CHECK_FAILED: [
@@ -74,7 +80,7 @@ function errorResponse(error: unknown) {
       errorName: error instanceof Error ? error.name : 'UnknownError',
     })
     return jsonError(
-      'PDF-filen kunde inte analyseras.',
+      'Dokumentet kunde inte analyseras.',
       500,
       'TASK_EMAIL_PDF_ANALYSIS_FAILED'
     )
@@ -113,11 +119,48 @@ export async function POST(request: Request) {
     if (instructionEntries.length !== 1 || typeof instructionEntries[0] !== 'string') {
       throw new Error('TASK_EMAIL_PDF_INSTRUCTION_REQUIRED')
     }
+
+    const documentTypeEntries = form.getAll('documentType')
+    if (
+      documentTypeEntries.length > 1
+      || (
+        documentTypeEntries.length === 1
+        && (
+          typeof documentTypeEntries[0] !== 'string'
+          || !TASK_EMAIL_PDF_DOCUMENT_TYPE_HINTS.includes(
+            documentTypeEntries[0] as TaskEmailPdfDocumentTypeHint
+          )
+        )
+      )
+    ) {
+      throw new Error('TASK_EMAIL_PDF_DOCUMENT_TYPE_INVALID')
+    }
+    const documentType = (documentTypeEntries[0] ?? 'auto') as TaskEmailPdfDocumentTypeHint
+
+    const analysisModeEntries = form.getAll('analysisMode')
+    if (
+      analysisModeEntries.length > 1
+      || (
+        analysisModeEntries.length === 1
+        && (
+          typeof analysisModeEntries[0] !== 'string'
+          || !TASK_EMAIL_PDF_ANALYSIS_MODES.includes(
+            analysisModeEntries[0] as TaskEmailPdfAnalysisMode
+          )
+        )
+      )
+    ) {
+      throw new Error('TASK_EMAIL_PDF_ANALYSIS_MODE_INVALID')
+    }
+    const analysisMode = (analysisModeEntries[0] ?? 'explicit') as TaskEmailPdfAnalysisMode
+
     const analysis = await analyzeTaskEmailPdf({
       orgId: org.orgId,
       userId: org.userId,
       file,
       instruction: instructionEntries[0],
+      documentType,
+      analysisMode,
     })
     return NextResponse.json({ analysis })
   } catch (error) {
